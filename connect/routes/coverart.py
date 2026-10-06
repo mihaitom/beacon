@@ -56,7 +56,8 @@ import weakref
 from collections import OrderedDict
 
 import httpx
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from core.auth import require_token
@@ -247,6 +248,27 @@ async def cover_art_batch(
         _resolve_all(by_url, body.image_urls[:_MAX_IDS]),
     )
     return {"results": results, "image_results": image_results}
+
+
+async def cover_image(media: MediaClient, cover_id: str, size: int = _DEFAULT_SIZE) -> Response:
+    """One cover as image bytes, for callers outside the app's own token -
+    the phone remote and party guests. A redirect to the media server would
+    hand them the credentials its cover URLs carry (Subsonic's u/t/s, Plex's
+    X-Plex-Token), so the bytes go through here instead, cache included."""
+    value = await _cached(
+        (_scope(media), cover_id, size), lambda: _fetch_cover(media, cover_id, size)
+    )
+    if isinstance(value, _FetchFailed):
+        raise HTTPException(status_code=502)
+    if value is None:
+        raise HTTPException(status_code=404)
+    header, encoded = value.split(",", 1)
+    content_type = header.removeprefix("data:").removesuffix(";base64")
+    return Response(
+        base64.b64decode(encoded),
+        media_type=content_type,
+        headers={"Cache-Control": "private, max-age=86400"},
+    )
 
 
 async def _resolve_all(resolve, refs: list[str]) -> dict[str, str | None]:

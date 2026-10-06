@@ -9,6 +9,7 @@ import { useConnectStore } from '@/stores/connect'
 import { useRemoteControlStore } from '@/stores/remoteControl'
 import { useAuthStore } from '@/stores/auth'
 import { useAutoplayStore } from '@/stores/autoplay'
+import { PartyRefusal, usePartyStore } from '@/stores/party'
 import type { Song } from '@/types/library'
 import type { DeviceType, DiscoveredDevice } from '@/services/connect/types'
 import { faviconSizeStep, RADIO_FAVICON_CACHE_VERSION } from '@/services/connect/radio'
@@ -31,8 +32,8 @@ export interface RemoteSong {
  * CONNECT_TOKEN as a query param (unavoidable for an <img src>, see
  * services/subsonic/client.ts), and shipping it to the phone would hand out
  * the same full API access CONNECT_TOKEN gives the trusted desktop process.
- * routes/remote.py's /cover-art redirects to a properly-scoped, LAN-reachable
- * URL instead.
+ * routes/remote.py's /cover-art serves the image itself under the phone's
+ * own password instead.
  *
  * Without any credential, and relative: the phone is served by connect
  * itself, so the path resolves against the right origin in every build, and
@@ -200,6 +201,20 @@ export async function handleRemoteCommand(
       if (song) playback.queueNext([song])
       return
     }
+    case 'party-wish': {
+      const song = await resolveSong(String(payload.songId))
+      if (!song) throw new PartyRefusal('not-found')
+      usePartyStore().wish(
+        song,
+        String(payload.guestId),
+        String(payload.guestName),
+        Number(payload.maxPending),
+      )
+      return
+    }
+    case 'party-withdraw':
+      usePartyStore().withdraw(String(payload.requestId), String(payload.guestId))
+      return
     case 'play-song-radio': {
       const song = await resolveSong(String(payload.songId))
       if (song) await playback.startSongRadio(song)
@@ -339,6 +354,24 @@ export async function resolveRemoteQuery(
           cover_art_id: a.coverArtId ?? null,
         })),
         total: filtered.length,
+      }
+    }
+    case 'album-request': {
+      try {
+        const album = await library.fetchAlbum(String(payload.albumId))
+        return {
+          album: {
+            id: album.id,
+            name: album.name,
+            artist: album.artist,
+            year: album.year,
+            cover_art_url: remoteCoverArtUrl(album.coverArtId),
+            cover_art_id: album.coverArtId ?? null,
+          },
+          songs: album.songs.map(toRemoteSong),
+        }
+      } catch {
+        return { album: null, songs: [] }
       }
     }
     case 'playlists-request': {

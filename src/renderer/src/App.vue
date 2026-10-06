@@ -23,6 +23,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useConnectStore } from '@/stores/connect'
 import { useLibraryStore } from '@/stores/library'
 import { useRemoteControlStore } from '@/stores/remoteControl'
+import { usePartyStore } from '@/stores/party'
 import { useUpdateStore } from '@/stores/update'
 import { useIsMobileWeb } from '@/composables/useIsMobileWeb'
 import { initKeyboardShortcuts } from '@/services/keyboardShortcuts'
@@ -136,7 +137,12 @@ export default {
           // needed at all (reconciling a renderer reload against connect's
           // still-running state).
           void useRemoteControlStore().refreshStatus()
+          void usePartyStore().refreshStatus()
         })
+    } else {
+      // Party mode is the one relay user the web build has too: guests
+      // reach it under /party/ on the same origin.
+      void usePartyStore().refreshStatus()
     }
     // window.api is absent in the web build (no Electron main process to
     // ask this of) — casting there just keeps running until the backend's
@@ -149,6 +155,8 @@ export default {
         if (connect.isActive) await connect.stopAll()
         const remoteControl = useRemoteControlStore()
         if (remoteControl.enabled) await remoteControl.disable()
+        const party = usePartyStore()
+        if (party.enabled) await party.disable()
       } catch (error) {
         console.error('[app] Failed to stop casting/remote control before quit:', error)
       } finally {

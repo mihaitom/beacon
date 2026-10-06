@@ -10,7 +10,7 @@ import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import 'vuetify/styles'
 import { i18n } from '@/i18n'
-import AudioVisualizer from '../AudioVisualizer.vue'
+import VisualizerBars from '../VisualizerBars.vue'
 
 const vuetify = createVuetify({ components, directives })
 const wrappers: VueWrapper[] = []
@@ -34,7 +34,7 @@ function painted(canvas: HTMLCanvasElement): number {
   return lit
 }
 
-describe('AudioVisualizer canvas', () => {
+describe('VisualizerBars canvas', () => {
   beforeEach(() => setActivePinia(createPinia()))
   afterEach(() => {
     for (const wrapper of wrappers.splice(0)) wrapper.unmount()
@@ -54,8 +54,8 @@ describe('AudioVisualizer canvas', () => {
    * something on the canvas. */
   it('leaves the bars on the canvas when its box is resized', async () => {
     await page.viewport(1200, 800)
-    const wrapper = mount(AudioVisualizer, {
-      props: { active: true },
+    const wrapper = mount(VisualizerBars, {
+      props: { active: true, sample: () => null },
       attachTo: sizedHost(600, 120),
       global: { plugins: [vuetify, i18n] },
     })

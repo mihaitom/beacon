@@ -1,5 +1,5 @@
 <template>
-  <canvas ref="canvasEl" class="audio-visualizer" />
+  <visualizer-bars :active="active" :color="color" :sample="sampleTargets" :smoothing="smoothing" />
 </template>
 
 <script lang="ts">
@@ -8,20 +8,9 @@ import { useAuthStore } from '@/stores/auth'
 import { getAudioEngine } from '@/services/audioEngine'
 import { VisualizerEventSource } from '@/services/connect/visualizer'
 import type { VisualizerFrame } from '@/services/connect/types'
+import { BAR_COUNT, MAX_FREQ_HZ, MIN_FREQ_HZ, resampleBands } from '@/services/visualizerBands'
+import VisualizerBars from './VisualizerBars.vue'
 
-// 60 bars, logarithmically spaced from 20Hz to 22050Hz — works out to
-// roughly 1/6-octave bands (log2(22050/20)/60 ≈ 0.168 octaves/bar, close
-// enough to true 1/6-octave that the difference isn't perceptible). See
-// connect/core/audio_analysis.py's identical band mapping for 'cast'
-// mode, which this must visually match.
-const BAR_COUNT = 60
-const MIN_FREQ_HZ = 20
-const MAX_FREQ_HZ = 22050
-// Fraction of the canvas height bars settle to when there's no signal to
-// show (paused, or a 'cast' connection that hasn't produced a frame yet) —
-// a resting flat line rather than nothing, so it still reads as "this is a
-// visualizer" at rest.
-const IDLE_HEIGHT = 0
 // How far each bar moves toward its target height per rendered frame —
 // lower is smoother/laggier, higher tracks the signal more tightly.
 // Applied both rising into real data and falling back to IDLE_HEIGHT/0, so
@@ -46,6 +35,7 @@ const SMOOTHING_CAST = 0.3
 
 export default {
   name: 'AudioVisualizer',
+  components: { VisualizerBars },
   props: {
     // False while the parent is showing this component only to let it
     // animate out (visualizer toggled off, or nothing playable anymore) —
@@ -79,17 +69,11 @@ export default {
   emits: ['debug-frame'],
   data() {
     return {
-      heights: Array.from({ length: BAR_COUNT }, () => IDLE_HEIGHT) as number[],
-      rafId: null as number | null,
-      resizeObserver: null as ResizeObserver | null,
       frequencyData: null as Uint8Array<ArrayBuffer> | null,
       visualizerEvents: null as VisualizerEventSource | null,
       // Latest frame from GET /visualizer (connect/core/audio_analysis.py)
       // — null until the first one arrives, or once 'cast' mode ends.
       castBands: null as number[] | null,
-      // Set once at mount — no need to react to the setting changing
-      // mid-session for a decorative element like this.
-      reducedMotion: false,
     }
   },
   computed: {
@@ -109,6 +93,9 @@ export default {
       if (!this.playbackStore.isPlaying) return 'idle'
       return this.playbackStore.isCasting ? 'cast' : 'local'
     },
+    smoothing(): number {
+      return this.mode === 'cast' ? SMOOTHING_CAST : SMOOTHING_LOCAL
+    },
   },
   watch: {
     mode: {
@@ -119,29 +106,7 @@ export default {
       },
     },
   },
-  mounted() {
-    this.reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    this.resizeObserver = new ResizeObserver(() => this.resizeCanvas())
-    this.resizeObserver.observe(this.$el)
-    this.resizeCanvas()
-    if (this.reducedMotion) {
-      // Bars would otherwise render one static frame and then never move
-      // again (see the removed renderFrame() call here and in
-      // resizeCanvas()) — with no ongoing animation, that reads as a broken
-      // visualizer rather than a deliberately motion-free one, so skip the
-      // paint entirely and say why instead.
-      this.$emitter.emit('toast', {
-        level: 'information',
-        title: this.$t('nowPlaying.reducedMotionToastTitle'),
-        message: this.$t('nowPlaying.reducedMotionToastMessage'),
-      })
-    } else {
-      this.rafId = requestAnimationFrame(this.draw)
-    }
-  },
   beforeUnmount() {
-    if (this.rafId != null) cancelAnimationFrame(this.rafId)
-    this.resizeObserver?.disconnect()
     this.stopVisualizerEvents()
   },
   methods: {
@@ -165,43 +130,9 @@ export default {
       this.castBands = null
       this.$emit('debug-frame', null)
     },
-    resizeCanvas() {
-      const canvas = this.$refs.canvasEl as HTMLCanvasElement | undefined
-      if (!canvas) return
-      const rect = canvas.getBoundingClientRect()
-      const ratio = window.devicePixelRatio || 1
-      canvas.width = Math.max(1, Math.round(rect.width * ratio))
-      canvas.height = Math.max(1, Math.round(rect.height * ratio))
-      // Setting either dimension wipes the canvas, and this runs after the
-      // frame's own draw() but before it is painted - so every frame of a
-      // window drag was painted empty, which reads as flicker. Repainting
-      // here fills it again in the same frame. Not while reduced motion is
-      // on: nothing has ever painted then (see mounted()), and one static
-      // frame appearing on resize would be worse than none.
-      if (!this.reducedMotion) this.renderFrame()
-    },
-    draw() {
-      this.rafId = requestAnimationFrame(this.draw)
-      this.renderFrame()
-    },
-    renderFrame() {
-      const canvas = this.$refs.canvasEl as HTMLCanvasElement | undefined
-      const ctx = canvas?.getContext('2d')
-      if (!canvas || !ctx) return
-
-      const targets = this.mode === 'local' ? this.sampleFrequencies() : this.resampleCastBands()
-      // Inactive (toggled off, or nothing playable) settles all the way to
-      // 0 instead of the normal idle resting line — see the `active` prop.
-      const floor = this.active ? IDLE_HEIGHT : 0
-      const smoothing = this.mode === 'cast' ? SMOOTHING_CAST : SMOOTHING_LOCAL
-      for (let i = 0; i < BAR_COUNT; i++) {
-        const target = Math.max(floor, targets?.[i] ?? floor)
-        // heights is always exactly BAR_COUNT long (see data()) — i is
-        // always in bounds here.
-        this.heights[i] = this.heights[i]! + (target - this.heights[i]!) * smoothing
-      }
-
-      this.paint(ctx, canvas.width, canvas.height)
+    /** What VisualizerBars reads every frame. */
+    sampleTargets(): number[] | null {
+      return this.mode === 'local' ? this.sampleFrequencies() : resampleBands(this.castBands)
     },
     // Raw FFT bins are linearly spaced in frequency, but pitch/perceived
     // "spread" of musical content is logarithmic — a linear bin mapping
@@ -240,63 +171,6 @@ export default {
       }
       return heights
     },
-    // The backend sends roughly as many bands as this draws bars
-    // (_BAND_COUNT in audio_analysis.py) but not necessarily exactly —
-    // linear interpolation between the two nearest bands stretches one
-    // onto the other smoothly. Nearest-index resampling (tried first)
-    // duplicated each band across multiple adjacent bars whenever there
-    // were meaningfully fewer bands than bars, which read as neighboring
-    // bars visibly moving in lockstep "groups" instead of independently.
-    resampleCastBands(): number[] | null {
-      const bands = this.castBands
-      if (!bands || bands.length === 0) return null
-      if (bands.length === 1) return Array.from({ length: BAR_COUNT }, () => bands[0]!)
-      const heights = Array.from<number>({ length: BAR_COUNT })
-      for (let i = 0; i < BAR_COUNT; i++) {
-        const position = (i / (BAR_COUNT - 1)) * (bands.length - 1)
-        const lower = Math.floor(position)
-        const upper = Math.min(bands.length - 1, lower + 1)
-        const t = position - lower
-        const a = bands[lower] ?? 0
-        const b = bands[upper] ?? 0
-        heights[i] = a + (b - a) * t
-      }
-      return heights
-    },
-    paint(ctx: CanvasRenderingContext2D, width: number, height: number) {
-      ctx.clearRect(0, 0, width, height)
-      if (width <= 0 || height <= 0) return
-
-      const gap = Math.max(1, width * 0.004)
-      const barWidth = (width - gap * (BAR_COUNT - 1)) / BAR_COUNT
-      const gradient = ctx.createLinearGradient(0, height, 0, 0)
-      gradient.addColorStop(0, `rgba(${this.color}, 1)`)
-      gradient.addColorStop(1, `rgba(${this.color}, 0.8)`)
-      // A soft dark shadow under the bars, so they stay legible over a
-      // bright artist background rather than washing out into it.
-      ctx.shadowColor = 'rgba(0, 0, 0, 0.45)'
-      ctx.shadowBlur = 8
-      ctx.shadowOffsetY = 1
-      ctx.fillStyle = gradient
-
-      ctx.beginPath()
-      for (let i = 0; i < BAR_COUNT; i++) {
-        const barHeight = Math.max(1, Math.min(height, this.heights[i]! * height))
-        const x = i * (barWidth + gap)
-        const y = height - barHeight
-        const radius = Math.min(barWidth / 2, 3)
-        ctx.roundRect(x, y, barWidth, barHeight, [radius, radius, 0, 0])
-      }
-      ctx.fill()
-    },
   },
 }
 </script>
-
-<style scoped>
-.audio-visualizer {
-  display: block;
-  width: 100%;
-  height: 100%;
-}
-</style>

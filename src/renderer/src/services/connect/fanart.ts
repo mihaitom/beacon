@@ -60,6 +60,24 @@ export async function getArtistArt(name: string): Promise<ArtistArt | null> {
   return art
 }
 
+/** The Fanart.tv URL of the background `name` is shown with, as Fanart.tv
+ * serves it - not routed through connect, so without this app's token. For
+ * party mode, whose guests fetch it under their own credential. */
+export function shownBackgroundSource(name: string): string | null {
+  const proxiedUrl = shown.get(name)?.background
+  return proxiedUrl ? fanartSource(proxiedUrl) : null
+}
+
+/** A connect-routed Fanart.tv URL (fanartImageUrl) back to Fanart.tv's own,
+ * without this app's token. */
+export function fanartSource(proxiedUrl: string): string | null {
+  try {
+    return new URL(proxiedUrl, window.location.origin).searchParams.get('url')
+  } catch {
+    return null
+  }
+}
+
 /** Records that `name` is now shown with `background` - the cycle buttons'
  * pick, so the next page for the same artist keeps it. */
 export function rememberBackground(name: string, background: string): void {

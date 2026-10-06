@@ -1,0 +1,884 @@
+"""Tests for party mode (core/party.py + routes/party.py).
+
+/party/ is meant to be reachable without any login in front of it, so most
+of what is here is the security boundary: which credential opens what, what
+a guest can and cannot make the renderer do, and what never leaves connect.
+The relay to the renderer is replaced by recorders - its own mechanics are
+covered in test_remote.py.
+"""
+
+import asyncio
+import re
+import time
+
+import pytest
+from fastapi.testclient import TestClient
+
+import routes.coverart as coverart_module
+import routes.party as party_routes
+from core import integration_key
+from core.party import Settings, clean_name, client_ip, party
+from core.remote import remote
+from main import app
+from media import SubsonicClient
+
+ORIGIN = "http://testserver"
+
+
+@pytest.fixture(autouse=True)
+def built_page(tmp_path, monkeypatch):
+    """What `pnpm build:party` leaves in static/party/ - the suite does not
+    depend on a frontend build having run."""
+    page = tmp_path / "party"
+    (page / "assets").mkdir(parents=True)
+    (page / "index.html").write_text(
+        '<!doctype html><meta name="csp-nonce" content="__CSP_NONCE__"><title>Beacon Party</title>'
+    )
+    (page / "assets" / "index-abc.js").write_text("console.log(1)")
+    monkeypatch.setattr(party_routes, "party_static", lambda: page)
+    return page
+
+
+@pytest.fixture
+def guest_client():
+    """A browser with no CONNECT_TOKEN - what a guest actually is."""
+    with TestClient(app, raise_server_exceptions=False) as c:
+        c.headers.update({"Origin": ORIGIN})
+        yield c
+
+
+@pytest.fixture
+def relay(monkeypatch):
+    """Records what would have been sent to the renderer."""
+    sent = {"commands": [], "queries": []}
+    answers = {}
+
+    async def fake_command(command_type, payload):
+        sent["commands"].append((command_type, payload))
+        error = answers.get(command_type)
+        if error:
+            from fastapi import HTTPException
+
+            raise HTTPException(status_code=502, detail=error)
+
+    async def fake_query(query_type, payload):
+        sent["queries"].append((query_type, payload))
+        return answers.get(query_type, {"items": [], "total": 0})
+
+    monkeypatch.setattr(party_routes, "relay_command", fake_command)
+    monkeypatch.setattr(party_routes, "relay_query", fake_query)
+    sent["answers"] = answers
+    return sent
+
+
+def _start(client, **body) -> str:
+    resp = client.post("/party-host/enable", json=body)
+    assert resp.status_code == 200
+    return resp.json()["token"]
+
+
+def _join(guest_client, token, name="Anna"):
+    return guest_client.post("/party/api/join", json={"token": token, "name": name})
+
+
+def _snapshot(queue_ids, index=0, requests=None, session_id=None, cover=True):
+    songs = [
+        {
+            "id": song_id,
+            "title": f"Title {song_id}",
+            "artist": "Artist",
+            "album": "Album",
+            "duration": 200,
+            "cover_art_id": f"cov-{song_id}" if cover else None,
+            "cover_art_url": f"/remote/cover-art?id=cov-{song_id}&session=secret-session",
+        }
+        for song_id in queue_ids
+    ]
+    return {
+        "playing": True,
+        "volume": 0.7,
+        "casting": [{"name": "Living room"}],
+        "session_id": session_id or "host-session",
+        "stream_info": {"target": "x"},
+        "current_song": songs[index] if songs else None,
+        "radio": None,
+        "queue": songs,
+        "queue_index": index,
+        "party_requests": requests or {},
+    }
+
+
+# ── Credentials ─────────────────────────────────────────────────────────────
+
+
+def test_everything_is_404_while_no_party_runs(guest_client):
+    assert guest_client.get("/party/").status_code == 404
+    assert guest_client.get("/party/api/state").status_code == 404
+    assert _join(guest_client, "anything").status_code == 404
+
+
+def test_host_endpoints_require_connect_token(guest_client):
+    assert guest_client.post("/party-host/enable").status_code == 401
+    assert guest_client.get("/party-host/status").status_code == 401
+
+
+def test_join_sets_an_httponly_strict_cookie_scoped_to_party(client, guest_client):
+    token = _start(client)
+    resp = _join(guest_client, token)
+    assert resp.status_code == 200
+    cookie = resp.headers["set-cookie"].lower()
+    assert "beacon_party=" in cookie
+    assert "httponly" in cookie
+    assert "samesite=strict" in cookie
+    assert "path=/party" in cookie
+    # Plain http in the test client: no Secure flag, or the browser would drop it.
+    assert "secure" not in cookie
+    assert guest_client.get("/party/api/state").status_code == 200
+
+
+def test_cookie_is_secure_behind_a_trusted_https_proxy(client, guest_client):
+    token = _start(client)
+    # TestClient's peer is "testclient", not a trusted proxy - so pretend.
+    party_routes_trusted = party_routes.is_trusted_proxy
+    try:
+        party_routes.is_trusted_proxy = lambda ip: True
+        resp = guest_client.post(
+            "/party/api/join",
+            json={"token": token, "name": "Anna"},
+            headers={"X-Forwarded-Proto": "https"},
+        )
+    finally:
+        party_routes.is_trusted_proxy = party_routes_trusted
+    assert "secure" in resp.headers["set-cookie"].lower()
+
+
+def test_forwarded_proto_from_an_untrusted_peer_is_ignored(client, guest_client):
+    token = _start(client)
+    resp = guest_client.post(
+        "/party/api/join",
+        json={"token": token, "name": "Anna"},
+        headers={"X-Forwarded-Proto": "https"},
+    )
+    assert "secure" not in resp.headers["set-cookie"].lower()
+
+
+def test_wrong_token_is_refused(client, guest_client):
+    _start(client)
+    assert _join(guest_client, "wrong").status_code == 401
+
+
+def test_the_invite_token_is_not_a_bearer_credential(client, guest_client):
+    token = _start(client)
+    resp = guest_client.get(f"/party/api/state?token={token}", headers={"X-Party-Token": token})
+    assert resp.status_code == 401
+
+
+def test_other_credentials_open_nothing_under_party(client, guest_client):
+    _start(client)
+    remote_password, _ = remote.enable()
+    key = integration_key.generate()
+    try:
+        for headers in (
+            {"X-Remote-Password": remote_password},
+            {"X-Remote-Password": key},
+            {"X-Connect-Token": client.headers.get("X-Connect-Token", "")},
+        ):
+            assert guest_client.get("/party/api/state", headers=headers).status_code == 401
+    finally:
+        integration_key.revoke()
+
+
+def test_the_party_cookie_opens_nothing_outside_party(client, guest_client):
+    token = _start(client)
+    sid = _join(guest_client, token).cookies.get("beacon_party")
+    assert sid
+    remote.enable()
+    # The cookie is scoped to /party, so a browser would not even send it
+    # elsewhere - sent anyway here, it still must not count.
+    guest_client.cookies.set("beacon_party", sid)
+    for path in ("/remote/state", "/remote/songs", "/party-host/status"):
+        assert guest_client.get(path).status_code == 401
+
+
+@pytest.mark.parametrize("action", ["rotate", "disable"])
+def test_rotating_or_ending_drops_every_guest(client, guest_client, action):
+    token = _start(client)
+    _join(guest_client, token)
+    assert guest_client.get("/party/api/state").status_code == 200
+    client.post(f"/party-host/{action}")
+    assert guest_client.get("/party/api/state").status_code in (401, 404)
+    if action == "rotate":
+        assert _join(guest_client, token).status_code == 401
+
+
+def test_party_ends_on_its_own_when_time_is_up(client, guest_client):
+    token = _start(client)
+    _join(guest_client, token)
+    party.expires_at = time.time() - 1
+    assert guest_client.get("/party/api/state").status_code == 404
+    assert party.enabled is False
+
+
+def test_party_is_stale_without_renderer_keepalive(client):
+    _start(client)
+    assert not party.is_stale()
+    remote.last_keepalive = time.time() - 3600
+    assert party.is_stale()
+
+
+def test_status_never_returns_the_invite_token(client):
+    token = _start(client)
+    body = client.get("/party-host/status").json()
+    assert token not in str(body)
+    assert body["enabled"] is True
+
+
+def test_kicked_guest_loses_access(client, guest_client):
+    token = _start(client)
+    _join(guest_client, token)
+    guest_id = client.get("/party-host/status").json()["guests"][0]["guest_id"]
+    assert client.delete(f"/party-host/guests/{guest_id}").status_code == 200
+    assert guest_client.get("/party/api/state").status_code == 401
+
+
+# ── Rate limits ─────────────────────────────────────────────────────────────
+
+
+def test_token_guessing_locks_out(client, guest_client):
+    token = _start(client)
+    attempts, _ = party_routes.JOIN_FAILURES_PER_IP
+    for _ in range(attempts):
+        assert _join(guest_client, "wrong").status_code == 401
+    # Locked out now, even with the right token.
+    assert _join(guest_client, token).status_code == 429
+
+
+def test_wishes_are_rate_limited(client, guest_client, relay):
+    token = _start(client)
+    _join(guest_client, token)
+    limit, _ = party_routes.WISHES
+    for _ in range(limit):
+        assert guest_client.post("/party/api/wishes", json={"song_id": "s1"}).status_code == 200
+    assert guest_client.post("/party/api/wishes", json={"song_id": "s1"}).status_code == 429
+
+
+def test_forwarded_for_is_only_believed_from_a_trusted_proxy():
+    assert client_ip("203.0.113.9", "198.51.100.1") == "203.0.113.9"
+    assert client_ip("127.0.0.1", "198.51.100.1") == "198.51.100.1"
+    # A client prepending its own entry doesn't get to choose: the rightmost
+    # untrusted hop is what the proxy itself saw.
+    assert client_ip("127.0.0.1", "1.1.1.1, 198.51.100.1") == "198.51.100.1"
+    assert client_ip("127.0.0.1", "198.51.100.1, 127.0.0.1") == "198.51.100.1"
+
+
+# ── Input ───────────────────────────────────────────────────────────────────
+
+
+def test_names_are_cleaned():
+    assert clean_name("  Anna  ") == "Anna"
+    assert clean_name("A\u202eB\x00C") == "ABC"  # no bidi override, no control chars
+    assert clean_name("x" * 100) == "x" * 24
+    assert clean_name("   ") is None
+
+
+def test_join_requires_a_name(client, guest_client):
+    token = _start(client)
+    assert _join(guest_client, token, name="\u200b ").status_code == 400
+
+
+def test_ids_are_validated(client, guest_client, relay):
+    token = _start(client)
+    _join(guest_client, token)
+    bad = guest_client.post("/party/api/wishes", json={"song_id": "../../rest/ping?x=1"})
+    assert bad.status_code == 400
+    assert relay["commands"] == []
+
+
+def test_search_is_capped(client, guest_client, relay):
+    token = _start(client)
+    _join(guest_client, token)
+    guest_client.get(f"/party/api/songs?search={'a' * 500}&limit=5000&offset=-4")
+    _, payload = relay["queries"][0]
+    assert len(payload["search"]) == 100
+    assert payload["limit"] == 50
+    assert payload["offset"] == 0
+
+
+def test_writes_from_another_origin_are_refused(client, guest_client, relay):
+    token = _start(client)
+    _join(guest_client, token)
+    resp = guest_client.post(
+        "/party/api/wishes", json={"song_id": "s1"}, headers={"Origin": "https://evil.example"}
+    )
+    assert resp.status_code == 403
+    assert relay["commands"] == []
+
+
+# ── What a guest can make the renderer do ───────────────────────────────────
+
+
+def test_a_wish_is_the_only_command_it_sends(client, guest_client, relay):
+    token = _start(client, max_pending_per_guest=2)
+    _join(guest_client, token)
+    assert guest_client.post("/party/api/wishes", json={"song_id": "s1"}).status_code == 200
+    [(command_type, payload)] = relay["commands"]
+    assert command_type == "party-wish"
+    assert payload["songId"] == "s1"
+    assert payload["guestName"] == "Anna"
+    assert payload["maxPending"] == 2
+    assert payload["guestId"]
+
+
+def test_guests_cannot_reach_the_remote_command_relay(client, guest_client, relay):
+    token = _start(client)
+    _join(guest_client, token)
+    for body in ({"type": "next"}, {"type": "seek", "payload": {"position": 0}}):
+        assert guest_client.post("/remote/command", json=body).status_code in (401, 404)
+        assert guest_client.post("/party/api/command", json=body).status_code == 404
+    assert relay["commands"] == []
+
+
+def test_renderer_refusals_reach_the_guest_as_such(client, guest_client, relay):
+    token = _start(client)
+    _join(guest_client, token)
+    relay["answers"]["party-wish"] = "limit"
+    assert guest_client.post("/party/api/wishes", json={"song_id": "s1"}).status_code == 409
+    relay["answers"]["party-withdraw"] = "forbidden"
+    assert guest_client.delete("/party/api/wishes/r1").status_code == 403
+
+
+def test_withdraw_names_the_guest(client, guest_client, relay):
+    token = _start(client)
+    _join(guest_client, token)
+    guest_client.delete("/party/api/wishes/r1")
+    [(command_type, payload)] = relay["commands"]
+    assert command_type == "party-withdraw"
+    assert payload["requestId"] == "r1"
+    assert payload["guestId"]
+
+
+# ── Skip votes ──────────────────────────────────────────────────────────────
+
+
+def _guests(token, names):
+    clients = []
+    for name in names:
+        c = TestClient(app, raise_server_exceptions=False)
+        c.headers.update({"Origin": ORIGIN})
+        assert _join(c, token, name).status_code == 200
+        clients.append(c)
+    return clients
+
+
+def _connect(*guest_clients):
+    """What an open event stream counts as - streaming one for real would
+    never end (see test_remote.py's module docstring)."""
+    for c in guest_clients:
+        sid = c.cookies.get("beacon_party")
+        party.streams[party.sessions[sid].guest_id] = 1
+
+
+def test_one_guest_alone_can_skip_at_a_third(client, relay):
+    """1/3 of one guest rounds up to one vote - the share is what the host
+    chose, with nothing added on top."""
+    token = _start(client, skip_ratio=1 / 3)
+    party.update_snapshot(_snapshot(["a", "b"]))
+    [anna] = _guests(token, ["Anna"])
+    _connect(anna)
+    assert party.skip_needed() == 1
+    assert anna.post("/party/api/skip").status_code == 200
+    assert relay["commands"] == [("next", {})]
+
+
+def test_a_voter_counts_once(client, relay):
+    token = _start(client, skip_ratio=1.0)
+    party.update_snapshot(_snapshot(["a", "b"]))
+    anna, ben = _guests(token, ["Anna", "Ben"])
+    _connect(anna, ben)
+    assert anna.post("/party/api/skip").status_code == 200
+    assert anna.post("/party/api/skip").status_code == 200
+    assert relay["commands"] == []
+    assert ben.post("/party/api/skip").status_code == 200
+    assert relay["commands"] == [("next", {})]
+
+
+def test_skip_threshold_follows_connected_guests(client, relay):
+    token = _start(client, skip_ratio=0.5)
+    party.update_snapshot(_snapshot(["a", "b"]))
+    guests = _guests(token, ["A", "B", "C", "D", "E", "F"])
+    _connect(*guests)
+    assert party.skip_needed() == 3
+    for g in guests[:2]:
+        g.post("/party/api/skip")
+    assert relay["commands"] == []
+    guests[2].post("/party/api/skip")
+    assert relay["commands"] == [("next", {})]
+
+
+def test_votes_reset_when_the_song_changes(client, relay):
+    token = _start(client)
+    party.update_snapshot(_snapshot(["a", "b"]))
+    anna, ben, cleo = _guests(token, ["Anna", "Ben", "Cleo"])
+    _connect(anna, ben, cleo)
+    anna.post("/party/api/skip")
+    party.update_snapshot(_snapshot(["a", "b"], index=1))
+    assert party.skip_votes == set()
+
+
+def test_skip_off_when_ratio_is_zero(client, guest_client, relay):
+    token = _start(client, skip_ratio=0)
+    party.update_snapshot(_snapshot(["a"]))
+    _join(guest_client, token)
+    assert guest_client.post("/party/api/skip").status_code == 409
+
+
+def test_withdrawn_vote_no_longer_counts(client, relay):
+    token = _start(client, skip_ratio=1.0)
+    party.update_snapshot(_snapshot(["a"]))
+    anna, ben = _guests(token, ["Anna", "Ben"])
+    _connect(anna, ben)
+    anna.post("/party/api/skip")
+    anna.delete("/party/api/skip")
+    ben.post("/party/api/skip")
+    assert relay["commands"] == []
+
+
+# ── What a guest gets to see ────────────────────────────────────────────────
+
+
+def test_snapshot_is_filtered(client, guest_client):
+    token = _start(client)
+    requests = {"1": {"id": "r1", "guest_id": "someone-else", "guest_name": "Ben"}}
+    party.update_snapshot(_snapshot(["a", "b", "c"], index=0, requests=requests))
+    _join(guest_client, token)
+    body = guest_client.get("/party/api/state").json()
+    text = str(body)
+    for leaked in ("host-session", "Living room", "volume", "stream_info", "someone-else"):
+        assert leaked not in text
+    assert "/remote/" not in text
+    assert [s["id"] for s in body["upcoming"]] == ["b", "c"]
+    assert body["upcoming"][0]["request"] == {"name": "Ben", "mine": False}
+
+
+def test_own_requests_are_marked_and_counted(client, guest_client):
+    token = _start(client, max_pending_per_guest=3)
+    _join(guest_client, token)
+    sid = guest_client.cookies.get("beacon_party")
+    me = party.sessions[sid].guest_id
+    requests = {
+        "1": {"id": "r1", "guest_id": me, "guest_name": "Anna"},
+        "2": {"id": "r2", "guest_id": "other", "guest_name": "Ben"},
+    }
+    party.update_snapshot(_snapshot(["a", "b", "c"], requests=requests))
+    body = guest_client.get("/party/api/state").json()
+    assert body["upcoming"][0]["request"] == {"name": "Anna", "mine": True, "id": "r1"}
+    assert "id" not in body["upcoming"][1]["request"]
+    assert body["limits"] == {"max_pending": 3, "pending": 1}
+
+
+def test_radio_hides_the_current_song_and_skip(client, guest_client):
+    token = _start(client)
+    snapshot = _snapshot(["a"])
+    snapshot["radio"] = {"name": "Station", "stream_url": "http://secret.example/stream"}
+    party.update_snapshot(snapshot)
+    _join(guest_client, token)
+    body = guest_client.get("/party/api/state").json()
+    assert body["radio"] == {"name": "Station"}
+    assert "secret.example" not in str(body)
+    assert body["skip"]["enabled"] is False
+    assert guest_client.post("/party/api/skip").status_code == 409
+
+
+# ── Cover art ───────────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def subsonic_cover(default_session, monkeypatch):
+    default_session.media = SubsonicClient(
+        "http://navidrome.example:4533", user="alice", password="secret"
+    )
+
+    async def fake_get(url, **kwargs):
+        response = type("R", (), {})()
+        response.status_code = 200
+        response.headers = {"content-type": "image/jpeg"}
+        response.content = b"jpeg-bytes"
+        return response
+
+    fake_client = type("C", (), {"get": staticmethod(fake_get)})()
+    monkeypatch.setattr(coverart_module, "_get_subsonic_client", lambda: fake_client)
+    coverart_module._reset_cache()
+    yield default_session
+    coverart_module._reset_cache()
+
+
+def test_cover_is_served_as_bytes_for_shown_artwork(client, guest_client, subsonic_cover):
+    token = _start(client)
+    party.update_snapshot(_snapshot(["a"], session_id=subsonic_cover.session_id))
+    _join(guest_client, token)
+    resp = guest_client.get("/party/api/cover?id=cov-a", follow_redirects=False)
+    assert resp.status_code == 200
+    assert resp.content == b"jpeg-bytes"
+    assert "location" not in resp.headers
+
+
+def test_cover_refuses_artwork_never_shown(client, guest_client, subsonic_cover):
+    token = _start(client)
+    party.update_snapshot(_snapshot(["a"], session_id=subsonic_cover.session_id))
+    _join(guest_client, token)
+    assert guest_client.get("/party/api/cover?id=cov-zzz").status_code == 404
+
+
+def test_cover_requires_a_guest(client, guest_client, subsonic_cover):
+    _start(client)
+    party.update_snapshot(_snapshot(["a"], session_id=subsonic_cover.session_id))
+    assert guest_client.get("/party/api/cover?id=cov-a").status_code == 401
+
+
+# ── Page and headers ────────────────────────────────────────────────────────
+
+
+def test_page_is_served_with_security_headers(client, guest_client):
+    _start(client)
+    resp = guest_client.get("/party/")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers["content-type"]
+    csp = resp.headers["content-security-policy"]
+    assert "script-src 'self'" in csp and "unsafe-inline" not in csp
+    assert resp.headers["x-frame-options"] == "DENY"
+    assert resp.headers["referrer-policy"] == "no-referrer"
+    assert resp.headers["x-content-type-options"] == "nosniff"
+
+
+def test_error_answers_carry_the_headers_too(guest_client):
+    resp = guest_client.get("/party/api/state")
+    assert resp.status_code == 404
+    assert resp.headers["x-frame-options"] == "DENY"
+
+
+def test_no_cors_under_party(client, guest_client):
+    _start(client)
+    resp = guest_client.get("/party/", headers={"Origin": "http://localhost:5173"})
+    assert "access-control-allow-origin" not in resp.headers
+
+
+def test_page_assets_and_shared_icons_are_served(client, guest_client):
+    _start(client)
+    assert guest_client.get("/party/assets/index-abc.js").status_code == 200
+    assert guest_client.get("/party/icon-192.png").status_code == 200
+
+
+def test_page_carries_a_fresh_nonce_its_csp_allows(client, guest_client):
+    """Vuetify's theme <style> is the one inline style allowed, by nonce."""
+    _start(client)
+    first = guest_client.get("/party/")
+    second = guest_client.get("/party/")
+    nonce = re.search(r'content="([^"]+)"', first.text).group(1)
+    assert nonce != "__CSP_NONCE__"
+    assert f"style-src 'self' 'nonce-{nonce}'" in first.headers["content-security-policy"]
+    assert nonce not in second.text  # never reused
+    assert first.headers["cache-control"] == "no-store"
+    assert "unsafe-inline" not in first.headers["content-security-policy"]
+
+
+def test_deep_links_get_the_page(client, guest_client):
+    _start(client)
+    assert "Beacon Party" in guest_client.get("/party/queue").text
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "app.js",
+        "sw.js",
+        "js/router.js",
+        "fonts/materialdesignicons-webfont.woff2",
+        "fonts/mdi.css",
+        "..%2Fremote%2Fapp.js",
+        "%2e%2e/main.py",
+        "api/nope",
+    ],
+)
+def test_nothing_else_is_reachable(client, guest_client, path):
+    _start(client)
+    resp = guest_client.get(f"/party/{path}")
+    assert resp.status_code == 404 or "Beacon Party" in resp.text
+
+
+def test_party_settings_default():
+    assert Settings().max_pending_per_guest == 3
+
+
+def test_open_streams_are_capped_per_address(client, guest_client):
+    token = _start(client)
+    _join(guest_client, token)
+    party.streams_per_ip["testclient"] = party_routes.MAX_STREAMS_PER_IP
+    assert guest_client.get("/party/api/events").status_code == 429
+
+
+def test_the_current_song_names_who_wished_for_it(client, guest_client):
+    token = _start(client)
+    requests = {"0": {"id": "r1", "guest_id": "someone", "guest_name": "Ben"}}
+    party.update_snapshot(_snapshot(["a", "b"], index=0, requests=requests))
+    _join(guest_client, token)
+    current = guest_client.get("/party/api/state").json()["current_song"]
+    assert current["wished_by"] == "Ben"
+    assert "someone" not in str(current)
+
+
+# ── Live updates ────────────────────────────────────────────────────────────
+# Driven through the generator directly, as test_remote.py does: a real
+# stream never ends on its own.
+
+
+async def _time_out(coro, timeout):
+    coro.close()
+    raise TimeoutError()
+
+
+def _events_request(sid: str):
+    from starlette.requests import Request
+
+    return Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/party/api/events",
+            "headers": [(b"cookie", f"beacon_party={sid}".encode())],
+            "client": ("203.0.113.5", 1234),
+            "query_string": b"",
+        }
+    )
+
+
+async def _open_stream():
+    party.enable()
+    sid, guest = party.join("Anna", "203.0.113.5")
+    resp = await party_routes.guest_events(_events_request(sid), guest)
+    gen = resp.body_iterator
+    await gen.__anext__()  # retry
+    first = await gen.__anext__()
+    return guest, gen, first
+
+
+async def test_events_open_with_the_guests_own_view():
+    guest, gen, first = await _open_stream()
+    try:
+        assert '"me": {"name": "Anna"}' in first
+        assert party.streams[guest.guest_id] == 1
+    finally:
+        await gen.aclose()
+    assert guest.guest_id not in party.streams
+    assert party.streams_per_ip == {}
+
+
+async def test_events_end_when_the_guest_is_removed():
+    guest, gen, _ = await _open_stream()
+    try:
+        party.kick(guest.guest_id)
+        await party.broadcast()
+        assert await gen.__anext__() == 'data: {"ended": true}\n\n'
+        with pytest.raises(StopAsyncIteration):
+            await gen.__anext__()
+    finally:
+        await gen.aclose()
+
+
+async def test_events_end_when_the_party_runs_out_of_time():
+    from unittest.mock import patch
+
+    _, gen, _ = await _open_stream()
+    try:
+        party.expires_at = time.time() - 1
+        with patch("routes.party.asyncio.wait_for", _time_out):
+            assert await gen.__anext__() == 'data: {"ended": true}\n\n'
+    finally:
+        await gen.aclose()
+
+
+async def test_events_heartbeat_while_the_party_runs():
+    from unittest.mock import patch
+
+    _, gen, _ = await _open_stream()
+    try:
+        with patch("routes.party.asyncio.wait_for", _time_out):
+            assert await gen.__anext__() == ": heartbeat\n\n"
+    finally:
+        await gen.aclose()
+
+
+# ── Playback timing ─────────────────────────────────────────────────────────
+
+
+def test_guests_hear_about_a_seek_but_not_about_every_tick(client):
+    _start(client)
+    party.update_snapshot(_snapshot(["a"]))
+    before = party.snapshot
+    ticking = dict(_snapshot(["a"]), position=before["position"] + 0.3)
+    party.update_snapshot(ticking)
+    assert not party._worth_telling(before, party.snapshot)
+    seeked = dict(_snapshot(["a"]), position=before["position"] + 60)
+    party.update_snapshot(seeked)
+    assert party._worth_telling(before, party.snapshot)
+
+
+def test_anything_but_the_position_is_worth_telling(client):
+    _start(client)
+    party.update_snapshot(_snapshot(["a", "b"]))
+    before = party.snapshot
+    party.update_snapshot(_snapshot(["a", "b"], index=1))
+    assert party._worth_telling(before, party.snapshot)
+
+
+def test_snapshot_says_whether_it_casts_but_not_where(client, guest_client):
+    token = _start(client)
+    party.update_snapshot(_snapshot(["a"]))
+    _join(guest_client, token)
+    body = guest_client.get("/party/api/state").json()
+    assert body["casting"] is True
+    assert "Living room" not in str(body)
+    assert body["duration"] == 0 or isinstance(body["duration"], float)
+
+
+# ── Lyrics and backdrop ─────────────────────────────────────────────────────
+
+
+def test_lyrics_are_the_hosts_and_only_for_the_playing_song(client, guest_client):
+    token = _start(client)
+    party.update_snapshot(_snapshot(["a", "b"]))
+    lines = [{"time": 1.0, "text": "First"}, {"time": 3.0, "text": "Second"}]
+    assert (
+        client.post(
+            "/party-host/lyrics",
+            json={"song_id": "a", "synced": True, "offset": 0.4, "lines": lines},
+        ).status_code
+        == 200
+    )
+    _join(guest_client, token)
+    body = guest_client.get("/party/api/lyrics").json()
+    assert body["lines"] == lines and body["offset"] == 0.4 and body["synced"] is True
+    party.update_snapshot(_snapshot(["a", "b"], index=1))
+    assert guest_client.get("/party/api/lyrics").json()["lines"] == []
+
+
+def test_guests_cannot_push_lyrics(client, guest_client):
+    token = _start(client)
+    _join(guest_client, token)
+    resp = guest_client.post("/party-host/lyrics", json={"song_id": "a", "lines": []})
+    assert resp.status_code == 401
+
+
+def test_lyrics_are_bounded(client):
+    _start(client)
+    party.set_lyrics("a", True, 0, [{"time": i, "text": "x" * 5000} for i in range(5000)])
+    assert len(party.lyrics["lines"]) == 2000
+    assert len(party.lyrics["lines"][0]["text"]) == 500
+
+
+def test_backdrop_is_only_the_hosts_image(client, guest_client, monkeypatch):
+    token = _start(client)
+    snapshot = _snapshot(["a"])
+    snapshot["party_backdrop"] = "https://assets.fanart.tv/fanart/music/x/bg.jpg"
+    party.update_snapshot(snapshot)
+    _join(guest_client, token)
+    asked = []
+    monkeypatch.setattr("core.fanart.get_cached_image", lambda url: asked.append(url) or b"jpeg")
+    resp = guest_client.get("/party/api/backdrop?url=https://evil.example/x.jpg")
+    assert resp.status_code == 200 and resp.content == b"jpeg"
+    assert asked == ["https://assets.fanart.tv/fanart/music/x/bg.jpg"]
+    assert guest_client.get("/party/api/state").json()["backdrop"] is True
+
+
+def test_no_backdrop_without_one_from_the_host(client, guest_client):
+    token = _start(client)
+    party.update_snapshot(_snapshot(["a"]))
+    _join(guest_client, token)
+    assert guest_client.get("/party/api/backdrop").status_code == 404
+
+
+# ── Visualizer ──────────────────────────────────────────────────────────────
+
+
+def test_visualizer_frames_reach_every_watching_guest():
+    first = asyncio.Queue(maxsize=4)
+    second = asyncio.Queue(maxsize=4)
+    party.visualizer_queues[:] = [first, second]
+    try:
+        for n in range(6):
+            party._on_frame([n / 10])
+        # Both get frames, neither takes them from the other, and a slow one
+        # keeps the freshest.
+        assert first.qsize() == 4 and second.qsize() == 4
+        assert first.get_nowait() == [0.2]
+    finally:
+        party.visualizer_queues.clear()
+
+
+def test_visualizer_only_follows_a_cast(client):
+    _start(client)
+    snapshot = _snapshot(["a"])
+    snapshot["casting"] = []
+    party.update_snapshot(snapshot)
+    assert party._host_feed() is None
+
+
+async def test_visualizer_listens_without_taking_the_hosts_frames(default_session):
+    """The cast analysis has one queue with one reader (GET /visualizer);
+    guests listen beside it."""
+
+    class FakeAnalyzer:
+        def __init__(self):
+            self.listeners = []
+
+    class FakeFeed:
+        def __init__(self):
+            self.analyzer = FakeAnalyzer()
+            self.subscribed = 0
+
+        def subscribe(self):
+            self.subscribed += 1
+
+        def unsubscribe(self):
+            self.subscribed -= 1
+
+    feed = FakeFeed()
+    default_session.visualizer = feed
+    party.enable()
+    party.update_snapshot(_snapshot(["a"], session_id=default_session.session_id))
+    queue = party.watch_visualizer()
+    await asyncio.sleep(0.05)
+    assert feed.subscribed == 1
+    assert party._on_frame in feed.analyzer.listeners
+    party.unwatch_visualizer(queue)
+    await asyncio.sleep(0.4)
+    assert feed.subscribed == 0
+    assert feed.analyzer.listeners == []
+
+
+def test_guests_step_through_the_hosts_backgrounds_only(client, guest_client, monkeypatch):
+    token = _start(client)
+    snapshot = _snapshot(["a"])
+    urls = [f"https://assets.fanart.tv/fanart/music/x/bg{n}.jpg" for n in range(3)]
+    snapshot["party_backdrop"] = urls[1]
+    snapshot["party_backdrops"] = urls
+    party.update_snapshot(snapshot)
+    _join(guest_client, token)
+    asked = []
+    monkeypatch.setattr("core.fanart.get_cached_image", lambda url: asked.append(url) or b"jpeg")
+    state = guest_client.get("/party/api/state").json()
+    assert state["backdrop_count"] == 3 and state["backdrop_index"] == 1
+    assert guest_client.get("/party/api/backdrop?index=2").status_code == 200
+    assert guest_client.get("/party/api/backdrop?index=3").status_code == 404
+    assert guest_client.get("/party/api/backdrop?index=-1").status_code == 404
+    assert asked == [urls[2]]
+    assert "fanart.tv" not in str(state)
+
+
+def test_backdrop_list_is_bounded_and_keeps_the_hosts_pick(client):
+    _start(client)
+    snapshot = _snapshot(["a"])
+    snapshot["party_backdrop"] = "https://assets.fanart.tv/host.jpg"
+    snapshot["party_backdrops"] = [f"https://assets.fanart.tv/{n}.jpg" for n in range(100)] + [7]
+    party.update_snapshot(snapshot)
+    assert len(party.backdrop_urls) == 31
+    assert party.backdrop_urls[0] == "https://assets.fanart.tv/host.jpg"

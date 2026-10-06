@@ -237,7 +237,7 @@ def test_command_timeout_is_more_generous_than_a_query_timeout():
 
 def test_command_504_on_timeout(client, monkeypatch):
     # Same reasoning/pattern as test_songs_query_504_on_timeout below —
-    # send_command() now blocks on the same pending-Future relay _query()
+    # send_command() now blocks on the same pending-Future relay relay_query()
     # does (see that endpoint's own comment), so the terminating case worth
     # covering at the HTTP level is the timeout, not a success that would
     # need a renderer to actually answer it (see this module's docstring).
@@ -274,7 +274,7 @@ def test_albums_query_relays_search_and_paging_to_the_renderer(client, monkeypat
         seen["payload"] = payload
         return {"items": [], "total": 0}
 
-    monkeypatch.setattr(remote_routes, "_query", capture)
+    monkeypatch.setattr(remote_routes, "relay_query", capture)
     resp = client.get(
         "/remote/albums?search=blue&offset=50&limit=25",
         headers={"X-Remote-Password": remote.password},
@@ -316,7 +316,7 @@ def test_devices_query_relays_the_rescan_flag(client, monkeypatch):
         seen["payload"] = payload
         return {"items": []}
 
-    monkeypatch.setattr(remote_routes, "_query", capture)
+    monkeypatch.setattr(remote_routes, "relay_query", capture)
 
     client.get("/remote/devices", headers={"X-Remote-Password": remote.password})
     assert seen["payload"] == {"rescan": False}
@@ -603,21 +603,42 @@ def test_cover_art_404_when_no_media_server_configured(client, default_session):
     assert resp.status_code == 404
 
 
-def test_cover_art_redirects_without_leaking_connect_token(client, default_session):
+def test_cover_art_serves_the_image_without_leaking_server_credentials(
+    client, default_session, monkeypatch
+):
+    """A redirect would put the media server's own credentials (Subsonic's
+    u/t/s here) into the phone's hands via the Location header."""
+    import routes.coverart as coverart_module
+
     default_session.media = SubsonicClient(
         "http://navidrome.example:4533", user="alice", password="secret"
     )
+    fetched = {}
+
+    async def fake_get(url, **kwargs):
+        fetched["url"] = url
+        response = type("R", (), {})()
+        response.status_code = 200
+        response.headers = {"content-type": "image/png"}
+        response.content = b"png-bytes"
+        return response
+
+    fake_client = type("C", (), {"get": staticmethod(fake_get)})()
+    monkeypatch.setattr(coverart_module, "_get_subsonic_client", lambda: fake_client)
+    coverart_module._reset_cache()
     client.post("/remote/enable")
     resp = client.get(
         f"/remote/cover-art?id=abc123&session={default_session.session_id}",
         headers={"X-Remote-Password": remote.password},
         follow_redirects=False,
     )
-    assert resp.status_code == 307
-    location = resp.headers["location"]
-    assert location.startswith("http://navidrome.example:4533/rest/getCoverArt.view?")
-    assert "id=abc123" in location
-    assert "token=" not in location  # CONNECT_TOKEN must never reach the phone
+    coverart_module._reset_cache()
+
+    assert resp.status_code == 200
+    assert resp.content == b"png-bytes"
+    assert resp.headers["content-type"] == "image/png"
+    assert "location" not in resp.headers
+    assert "id=abc123" in fetched["url"]  # the server was asked, by connect
 
 
 # ── /remote/waveform ─────────────────────────────────────────────────────
@@ -738,7 +759,7 @@ def test_every_precached_shell_asset_is_actually_served(client):
     import re
 
     client.post("/remote/enable")
-    sw = (remote_routes._static_dir() / "sw.js").read_text()
+    sw = (remote_routes.static_dir() / "sw.js").read_text()
     listed = re.search(r"SHELL_PATHS = \[(.*?)\]", sw, re.DOTALL)
     assert listed, "SHELL_PATHS not found in sw.js"
     paths = [p for p in re.findall(r"'\./([^']*)'", listed.group(1)) if p]
@@ -766,7 +787,7 @@ def test_every_icon_the_remote_uses_has_a_glyph():
     that has no glyph, and nothing else about the page looks wrong."""
     import re
 
-    static = remote_routes._static_dir()
+    static = remote_routes.static_dir()
     sources = [static / "index.html", static / "app.css", *sorted(static.glob("js/**/*.js"))]
     used = {
         name for source in sources for name in re.findall(r"mdi-[a-z0-9-]+", source.read_text())
@@ -844,7 +865,7 @@ def test_app_file_etag_changes_when_the_file_does(client, tmp_path, monkeypatch)
     shell.mkdir()
     (shell / "index.html").write_text("<html></html>")
     (shell / "app.js").write_text("console.log('v1');")
-    monkeypatch.setattr(remote_routes, "_static_dir", lambda: shell)
+    monkeypatch.setattr(remote_routes, "static_dir", lambda: shell)
     client.post("/remote/enable")
     first = client.get("/remote/app/app.js")
 
@@ -888,7 +909,7 @@ def test_app_rejects_a_path_traversal_attempt():
 def test_app_404_when_static_assets_are_entirely_missing(tmp_path, monkeypatch):
     from routes.remote import serve_remote_app
 
-    monkeypatch.setattr(remote_routes, "_static_dir", lambda: tmp_path)
+    monkeypatch.setattr(remote_routes, "static_dir", lambda: tmp_path)
     remote.enable()
     try:
         with pytest.raises(HTTPException) as exc_info:

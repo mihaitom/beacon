@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from core import auth, state
 from core import claims as claims_module
+from core import party as party_module
 from core import remote as remote_module
 from core import session as session_module
 from core.session import DEFAULT_SESSION_ID, SessionState
@@ -358,6 +359,12 @@ def reset_state():
     remote_module.remote._attempts.clear()
     remote_module.remote._lockout_until.clear()
     remote_module.remote._lockout_strikes.clear()
+    party_module.party.disable()
+    party_module.party.streams.clear()
+    party_module.party.streams_per_ip.clear()
+    party_module.party.host_session_id = None
+    party_module.party.current_song_id = None
+    party_module.party.settings = party_module.Settings()
     yield
 
 

@@ -6,6 +6,7 @@ import { useConnectStore } from '@/stores/connect'
 import { useRemoteControlStore } from '@/stores/remoteControl'
 import { useAutoplayStore } from '@/stores/autoplay'
 import { useAuthStore } from '@/stores/auth'
+import { PartyRefusal, usePartyStore } from '@/stores/party'
 import {
   handleRemoteCommand,
   resolveRemoteQuery,
@@ -327,6 +328,44 @@ describe('handleRemoteCommand', () => {
       await handleRemoteCommand('play-album', { albumId: 'al1' })
 
       expect(playSongList).toHaveBeenCalledWith(songs, 0, false, false)
+    })
+  })
+
+  describe('party', () => {
+    it('party-wish hands the resolved song and the guest to the party store', async () => {
+      const library = useLibraryStore()
+      const song = makeSong('a')
+      library.allSongs = [song]
+      const wish = vi.spyOn(usePartyStore(), 'wish').mockImplementation(() => {})
+
+      await handleRemoteCommand('party-wish', {
+        songId: 'a',
+        guestId: 'g1',
+        guestName: 'Anna',
+        maxPending: 3,
+      })
+
+      expect(wish).toHaveBeenCalledWith(song, 'g1', 'Anna', 3)
+    })
+
+    it('party-wish refuses a song that cannot be found, rather than doing nothing', async () => {
+      const library = useLibraryStore()
+      vi.spyOn(library, 'client').mockReturnValue(
+        fakeClient({ getSong: vi.fn().mockRejectedValue(new Error('404')) }),
+      )
+
+      // The guest is waiting on an answer; silence would read as success.
+      await expect(handleRemoteCommand('party-wish', { songId: 'ghost' })).rejects.toThrow(
+        PartyRefusal,
+      )
+    })
+
+    it('party-withdraw names the request and the guest asking', async () => {
+      const withdraw = vi.spyOn(usePartyStore(), 'withdraw').mockImplementation(() => {})
+
+      await handleRemoteCommand('party-withdraw', { requestId: 'r1', guestId: 'g1' })
+
+      expect(withdraw).toHaveBeenCalledWith('r1', 'g1')
     })
   })
 

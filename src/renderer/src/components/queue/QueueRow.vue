@@ -35,7 +35,19 @@
       <div class="text-body-medium" :class="{ 'text-primary': isCurrent }">
         {{ song.title }}
       </div>
-      <div class="text-body-small text-medium-emphasis">{{ song.artist }}</div>
+      <div class="text-body-small text-medium-emphasis queue-row__subtitle">
+        <span class="queue-row__artist">{{ song.artist }}</span>
+        <!-- A party guest's wish: who asked for it, so the host can tell
+         - their own queue from the guests'. -->
+        <span
+          v-if="wishedBy"
+          class="queue-row__wish"
+          :title="$t('party.wishedBy', { name: wishedBy })"
+        >
+          <v-icon icon="mdi-party-popper" size="12" color="primary" />
+          {{ wishedBy }}
+        </span>
+      </div>
     </div>
     <span class="text-body-small text-medium-emphasis queue-row__duration">{{
       formattedDuration
@@ -53,6 +65,7 @@
 <script lang="ts">
 import CoverArt from '@/components/library/CoverArt.vue'
 import { usePlaybackStore } from '@/stores/playback'
+import { usePartyStore } from '@/stores/party'
 import type { Song } from '@/types/library'
 
 export default {
@@ -102,6 +115,9 @@ export default {
     audible() {
       return this.isCurrent && this.playbackStore.radioStation == null
     },
+    wishedBy(): string | null {
+      return usePartyStore().requestAt(this.index)?.guestName ?? null
+    },
     formattedDuration() {
       const total = Math.round(this.song.duration ?? 0)
       const minutes = Math.floor(total / 60)
@@ -125,6 +141,32 @@ export default {
     opacity 0.15s ease,
     border-color 0.15s ease,
     background 0.15s ease;
+}
+
+/* The artist gives way before the wisher's name does: the name is the
+ * reason this line is longer than usual. */
+.queue-row__subtitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.queue-row__artist {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.queue-row__wish {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-shrink: 0;
+  max-width: 50%;
+  overflow: hidden;
+  white-space: nowrap;
 }
 
 .queue-row:hover {

@@ -23,6 +23,7 @@ import { useConnectStore } from './connect'
 import { isBackingOff } from '@/services/connect/pollGate'
 import { useAuthStore } from './auth'
 import { useAutoplayStore } from './autoplay'
+import { usePartyStore } from './party'
 import { castTargetLabel, sourceLine } from '@/services/connect/streamInfoLabels'
 
 interface RemoteControlState {
@@ -161,9 +162,16 @@ export const useRemoteControlStore = defineStore('remoteControl', {
       this.stopRelayUnlessNeeded()
     },
 
-    /** Switching one user of the relay off leaves it running for the other. */
+    /** Sends connect a fresh snapshot soon, for a change no store
+     * subscription below sees (party mode's lyrics and backdrop). */
+    refreshSnapshot(): void {
+      schedulePushSnapshot?.()
+    },
+
+    /** Switching one user of the relay off leaves it running for the others
+     * (phones, home automation, party guests). */
     stopRelayUnlessNeeded(): void {
-      if (this.enabled || this.integration) {
+      if (this.enabled || this.integration || usePartyStore().enabled) {
         // connect cleared its snapshot along with the phone credentials
         // (core/remote.py's disable()), so give it the current one again.
         schedulePushSnapshot?.()
@@ -307,6 +315,13 @@ export const useRemoteControlStore = defineStore('remoteControl', {
             : null,
           queue: playback.queue.map(toRemoteSong),
           queue_index: playback.currentIndex,
+          // Queue position -> who wished for it; connect turns this into
+          // what party guests see (core/party.py).
+          party_requests: usePartyStore().snapshotRequests(),
+          // What party guests see behind and beside the song (core/party.py).
+          party_backdrop: usePartyStore().backdropSource(),
+          party_backdrops: usePartyStore().backdropSources(),
+          party_lyrics_key: usePartyStore().lyricsKey(),
           casting: connect.activeTargets,
           // A cast device dropped out on its own and playback can be picked
           // back up. State rather than an event, because this channel only
@@ -365,10 +380,12 @@ export const useRemoteControlStore = defineStore('remoteControl', {
       const unsubFromPlayback = playback.$subscribe(schedulePush, { detached: true })
       const unsubFromConnect = connect.$subscribe(schedulePush, { detached: true })
       const unsubFromAutoplay = autoplay.$subscribe(schedulePush, { detached: true })
+      const unsubFromParty = usePartyStore().$subscribe(schedulePush, { detached: true })
       unsubscribePlayback = () => {
         unsubFromPlayback()
         unsubFromConnect()
         unsubFromAutoplay()
+        unsubFromParty()
       }
     },
 

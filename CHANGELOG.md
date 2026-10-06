@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Party mode: guests join with a QR code or link and get their own page in Beacon's look: Now Playing as in the app, with the artist background, the song in the bottom-left corner (or the large cover), synced lyrics and, while casting, the visualizer, each switchable, plus stepping through the artist's backgrounds, with the colours following the picture as in the app; next to it on a computer what is coming up, on a phone the mobile layout. They search the library and wish for songs, which take turns between guests; they can withdraw their own wishes and vote to skip, with a limit of open wishes per guest. Works in the desktop app and the web build, and everything guests use lives under its own `/party/` path for reverse proxies; see docs/party-mode.md
+
+### Fixed
+
+- Remote Control on the phone no longer receives the media server's credentials along with cover art
+
 ## [1.5.1] - 2026-09-28
 
 ### Fixed

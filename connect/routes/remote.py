@@ -39,9 +39,11 @@ from pydantic import BaseModel
 
 from core import integration_key, mdns
 from core.auth import require_token
+from core.party import party
 from core.remote import remote
 from core.session import SessionState, get_session
 from core.state import PORT, get_local_ip
+from routes.coverart import cover_image
 from routes.radio import radio_favicon as _fetch_radio_favicon
 from routes.waveform import get_waveform as _fetch_waveform
 
@@ -65,7 +67,7 @@ QUERY_TIMEOUT = 8.0
 COMMAND_TIMEOUT = 45.0
 
 
-def _static_dir() -> Path:
+def static_dir() -> Path:
     # PyInstaller (onedir or onefile) sets sys._MEIPASS to the bundle's
     # resource directory — packaging/connect-server.spec bundles static/
     # there (see its `datas`). In dev, this file lives at connect/routes/
@@ -195,6 +197,7 @@ class QueryResponseRequest(BaseModel):
 async def push_state(req: StateSnapshotRequest):
     remote.snapshot = req.snapshot
     await remote.event_bus.broadcast(req.snapshot)
+    await party.receive_snapshot(req.snapshot)
     return {"success": True}
 
 
@@ -335,16 +338,23 @@ async def send_command(req: CommandRequest):
     out) instead of the previous fire-and-forget 202 — a phone tapping
     "Next" twice in a row had no way to know the first tap had landed
     before firing the second. Reuses the exact same pending-Future
-    machinery _query() already relies on below (and the *same*
+    machinery relay_query() already relies on below (and the *same*
     /query-response endpoint the renderer answers it through — the future
     doesn't care whether the data it's resolved with came from a query or
     a command, so there was no reason to duplicate the relay for this)."""
+    await relay_command(req.type, req.payload)
+    return JSONResponse({"success": True}, status_code=200)
+
+
+async def relay_command(command_type: str, payload: dict) -> None:
+    """Hands one command to the renderer and waits until it has been
+    applied; raises the HTTP error a caller should answer with otherwise."""
     if not remote.renderer_connected:
         raise HTTPException(status_code=503, detail="Beacon is not connected")
     request_id = uuid.uuid4().hex
     future = remote.new_pending(request_id)
     await remote.command_bus.broadcast(
-        {"kind": "command", "request_id": request_id, "type": req.type, "payload": req.payload}
+        {"kind": "command", "request_id": request_id, "type": command_type, "payload": payload}
     )
     try:
         result = await asyncio.wait_for(future, timeout=COMMAND_TIMEOUT)
@@ -354,10 +364,9 @@ async def send_command(req: CommandRequest):
         remote.drop_pending(request_id)
     if isinstance(result, dict) and result.get("error"):
         raise HTTPException(status_code=502, detail=str(result["error"]))
-    return JSONResponse({"success": True}, status_code=200)
 
 
-async def _query(query_type: str, payload: dict) -> dict:
+async def relay_query(query_type: str, payload: dict) -> dict:
     if not remote.renderer_connected:
         raise HTTPException(status_code=503, detail="Beacon is not connected")
     request_id = uuid.uuid4().hex
@@ -375,7 +384,7 @@ async def _query(query_type: str, payload: dict) -> dict:
 
 @router.get("/songs", dependencies=[Depends(require_remote_password)])
 async def list_songs(search: str = "", offset: int = 0, limit: int = 50):
-    return await _query("songs-request", {"search": search, "offset": offset, "limit": limit})
+    return await relay_query("songs-request", {"search": search, "offset": offset, "limit": limit})
 
 
 @router.get("/albums", dependencies=[Depends(require_remote_password)])
@@ -383,22 +392,22 @@ async def list_albums(search: str = "", offset: int = 0, limit: int = 50):
     """The albums half of the phone's library view — same shape and same
     paging as /songs above, answered by the desktop out of its own already-
     loaded catalog (see resolveRemoteQuery's albums-request)."""
-    return await _query("albums-request", {"search": search, "offset": offset, "limit": limit})
+    return await relay_query("albums-request", {"search": search, "offset": offset, "limit": limit})
 
 
 @router.get("/playlists", dependencies=[Depends(require_remote_password)])
 async def list_playlists():
-    return await _query("playlists-request", {})
+    return await relay_query("playlists-request", {})
 
 
 @router.get("/playlists/{playlist_id}", dependencies=[Depends(require_remote_password)])
 async def get_playlist(playlist_id: str):
-    return await _query("playlist-request", {"playlistId": playlist_id})
+    return await relay_query("playlist-request", {"playlistId": playlist_id})
 
 
 @router.get("/radio-stations", dependencies=[Depends(require_remote_password)])
 async def list_radio_stations():
-    return await _query("radio-request", {})
+    return await relay_query("radio-request", {})
 
 
 @router.get("/devices", dependencies=[Depends(require_remote_password)])
@@ -406,12 +415,12 @@ async def list_devices(rescan: bool = False):
     """Opening the sheet asks for the cached list; the sheet's own rescan
     button asks for a fresh sweep, which takes seconds and is why it is not
     what an open costs."""
-    return await _query("devices-request", {"rescan": rescan})
+    return await relay_query("devices-request", {"rescan": rescan})
 
 
 @router.get("/device-volume", dependencies=[Depends(require_remote_password)])
 async def get_device_volume(type: str, name: str):
-    return await _query("device-volume-request", {"deviceType": type, "name": name})
+    return await relay_query("device-volume-request", {"deviceType": type, "name": name})
 
 
 # ── Phone-facing: media (cover art / radio favicons) ────────────────────────
@@ -431,19 +440,10 @@ async def get_device_volume(type: str, name: str):
 
 @router.get("/cover-art", dependencies=[Depends(require_remote_password)])
 async def remote_cover_art(id: str, session: SessionState = Depends(get_session)):
-    """Redirects to a direct, LAN-reachable, freshly-authenticated cover art
-    URL — session.media.get_cover_art_url(internal=True) (media/subsonic.py
-    et al.) is the exact same method that already lets LAN cast devices
-    (Sonos, Chromecast, ...) fetch artwork directly; a phone on the same LAN
-    can use it exactly the same way. No CONNECT_TOKEN anywhere in it — it
-    points straight at the actual media server, not through connect's own
-    /rest/* proxy (routes/proxy.py), which is what the desktop's own
-    coverArtUrl() goes through and is the thing this endpoint exists to
-    avoid handing the phone."""
-    url = session.media.get_cover_art_url(id, internal=True)
-    if not url:
-        raise HTTPException(status_code=404)
-    return RedirectResponse(url)
+    """The image itself, not a redirect to the media server: that URL
+    carries the server's own credentials, which a phone has no business
+    holding either (see cover_image)."""
+    return await cover_image(session.media, id)
 
 
 @router.get("/radio-favicon", dependencies=[Depends(require_remote_password)])
@@ -525,12 +525,12 @@ async def redirect_remote_app_to_trailing_slash():
 # the main app's own un-hashed index.html. These files never got it.
 #
 # "no-cache" is "ask every time", not "keep nothing" — and the ask is
-# answered with a 304 for anything unchanged (see _app_file_response), so a
+# answered with a 304 for anything unchanged (see app_file_response), so a
 # revalidated shell costs a round trip per file instead of its bytes.
 _APP_CACHE_CONTROL = "no-cache"
 
 
-def _app_file_response(path: Path, if_none_match: str | None) -> Response:
+def app_file_response(path: Path, if_none_match: str | None) -> Response:
     """One shell file, revalidated rather than assumed fresh.
 
     The conditional handling is spelled out here because FileResponse does
@@ -563,17 +563,17 @@ async def serve_remote_app(
     if not remote.enabled:
         raise HTTPException(status_code=404)
 
-    static_dir = _static_dir()
-    requested = (static_dir / path).resolve()
-    # Guard against path traversal escaping static_dir (e.g. `../../etc/passwd`)
+    root = static_dir()
+    requested = (root / path).resolve()
+    # Guard against path traversal escaping the root (e.g. `../../etc/passwd`)
     # before ever touching the filesystem with it.
-    if static_dir not in requested.parents and requested != static_dir:
+    if root not in requested.parents and requested != root:
         raise HTTPException(status_code=404)
 
     if requested.is_file():
-        return _app_file_response(requested, if_none_match)
+        return app_file_response(requested, if_none_match)
     # SPA fallback — the hash-router handles the actual sub-path client-side.
-    index = static_dir / "index.html"
+    index = root / "index.html"
     if index.is_file():
-        return _app_file_response(index, if_none_match)
+        return app_file_response(index, if_none_match)
     raise HTTPException(status_code=404)

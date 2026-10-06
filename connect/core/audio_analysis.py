@@ -454,6 +454,11 @@ class AudioAnalyzer:
         debug_lead_fn: Callable[[], tuple[float, bool]] | None = None,
     ) -> None:
         self.frames: asyncio.Queue[list[float]] = asyncio.Queue(maxsize=8)
+        # Called with every released frame, alongside `frames`. GET
+        # /visualizer is the queue's one reader; anything else watching the
+        # same cast (party guests, core/party.py) listens here instead, so
+        # it doesn't take frames away from that reader.
+        self.listeners: list[Callable[[list[float]], None]] = []
         # (content_position, bands) pairs already computed but not yet
         # released — see _release_frames(). A handful of KB even for a
         # whole track's worth (each entry is _BAND_COUNT floats).
@@ -875,6 +880,8 @@ class AudioAnalyzer:
                 if self.frames.full():
                     self.frames.get_nowait()  # drop oldest — always show freshest
                 self.frames.put_nowait(bands)
+                for listener in list(self.listeners):
+                    listener(bands)
         except asyncio.CancelledError:
             pass
 
