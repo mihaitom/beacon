@@ -16,7 +16,9 @@ from fastapi import Response
 from fastapi.testclient import TestClient
 
 import routes.coverart as coverart_module
+import routes.lyrics as lyrics_routes
 import routes.party as party_routes
+from core import fanart as fanart_module
 from core import integration_key
 from core.party import Settings, clean_name, party
 from core.remote import KEEPALIVE_TIMEOUT, remote
@@ -1019,6 +1021,75 @@ def test_background_and_lyrics_only_for_the_song_the_window_knew(client, default
     party.rebuild()
     assert party.snapshot["backdrop"] is False
     assert party.snapshot["lyrics_key"] is None
+
+
+async def test_connect_looks_up_the_lyrics_a_sleeping_window_never_named(
+    client, guest_client, default_session, monkeypatch
+):
+    token = _start(client)
+    party.update_snapshot(_snapshot(["a", "b"], session_id=default_session.session_id))
+    _cast(default_session, ["a", "b"], index=1)
+    _join(guest_client, token)
+    asked = []
+
+    async def fake_auto(song):
+        asked.append(song["title"])
+        return {"synced": True, "lines": [{"time": 1.0, "text": "Found by connect"}]}
+
+    monkeypatch.setattr(lyrics_routes, "auto_for_party", fake_auto)
+    party.rebuild()
+    await asyncio.sleep(0.05)
+    # The window never named b; guests still get connect's own match.
+    assert asked == ["Title b"]
+    body = guest_client.get("/party/api/lyrics").json()
+    assert body["lines"] == [{"time": 1.0, "text": "Found by connect"}]
+    assert body["offset"] == 0.0
+    state = guest_client.get("/party/api/state").json()
+    assert state["lyrics_key"] == "b:connect"
+
+
+async def test_connect_looks_up_a_song_once(client, default_session, monkeypatch):
+    _start(client)
+    party.update_snapshot(_snapshot(["a"], session_id=default_session.session_id))
+    _cast(default_session, ["a"])
+    asked = []
+
+    async def fake_auto(song):
+        asked.append(song["title"])
+        return {"synced": True, "lines": [{"time": 1.0, "text": "x"}]}
+
+    monkeypatch.setattr(lyrics_routes, "auto_for_party", fake_auto)
+    for _ in range(3):
+        party.rebuild()
+        await asyncio.sleep(0.05)
+    assert asked == ["Title a"]
+
+
+async def test_connect_looks_up_the_background_a_sleeping_window_never_named(
+    client, guest_client, default_session, monkeypatch
+):
+    token = _start(client)
+    party.update_snapshot(_snapshot(["a", "b"], session_id=default_session.session_id))
+    _cast(default_session, ["a", "b"], index=1)
+    _join(guest_client, token)
+    asked = []
+    urls = [
+        "https://assets.fanart.tv/fanart/music/x/bg1.jpg",
+        "https://assets.fanart.tv/fanart/music/x/bg2.jpg",
+    ]
+
+    async def fake_art(artist):
+        asked.append(artist)
+        return {"background": urls[0], "backgrounds": urls}
+
+    monkeypatch.setattr(fanart_module, "get_artist_art", fake_art)
+    party.rebuild()
+    await asyncio.sleep(0.05)
+    assert asked == ["Artist"]
+    state = guest_client.get("/party/api/state").json()
+    assert state["backdrop"] is True
+    assert state["backdrop_count"] == 2
+    assert state["backdrop_index"] == 0
 
 
 def test_local_playback_still_comes_from_the_window(client, default_session):

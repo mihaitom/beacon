@@ -241,9 +241,13 @@ and guests see no bars.
   (a locked phone) or, in the web build, after the tab is closed. Guests keep
   searching, wishing, withdrawing and voting to skip then: the server answers
   them itself, out of the music server and the cast's own queue, and the
-  window takes the wishes back if the cast ends while it is open. Only the
-  artist background and the lyrics need the window awake for a new song.
-  Quitting the desktop app stops its Beacon server, and the party with it. See
+  window takes the wishes back if the cast ends while it is open. While the
+  host casts, the server also looks up the lyrics and the artist background on
+  its own, so a new song needs nothing from the sleeping window; those lyrics
+  are the server's automatic match, without the sync offset the host may have
+  chosen, and the host's own copy returns once the window wakes. The party
+  dialog says which path is in effect. Quitting the desktop app stops its
+  Beacon server, and the party with it. See
   `docs/plans/party-mode-server-side.md`.
 - Taking a party over, or reloading the window that hosts it, keeps the link:
   the window gets it back from the Beacon server, and guests already there

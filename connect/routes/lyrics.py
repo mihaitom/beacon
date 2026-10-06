@@ -438,6 +438,34 @@ async def _do_auto(params: dict, wanted: list[LyricSource]) -> tuple[dict[str, A
     return None, reachable
 
 
+async def auto_for_party(song: dict) -> dict | None:
+    """The auto lyrics match for a song, parsed into {synced, lines} for
+    party mode's fallback (core/party.py) when the host's window has not
+    named the song's lyrics. Reuses the same cache as /lyrics/auto, so the
+    host's own window looking the song up costs nothing extra."""
+    from lyrics.shared import parse_lyrics
+
+    duration = song.get("duration")
+    params = {
+        "name": song.get("title"),
+        "artist": song.get("artist"),
+        "album": song.get("album"),
+        # Coerced to float so the cache key matches what /lyrics/auto built
+        # for the same song (its `duration` query parameter arrives as a
+        # float), and the two lookups share one entry rather than asking
+        # the providers twice.
+        "duration": float(duration) if duration is not None else None,
+    }
+    wanted = list(LyricSource)
+    result = await _lookup(_key("auto", params, wanted), lambda: _do_auto(params, wanted))
+    if result is _UNAVAILABLE or not result:
+        return None
+    synced, lines = parse_lyrics(result["lyrics"])
+    if not lines:
+        return None
+    return {"synced": synced, "lines": lines}
+
+
 @router.get("/by-remote-id")
 async def by_remote_id(source: str, id: str) -> str | None:
     return _answer(

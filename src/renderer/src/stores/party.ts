@@ -213,6 +213,14 @@ export const usePartyStore = defineStore('party', {
     connectedGuests(state): number {
       return state.guests.filter((g) => g.connected).length
     },
+
+    /** Whether connect answers guests on its own right now: the host casts
+     * a queue (not radio), so the party survives this window sleeping - see
+     * docs/plans/party-mode-server-side.md. */
+    serverHosted(): boolean {
+      const playback = usePlaybackStore()
+      return playback.isCasting && !playback.radioStation
+    },
   },
 
   actions: {

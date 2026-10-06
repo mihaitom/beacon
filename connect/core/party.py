@@ -175,6 +175,18 @@ class PartyState:
         # not find - not asked about again on every status tick.
         self._fetching: set[str] = set()
         self._unfetchable: set[str] = set()
+        # Fallback lyrics and background for the cast's current song, looked
+        # up by connect when the host's window - asleep, or not yet showing
+        # it - has not named them (docs/plans/party-mode-server-side.md,
+        # step 6). A song/artist asked for once is not asked for again.
+        self._fallback_lyrics: dict | None = None
+        self._lyrics_fetching: set[str] = set()
+        self._lyrics_looked_up: set[str] = set()
+        self._backdrop_artist: str | None = None
+        self._backdrop_url: str | None = None
+        self._backdrop_urls: list[str] = []
+        self._backdrop_fetching: set[str] = set()
+        self._backdrop_looked_up: set[str] = set()
 
     # ── Lifecycle ────────────────────────────────────────────────────────
 
@@ -219,6 +231,14 @@ class PartyState:
         self.cast_requests = []
         self.cast_owned = False
         self.cast_queue_seen = None
+        self._fallback_lyrics = None
+        self._lyrics_fetching.clear()
+        self._lyrics_looked_up.clear()
+        self._backdrop_artist = None
+        self._backdrop_url = None
+        self._backdrop_urls = []
+        self._backdrop_fetching.clear()
+        self._backdrop_looked_up.clear()
         self.host_tab = None
         if self._cast_task is not None:
             self._cast_task.cancel()
@@ -453,6 +473,101 @@ class PartyState:
         if self._worth_telling(previous, self.snapshot):
             await self.broadcast()
 
+    def _maybe_fetch_lyrics(self, song: dict) -> None:
+        """Starts connect's own lyrics lookup for the cast's current song,
+        when the host's window has not named its lyrics. Only from inside
+        the event loop - rebuild() is also called where there is none."""
+        song_id = song.get("id")
+        if not song_id:
+            return
+        if self.lyrics and self.lyrics["song_id"] == song_id:
+            return
+        if song_id in self._lyrics_fetching or song_id in self._lyrics_looked_up:
+            return
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._lyrics_fetching.add(song_id)
+        asyncio.create_task(self._fetch_fallback_lyrics(song))
+
+    async def _fetch_fallback_lyrics(self, song: dict) -> None:
+        from routes.lyrics import auto_for_party
+
+        song_id = song["id"]
+        try:
+            result = await auto_for_party(song)
+        except Exception as e:
+            logger.info(f"[party] Could not look up lyrics for {song_id}: {e}")
+            result = None
+        finally:
+            self._lyrics_fetching.discard(song_id)
+        self._lyrics_looked_up.add(song_id)
+        if not self.enabled:
+            return
+        if result is not None:
+            self._fallback_lyrics = {
+                "song_id": song_id,
+                "synced": result["synced"],
+                "offset": 0.0,
+                "lines": [
+                    {
+                        "time": float(line.get("time") or 0),
+                        "text": str(line.get("text") or "")[:LYRICS_MAX_LINE_LENGTH],
+                    }
+                    for line in result["lines"][:LYRICS_MAX_LINES]
+                ],
+            }
+        previous = self.snapshot
+        self.rebuild()
+        if self._worth_telling(previous, self.snapshot):
+            await self.broadcast()
+
+    def _maybe_fetch_backdrop(self, artist: str | None) -> None:
+        """Starts connect's own Fanart.tv lookup for the cast's current
+        artist, when the host's window has not named a background."""
+        if not artist:
+            return
+        if artist in self._backdrop_fetching or artist in self._backdrop_looked_up:
+            return
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._backdrop_fetching.add(artist)
+        asyncio.create_task(self._fetch_fallback_backdrop(artist))
+
+    async def _fetch_fallback_backdrop(self, artist: str) -> None:
+        from . import fanart
+
+        try:
+            art = await fanart.get_artist_art(artist)
+        except Exception as e:
+            logger.info(f"[party] Could not look up the background for {artist!r}: {e}")
+            art = None
+        finally:
+            self._backdrop_fetching.discard(artist)
+        self._backdrop_looked_up.add(artist)
+        if not self.enabled:
+            return
+        shown = (art or {}).get("background")
+        backgrounds = [
+            url for url in ((art or {}).get("backgrounds") or []) if isinstance(url, str)
+        ][:MAX_BACKDROPS]
+        self._backdrop_artist = artist
+        self._backdrop_url = shown if isinstance(shown, str) else None
+        self._backdrop_urls = backgrounds
+        previous = self.snapshot
+        self.rebuild()
+        if self._worth_telling(previous, self.snapshot):
+            await self.broadcast()
+
+    def _fallback_lyrics_key(self) -> str | None:
+        lyrics = self._fallback_lyrics
+        if lyrics and lyrics["song_id"] == self.current_song_id:
+            return f"{self.current_song_id}:connect"
+        return None
+
     def _requests(self, session, raw: dict) -> dict:
         """Who wished for what, by queue position. While the host casts,
         connect holds the wishes (core/party_queue.py) - the ones the
@@ -467,6 +582,15 @@ class PartyState:
                 self.cast_owned = False
                 self.cast_requests = []
                 self.cast_queue_seen = None
+                # Its fallback lyrics and background are the last thing
+                # connect looked up, and the window is awake again to push
+                # its own.
+                self._fallback_lyrics = None
+                self._lyrics_looked_up.clear()
+                self._backdrop_artist = None
+                self._backdrop_url = None
+                self._backdrop_urls = []
+                self._backdrop_looked_up.clear()
             return raw.get("party_requests") or {}
         self.own_cast_requests(session)
         party_queue.sync_requests(self, session.state)
@@ -526,8 +650,6 @@ class PartyState:
         requests = self._requests(session, raw)
         upcoming = []
         start = index + 1 if isinstance(index, int) and index >= 0 else 0
-        if session is not None:
-            self._look_up(session, session.state.queue[start : start + UPCOMING_LIMIT])
         for position in range(start, min(start + UPCOMING_LIMIT, len(queue))):
             entry = self.guest_song(queue[position])
             if entry is None:
@@ -547,16 +669,15 @@ class PartyState:
         if current_request:
             current_song["wished_by"] = current_request.get("guest_name")
         extras = current_song is not None and same_song
-        backdrop = raw.get("party_backdrop")
-        self.backdrop_url = backdrop if isinstance(backdrop, str) and extras else None
-        backdrops = raw.get("party_backdrops") if extras else None
-        self.backdrop_urls = [
-            url
-            for url in (backdrops if isinstance(backdrops, list) else [])
-            if isinstance(url, str)
-        ][:MAX_BACKDROPS]
-        if self.backdrop_url and self.backdrop_url not in self.backdrop_urls:
-            self.backdrop_urls.insert(0, self.backdrop_url)
+        if session is not None:
+            self._look_up(session, session.state.queue[start : start + UPCOMING_LIMIT])
+            # Lyrics and background the host's window has not named are
+            # looked up by connect itself, so guests keep them while it
+            # sleeps (see _fetch_fallback_lyrics/_fetch_fallback_backdrop).
+            if current_song is not None:
+                self._maybe_fetch_lyrics(current_song)
+                self._maybe_fetch_backdrop(current_song.get("artist"))
+        self._set_backdrop(raw, session, current_song, extras)
         if radio is None:
             self.radio_logo = None
         self.snapshot = {
@@ -575,11 +696,47 @@ class PartyState:
                 self.backdrop_urls.index(self.backdrop_url) if self.backdrop_url else 0
             ),
             "backdrop_count": len(self.backdrop_urls),
-            "lyrics_key": raw.get("party_lyrics_key") if extras else None,
+            "lyrics_key": self._lyrics_key(raw, extras),
             "current_song": current_song,
             "radio": self.guest_radio(radio) if radio else None,
             "upcoming": upcoming,
         }
+
+    def _set_backdrop(self, raw: dict, session, current_song, extras: bool) -> None:
+        """The Fanart.tv background(s) guests see: the host's own pick while
+        its window knows the song, else connect's fallback lookup for the
+        cast's current artist (see _fetch_fallback_backdrop)."""
+        backdrop = raw.get("party_backdrop")
+        if isinstance(backdrop, str) and extras:
+            self.backdrop_url = backdrop
+            backdrops = raw.get("party_backdrops")
+            self.backdrop_urls = [
+                url
+                for url in (backdrops if isinstance(backdrops, list) else [])
+                if isinstance(url, str)
+            ][:MAX_BACKDROPS]
+        elif (
+            session is not None
+            and current_song is not None
+            and self._backdrop_artist == current_song.get("artist")
+        ):
+            self.backdrop_url = self._backdrop_url
+            self.backdrop_urls = self._backdrop_urls[:]
+        else:
+            self.backdrop_url = None
+            self.backdrop_urls = []
+        if self.backdrop_url and self.backdrop_url not in self.backdrop_urls:
+            self.backdrop_urls.insert(0, self.backdrop_url)
+
+    def _lyrics_key(self, raw: dict, extras: bool) -> str | None:
+        """The lyrics key guests fetch under: the host's own while its
+        window knows the song, else connect's fallback match (see
+        _fallback_lyrics_key)."""
+        if extras:
+            key = raw.get("party_lyrics_key")
+            if key:
+                return key
+        return self._fallback_lyrics_key()
 
     def skip_needed(self) -> int:
         if self.settings.skip_ratio <= 0:
@@ -707,9 +864,13 @@ class PartyState:
         }
 
     def current_lyrics(self) -> dict | None:
-        """The stored lyrics if they belong to what is playing now."""
+        """The stored lyrics if they belong to what is playing now: the
+        host's own (with its match and offset) when it named them, else
+        connect's fallback match (no offset - see _fetch_fallback_lyrics)."""
         if self.lyrics and self.lyrics["song_id"] == self.current_song_id:
             return self.lyrics
+        if self._fallback_lyrics and self._fallback_lyrics["song_id"] == self.current_song_id:
+            return self._fallback_lyrics
         return None
 
     # ── Visualizer ───────────────────────────────────────────────────────

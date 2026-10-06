@@ -386,6 +386,11 @@ export default {
     removeGuest: 'Retirer {name}',
     hostedElsewhere:
       'Une fête tourne dans une autre fenêtre, qui répond aux invités. Reprends-la pour l’animer d’ici.',
+    runsOnServer:
+      'Tourne sur le serveur Beacon pendant que tu diffuses - cet appareil peut se verrouiller.',
+    runsLocally: 'Garde cette fenêtre ouverte - la musique joue ici.',
+    runsLocallyPhone:
+      'La musique joue sur cet appareil, qui doit rester éveillé - le verrouiller met fin à la fête.',
     rules: 'Règles',
     limit: 'Demandes en attente par invité',
     skip: 'Vote pour passer',

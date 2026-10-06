@@ -1,6 +1,6 @@
 # Plan: party mode that survives a locked phone
 
-Status: steps 1 to 5 done (2026-10-07), 6 and 7 planned.
+Status: done (2026-10-07).
 
 ## Why
 
@@ -151,8 +151,16 @@ cover goes through the existing `remember_cover()` / `/party/api/cover`.
    `stores/party.ts`'s `castRequests` shows them and takes them back when
    the cast ends. connect takes the window's over when the cast begins
    (`PartyState.own_cast_requests`).
-6. **Lyrics and backdrop fallbacks** for a sleeping tab.
-7. **Host UI** and `docs/party-mode.md`.
+6. **Lyrics and backdrop fallbacks** for a sleeping tab. _Done:_ while the
+   host casts, connect looks up a song the window has not named lyrics for
+   itself (`routes/lyrics.py`'s `auto_for_party`, the same cache as
+   `/lyrics/auto`) and its artist's background (`core/fanart.py`), so guests
+   keep both while the window sleeps. No offset on the fallback lyrics, and
+   the window's own match and offset take over once it wakes.
+7. **Host UI** and `docs/party-mode.md`. _Done:_ the party dialog says which
+   path is in effect ("Runs on the Beacon server while you cast" / "Keep
+   this window open"), and a phone starting a party without a cast is told
+   the music plays on that device and must stay awake.
 
 ## Tests
 

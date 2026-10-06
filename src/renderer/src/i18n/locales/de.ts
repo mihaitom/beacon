@@ -383,6 +383,10 @@ export default {
     removeGuest: '{name} entfernen',
     hostedElsewhere:
       'In einem anderen Fenster läuft eine Party, die den Gästen antwortet. Übernimm sie, um sie von hier aus zu leiten.',
+    runsOnServer: 'Läuft auf dem Beacon-Server, solange du castest - dieses Gerät darf sperren.',
+    runsLocally: 'Lass dieses Fenster offen - die Musik spielt hier.',
+    runsLocallyPhone:
+      'Die Musik spielt auf diesem Gerät, es muss wach bleiben - sperren beendet die Party.',
     rules: 'Regeln',
     limit: 'Offene Wünsche pro Gast',
     skip: 'Skip-Abstimmung',

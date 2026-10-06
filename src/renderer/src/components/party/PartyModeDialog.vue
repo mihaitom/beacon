@@ -14,8 +14,24 @@
       <v-card-text>
         <p class="text-body-medium text-medium-emphasis party-intro">{{ $t('party.hint') }}</p>
 
+        <!-- A phone that is not casting keeps the party alive only while
+         - it is awake - said plainly before the party is started. -->
+        <p v-if="isPhone && !store.serverHosted" class="text-body-small party-phone-warning">
+          {{ $t('party.runsLocallyPhone') }}
+        </p>
+
         <!-- Running, and answered by this window: the invitation itself. -->
         <template v-if="store.enabled && store.hostedHere">
+          <!-- Which path answers guests: connect while casting, else this
+           - window (see docs/plans/party-mode-server-side.md). -->
+          <v-alert
+            :type="store.serverHosted ? 'success' : 'warning'"
+            variant="tonal"
+            density="compact"
+            class="party-path"
+          >
+            {{ store.serverHosted ? $t('party.runsOnServer') : $t('party.runsLocally') }}
+          </v-alert>
           <template v-if="store.inviteUrl">
             <div class="party-qr">
               <canvas ref="qrCanvas" />
@@ -150,6 +166,7 @@
 <script lang="ts">
 import QRCode from 'qrcode'
 import { usePartyStore } from '@/stores/party'
+import { isMobileWebNow } from '@/composables/useIsMobileWeb'
 
 const LIMITS = [1, 2, 3, 5, 10]
 const DURATIONS = [2, 4, 8, 12, 24, 48]
@@ -168,6 +185,7 @@ export default {
       busy: null as 'start' | 'end' | 'rotate' | null,
       showPoster: false,
       linkCopied: false,
+      isPhone: false,
       linkCopiedTimer: undefined as ReturnType<typeof setTimeout> | undefined,
     }
   },
@@ -193,6 +211,7 @@ export default {
   watch: {
     modelValue(open: boolean) {
       if (!open) return
+      this.isPhone = isMobileWebNow()
       void this.$nextTick(() => this.renderQr())
       // A party started from another window since this one last asked.
       void this.store.refreshStatus()
@@ -290,6 +309,15 @@ export default {
 
 .party-intro {
   margin-bottom: 16px;
+}
+
+.party-phone-warning {
+  color: rgb(var(--v-theme-warning));
+  margin: -8px 0 16px;
+}
+
+.party-path {
+  margin-bottom: 12px;
 }
 
 .party-qr {

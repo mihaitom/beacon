@@ -386,6 +386,10 @@ export default {
     removeGuest: 'Rimuovi {name}',
     hostedElsewhere:
       "C'è una festa in un'altra finestra, che risponde agli ospiti. Prendila per gestirla da qui.",
+    runsOnServer: 'Gira sul server Beacon mentre trasmetti - questo dispositivo può bloccarsi.',
+    runsLocally: 'Tieni aperta questa finestra - la musica suona qui.',
+    runsLocallyPhone:
+      'La musica suona su questo dispositivo, che deve restare sveglio - bloccarlo termina la festa.',
     rules: 'Regole',
     limit: 'Richieste aperte per ospite',
     skip: 'Voto per saltare',

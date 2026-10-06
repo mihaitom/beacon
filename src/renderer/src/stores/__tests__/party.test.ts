@@ -412,4 +412,17 @@ describe('wishes while the host casts', () => {
     useConnectStore().status = { party_requests: [cast(1, 'Anna')] } as never
     await vi.waitFor(() => expect(party.requestAt(1)?.guestName).toBe('Anna'))
   })
+
+  it('is answered by the server while casting a queue, not for radio or local playback', () => {
+    const { playback, party } = setup(['now'])
+    const connect = useConnectStore()
+    // Not casting: the window answers guests.
+    expect(party.serverHosted).toBe(false)
+    // Casting a queue: the server answers them (docs/plans/party-mode-server-side.md).
+    connect.status = { targets: [{ id: 'speaker' }] } as never
+    expect(party.serverHosted).toBe(true)
+    // A station has nothing to wish for; the window keeps answering.
+    playback.radioStation = { id: 'r', name: 'FM', streamUrl: 'https://s', homePageUrl: null }
+    expect(party.serverHosted).toBe(false)
+  })
 })
