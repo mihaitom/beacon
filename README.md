@@ -51,6 +51,8 @@ Beacon is `connect` as the actual foundation instead of an add-on - a frontend b
 
 ---
 
+<!-- Everything from "## Features" down to the next "## " heading is also shown in the app, as "What Beacon can do" (src/renderer/src/services/help/docs.ts) - except "Keyboard shortcuts", which the app has its own dialog for. -->
+
 ## Features
 
 - **Sign in with Navidrome, Subsonic/OpenSubsonic, Jellyfin or Plex** (see below for what differs per server), and stay signed in across restarts. The server-URL field remembers previously used servers (deletable, one by one) so switching between them is one click.
@@ -322,7 +324,7 @@ The answers live in [docs/faq.md](docs/faq.md):
 - [No devices found](docs/faq.md#no-devices-found)
 - [My Sonos speaker doesn't appear under AirPlay (or DLNA)](docs/faq.md#my-sonos-speaker-doesnt-appear-under-airplay-or-dlna)
 - [Troubleshooting casting](docs/faq.md#troubleshooting-casting)
-- [How do I let party guests in from outside my network?](docs/faq.md#how-do-i-let-party-guests-in-from-outside-my-network)
+- [How do I let party guests in from outside my network?](docs/party-mode.md#over-the-internet)
 - [What does Beacon send to outside services?](docs/faq.md#what-does-beacon-send-to-outside-services)
 
 ---

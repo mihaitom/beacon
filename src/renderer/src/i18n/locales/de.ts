@@ -756,6 +756,9 @@ export default {
     withArtists: 'Mit {artists}',
     withArtistsAndMore: 'Mit {artists} und {count} weiteren',
   },
+  features: {
+    title: 'Was Beacon kann',
+  },
   help: {
     title: 'Hilfe',
     topic: 'Thema',

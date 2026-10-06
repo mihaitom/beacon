@@ -1,16 +1,7 @@
 <template>
   <v-dialog v-model="visible" max-width="860" scrollable>
     <v-card class="help-dialog beacon-dialog">
-      <v-card-title class="help-dialog__title">
-        <span>{{ $t('help.title') }}</span>
-        <v-btn
-          icon="mdi-close"
-          variant="text"
-          density="comfortable"
-          :title="$t('common.close')"
-          @click="visible = false"
-        />
-      </v-card-title>
+      <v-card-title>{{ $t('help.title') }}</v-card-title>
       <div class="help-dialog__toolbar">
         <v-select
           v-model="pageId"
@@ -33,6 +24,10 @@
         <!-- eslint-disable-next-line vue/no-v-html -- our own docs/, rendered by markdown-it with html off, never user input -->
         <div class="beacon-markdown" @click="onContentClick" v-html="html" />
       </v-card-text>
+      <v-card-actions>
+        <v-spacer />
+        <v-btn variant="text" @click="visible = false">{{ $t('common.close') }}</v-btn>
+      </v-card-actions>
     </v-card>
   </v-dialog>
 </template>
@@ -46,6 +41,7 @@ import {
   renderHelpPage,
   type HelpDocId,
   type HelpPage,
+  type HelpTarget,
 } from '@/services/help/docs'
 
 type PageOption = { title: string; value: string } | { type: 'subheader'; title: string }
@@ -59,7 +55,7 @@ export default {
     return {
       visible: false,
       pageId: pageFor('faq').id,
-      listener: null as ((id: HelpDocId) => void) | null,
+      listener: null as ((target: HelpDocId | HelpTarget) => void) | null,
     }
   },
   computed: {
@@ -82,17 +78,19 @@ export default {
     },
   },
   mounted() {
-    this.listener = (id: HelpDocId) => this.open(id)
+    this.listener = (target: HelpDocId | HelpTarget) => this.open(target)
     emitter.on('openHelp', this.listener)
   },
   beforeUnmount() {
     if (this.listener) emitter.off('openHelp', this.listener)
   },
   methods: {
-    open(id: HelpDocId) {
-      this.pageId = pageFor(id).id
+    open(target: HelpDocId | HelpTarget) {
+      const anchor = typeof target === 'string' ? null : target.anchor
+      this.pageId = typeof target === 'string' ? pageFor(target).id : target.page
       this.visible = true
-      void this.scrollTo(null)
+      // After pageId's own watcher, which scrolls to the top.
+      void this.$nextTick(() => this.scrollTo(anchor))
     },
     /** A FAQ topic says it is one, since its title alone ("Party mode")
      * can read like the guide of the same name. */
@@ -129,13 +127,6 @@ export default {
 </script>
 
 <style scoped>
-.help-dialog__title {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-
 .help-dialog__toolbar {
   display: flex;
   flex-wrap: wrap;

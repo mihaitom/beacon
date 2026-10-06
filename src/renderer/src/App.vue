@@ -7,6 +7,7 @@
   <artwork-lightbox />
   <song-info-dialog />
   <help-dialog />
+  <features-dialog />
 </template>
 
 <script lang="ts">
@@ -20,6 +21,7 @@ import KeyboardShortcutsDialog from '@/components/KeyboardShortcutsDialog.vue'
 import ArtworkLightbox from '@/components/library/ArtworkLightbox.vue'
 import SongInfoDialog from '@/components/library/SongInfoDialog.vue'
 import HelpDialog from '@/components/HelpDialog.vue'
+import FeaturesDialog from '@/components/FeaturesDialog.vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
 import { useConnectStore } from '@/stores/connect'
@@ -42,6 +44,7 @@ export default {
     ArtworkLightbox,
     SongInfoDialog,
     HelpDialog,
+    FeaturesDialog,
   },
   // Composition API escape hatch just for useIsMobileWeb() — everything else
   // here stays Options API, matching the rest of the renderer. Refs returned

@@ -132,12 +132,6 @@ That's intentional. Sonos speakers advertise AirPlay 2 but require MFi hardware 
 
 Set the log level to Trace in Settings (or `LOG_LEVEL=trace`, see Environment variables above, if the app never comes up far enough to reach Settings) - Debug only covers Beacon's own code, Trace also turns on the SoCo/pyatv/HTTP libraries actually talking to the device, which is normally what you need for a casting issue. Expect a lot of output either way.
 
-## Party mode
-
-### How do I let party guests in from outside my network?
-
-Guests on the same Wi-Fi only need the QR code. For guests on mobile data, put the Docker deployment behind your reverse proxy and let `/party` and `/party/` past its login (Authentik or similar), since guests have no account; everything a guest can reach lives under that path and is safe to open on its own. Then start the party with Beacon open under the public address rather than its LAN address, because the QR code points wherever the party was started from, and add the proxy to `PARTY_TRUSTED_PROXIES` so each guest is rate-limited by their own address instead of all of them sharing the proxy's. Ready-made configurations for Traefik, Nginx Proxy Manager and Caddy are in [party-mode.md](party-mode.md#over-the-internet).
-
 ## What leaves the deployment
 
 ### What does Beacon send to outside services?

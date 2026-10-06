@@ -547,9 +547,11 @@ does not scroll, which is what "the cap is clipping" looks like.
 
 - `scrollable` on the `v-dialog`, and never a second scroll region nested
   inside the body.
-- Close: an `mdi-close` icon button at the top right, and/or a text button in
-  `v-card-actions`. A dialog with a picture-backed header uses the icon only,
-  since the footer button would sit under a header that already offers one.
+- Close: a text button ("Close", `common.close`) at the right of
+  `v-card-actions`, after a `v-spacer`. Not an `mdi-close` icon at the top
+  right instead - the one exception is a dialog with a picture-backed
+  header, which uses the icon only, since the footer button would sit under
+  a header that already offers one.
 - An exception to "never a second scroll region": inside `.beacon-markdown`
   (below), a code block or a table scrolls sideways on its own. Neither can
   wrap, and on a phone one would otherwise widen the whole dialog.

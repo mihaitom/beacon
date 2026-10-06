@@ -5,7 +5,7 @@ import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { emitter } from '@/emitter'
-import { HELP_PAGES, findHelpPage, renderHelpPage, type HelpDocId } from '@/services/help/docs'
+import { HELP_PAGES, type HelpDocId } from '@/services/help/docs'
 import HelpDialog from '../HelpDialog.vue'
 
 const vuetify = createVuetify({ components, directives })
@@ -37,21 +37,30 @@ describe('HelpDialog', () => {
     expect(content().querySelector('#over-the-internet')).not.toBeNull()
   })
 
-  it('follows a link to another doc inside the dialog', async () => {
-    // Any page linking to another doc will do - whichever one does today.
-    const from = HELP_PAGES.find((page) =>
-      /data-help-page="(?!faq)[^"]+"/.test(page.doc === 'faq' ? renderHelpPage(page) : ''),
-    )!
+  it('follows a link to another page inside the dialog', async () => {
+    // A link as renderHelpPage() writes one, so this does not depend on
+    // which docs happen to link to each other today.
+    const target = HELP_PAGES.find((page) => page.doc !== 'faq')!
+    const anchor = [...target.anchors].at(-1)!
     const wrapper = await openOn('faq')
-    ;(wrapper.vm as unknown as { pageId: string }).pageId = from.id
-    await flushPromises()
-    const link = content().querySelector<HTMLAnchorElement>(
-      'a[data-help-page]:not([data-help-page^="faq"])',
-    )!
-    const target = findHelpPage(link.dataset.helpPage!)
+    const link = document.createElement('a')
+    link.href = `#${anchor}`
+    link.dataset.helpPage = target.id
+    link.dataset.helpAnchor = anchor
+    content().append(link)
     link.click()
     await flushPromises()
     expect((wrapper.vm as unknown as { pageId: string }).pageId).toBe(target.id)
-    expect(content().querySelector(`[id="${link.dataset.helpAnchor}"]`)).not.toBeNull()
+    expect(content().querySelector(`[id="${anchor}"]`)).not.toBeNull()
+  })
+
+  it('opens on one page at a heading, as a link from elsewhere asks', async () => {
+    const page = HELP_PAGES.find((p) => p.doc === 'faq' && p !== HELP_PAGES[0])!
+    const anchor = [...page.anchors].at(-1)!
+    const wrapper = await openOn('faq')
+    emitter.emit('openHelp', { page: page.id, anchor })
+    await flushPromises()
+    expect((wrapper.vm as unknown as { pageId: string }).pageId).toBe(page.id)
+    expect(content().querySelector(`[id="${anchor}"]`)).not.toBeNull()
   })
 })

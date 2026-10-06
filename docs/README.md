@@ -9,6 +9,9 @@ between them are followed inside the app, so a renamed heading needs the
 links to it updated too - the frontend suite checks every one. The FAQ is
 shown one `##` topic at a time, so its `##` headings are what the app's
 topic list offers, and the text above the first one only shows on GitHub.
+The root `README.md`'s Features section, down to the next `##` heading, is
+shown in the app as well, in a dialog of its own ("What Beacon can do"),
+leaving out the keyboard shortcuts, which the app lists in their own dialog.
 
 | What                                                 | Open it when                                                                                                                                                                                                                                                                         |
 | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

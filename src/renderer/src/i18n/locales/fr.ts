@@ -758,6 +758,9 @@ export default {
     withArtists: 'Avec {artists}',
     withArtistsAndMore: 'Avec {artists} et {count} autres',
   },
+  features: {
+    title: 'Ce que Beacon sait faire',
+  },
   help: {
     title: 'Aide',
     topic: 'Sujet',

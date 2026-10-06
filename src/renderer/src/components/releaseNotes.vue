@@ -1,5 +1,5 @@
 <template>
-  <v-dialog v-model="visible" max-width="920" scrollable transition="dialog-top-transition">
+  <v-dialog v-model="visible" max-width="920" scrollable>
     <v-card class="release-dialog beacon-dialog">
       <div class="release-hero">
         <div class="release-hero__icon-wrap">
