@@ -29,6 +29,10 @@ const FALLBACK_COLOR = '245, 169, 78'
 // frame; the guest's SSE feed roughly every 23ms).
 const SMOOTHING_CAST = 0.3
 
+// How long before a track ends the corner starts announcing the next one,
+// matching NowPlayingView's own NEXT_UP_SECONDS.
+const NEXT_UP_SECONDS = 15
+
 type Preference = 'showLyrics' | 'showVisualizer' | 'largeArtwork'
 const PREFERENCE_KEY = 'beacon_party_view'
 
@@ -78,11 +82,13 @@ function toNowPlayingRadio(radio: GuestRadio | null): NowPlayingRadio | null {
  * `party/store.ts`, plus the guest's own view preferences, colour
  * extraction and visualizer feed. The app's presentation renders it exactly
  * as it renders the host's. */
-export function useGuestNowPlayingSource(): {
+export function useGuestNowPlayingSource(opts: { isCompact?: () => boolean } = {}): {
   source: NowPlayingSource
   dispose: () => void
 } {
   const store = usePartyGuestStore()
+  // A phone has no room for a second card, as in the app.
+  const isCompact = opts.isCompact ?? (() => false)
 
   const showLyrics = ref(readPreference('showLyrics', true))
   const showVisualizer = ref(readPreference('showVisualizer', true))
@@ -141,6 +147,20 @@ export function useGuestNowPlayingSource(): {
       `radial-gradient(circle, rgba(${accentColor.value}, 0.55) 0%, rgba(${accentColor.value}, 0) 70%)`,
   )
 
+  const next = computed<NowPlayingSong | null>(() => {
+    if (radio.value) return null
+    const upcoming = store.snapshot?.upcoming?.[0]
+    return toNowPlayingSong(upcoming ?? null)
+  })
+  /** Whether the corner should announce the next song: a wide screen, the
+   * artwork hidden (where the small cover + labels live), a next one, and
+   * the current track within NEXT_UP_SECONDS of its end. */
+  const nextUpActive = computed(() => {
+    if (isCompact() || !artworkHidden.value || !next.value || !playing.value) return false
+    const total = duration.value
+    return total > 0 && total - store.position <= NEXT_UP_SECONDS
+  })
+
   const lyrics = computed(() => store.currentLyrics)
   const visualizerAvailable = computed(() => Boolean(store.snapshot?.casting && song.value))
   const visualizerActive = computed(
@@ -156,33 +176,48 @@ export function useGuestNowPlayingSource(): {
   })
 
   const panels = computed<NowPlayingPanel[]>(() => {
+    const list: NowPlayingPanel[] = []
     const current = song.value
     if (current) {
-      return [
-        {
-          key: current.id,
-          kind: 'song',
-          song: current,
-          eyebrow: eyebrow.value,
-          title: current.title,
-          radioTag: null,
-        },
-      ]
+      list.push({
+        key: current.id,
+        kind: 'song',
+        song: current,
+        eyebrow: eyebrow.value,
+        title: current.title,
+        radioTag: null,
+      })
+    } else if (radio.value) {
+      const station = radio.value
+      list.push({
+        key: 'radio',
+        kind: 'song',
+        song: null,
+        eyebrow: eyebrow.value,
+        title: station.nowPlaying ?? station.name,
+        radioTag: station.nowPlaying ? station.name : null,
+      })
     }
-    const station = radio.value
-    if (station) {
-      return [
-        {
-          key: 'radio',
-          kind: 'song',
-          song: null,
-          eyebrow: eyebrow.value,
-          title: station.nowPlaying ?? station.name,
-          radioTag: station.nowPlaying ? station.name : null,
-        },
-      ]
+    const upcoming = next.value
+    if (nextUpActive.value && upcoming) {
+      list.push({
+        key: 'chevrons',
+        kind: 'chevrons',
+        song: null,
+        eyebrow: '',
+        title: '',
+        radioTag: null,
+      })
+      list.push({
+        key: upcoming.id,
+        kind: 'song',
+        song: upcoming,
+        eyebrow: i18n.global.t('home.nextUp'),
+        title: upcoming.title,
+        radioTag: null,
+      })
     }
-    return []
+    return list
   })
 
   function openVisualizer(): void {
@@ -244,7 +279,7 @@ export function useGuestNowPlayingSource(): {
   const source: NowPlayingSource = reactive({
     song,
     radio,
-    next: computed(() => null),
+    next,
     playing,
     position: computed(() => store.position),
     duration,

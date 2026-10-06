@@ -190,6 +190,10 @@ export default {
   right: 24px;
   z-index: 2;
   display: flex;
+  /* The guest's skip vote is a text button, taller than an icon button; the
+   * row centres every button on a common line rather than top-aligning the
+   * shorter ones. */
+  align-items: center;
   gap: 4px;
   /* A translucent panel under the icons: with the artwork hidden they sit
    * directly on the artist photo, where a plain white icon can vanish. */

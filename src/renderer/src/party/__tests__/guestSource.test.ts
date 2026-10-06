@@ -99,6 +99,33 @@ describe('guest Now Playing source', () => {
     expect(built.source.ui.artworkHidden).toBe(true)
   })
 
+  it('announces the next song near the end of a track, as the app does', () => {
+    usePartyGuestStore().applySnapshot(
+      snapshot({
+        backdrop: true,
+        duration: 200,
+        position: 195,
+        current_song: SONG,
+        upcoming: [
+          {
+            id: 's2',
+            title: 'Next One',
+            artist: 'The Tide',
+            album: null,
+            duration: 180,
+            cover: null,
+          },
+        ],
+      }),
+    )
+    const built = useGuestNowPlayingSource()
+    dispose = built.dispose
+
+    expect(built.source.next?.title).toBe('Next One')
+    expect(built.source.panels.map((p) => p.kind)).toEqual(['song', 'chevrons', 'song'])
+    expect(built.source.panels[2]?.title).toBe('Next One')
+  })
+
   it('takes the position from the party store', () => {
     const store = usePartyGuestStore()
     store.applySnapshot(snapshot({ position: 42, current_song: SONG }))

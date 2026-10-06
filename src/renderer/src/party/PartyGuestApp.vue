@@ -129,8 +129,11 @@ export default {
   data() {
     return {
       // The guest's own Now Playing source, and everything behind it (view
-      // preferences, colour extraction, the visualizer feed).
-      guestNp: useGuestNowPlayingSource(),
+      // preferences, colour extraction, the visualizer feed). A phone has no
+      // room for the corner's next-up card, as in the app.
+      guestNp: useGuestNowPlayingSource({
+        isCompact: () => Boolean((this as unknown as { compact: boolean }).compact),
+      }),
       name: usePartyGuestStore().savedName,
       joining: false,
       joinError: '',
