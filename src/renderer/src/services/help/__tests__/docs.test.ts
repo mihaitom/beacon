@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import dockerfile from '../../../../../../Dockerfile?raw'
 import readme from '../../../../../../README.md?raw'
+import dockerignore from '../../../../../../.dockerignore?raw'
 import {
   FEATURES_PAGE,
   HELP_DOCS,
@@ -130,11 +131,18 @@ describe('the bundled docs', () => {
     }
   })
 
-  // The web image copies docs/ file by file; one left out there only
-  // breaks the Docker build.
+  // The web image copies docs/ file by file; one left out there, or
+  // filtered out again by .dockerignore, only breaks the Docker build.
   it('are all copied into the Docker build', () => {
-    for (const doc of HELP_DOCS) expect(dockerfile, doc.path).toContain(doc.path)
-    expect(dockerfile).toMatch(/^COPY .*\bREADME\.md\b/m)
+    const ignored = dockerignore
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith('#'))
+    for (const path of [...HELP_DOCS.map((doc) => doc.path), 'README.md']) {
+      expect(dockerfile, path).toMatch(new RegExp(`^COPY .*\\b${path.replace('.', '\\.')}\\b`, 'm'))
+      expect(ignored, path).not.toContain(path)
+      expect(ignored, path).not.toContain(path.split('/')[0])
+    }
   })
 })
 

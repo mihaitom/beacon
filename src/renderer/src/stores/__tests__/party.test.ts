@@ -1,6 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { PartyRefusal, usePartyStore, wishInsertIndex } from '../party'
+import { PartyRefusal, tabId, usePartyStore, wishInsertIndex } from '../party'
+import { useRemoteControlStore } from '../remoteControl'
+import {
+  claimPartyHost,
+  enableParty,
+  getPartyStatus,
+  type PartyStatus,
+} from '@/services/party/http'
 import { usePlaybackStore } from '../playback'
 import { makeSong } from './fixtures'
 
@@ -9,6 +16,7 @@ vi.mock('@/services/party/http', () => ({
   rotatePartyLink: vi.fn(),
   disableParty: vi.fn().mockResolvedValue({ success: true }),
   getPartyStatus: vi.fn(),
+  claimPartyHost: vi.fn(),
   updatePartySettings: vi.fn(),
   kickPartyGuest: vi.fn(),
 }))
@@ -236,5 +244,81 @@ describe('inviteUrl', () => {
 
   it('has no link before the party has a token', () => {
     expect(usePartyStore().inviteUrl).toBeNull()
+  })
+})
+
+describe('which window hosts the party', () => {
+  function status(hostTab: string | null, enabled = true): PartyStatus {
+    return {
+      enabled,
+      expires_at: enabled ? Date.now() / 1000 + 3600 : null,
+      lan_ip: '192.168.1.20',
+      port: 9181,
+      guests: [],
+      max_pending_per_guest: 3,
+      skip_ratio: 0.5,
+      host_tab: hostTab,
+    }
+  }
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    localStorage.clear()
+    sessionStorage.clear()
+    vi.spyOn(useRemoteControlStore(), 'startRelay').mockImplementation(() => {})
+    vi.spyOn(useRemoteControlStore(), 'stopRelayUnlessNeeded').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    usePartyStore().stopped()
+    vi.restoreAllMocks()
+  })
+
+  it('names this window as the host when it starts the party', async () => {
+    vi.mocked(enableParty).mockResolvedValue({ ...status(tabId()), token: 'tok' })
+    await usePartyStore().enable()
+    expect(vi.mocked(enableParty).mock.calls[0]![0].tab_id).toBe(tabId())
+    expect(usePartyStore().hostedHere).toBe(true)
+  })
+
+  it('learns of a party another window started, without answering its guests', async () => {
+    vi.mocked(getPartyStatus).mockResolvedValue(status('another-tab'))
+    const party = usePartyStore()
+    await party.refreshStatus()
+    expect(party.enabled).toBe(true)
+    expect(party.hostedHere).toBe(false)
+    expect(useRemoteControlStore().startRelay).not.toHaveBeenCalled()
+  })
+
+  it('picks its own party back up after a reload, link included', async () => {
+    vi.mocked(getPartyStatus).mockResolvedValue(status(tabId()))
+    vi.mocked(claimPartyHost).mockResolvedValue({ ...status(tabId()), token: 'tok' })
+    const party = usePartyStore()
+    await party.refreshStatus()
+    expect(party.hostedHere).toBe(true)
+    expect(party.inviteToken).toBe('tok')
+  })
+
+  it('takes the party over by telling connect it is this window', async () => {
+    vi.mocked(getPartyStatus).mockResolvedValue(status('another-tab'))
+    vi.mocked(claimPartyHost).mockResolvedValue({ ...status(tabId()), token: 'tok' })
+    const party = usePartyStore()
+    await party.refreshStatus()
+    await party.takeOver()
+    expect(claimPartyHost).toHaveBeenCalledWith(tabId())
+    expect(party.hostedHere).toBe(true)
+    // The party's own link, so nobody already there has to scan again.
+    expect(party.inviteToken).toBe('tok')
+  })
+
+  it('lets go once another window has taken over', async () => {
+    vi.mocked(getPartyStatus).mockResolvedValue(status(tabId()))
+    vi.mocked(claimPartyHost).mockResolvedValue({ ...status(tabId()), token: 'tok' })
+    const party = usePartyStore()
+    await party.refreshStatus()
+    party.applyStatus(status('another-tab'))
+    expect(party.hostedHere).toBe(false)
+    expect(party.enabled).toBe(true)
+    expect(useRemoteControlStore().stopRelayUnlessNeeded).toHaveBeenCalled()
   })
 })

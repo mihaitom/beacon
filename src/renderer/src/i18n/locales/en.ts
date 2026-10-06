@@ -378,8 +378,6 @@ export default {
     hint: 'Guests open a link or scan a code and see what is coming up, search your library and wish for songs. They cannot pause, skip or change anything else.',
     link: 'Invitation link',
     showPoster: 'Show the code full screen',
-    linkLost:
-      'The link from before is no longer available here. Renew it to invite more guests - everyone who joined with the old one has to scan the new one.',
     guests: 'Guests ({count})',
     noGuests: 'Nobody has joined yet.',
     removeGuest: 'Remove {name}',

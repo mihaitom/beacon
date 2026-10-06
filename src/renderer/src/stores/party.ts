@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { toRaw } from 'vue'
 import {
+  claimPartyHost,
   disableParty,
   enableParty,
   getPartyStatus,
@@ -55,10 +56,11 @@ interface PartyState {
   enabled: boolean
   /** Whether this window is the one answering guests. In the web build
    * every open tab would otherwise pick the party up and apply each wish
-   * once per tab. */
+   * once per tab. connect knows which one it is (status.host_tab), so a
+   * tab another one took the party from lets go (see applyStatus). */
   hostedHere: boolean
-  /** Only known right after this session started the party or renewed the
-   * link - /party-host/status never sends it. */
+  /** Known once this window has started the party, renewed the link or
+   * taken it over - /party-host/status never sends it. */
   inviteToken: string | null
   expiresAt: number | null
   lanIp: string
@@ -69,8 +71,8 @@ interface PartyState {
 }
 
 const SETTINGS_KEY = 'beacon_party_settings'
-// Per tab and surviving a reload - see hostedHere.
-const HOST_KEY = 'beacon_party_host'
+// Per tab and surviving a reload - see tabId().
+const TAB_KEY = 'beacon_party_tab'
 const STATUS_POLL_MS = 10_000
 
 const DEFAULT_SETTINGS: PartySettings = {
@@ -79,20 +81,22 @@ const DEFAULT_SETTINGS: PartySettings = {
   durationHours: 12,
 }
 
-function markHost(on: boolean): void {
+let fallbackTabId: string | null = null
+
+/** This window's name to connect as the party's host (core/party.py's
+ * host_tab): made up once per tab, and kept across a reload so a host tab
+ * that reloads picks its party back up. */
+export function tabId(): string {
   try {
-    if (on) sessionStorage.setItem(HOST_KEY, '1')
-    else sessionStorage.removeItem(HOST_KEY)
+    const stored = sessionStorage.getItem(TAB_KEY)
+    if (stored) return stored
+    const id = crypto.randomUUID()
+    sessionStorage.setItem(TAB_KEY, id)
+    return id
   } catch {
     // Without storage a reload simply has to take the party over again.
-  }
-}
-
-function wasHost(): boolean {
-  try {
-    return sessionStorage.getItem(HOST_KEY) === '1'
-  } catch {
-    return false
+    fallbackTabId ??= crypto.randomUUID()
+    return fallbackTabId
   }
 }
 
@@ -212,6 +216,8 @@ export const usePartyStore = defineStore('party', {
       this.port = status.port
       this.guests = status.guests
       if (!status.enabled) this.stopped()
+      // Another window took the party over (see takeOver()).
+      else if (this.hostedHere && status.host_tab !== tabId()) this.stopped()
     },
 
     async enable(): Promise<void> {
@@ -219,6 +225,7 @@ export const usePartyStore = defineStore('party', {
         duration_hours: this.settings.durationHours,
         max_pending_per_guest: this.settings.maxPendingPerGuest,
         skip_ratio: this.settings.skipRatio,
+        tab_id: tabId(),
       })
       this.inviteToken = invite.token
       this.requests = []
@@ -245,27 +252,37 @@ export const usePartyStore = defineStore('party', {
       this.applyStatus(await kickPartyGuest(guestId))
     },
 
-    /** App start: a party can outlive a reload of this window, since
-     * connect keeps running. The link itself can't be recovered (see
-     * inviteToken), only renewed. The desktop app is the only window there
-     * is; a browser tab only resumes a party it was hosting itself. */
+    /** At app start, on opening the party dialog and when the window comes
+     * back into view: a party can outlive a reload of this window, since
+     * connect keeps running, or have been started from another one. The
+     * desktop app is the only window there is; a browser tab only resumes
+     * a party it was hosting itself - by taking it over again, which is
+     * also what brings its link back (see takeOver()). */
     async refreshStatus(): Promise<void> {
+      let status: PartyStatus
       try {
-        this.applyStatus(await getPartyStatus())
+        status = await getPartyStatus()
       } catch {
         return
       }
-      if (this.enabled && (window.api || wasHost())) this.started()
+      this.applyStatus(status)
+      if (!this.enabled || this.hostedHere) return
+      if (window.api || status.host_tab === tabId()) await this.takeOver()
     },
 
-    /** Makes this window the one answering guests (see hostedHere). */
-    takeOver(): void {
-      if (this.enabled) this.started()
+    /** Makes this window the one answering guests (see hostedHere), with
+     * the party's existing link: renewing it would sign out every guest. */
+    async takeOver(): Promise<void> {
+      if (!this.enabled) return
+      const invite = await claimPartyHost(tabId())
+      this.applyStatus(invite)
+      if (!this.enabled) return
+      this.inviteToken = invite.token
+      this.started()
     },
 
     started(): void {
       this.hostedHere = true
-      markHost(true)
       // The relay is how guests' wishes reach this window, and its
       // keepalive is what keeps the party alive on connect's side.
       useRemoteControlStore().startRelay()
@@ -372,7 +389,6 @@ export const usePartyStore = defineStore('party', {
 
     stopped(): void {
       this.hostedHere = false
-      markHost(false)
       this.inviteToken = null
       this.guests = []
       this.requests = []

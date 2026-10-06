@@ -236,6 +236,38 @@ def test_status_never_returns_the_invite_token(client):
     assert body["enabled"] is True
 
 
+def test_the_window_that_starts_the_party_hosts_it(client):
+    _start(client, tab_id="tab-desktop")
+    assert client.get("/party-host/status").json()["host_tab"] == "tab-desktop"
+
+
+def test_another_window_can_take_the_party_over(client):
+    token = _start(client, tab_id="tab-desktop")
+    resp = client.post("/party-host/claim", json={"tab_id": "tab-phone"})
+    assert resp.status_code == 200
+    # The same link, so nobody already there has to scan again.
+    assert resp.json()["token"] == token
+    # What the desktop's next status poll sees, and lets go on.
+    assert client.get("/party-host/status").json()["host_tab"] == "tab-phone"
+
+
+def test_nothing_to_take_over_without_a_party(client):
+    assert client.post("/party-host/claim", json={"tab_id": "tab-phone"}).status_code == 404
+
+
+def test_a_tab_id_is_an_id_and_nothing_else(client):
+    _start(client)
+    resp = client.post("/party-host/claim", json={"tab_id": "<script>"})
+    assert resp.status_code == 422
+
+
+def test_a_new_party_forgets_the_last_host(client):
+    _start(client, tab_id="tab-desktop")
+    client.post("/party-host/disable")
+    _start(client)
+    assert client.get("/party-host/status").json()["host_tab"] is None
+
+
 def test_kicked_guest_loses_access(client, guest_client):
     token = _start(client)
     _join(guest_client, token)

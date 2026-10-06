@@ -232,7 +232,7 @@ and guests see no bars.
 
 - The party runs in the window that started it. In the web build, another
   browser tab can take it over from the party dialog, and only one tab answers
-  guests at a time. When that window goes quiet - closed, or asleep - the
+  guests at a time: the one that gave it up lets go within about ten seconds. When that window goes quiet - closed, or asleep - the
   party ends after about a minute and a half, unless the host is casting. Then
   the Beacon server keeps the party going and shows guests what plays while
   that window sleeps (a locked phone) or, in the web build, after the tab is
@@ -240,7 +240,8 @@ and guests see no bars.
   it. Wishing, searching and skipping still need the window for now; while it
   sleeps, guests are told Beacon isn't answering. See
   `docs/plans/party-mode-server-side.md`.
-- After a reload the link can't be shown again, since the host's status never
-  carries the token. "Renew link" makes a new one.
+- Taking a party over, or reloading the window that hosts it, keeps the link:
+  the window gets it back from the Beacon server, and guests already there
+  stay in. Only "Renew link" makes a new one and signs everyone out.
 - A wish is an ordinary queue entry. The host can move or remove it like any
   other, and that is what the guests then see.

@@ -158,6 +158,10 @@ class PartyState:
         self.songs: dict[str, dict] = {}  # insertion-ordered, see SONG_MEMORY
         # Follows the host's cast session (see _follow_cast).
         self._cast_task: asyncio.Task | None = None
+        # Which of the host's windows answers guests: a random id each tab
+        # makes up for itself. Another tab taking the party over replaces
+        # it, and the one that had it sees so in /party-host/status.
+        self.host_tab: str | None = None
 
     # ── Lifecycle ────────────────────────────────────────────────────────
 
@@ -197,6 +201,7 @@ class PartyState:
         self.lyrics = None
         self.tab_snapshot = {}
         self.songs.clear()
+        self.host_tab = None
         if self._cast_task is not None:
             self._cast_task.cancel()
             self._cast_task = None

@@ -378,8 +378,6 @@ export default {
     hint: 'Gäste öffnen einen Link oder scannen einen Code, sehen was als Nächstes kommt, durchsuchen deine Bibliothek und wünschen sich Titel. Pausieren, überspringen oder sonst etwas ändern können sie nicht.',
     link: 'Einladungslink',
     showPoster: 'Code im Vollbild zeigen',
-    linkLost:
-      'Der bisherige Link ist hier nicht mehr verfügbar. Erneuere ihn, um weitere Gäste einzuladen - wer mit dem alten beigetreten ist, muss den neuen scannen.',
     guests: 'Gäste ({count})',
     noGuests: 'Noch niemand beigetreten.',
     removeGuest: '{name} entfernen',

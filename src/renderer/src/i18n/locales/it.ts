@@ -381,8 +381,6 @@ export default {
     hint: 'Gli ospiti aprono un link o scansionano un codice, vedono cosa arriva, cercano nella tua libreria e chiedono brani. Non possono mettere in pausa, saltare o cambiare altro.',
     link: 'Link di invito',
     showPoster: 'Mostra il codice a schermo intero',
-    linkLost:
-      'Il link precedente non è più disponibile qui. Rinnovalo per invitare altri ospiti - chi è entrato con quello vecchio dovrà scansionare il nuovo.',
     guests: 'Ospiti ({count})',
     noGuests: 'Non è ancora entrato nessuno.',
     removeGuest: 'Rimuovi {name}',

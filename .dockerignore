@@ -45,7 +45,3 @@ src/preload
 .vscode
 .eslintcache
 *.tsbuildinfo
-
-# Docs — not read at build or run time (CHANGELOG.md is NOT excluded here —
-# releaseNotes.vue reads it via a `?raw` import at build time)
-README.md

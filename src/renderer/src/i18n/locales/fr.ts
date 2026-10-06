@@ -381,8 +381,6 @@ export default {
     hint: 'Les invités ouvrent un lien ou scannent un code, voient ce qui arrive, cherchent dans ta bibliothèque et demandent des morceaux. Ils ne peuvent ni mettre en pause, ni passer, ni rien changer d’autre.',
     link: "Lien d'invitation",
     showPoster: 'Afficher le code en plein écran',
-    linkLost:
-      "L'ancien lien n'est plus disponible ici. Renouvelle-le pour inviter d'autres personnes - ceux qui ont rejoint avec l'ancien devront scanner le nouveau.",
     guests: 'Invités ({count})',
     noGuests: "Personne n'a encore rejoint.",
     removeGuest: 'Retirer {name}',

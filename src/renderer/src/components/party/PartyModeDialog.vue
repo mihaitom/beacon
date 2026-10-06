@@ -44,9 +44,6 @@
               {{ $t('party.showPoster') }}
             </v-btn>
           </template>
-          <v-alert v-else type="info" variant="tonal" density="compact" class="party-notice">
-            {{ $t('party.linkLost') }}
-          </v-alert>
 
           <h3 class="eyebrow-label panel-title party-section">
             {{ $t('party.guests', { count: store.guests.length }) }}
@@ -195,7 +192,10 @@ export default {
   },
   watch: {
     modelValue(open: boolean) {
-      if (open) void this.$nextTick(() => this.renderQr())
+      if (!open) return
+      void this.$nextTick(() => this.renderQr())
+      // A party started from another window since this one last asked.
+      void this.store.refreshStatus()
     },
     'store.inviteUrl'() {
       void this.$nextTick(() => this.renderQr())

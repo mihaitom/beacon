@@ -15,10 +15,12 @@ export interface PartyStatus {
   guests: PartyGuest[]
   max_pending_per_guest: number
   skip_ratio: number
+  /** Which window answers guests - see stores/party.ts's tabId(). */
+  host_tab: string | null
 }
 
-/** Only /enable and /rotate carry the invite token - /status never does,
- * the same rule the phone remote's password follows. */
+/** Only /enable, /rotate and /claim carry the invite token - /status never
+ * does, the same rule the phone remote's password follows. */
 export interface PartyInvite extends PartyStatus {
   token: string
 }
@@ -32,7 +34,7 @@ export interface PartySettings {
  * Nothing here is reachable under /party/, which is what guests get. */
 
 export function enableParty(
-  body: PartySettings & { duration_hours: number },
+  body: PartySettings & { duration_hours: number; tab_id: string },
 ): Promise<PartyInvite> {
   return fetchConnect<PartyInvite>('/party-host/enable', { method: 'POST', body })
 }
@@ -43,6 +45,12 @@ export function rotatePartyLink(): Promise<PartyInvite> {
 
 export function disableParty(): Promise<{ success: boolean }> {
   return fetchConnect<{ success: boolean }>('/party-host/disable', { method: 'POST' })
+}
+
+/** Makes the window `tabId` the one answering guests, with the link it
+ * goes on showing them. */
+export function claimPartyHost(tabId: string): Promise<PartyInvite> {
+  return fetchConnect<PartyInvite>('/party-host/claim', { method: 'POST', body: { tab_id: tabId } })
 }
 
 export function getPartyStatus(): Promise<PartyStatus> {

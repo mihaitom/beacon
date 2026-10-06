@@ -125,6 +125,19 @@ class EnableRequest(BaseModel):
     duration_hours: float = DEFAULT_DURATION_HOURS
     max_pending_per_guest: int = 3
     skip_ratio: float = 0.5
+    tab_id: str = ""
+
+
+class ClaimRequest(BaseModel):
+    tab_id: str
+
+
+def _check_tab_id(tab_id: str) -> str | None:
+    if not tab_id:
+        return None
+    if not _ID.match(tab_id):
+        raise HTTPException(status_code=422, detail="Invalid tab id")
+    return tab_id
 
 
 class SettingsRequest(BaseModel):
@@ -146,12 +159,15 @@ def _host_status() -> dict:
         "guests": party.guest_list(),
         "max_pending_per_guest": party.settings.max_pending_per_guest,
         "skip_ratio": party.settings.skip_ratio,
+        "host_tab": party.host_tab if party.enabled else None,
     }
 
 
 @host_router.post("/enable")
 async def enable_party(req: EnableRequest):
+    tab_id = _check_tab_id(req.tab_id)
     token = party.enable(req.duration_hours)
+    party.host_tab = tab_id
     _apply_settings(req.max_pending_per_guest, req.skip_ratio)
     await party.broadcast()
     return {"token": token, **_host_status()}
@@ -173,10 +189,25 @@ async def disable_party():
     return {"success": True}
 
 
+@host_router.post("/claim")
+async def claim_party(req: ClaimRequest):
+    """This window answers guests from now on - see PartyState.host_tab. The
+    one that did until now notices on its next status poll and lets go.
+
+    With the invite token, like /enable and /rotate: the window taking over
+    has to be able to show the code to more guests, and renewing the link
+    instead would sign out everyone already there. Only the explicit
+    actions hand it out; /status never does."""
+    if not party.is_active():
+        raise HTTPException(status_code=404)
+    party.host_tab = _check_tab_id(req.tab_id)
+    return {"token": party.invite_token, **_host_status()}
+
+
 @host_router.get("/status")
 async def party_status():
-    # Never the invite token: only /enable and /rotate hand it out, the same
-    # rule /remote/status follows for the phone password.
+    # Never the invite token: only /enable, /rotate and /claim hand it out,
+    # the same rule /remote/status follows for the phone password.
     return _host_status()
 
 

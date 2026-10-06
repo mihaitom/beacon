@@ -381,8 +381,6 @@ export default {
     hint: 'Los invitados abren un enlace o escanean un código, ven lo que viene, buscan en tu biblioteca y piden canciones. No pueden pausar, saltar ni cambiar nada más.',
     link: 'Enlace de invitación',
     showPoster: 'Mostrar el código a pantalla completa',
-    linkLost:
-      'El enlace anterior ya no está disponible aquí. Renuévalo para invitar a más gente: quien entró con el antiguo tendrá que escanear el nuevo.',
     guests: 'Invitados ({count})',
     noGuests: 'Todavía no se ha unido nadie.',
     removeGuest: 'Quitar a {name}',
