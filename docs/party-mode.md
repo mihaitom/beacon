@@ -8,7 +8,8 @@ app). The large cover, the lyrics and the visualizer are each a toggle the
 guest's device remembers; without an artist background the large cover shows
 on its own. The artist background is only darkened behind the large cover,
 a guest can step through the artist's backgrounds, and the page's accent
-colour follows the picture as in the app. On a computer, what's next and the
+colour follows the picture as in the app. A radio station shows with its
+logo and the title it is currently playing. On a computer, what's next and the
 search sit in a side panel; on a phone,
 the mobile layout with a tab bar. The lyrics are the host's, with the match
 and sync offset the host chose, and while the host casts, the visualizer runs
@@ -66,7 +67,9 @@ proxy open `/party/` to the outside without opening anything else.
   ids, no speakers, no volume, no stream details, and other guests appear by
   name only. Covers are served as image bytes by Beacon itself (never a
   redirect to the media server, whose cover URLs carry credentials), and only
-  for artwork the guest has been shown.
+  for artwork the guest has been shown. A radio station's logo comes the
+  same way, and only for the station that is playing: guests never see its
+  homepage or stream address.
 - **Browser hardening.** Every answer under `/party/` carries a strict
   Content-Security-Policy (no inline script, nothing from other origins),
   `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer` and no CORS headers.

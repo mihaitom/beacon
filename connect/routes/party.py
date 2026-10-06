@@ -48,6 +48,7 @@ from core.party import (
 from core.session import registry
 from core.state import PORT, get_local_ip
 from routes.coverart import cover_image
+from routes.radio import radio_favicon
 from routes.remote import app_file_response, relay_command, relay_query, static_dir
 
 logger = logging.getLogger("connect.party")
@@ -476,6 +477,23 @@ async def cover(id: str = Query(...), guest: Guest = Depends(require_guest)):
     if session is None or session.media is None:
         raise HTTPException(status_code=404)
     return await cover_image(session.media, id)
+
+
+# The size the app's own Now Playing asks for (NowPlayingView.vue), so a
+# guest gets the logo the host's lookup already resolved and cached.
+RADIO_LOGO_SIZE = 512
+
+
+@router.get("/api/radio-logo")
+async def radio_logo(guest: Guest = Depends(require_guest)):
+    """The playing station's logo, as bytes. Takes no address: what is
+    looked up is the host's station or nothing (`k` in the URL is only
+    there to change it per station)."""
+    _limit(f"cover:{guest.guest_id}", COVERS)
+    if party.radio_logo is None:
+        raise HTTPException(status_code=404)
+    homepage, hint = party.radio_logo
+    return await radio_favicon(url=homepage, min_size=RADIO_LOGO_SIZE, hint=hint)
 
 
 @router.get("/api/lyrics")

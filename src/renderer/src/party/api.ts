@@ -22,6 +22,14 @@ export interface GuestAlbum {
   cover: string | null
 }
 
+export interface GuestRadio {
+  name: string
+  /** The station's ICY "now playing" tag, while it sends one. */
+  now_playing: string | null
+  /** /party/api/radio-logo, changing per station. */
+  logo: string | null
+}
+
 export interface GuestRequest {
   name: string
   mine: boolean
@@ -44,7 +52,7 @@ export interface GuestSnapshot {
   backdrop_count: number
   lyrics_key: string | null
   current_song: GuestSong | null
-  radio: { name: string } | null
+  radio: GuestRadio | null
   upcoming: UpcomingSong[]
   me: { name: string }
   limits: { max_pending: number; pending: number }

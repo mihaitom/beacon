@@ -368,7 +368,7 @@ export const useRemoteControlStore = defineStore('remoteControl', {
         statePushTimer = setTimeout(push, STATE_PUSH_DEBOUNCE_MS)
       }
       schedulePushSnapshot = schedulePush
-      // Three separate stores, one debounced push — cast target changes land
+      // Several stores, one debounced push — cast target changes land
       // in connect's own state (status.targets), not playback's, and
       // Autoplay's enabled flag lives in its own dedicated store (see
       // stores/autoplay.ts, toggled from PlayerBar.vue independently of
@@ -381,11 +381,16 @@ export const useRemoteControlStore = defineStore('remoteControl', {
       const unsubFromConnect = connect.$subscribe(schedulePush, { detached: true })
       const unsubFromAutoplay = autoplay.$subscribe(schedulePush, { detached: true })
       const unsubFromParty = usePartyStore().$subscribe(schedulePush, { detached: true })
+      // A new ICY title changes nothing in playback itself.
+      const unsubFromRadioMeta = useRadioMetadataStore().$subscribe(schedulePush, {
+        detached: true,
+      })
       unsubscribePlayback = () => {
         unsubFromPlayback()
         unsubFromConnect()
         unsubFromAutoplay()
         unsubFromParty()
+        unsubFromRadioMeta()
       }
     },
 

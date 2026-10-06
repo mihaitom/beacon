@@ -513,6 +513,25 @@ describe('remoteControl store', () => {
       expect(radio.buffering).toBe(true)
     })
 
+    it('sends a new station tag on its own, without waiting for playback to change', async () => {
+      const playback = usePlaybackStore()
+      playback.radioStation = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/live',
+        homePageUrl: null,
+      }
+      await enableStore()
+      vi.mocked(remoteHttp.pushRemoteState).mockClear()
+
+      useRadioMetadataStore().nowPlaying = 'Artist - Next Track'
+      await vi.waitFor(() => expect(remoteHttp.pushRemoteState).toHaveBeenCalled())
+
+      const calls = vi.mocked(remoteHttp.pushRemoteState).mock.calls
+      const radio = (calls[calls.length - 1]![0] as { radio: { now_playing: string } }).radio
+      expect(radio.now_playing).toBe('Artist - Next Track')
+    })
+
     it('sends a station with no tag as an explicit absence, not a missing field', async () => {
       // So the phone never has to tell "this station sends no tag" apart
       // from "an older desktop that never sent one".

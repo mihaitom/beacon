@@ -91,8 +91,8 @@
             </div>
             <div class="eyebrow-label">{{ eyebrow }}</div>
             <h1 class="detail-title guest-np__title">{{ title }}</h1>
-            <div v-if="song?.artist" class="text-title-large text-medium-emphasis">
-              {{ song.artist }}
+            <div v-if="subtitle" class="text-title-large text-medium-emphasis">
+              {{ subtitle }}
             </div>
             <v-chip
               v-if="song?.wished_by"
@@ -116,11 +116,8 @@
             <div class="guest-np__info">
               <div class="eyebrow-label">{{ eyebrow }}</div>
               <h1 class="detail-title guest-np__title">{{ title }}</h1>
-              <div
-                v-if="song?.artist"
-                class="text-title-large text-medium-emphasis guest-np__artist"
-              >
-                {{ song.artist }}
+              <div v-if="subtitle" class="text-title-large text-medium-emphasis guest-np__artist">
+                {{ subtitle }}
               </div>
               <div v-if="song?.wished_by" class="text-body-small guest-np__wish">
                 <v-icon icon="mdi-party-popper" size="14" />
@@ -175,6 +172,7 @@ import {
   BACKDROP_URL,
   VISUALIZER_URL,
   type GuestLyrics,
+  type GuestRadio,
   type GuestSnapshot,
   type GuestSong,
 } from '../api'
@@ -234,7 +232,7 @@ export default {
     song(): GuestSong | null {
       return this.snapshot?.current_song ?? null
     },
-    radio(): { name: string } | null {
+    radio(): GuestRadio | null {
       return this.snapshot?.radio ?? null
     },
     lyrics(): GuestLyrics | null {
@@ -253,15 +251,21 @@ export default {
     eyebrow(): string {
       return this.radio ? this.$t('partyGuest.onAir') : this.$t('partyGuest.nowPlaying')
     },
+    /** On radio as in the app (SongInfo.vue): the ICY title on top, the
+     * station under it - or the station alone while it sends none. */
     title(): string {
-      return this.song?.title ?? this.radio?.name ?? ''
+      return this.song?.title ?? this.radio?.now_playing ?? this.radio?.name ?? ''
+    },
+    subtitle(): string | null {
+      if (this.song) return this.song.artist
+      return this.radio?.now_playing ? this.radio.name : null
     },
     /** Bars only exist while the host casts a song (see the template). */
     visualizerAvailable(): boolean {
       return Boolean(this.snapshot?.casting && this.song)
     },
     coverUrl(): string | null {
-      return this.song?.cover ?? null
+      return this.song?.cover ?? this.radio?.logo ?? null
     },
     backdropSource(): string | null {
       if (this.snapshot?.backdrop && this.song) {
@@ -272,7 +276,8 @@ export default {
           ? `${BACKDROP_URL}?artist=${artist}`
           : `${BACKDROP_URL}?artist=${artist}&index=${this.backdropIndex}`
       }
-      return this.coverUrl
+      // A station logo is no backdrop, as in the app.
+      return this.song?.cover ?? null
     },
     colorTriplet(): string {
       return this.coverColor ?? FALLBACK_COLOR

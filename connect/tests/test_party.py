@@ -12,6 +12,7 @@ import re
 import time
 
 import pytest
+from fastapi import Response
 from fastapi.testclient import TestClient
 
 import routes.coverart as coverart_module
@@ -479,14 +480,78 @@ def test_own_requests_are_marked_and_counted(client, guest_client):
 def test_radio_hides_the_current_song_and_skip(client, guest_client):
     token = _start(client)
     snapshot = _snapshot(["a"])
-    snapshot["radio"] = {"name": "Station", "stream_url": "http://secret.example/stream"}
+    snapshot["radio"] = {
+        "name": "Station",
+        "stream_url": "http://secret.example/stream",
+        "home_page_url": "https://station.example",
+        "favicon_hint": "https://station.example/logo.png",
+        "now_playing": "Artist - Title",
+    }
     party.update_snapshot(snapshot)
     _join(guest_client, token)
     body = guest_client.get("/party/api/state").json()
-    assert body["radio"] == {"name": "Station"}
-    assert "secret.example" not in str(body)
+    assert body["radio"]["name"] == "Station"
+    assert body["radio"]["now_playing"] == "Artist - Title"
+    assert body["radio"]["logo"].startswith("/party/api/radio-logo?k=")
+    assert "example" not in str(body)
     assert body["skip"]["enabled"] is False
     assert guest_client.post("/party/api/skip").status_code == 409
+
+
+def _radio_snapshot(homepage="https://station.example", hint=""):
+    snapshot = _snapshot([])
+    snapshot["radio"] = {"name": "Station", "home_page_url": homepage, "favicon_hint": hint}
+    return snapshot
+
+
+def test_radio_logo_changes_url_per_station(client):
+    _start(client)
+    party.update_snapshot(_radio_snapshot("https://one.example"))
+    first = party.snapshot["radio"]["logo"]
+    party.update_snapshot(_radio_snapshot("https://two.example"))
+    assert party.snapshot["radio"]["logo"] != first
+
+
+@pytest.fixture
+def favicon_lookups(monkeypatch):
+    asked = []
+
+    async def fake_favicon(url, min_size, hint):
+        asked.append((url, min_size, hint))
+        return Response(content=b"png-bytes", media_type="image/png")
+
+    monkeypatch.setattr(party_routes, "radio_favicon", fake_favicon)
+    return asked
+
+
+def test_radio_logo_is_the_hosts_station_as_bytes(client, guest_client, favicon_lookups):
+    token = _start(client)
+    party.update_snapshot(_radio_snapshot(hint="https://station.example/logo.png"))
+    _join(guest_client, token)
+    resp = guest_client.get(party.snapshot["radio"]["logo"])
+    assert resp.status_code == 200
+    assert resp.content == b"png-bytes"
+    assert favicon_lookups == [
+        (
+            "https://station.example",
+            party_routes.RADIO_LOGO_SIZE,
+            "https://station.example/logo.png",
+        )
+    ]
+
+
+def test_radio_logo_is_gone_once_the_station_stops(client, guest_client, favicon_lookups):
+    token = _start(client)
+    party.update_snapshot(_radio_snapshot())
+    party.update_snapshot(_snapshot(["a"]))
+    _join(guest_client, token)
+    assert guest_client.get("/party/api/radio-logo?k=x").status_code == 404
+
+
+def test_radio_logo_requires_a_guest(client, guest_client):
+    _start(client)
+    party.update_snapshot(_radio_snapshot())
+    assert guest_client.get("/party/api/radio-logo?k=x").status_code == 401
 
 
 # ── Cover art ───────────────────────────────────────────────────────────────

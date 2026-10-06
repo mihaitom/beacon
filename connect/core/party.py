@@ -15,6 +15,7 @@ queue is the one Beacon window, whatever account is logged in.
 """
 
 import asyncio
+import hashlib
 import ipaddress
 import math
 import os
@@ -176,6 +177,9 @@ class PartyState:
         # The Fanart.tv background the host shows for the current artist.
         self.backdrop_url: str | None = None
         self.backdrop_urls: list[str] = []
+        # What the playing station's logo is resolved from (homepage, hint),
+        # never handed to a guest - see /party/api/radio-logo.
+        self.radio_logo: tuple[str, str] | None = None
         # The current song's lyrics as the host has them (match, offset).
         self.lyrics: dict | None = None
         # Guests watching the visualizer, and the task feeding them.
@@ -216,6 +220,7 @@ class PartyState:
         self.limiter.clear()
         self.backdrop_url = None
         self.backdrop_urls = []
+        self.radio_logo = None
         self.lyrics = None
 
     def is_active(self) -> bool:
@@ -309,6 +314,29 @@ class PartyState:
             "cover": self.remember_cover(album.get("cover_art_id")),
         }
 
+    def guest_radio(self, radio: dict) -> dict:
+        """The station as a guest sees it: name, ICY title and a logo URL
+        that names no third-party address - the homepage and hint stay here
+        (radio_logo) and /party/api/radio-logo resolves them."""
+        homepage, hint = radio.get("home_page_url"), radio.get("favicon_hint")
+        source = (
+            homepage if isinstance(homepage, str) else "",
+            hint if isinstance(hint, str) else "",
+        )
+        self.radio_logo = source if any(source) else None
+        now_playing = radio.get("now_playing")
+        logo = None
+        if self.radio_logo:
+            # A new station is a new URL, so a guest's browser never keeps
+            # showing the previous station's cached logo.
+            key = hashlib.sha256("\0".join(self.radio_logo).encode()).hexdigest()[:16]
+            logo = f"/party/api/radio-logo?k={key}"
+        return {
+            "name": radio.get("name"),
+            "now_playing": now_playing if isinstance(now_playing, str) and now_playing else None,
+            "logo": logo,
+        }
+
     def update_snapshot(self, raw: dict) -> None:
         """Reduces the renderer's full Remote Control snapshot to what a
         guest may see. Nothing about devices, volume, sessions or other
@@ -351,6 +379,9 @@ class PartyState:
         ][:MAX_BACKDROPS]
         if self.backdrop_url and self.backdrop_url not in self.backdrop_urls:
             self.backdrop_urls.insert(0, self.backdrop_url)
+        radio = raw.get("radio") if isinstance(raw.get("radio"), dict) else None
+        if radio is None:
+            self.radio_logo = None
         self.snapshot = {
             "playing": bool(raw.get("playing")),
             # Seconds, as of position_at (this server's clock, which the
@@ -369,7 +400,7 @@ class PartyState:
             "backdrop_count": len(self.backdrop_urls),
             "lyrics_key": raw.get("party_lyrics_key") if current_song else None,
             "current_song": current_song,
-            "radio": {"name": raw["radio"].get("name")} if raw.get("radio") else None,
+            "radio": self.guest_radio(radio) if radio else None,
             "upcoming": upcoming,
         }
 
