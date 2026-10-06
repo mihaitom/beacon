@@ -4,9 +4,11 @@ What lives here, and when to open it. The first four are for people running
 Beacon, the rest for people working on it.
 
 The app shows four of them in its help dialog (`services/help/docs.ts`):
-the FAQ, party mode, home automation and transcoding decisions. Links between them are followed inside the app, so a renamed
-heading needs the links to it updated too - the frontend suite checks every
-one.
+the FAQ, party mode, home automation and transcoding decisions. Links
+between them are followed inside the app, so a renamed heading needs the
+links to it updated too - the frontend suite checks every one. The FAQ is
+shown one `##` topic at a time, so its `##` headings are what the app's
+topic list offers, and the text above the first one only shows on GitHub.
 
 | What                                                 | Open it when                                                                                                                                                                                                                                                                         |
 | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

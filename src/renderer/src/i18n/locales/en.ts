@@ -752,8 +752,9 @@ export default {
   },
   help: {
     title: 'Help',
-    document: 'Document',
+    topic: 'Topic',
     englishOnly: 'These pages are only available in English.',
+    guides: 'Guides',
     faq: 'FAQ',
     conversion: 'What gets converted, and why',
   },

@@ -757,8 +757,9 @@ export default {
   },
   help: {
     title: 'Ayuda',
-    document: 'Documento',
+    topic: 'Tema',
     englishOnly: 'Estas páginas solo están disponibles en inglés.',
+    guides: 'Guías',
     faq: 'Preguntas frecuentes',
     conversion: 'Qué se convierte y por qué',
   },

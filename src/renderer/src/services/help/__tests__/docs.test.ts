@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import dockerfile from '../../../../../../Dockerfile?raw'
-import { HELP_DOCS, renderHelpDoc, resolveLink, slugify, type HelpDocId } from '../docs'
+import { HELP_DOCS, HELP_PAGES, pageFor, renderHelpPage, resolveLink, slugify } from '../docs'
 
 const REPO = 'https://github.com/mihaitom/beacon'
 
@@ -67,23 +67,32 @@ describe('resolveLink', () => {
 })
 
 describe('the bundled docs', () => {
-  const rendered = new Map(HELP_DOCS.map((doc) => [doc.id, parse(renderHelpDoc(doc))]))
+  const rendered = new Map(HELP_PAGES.map((page) => [page.id, parse(renderHelpPage(page))]))
 
   it('each have a title', () => {
     for (const doc of HELP_DOCS) expect(doc.title, doc.file).not.toBe('')
+    for (const page of HELP_PAGES) expect(page.title, page.id).not.toBe('')
+  })
+
+  it('find the FAQ topic that holds a question', () => {
+    for (const page of HELP_PAGES) {
+      for (const anchor of page.anchors) {
+        expect(pageFor(page.doc, anchor).id, `${page.id}#${anchor}`).toBe(page.id)
+      }
+    }
   })
 
   // The one that breaks quietly: a heading renamed in one doc, a link to it
   // left behind in another.
   it('only link to headings that exist', () => {
     for (const [id, page] of rendered) {
-      for (const link of page.querySelectorAll<HTMLAnchorElement>('a[data-help-anchor]')) {
+      for (const link of page.querySelectorAll<HTMLAnchorElement>('a[data-help-page]')) {
         const anchor = link.dataset.helpAnchor
         if (!anchor) continue
-        const target = rendered.get((link.dataset.helpDoc || id) as HelpDocId)!
+        const target = rendered.get(link.dataset.helpPage!)!
         expect(
           target.getElementById(anchor),
-          `${id}: ${link.textContent} -> ${link.dataset.helpDoc || id}#${anchor}`,
+          `${id}: ${link.textContent} -> ${link.dataset.helpPage}#${anchor}`,
         ).not.toBeNull()
       }
     }
@@ -91,7 +100,7 @@ describe('the bundled docs', () => {
 
   it('open everything outside the dialog in a new window', () => {
     for (const page of rendered.values()) {
-      for (const link of page.querySelectorAll<HTMLAnchorElement>('a:not([data-help-anchor])')) {
+      for (const link of page.querySelectorAll<HTMLAnchorElement>('a:not([data-help-page])')) {
         expect(link.target).toBe('_blank')
         expect(link.rel).toContain('noopener')
       }

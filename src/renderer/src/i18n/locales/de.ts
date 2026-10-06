@@ -758,8 +758,9 @@ export default {
   },
   help: {
     title: 'Hilfe',
-    document: 'Dokument',
+    topic: 'Thema',
     englishOnly: 'Diese Seiten gibt es nur auf Englisch.',
+    guides: 'Anleitungen',
     faq: 'Häufige Fragen',
     conversion: 'Was wann umgewandelt wird',
   },

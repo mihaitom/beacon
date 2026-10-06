@@ -760,8 +760,9 @@ export default {
   },
   help: {
     title: 'Aide',
-    document: 'Document',
+    topic: 'Sujet',
     englishOnly: 'Ces pages ne sont disponibles qu’en anglais.',
+    guides: 'Guides',
     faq: 'FAQ',
     conversion: 'Ce qui est converti, et pourquoi',
   },
