@@ -473,6 +473,26 @@ async def test_agent_events_overlapping_reconnect_does_not_clobber_the_new_conne
     assert remote.renderer_connected is False
 
 
+async def test_agent_events_the_newer_connection_closing_first_leaves_the_older_live():
+    """A party taken over by another browser tab: both relay until the old
+    tab notices, and the new one - a phone - may well drop first, locked or
+    switched away from. The old one still answers, so guests must not be
+    told nobody is there."""
+    from routes.remote import agent_events
+
+    remote.renderer_connected = False
+    old_gen = (await agent_events()).body_iterator
+    await old_gen.__anext__()
+    new_gen = (await agent_events()).body_iterator
+    try:
+        await new_gen.__anext__()
+        await new_gen.aclose()
+        assert remote.renderer_connected is True
+    finally:
+        await old_gen.aclose()
+    assert remote.renderer_connected is False
+
+
 async def test_agent_events_forwards_a_broadcast_command():
     from routes.remote import agent_events
 

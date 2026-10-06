@@ -9,6 +9,7 @@ import * as commands from '@/services/remoteControl/commands'
 import { RemoteAgentEventSource } from '@/services/remoteControl/agent'
 import { makeSong, makeStatus } from './fixtures'
 import { useRadioMetadataStore } from '../radioMetadata'
+import { usePartyStore } from '../party'
 
 vi.mock('@/services/remoteControl/http', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/services/remoteControl/http')>()
@@ -285,6 +286,31 @@ describe('remoteControl store', () => {
       await vi.advanceTimersByTimeAsync(300)
 
       expect(remoteHttp.pushRemoteState).toHaveBeenCalledTimes(1)
+    })
+
+    it('keeps the relay for a party this window hosts', () => {
+      const store = useRemoteControlStore()
+      store.startRelay()
+      const party = usePartyStore()
+      party.enabled = true
+      party.hostedHere = true
+
+      store.stopRelayUnlessNeeded()
+
+      expect(FakeAgent.instances[0]!.stopped).toBe(false)
+    })
+
+    it('stops the relay once another window has taken the party over', () => {
+      const store = useRemoteControlStore()
+      store.startRelay()
+      // Still running, just not answered from here any more.
+      const party = usePartyStore()
+      party.enabled = true
+      party.hostedHere = false
+
+      store.stopRelayUnlessNeeded()
+
+      expect(FakeAgent.instances[0]!.stopped).toBe(true)
     })
 
     it('revoking the key keeps the relay running while phones are on', async () => {

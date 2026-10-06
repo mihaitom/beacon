@@ -215,8 +215,7 @@ async def agent_events():
     endpoints can fail fast (503) instead of hanging when nothing is
     listening (e.g. Beacon quit but connect is still running in dev)."""
     queue = remote.command_bus.subscribe()
-    remote.renderer_connection_seq += 1
-    my_connection = remote.renderer_connection_seq
+    remote.renderer_connections += 1
     remote.renderer_connected = True
 
     async def generator():
@@ -230,11 +229,10 @@ async def agent_events():
                     yield ": heartbeat\n\n"
         finally:
             remote.command_bus.unsubscribe(queue)
-            # Only clear if a newer connection (a quick reconnect) hasn't
-            # already landed and taken over — see renderer_connection_seq's
-            # own comment.
-            if remote.renderer_connection_seq == my_connection:
-                remote.renderer_connected = False
+            # Only once no other connection is left - see
+            # renderer_connections' own comment.
+            remote.renderer_connections -= 1
+            remote.renderer_connected = remote.renderer_connections > 0
 
     return StreamingResponse(
         generator(),

@@ -169,9 +169,11 @@ export const useRemoteControlStore = defineStore('remoteControl', {
     },
 
     /** Switching one user of the relay off leaves it running for the others
-     * (phones, home automation, party guests). */
+     * (phones, home automation, party guests). For the party, only while
+     * this window is its host: one another tab took over must stop
+     * answering guests and keeping the party alive. */
     stopRelayUnlessNeeded(): void {
-      if (this.enabled || this.integration || usePartyStore().enabled) {
+      if (this.enabled || this.integration || usePartyStore().hostedHere) {
         // connect cleared its snapshot along with the phone credentials
         // (core/remote.py's disable()), so give it the current one again.
         schedulePushSnapshot?.()

@@ -366,6 +366,7 @@ def reset_state():
     }
     remote_module.remote.disable()
     remote_module.remote.renderer_connected = False
+    remote_module.remote.renderer_connections = 0
     remote_module.remote._attempts.clear()
     remote_module.remote._lockout_until.clear()
     remote_module.remote._lockout_strikes.clear()
