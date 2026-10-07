@@ -7,7 +7,9 @@ import {
   type GuestLyrics,
   type GuestSnapshot,
   type GuestSong,
+  type ListenTimelineEntry,
 } from './api'
+import { ListenAlongPlayer, type ListenState } from './listenAlong'
 
 export type GuestPhase = 'loading' | 'join' | 'message' | 'app'
 /** i18n keys under partyGuest.* for the full-page message screen. */
@@ -17,6 +19,29 @@ const NAME_KEY = 'beacon_party_name'
 // How often the extrapolated position is re-read - often enough for a
 // lyrics line to light up on time, rare enough to cost nothing.
 const CLOCK_TICK_MS = 250
+// Lyrics kept per song, so the song a listening guest still hears keeps its
+// lyrics after the host has moved on.
+const LYRICS_KEPT = 4
+
+/** What a listening guest hears, from the stream's timeline. */
+export interface Heard {
+  song: GuestSong | null
+  position: number
+  playing: boolean
+}
+
+export function heardAt(timeline: ListenTimelineEntry[], time: number): Heard | null {
+  let entry: ListenTimelineEntry | null = null
+  for (const candidate of timeline) {
+    if (candidate.at <= time) entry = candidate
+    else break
+  }
+  if (!entry) return null
+  let position = entry.playing ? entry.position + (time - entry.at) : entry.position
+  const duration = entry.song?.duration ?? 0
+  if (duration > 0) position = Math.min(position, duration)
+  return { song: entry.song, position, playing: entry.playing }
+}
 
 interface GuestState {
   phase: GuestPhase
@@ -43,6 +68,12 @@ interface GuestState {
   }
   /** Songs wished for from this page, so their buttons stay ticked. */
   wishedIds: string[]
+  /** Lyrics by song id, the last LYRICS_KEPT loaded. */
+  lyricsBySong: Record<string, GuestLyrics>
+  listenState: ListenState
+  /** The stream time this guest hears, re-read every CLOCK_TICK_MS while
+   * listening; null until it is known. */
+  listenTime: number | null
 }
 
 let events: EventSource | null = null
@@ -51,6 +82,7 @@ let clockTimer: ReturnType<typeof setInterval> | null = null
 let loadedLyricsKey: string | null = null
 let lyricsFetchSeq = 0
 let hashWatcher: (() => void) | null = null
+let player: ListenAlongPlayer | null = null
 
 function readName(): string {
   try {
@@ -95,13 +127,53 @@ export const usePartyGuestStore = defineStore('partyGuest', {
     lyricsLoading: false,
     search: { query: '', songs: [], albums: [], album: null, loading: false, seq: 0 },
     wishedIds: [],
+    lyricsBySong: {},
+    listenState: 'off',
+    listenTime: null,
   }),
 
   getters: {
     savedName: () => readName(),
 
-    /** Where playback is now, worked out from the last snapshot. */
+    listenAvailable: (state): boolean => Boolean(state.snapshot?.listen?.enabled),
+
+    /** Sound is coming, or about to again: playing or riding out a stall. */
+    listening: (state): boolean =>
+      state.listenState === 'playing' || state.listenState === 'buffering',
+
+    /** What this guest hears while listening along, once the stream's
+     * timeline says; null otherwise, when the host's view counts. */
+    heard(state): Heard | null {
+      if (state.listenState === 'off' || state.listenTime === null) return null
+      return heardAt(state.snapshot?.listen?.timeline ?? [], state.listenTime)
+    },
+
+    /** The song to show: the one this guest hears while listening along
+     * (a few seconds behind the host), else the host's. */
+    displaySong(): GuestSong | null {
+      const current = this.snapshot?.current_song ?? null
+      const heard = this.heard
+      if (!heard) return current
+      // The host's copy carries who wished for it.
+      return heard.song && current && heard.song.id === current.id ? current : heard.song
+    },
+
+    displayPlaying(): boolean {
+      const heard = this.heard
+      if (heard) return heard.playing && this.listenState === 'playing'
+      return this.snapshot?.playing ?? false
+    },
+
+    displayDuration(): number {
+      if (this.heard) return this.heard.song?.duration ?? 0
+      return this.snapshot?.duration ?? 0
+    },
+
+    /** Where playback is now: what this guest hears while listening along,
+     * else worked out from the last snapshot. */
     position(state): number {
+      const heard = this.heard
+      if (heard) return heard.position
       const snap = state.snapshot
       if (!snap) return 0
       if (!snap.playing) return snap.position
@@ -115,10 +187,12 @@ export const usePartyGuestStore = defineStore('partyGuest', {
       return Math.max(state.snapshot.limits.max_pending - state.snapshot.limits.pending, 0)
     },
 
-    /** Lyrics that belong to the song playing now, or null. */
+    /** Lyrics that belong to the song shown now, or null. */
     currentLyrics(state): GuestLyrics | null {
-      const song = state.snapshot?.current_song
-      return song && state.lyrics?.song_id === song.id ? state.lyrics : null
+      const song = this.displaySong
+      if (!song) return null
+      if (state.lyrics?.song_id === song.id) return state.lyrics
+      return state.lyricsBySong[song.id] ?? null
     },
   },
 
@@ -169,6 +243,7 @@ export const usePartyGuestStore = defineStore('partyGuest', {
       if (!clockTimer) {
         clockTimer = setInterval(() => {
           this.now = Date.now() / 1000
+          if (player) this.listenTime = player.heardTime()
         }, CLOCK_TICK_MS)
       }
     },
@@ -178,6 +253,28 @@ export const usePartyGuestStore = defineStore('partyGuest', {
       events = null
       if (clockTimer) clearInterval(clockTimer)
       clockTimer = null
+      this.stopListening()
+    },
+
+    /** Starts listening along. Straight from the guest's tap - browsers
+     * only let sound start from inside one. */
+    startListening(): void {
+      player ??= new ListenAlongPlayer((state) => {
+        this.listenState = state
+        this.listenTime = player?.heardTime() ?? null
+      })
+      player.play()
+    },
+
+    stopListening(): void {
+      player?.stop()
+      this.listenTime = null
+    },
+
+    /** The stream time heard this very moment - for the visualizer, which
+     * needs it per animation frame rather than per CLOCK_TICK_MS. */
+    heardTimeNow(): number | null {
+      return player?.heardTime() ?? null
     },
 
     connect(): void {
@@ -215,6 +312,11 @@ export const usePartyGuestStore = defineStore('partyGuest', {
       this.now = Date.now() / 1000
       this.clockSkew = snapshot.position_at - this.now
       this.snapshot = snapshot
+      if (this.listenState !== 'off') {
+        // The host switched listening along off, or the stream restarted.
+        if (!snapshot.listen?.enabled) this.stopListening()
+        else player?.followEpoch(snapshot.listen.epoch)
+      }
       if (snapshot.lyrics_key !== this.lyricsKey) {
         this.lyricsKey = snapshot.lyrics_key
         void this.loadLyrics()
@@ -236,12 +338,21 @@ export const usePartyGuestStore = defineStore('partyGuest', {
       try {
         this.lyrics = await partyApi.lyrics()
         loadedLyricsKey = key
+        this.keepLyrics(this.lyrics)
       } catch {
         this.lyrics = null
         loadedLyricsKey = null
       } finally {
         if (seq === lyricsFetchSeq) this.lyricsLoading = false
       }
+    },
+
+    keepLyrics(lyrics: GuestLyrics): void {
+      if (!lyrics.song_id || !lyrics.lines.length) return
+      const kept = { ...this.lyricsBySong, [lyrics.song_id]: lyrics }
+      const ids = Object.keys(kept)
+      for (const id of ids.slice(0, Math.max(ids.length - LYRICS_KEPT, 0))) delete kept[id]
+      this.lyricsBySong = kept
     },
 
     async runSearch(query: string): Promise<void> {

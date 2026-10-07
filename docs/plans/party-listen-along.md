@@ -1,14 +1,18 @@
-# Plan: listening along from somewhere else
+# Plan: online party
 
-Status: planned, not started.
+Status: built (2026-10-07), not yet checked on a phone. See "Still open" at
+the end.
 
 ## Why
 
 Party guests today see what plays and steer it with wishes and skip votes,
 but the music itself only comes out of the host's speakers or the host's
-device. Guests who are not in the room - friends at home, colleagues in
-another office - should be able to tap "Listen along" on the party page and
-hear what the host hears, in their own browser.
+device, so a party is limited to one room. An online party lifts that:
+guests anywhere - at home, on the train, in another office - tap the
+headphones button on the party page and hear the music in their own
+browser, with the wishes and votes they already have. In the code it is
+"listening along" (`listen_kbps`, `/party/api/listen`), which is what a guest
+does in it.
 
 ## Decision
 
@@ -185,3 +189,20 @@ guest store.
 On a device, before calling it done: listen along on an iPhone and an
 Android phone over mobile data, check the lyrics across a song change, and
 with the screen locked.
+
+## Still open
+
+Built as described above, with two differences: the visualizer's bands are
+computed from the PCM the broadcaster writes anyway rather than by an
+`AudioAnalyzer` on its output (exact stream times, no second decode), and a
+station is decoded from its own address rather than from the session's radio
+relay, which a host listening "directly from the station" does not have.
+
+What has not happened yet, and decides whether it is done:
+
+- **On a device:** listening along on an iPhone and an Android phone over
+  mobile data - a song change, lyrics sync, the visualizer, the lock screen.
+  In particular whether `audio.currentTime` starts at 0 and stays right
+  across stalls, which the heard position is built on.
+- **The host on a sleeping phone during local playback** stops the music and
+  with it the stream, as before.

@@ -324,6 +324,9 @@ export const useRemoteControlStore = defineStore('remoteControl', {
           party_backdrop: usePartyStore().backdropSource(),
           party_backdrops: usePartyStore().backdropSources(),
           party_lyrics_key: usePartyStore().lyricsKey(),
+          // The ReplayGain this window plays the song with, so guests
+          // listening along hear it at the same level.
+          party_gain: playback.replayGainMultiplier,
           // Which window this is, so connect hands guests only the host's
           // view of things (core/party.py's receive_snapshot).
           party_tab: usePartyStore().hostedHere ? partyTabId() : null,

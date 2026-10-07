@@ -53,6 +53,7 @@
       <main class="guest-app__page" :class="{ 'guest-app__page--flush': tab === 'now' }">
         <now-playing-presentation v-if="tab === 'now'" compact>
           <template #toolbar-actions>
+            <guest-listen-button />
             <guest-skip-button @notify="notify" />
           </template>
         </now-playing-presentation>
@@ -78,6 +79,7 @@
     <div v-else class="guest-app__desktop">
       <now-playing-presentation class="guest-app__stage">
         <template #toolbar-actions>
+          <guest-listen-button />
           <guest-skip-button @notify="notify" />
         </template>
       </now-playing-presentation>
@@ -117,13 +119,21 @@ import { useGuestNowPlayingSource } from './guestSource'
 import { nowPlayingSourceKey } from '@/components/now-playing/source'
 import NowPlayingPresentation from '@/components/now-playing/NowPlayingPresentation.vue'
 import GuestSkipButton from './components/GuestSkipButton.vue'
+import GuestListenButton from './components/GuestListenButton.vue'
 import GuestQueue from './components/GuestQueue.vue'
 import GuestRadioHint from './components/GuestRadioHint.vue'
 import GuestWish from './components/GuestWish.vue'
 
 export default {
   name: 'PartyGuestApp',
-  components: { NowPlayingPresentation, GuestSkipButton, GuestQueue, GuestRadioHint, GuestWish },
+  components: {
+    NowPlayingPresentation,
+    GuestSkipButton,
+    GuestListenButton,
+    GuestQueue,
+    GuestRadioHint,
+    GuestWish,
+  },
   provide() {
     // The guest's own Now Playing source, and everything behind it (view
     // preferences, colour extraction, the visualizer feed). A phone has no

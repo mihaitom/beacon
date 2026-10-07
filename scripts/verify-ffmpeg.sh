@@ -177,6 +177,20 @@ else
 fi
 rm -f "$work/relay.mp3"
 
+# core/party_broadcast.py: a song decoded to raw PCM, and the listen-along
+# encoder reading that PCM from stdin.
+smoke "decode to stereo s16le" -i "$t" -vn -ac 2 -ar 44100 -f s16le "$work/pcm"
+if "$bin" -hide_banner -loglevel error -y -f s16le -ar 44100 -ac 2 -i pipe:0 \
+    -acodec aac -b:a 192k -ar 44100 -f adts -flush_packets 1 "$work/listen.aac" \
+    < "$work/pcm" 2> "$work/stderr"; then
+    echo "[verify-ffmpeg]   ok: listen-along encode from pipe:0"
+else
+    echo "[verify-ffmpeg] FAILED: listen-along encode from pipe:0" >&2
+    sed 's/^/[verify-ffmpeg]     /' "$work/stderr" >&2
+    failures=$((failures + 1))
+fi
+rm -f "$work/pcm" "$work/listen.aac"
+
 # routes/debug.py's test station, for the two mp3 muxer options it needs to
 # look like a real Icecast stream rather than a file.
 smoke "test station mp3" -re -i "$t" -vn -ac 2 -ar 44100 -b:a 128k \

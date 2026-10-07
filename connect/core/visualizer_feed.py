@@ -766,7 +766,7 @@ class VisualizerFeed:
         (see this function's own change history below); this analyzer now
         has no pipe in common with device audio to ever stall again — at
         worst a bug here drops frames into its own, separately-bounded
-        queue (_ANALYSIS_QUEUE_MAXSIZE) instead.
+        queue (core/audio_fanout.py's ANALYSIS_QUEUE_MAXSIZE) instead.
 
         `start_offset` is always 0: a station has no track position to
         seek to, so every attach — including one that joins minutes into
@@ -853,7 +853,7 @@ class VisualizerFeed:
         # whole reason that sharing was removed. Decoding stays in this
         # analyzer's own separate process.
         # lossy=True: analysis wants the live edge, never a backlog. See
-        # core/radio_relay.py's _ANALYSIS_QUEUE_MAXSIZE for what working
+        # core/audio_fanout.py's ANALYSIS_QUEUE_MAXSIZE for what working
         # through one costs — full-speed decode+FFT starving the event loop
         # device audio is paced on, and every frame it produces too late to
         # release anyway.

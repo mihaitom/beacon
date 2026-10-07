@@ -67,6 +67,12 @@
           <p v-if="!store.guests.length" class="text-body-small text-medium-emphasis">
             {{ $t('party.noGuests') }}
           </p>
+          <p
+            v-if="store.settings.listenKbps && store.listeners"
+            class="text-body-small text-medium-emphasis"
+          >
+            {{ $t('party.listeners', { count: store.listeners, mbps: uploadMbps }) }}
+          </p>
           <div v-for="guest in store.guests" :key="guest.guest_id" class="party-guest">
             <v-icon
               :icon="guest.connected ? 'mdi-circle' : 'mdi-circle-outline'"
@@ -112,6 +118,15 @@
             variant="solo-filled"
             hide-details
             @update:model-value="(v: number) => store.saveSettings({ skipRatio: v })"
+          />
+          <v-select
+            :model-value="store.settings.listenKbps"
+            :items="listenOptions"
+            :label="$t('party.listen')"
+            :hint="$t('party.listenHint')"
+            persistent-hint
+            variant="solo-filled"
+            @update:model-value="(v: number) => store.saveSettings({ listenKbps: v })"
           />
           <v-select
             v-if="!store.enabled"
@@ -169,6 +184,9 @@ import { usePartyStore } from '@/stores/party'
 import { isMobileWebNow } from '@/composables/useIsMobileWeb'
 
 const LIMITS = [1, 2, 3, 5, 10]
+// What connect's listen-along stream offers (core/party_broadcast.py's
+// BITRATES_KBPS).
+const LISTEN_BITRATES = [128, 192, 256]
 const DURATIONS = [2, 4, 8, 12, 24, 48]
 
 export default {
@@ -203,6 +221,19 @@ export default {
         { title: this.$t('party.skipShare', { share: '1/2' }), value: 0.5 },
         { title: this.$t('party.skipShare', { share: '2/3' }), value: 2 / 3 },
       ]
+    },
+    listenOptions() {
+      return [
+        { title: this.$t('party.listenOff'), value: 0 },
+        ...LISTEN_BITRATES.map((kbps) => ({
+          title: this.$t('party.listenAac', { kbps }),
+          value: kbps,
+        })),
+      ]
+    },
+    uploadMbps(): string {
+      const mbps = (this.store.listeners * this.store.settings.listenKbps) / 1000
+      return mbps.toLocaleString(this.$i18n.locale, { maximumFractionDigits: 1 })
     },
     durationOptions() {
       return DURATIONS.map((h) => ({ title: this.$t('party.hours', { count: h }), value: h }))

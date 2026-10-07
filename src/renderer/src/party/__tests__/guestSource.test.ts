@@ -4,9 +4,15 @@ import { flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { i18n } from '@/i18n'
 import { extractDominantColor } from '@/services/colorExtractor'
-import { useGuestNowPlayingSource } from '../guestSource'
+import { takeListenFrame, useGuestNowPlayingSource } from '../guestSource'
 import { usePartyGuestStore } from '../store'
-import { BACKDROP_URL, type GuestSnapshot, type GuestSong } from '../api'
+import {
+  BACKDROP_URL,
+  LISTEN_VISUALIZER_URL,
+  VISUALIZER_URL,
+  type GuestSnapshot,
+  type GuestSong,
+} from '../api'
 
 // The real sampler needs a canvas jsdom does not implement.
 vi.mock('@/services/colorExtractor', () => ({ extractDominantColor: vi.fn() }))
@@ -15,7 +21,7 @@ class FakeEventSource {
   static CLOSED = 2
   static instances: FakeEventSource[] = []
   readyState = 1
-  constructor() {
+  constructor(public url = '') {
     FakeEventSource.instances.push(this)
   }
   onmessage: ((event: MessageEvent<string>) => void) | null = null
@@ -48,6 +54,7 @@ function snapshot(overrides: Partial<GuestSnapshot> = {}): GuestSnapshot {
     current_song: null,
     radio: null,
     upcoming: [],
+    listen: { enabled: false, epoch: null, timeline: [] },
     me: { name: 'Anna' },
     limits: { max_pending: 3, pending: 0 },
     skip: { enabled: true, votes: 0, needed: 2, mine: false },
@@ -184,6 +191,44 @@ describe('guest Now Playing source', () => {
     onScreen.value = false
     await nextTick()
     expect(FakeEventSource.instances[0]!.readyState).toBe(FakeEventSource.CLOSED)
+  })
+
+  it("a listening guest's bars come from the stream, by what it hears", async () => {
+    const store = usePartyGuestStore()
+    // The host plays locally: no cast, so no bars for anyone else.
+    store.applySnapshot(snapshot({ casting: false, current_song: SONG }))
+    store.listenState = 'playing'
+    const heard = vi.spyOn(store, 'heardTimeNow').mockReturnValue(10.05)
+    const built = useGuestNowPlayingSource()
+    dispose = built.dispose
+    await nextTick()
+    expect(built.source.visualizer.available).toBe(true)
+    const feed = FakeEventSource.instances.find((e) => e.url === LISTEN_VISUALIZER_URL)!
+    expect(FakeEventSource.instances.some((e) => e.url === VISUALIZER_URL)).toBe(false)
+    const frames = [
+      [10.0, [0.2]],
+      [10.1, [0.9]],
+    ]
+    feed.onmessage?.({ data: JSON.stringify({ frames }) } as MessageEvent<string>)
+    expect(built.source.visualizer.sample()?.[0]).toBe(0.2)
+    heard.mockReturnValue(10.12)
+    expect(built.source.visualizer.sample()?.[0]).toBe(0.9)
+
+    store.listenState = 'off'
+    await nextTick()
+    expect(feed.readyState).toBe(FakeEventSource.CLOSED)
+  })
+
+  it('drops frames nobody can hear any more, never the one shown', () => {
+    const frames: [number, number[]][] = [
+      [1, [1]],
+      [2, [2]],
+      [5, [5]],
+      [6, [6]],
+    ]
+    expect(takeListenFrame(frames, 0.5)).toBeNull()
+    expect(takeListenFrame(frames, 5.5)).toEqual([5])
+    expect(frames.map((frame) => frame[0])).toEqual([5, 6])
   })
 
   it('says it is looking for lyrics while they are on their way', () => {

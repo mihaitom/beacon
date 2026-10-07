@@ -7,6 +7,7 @@ import {
   claimPartyHost,
   enableParty,
   getPartyStatus,
+  updatePartySettings,
   type PartyStatus,
 } from '@/services/party/http'
 import { usePlaybackStore } from '../playback'
@@ -277,6 +278,8 @@ describe('which window hosts the party', () => {
       guests: [],
       max_pending_per_guest: 3,
       skip_ratio: 0.5,
+      listen_kbps: 0,
+      listeners: 0,
       host_tab: hostTab,
     }
   }
@@ -299,6 +302,22 @@ describe('which window hosts the party', () => {
     await usePartyStore().enable()
     expect(vi.mocked(enableParty).mock.calls[0]![0].tab_id).toBe(tabId())
     expect(usePartyStore().hostedHere).toBe(true)
+  })
+
+  it('hands connect the listen-along bitrate the host picked', async () => {
+    vi.mocked(enableParty).mockResolvedValue({ ...status(tabId()), token: 'tok' })
+    vi.mocked(updatePartySettings).mockResolvedValue({
+      ...status(tabId()),
+      listen_kbps: 192,
+      listeners: 2,
+    })
+    const party = usePartyStore()
+    party.saveSettings({ listenKbps: 128 })
+    await party.enable()
+    expect(vi.mocked(enableParty).mock.calls.at(-1)![0].listen_kbps).toBe(128)
+    party.saveSettings({ listenKbps: 192 })
+    expect(vi.mocked(updatePartySettings).mock.calls.at(-1)![0].listen_kbps).toBe(192)
+    await vi.waitFor(() => expect(party.listeners).toBe(2))
   })
 
   it('learns of a party another window started, without answering its guests', async () => {
@@ -404,6 +423,8 @@ describe('wishes while the host casts', () => {
       guests: [],
       max_pending_per_guest: 3,
       skip_ratio: 0.5,
+      listen_kbps: 0,
+      listeners: 0,
       host_tab: tabId(),
       token: 'tok',
     })

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
-import { usePartyGuestStore } from '../store'
+import { heardAt, usePartyGuestStore } from '../store'
 import { PartyApiError, partyApi, type GuestSnapshot } from '../api'
 
 function snapshot(overrides: Partial<GuestSnapshot> = {}): GuestSnapshot {
@@ -24,6 +24,7 @@ function snapshot(overrides: Partial<GuestSnapshot> = {}): GuestSnapshot {
     },
     radio: null,
     upcoming: [],
+    listen: { enabled: false, epoch: null, timeline: [] },
     me: { name: 'Anna' },
     limits: { max_pending: 3, pending: 1 },
     skip: { enabled: true, votes: 0, needed: 2, mine: false },
@@ -188,5 +189,102 @@ describe('party guest store', () => {
     const store = usePartyGuestStore()
     store.applySnapshot(snapshot({ limits: { max_pending: 3, pending: 3 } }))
     expect(store.wishesLeft).toBe(0)
+  })
+})
+
+describe('listening along', () => {
+  const songA = { id: 'a', title: 'A', artist: 'X', album: null, duration: 200, cover: null }
+  const songB = { id: 'b', title: 'B', artist: 'Y', album: null, duration: 180, cover: null }
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  function listening(timeline: GuestSnapshot['listen']['timeline'], current = songB) {
+    const store = usePartyGuestStore()
+    store.applySnapshot(
+      snapshot({
+        current_song: { ...current, wished_by: 'Ben' },
+        listen: { enabled: true, epoch: 'e1', timeline },
+      }),
+    )
+    store.listenState = 'playing'
+    return store
+  }
+
+  it('maps the stream time heard onto a song and a position', () => {
+    const timeline = [
+      { at: 0, song: songA, position: 30, playing: true },
+      { at: 170, song: songB, position: 0, playing: true },
+    ]
+    expect(heardAt(timeline, 100)).toEqual({ song: songA, position: 130, playing: true })
+    expect(heardAt(timeline, 175)).toEqual({ song: songB, position: 5, playing: true })
+    expect(heardAt(timeline, -1)).toBeNull()
+  })
+
+  it('holds the position of a paused stretch and never runs past the song', () => {
+    expect(heardAt([{ at: 0, song: songA, position: 50, playing: false }], 90)?.position).toBe(50)
+    expect(heardAt([{ at: 0, song: songA, position: 190, playing: true }], 60)?.position).toBe(200)
+  })
+
+  it('shows what the guest hears, not what the host has moved on to', () => {
+    const store = listening([
+      { at: 0, song: songA, position: 0, playing: true },
+      { at: 200, song: songB, position: 0, playing: true },
+    ])
+    store.listenTime = 195
+    expect(store.displaySong?.id).toBe('a')
+    expect(store.position).toBeCloseTo(195)
+    expect(store.displayDuration).toBe(200)
+    store.listenTime = 202
+    // The host's copy, which knows who wished for it.
+    expect(store.displaySong?.wished_by).toBe('Ben')
+  })
+
+  it("falls back to the host's view until the stream time is known", () => {
+    const store = listening([{ at: 0, song: songA, position: 0, playing: true }])
+    store.listenTime = null
+    expect(store.displaySong?.id).toBe('b')
+  })
+
+  it('keeps the lyrics of the song still being heard', async () => {
+    const store = usePartyGuestStore()
+    vi.spyOn(partyApi, 'lyrics')
+      .mockResolvedValueOnce({
+        song_id: 'a',
+        synced: true,
+        offset: 0,
+        lines: [{ time: 0, text: 'a' }],
+      })
+      .mockResolvedValueOnce({
+        song_id: 'b',
+        synced: true,
+        offset: 0,
+        lines: [{ time: 0, text: 'b' }],
+      })
+    store.applySnapshot(snapshot({ current_song: songA, lyrics_key: 'a:1' }))
+    await vi.waitFor(() => expect(store.lyrics?.song_id).toBe('a'))
+    const timeline = [
+      { at: 0, song: songA, position: 0, playing: true },
+      { at: 200, song: songB, position: 0, playing: true },
+    ]
+    store.applySnapshot(
+      snapshot({
+        current_song: songB,
+        lyrics_key: 'b:1',
+        listen: { enabled: true, epoch: 'e1', timeline },
+      }),
+    )
+    await vi.waitFor(() => expect(store.lyrics?.song_id).toBe('b'))
+    store.listenState = 'playing'
+    store.listenTime = 198
+    expect(store.currentLyrics?.lines[0]?.text).toBe('a')
+  })
+
+  it('stops when the host switches listening along off', () => {
+    const store = listening([])
+    const stop = vi.spyOn(store, 'stopListening')
+    store.applySnapshot(snapshot({ listen: { enabled: false, epoch: null, timeline: [] } }))
+    expect(stop).toHaveBeenCalled()
   })
 })

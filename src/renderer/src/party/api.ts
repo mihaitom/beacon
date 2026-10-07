@@ -39,6 +39,23 @@ export interface GuestRequest {
 
 export type UpcomingSong = GuestSong & { request?: GuestRequest }
 
+/** From stream time `at` on, the listen-along stream plays `song` from
+ * `position` - or holds it there, while not `playing`. */
+export interface ListenTimelineEntry {
+  at: number
+  song: GuestSong | null
+  position: number
+  playing: boolean
+}
+
+export interface GuestListen {
+  /** Whether the host lets guests listen along. */
+  enabled: boolean
+  /** Which stream the timeline belongs to; null while none runs. */
+  epoch: string | null
+  timeline: ListenTimelineEntry[]
+}
+
 export interface GuestSnapshot {
   playing: boolean
   position: number
@@ -54,6 +71,7 @@ export interface GuestSnapshot {
   current_song: GuestSong | null
   radio: GuestRadio | null
   upcoming: UpcomingSong[]
+  listen: GuestListen
   me: { name: string }
   limits: { max_pending: number; pending: number }
   skip: { enabled: boolean; votes: number; needed: number; mine: boolean }
@@ -117,8 +135,12 @@ export const partyApi = {
     request<{ success: boolean }>('DELETE', `/wishes/${q(requestId)}`),
   skip: () => request<{ success: boolean }>('POST', '/skip'),
   unskip: () => request<{ success: boolean }>('DELETE', '/skip'),
+  listenStart: (conn: string) =>
+    request<{ epoch: string; start: number | null }>('GET', `/listen/start?c=${q(conn)}`),
 }
 
 export const EVENTS_URL = `${BASE}/events`
 export const VISUALIZER_URL = `${BASE}/visualizer`
 export const BACKDROP_URL = `${BASE}/backdrop`
+export const LISTEN_URL = `${BASE}/listen`
+export const LISTEN_VISUALIZER_URL = `${BASE}/listen/visualizer`

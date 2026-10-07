@@ -26,6 +26,7 @@ function snapshot(radio: GuestSnapshot['radio']): GuestSnapshot {
     current_song: null,
     radio,
     upcoming: [],
+    listen: { enabled: false, epoch: null, timeline: [] },
     me: { name: 'Anna' },
     limits: { max_pending: 3, pending: 0 },
     skip: { enabled: false, votes: 0, needed: 1, mine: false },

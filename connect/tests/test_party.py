@@ -1549,3 +1549,296 @@ def test_backdrop_list_is_bounded_and_keeps_the_hosts_pick(client):
     party.update_snapshot(snapshot)
     assert len(party.backdrop_urls) == 31
     assert party.backdrop_urls[0] == "https://assets.fanart.tv/host.jpg"
+
+
+# ── Listening along ─────────────────────────────────────────────────────────
+# core/party_broadcast.py has its own tests; here is what party mode adds
+# around it: who may listen, what the stream follows, what guests are told.
+
+
+class _FakeBroadcaster:
+    """Stands in for the real one, which would start an encoder."""
+
+    def __init__(self, kbps, hearing_fn, url_fn, on_timeline=None, on_stopped=None):
+        self.bitrate_kbps = kbps
+        self.hearing_fn = hearing_fn
+        self.url_fn = url_fn
+        self.epoch = f"epoch-{kbps}"
+        self.stopped = False
+        self.timeline = []
+        self.queues: list[asyncio.Queue] = []
+        self._on_stopped = on_stopped
+
+    async def start(self):
+        pass
+
+    def stop(self):
+        from core.audio_fanout import send_sentinel
+
+        self.stopped = True
+        for q in self.queues:
+            send_sentinel(q)
+        if self._on_stopped is not None:
+            self._on_stopped(self)
+
+    def subscribe(self):
+        q = asyncio.Queue()
+        self.queues.append(q)
+        return q
+
+    def unsubscribe(self, q):
+        if q in self.queues:
+            self.queues.remove(q)
+
+    def start_time(self, q):
+        return 12.5
+
+    @property
+    def listeners(self):
+        return len(self.queues)
+
+
+@pytest.fixture
+def fake_broadcaster(monkeypatch):
+    import core.party as party_module
+
+    monkeypatch.setattr(party_module, "Broadcaster", _FakeBroadcaster)
+
+
+def _listening_party(kbps=192):
+    party.enable()
+    party.settings.listen_kbps = kbps
+    sid, guest = party.join("Anna", "203.0.113.5")
+    return sid, guest
+
+
+def test_listening_along_is_off_unless_the_host_turns_it_on(client, guest_client):
+    token = _start(client)
+    _join(guest_client, token)
+    assert guest_client.get("/party/api/listen?c=conn1").status_code == 404
+    assert guest_client.get("/party/api/state").json()["listen"]["enabled"] is False
+
+
+def test_listening_along_needs_a_guest(client, guest_client):
+    _start(client, listen_kbps=192)
+    assert guest_client.get("/party/api/listen?c=conn1").status_code == 401
+    assert guest_client.get("/party/api/listen/start?c=conn1").status_code == 401
+
+
+def test_only_the_offered_bitrates_are_accepted(client):
+    assert client.post("/party-host/enable", json={"listen_kbps": 100}).status_code == 422
+    assert party.enabled is False
+    _start(client, listen_kbps=128)
+    body = {"max_pending_per_guest": 3, "skip_ratio": 0.5}
+    resp = client.post("/party-host/settings", json={**body, "listen_kbps": 64})
+    assert resp.status_code == 422
+    resp = client.post("/party-host/settings", json={**body, "listen_kbps": 256})
+    assert resp.json()["listen_kbps"] == 256
+
+
+async def test_the_stream_is_the_hosts_and_says_where_it_begins(fake_broadcaster):
+    _sid, guest = _listening_party()
+    resp = await party_routes.listen(c="conn1", guest=guest)
+    assert resp.media_type == "audio/aac"
+    gen = resp.body_iterator
+    try:
+        broadcaster = party.broadcaster
+        broadcaster.queues[0].put_nowait(b"aac-bytes")
+        assert await gen.__anext__() == b"aac-bytes"
+        start = await party_routes.listen_start(c="conn1", guest=guest)
+        assert start == {"epoch": "epoch-192", "start": 12.5}
+        assert party.listeners == 1
+    finally:
+        await gen.aclose()
+    assert party.listeners == 0
+
+
+async def test_another_guest_cannot_ask_about_a_connection(fake_broadcaster):
+    _sid, guest = _listening_party()
+    _, other = party.join("Ben", "203.0.113.6")
+    resp = await party_routes.listen(c="conn1", guest=guest)
+    try:
+        with pytest.raises(party_routes.HTTPException) as e:
+            await party_routes.listen_start(c="conn1", guest=other)
+        assert e.value.status_code == 404
+    finally:
+        await resp.body_iterator.aclose()
+
+
+async def test_a_removed_guest_loses_the_sound(fake_broadcaster):
+    _sid, guest = _listening_party()
+    resp = await party_routes.listen(c="conn1", guest=guest)
+    gen = resp.body_iterator
+    party.kick(guest.guest_id)
+    party.broadcaster.queues[0].put_nowait(b"more")
+    with pytest.raises(StopAsyncIteration):
+        await gen.__anext__()
+    assert party_routes._listeners == {}
+
+
+async def test_a_new_connection_ends_the_oldest_beyond_two(fake_broadcaster):
+    """A phone reconnecting opens the new stream before the old one is
+    noticed gone; a third makes room rather than being refused."""
+    _sid, guest = _listening_party()
+    first = await party_routes.listen(c="conn1", guest=guest)
+    await party_routes.listen(c="conn2", guest=guest)
+    await party_routes.listen(c="conn3", guest=guest)
+    assert set(party_routes._listeners) == {"conn2", "conn3"}
+    with pytest.raises(StopAsyncIteration):
+        await first.body_iterator.__anext__()
+
+
+async def test_a_connection_id_cannot_be_reused(fake_broadcaster):
+    _sid, guest = _listening_party()
+    await party_routes.listen(c="conn1", guest=guest)
+    with pytest.raises(party_routes.HTTPException) as e:
+        await party_routes.listen(c="conn1", guest=guest)
+    assert e.value.status_code == 409
+
+
+async def test_a_new_bitrate_ends_the_running_stream(client, fake_broadcaster):
+    _start(client, listen_kbps=192)
+    broadcaster = await party.listen()
+    body = {"max_pending_per_guest": 3, "skip_ratio": 0.5, "listen_kbps": 128}
+    client.post("/party-host/settings", json=body)
+    assert broadcaster.stopped
+    assert (await party.listen()).bitrate_kbps == 128
+
+
+async def test_ending_the_party_ends_the_stream(fake_broadcaster):
+    _listening_party()
+    broadcaster = await party.listen()
+    party.disable()
+    assert broadcaster.stopped
+    assert party.broadcaster is None
+
+
+async def test_guests_get_the_timeline_with_songs_they_may_see(fake_broadcaster):
+    from core.party_broadcast import TimelineEntry
+
+    _listening_party()
+    party.update_snapshot(_snapshot(["a", "b"]))
+    broadcaster = await party.listen()
+    broadcaster.timeline = [
+        TimelineEntry(0.0, "a", 30.0, True),
+        TimelineEntry(170.0, "b", 0.0, True),
+    ]
+    party.rebuild()
+    listen = party.snapshot["listen"]
+    assert listen["enabled"] is True
+    assert listen["epoch"] == "epoch-192"
+    first, second = listen["timeline"]
+    assert first["at"] == 0.0 and first["position"] == 30.0 and first["playing"] is True
+    assert first["song"]["title"] == "Title a"
+    assert first["song"]["cover"].startswith("/party/api/cover?id=")
+    assert "secret-session" not in str(listen)
+    assert second["song"]["id"] == "b"
+
+
+def test_the_stream_follows_the_hosts_window_while_it_plays_locally(client):
+    _start(client)
+    snapshot = dict(_snapshot(["a", "b"]), position=40.0, duration=200, party_gain=0.5)
+    party.update_snapshot(snapshot)
+    party.tab_snapshot_at = time.time() - 2.0
+    hearing = party.host_hearing()
+    assert hearing.song_id == "a"
+    assert hearing.position == pytest.approx(42.0, abs=0.2)
+    assert hearing.playing is True
+    assert hearing.next_song_id == "b"
+    assert hearing.duration == 200
+    assert hearing.gain == 0.5
+
+
+def test_a_paused_window_is_not_moved_on(client):
+    _start(client)
+    party.update_snapshot(dict(_snapshot(["a"]), playing=False, position=40.0))
+    party.tab_snapshot_at = time.time() - 30.0
+    hearing = party.host_hearing()
+    assert hearing.playing is False
+    assert hearing.position == 40.0
+    assert hearing.next_song_id is None
+
+
+def test_a_gain_out_of_range_is_ignored(client):
+    _start(client)
+    party.update_snapshot(dict(_snapshot(["a"]), party_gain=1000))
+    assert party.host_hearing().gain == 1.0
+
+
+def test_a_station_is_followed_by_its_own_address(client):
+    _start(client)
+    snapshot = _radio_snapshot()
+    snapshot["radio"]["stream_url"] = "https://station.example/live.mp3"
+    party.update_snapshot(snapshot)
+    hearing = party.host_hearing()
+    assert hearing.radio_url == "https://station.example/live.mp3"
+    assert hearing.song_id is None and hearing.playing is True
+    # ...which guests never see.
+    party.settings.listen_kbps = 192
+    party.rebuild()
+    assert "live.mp3" not in str(party.snapshot)
+
+
+def test_a_station_address_that_is_not_http_is_not_decoded(client):
+    _start(client)
+    snapshot = _radio_snapshot()
+    snapshot["radio"]["stream_url"] = "file:///etc/passwd"
+    party.update_snapshot(snapshot)
+    assert party.host_hearing() is None
+
+
+def test_the_stream_follows_the_cast_while_the_host_casts(client, default_session):
+    _start(client)
+    party.update_snapshot(_snapshot(["x"], session_id=default_session.session_id))
+    _cast(default_session, ["a", "b", "c"], index=1)
+    st = default_session.state
+    st.clock.start(25.0)
+    st.current_track_gain = 0.8
+    hearing = party.host_hearing()
+    assert hearing.song_id == "b"
+    assert hearing.position == pytest.approx(25.0, abs=0.2)
+    assert hearing.next_song_id == "c"
+    assert hearing.gain == 0.8
+    st.clock.pause(25.0)
+    assert party.host_hearing().playing is False
+
+
+async def test_the_stream_is_decoded_from_the_hosts_media_server(
+    client, default_session, monkeypatch
+):
+    _start(client)
+    party.update_snapshot(_snapshot(["a"], session_id=default_session.session_id))
+    monkeypatch.setattr(
+        default_session.media, "get_stream_url", lambda song_id: f"http://nav/stream/{song_id}"
+    )
+    assert await party._stream_url("a") == "http://nav/stream/a"
+    party.host_session_id = "gone"
+    assert await party._stream_url("a") is None
+
+
+async def test_listening_guests_get_bars_from_the_stream_itself(fake_broadcaster):
+    _sid, guest = _listening_party()
+    with pytest.raises(party_routes.HTTPException) as e:
+        await party_routes.listen_visualizer(guest=guest)
+    assert e.value.status_code == 404  # nothing to analyse before anyone listens
+
+    broadcaster = await party.listen()
+    bands: asyncio.Queue = asyncio.Queue()
+    broadcaster.watch_bands = lambda: bands
+    broadcaster.unwatch_bands = lambda q: None
+    resp = await party_routes.listen_visualizer(guest=guest)
+    gen = resp.body_iterator
+    try:
+        await gen.__anext__()  # retry
+        bands.put_nowait([(10.0, [0.5, 0.25])])
+        message = await gen.__anext__()
+        assert message.startswith("data: ")
+        assert '"frames":[[10.0,[0.5,0.25]]]' in message
+        assert '"epoch":"epoch-192"' in message
+        assert party_routes._listen_visualizers == 1
+        bands.put_nowait(None)
+        with pytest.raises(StopAsyncIteration):
+            await gen.__anext__()
+    finally:
+        await gen.aclose()
+    assert party_routes._listen_visualizers == 0

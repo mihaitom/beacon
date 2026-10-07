@@ -41,6 +41,7 @@ function songSnapshot(): GuestSnapshot {
     },
     radio: null,
     upcoming: [],
+    listen: { enabled: false, epoch: null, timeline: [] },
     me: { name: 'Anna' },
     limits: { max_pending: 3, pending: 0 },
     skip: { enabled: true, votes: 0, needed: 2, mine: false },

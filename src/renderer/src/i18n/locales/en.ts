@@ -402,6 +402,11 @@ export default {
     posterHint: 'Scan with your phone camera',
     failed: "That didn't work - is the backend reachable?",
     wishedBy: 'Wished for by {name}',
+    listen: 'Online party',
+    listenOff: 'Off',
+    listenAac: 'AAC {kbps} kbit/s',
+    listenHint: 'Guests hear the music in their own browser, wherever they are.',
+    listeners: '{count} listening online - about {mbps} Mbit/s upload',
   },
   partyGuest: {
     largeArtwork: 'Large artwork',
@@ -444,6 +449,10 @@ export default {
     errGeneric: "That didn't work - try again.",
     full: 'This party is full.',
     nameTaken: 'That name is taken - please pick another.',
+    listen: 'Listen along',
+    listenStop: 'Stop listening',
+    listenConnecting: 'Connecting…',
+    listenFailed: "The stream isn't playing - tap to try again.",
   },
   remoteControl: {
     title: 'Remote Control',

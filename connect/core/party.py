@@ -26,6 +26,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from urllib.parse import quote
 
+from .party_broadcast import BITRATES_KBPS, Broadcaster, Hearing
 from .remote import KEEPALIVE_TIMEOUT, REAP_INTERVAL, remote
 from .state import EventBus
 
@@ -88,6 +89,13 @@ class Settings:
     # Share of the guests currently connected that have to vote to skip,
     # rounded up and at least one; 0 switches skipping off.
     skip_ratio: float = 0.5
+    # Listening along (core/party_broadcast.py): the AAC bitrate guests get,
+    # one of BITRATES_KBPS, or 0 for off.
+    listen_kbps: int = 0
+
+
+def listen_kbps_allowed(kbps: int) -> bool:
+    return kbps == 0 or kbps in BITRATES_KBPS
 
 
 @dataclass
@@ -160,6 +168,8 @@ class PartyState:
         self._visualizer_task: asyncio.Task | None = None
         # The host's last snapshot as it came, and the songs it named.
         self.tab_snapshot: dict = {}
+        # When it arrived, by this server's clock: its position is as of then.
+        self.tab_snapshot_at = 0.0
         self.songs: dict[str, dict] = {}  # insertion-ordered, see SONG_MEMORY
         # Follows the host's cast session (see _follow_cast).
         self._cast_task: asyncio.Task | None = None
@@ -189,6 +199,8 @@ class PartyState:
         self._backdrop_urls: list[str] = []
         self._backdrop_fetching: set[str] = set()
         self._backdrop_looked_up: set[str] = set()
+        # The listen-along stream, while anyone listens.
+        self.broadcaster: Broadcaster | None = None
 
     # ── Lifecycle ────────────────────────────────────────────────────────
 
@@ -245,6 +257,7 @@ class PartyState:
         if self._cast_task is not None:
             self._cast_task.cancel()
             self._cast_task = None
+        self.stop_listening()
 
     def is_active(self) -> bool:
         if self.enabled and time.time() >= self.expires_at:
@@ -626,6 +639,7 @@ class PartyState:
         """The host's window pushed a snapshot (see receive_snapshot)."""
         self.host_session_id = raw.get("session_id") or self.host_session_id
         self.tab_snapshot = raw
+        self.tab_snapshot_at = time.time()
         self.remember_song(raw.get("current_song"))
         for song in raw.get("queue") or []:
             self.remember_song(song)
@@ -709,6 +723,7 @@ class PartyState:
             "current_song": current_song,
             "radio": self.guest_radio(radio) if radio else None,
             "upcoming": upcoming,
+            "listen": self._listen_snapshot(),
         }
 
     def _set_backdrop(self, raw: dict, session, current_song, extras: bool) -> None:
@@ -781,6 +796,9 @@ class PartyState:
         return {
             **self.snapshot,
             "upcoming": upcoming,
+            # Before the host's window has pushed anything there is no
+            # snapshot yet, but whether guests may listen along is known.
+            "listen": self.snapshot.get("listen") or self._listen_snapshot(),
             "me": {"name": guest.name},
             "limits": {
                 "max_pending": self.settings.max_pending_per_guest,
@@ -944,6 +962,149 @@ class PartyState:
 
     async def broadcast(self) -> None:
         await self.event_bus.broadcast({"kind": "update"})
+
+    # ── Listening along ──────────────────────────────────────────────────
+
+    def host_hearing(self) -> Hearing | None:
+        """What the host hears right now: the cast session's clock while
+        casting (the speaker's own position), otherwise the host window's
+        last snapshot, moved on by the time since it arrived."""
+        session = self.host_cast()
+        if session is not None:
+            from .session import compute_position
+
+            st = session.state
+            index = st.queue_index
+            following = st.queue[index + 1] if 0 <= index < len(st.queue) - 1 else None
+            return Hearing(
+                song_id=st.current_track.id,
+                position=compute_position(session),
+                playing=st.is_streaming and not st.clock.is_paused,
+                duration=float(st.current_track.duration or 0),
+                next_song_id=following,
+                gain=st.current_track_gain,
+            )
+        raw = self.tab_snapshot
+        if not raw:
+            return None
+        playing = bool(raw.get("playing"))
+        radio = raw.get("radio")
+        if isinstance(radio, dict):
+            # The station's own address: guests never see it, the stream
+            # decodes it here.
+            url = radio.get("stream_url")
+            if not isinstance(url, str) or not url.startswith(("http://", "https://")):
+                return None
+            return Hearing(song_id=None, position=0.0, playing=playing, radio_url=url)
+        current = raw.get("current_song")
+        if not isinstance(current, dict) or not current.get("id"):
+            return None
+        position = float(raw.get("position") or 0)
+        if playing:
+            position += max(time.time() - self.tab_snapshot_at, 0.0)
+        queue = raw.get("queue") or []
+        index = raw.get("queue_index", -1)
+        following = None
+        if isinstance(index, int) and 0 <= index < len(queue) - 1:
+            following = (queue[index + 1] or {}).get("id")
+        gain = raw.get("party_gain")
+        return Hearing(
+            song_id=current["id"],
+            position=position,
+            playing=playing,
+            duration=float(raw.get("duration") or 0),
+            next_song_id=following,
+            gain=float(gain) if isinstance(gain, int | float) and 0 < gain <= 4 else 1.0,
+        )
+
+    async def _stream_url(self, song_id: str) -> str | None:
+        from .session import registry
+
+        session = registry.get(self.host_session_id) if self.host_session_id else None
+        if session is None:
+            return None
+        return await asyncio.to_thread(session.media.get_stream_url, song_id)
+
+    async def listen(self) -> Broadcaster | None:
+        """The listen-along stream, started for the first guest who wants
+        it. None while the host has it switched off."""
+        kbps = self.settings.listen_kbps
+        if not self.enabled or not kbps:
+            return None
+        current = self.broadcaster
+        if current is not None and not current.stopped and current.bitrate_kbps == kbps:
+            return current
+        self.stop_listening()
+        broadcaster = Broadcaster(
+            kbps,
+            self.host_hearing,
+            self._stream_url,
+            on_timeline=self._timeline_changed,
+            on_stopped=self._broadcast_stopped,
+        )
+        self.broadcaster = broadcaster
+        try:
+            await broadcaster.start()
+        except Exception as e:
+            logger.warning(f"[party] Could not start listening along: {e}")
+            self.stop_listening()
+            return None
+        # Guests learn the new stream's epoch with the next snapshot.
+        self._timeline_changed()
+        return broadcaster
+
+    def stop_listening(self) -> None:
+        """Ends the stream; listening guests reconnect to the next one."""
+        if self.broadcaster is not None:
+            self.broadcaster.stop()
+        self.broadcaster = None
+
+    @property
+    def listeners(self) -> int:
+        b = self.broadcaster
+        return b.listeners if b is not None and not b.stopped else 0
+
+    def _broadcast_stopped(self, broadcaster: Broadcaster) -> None:
+        if self.broadcaster is broadcaster:
+            self.broadcaster = None
+            self._timeline_changed()
+
+    def _timeline_changed(self) -> None:
+        try:
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        asyncio.create_task(self._tell_timeline())
+
+    async def _tell_timeline(self) -> None:
+        if not self.enabled:
+            return
+        previous = self.snapshot
+        self.rebuild()
+        if self._worth_telling(previous, self.snapshot):
+            await self.broadcast()
+
+    def _listen_snapshot(self) -> dict:
+        """Whether guests can listen along, and - while the stream runs -
+        which song it plays from which stream time on, so a listening page
+        can tell what it hears (core/party_broadcast.py)."""
+        b = self.broadcaster
+        running = b is not None and not b.stopped
+        return {
+            "enabled": self.settings.listen_kbps > 0,
+            "epoch": b.epoch if running else None,
+            "timeline": [
+                {
+                    "at": round(entry.stream_time, 3),
+                    "song": self.guest_song(self.songs.get(entry.song_id))
+                    if entry.song_id
+                    else None,
+                    "position": round(entry.position, 3),
+                    "playing": entry.playing,
+                }
+                for entry in (b.timeline if running else [])
+            ],
+        }
 
     # ── Skip votes ───────────────────────────────────────────────────────
 

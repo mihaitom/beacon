@@ -20,6 +20,7 @@ import logging
 import re
 import secrets
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -34,6 +35,7 @@ from fastapi.responses import (
 from pydantic import BaseModel
 
 from core import fanart, party_library, party_queue
+from core.audio_fanout import send_sentinel
 from core.auth import require_token
 from core.party import (
     DEFAULT_DURATION_HOURS,
@@ -41,8 +43,10 @@ from core.party import (
     MAX_STREAMS_TOTAL,
     Guest,
     clean_name,
+    listen_kbps_allowed,
     party,
 )
+from core.party_broadcast import Broadcaster
 from core.session import registry
 from core.state import PORT, get_local_ip
 from core.trusted_proxies import client_ip, is_trusted_proxy
@@ -65,6 +69,10 @@ SEARCHES = (60, 60)
 COVERS = (600, 60)
 LYRICS = (30, 60)
 MAX_VISUALIZER_STREAMS = 50
+# Listening along. Two per guest, so a reconnect can open the new stream
+# before the old one is noticed gone; a third ends the oldest instead.
+MAX_LISTEN_PER_GUEST = 2
+MAX_LISTEN_STREAMS = 50
 
 # Ids as the media servers hand them out (Navidrome's hex, Jellyfin's GUIDs,
 # Plex's rating keys, versions appended with "_") - and nothing that could
@@ -126,6 +134,7 @@ class EnableRequest(BaseModel):
     duration_hours: float = DEFAULT_DURATION_HOURS
     max_pending_per_guest: int = 3
     skip_ratio: float = 0.5
+    listen_kbps: int = 0
     tab_id: str = ""
 
 
@@ -144,11 +153,20 @@ def _check_tab_id(tab_id: str) -> str | None:
 class SettingsRequest(BaseModel):
     max_pending_per_guest: int
     skip_ratio: float
+    listen_kbps: int = 0
 
 
-def _apply_settings(max_pending: int, skip_ratio: float) -> None:
+def _apply_settings(max_pending: int, skip_ratio: float, listen_kbps: int) -> None:
+    if not listen_kbps_allowed(listen_kbps):
+        raise HTTPException(status_code=422, detail="Unsupported listen-along bitrate")
     party.settings.max_pending_per_guest = min(max(max_pending, 1), 50)
     party.settings.skip_ratio = min(max(skip_ratio, 0.0), 1.0)
+    if listen_kbps != party.settings.listen_kbps:
+        party.settings.listen_kbps = listen_kbps
+        # Guests listening reconnect to a stream at the new bitrate, or hear
+        # the end of it.
+        party.stop_listening()
+        party.rebuild()
 
 
 def _host_status() -> dict:
@@ -160,6 +178,8 @@ def _host_status() -> dict:
         "guests": party.guest_list(),
         "max_pending_per_guest": party.settings.max_pending_per_guest,
         "skip_ratio": party.settings.skip_ratio,
+        "listen_kbps": party.settings.listen_kbps,
+        "listeners": party.listeners if party.enabled else 0,
         "host_tab": party.host_tab if party.enabled else None,
     }
 
@@ -167,9 +187,11 @@ def _host_status() -> dict:
 @host_router.post("/enable")
 async def enable_party(req: EnableRequest):
     tab_id = _check_tab_id(req.tab_id)
+    if not listen_kbps_allowed(req.listen_kbps):
+        raise HTTPException(status_code=422, detail="Unsupported listen-along bitrate")
     token = party.enable(req.duration_hours)
     party.host_tab = tab_id
-    _apply_settings(req.max_pending_per_guest, req.skip_ratio)
+    _apply_settings(req.max_pending_per_guest, req.skip_ratio, req.listen_kbps)
     await party.broadcast()
     return {"token": token, **_host_status()}
 
@@ -214,7 +236,7 @@ async def party_status():
 
 @host_router.post("/settings")
 async def update_settings(req: SettingsRequest):
-    _apply_settings(req.max_pending_per_guest, req.skip_ratio)
+    _apply_settings(req.max_pending_per_guest, req.skip_ratio, req.listen_kbps)
     await party.broadcast()
     return _host_status()
 
@@ -663,6 +685,126 @@ async def visualizer(guest: Guest = Depends(require_guest)):
                 yield f"data: {json.dumps({'bands': [round(b, 3) for b in bands]})}\n\n"
         finally:
             party.unwatch_visualizer(queue)
+
+    return StreamingResponse(
+        generator(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
+
+
+@dataclass
+class _Listener:
+    guest_id: str
+    broadcaster: Broadcaster
+    queue: asyncio.Queue
+    opened_at: float
+
+
+# Open listen-along streams, by the connection id the page made up for each.
+_listeners: dict[str, _Listener] = {}
+
+
+def _end_listener(conn: str) -> None:
+    listener = _listeners.pop(conn, None)
+    if listener is not None:
+        listener.broadcaster.unsubscribe(listener.queue)
+        send_sentinel(listener.queue)
+
+
+@router.get("/api/listen")
+async def listen(c: str = Query(...), guest: Guest = Depends(require_guest)):
+    """The live stream of what the host hears (core/party_broadcast.py).
+    `c` is an id the page makes up for this one connection, to ask
+    /api/listen/start where in the stream its audio begins."""
+    conn = _check_id(c)
+    if conn in _listeners:
+        raise HTTPException(status_code=409, detail="Connection id in use")
+    mine = sorted(
+        (key for key, value in _listeners.items() if value.guest_id == guest.guest_id),
+        key=lambda key: _listeners[key].opened_at,
+    )
+    while len(mine) >= MAX_LISTEN_PER_GUEST:
+        _end_listener(mine.pop(0))
+    if len(_listeners) >= MAX_LISTEN_STREAMS:
+        raise HTTPException(status_code=429, detail="Too many open connections")
+    broadcaster = await party.listen()
+    if broadcaster is None:
+        raise HTTPException(status_code=404)
+    queue = broadcaster.subscribe()
+    _listeners[conn] = _Listener(guest.guest_id, broadcaster, queue, time.monotonic())
+
+    async def generator():
+        try:
+            while party.guest_alive(guest):
+                try:
+                    chunk = await asyncio.wait_for(queue.get(), timeout=5.0)
+                except TimeoutError:
+                    continue
+                if chunk is None:
+                    return
+                yield chunk
+        finally:
+            if _listeners.get(conn) is not None and _listeners[conn].queue is queue:
+                _end_listener(conn)
+
+    return StreamingResponse(
+        generator(),
+        media_type="audio/aac",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.get("/api/listen/start")
+async def listen_start(c: str = Query(...), guest: Guest = Depends(require_guest)):
+    """Where connection `c`'s audio begins, in stream time - null until
+    its first audio has been handed to it."""
+    listener = _listeners.get(_check_id(c))
+    if listener is None or listener.guest_id != guest.guest_id:
+        raise HTTPException(status_code=404)
+    return {
+        "epoch": listener.broadcaster.epoch,
+        "start": listener.broadcaster.start_time(listener.queue),
+    }
+
+
+_listen_visualizers = 0
+
+
+@router.get("/api/listen/visualizer")
+async def listen_visualizer(guest: Guest = Depends(require_guest)):
+    """The bars for a guest listening along, from the stream's own audio:
+    batches of [stream time, bands], which the page shows once it hears
+    that stream time. Counted against the same cap as /api/visualizer."""
+    global _listen_visualizers
+    if len(party.visualizer_queues) + _listen_visualizers >= MAX_VISUALIZER_STREAMS:
+        raise HTTPException(status_code=429, detail="Too many open connections")
+    broadcaster = party.broadcaster
+    if broadcaster is None or broadcaster.stopped:
+        raise HTTPException(status_code=404)
+    queue = broadcaster.watch_bands()
+    _listen_visualizers += 1
+
+    async def generator():
+        global _listen_visualizers
+        try:
+            yield "retry: 3000\n\n"
+            while party.guest_alive(guest):
+                try:
+                    frames = await asyncio.wait_for(queue.get(), timeout=1.0)
+                except TimeoutError:
+                    yield ": idle\n\n"
+                    continue
+                if frames is None:
+                    return
+                payload = {
+                    "epoch": broadcaster.epoch,
+                    "frames": [[round(t, 3), [round(b, 2) for b in bands]] for t, bands in frames],
+                }
+                yield f"data: {json.dumps(payload, separators=(',', ':'))}\n\n"
+        finally:
+            broadcaster.unwatch_bands(queue)
+            _listen_visualizers -= 1
 
     return StreamingResponse(
         generator(),

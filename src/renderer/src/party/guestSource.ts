@@ -13,7 +13,7 @@ import { extractDominantColor } from '@/services/colorExtractor'
 import { resampleBands } from '@/services/visualizerBands'
 import { visualizerBarColor } from '@/services/visualizerColor'
 import type { GuestRadio, GuestSong } from './api'
-import { BACKDROP_URL, VISUALIZER_URL } from './api'
+import { BACKDROP_URL, LISTEN_VISUALIZER_URL, VISUALIZER_URL } from './api'
 import { usePartyGuestStore } from './store'
 import type {
   NowPlayingPanel,
@@ -28,6 +28,25 @@ const FALLBACK_COLOR = '245, 169, 78'
 // The app's cast smoothing (see NowPlayingView's SMOOTHING_CAST): the
 // guest's feed is the same ~23ms backend frames.
 const SMOOTHING_CAST = 0.3
+
+// Listening along: frames older than this behind what is heard are of no
+// more use, and the newest are kept only as far ahead as a guest's buffer
+// can plausibly be.
+const LISTEN_FRAMES_BEHIND_SECONDS = 1
+const LISTEN_FRAMES_AHEAD_SECONDS = 30
+
+type ListenFrame = [number, number[]]
+
+/** The latest frame at or before `time`, dropping the ones before it. */
+export function takeListenFrame(frames: ListenFrame[], time: number): number[] | null {
+  let index = -1
+  for (let i = 0; i < frames.length && frames[i]![0] <= time; i++) index = i
+  if (index < 0) return null
+  const bands = frames[index]![1]
+  const stale = frames.findIndex((frame) => frame[0] >= time - LISTEN_FRAMES_BEHIND_SECONDS)
+  frames.splice(0, Math.min(stale < 0 ? frames.length : stale, index))
+  return bands
+}
 
 // How long before a track ends the corner starts announcing the next one,
 // matching NowPlayingView's own NEXT_UP_SECONDS.
@@ -105,6 +124,10 @@ export function useGuestNowPlayingSource(
   const backdropIndex = ref<number | null>(null)
   const bands = ref<number[] | null>(null)
   let visualizerEvents: EventSource | null = null
+  // Listening along: the stream's own frames, by stream time, shown once
+  // this guest hears them. Plain, not reactive - sampled per animation frame.
+  let listenFrames: ListenFrame[] = []
+  let listenVisualizerEvents: EventSource | null = null
 
   function persist(name: Preference, value: boolean): void {
     try {
@@ -114,14 +137,16 @@ export function useGuestNowPlayingSource(
     }
   }
 
+  // While listening along, the song this guest hears, a few seconds behind
+  // the host (see party/store.ts's displaySong).
   const song: ComputedRef<NowPlayingSong | null> = computed(() =>
-    toNowPlayingSong(store.snapshot?.current_song ?? null),
+    toNowPlayingSong(store.displaySong),
   )
   const radio: ComputedRef<NowPlayingRadio | null> = computed(() =>
     toNowPlayingRadio(store.snapshot?.radio ?? null),
   )
-  const playing = computed(() => store.snapshot?.playing ?? false)
-  const duration = computed(() => store.snapshot?.duration ?? 0)
+  const playing = computed(() => store.displayPlaying)
+  const duration = computed(() => store.displayDuration)
   const artworkLarge = computed(() => largeArtwork.value || !store.snapshot?.backdrop)
   const artworkHidden = computed(() => Boolean(store.snapshot?.backdrop) && !artworkLarge.value)
 
@@ -167,7 +192,11 @@ export function useGuestNowPlayingSource(
   })
 
   const lyrics = computed(() => store.currentLyrics)
-  const visualizerAvailable = computed(() => Boolean(store.snapshot?.casting && song.value))
+  // While listening along the bars come from the stream itself, so they
+  // exist during the host's local playback too.
+  const visualizerAvailable = computed(() =>
+    Boolean((store.listening || store.snapshot?.casting) && song.value),
+  )
   const visualizerActive = computed(
     () => showVisualizer.value && visualizerAvailable.value && playing.value,
   )
@@ -239,6 +268,35 @@ export function useGuestNowPlayingSource(
     bands.value = null
   }
 
+  function openListenVisualizer(): void {
+    if (listenVisualizerEvents) return
+    listenFrames = []
+    listenVisualizerEvents = new EventSource(LISTEN_VISUALIZER_URL, { withCredentials: true })
+    listenVisualizerEvents.onmessage = (event: MessageEvent<string>) => {
+      const data = JSON.parse(event.data) as { frames: ListenFrame[] }
+      listenFrames.push(...data.frames)
+      const heard = store.heardTimeNow()
+      const newest = listenFrames.at(-1)?.[0] ?? 0
+      const floor = (heard ?? newest) - LISTEN_FRAMES_AHEAD_SECONDS
+      if ((listenFrames[0]?.[0] ?? 0) < floor) {
+        listenFrames = listenFrames.filter((frame) => frame[0] >= floor)
+      }
+    }
+  }
+
+  function closeListenVisualizer(): void {
+    listenVisualizerEvents?.close()
+    listenVisualizerEvents = null
+    listenFrames = []
+  }
+
+  function sampleBands(): number[] | null {
+    if (!store.listening) return resampleBands(bands.value)
+    const heard = store.heardTimeNow()
+    if (heard === null) return null
+    return resampleBands(takeListenFrame(listenFrames, heard))
+  }
+
   async function loadColor(url: string, target: 'coverColor' | 'backdropColor'): Promise<void> {
     const rgb = await extractDominantColor(url)
     // The song or the picture may have changed while this loaded.
@@ -279,8 +337,13 @@ export function useGuestNowPlayingSource(
       },
     ),
     watch(
-      () => visualizerActive.value && isOnScreen(),
+      () => visualizerActive.value && isOnScreen() && !store.listening,
       (live) => (live ? openVisualizer() : closeVisualizer()),
+      { immediate: true },
+    ),
+    watch(
+      () => visualizerActive.value && isOnScreen() && store.listening,
+      (live) => (live ? openListenVisualizer() : closeListenVisualizer()),
       { immediate: true },
     ),
   ]
@@ -322,7 +385,7 @@ export function useGuestNowPlayingSource(
       active: visualizerActive,
       color: visualizerColor,
       smoothing: SMOOTHING_CAST,
-      sample: () => resampleBands(bands.value),
+      sample: sampleBands,
       debug: null,
     }),
     capabilities: reactive({
@@ -380,6 +443,7 @@ export function useGuestNowPlayingSource(
     dispose: () => {
       stops.forEach((stop) => stop())
       closeVisualizer()
+      closeListenVisualizer()
     },
   }
 }

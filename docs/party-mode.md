@@ -26,6 +26,7 @@ alike.
 | Search songs and albums and wish for a song        | Remove or move anything but their own wish |
 | Withdraw their own wish until it starts playing    | See who other guests are beyond a name     |
 | Vote to skip the current song                      | Reach anything outside `/party/`           |
+| Listen online, when the host allows it             | Hear anything but what the host hears      |
 
 Wishes go into a block right after the current song, taking turns between
 guests: three wishes from Anna and then one from Ben play as Anna, Ben, Anna,
@@ -40,6 +41,35 @@ controls.
 While a radio station plays there is no queue to wish into: what's next and
 the search make way for a note saying so, and a wish that arrives anyway is
 refused.
+
+## Online party
+
+A party does not have to happen in one room. With "Online party" switched on
+in the party dialog, guests hear the music in their own browser, wherever
+they are - at home, on the train, in another office - and wish, vote and
+read along as everyone else does. The host picks the quality there (AAC at
+128, 192 or 256 kbit/s); it is off until then. Guests then get a headphones
+button next to the skip vote, and tapping it plays what the host plays: the
+songs while the host casts or plays locally, and a radio station too.
+Nothing changes for the host.
+
+A guest listening online is a few seconds behind the host, the buffer that
+carries a phone through a dead spot on mobile data. The song card, the
+lyrics and the visualizer follow what that guest hears, not what the host
+hears, so they stay in step with the music; what's next, the search and the
+skip vote stay live. The visualizer works for them even while the host plays
+locally.
+
+Each listener costs upload bandwidth on the Beacon server: about the chosen
+bitrate per guest, so ten guests at 192 kbit/s are around 2 Mbit/s. The
+party dialog shows how many are listening and roughly what that adds up to.
+
+Streaming a music library over the internet to people outside the household
+is legally a different thing from playing it at a party in one room. Whether
+that is fine where you live is your decision. The same goes for your proxy
+or CDN: a free CDN plan (Cloudflare's, for example) may not allow continuous
+audio through it, so check its terms or serve the party from a hostname
+that bypasses the CDN.
 
 ## Security model
 
@@ -98,6 +128,8 @@ behind your reverse proxy. Whichever proxy it is:
   route of its own without it - the examples below do exactly that. Without a
   forward-auth, an ordinary proxy host is enough and nothing else changes:
   `/party/` is the only part a guest can use without Beacon's own login.
+  The online party's stream is part of it (`/party/api/listen`), so
+  nothing else needs opening for it.
 - **The `Host` header goes through unchanged.** Changing requests are
   checked against it (see "Browser hardening" above). All three proxies
   below do that by default.

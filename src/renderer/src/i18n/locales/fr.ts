@@ -406,6 +406,11 @@ export default {
     posterHint: "Scanne avec l'appareil photo de ton téléphone",
     failed: "Ça n'a pas marché - le backend est-il joignable ?",
     wishedBy: 'Demandé par {name}',
+    listen: 'Fête en ligne',
+    listenOff: 'Désactivée',
+    listenAac: 'AAC {kbps} kbit/s',
+    listenHint: 'Les invités écoutent la musique dans leur navigateur, où qu’ils soient.',
+    listeners: '{count} à l’écoute en ligne - environ {mbps} Mbit/s en envoi',
   },
   partyGuest: {
     largeArtwork: 'Grande pochette',
@@ -448,6 +453,10 @@ export default {
     errGeneric: "Ça n'a pas marché - réessaie.",
     full: 'Cette fête est complète.',
     nameTaken: 'Ce nom est déjà pris, choisis-en un autre.',
+    listen: 'Écouter',
+    listenStop: 'Arrêter l’écoute',
+    listenConnecting: 'Connexion…',
+    listenFailed: 'Le flux ne joue pas - touche pour réessayer.',
   },
   remoteControl: {
     title: 'Contrôle à distance',

@@ -133,7 +133,7 @@ Two different answers to "control Beacon from my phone", depending on how you ru
 
 ### Party mode
 
-The party button in the player bar invites guests with a QR code or a link: they get a page in Beacon's look (on a computer Now Playing with artist background and synced lyrics, on a phone the mobile layout, the visualizer while casting), see what is coming up, search the library and wish for songs, which take turns between guests right after the current one. They can withdraw their own wishes and vote to skip, and nothing else - no pausing, no speakers, no volume. Works in the desktop app and the Docker/web build; everything guests use lives under `/party/`, so a reverse proxy can let just that past its login. See [docs/party-mode.md](docs/party-mode.md) for the security model and examples for Traefik, Nginx Proxy Manager and Caddy.
+The party button in the player bar invites guests with a QR code or a link: they get a page in Beacon's look (on a computer Now Playing with artist background and synced lyrics, on a phone the mobile layout, the visualizer while casting), see what is coming up, search the library and wish for songs, which take turns between guests right after the current one. They can withdraw their own wishes and vote to skip, and nothing else - no pausing, no speakers, no volume. As an online party, guests hear the music in their own browser wherever they are, if the host switches that on. Works in the desktop app and the Docker/web build; everything guests use lives under `/party/`, so a reverse proxy can let just that past its login. See [docs/party-mode.md](docs/party-mode.md) for the security model and examples for Traefik, Nginx Proxy Manager and Caddy.
 
 ---
 

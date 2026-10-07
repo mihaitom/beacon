@@ -36,6 +36,9 @@ export interface PartySettings {
   /** Share of connected guests needed to skip; 0 switches skipping off. */
   skipRatio: number
   durationHours: number
+  /** AAC bitrate guests can listen along at (connect's
+   * core/party_broadcast.py); 0 switches listening along off. */
+  listenKbps: number
 }
 
 function fromCast(request: CastPartyRequest, song: Song): PartyRequest & { position: number } {
@@ -77,6 +80,8 @@ interface PartyState {
   lanIp: string
   port: number
   guests: PartyGuest[]
+  /** Guests listening along right now. */
+  listeners: number
   requests: PartyRequest[]
   /** While the host casts, connect holds the wishes and this window only
    * shows them (from the cast session's status); null otherwise, when
@@ -94,6 +99,7 @@ const DEFAULT_SETTINGS: PartySettings = {
   maxPendingPerGuest: 3,
   skipRatio: 0.5,
   durationHours: 12,
+  listenKbps: 0,
 }
 
 let fallbackTabId: string | null = null
@@ -176,6 +182,7 @@ export const usePartyStore = defineStore('party', {
     lanIp: '',
     port: 0,
     guests: [],
+    listeners: 0,
     requests: [],
     castRequests: null,
     settings: loadSettings(),
@@ -235,6 +242,7 @@ export const usePartyStore = defineStore('party', {
         void updatePartySettings({
           max_pending_per_guest: this.settings.maxPendingPerGuest,
           skip_ratio: this.settings.skipRatio,
+          listen_kbps: this.settings.listenKbps,
         })
           .then((status) => this.applyStatus(status))
           .catch(() => {})
@@ -247,6 +255,7 @@ export const usePartyStore = defineStore('party', {
       this.lanIp = status.lan_ip
       this.port = status.port
       this.guests = status.guests
+      this.listeners = status.listeners ?? 0
       if (!status.enabled) this.stopped()
       // Another window took the party over (see takeOver()).
       else if (this.hostedHere && status.host_tab !== tabId()) this.stopped()
@@ -257,6 +266,7 @@ export const usePartyStore = defineStore('party', {
         duration_hours: this.settings.durationHours,
         max_pending_per_guest: this.settings.maxPendingPerGuest,
         skip_ratio: this.settings.skipRatio,
+        listen_kbps: this.settings.listenKbps,
         tab_id: tabId(),
       })
       this.inviteToken = invite.token
@@ -431,6 +441,7 @@ export const usePartyStore = defineStore('party', {
       this.hostedHere = false
       this.inviteToken = null
       this.guests = []
+      this.listeners = 0
       this.requests = []
       this.expiresAt = null
       if (statusTimer) clearInterval(statusTimer)

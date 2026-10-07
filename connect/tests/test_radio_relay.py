@@ -7,6 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 
+import core.audio_fanout as fanout_mod
 import core.radio_relay as relay_mod
 from core.radio_relay import RadioRelay, _device_output_args, relay_format_for_target
 
@@ -822,7 +823,7 @@ class TestRadioRelayFetchLoop:
         source and costs full-speed decode+FFT to work through, starving
         the loop device audio is paced on. Heard live 2026-09-03 as
         speaker dropouts with a frozen visualizer."""
-        chunks = [b"c%d" % i for i in range(relay_mod._ANALYSIS_QUEUE_MAXSIZE + 3)]
+        chunks = [b"c%d" % i for i in range(fanout_mod.ANALYSIS_QUEUE_MAXSIZE + 3)]
         relay, _proc, _ = _relay_with_fake_ffmpeg(stdout_chunks=chunks)
         stream = _mock_stream({}, [])
 
@@ -838,7 +839,7 @@ class TestRadioRelayFetchLoop:
             item = q.get_nowait()
             if item is not None:
                 held.append(item)
-        assert len(held) <= relay_mod._ANALYSIS_QUEUE_MAXSIZE
+        assert len(held) <= fanout_mod.ANALYSIS_QUEUE_MAXSIZE
         # The live edge survived; the start of the stream was discarded.
         assert chunks[-1] in held
         assert chunks[0] not in held
@@ -855,7 +856,7 @@ class TestRadioRelayFetchLoop:
         stream = _mock_stream({}, [])
 
         with (
-            patch.object(relay_mod, "_AUDIO_QUEUE_MAXSIZE", size),
+            patch.object(fanout_mod, "AUDIO_QUEUE_MAXSIZE", size),
             patch.object(relay_mod._client, "stream", stream),
         ):
             await relay.start()

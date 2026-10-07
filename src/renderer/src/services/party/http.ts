@@ -15,6 +15,10 @@ export interface PartyStatus {
   guests: PartyGuest[]
   max_pending_per_guest: number
   skip_ratio: number
+  /** Listening along: the guests' AAC bitrate, 0 while it is off. */
+  listen_kbps: number
+  /** Guests listening along right now. */
+  listeners: number
   /** Which window answers guests - see stores/party.ts's tabId(). */
   host_tab: string | null
 }
@@ -28,6 +32,7 @@ export interface PartyInvite extends PartyStatus {
 export interface PartySettings {
   max_pending_per_guest: number
   skip_ratio: number
+  listen_kbps: number
 }
 
 /** The host side of party mode (connect's /party-host/*, CONNECT_TOKEN).

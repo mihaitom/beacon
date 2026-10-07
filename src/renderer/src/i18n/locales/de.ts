@@ -402,6 +402,11 @@ export default {
     posterHint: 'Mit der Handykamera scannen',
     failed: 'Das hat nicht geklappt - ist das Backend erreichbar?',
     wishedBy: 'Gewünscht von {name}',
+    listen: 'Online-Party',
+    listenOff: 'Aus',
+    listenAac: 'AAC {kbps} kbit/s',
+    listenHint: 'Gäste hören die Musik in ihrem eigenen Browser, egal wo sie sind.',
+    listeners: '{count} hören online mit - etwa {mbps} Mbit/s Upload',
   },
   partyGuest: {
     largeArtwork: 'Großes Cover',
@@ -444,6 +449,10 @@ export default {
     errGeneric: 'Das hat nicht geklappt - nochmal versuchen.',
     full: 'Diese Party ist voll.',
     nameTaken: 'Dieser Name ist schon vergeben - bitte einen anderen wählen.',
+    listen: 'Mithören',
+    listenStop: 'Mithören beenden',
+    listenConnecting: 'Verbinde…',
+    listenFailed: 'Der Stream spielt nicht - tippen, um es nochmal zu versuchen.',
   },
   remoteControl: {
     title: 'Fernsteuerung',

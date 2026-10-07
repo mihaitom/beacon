@@ -406,6 +406,11 @@ export default {
     posterHint: 'Escanéalo con la cámara del móvil',
     failed: 'No ha funcionado. ¿Está accesible el backend?',
     wishedBy: 'Pedida por {name}',
+    listen: 'Fiesta online',
+    listenOff: 'Desactivado',
+    listenAac: 'AAC {kbps} kbit/s',
+    listenHint: 'Los invitados oyen la música en su propio navegador, estén donde estén.',
+    listeners: '{count} escuchando online - unos {mbps} Mbit/s de subida',
   },
   partyGuest: {
     largeArtwork: 'Portada grande',
@@ -448,6 +453,10 @@ export default {
     errGeneric: 'No ha funcionado, inténtalo de nuevo.',
     full: 'Esta fiesta está llena.',
     nameTaken: 'Ese nombre ya está en uso; elige otro.',
+    listen: 'Escuchar',
+    listenStop: 'Dejar de escuchar',
+    listenConnecting: 'Conectando…',
+    listenFailed: 'El stream no suena - toca para intentarlo de nuevo.',
   },
   remoteControl: {
     title: 'Control remoto',

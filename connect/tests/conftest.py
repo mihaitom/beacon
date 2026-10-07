@@ -375,6 +375,11 @@ def reset_state():
     party_module.party.host_session_id = None
     party_module.party.current_song_id = None
     party_module.party.settings = party_module.Settings()
+    party_module.party.tab_snapshot_at = 0.0
+    from routes import party as party_routes_module
+
+    party_routes_module._listeners.clear()
+    party_routes_module._listen_visualizers = 0
     yield
 
 

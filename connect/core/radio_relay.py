@@ -71,14 +71,13 @@ import asyncio
 import logging
 import os
 import time
-from collections import deque
 from collections.abc import Awaitable, Callable
-from contextlib import suppress
 
 import httpx
 
 from lyrics.shared import USER_AGENT
 
+from .audio_fanout import AudioFanout
 from .ffmpeg import FFMPEG_BIN
 from .icy_metadata import IcyDemuxer, parse_bitrate, parse_codec
 from .stream_format import is_station_refusal, usable_content_type
@@ -223,7 +222,7 @@ def _burst_limits() -> tuple[float, int]:
 # -flush_packets 1: without it, ffmpeg's muxer holds packets back and
 # writes to pipe:1 in bursts rather than as each one is ready — fine for a
 # file, audible as stutter for a live restream feeding a queue-based
-# fan-out downstream (see _AUDIO_QUEUE_MAXSIZE's own comment: a burst
+# fan-out downstream (see core/audio_fanout.py's AUDIO_QUEUE_MAXSIZE: a burst
 # large enough to fill that queue means real audio bytes get dropped, not
 # just delayed). Reported live 2026-09-01 as "stottert recht arg" while
 # casting, with local playback (which never goes through this relay at
@@ -247,38 +246,6 @@ _AAC_SOURCE_CONTENT_TYPES = ("audio/aac", "audio/aacp", "audio/x-aac")
 # codec, so a codec change gets headroom rather than the same number.
 _CODEC_CHANGE_FLOOR_KBPS = 192
 _MP3_CONTENT_TYPE = "audio/mpeg"
-
-# Generous on purpose, now that a burst is possible (see -flush_packets
-# above for why one shouldn't normally happen any more, and this is the
-# backstop for whatever burst still gets through it): at the 8KiB chunks
-# _fan_out_audio() reads, a queue this size holds roughly 33MB — about
-# twenty minutes of 192kbps audio — before a subscriber that is never
-# coming back starts costing memory instead of just falling behind. The
-# old, much smaller value (64 - a few seconds) is what let a single burst
-# overflow it and start dropping real audio bytes, which reads as
-# stutter, not silence.
-_AUDIO_QUEUE_MAXSIZE = 4000
-
-# The same fan-out, for a subscriber that would rather skip forward than
-# fall behind: the visualizer's analyzer (core/visualizer_feed.py). A
-# device must never lose a byte, so its queue is sized to outlast any
-# burst — but for analysis, old audio is worthless. Buffering minutes of
-# it and then racing to "catch up" is actively harmful: the catch-up runs
-# with no pacing at all (_read_pcm()'s own lookahead cap only throttles
-# running *ahead*, and a backlog is the other direction), so it decodes
-# and FFTs at full CPU speed for as long as the backlog lasts, starving
-# the event loop that device audio is also being paced on. Reported live
-# 2026-09-03: a 10s device scan was enough to put the analyzer behind, and
-# the recovery from it produced audible dropouts on the speaker plus a
-# visualizer that stayed frozen — every frame it computed afterwards was
-# minutes late and got dropped by _release_frames().
-#
-# A few seconds is all analysis can use. Beyond that the oldest bytes are
-# dropped, not the newest (see _fan_out_audio()), so this subscriber stays
-# at the live edge instead of accumulating a debt it can never usefully
-# repay.
-_ANALYSIS_QUEUE_MAXSIZE = 48
-
 
 # How long start() waits for the first connection attempt to resolve one
 # way or the other before giving up on it. Not a timeout on the fetch
@@ -318,22 +285,6 @@ _ORPHAN_TIMEOUT_SECONDS = 90.0
 # How often that is checked. Coarse on purpose — this decides a timeout
 # measured in minutes, not a moment.
 _ORPHAN_CHECK_INTERVAL_SECONDS = 5.0
-
-
-def _send_sentinel(q: "asyncio.Queue[bytes | None]") -> None:
-    """Hand a subscriber the `None` that means "the relay has stopped for
-    good". Has to arrive even on a queue that is already full, or the
-    subscriber blocked on it never learns to stop waiting — and a full
-    queue is an entirely expected state here, not an anomaly:
-    _fan_out_audio() lets a slow subscriber's queue fill rather than
-    stalling everyone else behind it. Dropping the oldest
-    chunk to make room costs a reader that is already that far behind
-    nothing it could still have played in time. (`get_nowait()` cannot
-    fail after `full()` — there is no await between them for anything else
-    to drain the queue.)"""
-    if q.full():
-        q.get_nowait()
-    q.put_nowait(None)
 
 
 def _encode_args(bitrate_kbps: int, aac: bool = False) -> list[str]:
@@ -543,24 +494,9 @@ class RadioRelay:
         self._fetch_task: asyncio.Task | None = None
         self._audio_fanout_task: asyncio.Task | None = None
         self._orphan_task: asyncio.Task | None = None
-        self._audio_subscribers: list[asyncio.Queue[bytes | None]] = []
-        # id() of the subscribers that asked for `lossy` — an asyncio.Queue
-        # isn't hashable-by-value in a way that would make a set of the
-        # queues themselves any clearer, and identity is exactly the
-        # question being asked.
-        self._lossy_subscribers: set[int] = set()
-        # Since when nothing has been listening — see _watch_for_orphan().
-        # Starts now rather than at the first subscriber: a relay whose
-        # device never connects at all (a dispatch the speaker silently
-        # dropped) is exactly as orphaned as one whose device has left, and
-        # is otherwise the one case nothing would ever notice.
-        self._no_listeners_since: float | None = time.monotonic()
-        # The most recent _BURST_SECONDS of device audio, as (emitted_at,
-        # chunk), handed to a listening subscriber the moment it arrives so
-        # it starts with a buffer instead of at the live edge. See
-        # _BURST_SECONDS.
-        self._burst: deque[tuple[float, bytes]] = deque()
-        self._burst_bytes = 0
+        # Every listener of the device audio — players, cast devices and the
+        # visualizer's analyzer alike. Its burst window is _BURST_SECONDS.
+        self._fanout = AudioFanout(_burst_limits)
         # Set once the first connection attempt has either produced a
         # running ffmpeg or given up — see start().
         self._started = asyncio.Event()
@@ -613,9 +549,7 @@ class RadioRelay:
                 self._proc.kill()
             except ProcessLookupError:
                 pass
-        for q in self._audio_subscribers:
-            _send_sentinel(q)
-        self._audio_subscribers.clear()
+        self._fanout.stop()
 
     def subscribe_audio(
         self, *, lossy: bool = False, burst: bool = False
@@ -629,8 +563,8 @@ class RadioRelay:
         every byte: it gets a small queue whose *oldest* entries are
         dropped when it can't keep up, instead of a large one whose newest
         are. Only the visualizer's analyzer asks for this — see
-        _ANALYSIS_QUEUE_MAXSIZE. A device never does: a gap in its audio is
-        audible.
+        core/audio_fanout.py's ANALYSIS_QUEUE_MAXSIZE. A device never does:
+        a gap in its audio is audible.
 
         `burst` is the opposite request, and the two are mutually
         exclusive by nature: hand me the last few seconds up front, so what
@@ -639,40 +573,10 @@ class RadioRelay:
         else — see _BURST_SECONDS for why that cushion is worth six
         seconds of being behind live, and why an analyzer must never have
         one."""
-        maxsize = _ANALYSIS_QUEUE_MAXSIZE if lossy else _AUDIO_QUEUE_MAXSIZE
-        q: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=maxsize)
-        if self._stopped:
-            # Subscribing to an already-stopped relay is a real race, not a
-            # caller mistake: radio_stream() reads session.radio_relay and
-            # returns a StreamingResponse whose generator only subscribes
-            # once it is first iterated, by which point a station change or
-            # /stop may have run. stop() has already handed out its
-            # sentinels and cleared the list by then, so an ordinary
-            # subscription here would wait on a queue nothing will ever
-            # feed — the device's connection would hang open forever
-            # instead of closing.
-            q.put_nowait(None)
-            return q
-        self._audio_subscribers.append(q)
-        if lossy:
-            self._lossy_subscribers.add(id(q))
-        self._note_listener_change()
-        if burst:
-            # Before the append above would matter either way — nothing is
-            # fed into this queue until the next chunk arrives — but
-            # ordering it after keeps "subscribed" and "primed" from ever
-            # being separated by an await that isn't there today.
-            self._trim_burst()
-            for _, chunk in self._burst:
-                with suppress(asyncio.QueueFull):
-                    q.put_nowait(chunk)
-        return q
+        return self._fanout.subscribe(lossy=lossy, burst=burst)
 
     def unsubscribe_audio(self, q: "asyncio.Queue[bytes | None]") -> None:
-        if q in self._audio_subscribers:
-            self._audio_subscribers.remove(q)
-        self._lossy_subscribers.discard(id(q))
-        self._note_listener_change()
+        self._fanout.unsubscribe(q)
 
     @property
     def listeners(self) -> int:
@@ -682,24 +586,31 @@ class RadioRelay:
         subscribes because something else is playing, and counting it would
         let an app left open on the visualizer keep a station alive that no
         speaker is taking any more."""
-        return len(self._audio_subscribers) - len(self._lossy_subscribers)
+        return self._fanout.listeners
 
-    def _note_listener_change(self) -> None:
-        """Keeps the "nothing is listening since" stamp _watch_for_orphan()
-        reads. Set on the way down to zero and cleared on the way back up,
-        so an ordinary reconnect resets the clock rather than accumulating
-        against it."""
-        if self.listeners > 0:
-            self._no_listeners_since = None
-        elif self._no_listeners_since is None:
-            self._no_listeners_since = time.monotonic()
+    # The fan-out's own state, under the names this class had while it held
+    # it itself.
+    @property
+    def _audio_subscribers(self) -> list["asyncio.Queue[bytes | None]"]:
+        return self._fanout.subscribers
+
+    @property
+    def _burst_bytes(self) -> int:
+        return self._fanout.burst_bytes
+
+    @property
+    def _no_listeners_since(self) -> float | None:
+        return self._fanout.no_listeners_since
+
+    @_no_listeners_since.setter
+    def _no_listeners_since(self, value: float | None) -> None:
+        self._fanout.no_listeners_since = value
 
     def orphaned_for(self) -> float:
         """How long nothing has been listening, or 0.0 while something is.
         Split out from the loop below purely so it is testable without
         waiting a real _ORPHAN_TIMEOUT_SECONDS out."""
-        since = self._no_listeners_since
-        return 0.0 if since is None else time.monotonic() - since
+        return self._fanout.orphaned_for()
 
     async def _watch_for_orphan(self) -> None:
         """Ends a relay nothing is listening to any more — see
@@ -838,7 +749,7 @@ class RadioRelay:
             # was handed a Content-Type for. A station that comes back
             # announcing a different icy-br would otherwise flip the
             # container mid-body: MP3 frames, then ADTS, down one open
-            # connection, with the burst buffer (see _remember_for_burst)
+            # connection, with the burst buffer (see core/audio_fanout.py)
             # still holding frames of the first kind. Whatever this decided
             # the first time is what this relay serves until something
             # restarts it — which a changed quality setting does, deliberately
@@ -983,42 +894,6 @@ class RadioRelay:
                     # that held the audio back.
                     logger.info(f"[radio-relay] {self.url}: produced no audio for {waited:.1f}s")
                 first = False
-                self._remember_for_burst(chunk)
-                for q in list(self._audio_subscribers):
-                    try:
-                        q.put_nowait(chunk)
-                    except asyncio.QueueFull:
-                        if id(q) not in self._lossy_subscribers:
-                            continue  # a slow device falls behind rather than blocking the others
-                        # Lossy subscriber: make room by discarding what it
-                        # has not read yet, so it resumes at the live edge
-                        # instead of working through a backlog. See
-                        # _ANALYSIS_QUEUE_MAXSIZE.
-                        with suppress(asyncio.QueueEmpty):
-                            q.get_nowait()
-                        with suppress(asyncio.QueueFull):
-                            q.put_nowait(chunk)
+                self._fanout.publish(chunk)
         except asyncio.CancelledError:
             pass
-
-    def _remember_for_burst(self, chunk: bytes) -> None:
-        """Keeps `chunk` for the next subscriber that asks for a burst —
-        see _BURST_SECONDS. Unconditional, whether or not anything is
-        subscribed at all: what makes this useful is having the seconds
-        already in hand when somebody arrives, which is exactly the moment
-        it is too late to start collecting them."""
-        self._burst.append((time.monotonic(), chunk))
-        self._burst_bytes += len(chunk)
-        self._trim_burst()
-
-    def _trim_burst(self) -> None:
-        """Drops everything older than the burst window (and anything past
-        the byte ceiling). Also on the way *out*, not only on the way in:
-        while the station is down nothing new arrives, so age alone is what
-        empties this — which is what keeps a listener reconnecting after an
-        outage from being handed audio from before it."""
-        window, max_bytes = _burst_limits()
-        cutoff = time.monotonic() - window
-        while self._burst and (self._burst[0][0] < cutoff or self._burst_bytes > max_bytes):
-            _, chunk = self._burst.popleft()
-            self._burst_bytes -= len(chunk)
