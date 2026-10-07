@@ -197,6 +197,19 @@ export const usePartyStore = defineStore('party', {
       return `${base}/party/#t=${state.inviteToken}`
     },
 
+    /** Whether guests can listen along. Only in the web build: the desktop
+     * app's link is this machine's LAN address (see inviteUrl), which
+     * nobody outside the room can reach. */
+    onlineAvailable(): boolean {
+      return !window.api
+    },
+
+    /** The listen-along bitrate connect is asked for - none from the
+     * desktop app, whatever an earlier setting says. */
+    listenKbps(state): number {
+      return window.api ? 0 : state.settings.listenKbps
+    },
+
     /** Requests still ahead in the queue, or playing right now. */
     activeRequests(state): (PartyRequest & { position: number })[] {
       const playback = usePlaybackStore()
@@ -242,7 +255,7 @@ export const usePartyStore = defineStore('party', {
         void updatePartySettings({
           max_pending_per_guest: this.settings.maxPendingPerGuest,
           skip_ratio: this.settings.skipRatio,
-          listen_kbps: this.settings.listenKbps,
+          listen_kbps: this.listenKbps,
         })
           .then((status) => this.applyStatus(status))
           .catch(() => {})
@@ -266,7 +279,7 @@ export const usePartyStore = defineStore('party', {
         duration_hours: this.settings.durationHours,
         max_pending_per_guest: this.settings.maxPendingPerGuest,
         skip_ratio: this.settings.skipRatio,
-        listen_kbps: this.settings.listenKbps,
+        listen_kbps: this.listenKbps,
         tab_id: tabId(),
       })
       this.inviteToken = invite.token

@@ -320,6 +320,20 @@ describe('which window hosts the party', () => {
     await vi.waitFor(() => expect(party.listeners).toBe(2))
   })
 
+  it('offers no online party from the desktop app, whose link only reaches the LAN', async () => {
+    vi.stubGlobal('api', {})
+    try {
+      vi.mocked(enableParty).mockResolvedValue({ ...status(tabId()), token: 'tok' })
+      const party = usePartyStore()
+      party.saveSettings({ listenKbps: 192 })
+      expect(party.onlineAvailable).toBe(false)
+      await party.enable()
+      expect(vi.mocked(enableParty).mock.calls.at(-1)![0].listen_kbps).toBe(0)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('learns of a party another window started, without answering its guests', async () => {
     vi.mocked(getPartyStatus).mockResolvedValue(status('another-tab'))
     const party = usePartyStore()

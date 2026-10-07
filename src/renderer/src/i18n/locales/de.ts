@@ -405,7 +405,8 @@ export default {
     listen: 'Online-Party',
     listenOff: 'Aus',
     listenAac: 'AAC {kbps} kbit/s',
-    listenHint: 'Gäste hören die Musik in ihrem eigenen Browser, egal wo sie sind.',
+    listenHint:
+      'Für eine Party online, zum Beispiel im Voice-Chat: Alle bekommen deine Musik über den Party-Link in ihren Browser.',
     listeners: '{count} hören online mit - etwa {mbps} Mbit/s Upload',
   },
   partyGuest: {

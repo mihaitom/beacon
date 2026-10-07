@@ -5,14 +5,13 @@ the end.
 
 ## Why
 
-Party guests today see what plays and steer it with wishes and skip votes,
-but the music itself only comes out of the host's speakers or the host's
-device, so a party is limited to one room. An online party lifts that:
-guests anywhere - at home, on the train, in another office - tap the
-headphones button on the party page and hear the music in their own
-browser, with the wishes and votes they already have. In the code it is
-"listening along" (`listen_kbps`, `/party/api/listen`), which is what a guest
-does in it.
+Party mode assumed everyone is in one room, where the host's speakers are.
+An online party is for a group that meets online instead - friends in a
+voice chat, a stream, a remote team's call - with the host bringing the
+music: everyone opens the party link, taps the headphones button and hears
+the music in their own browser, with the wishes and votes party mode already
+has. In the code it is "listening along" (`listen_kbps`,
+`/party/api/listen`), which is what a guest does in it.
 
 ## Decision
 
@@ -159,7 +158,13 @@ fail until the recipe catches up.
   household is legally a different thing from a party in one room. A
   decision for whoever runs it, but worth stating in `docs/party-mode.md`
   when this ships.
-- **Sync between guests.** Not needed: nobody hears anyone else.
+- **Sync between guests.** Matters more than first thought: in a voice chat
+  people react to the music together. Today every guest is the burst
+  (6 s) plus their own network behind the host, so guests are roughly in
+  step and the host is clearly ahead. If that turns out to be missed, a
+  guest knows both its heard stream time and the live edge, and could nudge
+  `playbackRate` towards a common delay; the host would have to listen to
+  the stream too to be in step.
 - **A phone hosting local playback with the screen locked** stops the music
   anyway, out of scope as in `party-mode-server-side.md`.
 
@@ -197,6 +202,11 @@ computed from the PCM the broadcaster writes anyway rather than by an
 `AudioAnalyzer` on its output (exact stream times, no second decode), and a
 station is decoded from its own address rather than from the session's radio
 relay, which a host listening "directly from the station" does not have.
+
+Web build only: the desktop app's party link is its LAN address, which
+nobody outside the room can reach, so its party dialog leaves the setting
+out and sends connect 0 whatever was stored (`stores/party.ts`'s
+`listenKbps`).
 
 What has not happened yet, and decides whether it is done:
 

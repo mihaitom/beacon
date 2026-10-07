@@ -409,7 +409,8 @@ export default {
     listen: 'Fête en ligne',
     listenOff: 'Désactivée',
     listenAac: 'AAC {kbps} kbit/s',
-    listenHint: 'Les invités écoutent la musique dans leur navigateur, où qu’ils soient.',
+    listenHint:
+      'Pour une fête en ligne, par exemple en chat vocal : tout le monde reçoit ta musique dans son navigateur via le lien de la fête.',
     listeners: '{count} à l’écoute en ligne - environ {mbps} Mbit/s en envoi',
   },
   partyGuest: {

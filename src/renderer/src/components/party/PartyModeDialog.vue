@@ -68,7 +68,7 @@
             {{ $t('party.noGuests') }}
           </p>
           <p
-            v-if="store.settings.listenKbps && store.listeners"
+            v-if="store.listenKbps && store.listeners"
             class="text-body-small text-medium-emphasis"
           >
             {{ $t('party.listeners', { count: store.listeners, mbps: uploadMbps }) }}
@@ -120,6 +120,7 @@
             @update:model-value="(v: number) => store.saveSettings({ skipRatio: v })"
           />
           <v-select
+            v-if="store.onlineAvailable"
             :model-value="store.settings.listenKbps"
             :items="listenOptions"
             :label="$t('party.listen')"
@@ -232,7 +233,7 @@ export default {
       ]
     },
     uploadMbps(): string {
-      const mbps = (this.store.listeners * this.store.settings.listenKbps) / 1000
+      const mbps = (this.store.listeners * this.store.listenKbps) / 1000
       return mbps.toLocaleString(this.$i18n.locale, { maximumFractionDigits: 1 })
     },
     durationOptions() {
