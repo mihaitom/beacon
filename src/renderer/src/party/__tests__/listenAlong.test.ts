@@ -5,6 +5,7 @@ import { partyApi } from '../api'
 /** Just what the player touches of an <audio> element. */
 class FakeAudio {
   src = ''
+  volume = 1
   currentTime = 0
   paused = true
   preload = ''
@@ -147,5 +148,16 @@ describe('listening along', () => {
     expect(audio.paused).toBe(true)
     expect(states.at(-1)).toBe('off')
     expect(player.heardTime()).toBeNull()
+  })
+})
+
+describe('the guest’s volume', () => {
+  it('applies to the element now and to the next connection', () => {
+    const { audio, player } = setup()
+    player.setVolume(0.3)
+    player.play()
+    expect(audio.volume).toBe(0.3)
+    player.setVolume(0.6)
+    expect(audio.volume).toBe(0.6)
   })
 })

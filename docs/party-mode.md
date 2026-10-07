@@ -50,10 +50,13 @@ music. With "Online party" switched on in the party dialog, everyone opens
 the party link and gets the music in their own browser, along with
 everything else a party has: what's coming up, wishes, skip votes, lyrics.
 The host picks the quality there (AAC at 128, 192 or 256 kbit/s); it is off
-until then. Guests get a headphones button next to the skip vote, and
-tapping it plays what the host plays: the songs while the host casts or
-plays locally, and a radio station too. Nothing changes for the host, who
-listens as always.
+until then. Guests then get a player bar of their own along the bottom of
+the page: a play button that starts and stops their stream, a waveform
+showing where the song is, and their own volume, which changes only what
+their browser plays (on a computer; a phone has its buttons for that, and an
+iPhone lets no page set it). The stream is what the host plays: the songs
+while the host casts or plays locally, and a radio station too. Nothing
+changes for the host, who listens as always.
 
 The online party is a web build feature (the Docker image, reached under its
 public address - see [Over the internet](#over-the-internet)). The desktop

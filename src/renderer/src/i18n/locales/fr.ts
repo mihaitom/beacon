@@ -458,6 +458,8 @@ export default {
     listenStop: 'Arrêter l’écoute',
     listenConnecting: 'Connexion…',
     listenFailed: 'Le flux ne joue pas - touche pour réessayer.',
+    live: 'En direct',
+    project: 'Beacon sur GitHub',
   },
   remoteControl: {
     title: 'Contrôle à distance',

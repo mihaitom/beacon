@@ -10,6 +10,8 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
+// The page's own global styles (party/main.ts) - the layout tokens live there.
+import '@/assets/main.css'
 import 'vuetify/styles'
 import '@mdi/font/css/materialdesignicons.css'
 import { i18n } from '@/i18n'
@@ -77,5 +79,34 @@ describe('PartyGuestApp phone shell', () => {
     expect(actions?.querySelector('.now-playing__toolbar')).not.toBeNull()
     // And the toolbar's own buttons, including the guest's skip vote.
     expect(actions?.querySelector('.guest-skip')).not.toBeNull()
+  })
+
+  it("leaves Now Playing all the room above the online party's player bar", async () => {
+    for (const [width, height] of [
+      [1440, 900],
+      [390, 844],
+    ]) {
+      await page.viewport(width!, height!)
+      const store = usePartyGuestStore()
+      vi.spyOn(store, 'start').mockResolvedValue()
+      vi.spyOn(store, 'loadWaveform').mockResolvedValue()
+      store.phase = 'app'
+      store.snapshot = { ...songSnapshot(), listen: { enabled: true, epoch: null, timeline: [] } }
+
+      const wrapper = mount(PartyGuestApp, {
+        attachTo: document.body,
+        global: { plugins: [vuetify, i18n] },
+      })
+      await new Promise((resolve) => setTimeout(resolve, 80))
+
+      const bar = document.querySelector('.guest-player-bar')!.getBoundingClientRect()
+      const stage = document.querySelector('.now-playing')!.getBoundingClientRect()
+      // Now Playing sizes itself off the window, not its container; the bar
+      // must not end up over its bottom edge or pushed off screen.
+      expect(stage.bottom).toBeLessThanOrEqual(bar.top + 1)
+      expect(bar.bottom).toBeLessThanOrEqual(window.innerHeight)
+      wrapper.unmount()
+      setActivePinia(createPinia())
+    }
   })
 })

@@ -454,6 +454,8 @@ export default {
     listenStop: 'Mithören beenden',
     listenConnecting: 'Verbinde…',
     listenFailed: 'Der Stream spielt nicht - tippen, um es nochmal zu versuchen.',
+    live: 'Live',
+    project: 'Beacon auf GitHub',
   },
   remoteControl: {
     title: 'Fernsteuerung',

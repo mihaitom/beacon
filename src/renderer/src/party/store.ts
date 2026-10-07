@@ -9,13 +9,14 @@ import {
   type GuestSong,
   type ListenTimelineEntry,
 } from './api'
-import { ListenAlongPlayer, type ListenState } from './listenAlong'
+import { ListenAlongPlayer, volumeAdjustable, type ListenState } from './listenAlong'
 
 export type GuestPhase = 'loading' | 'join' | 'message' | 'app'
 /** i18n keys under partyGuest.* for the full-page message screen. */
 export type GuestMessage = 'ended' | 'rescan' | 'offline'
 
 const NAME_KEY = 'beacon_party_name'
+const VOLUME_KEY = 'beacon_party_volume'
 // How often the extrapolated position is re-read - often enough for a
 // lyrics line to light up on time, rare enough to cost nothing.
 const CLOCK_TICK_MS = 250
@@ -74,6 +75,12 @@ interface GuestState {
   /** The stream time this guest hears, re-read every CLOCK_TICK_MS while
    * listening; null until it is known. */
   listenTime: number | null
+  /** This guest's own volume for the online party, 0..100. */
+  volume: number
+  /** False where the browser ignores a page's volume (iOS). */
+  volumeAdjustable: boolean
+  /** The waveform of displaySong, and which song it is for. */
+  waveform: { songId: string | null; peaks: number[] }
 }
 
 let events: EventSource | null = null
@@ -83,6 +90,17 @@ let loadedLyricsKey: string | null = null
 let lyricsFetchSeq = 0
 let hashWatcher: (() => void) | null = null
 let player: ListenAlongPlayer | null = null
+
+function readVolume(): number {
+  try {
+    const stored = Number(localStorage.getItem(VOLUME_KEY))
+    // A stored 0 comes back as full volume: a page that opens silent reads
+    // as a stream that does not work.
+    return Number.isFinite(stored) && stored > 0 && stored <= 100 ? stored : 100
+  } catch {
+    return 100
+  }
+}
 
 function readName(): string {
   try {
@@ -130,6 +148,9 @@ export const usePartyGuestStore = defineStore('partyGuest', {
     lyricsBySong: {},
     listenState: 'off',
     listenTime: null,
+    volume: readVolume(),
+    volumeAdjustable: volumeAdjustable(),
+    waveform: { songId: null, peaks: [] },
   }),
 
   getters: {
@@ -263,12 +284,37 @@ export const usePartyGuestStore = defineStore('partyGuest', {
         this.listenState = state
         this.listenTime = player?.heardTime() ?? null
       })
+      player.setVolume(this.volume / 100)
       player.play()
     },
 
     stopListening(): void {
       player?.stop()
       this.listenTime = null
+    },
+
+    setVolume(volume: number): void {
+      this.volume = Math.min(Math.max(volume, 0), 100)
+      player?.setVolume(this.volume / 100)
+      try {
+        localStorage.setItem(VOLUME_KEY, String(this.volume))
+      } catch {
+        // Still this volume for now.
+      }
+    },
+
+    /** The waveform for `songId`, once per song. Asked for again only when
+     * the song changes - connect decodes it fresh every time. */
+    async loadWaveform(songId: string | null): Promise<void> {
+      if (songId === this.waveform.songId) return
+      this.waveform = { songId, peaks: [] }
+      if (!songId) return
+      try {
+        const { peaks } = await partyApi.waveform(songId)
+        if (this.waveform.songId === songId) this.waveform = { songId, peaks }
+      } catch {
+        // No waveform: the bar shows a plain line instead.
+      }
     },
 
     /** The stream time heard this very moment - for the visualizer, which

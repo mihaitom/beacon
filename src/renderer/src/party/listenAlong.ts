@@ -12,6 +12,19 @@ import { LISTEN_URL, partyApi } from './api'
 
 export type ListenState = 'off' | 'connecting' | 'playing' | 'buffering' | 'failed'
 
+/** Whether this browser lets a page set an element's volume. iOS does not:
+ * there `volume` stays 1 whatever is assigned, and only the hardware buttons
+ * change it. */
+export function volumeAdjustable(): boolean {
+  try {
+    const probe = new Audio()
+    probe.volume = 0.5
+    return probe.volume === 0.5
+  } catch {
+    return false
+  }
+}
+
 // Same numbers as audioEngine.ts's live stream, for the same reasons.
 const STALL_SECONDS = 4
 const HOLD_SECONDS = 20
@@ -43,6 +56,7 @@ export class ListenAlongPlayer {
   private lastProgressAt = 0
   private attempts = 0
   private dropStartedAt: number | null = null
+  private volume = 1
 
   constructor(
     private readonly onChange: (state: ListenState) => void,
@@ -55,6 +69,12 @@ export class ListenAlongPlayer {
     this.attempts = 0
     this.dropStartedAt = null
     this.connect()
+  }
+
+  /** 0..1, kept for the elements of later connections too. */
+  setVolume(volume: number): void {
+    this.volume = volume
+    if (this.audio) this.audio.volume = volume
   }
 
   stop(): void {
@@ -84,6 +104,7 @@ export class ListenAlongPlayer {
     this.audio ??= this.createAudio()
     const audio = this.audio
     audio.preload = 'none'
+    audio.volume = this.volume
     audio.onplaying = () => this.onPlaying()
     audio.ontimeupdate = () => this.onProgress()
     audio.onerror = () => this.dropped()

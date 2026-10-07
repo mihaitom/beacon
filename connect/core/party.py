@@ -1017,6 +1017,16 @@ class PartyState:
             gain=float(gain) if isinstance(gain, int | float) and 0 < gain <= 4 else 1.0,
         )
 
+    def playing_song_ids(self) -> set[str]:
+        """Songs a guest may be hearing right now: the host's current one
+        and, while the online party's stream runs, whatever its timeline
+        still holds for guests behind the host."""
+        ids = {self.current_song_id} if self.current_song_id else set()
+        b = self.broadcaster
+        if b is not None and not b.stopped:
+            ids.update(entry.song_id for entry in b.timeline if entry.song_id)
+        return ids
+
     async def _stream_url(self, song_id: str) -> str | None:
         from .session import registry
 

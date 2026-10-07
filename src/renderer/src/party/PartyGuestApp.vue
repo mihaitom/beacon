@@ -50,10 +50,23 @@
          - a phone, as it does into MobileLayout.vue's own app bar. -->
         <span id="mobile-app-bar-actions" class="guest-app__actions" />
       </header>
-      <main class="guest-app__page" :class="{ 'guest-app__page--flush': tab === 'now' }">
+      <main
+        class="guest-app__page"
+        :class="{ 'guest-app__page--flush': tab === 'now', 'guest-app__page--online': online }"
+      >
+        <a
+          v-if="tab === 'now'"
+          :href="githubUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="text-body-small guest-app__project guest-app__project--compact"
+          :title="$t('partyGuest.project')"
+        >
+          <v-icon icon="mdi-github" size="14" />
+          <span>Beacon</span>
+        </a>
         <now-playing-presentation v-if="tab === 'now'" compact>
           <template #toolbar-actions>
-            <guest-listen-button />
             <guest-skip-button @notify="notify" />
           </template>
         </now-playing-presentation>
@@ -61,6 +74,7 @@
         <guest-queue v-else-if="tab === 'queue'" @notify="notify" />
         <guest-wish v-else @notify="notify" />
       </main>
+      <guest-player-bar v-if="online" compact />
       <v-bottom-navigation v-model="tab" grow color="primary" class="guest-app__tabs" mandatory>
         <v-btn value="now" prepend-icon="mdi-play-circle-outline" stacked>
           {{ $t('partyGuest.tabNow') }}
@@ -76,10 +90,19 @@
 
     <!-- A larger screen: Now Playing as the stage, what's next and the
      - search beside it. -->
-    <div v-else class="guest-app__desktop">
+    <div v-else class="guest-app__desktop" :class="{ 'guest-app__desktop--online': online }">
+      <a
+        :href="githubUrl"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="text-body-small guest-app__project"
+        :title="$t('partyGuest.project')"
+      >
+        <v-icon icon="mdi-github" size="14" />
+        <span>Beacon</span>
+      </a>
       <now-playing-presentation class="guest-app__stage">
         <template #toolbar-actions>
-          <guest-listen-button />
           <guest-skip-button @notify="notify" />
         </template>
       </now-playing-presentation>
@@ -105,6 +128,7 @@
           <guest-wish v-else @notify="notify" />
         </div>
       </aside>
+      <guest-player-bar v-if="online" class="guest-app__player-bar" />
     </div>
 
     <v-snackbar v-model="toastOpen" :timeout="3500" location="bottom">{{ toast }}</v-snackbar>
@@ -119,7 +143,8 @@ import { useGuestNowPlayingSource } from './guestSource'
 import { nowPlayingSourceKey } from '@/components/now-playing/source'
 import NowPlayingPresentation from '@/components/now-playing/NowPlayingPresentation.vue'
 import GuestSkipButton from './components/GuestSkipButton.vue'
-import GuestListenButton from './components/GuestListenButton.vue'
+import GuestPlayerBar from './components/GuestPlayerBar.vue'
+import { GITHUB_URL } from '@/services/project'
 import GuestQueue from './components/GuestQueue.vue'
 import GuestRadioHint from './components/GuestRadioHint.vue'
 import GuestWish from './components/GuestWish.vue'
@@ -129,7 +154,7 @@ export default {
   components: {
     NowPlayingPresentation,
     GuestSkipButton,
-    GuestListenButton,
+    GuestPlayerBar,
     GuestQueue,
     GuestRadioHint,
     GuestWish,
@@ -159,6 +184,7 @@ export default {
       sideTab: 'queue',
       toast: '',
       toastOpen: false,
+      githubUrl: GITHUB_URL,
     }
   },
   computed: {
@@ -171,6 +197,10 @@ export default {
     },
     radio(): boolean {
       return Boolean(this.store.snapshot?.radio)
+    },
+    /** The host offers the online party: the player bar is the way in. */
+    online(): boolean {
+      return this.store.listenAvailable
     },
     meName(): string {
       return this.store.snapshot?.me.name ?? ''
@@ -275,9 +305,15 @@ export default {
 
 /* Between the app bar and the tab bar, scrolling on its own. */
 .guest-app__page {
+  position: relative;
   height: calc(100dvh - 56px - 56px - env(safe-area-inset-top));
   overflow-y: auto;
   padding: 16px;
+}
+
+/* Room for the online party's player bar above the tab bar. */
+.guest-app__page.guest-app__page--online {
+  height: calc(100dvh - 56px - 60px - 56px - env(safe-area-inset-top));
 }
 
 /* Now Playing fills the page edge to edge, its backdrop included. */
@@ -292,9 +328,55 @@ export default {
 }
 
 .guest-app__desktop {
+  position: relative;
   height: 100dvh;
   display: grid;
   grid-template-columns: minmax(0, 1fr) clamp(340px, 30vw, 440px);
+}
+
+/* The player bar runs under both columns, as the app's does. */
+.guest-app__desktop.guest-app__desktop--online {
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.guest-app__player-bar {
+  grid-column: 1 / -1;
+}
+
+/* Now Playing sizes itself to the window minus the app's layout bars; here
+ * the player bar is not one of Vuetify's, so it is named outright. */
+.guest-app__desktop--online .guest-app__stage {
+  --v-layout-bottom: var(--beacon-player-bar-height);
+}
+
+/* Where the app comes from, kept quiet: in the corner opposite the
+ * toolbar, on the same translucent pill so it reads over a photo. */
+.guest-app__project {
+  position: absolute;
+  top: 24px;
+  left: 24px;
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(18, 20, 28, 0.55);
+  backdrop-filter: blur(8px);
+  color: inherit;
+  text-decoration: none;
+  opacity: 0.55;
+  transition: opacity 0.15s;
+}
+
+.guest-app__project:hover,
+.guest-app__project:focus-visible {
+  opacity: 1;
+}
+
+.guest-app__project.guest-app__project--compact {
+  top: 8px;
+  left: 8px;
 }
 
 .guest-app__stage {

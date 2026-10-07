@@ -8,7 +8,7 @@ the end.
 Party mode assumed everyone is in one room, where the host's speakers are.
 An online party is for a group that meets online instead - friends in a
 voice chat, a stream, a remote team's call - with the host bringing the
-music: everyone opens the party link, taps the headphones button and hears
+music: everyone opens the party link, taps play in the party page's player bar and hears
 the music in their own browser, with the wishes and votes party mode already
 has. In the code it is "listening along" (`listen_kbps`,
 `/party/api/listen`), which is what a guest does in it.

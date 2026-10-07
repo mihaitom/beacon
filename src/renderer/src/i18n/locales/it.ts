@@ -457,6 +457,8 @@ export default {
     listenStop: 'Smetti di ascoltare',
     listenConnecting: 'Connessione…',
     listenFailed: 'Lo stream non suona - tocca per riprovare.',
+    live: 'Dal vivo',
+    project: 'Beacon su GitHub',
   },
   remoteControl: {
     title: 'Controllo remoto',

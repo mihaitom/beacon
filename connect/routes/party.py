@@ -34,7 +34,7 @@ from fastapi.responses import (
 )
 from pydantic import BaseModel
 
-from core import fanart, party_library, party_queue
+from core import fanart, party_library, party_queue, waveform
 from core.audio_fanout import send_sentinel
 from core.auth import require_token
 from core.party import (
@@ -68,6 +68,7 @@ VOTES = (20, 60)
 SEARCHES = (60, 60)
 COVERS = (600, 60)
 LYRICS = (30, 60)
+WAVEFORMS = (30, 60)
 MAX_VISUALIZER_STREAMS = 50
 # Listening along. Two per guest, so a reconnect can open the new stream
 # before the old one is noticed gone; a third ends the oldest instead.
@@ -622,6 +623,33 @@ async def radio_logo(guest: Guest = Depends(require_guest)):
         raise HTTPException(status_code=404)
     homepage, hint = party.radio_logo
     return await radio_favicon(url=homepage, min_size=RADIO_LOGO_SIZE, hint=hint)
+
+
+# Waveform decodes already running, by song: guests of one party all ask for
+# the same song at the same moment, and share one decode. Dropped as soon as
+# it is done - waveforms are never kept (see core/waveform.py).
+_waveforms_running: dict[str, asyncio.Task] = {}
+
+
+async def _decode_waveform(song_id: str) -> list[float]:
+    url = await party._stream_url(song_id)
+    return await waveform.get_waveform(song_id, url) if url else []
+
+
+@router.get("/api/waveform")
+async def guest_waveform(id: str = Query(...), guest: Guest = Depends(require_guest)):
+    """The seek-bar waveform of a song playing now - the host's current one
+    or the one a guest listening along still hears. Nothing else."""
+    song_id = _check_id(id)
+    _limit(f"waveform:{guest.guest_id}", WAVEFORMS)
+    if song_id not in party.playing_song_ids():
+        raise HTTPException(status_code=404)
+    task = _waveforms_running.get(song_id)
+    if task is None:
+        task = asyncio.create_task(_decode_waveform(song_id))
+        _waveforms_running[song_id] = task
+        task.add_done_callback(lambda _: _waveforms_running.pop(song_id, None))
+    return {"peaks": await asyncio.shield(task)}
 
 
 @router.get("/api/lyrics")

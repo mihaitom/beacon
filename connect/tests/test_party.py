@@ -1876,3 +1876,67 @@ async def test_listening_guests_get_bars_from_the_stream_itself(fake_broadcaster
     finally:
         await gen.aclose()
     assert party_routes._listen_visualizers == 0
+
+
+def test_guests_get_the_waveform_of_the_song_playing_only(client, guest_client, monkeypatch):
+    calls = []
+
+    async def fake_waveform(song_id, url):
+        calls.append((song_id, url))
+        return [0.1, 0.5]
+
+    monkeypatch.setattr("core.waveform.get_waveform", fake_waveform)
+
+    async def stream_url(song_id):
+        return f"http://nav/{song_id}"
+
+    monkeypatch.setattr(party, "_stream_url", stream_url)
+    token = _start(client)
+    party.update_snapshot(_snapshot(["a", "b"]))
+    _join(guest_client, token)
+    assert guest_client.get("/party/api/waveform?id=a").json() == {"peaks": [0.1, 0.5]}
+    # Queued, not playing: nothing to show yet, and no decode for it.
+    assert guest_client.get("/party/api/waveform?id=b").status_code == 404
+    assert guest_client.get("/party/api/waveform?id=../x").status_code == 400
+    assert calls == [("a", "http://nav/a")]
+
+
+async def test_a_listening_guest_gets_the_waveform_of_what_it_still_hears(fake_broadcaster):
+    from core.party_broadcast import TimelineEntry
+
+    _listening_party()
+    party.update_snapshot(_snapshot(["b"]))
+    broadcaster = await party.listen()
+    broadcaster.timeline = [TimelineEntry(0.0, "a", 0.0, True), TimelineEntry(9.0, "b", 0.0, True)]
+    assert party.playing_song_ids() == {"a", "b"}
+
+
+async def test_guests_asking_at_once_share_one_decode(fake_broadcaster, monkeypatch):
+    decodes = 0
+    release = asyncio.Event()
+
+    async def slow_waveform(song_id, url):
+        nonlocal decodes
+        decodes += 1
+        await release.wait()
+        return [0.3]
+
+    async def stream_url(song_id):
+        return "http://nav/a"
+
+    monkeypatch.setattr("core.waveform.get_waveform", slow_waveform)
+    monkeypatch.setattr(party, "_stream_url", stream_url)
+    _sid, guest = _listening_party()
+    _, other = party.join("Ben", "203.0.113.6")
+    party.update_snapshot(_snapshot(["a"]))
+    first = asyncio.create_task(party_routes.guest_waveform(id="a", guest=guest))
+    second = asyncio.create_task(party_routes.guest_waveform(id="a", guest=other))
+    await asyncio.sleep(0)
+    release.set()
+    assert await first == await second == {"peaks": [0.3]}
+    assert decodes == 1
+    # Not kept: the next request decodes again.
+    release.clear()
+    release.set()
+    await party_routes.guest_waveform(id="a", guest=guest)
+    assert decodes == 2

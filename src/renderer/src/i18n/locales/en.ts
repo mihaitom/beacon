@@ -454,6 +454,8 @@ export default {
     listenStop: 'Stop listening',
     listenConnecting: 'Connecting…',
     listenFailed: "The stream isn't playing - tap to try again.",
+    live: 'Live',
+    project: 'Beacon on GitHub',
   },
   remoteControl: {
     title: 'Remote Control',

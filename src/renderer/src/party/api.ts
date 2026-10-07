@@ -135,6 +135,7 @@ export const partyApi = {
     request<{ success: boolean }>('DELETE', `/wishes/${q(requestId)}`),
   skip: () => request<{ success: boolean }>('POST', '/skip'),
   unskip: () => request<{ success: boolean }>('DELETE', '/skip'),
+  waveform: (songId: string) => request<{ peaks: number[] }>('GET', `/waveform?id=${q(songId)}`),
   listenStart: (conn: string) =>
     request<{ epoch: string; start: number | null }>('GET', `/listen/start?c=${q(conn)}`),
 }
