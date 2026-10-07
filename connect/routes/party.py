@@ -713,13 +713,19 @@ def _end_listener(conn: str) -> None:
 
 
 @router.get("/api/listen")
-async def listen(c: str = Query(...), guest: Guest = Depends(require_guest)):
+async def listen(request: Request, c: str = Query(...), guest: Guest = Depends(require_guest)):
     """The live stream of what the host hears (core/party_broadcast.py).
     `c` is an id the page makes up for this one connection, to ask
     /api/listen/start where in the stream its audio begins."""
     conn = _check_id(c)
-    if conn in _listeners:
-        raise HTTPException(status_code=409, detail="Connection id in use")
+    existing = _listeners.get(conn)
+    if existing is not None:
+        if existing.guest_id != guest.guest_id:
+            raise HTTPException(status_code=409, detail="Connection id in use")
+        # The same player asking again: Safari probes a media URL with a
+        # two-byte range request and then fetches it once more. The newer
+        # request is the one that plays.
+        _end_listener(conn)
     mine = sorted(
         (key for key, value in _listeners.items() if value.guest_id == guest.guest_id),
         key=lambda key: _listeners[key].opened_at,
@@ -733,8 +739,15 @@ async def listen(c: str = Query(...), guest: Guest = Depends(require_guest)):
         raise HTTPException(status_code=404)
     queue = broadcaster.subscribe()
     _listeners[conn] = _Listener(guest.guest_id, broadcaster, queue, time.monotonic())
+    label = f"guest {guest.guest_id} conn {conn[:6]}"
+    logger.info(
+        f"[party] Listening along: {label}, range={request.headers.get('range') or '-'}, "
+        f"{(request.headers.get('user-agent') or '-')[:80]}"
+    )
 
     async def generator():
+        sent = 0
+        opened = time.monotonic()
         try:
             while party.guest_alive(guest):
                 try:
@@ -743,10 +756,15 @@ async def listen(c: str = Query(...), guest: Guest = Depends(require_guest)):
                     continue
                 if chunk is None:
                     return
+                sent += len(chunk)
                 yield chunk
         finally:
             if _listeners.get(conn) is not None and _listeners[conn].queue is queue:
                 _end_listener(conn)
+            logger.info(
+                f"[party] Stopped listening along: {label} after "
+                f"{time.monotonic() - opened:.1f}s, {sent // 1024} KiB sent"
+            )
 
     return StreamingResponse(
         generator(),

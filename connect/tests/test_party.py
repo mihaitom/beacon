@@ -1605,6 +1605,24 @@ def fake_broadcaster(monkeypatch):
     monkeypatch.setattr(party_module, "Broadcaster", _FakeBroadcaster)
 
 
+def _listen_request(range_header: str | None = None):
+    from starlette.requests import Request
+
+    headers = [(b"user-agent", b"Mozilla/5.0 (iPhone)")]
+    if range_header:
+        headers.append((b"range", range_header.encode()))
+    return Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/party/api/listen",
+            "headers": headers,
+            "client": ("203.0.113.5", 1234),
+            "query_string": b"",
+        }
+    )
+
+
 def _listening_party(kbps=192):
     party.enable()
     party.settings.listen_kbps = kbps
@@ -1638,7 +1656,7 @@ def test_only_the_offered_bitrates_are_accepted(client):
 
 async def test_the_stream_is_the_hosts_and_says_where_it_begins(fake_broadcaster):
     _sid, guest = _listening_party()
-    resp = await party_routes.listen(c="conn1", guest=guest)
+    resp = await party_routes.listen(_listen_request(), c="conn1", guest=guest)
     assert resp.media_type == "audio/aac"
     gen = resp.body_iterator
     try:
@@ -1656,7 +1674,7 @@ async def test_the_stream_is_the_hosts_and_says_where_it_begins(fake_broadcaster
 async def test_another_guest_cannot_ask_about_a_connection(fake_broadcaster):
     _sid, guest = _listening_party()
     _, other = party.join("Ben", "203.0.113.6")
-    resp = await party_routes.listen(c="conn1", guest=guest)
+    resp = await party_routes.listen(_listen_request(), c="conn1", guest=guest)
     try:
         with pytest.raises(party_routes.HTTPException) as e:
             await party_routes.listen_start(c="conn1", guest=other)
@@ -1667,7 +1685,7 @@ async def test_another_guest_cannot_ask_about_a_connection(fake_broadcaster):
 
 async def test_a_removed_guest_loses_the_sound(fake_broadcaster):
     _sid, guest = _listening_party()
-    resp = await party_routes.listen(c="conn1", guest=guest)
+    resp = await party_routes.listen(_listen_request(), c="conn1", guest=guest)
     gen = resp.body_iterator
     party.kick(guest.guest_id)
     party.broadcaster.queues[0].put_nowait(b"more")
@@ -1680,19 +1698,35 @@ async def test_a_new_connection_ends_the_oldest_beyond_two(fake_broadcaster):
     """A phone reconnecting opens the new stream before the old one is
     noticed gone; a third makes room rather than being refused."""
     _sid, guest = _listening_party()
-    first = await party_routes.listen(c="conn1", guest=guest)
-    await party_routes.listen(c="conn2", guest=guest)
-    await party_routes.listen(c="conn3", guest=guest)
+    first = await party_routes.listen(_listen_request(), c="conn1", guest=guest)
+    await party_routes.listen(_listen_request(), c="conn2", guest=guest)
+    await party_routes.listen(_listen_request(), c="conn3", guest=guest)
     assert set(party_routes._listeners) == {"conn2", "conn3"}
     with pytest.raises(StopAsyncIteration):
         await first.body_iterator.__anext__()
 
 
-async def test_a_connection_id_cannot_be_reused(fake_broadcaster):
+async def test_the_same_player_asking_again_gets_the_stream_again(fake_broadcaster):
+    """Safari probes a media URL with a two-byte range request and then
+    fetches it again under the same connection id; refusing the second
+    request left an iPhone connecting forever."""
     _sid, guest = _listening_party()
-    await party_routes.listen(c="conn1", guest=guest)
+    probe = await party_routes.listen(_listen_request("bytes=0-1"), c="conn1", guest=guest)
+    again = await party_routes.listen(_listen_request(), c="conn1", guest=guest)
+    with pytest.raises(StopAsyncIteration):
+        await probe.body_iterator.__anext__()
+    assert list(party_routes._listeners) == ["conn1"]
+    party.broadcaster.queues[-1].put_nowait(b"audio")
+    assert await again.body_iterator.__anext__() == b"audio"
+    await again.body_iterator.aclose()
+
+
+async def test_another_guest_cannot_take_a_connection_id(fake_broadcaster):
+    _sid, guest = _listening_party()
+    _, other = party.join("Ben", "203.0.113.6")
+    await party_routes.listen(_listen_request(), c="conn1", guest=guest)
     with pytest.raises(party_routes.HTTPException) as e:
-        await party_routes.listen(c="conn1", guest=guest)
+        await party_routes.listen(_listen_request(), c="conn1", guest=other)
     assert e.value.status_code == 409
 
 
