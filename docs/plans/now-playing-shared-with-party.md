@@ -24,7 +24,8 @@ store-reading leaves. It gets the component itself through the source
 `debugOverlayComponent`): `hostSource.ts` hands it `CoverArt`,
 `RadioTitleLog`, `LyricsCandidateList` and `VisualizerDebugOverlay`, the
 guest source hands it `GuestCover` (a plain, store-free image) and nulls.
-The final check now passes: after `pnpm build:party`,
+`GuestCover` replaced the `CoverArt` `src` prop planned below, which is gone
+again. The final check now passes: after `pnpm build:party`,
 `grep -c getSimilarSongs2 connect/static/party/assets/*.js` is 0 and the one
 JS chunk is ~590 kB (down from ~680).
 

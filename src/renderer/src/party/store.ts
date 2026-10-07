@@ -31,6 +31,8 @@ interface GuestState {
   now: number
   lyrics: GuestLyrics | null
   lyricsKey: string | null
+  /** A lyrics fetch for lyricsKey is in flight. */
+  lyricsLoading: boolean
   search: {
     query: string
     songs: GuestSong[]
@@ -47,6 +49,7 @@ let events: EventSource | null = null
 let clockTimer: ReturnType<typeof setInterval> | null = null
 // The lyrics_key `lyrics` was loaded for (see loadLyrics).
 let loadedLyricsKey: string | null = null
+let lyricsFetchSeq = 0
 let hashWatcher: (() => void) | null = null
 
 function readName(): string {
@@ -89,6 +92,7 @@ export const usePartyGuestStore = defineStore('partyGuest', {
     now: Date.now() / 1000,
     lyrics: null,
     lyricsKey: null,
+    lyricsLoading: false,
     search: { query: '', songs: [], albums: [], album: null, loading: false, seq: 0 },
     wishedIds: [],
   }),
@@ -219,17 +223,24 @@ export const usePartyGuestStore = defineStore('partyGuest', {
 
     async loadLyrics(): Promise<void> {
       const key = this.lyricsKey
-      if (!key) return
+      // Only the latest call says whether a fetch is still running.
+      const seq = ++lyricsFetchSeq
       // Already here: a key that went away and came back (the host's
       // window waking, a song change seen twice) is no reason to ask again,
       // and asking on every flip runs into the rate limit.
-      if (key === loadedLyricsKey && this.lyrics) return
+      if (!key || (key === loadedLyricsKey && this.lyrics)) {
+        this.lyricsLoading = false
+        return
+      }
+      this.lyricsLoading = true
       try {
         this.lyrics = await partyApi.lyrics()
         loadedLyricsKey = key
       } catch {
         this.lyrics = null
         loadedLyricsKey = null
+      } finally {
+        if (seq === lyricsFetchSeq) this.lyricsLoading = false
       }
     },
 

@@ -21,7 +21,6 @@
       :src="source.radio?.logoUrl ?? null"
       :size="artSize"
       fallback-icon="mdi-radio"
-      :transparency="true"
       :class="radioIconIsTransparent ? 'radio-cover-art--transparent' : 'cover-shadow'"
       @transparency="radioIconIsTransparent = $event"
     />
@@ -55,11 +54,19 @@ export default {
       radioIconIsTransparent: false,
     }
   },
+  computed: {
+    /** What identifies the station's logo. Not the radio object itself:
+     * that is rebuilt on every ICY title (and every guest snapshot), and
+     * the cover component only reports transparency when its logo changes. */
+    radioLogo(): unknown {
+      return this.source.radio?.favicon ?? this.source.radio?.logoUrl ?? null
+    },
+  },
   watch: {
     // A different station's logo is a different shape — drop the previous
     // one's treatment the moment the station changes, rather than carrying
     // it until the new logo arrives and <cover-art> reports its own.
-    'source.radio'() {
+    radioLogo() {
       this.radioIconIsTransparent = false
     },
   },

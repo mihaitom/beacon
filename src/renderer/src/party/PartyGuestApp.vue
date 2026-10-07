@@ -125,18 +125,23 @@ export default {
   name: 'PartyGuestApp',
   components: { NowPlayingPresentation, GuestSkipButton, GuestQueue, GuestRadioHint, GuestWish },
   provide() {
+    // The guest's own Now Playing source, and everything behind it (view
+    // preferences, colour extraction, the visualizer feed). A phone has no
+    // room for the corner's next-up card, as in the app, and shows Now
+    // Playing only on its own tab - the visualizer feed stays closed on the
+    // others. Built here rather than in data(): its watchers read `compact`
+    // and `tab` straight away, and neither exists before data() returns.
+    this.guestNp = useGuestNowPlayingSource({
+      isCompact: () => this.compact,
+      isOnScreen: () => !this.compact || this.tab === 'now',
+    })
     // The shared Now Playing presentation reads this instead of any store,
     // so guests and the host render the same components.
     return { [nowPlayingSourceKey]: this.guestNp.source }
   },
   data() {
     return {
-      // The guest's own Now Playing source, and everything behind it (view
-      // preferences, colour extraction, the visualizer feed). A phone has no
-      // room for the corner's next-up card, as in the app.
-      guestNp: useGuestNowPlayingSource({
-        isCompact: () => Boolean((this as unknown as { compact: boolean }).compact),
-      }),
+      guestNp: null as ReturnType<typeof useGuestNowPlayingSource> | null,
       name: usePartyGuestStore().savedName,
       joining: false,
       joinError: '',
@@ -166,7 +171,7 @@ export default {
   },
   beforeUnmount() {
     this.store.stop()
-    this.guestNp.dispose()
+    this.guestNp?.dispose()
   },
   methods: {
     async join() {

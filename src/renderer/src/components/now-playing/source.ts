@@ -60,7 +60,6 @@ export interface NowPlayingBackdrop {
   isArtist: boolean
   /** Every background to step through; a guest steps on its own. */
   backgrounds: string[]
-  index: number
 }
 
 export interface NowPlayingVisualizer {
@@ -81,19 +80,19 @@ export interface NowPlayingVisualizer {
 /** What a given host allows the presentation to do. The app turns everything
  * on; the guest page turns all of it off except fullscreen. */
 export interface NowPlayingCapabilities {
-  /** Click a lyric line to seek. */
-  seek: boolean
   fullscreen: boolean
   /** Turn artist/album names into links to their pages. */
   artistLinks: boolean
   /** A station's title log in place of the lyrics. */
   titleLog: boolean
-  /** The autoplay toggle (only ever shown in fullscreen). */
+  /** The autoplay toggle (only ever shown in fullscreen), where the server
+   * can do song radio at all. */
   autoplay: boolean
   /** The toolbar's made-up-title button, only where the backend is at
    * DEBUG/TRACE. */
   debug: boolean
-  /** The lyrics toolbar: calibrate, sync offset, match picker. */
+  /** The lyrics toolbar: calibrate, sync offset, match picker, and
+   * clicking a line to seek. */
   lyricsTools: boolean
 }
 
@@ -122,13 +121,9 @@ export interface NowPlayingPanel {
 export interface NowPlayingSource {
   song: NowPlayingSong | null
   radio: NowPlayingRadio | null
-  next: NowPlayingSong | null
-  playing: boolean
   /** Seconds, kept current. */
   position: number
-  duration: number
-  /** "r, g, b" - drives the glow and the ambient wash. */
-  accentColor: string
+  /** The halo behind the artwork, a CSS background. */
   glowColor: string
   ambientStyle: Record<string, string>
   backdrop: NowPlayingBackdrop
@@ -138,8 +133,9 @@ export interface NowPlayingSource {
   /** The component the artwork and the corner panel render for a cover.
    * The app's batched CoverArt (which imports the library store, so it must
    * not reach the guest bundle), or the guest page's own store-free image.
-   * Both take the same props: `src`, `coverArtId`, `radioFavicon`, `size`,
-   * `contain`, `fallbackIcon`, and emit `transparency`/`loaded`. */
+   * The presentation hands it `coverArtId`, `radioFavicon` (CoverArt's) and
+   * `src` (GuestCover's) alike, plus `size`, `contain` and `fallbackIcon`;
+   * both emit `transparency` for a station logo. */
   cover: Component
   /** The app's title log (host only). Like `cover`, injected rather than
    * imported: it reads the library store, which must not reach the guest
@@ -154,7 +150,7 @@ export interface NowPlayingSource {
   debugOverlayComponent: Component | null
   ui: NowPlayingUi
   /** The corner stack: the current song, then the next one near the end of
-   * a track. */
+   * a track. The source decides when the next one shows. */
   panels: NowPlayingPanel[]
   /** The radio log's search, and its paging. */
   searchTitles(query: string): void
@@ -163,11 +159,9 @@ export interface NowPlayingSource {
   toggleVisualizer(): void
   toggleArtwork(): void
   cycleBackground(): void
-  /** The guest page steps through the artist's backgrounds on its own. */
-  selectBackdrop(index: number): void
   seek(seconds: number): void
   setLyricsOffset(seconds: number): void
-  resetLyricsOffset(offset: number): void
+  resetLyricsOffset(): void
   /** Host only: the match picker's candidates. */
   loadLyricsCandidates(): void
   clearLyricsCandidates(): void

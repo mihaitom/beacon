@@ -151,3 +151,29 @@ describe('LyricsPanel source link', () => {
     expect(wrapper.find('.lyrics-panel__source').exists()).toBe(true)
   })
 })
+
+describe('LyricsPanel sync offset', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    usePlaybackStore().setQueue([makeSong('a')], 0)
+    const lyrics = useLyricsStore()
+    vi.spyOn(lyrics, 'ensureLoaded').mockResolvedValue()
+    lyrics.songId = 'a'
+    lyrics.loading = false
+    lyrics.synced = true
+    lyrics.lines = [{ time: 1, text: 'First line' }]
+  })
+
+  it.each([0.5, -0.5])('resets an offset of %s back to none', async (offset) => {
+    const lyrics = useLyricsStore()
+    lyrics.offset = offset
+    const wrapper = mount(LyricsPanel, {
+      props: { variant: 'compact' },
+      global: { plugins: [vuetify, i18n], provide: provideLyricsSource() },
+    })
+
+    await wrapper.get('.lyrics-panel__sync-label').trigger('click')
+
+    expect(lyrics.offset).toBe(0)
+  })
+})

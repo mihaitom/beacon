@@ -135,4 +135,45 @@ describe('PartyGuestApp with the shared Now Playing', () => {
     expect(wrapper.find('.lyrics-panel').exists()).toBe(true)
     expect(wrapper.find('.lyrics-panel__toolbar').exists()).toBe(false)
   })
+
+  it("closes the visualizer feed on a phone's other tabs", async () => {
+    const opened: Array<{ readyState: number }> = []
+    vi.stubGlobal(
+      'EventSource',
+      class {
+        readyState = 1
+        constructor() {
+          opened.push(this)
+        }
+        close() {
+          this.readyState = 2
+        }
+      },
+    )
+    window.innerWidth = 390
+    const store = usePartyGuestStore()
+    vi.spyOn(store, 'start').mockResolvedValue()
+    store.phase = 'app'
+    store.snapshot = {
+      ...snapshot(null),
+      casting: true,
+      current_song: {
+        id: 's1',
+        title: 'Harbor Lights',
+        artist: 'The Tide',
+        album: null,
+        duration: 200,
+        cover: null,
+      },
+    }
+    const vuetify = createVuetify({ components, directives })
+    const wrapper = mount(PartyGuestApp, { global: { plugins: [vuetify, i18n] } })
+    await wrapper.vm.$nextTick()
+    expect(opened.map((source) => source.readyState)).toEqual([1])
+
+    await wrapper.findAll('.guest-app__tabs .v-btn').at(1)!.trigger('click')
+
+    expect(opened.map((source) => source.readyState)).toEqual([2])
+    vi.unstubAllGlobals()
+  })
 })

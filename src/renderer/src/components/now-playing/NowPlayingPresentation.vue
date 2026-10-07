@@ -53,10 +53,10 @@
     <now-playing-visualizer :compact="compact" />
 
     <!-- Positioned in .now-playing's own layout (which is already
-     - `position: relative`, see its own CSS), not inside <audio-visualizer>
-     - or .now-playing__visualizer-row above — see VisualizerDebugOverlay's
-     - own comment for why living inside AudioVisualizer either covered the
-     - bars or compressed them, reported live 2026-09-05 both times. This
+     - `position: relative`, see its own CSS), not inside the bars or
+     - .now-playing__visualizer-row above — see VisualizerDebugOverlay's
+     - own comment for why living inside them either covered the bars or
+     - compressed them, reported live 2026-09-05 both times. This
      - way it can never do either: it takes no layout space from the
      - visualizer row at all, floating over whatever's underneath instead
      - (the artwork/backdrop area, not the bars themselves, for the
@@ -319,7 +319,7 @@ export default {
 
 /* Mirrors the toolbar's own corner placement (opposite side, so
  * the two never collide) — see VisualizerDebugOverlay's own comment for
- * why this lives here rather than inside <audio-visualizer>/the visualizer
+ * why this lives here rather than inside the bars/the visualizer
  * row: this way it takes no layout space from the bars at all, in a corner
  * they don't reach into either. Applied straight to
  * <visualizer-debug-overlay>'s own root (class fallthrough) — that root is

@@ -4,7 +4,7 @@ import { ReconnectingEventSource } from './reconnectingEventSource'
 /**
  * Wraps GET /visualizer (via ReconnectingEventSource — see that file for why
  * a plain EventSource isn't enough) — real-time frequency-band frames for
- * AudioVisualizer.vue's 'cast' mode, produced by
+ * NowPlayingView.vue's 'cast' mode, produced by
  * connect/core/audio_analysis.py. Only ever emits while casting to a
  * Sonos/DLNA/Chromecast target; the connection sits idle (heartbeats only,
  * no onFrame calls) the rest of the time. Mirrors ConnectEventSource

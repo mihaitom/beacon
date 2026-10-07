@@ -27,6 +27,6 @@ const app = createApp(PartyGuestApp)
 app.use(createPinia())
 app.use(vuetify)
 app.use(i18n)
-// AudioVisualizer reports reduced motion through the app's event bus.
+// VisualizerBars reports reduced motion through the app's event bus.
 app.config.globalProperties.$emitter = emitter
 app.mount('#app')

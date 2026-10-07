@@ -1,7 +1,7 @@
 <template>
   <div
     class="guest-cover"
-    :class="{ 'guest-cover--contain': contain, 'guest-cover--transparent': transparent }"
+    :class="{ 'guest-cover--transparent': transparent }"
     :style="{ width: sizeCss, height: sizeCss }"
   >
     <img
@@ -26,10 +26,10 @@ import type { PropType } from 'vue'
  * batched CoverArt, so the shared Now Playing presentation can render the
  * same markup without pulling the library store into the guest bundle.
  *
- * Takes the same props as CoverArt (the host's `coverArtId` and
- * `radioFavicon` routes are simply unused here - a guest only ever has a
- * ready URL in `src`). A radio logo asks it to read the backend's own
- * transparency reading off the response; a song cover does not. */
+ * Takes CoverArt's props too (the host's `coverArtId` and `radioFavicon`
+ * routes are simply unused here - a guest only ever has a ready URL in
+ * `src`). A contained image is a station logo, the only one connect
+ * measures for transparency; a song cover is never asked. */
 export default {
   name: 'GuestCover',
   props: {
@@ -58,12 +58,6 @@ export default {
       type: String,
       default: 'mdi-album',
     },
-    /** Whether to read the transparent-logo header off the response (radio
-     * logos only). */
-    transparency: {
-      type: Boolean,
-      default: false,
-    },
   },
   emits: ['transparency', 'loaded'],
   data() {
@@ -77,11 +71,11 @@ export default {
   watch: {
     src() {
       this.transparent = false
-      if (this.transparency && this.src) void this.checkTransparency(this.src)
+      if (this.contain && this.src) void this.checkTransparency(this.src)
     },
   },
   mounted() {
-    if (this.transparency && this.src) void this.checkTransparency(this.src)
+    if (this.contain && this.src) void this.checkTransparency(this.src)
   },
   methods: {
     /** connect measures the logo (routes/radio.py's _has_transparency) and
@@ -113,12 +107,6 @@ export default {
   color: rgba(255, 255, 255, 0.4);
 }
 
-/* A station logo is whatever shape the station made it; cropping one to a
- * square cuts the name off its own logo (see CoverArt's own `contain`). */
-.guest-cover--contain {
-  object-fit: contain;
-}
-
 .guest-cover--transparent {
   background: transparent;
 }
@@ -129,6 +117,8 @@ export default {
   object-fit: cover;
 }
 
+/* A station logo is whatever shape the station made it; cropping one to a
+ * square cuts the name off its own logo (see CoverArt's own `contain`). */
 .guest-cover__img--contain {
   object-fit: contain;
 }

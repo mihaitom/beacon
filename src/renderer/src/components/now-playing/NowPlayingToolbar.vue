@@ -130,7 +130,7 @@
         variant="text"
         density="comfortable"
         title="Debug: add a made-up title"
-        @click="source.addDebugTitle?.()"
+        @click="source.addDebugTitle()"
       />
     </div>
   </Teleport>

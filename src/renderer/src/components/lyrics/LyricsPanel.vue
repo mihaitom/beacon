@@ -96,7 +96,7 @@
           class="lyrics-panel__sync-label"
           :class="{ 'lyrics-panel__sync-label--resettable': source.lyrics.offset !== 0 }"
           :title="source.lyrics.offset !== 0 ? $t('lyrics.syncReset') : undefined"
-          @click="source.lyrics.offset !== 0 && source.resetLyricsOffset(source.lyrics.offset)"
+          @click="source.lyrics.offset !== 0 && source.resetLyricsOffset()"
         >
           {{ offsetLabel }}
         </span>

@@ -6,7 +6,7 @@ import { nowPlayingSourceKey } from './source'
  * of importing a store. */
 export const nowPlayingSourceMixin = {
   inject: {
-    nowPlayingSource: { from: nowPlayingSourceKey, required: true },
+    nowPlayingSource: { from: nowPlayingSourceKey },
   },
   computed: {
     source(this: { nowPlayingSource: NowPlayingSource }): NowPlayingSource {

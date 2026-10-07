@@ -25,8 +25,8 @@ import type {
 // The app's amber, as NowPlayingView falls back to it.
 const FALLBACK_COLOR = '245, 169, 78'
 
-// Same smoothing the app's cast bars use (its local analyser updates every
-// frame; the guest's SSE feed roughly every 23ms).
+// The app's cast smoothing (see NowPlayingView's SMOOTHING_CAST): the
+// guest's feed is the same ~23ms backend frames.
 const SMOOTHING_CAST = 0.3
 
 // How long before a track ends the corner starts announcing the next one,
@@ -82,13 +82,18 @@ function toNowPlayingRadio(radio: GuestRadio | null): NowPlayingRadio | null {
  * `party/store.ts`, plus the guest's own view preferences, colour
  * extraction and visualizer feed. The app's presentation renders it exactly
  * as it renders the host's. */
-export function useGuestNowPlayingSource(opts: { isCompact?: () => boolean } = {}): {
+export function useGuestNowPlayingSource(
+  opts: { isCompact?: () => boolean; isOnScreen?: () => boolean } = {},
+): {
   source: NowPlayingSource
   dispose: () => void
 } {
   const store = usePartyGuestStore()
   // A phone has no room for a second card, as in the app.
   const isCompact = opts.isCompact ?? (() => false)
+  // The source outlives the presentation (a phone shows one tab at a time),
+  // so the visualizer feed has to ask whether anyone is looking.
+  const isOnScreen = opts.isOnScreen ?? (() => true)
 
   const showLyrics = ref(readPreference('showLyrics', true))
   const showVisualizer = ref(readPreference('showVisualizer', true))
@@ -257,11 +262,13 @@ export function useGuestNowPlayingSource(opts: { isCompact?: () => boolean } = {
     ),
     // immediate: the picture already there when the page opens needs its
     // colour as much as the next one.
+    // On the URL alone: every snapshot is a new object, and resetting the
+    // colour on each one flashed the bars and the app accent to amber.
     watch(
-      () => ({ url: backdropSource.value, backdrop: store.snapshot?.backdrop }),
-      ({ url, backdrop }) => {
+      backdropSource,
+      (url) => {
         backdropColor.value = null
-        if (url && backdrop) void loadColor(url, 'backdropColor')
+        if (url && store.snapshot?.backdrop) void loadColor(url, 'backdropColor')
       },
       { immediate: true },
     ),
@@ -271,19 +278,17 @@ export function useGuestNowPlayingSource(opts: { isCompact?: () => boolean } = {
         backdropIndex.value = null
       },
     ),
-    watch(visualizerActive, (active) => (active ? openVisualizer() : closeVisualizer()), {
-      immediate: true,
-    }),
+    watch(
+      () => visualizerActive.value && isOnScreen(),
+      (live) => (live ? openVisualizer() : closeVisualizer()),
+      { immediate: true },
+    ),
   ]
 
   const source: NowPlayingSource = reactive({
     song,
     radio,
-    next,
-    playing,
     position: computed(() => store.position),
-    duration,
-    accentColor,
     glowColor,
     ambientStyle,
     backdrop: reactive({
@@ -295,17 +300,18 @@ export function useGuestNowPlayingSource(opts: { isCompact?: () => boolean } = {
         const count = store.snapshot?.backdrop_count ?? 0
         return count > 0 ? Array.from<string>({ length: count }).fill('') : []
       }),
-      index: computed(() => backdropIndex.value ?? store.snapshot?.backdrop_index ?? 0),
     }),
     lyrics: reactive({
       lines: computed(() => lyrics.value?.lines ?? []),
       synced: computed(() => lyrics.value?.synced ?? false),
       offset: computed(() => lyrics.value?.offset ?? 0),
       songKey: computed(() => lyrics.value?.song_id ?? null),
-      loading: false,
+      loading: computed(() => store.lyricsLoading),
       status: computed(() => {
-        if (lyrics.value?.lines.length) return null
-        return song.value ? i18n.global.t('lyrics.notFound') : null
+        if (lyrics.value?.lines.length || !song.value) return null
+        return store.lyricsLoading
+          ? i18n.global.t('lyrics.searching')
+          : i18n.global.t('lyrics.notFound')
       }),
       sourceLabel: null,
       sourceUrl: null,
@@ -320,7 +326,6 @@ export function useGuestNowPlayingSource(opts: { isCompact?: () => boolean } = {
       debug: null,
     }),
     capabilities: reactive({
-      seek: false,
       fullscreen: true,
       artistLinks: false,
       titleLog: false,
@@ -335,13 +340,7 @@ export function useGuestNowPlayingSource(opts: { isCompact?: () => boolean } = {
     lyricsCandidateComponent: null,
     debugOverlayComponent: null,
     ui: reactive({
-      lyricsOpen: computed({
-        get: () => showLyrics.value,
-        set: (open: boolean) => {
-          showLyrics.value = open
-          persist('showLyrics', open)
-        },
-      }),
+      lyricsOpen: computed(() => showLyrics.value),
       showVisualizer: computed(() => showVisualizer.value),
       artworkHidden,
     }),
@@ -365,9 +364,6 @@ export function useGuestNowPlayingSource(opts: { isCompact?: () => boolean } = {
       if (count < 2) return
       const current = backdropIndex.value ?? store.snapshot?.backdrop_index ?? 0
       backdropIndex.value = (current + 1) % count
-    },
-    selectBackdrop: (index: number) => {
-      backdropIndex.value = index
     },
     seek: () => {},
     setLyricsOffset: () => {},

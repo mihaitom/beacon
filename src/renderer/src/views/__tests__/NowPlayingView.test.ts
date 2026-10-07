@@ -89,12 +89,12 @@ async function mountView(props: Record<string, unknown> = {}) {
         stubs: {
           // Each of these pulls in canvas/image-loading/CORS-fetch
           // machinery this view doesn't itself own — CoverArt.vue's own
-          // <img>, LyricsPanel.vue's fetch-backed content, AudioVisualizer's
-          // Web Audio analyser. Stubbing keeps these tests about
+          // <img>, LyricsPanel.vue's fetch-backed content, VisualizerBars'
+          // canvas. Stubbing keeps these tests about
           // NowPlayingView's own conditionals, not their internals.
           CoverArt: true,
           LyricsPanel: true,
-          AudioVisualizer: true,
+          VisualizerBars: true,
         },
       },
     },
@@ -245,6 +245,28 @@ describe('NowPlayingView', () => {
 
       expect(wrapper.get('.now-playing__title').text()).toBe('Artist - Track')
       expect(wrapper.get('.now-playing__radio-tag').text()).toBe('Chill FM')
+    })
+
+    /** The logo reports its transparency once, when it loads; a new title
+     * from the station is not a new logo and must not put the card back. */
+    it("keeps a transparent logo's treatment when the station's title changes", async () => {
+      const { wrapper } = await mountView()
+      usePlaybackStore().radioStation = {
+        id: '',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: 'https://chill.example',
+      }
+      await wrapper.vm.$nextTick()
+      const logo = wrapper.findComponent({ name: 'CoverArt' })
+      logo.vm.$emit('transparency', true)
+      await wrapper.vm.$nextTick()
+      expect(logo.classes()).toContain('radio-cover-art--transparent')
+
+      useRadioMetadataStore().nowPlaying = 'Artist - Track'
+      await wrapper.vm.$nextTick()
+
+      expect(logo.classes()).toContain('radio-cover-art--transparent')
     })
   })
 
@@ -598,6 +620,14 @@ describe('NowPlayingView', () => {
       await wrapper.vm.$nextTick()
 
       expect(isAmber(wrapper, 'mdi-infinity')).toBe(true)
+    })
+
+    it('leaves autoplay away where the server cannot do song radio', async () => {
+      const { wrapper } = await mountToolbar()
+      useAuthStore().capabilities.songRadio = false
+      await enterFullscreen(wrapper)
+
+      expect(wrapper.find('.now-playing__toolbar .mdi-infinity').exists()).toBe(false)
     })
 
     it.each([

@@ -347,7 +347,7 @@ export class AudioEngine {
     // as it can and would happily fill a much bigger buffer.
     this.audio.preload = 'auto'
     // Builds the analyser graph now, at app startup, rather than lazily on
-    // AudioVisualizer.vue's first frame (which used to live inside
+    // the visualizer's first frame (which used to live inside
     // getAnalyser() below). createMediaElementSource() reroutes this
     // element's output through the Web Audio graph the moment it's called —
     // on Chromium that produces a brief but genuinely audible dropout, and
@@ -359,7 +359,7 @@ export class AudioEngine {
     // Wrapped in try/catch so an environment where Web Audio setup fails
     // (unsupported, or some other browser policy) only ever loses the
     // visualizer (getAnalyser() below throws, caught by
-    // AudioVisualizer.vue's sampleFrequencies()) instead of taking plain
+    // NowPlayingView.vue's sampleFrequencies()) instead of taking plain
     // <audio> playback down with it.
     if (webAudioAllowed()) {
       try {
@@ -1211,7 +1211,7 @@ export class AudioEngine {
     this.audioContext = new AudioContext()
     const source = this.audioContext.createMediaElementSource(this.audio)
     this.analyserNode = this.audioContext.createAnalyser()
-    // A much finer FFT than this used to run (see AudioVisualizer.vue's
+    // A much finer FFT than this used to run (see NowPlayingView.vue's
     // sampleFrequencies(), which maps the resulting bins into real
     // 1/6-octave log bands over 20-22050Hz) — that coarser one was fine
     // for the old plain linear-bin sampling, but a real log/octave mapping
@@ -1229,7 +1229,7 @@ export class AudioEngine {
     // on (0.6) — that read as a bit too jumpy once actually tried. Not a
     // big correction: this value only damps the analyser's own bin-to-bin
     // read, a separate, much smaller effect than the visual per-rendered-
-    // frame easing AudioVisualizer.vue's SMOOTHING_LOCAL already applies
+    // frame easing NowPlayingView.vue's SMOOTHING_LOCAL already applies
     // on top.
     this.analyserNode.smoothingTimeConstant = 0.7
     // Web Audio's own default range (-100/-30dB) compresses typical
@@ -1303,7 +1303,7 @@ export class AudioEngine {
     return this.analyserNode !== null
   }
 
-  /** Used by the fullscreen visualizer (AudioVisualizer.vue). Throws if the
+  /** Used by the Now Playing visualizer (NowPlayingView.vue). Throws if the
    * constructor's setupAnalyser() failed — the caller already handles that
    * (see sampleFrequencies()'s try/catch). */
   getAnalyser(): AnalyserNode {

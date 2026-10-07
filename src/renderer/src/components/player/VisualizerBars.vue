@@ -12,8 +12,8 @@ import { BAR_COUNT } from '@/services/visualizerBands'
 // visualizer" at rest.
 const IDLE_HEIGHT = 0
 /** The bars themselves: canvas, smoothing and painting, fed by whoever
- * knows what is playing - AudioVisualizer for the app, the party guest
- * page with the frames connect hands it. Knows no store, so the guest
+ * knows what is playing through the Now Playing source - NowPlayingView
+ * for the app, the party guest page with the frames connect hands it. Knows no store, so the guest
  * page doesn't carry the app's playback along with it. */
 export default {
   name: 'VisualizerBars',
@@ -24,7 +24,7 @@ export default {
       type: Boolean,
       default: true,
     },
-    /** An "r, g, b" triplet - see AudioVisualizer's own color prop. */
+    /** An "r, g, b" triplet - the source's visualizer.color. */
     color: {
       type: String,
       default: '245, 169, 78',

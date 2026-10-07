@@ -1,12 +1,23 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { nextTick, ref } from 'vue'
+import { flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { i18n } from '@/i18n'
+import { extractDominantColor } from '@/services/colorExtractor'
 import { useGuestNowPlayingSource } from '../guestSource'
 import { usePartyGuestStore } from '../store'
-import type { GuestSnapshot, GuestSong } from '../api'
+import { BACKDROP_URL, type GuestSnapshot, type GuestSong } from '../api'
+
+// The real sampler needs a canvas jsdom does not implement.
+vi.mock('@/services/colorExtractor', () => ({ extractDominantColor: vi.fn() }))
 
 class FakeEventSource {
   static CLOSED = 2
+  static instances: FakeEventSource[] = []
   readyState = 1
+  constructor() {
+    FakeEventSource.instances.push(this)
+  }
   onmessage: ((event: MessageEvent<string>) => void) | null = null
   onerror: (() => void) | null = null
   close() {
@@ -50,6 +61,8 @@ describe('guest Now Playing source', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.stubGlobal('EventSource', FakeEventSource)
+    FakeEventSource.instances = []
+    vi.mocked(extractDominantColor).mockReset().mockResolvedValue(null)
     localStorage.clear()
   })
 
@@ -75,7 +88,6 @@ describe('guest Now Playing source', () => {
     const built = useGuestNowPlayingSource()
     dispose = built.dispose
 
-    expect(built.source.capabilities.seek).toBe(false)
     expect(built.source.capabilities.artistLinks).toBe(false)
     expect(built.source.capabilities.titleLog).toBe(false)
     expect(built.source.capabilities.autoplay).toBe(false)
@@ -93,9 +105,10 @@ describe('guest Now Playing source', () => {
     dispose = built.dispose
 
     expect(built.source.backdrop.backgrounds).toHaveLength(3)
-    expect(built.source.backdrop.index).toBe(1)
+    // The host's pick until this guest steps on.
+    expect(built.source.backdrop.source).not.toContain('index=')
     built.source.cycleBackground()
-    expect(built.source.backdrop.index).toBe(2)
+    expect(built.source.backdrop.source).toContain('index=2')
     expect(built.source.ui.artworkHidden).toBe(true)
   })
 
@@ -121,7 +134,6 @@ describe('guest Now Playing source', () => {
     const built = useGuestNowPlayingSource()
     dispose = built.dispose
 
-    expect(built.source.next?.title).toBe('Next One')
     expect(built.source.panels.map((p) => p.kind)).toEqual(['song', 'chevrons', 'song'])
     expect(built.source.panels[2]?.title).toBe('Next One')
   })
@@ -134,5 +146,56 @@ describe('guest Now Playing source', () => {
     dispose = built.dispose
 
     expect(built.source.position).toBeCloseTo(42)
+  })
+
+  it('keeps the backdrop colour through snapshots that leave the picture alone', async () => {
+    vi.mocked(extractDominantColor).mockResolvedValue([20, 140, 220])
+    const store = usePartyGuestStore()
+    const base = { backdrop: true, backdrop_count: 1, current_song: SONG }
+    store.applySnapshot(snapshot(base))
+    const built = useGuestNowPlayingSource()
+    dispose = built.dispose
+    await flushPromises()
+
+    // A skip vote: a new snapshot, the same picture.
+    store.applySnapshot(
+      snapshot({ ...base, skip: { enabled: true, votes: 1, needed: 2, mine: false } }),
+    )
+    await nextTick()
+
+    const backdropReads = vi
+      .mocked(extractDominantColor)
+      .mock.calls.filter(([url]) => String(url).startsWith(BACKDROP_URL))
+    expect(backdropReads).toHaveLength(1)
+  })
+
+  it('keeps the visualizer feed closed while Now Playing is off screen', async () => {
+    usePartyGuestStore().applySnapshot(snapshot({ casting: true, current_song: SONG }))
+    const onScreen = ref(false)
+    const built = useGuestNowPlayingSource({ isOnScreen: () => onScreen.value })
+    dispose = built.dispose
+    expect(FakeEventSource.instances).toHaveLength(0)
+
+    onScreen.value = true
+    await nextTick()
+    expect(FakeEventSource.instances).toHaveLength(1)
+    expect(FakeEventSource.instances[0]!.readyState).toBe(1)
+
+    onScreen.value = false
+    await nextTick()
+    expect(FakeEventSource.instances[0]!.readyState).toBe(FakeEventSource.CLOSED)
+  })
+
+  it('says it is looking for lyrics while they are on their way', () => {
+    const store = usePartyGuestStore()
+    store.applySnapshot(snapshot({ current_song: SONG }))
+    const built = useGuestNowPlayingSource()
+    dispose = built.dispose
+
+    store.lyricsLoading = true
+    expect(built.source.lyrics.status).toBe(i18n.global.t('lyrics.searching'))
+
+    store.lyricsLoading = false
+    expect(built.source.lyrics.status).toBe(i18n.global.t('lyrics.notFound'))
   })
 })

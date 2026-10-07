@@ -34,9 +34,16 @@ import { visualizerBarColor } from '@/services/visualizerColor'
 import { accountScopedKey } from '@/services/accountKey'
 import type { Song } from '@/types/library'
 
-// See AudioVisualizer's old comment: local analysis updates every frame,
-// the backend's cast frames roughly every 23ms.
+// How far each bar moves toward its target per rendered frame - lower is
+// smoother but laggier. Lowered from 0.5, which read as visibly jittery:
+// the bars chased every frame-to-frame FFT fluctuation almost fully within
+// one frame.
 const SMOOTHING_LOCAL = 0.3
+// Casting gets a new value only every ~23ms (the backend's hop, see
+// audio_analysis.py's _FRAME_SECONDS) against ~60Hz locally. Lower than this
+// and each bar was still chasing the previous target when the next arrived -
+// an "always a bit behind" feel, although the backend's timing checked out.
+// Higher brought the jitter back, so it stays equal to SMOOTHING_LOCAL.
 const SMOOTHING_CAST = 0.3
 
 // Warm amber — the same signal color the app is named after (see main.ts's
@@ -132,10 +139,9 @@ export default {
       // "r, g, b" — kept as a CSS-ready string so the two computed styles
       // below don't each redo the same join().
       extractedColor: null as string | null,
-      // The visualizer's own data source (moved out of AudioVisualizer so
-      // the guest page can share the bars without the audio engine): a
-      // Web Audio analyser during local playback, the backend's frames
-      // while casting.
+      // The visualizer's data, handed to the bars through the source (the
+      // guest page shares the bars without the audio engine): a Web Audio
+      // analyser during local playback, the backend's frames while casting.
       frequencyData: null as Uint8Array<ArrayBuffer> | null,
       visualizerEvents: null as VisualizerEventSource | null,
       castBands: null as number[] | null,
@@ -193,17 +199,15 @@ export default {
     radioStation() {
       return this.playbackStore.radioStation
     },
-    isPlaying(): boolean {
-      return this.playbackStore.isPlaying
-    },
     localPosition(): number {
       return this.playbackStore.localPosition
     },
-    duration(): number {
-      return this.playbackStore.duration
-    },
     autoplayEnabled(): boolean {
       return this.autoplayStore.enabled
+    },
+    // Behind the same capability gate as PlayerBar's own autoplay button.
+    autoplayAvailable(): boolean {
+      return this.authStore.capabilities.songRadio
     },
     // The radio snapshot fields the source hands the log panel, lifted here
     // so hostSource reads them the same way it reads everything else.
@@ -377,8 +381,10 @@ export default {
     visualizerActive() {
       return this.hasPlayable && this.showVisualizer && this.visualizerAvailable
     },
-    /** 'local' has a real <audio> element to tap, 'cast' gets real data from
-     * the backend instead — see AudioVisualizer's old comment. */
+    /** 'local' has a real <audio> element to tap (services/audioEngine.ts),
+     * 'cast' gets real data from the backend instead
+     * (services/connect/visualizer.ts). 'idle' while fading out or paused:
+     * no data is needed then. */
     visualizerMode(): 'local' | 'cast' | 'idle' {
       if (!this.visualizerActive) return 'idle'
       if (!this.playbackStore.isPlaying) return 'idle'
@@ -409,11 +415,6 @@ export default {
     },
     backdropIsArtist(): boolean {
       return Boolean(this.artistBackground)
-    },
-    /** Whether there is more than one background to step through - with a
-     * single one (or none) the toolbar's cycle button would do nothing. */
-    canCycleBackground(): boolean {
-      return this.artistBackgrounds.length > 1
     },
     // The biggest single spot in the whole app for one of these — 512 asks
     // for whatever's largest a station's homepage actually declares (see

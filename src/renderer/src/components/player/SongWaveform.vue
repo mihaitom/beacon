@@ -74,8 +74,7 @@ export default {
       return usePlaybackStore()
     },
     // Not the seek-value contract's concern, so read directly off the store
-    // rather than as a prop — same reasoning as AudioVisualizer.vue reading
-    // its own stores for `mode`. Radio has no stable id/seekable position.
+    // rather than as a prop. Radio has no stable id/seekable position.
     songId(): string | null {
       return this.playbackStore.radioStation ? null : (this.playbackStore.currentSong?.id ?? null)
     },
@@ -278,7 +277,7 @@ export default {
       const barCount = this.peaks.length
       // width/barCount is always positive regardless of how narrow the
       // container gets — a fixed gap-then-subtract formula (like
-      // AudioVisualizer.vue's) can go negative at 300 bars in a cramped
+      // VisualizerBars.vue's) can go negative at 300 bars in a cramped
       // layout, since this component's width isn't capped the way that
       // one's BAR_COUNT was sized for.
       const barWidth = width / barCount

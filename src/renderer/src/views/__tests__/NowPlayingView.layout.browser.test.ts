@@ -73,11 +73,11 @@ async function mountView(props: Record<string, unknown> = {}) {
     attachTo: document.body,
     global: {
       plugins: [vuetify, i18n, router],
-      // AudioVisualizer needs a real audio source (Web Audio analyser)
-      // this test has none of — kept out regardless of showVisualizer
-      // (see beforeEach) as a second line of defense against it ever
+      // The bars sample a real audio source (Web Audio analyser) this test
+      // has none of — kept out regardless of showVisualizer (see
+      // beforeEach) as a second line of defense against them ever
       // mounting and throwing.
-      stubs: { AudioVisualizer: true },
+      stubs: { VisualizerBars: true },
     },
   })
   mountedWrappers.push(wrapper)

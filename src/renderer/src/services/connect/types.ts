@@ -392,10 +392,10 @@ export interface ConnectStatus {
 // arrives while casting to a target analyzable at all (Sonos/DLNA/
 // Chromecast/AirPlay for a queued track; radio too, while relayed through
 // Beacon's own backend — see core/audio_analysis.py's own module
-// docstring); AudioVisualizer.vue's 'cast' mode is the only consumer.
+// docstring); NowPlayingView.vue's 'cast' mode is the only consumer.
 export interface VisualizerFrame {
   bands: number[]
-  // Debug-overlay data (AudioVisualizer.vue, gated on the account's log
+  // Debug-overlay data (VisualizerDebugOverlay.vue, gated on the account's log
   // level being DEBUG/TRACE) — both track and radio casts carry one, see
   // core/audio_analysis.py's AudioAnalyzer.last_release_debug for what
   // these two numbers are and why they're worth comparing. Absent until

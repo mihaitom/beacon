@@ -106,6 +106,35 @@ describe('party guest store', () => {
     expect(store.currentLyrics?.song_id).toBe('a')
   })
 
+  it('says a lyrics fetch is running until the latest one has answered', async () => {
+    const store = usePartyGuestStore()
+    const answers: Array<(value: Awaited<ReturnType<typeof partyApi.lyrics>>) => void> = []
+    vi.spyOn(partyApi, 'lyrics').mockImplementation(
+      () => new Promise((resolve) => answers.push(resolve)),
+    )
+    const lines = { synced: true, offset: 0, lines: [{ time: 0, text: 'x' }] }
+
+    store.applySnapshot(snapshot({ lyrics_key: 'c:1' }))
+    expect(store.lyricsLoading).toBe(true)
+    store.applySnapshot(snapshot({ lyrics_key: 'c:2' }))
+    answers[0]!({ song_id: 'a', ...lines })
+    await Promise.resolve()
+    expect(store.lyricsLoading).toBe(true)
+
+    answers[1]!({ song_id: 'a', ...lines })
+    await vi.waitFor(() => expect(store.lyricsLoading).toBe(false))
+  })
+
+  it('stops saying lyrics are coming once their key goes away', () => {
+    const store = usePartyGuestStore()
+    vi.spyOn(partyApi, 'lyrics').mockReturnValue(new Promise(() => {}))
+
+    store.applySnapshot(snapshot({ lyrics_key: 'd:1' }))
+    store.applySnapshot(snapshot({ lyrics_key: null }))
+
+    expect(store.lyricsLoading).toBe(false)
+  })
+
   it('takes the invite token out of the address and asks for a name', async () => {
     history.replaceState(null, '', '/party/#t=abc_DEF-1')
     vi.spyOn(partyApi, 'state').mockRejectedValue(new PartyApiError(401, 'Not joined'))

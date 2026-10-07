@@ -36,7 +36,7 @@ export function lyricsSourceFixture(): NowPlayingSource {
     lyricsCandidateComponent: markRaw(LyricsCandidateList),
     capabilities: reactive({ lyricsTools: true }),
     setLyricsOffset: (offset: number) => lyrics.setOffset(offset),
-    resetLyricsOffset: (offset: number) => lyrics.setOffset(0 - offset),
+    resetLyricsOffset: () => lyrics.setOffset(0),
     seek: (seconds: number) => void playback.seek(seconds),
     loadLyricsCandidates: () => {
       if (playback.currentSong) void lyrics.loadCandidates(playback.currentSong)

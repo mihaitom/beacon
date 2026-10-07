@@ -19,18 +19,13 @@ import type { NowPlayingPanel, NowPlayingRadio, NowPlayingSong, NowPlayingSource
 export interface HostNowPlayingApi {
   currentSong: Song | null
   radioStation: RadioStation | null
-  nextSong: Song | null
   radioFavicon: RadioFaviconRequest | null
-  isPlaying: boolean
   localPosition: number
-  duration: number
-  colorTriplet: string
   glowColor: string
   ambientStyle: Record<string, string>
   backdropSource: string | null
   backdropIsArtist: boolean
   artistBackgrounds: string[]
-  artistBackground: string | null
   visualizerAvailable: boolean
   visualizerActive: boolean
   visualizerColor: string
@@ -48,6 +43,8 @@ export interface HostNowPlayingApi {
   radioSearchPending: boolean
   radioHasActiveSearch: boolean
   autoplayEnabled: boolean
+  /** Whether the server can top up the queue at all (song radio). */
+  autoplayAvailable: boolean
   debugEnabled: boolean
 
   setLyricsOpen(open: boolean): void
@@ -82,10 +79,17 @@ export function toNowPlayingSong(song: Song | null): NowPlayingSong | null {
 }
 
 /** What to say when there are no lyric lines to show, or null when there
- * are. Exported so tests can build a source without the whole view. */
+ * are. Exported so tests can build a source without the whole view.
+ *
+ * "Looking" covers two cases: a lookup that is running, and a song the
+ * store has no answer about yet - the beat between the panel appearing and
+ * the lookup starting. "None found" there would claim an outcome nobody has
+ * looked for. */
 export function lyricsStatus(currentSongId: string | null): string | null {
   const lyrics = useLyricsStore()
   if (lyrics.loading) return i18n.global.t('lyrics.searching')
+  // Lines win: a message hiding real lyrics would be worse than one a
+  // moment out of date.
   if (!lyrics.error && lyrics.lines.length > 0) return null
   if (currentSongId !== null && lyrics.songId !== currentSongId) {
     return i18n.global.t('lyrics.searching')
@@ -127,20 +131,13 @@ export function hostNowPlayingSource(api: HostNowPlayingApi): NowPlayingSource {
   return reactive({
     song: computed(() => toNowPlayingSong(api.currentSong)),
     radio: computed(() => hostRadio(api)),
-    next: computed(() => toNowPlayingSong(api.nextSong)),
-    playing: computed(() => api.isPlaying),
     position: computed(() => api.localPosition),
-    duration: computed(() => api.duration),
-    accentColor: computed(() => api.colorTriplet),
     glowColor: computed(() => api.glowColor),
     ambientStyle: computed(() => api.ambientStyle),
     backdrop: reactive({
       source: computed(() => api.backdropSource),
       isArtist: computed(() => api.backdropIsArtist),
       backgrounds: computed(() => api.artistBackgrounds),
-      index: computed(() =>
-        api.artistBackground ? api.artistBackgrounds.indexOf(api.artistBackground) : 0,
-      ),
     }),
     lyrics: reactive({
       lines: computed(() => useLyricsStore().lines),
@@ -162,11 +159,10 @@ export function hostNowPlayingSource(api: HostNowPlayingApi): NowPlayingSource {
       debug: computed(() => api.visualizerDebug),
     }),
     capabilities: reactive({
-      seek: true,
       fullscreen: true,
       artistLinks: true,
       titleLog: true,
-      autoplay: true,
+      autoplay: computed(() => api.autoplayAvailable),
       debug: computed(() => api.debugEnabled),
       lyricsTools: true,
     }),
@@ -179,10 +175,7 @@ export function hostNowPlayingSource(api: HostNowPlayingApi): NowPlayingSource {
     lyricsCandidateComponent: markRaw(LyricsCandidateList),
     debugOverlayComponent: markRaw(VisualizerDebugOverlay),
     ui: reactive({
-      lyricsOpen: computed({
-        get: () => api.showLyrics,
-        set: (open: boolean) => api.setLyricsOpen(open),
-      }),
+      lyricsOpen: computed(() => api.showLyrics),
       showVisualizer: computed(() => api.showVisualizer),
       artworkHidden: computed(() => api.artworkHidden),
     }),
@@ -193,10 +186,9 @@ export function hostNowPlayingSource(api: HostNowPlayingApi): NowPlayingSource {
     toggleVisualizer: () => api.toggleVisualizer(),
     toggleArtwork: () => api.toggleArtwork(),
     cycleBackground: () => api.cycleArtistBackground(),
-    selectBackdrop: () => {},
     seek: (seconds: number) => api.seek(seconds),
     setLyricsOffset: (offset: number) => api.setLyricsOffset(offset),
-    resetLyricsOffset: (offset: number) => api.setLyricsOffset(0 - offset),
+    resetLyricsOffset: () => api.setLyricsOffset(0),
     loadLyricsCandidates: () => api.loadLyricsCandidates(),
     clearLyricsCandidates: () => api.clearLyricsCandidates(),
     toggleAutoplay: () => api.toggleAutoplay(),
