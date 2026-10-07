@@ -99,6 +99,19 @@ describe('the online party player bar', () => {
     expect(localStorage.getItem('beacon_party_volume')).toBe('40')
   })
 
+  it('moves the volume with the mouse wheel, like the app’s own slider', async () => {
+    const store = usePartyGuestStore()
+    store.applySnapshot(snapshot(true))
+    store.volumeAdjustable = true
+    store.setVolume(40)
+    const slider = mountBar().find('input[type="range"]')
+
+    await slider.trigger('wheel', { deltaY: -100 })
+
+    // One notch up is one 5% step, from an off-grid value to the next line.
+    expect(store.volume).toBe(45)
+  })
+
   it('offers no slider where the browser ignores it', () => {
     const store = usePartyGuestStore()
     store.applySnapshot(snapshot(true))

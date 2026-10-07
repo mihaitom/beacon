@@ -68,6 +68,7 @@
           :aria-label="$t('player.volume')"
           class="guest-player-bar__slider"
           @update:model-value="store.setVolume($event)"
+          @wheel="onVolumeWheel"
         />
       </template>
     </div>
@@ -79,6 +80,7 @@ import WaveformBars from '@/components/player/WaveformBars.vue'
 import TouchVolumeSlider from '@/components/mobile/TouchVolumeSlider.vue'
 import GuestCover from './GuestCover.vue'
 import { usePartyGuestStore } from '../store'
+import { volumeAfterWheel } from '@/services/volumeWheel'
 
 /** The online party's player bar: the guest's own play button for the
  * stream, where the song is, and the guest's own volume. Shown only while
@@ -90,7 +92,7 @@ export default {
     compact: { type: Boolean, default: false },
   },
   data() {
-    return { volumeBeforeMute: 100 }
+    return { volumeBeforeMute: 100, volumeWheelCarry: 0 }
   },
   computed: {
     store() {
@@ -147,6 +149,19 @@ export default {
       } else {
         this.store.setVolume(this.volumeBeforeMute || 100)
       }
+    },
+    /** The slider is the guest's own browser volume, so the wheel moves it
+     * the same way the app's slider moves its own (see volumeWheel.ts). */
+    onVolumeWheel(event: WheelEvent) {
+      event.preventDefault()
+      const { volume, carry } = volumeAfterWheel(
+        event,
+        this.store.volume,
+        100,
+        this.volumeWheelCarry,
+      )
+      this.volumeWheelCarry = carry
+      if (volume != null) this.store.setVolume(volume)
     },
     formatTime(seconds: number): string {
       const total = Math.max(0, Math.round(seconds))
