@@ -252,6 +252,16 @@ describe('CoverArt', () => {
     expect(wrapper.html()).toContain('blob:cover-1')
   })
 
+  it("shows its own image when handed the guest page's src as well", async () => {
+    // The shared Now Playing passes `src` to whichever cover it renders; the
+    // host's is null. It must not reach CoverFrame and blank the cover.
+    const wrapper = await scrollIntoRest(mountCover({ src: null }))
+    requests[0]!.succeed()
+    await flush()
+
+    expect(wrapper.html()).toContain('blob:cover-1')
+  })
+
   it('cross-fades from the smaller copy it was handed to the real one', async () => {
     // The artwork viewer is opened from something that already has a small
     // version of the very same picture on screen. Covering that with a

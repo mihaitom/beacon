@@ -236,6 +236,15 @@ export default {
       type: String as PropType<string | null>,
       default: null,
     },
+    /** GuestCover's ready URL, which the shared Now Playing hands every
+     * cover component alongside coverArtId - unused here. Declared so it
+     * stops at this component: left undeclared it fell through to
+     * CoverFrame's own `src` prop and overrode the image fetched here with
+     * the host's null, leaving Now Playing on its skeleton for good. */
+    src: {
+      type: String as PropType<string | null>,
+      default: null,
+    },
     /** A ready-made image URL — tried before coverArtId when given (e.g.
      * Navidrome's artistImageUrl, a real photo rather than an album-cover
      * placeholder, and usually a pre-signed URL on a host of its own). Many
