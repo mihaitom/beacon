@@ -56,7 +56,7 @@
     <div v-if="!compact" class="guest-player-bar__volume">
       <template v-if="store.volumeAdjustable">
         <v-btn
-          :icon="store.volume === 0 ? 'mdi-volume-off' : 'mdi-volume-high'"
+          :icon="store.volume === 0 ? 'mdi-volume-mute' : 'mdi-volume-high'"
           variant="text"
           density="comfortable"
           :title="$t('player.mute')"
