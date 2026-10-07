@@ -8,6 +8,7 @@ import { i18n } from '@/i18n'
 import PartyGuestApp from '../PartyGuestApp.vue'
 import { usePartyGuestStore } from '../store'
 import { PartyApiError } from '../api'
+import { GITHUB_URL } from '@/services/project'
 import type { GuestSnapshot } from '../api'
 
 const DESKTOP_WIDTH = window.innerWidth
@@ -176,5 +177,23 @@ describe('PartyGuestApp with the shared Now Playing', () => {
 
     expect(opened.map((source) => source.readyState)).toEqual([2])
     vi.unstubAllGlobals()
+  })
+})
+
+describe('PartyGuestApp with no party to show', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  it('still says where Beacon comes from', async () => {
+    const store = usePartyGuestStore()
+    vi.spyOn(store, 'start').mockResolvedValue()
+    store.phase = 'message'
+    store.message = 'ended'
+    const vuetify = createVuetify({ components, directives })
+    const wrapper = mount(PartyGuestApp, { global: { plugins: [vuetify, i18n] } })
+    await wrapper.vm.$nextTick()
+    expect(wrapper.text()).toContain(i18n.global.t('partyGuest.endedTitle'))
+    expect(wrapper.find(`a[href="${GITHUB_URL}"]`).exists()).toBe(true)
   })
 })

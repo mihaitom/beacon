@@ -20,6 +20,9 @@ const VOLUME_KEY = 'beacon_party_volume'
 // How often the extrapolated position is re-read - often enough for a
 // lyrics line to light up on time, rare enough to cost nothing.
 const CLOCK_TICK_MS = 250
+// How long a wish counts as made without any snapshot showing it. Covers a
+// snapshot built just before the wish landed; past it, the snapshot decides.
+const PENDING_WISH_MS = 10_000
 // Lyrics kept per song, so the song a listening guest still hears keeps its
 // lyrics after the host has moved on.
 const LYRICS_KEPT = 4
@@ -67,8 +70,10 @@ interface GuestState {
     loading: boolean
     seq: number
   }
-  /** Songs wished for from this page, so their buttons stay ticked. */
-  wishedIds: string[]
+  /** Wishes made from this page that no snapshot has shown yet, by song id,
+   * with when (ms) - so a button is ticked straight away rather than once
+   * the next snapshot arrives. See isWished. */
+  pendingWishes: Record<string, number>
   /** Lyrics by song id, the last LYRICS_KEPT loaded. */
   lyricsBySong: Record<string, GuestLyrics>
   listenState: ListenState
@@ -144,7 +149,7 @@ export const usePartyGuestStore = defineStore('partyGuest', {
     lyricsKey: null,
     lyricsLoading: false,
     search: { query: '', songs: [], albums: [], album: null, loading: false, seq: 0 },
-    wishedIds: [],
+    pendingWishes: {},
     lyricsBySong: {},
     listenState: 'off',
     listenTime: null,
@@ -201,6 +206,25 @@ export const usePartyGuestStore = defineStore('partyGuest', {
       const elapsed = state.now + state.clockSkew - snap.position_at
       const position = snap.position + Math.max(elapsed, 0)
       return snap.duration > 0 ? Math.min(position, snap.duration) : position
+    },
+
+    /** This guest's wishes still to come, from the snapshot. A wish leaves
+     * it when it starts playing or is withdrawn, which is what resets its
+     * button in the search. */
+    myWishIds(state): Set<string> {
+      const ids = new Set<string>()
+      for (const song of state.snapshot?.upcoming ?? []) {
+        if (song.request?.mine) ids.add(song.id)
+      }
+      return ids
+    },
+
+    isWished(): (songId: string) => boolean {
+      return (songId) => {
+        if (this.myWishIds.has(songId)) return true
+        const at = this.pendingWishes[songId]
+        return at !== undefined && Date.now() - at < PENDING_WISH_MS
+      }
     },
 
     wishesLeft(state): number {
@@ -358,6 +382,11 @@ export const usePartyGuestStore = defineStore('partyGuest', {
       this.now = Date.now() / 1000
       this.clockSkew = snapshot.position_at - this.now
       this.snapshot = snapshot
+      // A wish the snapshot shows is the snapshot's from now on.
+      const shown = this.myWishIds
+      for (const id of Object.keys(this.pendingWishes)) {
+        if (shown.has(id)) delete this.pendingWishes[id]
+      }
       if (this.listenState !== 'off') {
         // The host switched listening along off, or the stream restarted.
         if (!snapshot.listen?.enabled) this.stopListening()
@@ -427,7 +456,7 @@ export const usePartyGuestStore = defineStore('partyGuest', {
 
     async wish(song: GuestSong): Promise<void> {
       await partyApi.wish(song.id)
-      this.wishedIds.push(song.id)
+      this.pendingWishes[song.id] = Date.now()
     },
 
     async withdraw(requestId: string): Promise<void> {

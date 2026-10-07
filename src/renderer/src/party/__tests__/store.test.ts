@@ -288,3 +288,56 @@ describe('listening along', () => {
     expect(stop).toHaveBeenCalled()
   })
 })
+
+describe('the wish buttons', () => {
+  const song = { id: 'w1', title: 'W', artist: null, album: null, duration: 180, cover: null }
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.restoreAllMocks()
+  })
+
+  it('is ticked straight away, and again once the song plays it is not', async () => {
+    const store = usePartyGuestStore()
+    vi.spyOn(partyApi, 'wish').mockResolvedValue({ success: true })
+    store.applySnapshot(snapshot())
+    await store.wish(song)
+    expect(store.isWished('w1')).toBe(true)
+
+    // The wish shows up in what is coming up...
+    store.applySnapshot(
+      snapshot({ upcoming: [{ ...song, request: { name: 'Anna', mine: true, id: 'r1' } }] }),
+    )
+    expect(store.isWished('w1')).toBe(true)
+    // ...and leaves it once it is playing: the button can be used again.
+    store.applySnapshot(snapshot({ current_song: song, upcoming: [] }))
+    expect(store.isWished('w1')).toBe(false)
+  })
+
+  it('is no longer ticked once withdrawn', () => {
+    const store = usePartyGuestStore()
+    store.applySnapshot(
+      snapshot({ upcoming: [{ ...song, request: { name: 'Anna', mine: true, id: 'r1' } }] }),
+    )
+    expect(store.isWished('w1')).toBe(true)
+    store.applySnapshot(snapshot({ upcoming: [] }))
+    expect(store.isWished('w1')).toBe(false)
+  })
+
+  it("is not ticked for somebody else's wish", () => {
+    const store = usePartyGuestStore()
+    store.applySnapshot(
+      snapshot({ upcoming: [{ ...song, request: { name: 'Ben', mine: false } }] }),
+    )
+    expect(store.isWished('w1')).toBe(false)
+  })
+
+  it('gives up on a wish no snapshot ever showed', async () => {
+    const store = usePartyGuestStore()
+    vi.spyOn(partyApi, 'wish').mockResolvedValue({ success: true })
+    const now = vi.spyOn(Date, 'now').mockReturnValue(1_000_000)
+    await store.wish(song)
+    now.mockReturnValue(1_000_000 + 11_000)
+    expect(store.isWished('w1')).toBe(false)
+  })
+})

@@ -408,6 +408,7 @@ export default {
     listenHint:
       'For a party online, in a voice chat for example: everyone gets your music in their own browser from the party link.',
     listeners: '{count} listening online - about {mbps} Mbit/s upload',
+    invitation: 'Invitation',
   },
   partyGuest: {
     largeArtwork: 'Large artwork',

@@ -5,6 +5,7 @@
     </div>
 
     <div v-else-if="store.phase === 'message'" class="guest-app__center">
+      <guest-project-link :compact="compact" />
       <v-icon icon="mdi-lighthouse-on" color="primary" size="56" />
       <h1 class="display-title">{{ $t(`partyGuest.${store.message}Title`) }}</h1>
       <p class="text-body-medium text-medium-emphasis">
@@ -54,17 +55,7 @@
         class="guest-app__page"
         :class="{ 'guest-app__page--flush': tab === 'now', 'guest-app__page--online': online }"
       >
-        <a
-          v-if="tab === 'now'"
-          :href="githubUrl"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="text-body-small guest-app__project guest-app__project--compact"
-          :title="$t('partyGuest.project')"
-        >
-          <v-icon icon="mdi-github" size="14" />
-          <span>Beacon</span>
-        </a>
+        <guest-project-link v-if="tab === 'now'" compact />
         <now-playing-presentation v-if="tab === 'now'" compact>
           <template #toolbar-actions>
             <guest-skip-button @notify="notify" />
@@ -91,16 +82,7 @@
     <!-- A larger screen: Now Playing as the stage, what's next and the
      - search beside it. -->
     <div v-else class="guest-app__desktop" :class="{ 'guest-app__desktop--online': online }">
-      <a
-        :href="githubUrl"
-        target="_blank"
-        rel="noopener noreferrer"
-        class="text-body-small guest-app__project"
-        :title="$t('partyGuest.project')"
-      >
-        <v-icon icon="mdi-github" size="14" />
-        <span>Beacon</span>
-      </a>
+      <guest-project-link />
       <now-playing-presentation class="guest-app__stage">
         <template #toolbar-actions>
           <guest-skip-button @notify="notify" />
@@ -144,7 +126,7 @@ import { nowPlayingSourceKey } from '@/components/now-playing/source'
 import NowPlayingPresentation from '@/components/now-playing/NowPlayingPresentation.vue'
 import GuestSkipButton from './components/GuestSkipButton.vue'
 import GuestPlayerBar from './components/GuestPlayerBar.vue'
-import { GITHUB_URL } from '@/services/project'
+import GuestProjectLink from './components/GuestProjectLink.vue'
 import GuestQueue from './components/GuestQueue.vue'
 import GuestRadioHint from './components/GuestRadioHint.vue'
 import GuestWish from './components/GuestWish.vue'
@@ -155,6 +137,7 @@ export default {
     NowPlayingPresentation,
     GuestSkipButton,
     GuestPlayerBar,
+    GuestProjectLink,
     GuestQueue,
     GuestRadioHint,
     GuestWish,
@@ -184,7 +167,6 @@ export default {
       sideTab: 'queue',
       toast: '',
       toastOpen: false,
-      githubUrl: GITHUB_URL,
     }
   },
   computed: {
@@ -248,6 +230,7 @@ export default {
 
 <style scoped>
 .guest-app__center {
+  position: relative;
   min-height: 100dvh;
   display: flex;
   flex-direction: column;
@@ -347,36 +330,6 @@ export default {
  * the player bar is not one of Vuetify's, so it is named outright. */
 .guest-app__desktop--online .guest-app__stage {
   --v-layout-bottom: var(--beacon-player-bar-height);
-}
-
-/* Where the app comes from, kept quiet: in the corner opposite the
- * toolbar, on the same translucent pill so it reads over a photo. */
-.guest-app__project {
-  position: absolute;
-  top: 24px;
-  left: 24px;
-  z-index: 3;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  background: rgba(18, 20, 28, 0.55);
-  backdrop-filter: blur(8px);
-  color: inherit;
-  text-decoration: none;
-  opacity: 0.55;
-  transition: opacity 0.15s;
-}
-
-.guest-app__project:hover,
-.guest-app__project:focus-visible {
-  opacity: 1;
-}
-
-.guest-app__project.guest-app__project--compact {
-  top: 8px;
-  left: 8px;
 }
 
 .guest-app__stage {

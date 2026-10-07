@@ -31,7 +31,7 @@ export default {
       return usePartyGuestStore()
     },
     wished(): boolean {
-      return this.store.wishedIds.includes(this.song.id)
+      return this.store.isWished(this.song.id)
     },
   },
   methods: {

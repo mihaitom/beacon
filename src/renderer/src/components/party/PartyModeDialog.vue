@@ -1,5 +1,5 @@
 <template>
-  <v-dialog :model-value="modelValue" max-width="460" scrollable @update:model-value="onClose">
+  <v-dialog :model-value="modelValue" max-width="900" scrollable @update:model-value="onClose">
     <v-card class="beacon-dialog">
       <v-card-title class="party-title">
         <span>{{ $t('party.title') }}</span>
@@ -20,19 +20,35 @@
           {{ $t('party.runsLocallyPhone') }}
         </p>
 
-        <!-- Running, and answered by this window: the invitation itself. -->
-        <template v-if="store.enabled && store.hostedHere">
-          <!-- Which path answers guests: connect while casting, else this
-           - window (see docs/plans/party-mode-server-side.md). -->
-          <v-alert
-            :type="store.serverHosted ? 'success' : 'warning'"
-            variant="tonal"
-            density="compact"
-            class="party-path"
-          >
-            {{ store.serverHosted ? $t('party.runsOnServer') : $t('party.runsLocally') }}
-          </v-alert>
-          <template v-if="store.inviteUrl">
+        <!-- Which path answers guests: connect while casting, else this
+         - window (see docs/plans/party-mode-server-side.md). -->
+        <v-alert
+          v-if="hostedHere"
+          :type="store.serverHosted ? 'success' : 'warning'"
+          variant="tonal"
+          density="compact"
+          class="party-notice"
+        >
+          {{ store.serverHosted ? $t('party.runsOnServer') : $t('party.runsLocally') }}
+        </v-alert>
+        <!-- Running, but some other tab is the one answering guests. -->
+        <v-alert
+          v-else-if="store.enabled"
+          type="info"
+          variant="tonal"
+          density="compact"
+          class="party-notice"
+        >
+          {{ $t('party.hostedElsewhere') }}
+        </v-alert>
+
+        <!-- Side by side while the party runs here - the invitation, the
+         - rules, and who came - so a party of a normal size fits without
+         - scrolling. The columns fold underneath each other on a narrow
+         - screen. -->
+        <div class="party-columns" :class="{ 'party-columns--running': hostedHere }">
+          <section v-if="hostedHere && store.inviteUrl" class="party-column">
+            <h3 class="eyebrow-label panel-title">{{ $t('party.invitation') }}</h3>
             <div class="party-qr">
               <canvas ref="qrCanvas" />
             </div>
@@ -59,85 +75,79 @@
             <v-btn variant="tonal" block prepend-icon="mdi-fullscreen" @click="showPoster = true">
               {{ $t('party.showPoster') }}
             </v-btn>
-          </template>
+          </section>
 
-          <h3 class="eyebrow-label panel-title party-section">
-            {{ $t('party.guests', { count: store.guests.length }) }}
-          </h3>
-          <p v-if="!store.guests.length" class="text-body-small text-medium-emphasis">
-            {{ $t('party.noGuests') }}
-          </p>
-          <p
-            v-if="store.listenKbps && store.listeners"
-            class="text-body-small text-medium-emphasis"
-          >
-            {{ $t('party.listeners', { count: store.listeners, mbps: uploadMbps }) }}
-          </p>
-          <div v-for="guest in store.guests" :key="guest.guest_id" class="party-guest">
-            <v-icon
-              :icon="guest.connected ? 'mdi-circle' : 'mdi-circle-outline'"
-              :color="guest.connected ? 'success' : undefined"
-              size="10"
-            />
-            <span class="text-body-medium party-guest__name">{{ guest.name }}</span>
-            <v-btn
-              icon="mdi-account-remove"
-              size="small"
-              variant="text"
-              :title="$t('party.removeGuest', { name: guest.name })"
-              @click="kick(guest.guest_id)"
-            />
-          </div>
-        </template>
+          <section class="party-column party-column--rules">
+            <h3 class="eyebrow-label panel-title">{{ $t('party.rules') }}</h3>
+            <div class="party-settings">
+              <v-select
+                :model-value="store.settings.maxPendingPerGuest"
+                :items="limitOptions"
+                :label="$t('party.limit')"
+                variant="solo-filled"
+                hide-details
+                @update:model-value="(v: number) => store.saveSettings({ maxPendingPerGuest: v })"
+              />
+              <v-select
+                :model-value="store.settings.skipRatio"
+                :items="skipOptions"
+                :label="$t('party.skip')"
+                variant="solo-filled"
+                hide-details
+                @update:model-value="(v: number) => store.saveSettings({ skipRatio: v })"
+              />
+              <v-select
+                v-if="!store.enabled"
+                :model-value="store.settings.durationHours"
+                :items="durationOptions"
+                :label="$t('party.duration')"
+                variant="solo-filled"
+                hide-details
+                @update:model-value="(v: number) => store.saveSettings({ durationHours: v })"
+              />
+              <v-select
+                v-if="store.onlineAvailable"
+                :model-value="store.settings.listenKbps"
+                :items="listenOptions"
+                :label="$t('party.listen')"
+                :hint="$t('party.listenHint')"
+                persistent-hint
+                variant="solo-filled"
+                class="party-settings__online"
+                @update:model-value="(v: number) => store.saveSettings({ listenKbps: v })"
+              />
+            </div>
+          </section>
 
-        <!-- Running, but some other tab is the one answering guests. -->
-        <v-alert
-          v-else-if="store.enabled"
-          type="info"
-          variant="tonal"
-          density="compact"
-          class="party-notice"
-        >
-          {{ $t('party.hostedElsewhere') }}
-        </v-alert>
-
-        <h3 class="eyebrow-label panel-title party-section">{{ $t('party.rules') }}</h3>
-        <div class="party-settings">
-          <v-select
-            :model-value="store.settings.maxPendingPerGuest"
-            :items="limitOptions"
-            :label="$t('party.limit')"
-            variant="solo-filled"
-            hide-details
-            @update:model-value="(v: number) => store.saveSettings({ maxPendingPerGuest: v })"
-          />
-          <v-select
-            :model-value="store.settings.skipRatio"
-            :items="skipOptions"
-            :label="$t('party.skip')"
-            variant="solo-filled"
-            hide-details
-            @update:model-value="(v: number) => store.saveSettings({ skipRatio: v })"
-          />
-          <v-select
-            v-if="store.onlineAvailable"
-            :model-value="store.settings.listenKbps"
-            :items="listenOptions"
-            :label="$t('party.listen')"
-            :hint="$t('party.listenHint')"
-            persistent-hint
-            variant="solo-filled"
-            @update:model-value="(v: number) => store.saveSettings({ listenKbps: v })"
-          />
-          <v-select
-            v-if="!store.enabled"
-            :model-value="store.settings.durationHours"
-            :items="durationOptions"
-            :label="$t('party.duration')"
-            variant="solo-filled"
-            hide-details
-            @update:model-value="(v: number) => store.saveSettings({ durationHours: v })"
-          />
+          <section v-if="hostedHere" class="party-column">
+            <h3 class="eyebrow-label panel-title">
+              {{ $t('party.guests', { count: store.guests.length }) }}
+            </h3>
+            <p
+              v-if="store.listenKbps && store.listeners"
+              class="text-body-small text-medium-emphasis party-listeners"
+            >
+              {{ $t('party.listeners', { count: store.listeners, mbps: uploadMbps }) }}
+            </p>
+            <p v-if="!store.guests.length" class="text-body-small text-medium-emphasis">
+              {{ $t('party.noGuests') }}
+            </p>
+            <div v-for="guest in store.guests" :key="guest.guest_id" class="party-guest">
+              <v-icon
+                :icon="guest.connected ? 'mdi-circle' : 'mdi-circle-outline'"
+                :color="guest.connected ? 'success' : undefined"
+                size="10"
+              />
+              <span class="text-body-medium party-guest__name">{{ guest.name }}</span>
+              <v-btn
+                icon="mdi-account-remove"
+                size="small"
+                variant="text"
+                :title="$t('party.removeGuest', { name: guest.name })"
+                @click="kick(guest.guest_id)"
+              />
+            </div>
+          </section>
         </div>
       </v-card-text>
 
@@ -212,6 +222,11 @@ export default {
     store() {
       return usePartyStore()
     },
+    /** Running, and answered by this window: the invitation and the guest
+     * list are this window's to show. */
+    hostedHere(): boolean {
+      return this.store.enabled && this.store.hostedHere
+    },
     limitOptions() {
       return LIMITS.map((n) => ({ title: String(n), value: n }))
     },
@@ -269,7 +284,7 @@ export default {
       }
     },
     renderQr() {
-      void this.drawQr(this.$refs.qrCanvas as HTMLCanvasElement | undefined, 240)
+      void this.drawQr(this.$refs.qrCanvas as HTMLCanvasElement | undefined, 200)
     },
     renderPoster() {
       // Sized to the shorter side of the window, leaving room for the
@@ -348,7 +363,28 @@ export default {
   margin: -8px 0 16px;
 }
 
-.party-path {
+.party-notice {
+  margin-bottom: 16px;
+}
+
+/* Columns of at least 240px, as many as fit: three while the party runs
+ * in a 900px dialog (invitation, rules, guests), one under the other on a
+ * phone. Before it starts there are only the rules, which then spread over
+ * the whole width instead (see .party-settings). */
+.party-columns {
+  display: grid;
+  gap: 16px 28px;
+}
+
+.party-columns--running {
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+}
+
+.party-column {
+  min-width: 0;
+}
+
+.party-column .panel-title {
   margin-bottom: 12px;
 }
 
@@ -364,12 +400,7 @@ export default {
   border-radius: 4px;
 }
 
-.party-notice {
-  margin-bottom: 8px;
-}
-
-.party-section {
-  margin-top: 20px;
+.party-listeners {
   margin-bottom: 8px;
 }
 
@@ -388,10 +419,18 @@ export default {
   white-space: nowrap;
 }
 
+/* One column of fields in the running layout's narrow third; side by side
+ * before the party starts, when the rules have the dialog to themselves. */
 .party-settings {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
   gap: 12px;
+}
+
+/* The online party's field carries a line of explanation under it; across
+ * the whole row so that line has room. */
+.party-settings__online {
+  grid-column: 1 / -1;
 }
 
 .party-poster {

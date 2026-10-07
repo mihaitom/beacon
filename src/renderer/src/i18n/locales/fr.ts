@@ -412,6 +412,7 @@ export default {
     listenHint:
       'Pour une fête en ligne, par exemple en chat vocal : tout le monde reçoit ta musique dans son navigateur via le lien de la fête.',
     listeners: '{count} à l’écoute en ligne - environ {mbps} Mbit/s en envoi',
+    invitation: 'Invitation',
   },
   partyGuest: {
     largeArtwork: 'Grande pochette',
