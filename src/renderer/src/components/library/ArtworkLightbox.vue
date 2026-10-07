@@ -152,11 +152,12 @@ export default {
  * should be nothing behind it at all.
  *
  * Two classes rather than one, and the v-avatar branch named separately:
- * .artwork-lightbox__art lands on CoverArt's own root element, so a rule
- * on it alone ties with that component's own `.cover-art` rule on
- * specificity and the winner is decided by stylesheet order. Pairing it
- * with the class it is overriding settles it. Same technique, and the same
- * reason, as .radio-cover-art--transparent in NowPlayingView.vue. */
+ * .artwork-lightbox__art lands on the cover's root element (CoverFrame's,
+ * through CoverArt), so a rule on it alone ties with CoverFrame's own
+ * `.cover-art` rule on specificity and the winner is decided by stylesheet
+ * order. Pairing it with the class it is overriding settles it. Same
+ * technique, and the same reason, as .radio-cover-art--transparent in
+ * NowPlayingArtwork.vue. */
 .artwork-lightbox__art.cover-art,
 .artwork-lightbox__art.v-avatar {
   background: transparent;

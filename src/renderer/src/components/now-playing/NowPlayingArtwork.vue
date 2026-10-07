@@ -107,7 +107,7 @@ export default {
  * around an edge that was never actually there.
  *
  * .radio-cover-art--transparent.cover-art (compound, not just the one
- * class) is deliberate — CoverArt.vue's own scoped background rule targets
+ * class) is deliberate — CoverFrame.vue's own scoped background rule targets
  * .cover-art alone, so at equal specificity the one that happens to be
  * later in the built CSS wins, not necessarily this one. Matching both
  * classes outranks it regardless of build order. */

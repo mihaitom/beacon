@@ -1,30 +1,20 @@
 <template>
-  <div
-    class="guest-cover"
-    :class="{ 'guest-cover--transparent': transparent }"
-    :style="{ width: sizeCss, height: sizeCss }"
-  >
-    <img
-      v-if="src"
-      :src="src"
-      alt=""
-      class="guest-cover__img"
-      :class="{ 'guest-cover__img--contain': contain }"
-      @load="$emit('loaded', src)"
-      @error="$emit('loaded', null)"
-    />
-    <div v-else class="guest-cover__fallback">
-      <v-icon :icon="fallbackIcon" />
-    </div>
-  </div>
+  <cover-frame
+    :src="failed ? null : src"
+    :size="size"
+    :contain="contain"
+    :fallback-icon="fallbackIcon"
+    @error="failed = true"
+  />
 </template>
 
 <script lang="ts">
 import type { PropType } from 'vue'
+import CoverFrame from '@/components/library/CoverFrame.vue'
 
-/** The party guest page's cover image: a store-free stand-in for the app's
- * batched CoverArt, so the shared Now Playing presentation can render the
- * same markup without pulling the library store into the guest bundle.
+/** The party guest page's cover: the app's own CoverFrame, fed a ready URL
+ * connect serves instead of CoverArt's batched, token-carrying fetch - which
+ * would pull the library store into the guest bundle.
  *
  * Takes CoverArt's props too (the host's `coverArtId` and `radioFavicon`
  * routes are simply unused here - a guest only ever has a ready URL in
@@ -32,6 +22,7 @@ import type { PropType } from 'vue'
  * measures for transparency; a song cover is never asked. */
 export default {
   name: 'GuestCover',
+  components: { CoverFrame },
   props: {
     src: {
       type: String as PropType<string | null>,
@@ -59,18 +50,15 @@ export default {
       default: 'mdi-album',
     },
   },
-  emits: ['transparency', 'loaded'],
+  emits: ['transparency'],
   data() {
-    return { transparent: false }
-  },
-  computed: {
-    sizeCss(): string {
-      return typeof this.size === 'number' ? `${this.size}px` : this.size
-    },
+    // A URL that failed shows the fallback icon, as CoverArt does once its
+    // candidates are spent.
+    return { failed: false }
   },
   watch: {
     src() {
-      this.transparent = false
+      this.failed = false
       if (this.contain && this.src) void this.checkTransparency(this.src)
     },
   },
@@ -85,8 +73,7 @@ export default {
       try {
         const response = await fetch(url, { credentials: 'same-origin' })
         if (url !== this.src) return
-        this.transparent = response.headers.get('X-Has-Transparency') === 'true'
-        this.$emit('transparency', this.transparent)
+        this.$emit('transparency', response.headers.get('X-Has-Transparency') === 'true')
       } catch {
         // Shown with a card, as before its reading arrives.
       }
@@ -94,38 +81,3 @@ export default {
   },
 }
 </script>
-
-<style scoped>
-.guest-cover {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.4);
-}
-
-.guest-cover--transparent {
-  background: transparent;
-}
-
-.guest-cover__img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-/* A station logo is whatever shape the station made it; cropping one to a
- * square cuts the name off its own logo (see CoverArt's own `contain`). */
-.guest-cover__img--contain {
-  object-fit: contain;
-}
-
-.guest-cover__fallback {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-</style>

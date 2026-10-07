@@ -23,9 +23,11 @@ store-reading leaves. It gets the component itself through the source
 (`cover`, `titleLogComponent`, `lyricsCandidateComponent`,
 `debugOverlayComponent`): `hostSource.ts` hands it `CoverArt`,
 `RadioTitleLog`, `LyricsCandidateList` and `VisualizerDebugOverlay`, the
-guest source hands it `GuestCover` (a plain, store-free image) and nulls.
-`GuestCover` replaced the `CoverArt` `src` prop planned below, which is gone
-again. The final check now passes: after `pnpm build:party`,
+guest source hands it `GuestCover` and nulls. Both covers draw through
+`library/CoverFrame.vue` (box, image, skeleton, fallback icon), so only how
+the image is fetched differs; a hand-written guest copy of that look had
+already drifted (an unscaled fallback icon). `GuestCover` replaced the
+`CoverArt` `src` prop planned below, which is gone again. The final check now passes: after `pnpm build:party`,
 `grep -c getSimilarSongs2 connect/static/party/assets/*.js` is 0 and the one
 JS chunk is ~590 kB (down from ~680).
 
