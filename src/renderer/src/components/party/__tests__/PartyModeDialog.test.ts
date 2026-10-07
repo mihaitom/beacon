@@ -34,11 +34,16 @@ function closeRequests(wrapper: VueWrapper) {
   return (wrapper.emitted('update:modelValue') ?? []).filter((event) => event[0] === false)
 }
 
-/** A button in the action row, found by the label the app gives it. */
-function actionButton(label: string) {
-  return [...document.body.querySelectorAll<HTMLButtonElement>('.v-card-actions button')].find(
+/** Buttons in the action row with the label the app gives them. */
+function actionButtons(label: string) {
+  return [...document.body.querySelectorAll<HTMLButtonElement>('.v-card-actions button')].filter(
     (button) => button.textContent?.trim() === label,
   )
+}
+
+/** A button in the action row, found by the label the app gives it. */
+function actionButton(label: string) {
+  return actionButtons(label)[0]
 }
 
 describe('PartyModeDialog', () => {
@@ -65,14 +70,16 @@ describe('PartyModeDialog', () => {
     expect(closeRequests(wrapper)).toHaveLength(1)
   })
 
-  it('offers Done once a party is running', async () => {
+  it('offers exactly one Done once a party is running', async () => {
     const store = usePartyStore()
     store.enabled = true
     const wrapper = mountDialog()
     await wrapper.setProps({ modelValue: true })
     await wrapper.vm.$nextTick()
 
-    actionButton(i18n.global.t('common.done'))!.click()
+    const done = actionButtons(i18n.global.t('common.done'))
+    expect(done).toHaveLength(1)
+    done[0]!.click()
     await wrapper.vm.$nextTick()
 
     expect(closeRequests(wrapper)).toHaveLength(1)
