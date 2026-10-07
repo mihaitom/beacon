@@ -7,6 +7,7 @@ import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import PartyGuestApp from '../PartyGuestApp.vue'
 import { usePartyGuestStore } from '../store'
+import { PartyApiError } from '../api'
 import type { GuestSnapshot } from '../api'
 
 const DESKTOP_WIDTH = window.innerWidth
@@ -72,6 +73,28 @@ describe('PartyGuestApp while a radio station plays', () => {
     const wishTab = wrapper.findAll('.guest-app__tabs .v-btn').at(2)!
     await wishTab.trigger('click')
     expect(wrapper.text()).toContain(i18n.global.t('partyGuest.radioText'))
+  })
+})
+
+describe('PartyGuestApp joining', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    localStorage.clear()
+  })
+
+  it('says a name already in use is taken', async () => {
+    const store = usePartyGuestStore()
+    vi.spyOn(store, 'start').mockResolvedValue()
+    store.phase = 'join'
+    vi.spyOn(store, 'join').mockRejectedValue(new PartyApiError(409, 'taken'))
+    const vuetify = createVuetify({ components, directives })
+    const wrapper = mount(PartyGuestApp, { global: { plugins: [vuetify, i18n] } })
+    const vm = wrapper.vm as unknown as { name: string; joinError: string; join(): Promise<void> }
+    vm.name = 'Anna'
+
+    await vm.join()
+
+    expect(vm.joinError).toBe(i18n.global.t('partyGuest.nameTaken'))
   })
 })
 

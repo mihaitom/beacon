@@ -443,6 +443,7 @@ export default {
     errOffline: "Beacon isn't answering right now.",
     errGeneric: "That didn't work - try again.",
     full: 'This party is full.',
+    nameTaken: 'That name is taken - please pick another.',
   },
   remoteControl: {
     title: 'Remote Control',

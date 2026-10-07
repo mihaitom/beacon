@@ -46,6 +46,9 @@
         <v-icon icon="mdi-lighthouse-on" color="primary" />
         <span class="guest-app__brand">Beacon</span>
         <span class="text-body-small text-medium-emphasis guest-app__me">{{ meName }}</span>
+        <!-- The shared Now Playing toolbar teleports its buttons in here on
+         - a phone, as it does into MobileLayout.vue's own app bar. -->
+        <span id="mobile-app-bar-actions" class="guest-app__actions" />
       </header>
       <main class="guest-app__page" :class="{ 'guest-app__page--flush': tab === 'now' }">
         <now-playing-presentation v-if="tab === 'now'" compact>
@@ -178,6 +181,10 @@ export default {
           this.store.showMessage('ended')
           return
         }
+        if (error instanceof PartyApiError && error.status === 409) {
+          this.joinError = this.$t('partyGuest.nameTaken')
+          return
+        }
         this.joinError =
           error instanceof PartyApiError && error.status === 503
             ? this.$t('partyGuest.full')
@@ -236,10 +243,19 @@ export default {
 
 .guest-app__me {
   margin-left: auto;
+  min-width: 0;
   max-width: 50%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* Where NowPlayingToolbar teleports its buttons on a phone. */
+.guest-app__actions {
+  display: flex;
+  align-items: center;
+  margin-left: 8px;
+  flex-shrink: 0;
 }
 
 /* Between the app bar and the tab bar, scrolling on its own. */

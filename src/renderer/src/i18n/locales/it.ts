@@ -446,6 +446,7 @@ export default {
     errOffline: 'Beacon non risponde al momento.',
     errGeneric: 'Non ha funzionato, riprova.',
     full: 'Questa festa è al completo.',
+    nameTaken: 'Questo nome è già in uso: scegline un altro.',
   },
   remoteControl: {
     title: 'Controllo remoto',

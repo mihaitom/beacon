@@ -443,6 +443,7 @@ export default {
     errOffline: 'Beacon antwortet gerade nicht.',
     errGeneric: 'Das hat nicht geklappt - nochmal versuchen.',
     full: 'Diese Party ist voll.',
+    nameTaken: 'Dieser Name ist schon vergeben - bitte einen anderen wählen.',
   },
   remoteControl: {
     title: 'Fernsteuerung',

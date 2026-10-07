@@ -316,6 +316,8 @@ async def join(req: JoinRequest, request: Request):
     name = clean_name(req.name)
     if name is None:
         raise HTTPException(status_code=400, detail="Please enter a name")
+    if party.has_guest_named(name):
+        raise HTTPException(status_code=409, detail="That name is taken")
     _limit(f"join:{ip}", JOINS_PER_IP)
     joined = party.join(name, ip)
     if joined is None:

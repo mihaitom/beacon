@@ -11,7 +11,10 @@
    - the moment it is most needed. Also disabled wherever the target simply is
    - not there — the view is mounted on its own in tests, and a Teleport
    - pointed at nothing does not degrade, it throws on unmount. -->
-  <Teleport to="#mobile-app-bar-actions" :disabled="!compact || !canDock">
+  <!-- `defer` resolves the target after this render, so the guest page's
+   - header (rendered in the same pass as this toolbar, unlike the app's
+   - separate app-bar component) is in the document by then. -->
+  <Teleport to="#mobile-app-bar-actions" :disabled="!compact || !canDock" defer>
     <div
       v-if="hasPlayable"
       class="now-playing__toolbar"
@@ -180,6 +183,15 @@ export default {
     // toolbar from rendering over the artwork for a frame first.
     this.canDock = document.getElementById('mobile-app-bar-actions') !== null
   },
+  mounted() {
+    // The guest page renders its header in the same pass as this toolbar
+    // (there is no separate app-bar component ahead of a router view), so
+    // the target can miss the created() check; look again once mounted, and
+    // the Teleport docks on the re-render.
+    if (!this.canDock) {
+      this.canDock = document.getElementById('mobile-app-bar-actions') !== null
+    }
+  },
 }
 </script>
 
@@ -221,7 +233,9 @@ export default {
   right: 8px;
   /* Stacked, not a row — a phone screen is narrow enough that even two icon
    * buttons side by side reached noticeably into the artwork underneath
-   * instead of staying clear of it in the corner. */
+   * instead of staying clear of it in the corner. (Both the app and the
+   * guest page dock the toolbar into their app bar, so this is only the
+   * fallback where there is no bar to dock into.) */
   flex-direction: column;
 }
 </style>

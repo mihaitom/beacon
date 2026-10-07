@@ -327,6 +327,17 @@ def test_join_requires_a_name(client, guest_client):
     assert _join(guest_client, token, name="\u200b ").status_code == 400
 
 
+def test_a_name_already_in_use_is_refused(client, guest_client):
+    token = _start(client)
+    assert _join(guest_client, token, "Anna").status_code == 200
+    # A different guest, normalised the same way ("anna" is "Anna").
+    other = TestClient(app, raise_server_exceptions=False)
+    other.headers.update({"Origin": ORIGIN})
+    assert _join(other, token, "anna").status_code == 409
+    # A different name still gets in.
+    assert _join(other, token, "Ben").status_code == 200
+
+
 def test_ids_are_validated(client, guest_client, relay):
     token = _start(client)
     _join(guest_client, token)

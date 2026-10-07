@@ -266,6 +266,13 @@ class PartyState:
             return False
         return secrets.compare_digest(provided.encode(), self.invite_token.encode())
 
+    def has_guest_named(self, name: str) -> bool:
+        """Whether a guest already goes by this name, compared the way the
+        name is normalised (casefold) so "Anna" and "anna" are the same
+        person to the host and the other guests."""
+        wanted = name.casefold()
+        return any(g.name.casefold() == wanted for g in self.sessions.values())
+
     def join(self, name: str, ip: str) -> tuple[str, Guest] | None:
         if len(self.sessions) >= MAX_GUESTS:
             return None
