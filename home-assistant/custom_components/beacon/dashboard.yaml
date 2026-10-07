@@ -95,6 +95,19 @@ views:
               {% else %}<ha-icon icon="mdi:laptop"></ha-icon>
               Playing on **this computer**{% endif %}
               {% endif %}
+          # Only while a party is running: the sensor is unknown otherwise.
+          - type: tile
+            entity: sensor.beacon_party
+            name: Party
+            icon: mdi:party-popper
+            color: amber
+            vertical: false
+            grid_options:
+              columns: full
+            visibility:
+              - condition: numeric_state
+                entity: sensor.beacon_party
+                above: -1
 
       # ── Speakers ────────────────────────────────────────────────────────
       - type: grid
