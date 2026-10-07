@@ -63,6 +63,20 @@ import packageJson from '../../../../package.json'
 
 const md = new MarkdownIt({ html: false, linkify: true })
 
+// Every link opens in a window of its own. Followed in place, a link takes
+// the app itself off to the page; Electron hands a new window to the system
+// browser instead (src/main/index.ts's setWindowOpenHandler).
+md.renderer.rules.link_open = (tokens, idx, options, _env, self) => {
+  tokens[idx]!.attrSet('target', '_blank')
+  tokens[idx]!.attrSet('rel', 'noopener noreferrer')
+  return self.renderToken(tokens, idx, options)
+}
+
+/** A version's notes as HTML. */
+export function renderNotes(markdown: string): string {
+  return md.render(markdown)
+}
+
 // beacon. prefix added when this became account-scoped (see storageKey()
 // below) — matches every other settings key's convention. A returning user
 // sees the "what's new" dialog once more after this change, since the old
@@ -137,7 +151,7 @@ export default defineComponent({
       return this.changelogEntries.find((entry) => entry.version === this.selectedVersion) ?? null
     },
     selectedHtml(): string {
-      return this.selectedEntry ? md.render(this.selectedEntry.body) : ''
+      return this.selectedEntry ? renderNotes(this.selectedEntry.body) : ''
     },
     storageKey(): string {
       return accountScopedKey(`${STORAGE_PREFIX}:${this.appVersion}`)

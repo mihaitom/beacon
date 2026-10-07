@@ -6,10 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Highlights
+
+- **Party mode (experimental):** guests scan a QR code or open a link and get their own Beacon page - what is playing, the lyrics, what comes next - where they search your library, wish for songs and vote to skip, while the controls stay yours
+- **Online party (experimental):** for a group that meets online, in a voice chat for example: everyone hears your music in their own browser from the same link, with everything party mode has
+
+Both are brand new and still finding their feet. If something at your party does not work the way you expected, or you are missing something, please [open an issue](https://github.com/mihaitom/beacon/issues) - every report helps shape them.
+
 ### Added
 
-- Party mode: guests join with a QR code or link and get their own page in Beacon's look: Now Playing as in the app, with the artist background, the song in the bottom-left corner (or the large cover), synced lyrics and, while casting, the visualizer, each switchable, a radio station with its logo and current title, plus stepping through the artist's backgrounds, with the colours following the picture as in the app; next to it on a computer what is coming up, on a phone the mobile layout. They search the library and wish for songs, which take turns between guests; they can withdraw their own wishes and vote to skip, with a limit of open wishes per guest; while a radio station plays, wishing pauses with a note saying so. While casting, the party keeps going - guests see what plays, search, wish and vote to skip, lyrics and the artist background included - even when the host's screen is locked or, in the web build, the tab is closed, and the party dialog says which device is keeping it alive. Works in the desktop app and the web build, and everything guests use lives under its own `/party/` path for reverse proxies; see docs/party-mode.md
-- Online party: for a group meeting online, in a voice chat for example, everyone hears the host's music in their own browser from the party link, with a player bar of their own (play, where the song is, their own volume), wishes, skip votes, and lyrics and the visualizer following what they hear; the host switches it on and picks the quality in the party dialog (web build only, since it needs Beacon reachable from outside)
+- Party mode (experimental): guests join with a QR code or a link and get a page in Beacon's look - Now Playing with the artist background, synced lyrics and the large cover, each switchable, and what is coming up beside it, or the mobile layout on a phone. They search the library, wish for songs (taking turns between guests), withdraw their own wishes and vote to skip; you set how many open wishes a guest may have and how many votes a skip needs. While you cast, the party keeps going even with your screen locked or, in the web build, the tab closed. Everything guests use lives under its own `/party/` path, so a reverse proxy can open just that; see docs/party-mode.md
+- Online party (experimental): with it switched on in the party dialog, guests hear your music in their own browser, at the quality you pick, with a player bar of their own (play, where the song is, their own volume) and the lyrics and visualizer following what they hear. Web build only, since Beacon has to be reachable from outside; see docs/party-mode.md
 - Help inside the app: the FAQ, topic by topic, and the guides to party mode, home automation and format conversion open right where the question comes up, for example from the party dialog or next to the home automation key; Settings > About also lists everything Beacon can do (both in English)
 
 ### Changed
