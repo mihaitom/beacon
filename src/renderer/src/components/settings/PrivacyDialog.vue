@@ -160,6 +160,9 @@ const SERVICES = {
     { key: 'wikidata', host: 'www.wikidata.org', url: 'https://www.wikidata.org/' },
     { key: 'wikipedia', host: 'wikipedia.org', url: 'https://www.wikipedia.org/' },
     { key: 'plexAuth', host: 'plex.tv', url: 'https://www.plex.tv/' },
+    // Only when someone presses "Test setup" for an online party, so no
+    // chip either: not pressing it is the opt-out.
+    { key: 'publicDns', host: 'cloudflare-dns.com', url: 'https://one.one.one.one/' },
   ],
 } as const
 

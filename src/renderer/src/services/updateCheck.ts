@@ -1,8 +1,5 @@
 import packageJson from '../../../../package.json'
-
-// Matches electron-builder.yml's own `publish` block — not a second,
-// independently-maintained source of truth for where releases live.
-const GITHUB_REPO = 'mihaitom/beacon'
+import { GITHUB_REPO } from './project'
 
 export interface UpdateCheckResult {
   available: boolean

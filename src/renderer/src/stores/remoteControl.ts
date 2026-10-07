@@ -23,6 +23,7 @@ import { useConnectStore } from './connect'
 import { isBackingOff } from '@/services/connect/pollGate'
 import { useAuthStore } from './auth'
 import { useAutoplayStore } from './autoplay'
+import { tabId as partyTabId, usePartyStore } from './party'
 import { castTargetLabel, sourceLine } from '@/services/connect/streamInfoLabels'
 
 interface RemoteControlState {
@@ -161,9 +162,18 @@ export const useRemoteControlStore = defineStore('remoteControl', {
       this.stopRelayUnlessNeeded()
     },
 
-    /** Switching one user of the relay off leaves it running for the other. */
+    /** Sends connect a fresh snapshot soon, for a change no store
+     * subscription below sees (party mode's lyrics and backdrop). */
+    refreshSnapshot(): void {
+      schedulePushSnapshot?.()
+    },
+
+    /** Switching one user of the relay off leaves it running for the others
+     * (phones, home automation, party guests). For the party, only while
+     * this window is its host: one another tab took over must stop
+     * answering guests and keeping the party alive. */
     stopRelayUnlessNeeded(): void {
-      if (this.enabled || this.integration) {
+      if (this.enabled || this.integration || usePartyStore().hostedHere) {
         // connect cleared its snapshot along with the phone credentials
         // (core/remote.py's disable()), so give it the current one again.
         schedulePushSnapshot?.()
@@ -307,6 +317,29 @@ export const useRemoteControlStore = defineStore('remoteControl', {
             : null,
           queue: playback.queue.map(toRemoteSong),
           queue_index: playback.currentIndex,
+          // Queue position -> who wished for it; connect turns this into
+          // what party guests see (core/party.py).
+          party_requests: usePartyStore().snapshotRequests(),
+          // What party guests see behind and beside the song (core/party.py).
+          party_backdrop: usePartyStore().backdropSource(),
+          party_backdrops: usePartyStore().backdropSources(),
+          party_lyrics_key: usePartyStore().lyricsKey(),
+          // The ReplayGain this window plays the song with, so guests
+          // listening along hear it at the same level.
+          party_gain: playback.replayGainMultiplier,
+          // Which window this is, so connect hands guests only the host's
+          // view of things (core/party.py's receive_snapshot).
+          party_tab: usePartyStore().hostedHere ? partyTabId() : null,
+          // Read-only party status for Home Assistant, the one thing about a
+          // party that is safe to hand an integration: how many guests are
+          // in, how many listen along online, and the online bitrate (0 when
+          // off). Never the invite link - see /party-host/status on why.
+          party: {
+            running: usePartyStore().enabled,
+            guests: usePartyStore().guests.length,
+            listeners: usePartyStore().listeners,
+            listen_kbps: usePartyStore().listenKbps,
+          },
           casting: connect.activeTargets,
           // A cast device dropped out on its own and playback can be picked
           // back up. State rather than an event, because this channel only
@@ -353,7 +386,7 @@ export const useRemoteControlStore = defineStore('remoteControl', {
         statePushTimer = setTimeout(push, STATE_PUSH_DEBOUNCE_MS)
       }
       schedulePushSnapshot = schedulePush
-      // Three separate stores, one debounced push — cast target changes land
+      // Several stores, one debounced push — cast target changes land
       // in connect's own state (status.targets), not playback's, and
       // Autoplay's enabled flag lives in its own dedicated store (see
       // stores/autoplay.ts, toggled from PlayerBar.vue independently of
@@ -365,10 +398,17 @@ export const useRemoteControlStore = defineStore('remoteControl', {
       const unsubFromPlayback = playback.$subscribe(schedulePush, { detached: true })
       const unsubFromConnect = connect.$subscribe(schedulePush, { detached: true })
       const unsubFromAutoplay = autoplay.$subscribe(schedulePush, { detached: true })
+      const unsubFromParty = usePartyStore().$subscribe(schedulePush, { detached: true })
+      // A new ICY title changes nothing in playback itself.
+      const unsubFromRadioMeta = useRadioMetadataStore().$subscribe(schedulePush, {
+        detached: true,
+      })
       unsubscribePlayback = () => {
         unsubFromPlayback()
         unsubFromConnect()
         unsubFromAutoplay()
+        unsubFromParty()
+        unsubFromRadioMeta()
       }
     },
 

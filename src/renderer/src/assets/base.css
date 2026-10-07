@@ -565,6 +565,173 @@ body {
   overflow-y: auto;
 }
 
+/* ── Rendered markdown ────────────────────────────────────────────────────
+ * Our own markdown files rendered by markdown-it and put in with v-html:
+ * the release notes (releaseNotes.vue) and the bundled docs
+ * (HelpDialog.vue). Here rather than :deep() in each, since v-html content
+ * never carries a component's scope id. Tables and code blocks scroll on
+ * their own sideways - a config line or a wide table cannot wrap, and on a
+ * phone it would otherwise widen the whole dialog. */
+.beacon-markdown {
+  color: rgb(var(--v-theme-on-surface));
+  overflow-wrap: anywhere;
+}
+
+.beacon-markdown h2 {
+  margin: 1.75rem 0 0.5rem;
+  font-size: 1.2rem;
+  font-weight: 700;
+}
+
+.beacon-markdown h3 {
+  margin: 1.25rem 0 0.4rem;
+  font-size: 1.02rem;
+  font-weight: 700;
+}
+
+.beacon-markdown h4 {
+  margin: 1rem 0 0.35rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+}
+
+.beacon-markdown > :first-child {
+  margin-top: 0;
+}
+
+.beacon-markdown p {
+  margin: 0.5rem 0;
+}
+
+.beacon-markdown ul,
+.beacon-markdown ol {
+  margin: 0.25rem 0 0.25rem 1.25rem;
+  padding-left: 0;
+}
+
+.beacon-markdown li {
+  margin-bottom: 0.35rem;
+}
+
+.beacon-markdown li > ul,
+.beacon-markdown li > ol {
+  margin-top: 0.35rem;
+}
+
+.beacon-markdown strong {
+  color: rgb(var(--v-theme-on-surface));
+}
+
+.beacon-markdown a {
+  color: rgb(var(--v-theme-primary));
+}
+
+.beacon-markdown code {
+  background: color-mix(in srgb, rgb(var(--v-theme-on-surface)) 12%, transparent);
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+
+.beacon-markdown pre {
+  margin: 0.75rem 0;
+  padding: 0.75rem 0.9rem;
+  border-radius: 8px;
+  background: color-mix(in srgb, rgb(var(--v-theme-on-surface)) 8%, transparent);
+  overflow-x: auto;
+}
+
+.beacon-markdown pre code {
+  padding: 0;
+  background: none;
+  overflow-wrap: normal;
+  white-space: pre;
+}
+
+.beacon-markdown table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  margin: 0.75rem 0;
+  border-collapse: collapse;
+  font-size: 0.9em;
+}
+
+.beacon-markdown th,
+.beacon-markdown td {
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid var(--beacon-hairline);
+  text-align: left;
+  vertical-align: top;
+}
+
+.beacon-markdown blockquote {
+  margin: 0.75rem 0;
+  padding: 0.5rem 0.9rem;
+  border-left: 3px solid rgb(var(--v-theme-primary));
+  border-radius: 0 8px 8px 0;
+  background: color-mix(
+    in srgb,
+    rgb(var(--v-theme-surface)) 95%,
+    rgb(var(--v-theme-on-surface)) 5%
+  );
+}
+
+.beacon-markdown blockquote p {
+  margin: 0.2rem 0;
+}
+
+.beacon-markdown hr {
+  margin: 1.25rem 0;
+  border: 0;
+  border-top: 1px solid var(--beacon-hairline);
+}
+
+/* Tabs inside rendered markdown: a group of alternatives of which a reader
+ * wants one (services/help/docs.ts's TABBED_SECTIONS). Drawn like the app's
+ * own tabs - the chosen one in amber with an amber underline over the
+ * section's hairline - and wrapping onto a second row rather than scrolling
+ * on a phone. */
+.beacon-markdown .help-tabs {
+  margin: 0.75rem 0 1rem;
+}
+
+.beacon-markdown .help-tabs__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-bottom: 1px solid var(--beacon-hairline);
+}
+
+.beacon-markdown .help-tabs__tab {
+  padding: 8px 12px;
+  margin-bottom: -1px;
+  /* A <button>'s own grey box and bevelled border, which nothing else here
+   * takes away. */
+  background: none;
+  border: none;
+  border-radius: 0;
+  border-bottom: 2px solid transparent;
+  color: rgba(var(--v-theme-on-surface), var(--v-medium-emphasis-opacity));
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.beacon-markdown .help-tabs__tab:hover {
+  color: rgb(var(--v-theme-on-surface));
+}
+
+.beacon-markdown .help-tabs__tab[aria-selected='true'] {
+  color: rgb(var(--v-theme-primary));
+  border-bottom-color: rgb(var(--v-theme-primary));
+}
+
+.beacon-markdown .help-tabs__panel {
+  padding-top: 0.25rem;
+}
+
 /* Opt-in for plain v-list-item rows (genre/search results, anywhere else
  * that's just a browsable v-list rather than a custom row component) —
  * swaps Vuetify's own grey hover overlay for the shared warm tint above,

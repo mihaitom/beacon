@@ -139,6 +139,7 @@ export interface RawPlaylist {
   coverArt?: string
   public?: boolean
   owner?: string
+  changed?: string
   entry?: RawSong[]
 }
 

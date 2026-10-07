@@ -799,7 +799,7 @@ async def scrobble(params: dict, media: PlexClient) -> dict:
 
 
 def _map_playlist(item: dict) -> dict:
-    return {
+    playlist = {
         "id": str(item["ratingKey"]),
         "name": item.get("title", "Unknown"),
         "songCount": item.get("leafCount") or 0,
@@ -807,6 +807,8 @@ def _map_playlist(item: dict) -> dict:
         "coverArt": _cover_art_id(item, item["ratingKey"]),
         "public": False,
     }
+    _set(playlist, "changed", _epoch_to_iso(item.get("updatedAt") or item.get("addedAt")))
+    return playlist
 
 
 async def get_playlists(_params: dict, media: PlexClient) -> dict:
@@ -1094,6 +1096,16 @@ async def _handle_binary(
 
 
 # ── Entry point ────────────────────────────────────────────────────────────
+
+
+async def call(endpoint: str, params: dict, media: PlexClient) -> dict:
+    """One Subsonic endpoint answered from inside connect rather than for a
+    request - core/party_library.py asks this while the party's host
+    window sleeps. Same answer handle() wraps in the Subsonic envelope."""
+    handler = _HANDLERS.get(endpoint)
+    if handler is None:
+        raise ValueError(f"{endpoint} is not bridged")
+    return await handler(params, media)
 
 
 async def handle(

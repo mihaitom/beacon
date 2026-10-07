@@ -22,7 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from core import audio_analysis, hls, radio_relay, waveform
+from core import audio_analysis, hls, party_broadcast, radio_relay, waveform
 from core.streamer import (
     _COPY_MUXER_FOR_CODEC,
     _FALLBACK_ARGS,
@@ -55,17 +55,30 @@ def _components_named_in(args: list[str]) -> tuple[set[str], set[str], set[str]]
     """(encoders, muxers, filters) an ffmpeg argument list names.
 
     Reads the real argument lists rather than a second copy of them, so a
-    tier whose command changes is re-read rather than re-described."""
+    tier whose command changes is re-read rather than re-described. A `-f`
+    ahead of an `-i` names an input format, a demuxer - see
+    _demuxers_named_in()."""
     encoders, muxers, filters = set(), set(), set()
-    for flag, value in pairwise(args):
+    first_input = args.index("-i") if "-i" in args else -1
+    for index, (flag, value) in enumerate(pairwise(args)):
         if flag in ("-acodec", "-c:a") and value != "copy":
             encoders.add(value)
-        elif flag == "-f":
+        elif flag == "-f" and index > first_input:
             muxers.add(value)
         elif flag == "-af":
             # "volume=0.7" and any future "name=value,name=value" chain.
             filters.update(re.findall(r"([a-z_][a-z_0-9]*)=", value))
     return encoders, muxers, filters
+
+
+def _demuxers_named_in(args: list[str]) -> set[str]:
+    """Input formats an ffmpeg argument list forces with `-f` before `-i`."""
+    first_input = args.index("-i") if "-i" in args else -1
+    return {
+        value
+        for index, (flag, value) in enumerate(pairwise(args))
+        if flag == "-f" and index < first_input
+    }
 
 
 def _every_command() -> list[list[str]]:
@@ -91,6 +104,9 @@ def _every_command() -> list[list[str]]:
         list(radio_relay._encode_args(192)),
         list(radio_relay._encode_args(192, aac=True)),
         list(debug._station_cmd("http://station/stream")),
+        # Listening along: a song decoded to PCM, and the encoder reading it.
+        list(party_broadcast.decoder_cmd("http://nav/stream", 12.0, 0.7)),
+        *[list(party_broadcast.encoder_cmd(kbps)) for kbps in party_broadcast.BITRATES_KBPS],
     ]
     commands += [list(lossy_encode_args(fmt, 192)[0]) for fmt in _LOSSY_ENCODERS]
     layout = hls.segment_layout(60.0, 44100, 1024)
@@ -120,6 +136,15 @@ def test_every_muxer_the_backend_names_is_in_the_contract():
     for command in _every_command():
         named |= _components_named_in(command)[1]
     assert named, "no muxers found — the argument lists moved"
+    assert named <= required, f"not in required-components: {sorted(named - required)}"
+
+
+def test_every_input_format_the_backend_forces_is_in_the_contract():
+    required = _contract()["demuxer"]
+    named = set()
+    for command in _every_command():
+        named |= _demuxers_named_in(command)
+    assert "s16le" in named, "the listen-along encoder no longer reads raw PCM from these commands"
     assert named <= required, f"not in required-components: {sorted(named - required)}"
 
 

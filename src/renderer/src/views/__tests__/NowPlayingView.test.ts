@@ -13,6 +13,7 @@ import { useLyricsStore } from '@/stores/lyrics'
 import { useAuthStore } from '@/stores/auth'
 import { useAutoplayStore } from '@/stores/autoplay'
 import NowPlayingView from '../NowPlayingView.vue'
+import NowPlayingPresentation from '@/components/now-playing/NowPlayingPresentation.vue'
 import { getAudioEngine } from '@/services/audioEngine'
 import { getLogLevel, type LogLevel } from '@/services/connect/logLevel'
 import { getArtistArt } from '@/services/connect/fanart'
@@ -88,12 +89,12 @@ async function mountView(props: Record<string, unknown> = {}) {
         stubs: {
           // Each of these pulls in canvas/image-loading/CORS-fetch
           // machinery this view doesn't itself own — CoverArt.vue's own
-          // <img>, LyricsPanel.vue's fetch-backed content, AudioVisualizer's
-          // Web Audio analyser. Stubbing keeps these tests about
+          // <img>, LyricsPanel.vue's fetch-backed content, VisualizerBars'
+          // canvas. Stubbing keeps these tests about
           // NowPlayingView's own conditionals, not their internals.
           CoverArt: true,
           LyricsPanel: true,
-          AudioVisualizer: true,
+          VisualizerBars: true,
         },
       },
     },
@@ -244,6 +245,28 @@ describe('NowPlayingView', () => {
 
       expect(wrapper.get('.now-playing__title').text()).toBe('Artist - Track')
       expect(wrapper.get('.now-playing__radio-tag').text()).toBe('Chill FM')
+    })
+
+    /** The logo reports its transparency once, when it loads; a new title
+     * from the station is not a new logo and must not put the card back. */
+    it("keeps a transparent logo's treatment when the station's title changes", async () => {
+      const { wrapper } = await mountView()
+      usePlaybackStore().radioStation = {
+        id: '',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/chill',
+        homePageUrl: 'https://chill.example',
+      }
+      await wrapper.vm.$nextTick()
+      const logo = wrapper.findComponent({ name: 'CoverArt' })
+      logo.vm.$emit('transparency', true)
+      await wrapper.vm.$nextTick()
+      expect(logo.classes()).toContain('radio-cover-art--transparent')
+
+      useRadioMetadataStore().nowPlaying = 'Artist - Track'
+      await wrapper.vm.$nextTick()
+
+      expect(logo.classes()).toContain('radio-cover-art--transparent')
     })
   })
 
@@ -507,8 +530,17 @@ describe('NowPlayingView', () => {
     /** Autoplay's button is fullscreen-only here: the ordinary desktop
      * window has PlayerBar.vue's own copy, and the phone has one in its
      * transport row (MobileTransportControls.vue). */
+    // Fullscreen is the presentation's own concern, so its state lives
+    // there (see NowPlayingPresentation.vue) rather than on the host view.
+    function presentation(wrapper: VueWrapper) {
+      return wrapper.findComponent(NowPlayingPresentation).vm as unknown as {
+        isFullscreen: boolean
+        toggleFullscreen(): Promise<void>
+      }
+    }
+
     async function enterFullscreen(wrapper: VueWrapper): Promise<void> {
-      ;(wrapper.vm as unknown as { isFullscreen: boolean }).isFullscreen = true
+      presentation(wrapper).isFullscreen = true
       await wrapper.vm.$nextTick()
     }
 
@@ -590,6 +622,14 @@ describe('NowPlayingView', () => {
       expect(isAmber(wrapper, 'mdi-infinity')).toBe(true)
     })
 
+    it('leaves autoplay away where the server cannot do song radio', async () => {
+      const { wrapper } = await mountToolbar()
+      useAuthStore().capabilities.songRadio = false
+      await enterFullscreen(wrapper)
+
+      expect(wrapper.find('.now-playing__toolbar .mdi-infinity').exists()).toBe(false)
+    })
+
     it.each([
       ['desktop', {}],
       // The mobile web UI renders this same toolbar — MobileNowPlayingView.vue
@@ -622,10 +662,9 @@ describe('NowPlayingView', () => {
 
     it('colors the fullscreen button while fullscreen, and still swaps its icon', async () => {
       const { wrapper } = await mountToolbar()
-      const vm = wrapper.vm as unknown as { isFullscreen: boolean }
       expect(isAmber(wrapper, 'mdi-fullscreen')).toBe(false)
 
-      vm.isFullscreen = true
+      presentation(wrapper).isFullscreen = true
       await wrapper.vm.$nextTick()
 
       // The icon swap stays: unlike the others, it describes what clicking
@@ -662,7 +701,7 @@ describe('NowPlayingView', () => {
       })
       rootEl.requestFullscreen = requestFullscreen as unknown as typeof rootEl.requestFullscreen
 
-      const vm = wrapper.vm as unknown as {
+      const vm = wrapper.findComponent(NowPlayingPresentation).vm as unknown as {
         toggleFullscreen(): Promise<void>
         isFullscreen: boolean
       }

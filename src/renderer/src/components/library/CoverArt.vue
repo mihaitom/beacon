@@ -11,62 +11,27 @@
    -   * at most MAX_CONCURRENT_LOADS are in flight across the whole app,
    -   * and a fetch is aborted the moment its cover stops being rendered.
    -
-   - v-img is left as pure presentation here - it always receives an object
-   - URL for an image already in memory, so `eager` costs nothing and its own
-   - intersection handling would only get in the way. -->
-  <v-avatar v-if="rounded" ref="root" :size="sizeCss" rounded="0">
-    <v-img
-      v-if="displaySrc || lazySrc"
-      :src="displaySrc ?? undefined"
-      :lazy-src="lazySrc"
-      width="100%"
-      height="100%"
-      :cover="!contain"
-      eager
-      @error="onImageError"
-    >
-      <template #placeholder>
-        <!-- Only when there is nothing better to show: with a lazy-src,
-           - v-img is already drawing that in this same spot. -->
-        <v-skeleton-loader v-if="!lazySrc" type="image" class="cover-art-skeleton" />
-      </template>
-    </v-img>
-    <v-skeleton-loader v-else-if="current" type="image" class="cover-art-skeleton" />
-    <v-icon v-else :size="iconSizeCss(0.6)" :icon="fallbackIcon" />
-  </v-avatar>
-  <!-- v-img is sized as 100%/100% of this box, not its own copy of `size`
-   - in px — a second, independent explicit size wouldn't track a CSS
-   - transition put on this box's own width/height (e.g. NowPlayingView's
-   - artwork-shrinks-for-lyrics animation): the box would resize smoothly
-   - while the image inside it snapped instantly, since nothing here was
-   - telling *it* to animate too. Filling the parent means it always
-   - matches this box's current size, mid-transition or not. -->
-  <div v-else ref="root" class="cover-art" :style="{ width: sizeCss, height: sizeCss }">
-    <v-img
-      v-if="displaySrc || lazySrc"
-      :src="displaySrc ?? undefined"
-      :lazy-src="lazySrc"
-      width="100%"
-      height="100%"
-      :cover="!contain"
-      eager
-      @error="onImageError"
-    >
-      <template #placeholder>
-        <!-- Same as the rounded branch above. -->
-        <v-skeleton-loader v-if="!lazySrc" type="image" class="cover-art-skeleton" />
-      </template>
-    </v-img>
-    <v-skeleton-loader v-else-if="current" type="image" class="cover-art-skeleton" />
-    <div v-else class="cover-art-fallback">
-      <v-icon :size="iconSizeCss(0.5)" :icon="fallbackIcon" />
-    </div>
-  </div>
+   - What it looks like is CoverFrame's, which is pure presentation here: it
+   - always receives an object URL for an image already in memory, so v-img's
+   - `eager` costs nothing and its own intersection handling would only get
+   - in the way. -->
+  <cover-frame
+    ref="root"
+    :src="displaySrc"
+    :lazy-src="lazySrc"
+    :pending="current !== null"
+    :size="size"
+    :rounded="rounded"
+    :contain="contain"
+    :fallback-icon="fallbackIcon"
+    @error="onImageError"
+  />
 </template>
 
 <script lang="ts">
 import type { PropType } from 'vue'
 import { useLibraryStore } from '@/stores/library'
+import CoverFrame from './CoverFrame.vue'
 import {
   fetchArtistImageBatched,
   fetchCoverArtBatched,
@@ -265,8 +230,18 @@ async function fetchDirect(url: string, signal: AbortSignal): Promise<Blob> {
 
 export default {
   name: 'CoverArt',
+  components: { CoverFrame },
   props: {
     coverArtId: {
+      type: String as PropType<string | null>,
+      default: null,
+    },
+    /** GuestCover's ready URL, which the shared Now Playing hands every
+     * cover component alongside coverArtId - unused here. Declared so it
+     * stops at this component: left undeclared it fell through to
+     * CoverFrame's own `src` prop and overrode the image fetched here with
+     * the host's null, leaving Now Playing on its skeleton for good. */
+    src: {
       type: String as PropType<string | null>,
       default: null,
     },
@@ -285,10 +260,9 @@ export default {
     // string is used as-is as a raw CSS size (e.g. NowPlayingView.vue's
     // own "70vh" — sizing its big artwork off the viewport instead of a
     // fixed pixel figure that reads too small on a tall window and too
-    // large on a short one). See sizeCss/fetchSize/iconSizeCss below for
-    // how each of this component's three actual uses of `size` (its own
-    // CSS box, the resolution requested from the media server, and the
-    // fallback icon's proportional size) handle either shape.
+    // large on a short one). CoverFrame sizes the box and the fallback icon
+    // from it; fetchSize below picks the resolution requested from the
+    // media server.
     size: {
       type: [Number, String] as PropType<number | string>,
       default: 160,
@@ -411,12 +385,6 @@ export default {
     }
   },
   computed: {
-    // This component's own CSS box (width/height, both branches) — a
-    // number needs "px" appended, a string (already a full CSS value) is
-    // used as-is.
-    sizeCss(): string {
-      return typeof this.size === 'number' ? `${this.size}px` : this.size
-    },
     // What resolution to actually request from the media server — one of
     // FETCH_SIZES above, never the box's own size. A CSS size string (e.g.
     // "70vh") has no pixel figure to derive this from at all, so it takes
@@ -534,19 +502,12 @@ export default {
     this.observer = null
   },
   methods: {
-    /** The DOM element to watch. Deliberately not `this.$el`: this
-     * component's two root branches have template comments between them,
-     * which a dev build keeps, making the component a *fragment* — and
-     * `$el` is then the first node of that fragment, i.e. a comment node,
-     * which IntersectionObserver.observe() rejects outright ("parameter 1
-     * is not of type 'Element'"). A ref on each branch's actual root
-     * always resolves to the real element, whichever branch rendered.
-     * The avatar branch's ref is a component, not an element, so its own
-     * root has to be unwrapped. */
+    /** The DOM element to watch: CoverFrame's root. Deliberately not
+     * `this.$el`: the template comment above CoverFrame, which a dev build
+     * keeps, makes this component a fragment whose `$el` is that comment,
+     * and IntersectionObserver.observe() rejects a comment outright. */
     rootElement(): Element | null {
-      const root = this.$refs.root as Element | { $el?: unknown } | undefined
-      if (root instanceof Element) return root
-      const el = root && '$el' in root ? root.$el : null
+      const el = (this.$refs.root as { $el?: unknown } | undefined)?.$el
       return el instanceof Element ? el : null
     },
     startSettle() {
@@ -751,49 +712,6 @@ export default {
         this.observer = null
       }
     },
-    // Fallback icon's proportional size (0.6 for the rounded avatar
-    // variant, 0.5 for the plain box — see the template). CSS calc(),
-    // not arithmetic on `size` directly, so this still works when `size`
-    // is a viewport-relative string rather than a plain pixel number.
-    iconSizeCss(fraction: number): string {
-      return typeof this.size === 'number'
-        ? `${this.size * fraction}px`
-        : `calc(${this.size} * ${fraction})`
-    },
   },
 }
 </script>
-
-<style scoped>
-.cover-art {
-  border-radius: 4px;
-  overflow: hidden;
-  background: rgba(255, 255, 255, 0.06);
-}
-
-.cover-art-fallback {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: rgba(255, 255, 255, 0.3);
-}
-
-/* Shown for as long as there is no image to show yet — without this, the
- * cover briefly renders empty/transparent between "data arrived" and
- * "image arrived". .v-img__placeholder is already position:absolute +
- * 100%/100%, so this just needs to fill that; the parent (.cover-art or
- * the avatar) already clips to the right shape. */
-.cover-art-skeleton {
-  width: 100%;
-  height: 100%;
-  border-radius: 0;
-}
-
-.cover-art-skeleton :deep(.v-skeleton-loader__bone) {
-  margin: 0;
-  width: 100%;
-  height: 100%;
-}
-</style>

@@ -18,13 +18,14 @@ conventions are, and which mistakes have already been made once.
 
 **`connect/` - the backend** (Python 3.13, FastAPI, `uv`)
 
-| Path                     | What it is                                                                                                                                                                                                 |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `connect/main.py`        | App bootstrap. `load_dotenv()` runs _before_ the `core.*`/`routes.*` imports on purpose - several of them read their config at module import time                                                          |
-| `connect/routes/`        | HTTP surface. `proxy.py` is the important one: `/rest/*` is a transparent passthrough to the media server, or to `media/jellyfin_bridge.py` / `media/plex_bridge.py`, which speak Subsonic on their behalf |
-| `connect/core/`          | Sessions, auth, the playback clock, radio (relay, ICY metadata, history), waveform, recommendations                                                                                                        |
-| `connect/delivery/`      | One module per cast target: `sonos.py`, `airplay.py`, `chromecast.py`, `dlna.py`, coordinated by `manager.py`                                                                                              |
-| `connect/static/remote/` | The phone Remote Control UI - plain JS, no build step, served by connect itself                                                                                                                            |
+| Path                     | What it is                                                                                                                                                                                                                |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `connect/main.py`        | App bootstrap. `load_dotenv()` runs _before_ the `core.*`/`routes.*` imports on purpose - several of them read their config at module import time                                                                         |
+| `connect/routes/`        | HTTP surface. `proxy.py` is the important one: `/rest/*` is a transparent passthrough to the media server, or to `media/jellyfin_bridge.py` / `media/plex_bridge.py`, which speak Subsonic on their behalf                |
+| `connect/core/`          | Sessions, auth, the playback clock, radio (relay, ICY metadata, history), waveform, recommendations                                                                                                                       |
+| `connect/delivery/`      | One module per cast target: `sonos.py`, `airplay.py`, `chromecast.py`, `dlna.py`, coordinated by `manager.py`                                                                                                             |
+| `connect/static/remote/` | The phone Remote Control UI - plain JS, no build step, served by connect itself                                                                                                                                           |
+| `connect/static/party/`  | Build output (gitignored) of the party-mode guest page, `src/renderer/src/party/` via `pnpm build:party`. Reachable without a login, so `routes/party.py` serves only it and checks everything (see `docs/party-mode.md`) |
 
 The frontend never talks to the media server directly: every call goes
 through connect's proxy, which is also what makes Jellyfin and Plex look like
@@ -102,7 +103,8 @@ the suite stays green, the test does not test.
 reshaping any UI**, and update it when a decision in it changes. Its
 enforceable half lives as shared classes in
 `src/renderer/src/assets/base.css` (`.beacon-panel`, `.panel-title`,
-`.section-title`, `.eyebrow-label`, `.beacon-dialog`, `.mobile-row`);
+`.section-title`, `.eyebrow-label`, `.beacon-dialog`, `.beacon-markdown`,
+`.mobile-row`);
 `docs/styleguide.html` is
 the same thing rendered, for looking at rather than reading.
 
@@ -216,3 +218,8 @@ an entry. Keep those docs anonymous: no IPs, no real speaker or room names
   (`Artist/Album/01-03 - Title.mp3`), not the real one, unless that player
   has "Report Real Path" enabled. Beacon shows what the server sent; that is
   not a bug in the path row.
+- **Party guests have their own copy of Now Playing:**
+  `party/components/GuestNowPlaying.vue` is a copy of Now Playing. A change
+  to `NowPlayingView` or its components does not reach party guests; before
+  a larger one, do `docs/plans/now-playing-shared-with-party.md` first
+  instead of changing both.

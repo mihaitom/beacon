@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-10-07
+
+### Highlights
+
+- **Party mode (experimental):** guests scan a QR code or open a link and get their own Beacon page - what is playing, the lyrics, what comes next - where they search your library, wish for songs and vote to skip, while the controls stay yours
+- **Online party (experimental):** for a group that meets online, in a voice chat for example: everyone hears your music in their own browser from the same link, with everything party mode has
+
+Both are brand new and still finding their feet. If something at your party does not work the way you expected, or you are missing something, please [open an issue](https://github.com/mihaitom/beacon/issues) - every report helps shape them.
+
+### Added
+
+- Party mode (experimental): guests join with a QR code or a link and get a page in Beacon's look - Now Playing with the artist background, synced lyrics and the large cover, each switchable, and what is coming up beside it, or the mobile layout on a phone. They search the library, wish for songs (taking turns between guests), withdraw their own wishes and vote to skip; you set how many open wishes a guest may have and how many votes a skip needs. While you cast, the party keeps going even with your screen locked or, in the web build, the tab closed. Everything guests use lives under its own `/party/` path, so a reverse proxy can open just that; see docs/party-mode.md
+- Online party (experimental): with it switched on in the party dialog, guests hear your music in their own browser, at the quality you pick, with a player bar of their own (play, where the song is, their own volume) and the lyrics and visualizer following what they hear. A "Test setup" button checks whether guests from outside can reach the party. Web build only, since Beacon has to be reachable from outside; see docs/party-mode.md
+- Help inside the app: the FAQ, topic by topic, and the guides to party mode, home automation and format conversion open right where the question comes up, for example from the party dialog or next to the home automation key; Settings > About also lists everything Beacon can do (both in English)
+- A running party is visible in Home Assistant: how many guests have joined and how many listen along online, read-only
+
+### Changed
+
+- The Playlists page is now a list: each playlist shows artwork from its own albums (cycling through them on hover), its main artists, genres and when it was last edited, with Play and Shuffle buttons on the right
+- The Radio page is now a list in the same style: each station shows its country, format and genre tags from Radio Browser, and the last title you heard on it (or what is playing right now)
+- Copying the home automation key or the Remote Control address now confirms with a checkmark, as the app's other copy buttons do
+
+### Fixed
+
+- Remote Control on the phone no longer receives the media server's credentials along with cover art
+
 ## [1.5.1] - 2026-09-28
 
 ### Fixed

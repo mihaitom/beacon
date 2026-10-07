@@ -8,6 +8,7 @@ import { i18n } from '@/i18n'
 import { usePlaybackStore } from '@/stores/playback'
 import { FILE_SOURCE, useLyricsStore } from '@/stores/lyrics'
 import LyricsPanel from '../LyricsPanel.vue'
+import { provideLyricsSource } from './sourceFixture'
 import { makeSong } from '@/stores/__tests__/fixtures'
 
 const vuetify = createVuetify({ components, directives })
@@ -26,7 +27,10 @@ describe('LyricsPanel without lyrics', () => {
   })
 
   function mountPanel(variant: 'compact' | 'immersive' = 'compact') {
-    return mount(LyricsPanel, { props: { variant }, global: { plugins: [vuetify, i18n] } })
+    return mount(LyricsPanel, {
+      props: { variant },
+      global: { plugins: [vuetify, i18n], provide: provideLyricsSource() },
+    })
   }
 
   it('says it is looking while the lookup runs', () => {
@@ -121,7 +125,7 @@ describe('LyricsPanel source link', () => {
   function mountPanel() {
     return mount(LyricsPanel, {
       props: { variant: 'compact' },
-      global: { plugins: [vuetify, i18n] },
+      global: { plugins: [vuetify, i18n], provide: provideLyricsSource() },
     })
   }
 
@@ -145,5 +149,31 @@ describe('LyricsPanel source link', () => {
 
     expect(wrapper.find('a.lyrics-panel__source').exists()).toBe(false)
     expect(wrapper.find('.lyrics-panel__source').exists()).toBe(true)
+  })
+})
+
+describe('LyricsPanel sync offset', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    usePlaybackStore().setQueue([makeSong('a')], 0)
+    const lyrics = useLyricsStore()
+    vi.spyOn(lyrics, 'ensureLoaded').mockResolvedValue()
+    lyrics.songId = 'a'
+    lyrics.loading = false
+    lyrics.synced = true
+    lyrics.lines = [{ time: 1, text: 'First line' }]
+  })
+
+  it.each([0.5, -0.5])('resets an offset of %s back to none', async (offset) => {
+    const lyrics = useLyricsStore()
+    lyrics.offset = offset
+    const wrapper = mount(LyricsPanel, {
+      props: { variant: 'compact' },
+      global: { plugins: [vuetify, i18n], provide: provideLyricsSource() },
+    })
+
+    await wrapper.get('.lyrics-panel__sync-label').trigger('click')
+
+    expect(lyrics.offset).toBe(0)
   })
 })

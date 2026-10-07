@@ -374,6 +374,162 @@ export default {
     clear: 'Vaciar cola',
     saveAsPlaylist: 'Guardar cola como lista de reproducción',
   },
+  party: {
+    copied: 'Copiado',
+    copyLink: 'Copiar enlace',
+    title: 'Modo fiesta',
+    hint: 'Los invitados abren un enlace o escanean un código, ven lo que viene, buscan en tu biblioteca y piden canciones. No pueden pausar, saltar ni cambiar nada más.',
+    link: 'Enlace de invitación',
+    showPoster: 'Mostrar el código a pantalla completa',
+    guests: 'Invitados ({count})',
+    noGuests: 'Todavía no se ha unido nadie.',
+    removeGuest: 'Quitar a {name}',
+    hostedElsewhere:
+      'Hay una fiesta en otra ventana, que es la que responde a los invitados. Tómala para dirigirla desde aquí.',
+    runsOnServer:
+      'Se ejecuta en el servidor de Beacon mientras emites - este dispositivo puede bloquearse.',
+    runsLocally: 'Mantén Beacon abierto - la música suena en este dispositivo.',
+    runsLocallyPhone:
+      'La música suena en este dispositivo, que debe permanecer despierto - bloquearlo acaba la fiesta.',
+    rules: 'Reglas',
+    limit: 'Peticiones abiertas por invitado',
+    skip: 'Votación para saltar',
+    skipOff: 'Desactivada',
+    skipShare: '{share} de los invitados',
+    duration: 'Termina tras',
+    hours: '{count} horas',
+    end: 'Terminar fiesta',
+    renewLink: 'Renovar enlace',
+    takeOver: 'Tomar el control',
+    start: 'Empezar fiesta',
+    posterTitle: 'Pide una canción',
+    posterHint: 'Escanéalo con la cámara del móvil',
+    failed: 'No ha funcionado. ¿Está accesible el backend?',
+    wishedBy: 'Pedida por {name}',
+    listen: 'Fiesta online',
+    listenOff: 'Desactivado',
+    listenAac: 'AAC {kbps} kbit/s',
+    listenHint:
+      'Para una fiesta online, por ejemplo en un chat de voz: todos reciben tu música en su navegador desde el enlace de la fiesta.',
+    listeners: '{count} escuchando online - unos {mbps} Mbit/s de subida',
+    invitation: 'Invitación',
+    probe: {
+      button: 'Probar configuración',
+      title: 'Configuración de la fiesta online',
+      running: 'Probando…',
+      again: 'Probar de nuevo',
+      about: 'Comprueba si los invitados fuera de tu red pueden llegar al enlace de esta fiesta.',
+      dnsNote:
+        'Para la comprobación en el DNS público, Beacon consulta el nombre al DNS de Cloudflare (1.1.1.1).',
+      steps: {
+        'public-dns': 'DNS público',
+        'reach-public': 'Desde internet',
+        address: 'Dirección',
+        dns: 'Resolución de nombre aquí',
+        reach: 'Acceso a la fiesta',
+        https: 'HTTPS',
+        proxies: 'Proxy inverso',
+      },
+      codes: {
+        'public-dns': {
+          public: 'Para todos, {host} apunta a {publicAddresses}.',
+          missing:
+            'El DNS público no conoce {host}, así que los invitados fuera de tu red no encontrarán la fiesta.',
+          private:
+            'El DNS público hace apuntar {host} a {publicAddresses}, una dirección que solo existe dentro de una red.',
+          unavailable: 'No se pudo consultar el DNS público.',
+        },
+        'reach-public': {
+          ok: 'Este Beacon respondió a través de {publicAddresses}, el camino que siguen los invitados.',
+        },
+        address: {
+          ok: 'El enlace usa {host}.',
+          'local-address':
+            'El enlace apunta a {host}, que solo conoce tu propia red. Abre Beacon con su dirección pública e inicia la fiesta desde ahí.',
+        },
+        dns: {
+          public: '{host} resuelve a {addresses}.',
+          private: 'Aquí {host} resuelve a {addresses}, una dirección de tu propia red.',
+          unresolvable: 'El servidor de Beacon no puede resolver {host}.',
+        },
+        reach: {
+          home: 'Dentro de tu red, {host} llega directamente a este Beacon.',
+          ok: 'Este Beacon respondió en {host}.',
+          'local-only':
+            'Este Beacon respondió, pero a través de tu propia red; eso aún no dice nada de los invitados de fuera.',
+          login: 'Respondió un inicio de sesión en lugar de Beacon: /party tiene que saltárselo.',
+          'not-beacon':
+            'En {host} respondió algo distinto de este Beacon; revisa adónde envía tu proxy /party.',
+          certificate:
+            'El certificado de {host} no es válido, así que los navegadores de los invitados lo rechazarán.',
+          unreachable:
+            'El servidor de Beacon no pudo llegar a {host}. Puede ser la configuración o un router que no deja a los dispositivos de casa llegar a su propia dirección pública.',
+          timeout:
+            '{host} no respondió a tiempo. Puede ser la configuración o un router que no deja a los dispositivos de casa llegar a su propia dirección pública.',
+        },
+        https: {
+          'no-https':
+            'La fiesta funciona con HTTP sin cifrar: los navegadores de los invitados pueden avisar y su sesión no está protegida.',
+        },
+        proxies: {
+          'untrusted-proxy':
+            'El proxy en {proxy} no está en TRUSTED_PROXIES, así que cada invitado cuenta como ese proxy y comparten sus límites.',
+        },
+      },
+      dnsHint:
+        'Los invitados fuera de tu red buscan el nombre en el DNS público. Un nombre que solo conoce tu router o un DNS local (Pi-hole, AdGuard Home) funciona en casa y en ningún otro sitio: necesita un registro DNS público que apunte a tu dirección de internet.',
+      phoneHint: 'La prueba más segura es abrir el enlace en un móvil con el wifi apagado.',
+      setups: 'Configuración para los proxies habituales',
+    },
+  },
+  partyGuest: {
+    largeArtwork: 'Portada grande',
+    joinTitle: 'Únete a la fiesta',
+    joinText: 'Elige un nombre: aparecerá junto a las canciones que pidas.',
+    namePlaceholder: 'Tu nombre',
+    join: 'Unirse',
+    tabNow: 'Ahora',
+    tabQueue: 'A continuación',
+    tabWish: 'Pedir',
+    endedTitle: 'Ahora no hay fiesta',
+    endedText: 'La fiesta ha terminado o el enlace ya no es válido.',
+    rescanTitle: 'Vuelve a escanear el código',
+    rescanText: 'Abre la fiesta con el código QR o el enlace que te enviaron.',
+    offlineTitle: 'No se puede llegar a la fiesta',
+    offlineText: 'Beacon no responde ahora mismo. Inténtalo de nuevo en un momento.',
+    nothingPlaying: 'No suena nada ahora mismo.',
+    radioTitle: 'Está sonando la radio',
+    radioText: 'Solo se pueden pedir canciones mientras suena música de la biblioteca.',
+    voteSkip: 'Votar para saltar',
+    voted: 'Has votado saltar',
+    queueEmpty: 'Aún no hay nada en la cola: sé el primero en pedir una canción.',
+    yourWish: 'Tu petición',
+    withdraw: 'Retirar',
+    search: 'Buscar canciones o álbumes',
+    songs: 'Canciones',
+    albums: 'Álbumes',
+    back: 'Atrás',
+    noResults: 'No se ha encontrado nada.',
+    searchHint: 'Busca una canción o un álbum para pedir.',
+    quota: 'Te quedan {left} de {max} peticiones',
+    quotaNone: 'Has usado todas tus peticiones: espera a que suene una.',
+    wish: 'Pedir esta canción',
+    wished: '¡Pedida!',
+    errLimit: 'Has llegado a tu límite de peticiones.',
+    errDuplicate: 'Esa canción ya está pedida.',
+    errNotFound: 'No se ha encontrado esa canción.',
+    errRate: 'Ve un poco más despacio.',
+    errOffline: 'Beacon no responde ahora mismo.',
+    errGeneric: 'No ha funcionado, inténtalo de nuevo.',
+    full: 'Esta fiesta está llena.',
+    nameTaken: 'Ese nombre ya está en uso; elige otro.',
+    listen: 'Escuchar',
+    listenStop: 'Dejar de escuchar',
+    listenConnecting: 'Conectando…',
+    listenFailed: 'El stream no suena - toca para intentarlo de nuevo.',
+    live: 'En directo',
+    project: 'Beacon en GitHub',
+  },
   remoteControl: {
     title: 'Control remoto',
     hint: 'Permite que un teléfono en tu red controle la reproducción - Reproduciendo ahora, Cola, Listas de reproducción, Canciones y Radio.',
@@ -383,6 +539,8 @@ export default {
     pairHint:
       'Escanea este código con la cámara de tu teléfono, o abre la dirección de abajo e introduce el PIN.',
     address: 'Dirección',
+    copyAddress: 'Copiar dirección',
+    copied: 'Copiado',
     turnOff: 'Desactivar',
     regenerate: 'Regenerar código',
     needsRegenerate:
@@ -470,6 +628,8 @@ export default {
     homeAutomationKeyActive: 'Hay una clave activa',
     homeAutomationKeyMissing: 'Aún no hay clave',
     homeAutomationKey: 'Clave',
+    homeAutomationCopyKey: 'Copiar clave',
+    homeAutomationKeyCopied: 'Copiado',
     homeAutomationKeyOnce:
       'Solo se muestra ahora. Cópiala en tu integración; si la pierdes, crea una nueva.',
     homeAutomationGenerate: 'Crear clave',
@@ -680,6 +840,20 @@ export default {
     byOwner: 'de {owner}',
     deleteTitle: '¿Eliminar lista de reproducción?',
     deleteConfirm: '¿Eliminar "{name}"? Esto no se puede deshacer.',
+    editedAgo: 'editada {ago}',
+    withArtists: 'Con {artists}',
+    withArtistsAndMore: 'Con {artists} y {count} más',
+  },
+  features: {
+    title: 'Lo que Beacon puede hacer',
+  },
+  help: {
+    title: 'Ayuda',
+    topic: 'Tema',
+    englishOnly: 'Estas páginas solo están disponibles en inglés.',
+    guides: 'Guías',
+    faq: 'Preguntas frecuentes',
+    conversion: 'Qué se convierte y por qué',
   },
   privacy: {
     title: 'Privacidad',
@@ -718,9 +892,10 @@ export default {
       },
       radioBrowser: {
         name: 'Radio Browser',
-        purpose: 'El directorio de emisoras detrás de «Descubrir emisoras».',
+        purpose:
+          'El directorio de emisoras detrás de «Descubrir emisoras». También las etiquetas, el país y el formato de tus emisoras guardadas en la página de Radio.',
         sends:
-          'Tu término de búsqueda y el país elegido. Al reproducir una emisora encontrada aquí, Beacon informa de su identificador como clic; lo piden las propias reglas del directorio, para que las emisoras populares sigan siendo reconocibles. Una emisora que hayas añadido escribiendo su dirección nunca se informa. Al votar por una emisora también se envía su identificador, solo cuando pulsas tú ese botón.',
+          'Tu término de búsqueda y el país elegido. Al reproducir una emisora encontrada aquí, Beacon informa de su identificador como clic; lo piden las propias reglas del directorio, para que las emisoras populares sigan siendo reconocibles. Una emisora que hayas añadido escribiendo su dirección nunca se informa. Al votar por una emisora también se envía su identificador, solo cuando pulsas tú ese botón. Para la página de Radio, el servidor de Beacon consulta tus emisoras guardadas: por identificador si se conoce, si no por dirección del stream, también las que añadiste tú. Eso no cuenta como clic y se repite como pronto al cabo de varios días.',
       },
       stationSite: {
         name: 'Los sitios web de las emisoras',
@@ -804,6 +979,13 @@ export default {
         sends:
           'Una petición de inicio de sesión y, después, tu token de Plex cada vez que se comprueba. Para iniciar sesión se abre app.plex.tv en el navegador. Con Navidrome o Jellyfin no ocurre nada de esto.',
       },
+      publicDns: {
+        name: 'Cloudflare DNS',
+        purpose:
+          'Solo cuando pulsas «Probar configuración» en una fiesta online: si los invitados fuera de tu red encuentran la dirección de la fiesta.',
+        sends:
+          'El nombre de host de la fiesta, nada más: la misma pregunta que el móvil de cualquier invitado hace a un DNS público.',
+      },
     },
   },
   radio: {
@@ -857,6 +1039,10 @@ export default {
     titleLogFilterEmpty: 'Nada en el historial de esta emisora coincide con «{query}».',
     titleLogSearch: 'Buscar en tu biblioteca',
     titleLogYesterday: 'Ayer',
+    playing: 'Sonando',
+    nowPlayingLine: 'Sonando ahora: {title}',
+    lastHeard: 'Escuchado por última vez: {title} · {ago}',
+    bitrate: '{bitrate} kbit/s',
   },
   favorites: {
     eyebrow: 'Tu colección',

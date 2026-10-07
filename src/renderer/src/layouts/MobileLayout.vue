@@ -29,6 +29,9 @@
          - sit in the top-right corner of the artwork, which only worked
          - while the artwork was small enough to leave a corner free. -->
       <span id="mobile-app-bar-actions" class="mobile-app-bar__actions" />
+      <!-- On every route like the settings button beside it: the party is
+         - this window's, whatever the phone happens to be showing. -->
+      <party-mode-button class="mobile-app-bar__action" />
       <v-btn
         icon="mdi-cog-outline"
         variant="text"
@@ -61,10 +64,11 @@
 import MobileTabBar from '@/components/mobile/MobileTabBar.vue'
 import MobilePlayerBar from '@/components/mobile/MobilePlayerBar.vue'
 import CastTakeoverConfirmDialog from '@/components/connect/CastTakeoverConfirmDialog.vue'
+import PartyModeButton from '@/components/party/PartyModeButton.vue'
 
 export default {
   name: 'MobileLayout',
-  components: { MobileTabBar, MobilePlayerBar, CastTakeoverConfirmDialog },
+  components: { MobileTabBar, MobilePlayerBar, CastTakeoverConfirmDialog, PartyModeButton },
   computed: {
     onNowPlaying() {
       return this.$route.name === 'm-now-playing'

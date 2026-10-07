@@ -3,8 +3,8 @@
     <div
       class="now-playing__content"
       :class="{
-        'now-playing__content--split': hasPlayable && showLyrics,
-        'now-playing__content--corner': artworkHidden,
+        'now-playing__content--split': hasPlayable && source.ui.lyricsOpen,
+        'now-playing__content--corner': source.ui.artworkHidden,
       }"
     >
       <template v-if="hasPlayable">
@@ -17,47 +17,38 @@
          - absolutely positioned as the back one. -->
         <div class="now-playing__flip-card">
           <div class="now-playing__primary">
-            <now-playing-artwork
-              v-if="!artworkHidden"
-              :song="currentSong"
-              :radio-favicon="radioFavicon"
-              :art-size="artSize"
-              :glow-color="glowColor"
-            />
+            <now-playing-artwork v-if="!source.ui.artworkHidden" :art-size="artSize" />
 
             <!-- The track panel(s). Normally just the current song; near the
              - end of a track animated chevrons and the next one are added to
-             - the right (see panels), the next glass card sliding left into
-             - the current's place on the change. With the artwork hidden each
-             - panel is the small cover + labels; with the artwork shown the
-             - single panel is just the labels under it. -->
-            <now-playing-track-panels
-              :panels="panels"
-              :artwork-hidden="artworkHidden"
-              :visualizer-color="visualizerColor"
-            />
+             - the right (see the source's panels), the next glass card sliding
+             - left into the current's place on the change. With the artwork
+             - hidden each panel is the small cover + labels; with the artwork
+             - shown the single panel is just the labels under it. -->
+            <now-playing-track-panels />
           </div>
 
           <transition name="now-playing-lyrics">
             <lyrics-panel
-              v-if="showLyrics && currentSong"
+              v-if="source.ui.lyricsOpen && source.song"
               variant="immersive"
               class="now-playing__lyrics"
             />
             <!-- Radio takes the same half of the split (and the same back
                - face of the portrait flip card): no lyrics to show, but the
                - station's own title log to read instead. -->
-            <radio-title-log
-              v-else-if="showLyrics && radioStation"
+            <component
+              :is="source.titleLogComponent"
+              v-else-if="source.ui.lyricsOpen && source.radio && source.capabilities.titleLog"
               variant="immersive"
-              :entries="titleLogEntries"
-              :has-more="!radioMeta.hasActiveSearch && !radioMeta.titleLogComplete"
-              :query="radioMeta.searchQuery"
-              :current-at="radioMeta.titleLog[0]?.at ?? null"
-              :pending="radioMeta.searchPending"
+              :entries="source.radio.titleLog"
+              :has-more="!source.radio.hasActiveSearch && !source.radio.titleLogComplete"
+              :query="source.radio.searchQuery"
+              :current-at="source.radio.titleLog[0]?.at ?? null"
+              :pending="source.radio.searchPending"
               class="now-playing__lyrics now-playing__lyrics--title-log"
-              @load-more="radioMeta.loadOlder()"
-              @update:query="$emit('search', $event)"
+              @load-more="source.loadOlderTitles()"
+              @update:query="source.searchTitles($event)"
             />
           </transition>
         </div>
@@ -69,81 +60,29 @@
 </template>
 
 <script lang="ts">
-import { usePlaybackStore } from '@/stores/playback'
-import { useDrawersStore } from '@/stores/drawers'
-import { useRadioMetadataStore } from '@/stores/radioMetadata'
 import LyricsPanel from '@/components/lyrics/LyricsPanel.vue'
-import RadioTitleLog from '@/components/radio/RadioTitleLog.vue'
 import NowPlayingArtwork from '@/components/now-playing/NowPlayingArtwork.vue'
 import NowPlayingTrackPanels from '@/components/now-playing/NowPlayingTrackPanels.vue'
-import type { NowPlayingPanel } from '@/components/now-playing/types'
-import type { RadioFaviconRequest } from '@/services/connect/radio'
-import type { RadioTitleEntry } from '@/services/connect/radioMetadata'
-import type { Song } from '@/types/library'
+import { nowPlayingSourceMixin } from '@/components/now-playing/useSource'
 
 /** The desktop stage: artwork and lyrics side by side on a wide window,
  * flipping the card over to show the lyrics once the stage is too narrow.
  * Separate from the phone's stage because that one is always-flip and
  * full-screen; only the presentational leaves (NowPlayingArtwork,
- * NowPlayingTrackPanels) are shared. The container keeps the data, the
+ * NowPlayingTrackPanels) are shared. The source keeps the data, the
  * backdrop, the toolbar, the visualizer and the flip/slide mechanics; this
- * only renders the card and reads the stores it needs to. */
+ * only renders the card. */
 export default {
   name: 'NowPlayingStageDesktop',
   components: {
     LyricsPanel,
-    RadioTitleLog,
     NowPlayingArtwork,
     NowPlayingTrackPanels,
   },
-  props: {
-    artworkHidden: {
-      type: Boolean,
-      default: false,
-    },
-    glowColor: {
-      type: String,
-      required: true,
-    },
-    visualizerColor: {
-      type: String,
-      required: true,
-    },
-    radioFavicon: {
-      type: Object as () => RadioFaviconRequest | null,
-      default: null,
-    },
-    panels: {
-      type: Array as () => NowPlayingPanel[],
-      required: true,
-    },
-    titleLogEntries: {
-      type: Array as () => RadioTitleEntry[],
-      required: true,
-    },
-  },
-  emits: ['search'],
+  mixins: [nowPlayingSourceMixin],
   computed: {
-    playbackStore() {
-      return usePlaybackStore()
-    },
-    drawersStore() {
-      return useDrawersStore()
-    },
-    radioMeta() {
-      return useRadioMetadataStore()
-    },
-    currentSong(): Song | null {
-      return this.playbackStore.currentSong
-    },
-    radioStation() {
-      return this.playbackStore.radioStation
-    },
     hasPlayable(): boolean {
-      return this.currentSong != null || this.radioStation != null
-    },
-    showLyrics(): boolean {
-      return this.drawersStore.lyricsPanelOpen
+      return this.source.song != null || this.source.radio != null
     },
     /** cqh/cqw (container query units), not vh/vw — .now-playing__stage is a
      * `container-type: size` host sized by the container's own grid, after

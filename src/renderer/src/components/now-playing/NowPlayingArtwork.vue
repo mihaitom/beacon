@@ -1,15 +1,24 @@
 <template>
   <div class="now-playing__art-wrap" :class="{ 'now-playing__art-wrap--compact': compact }">
-    <div class="now-playing__art-glow" :style="{ background: glowColor }" />
-    <cover-art v-if="song" :cover-art-id="song.coverArtId" :size="artSize" class="cover-shadow" />
+    <div class="now-playing__art-glow" :style="{ background: source.glowColor }" />
+    <component
+      :is="source.cover"
+      v-if="source.song"
+      :cover-art-id="source.song.coverArtId"
+      :src="source.song.coverUrl"
+      :size="artSize"
+      class="cover-shadow"
+    />
     <!-- No cover-shadow/card background for a transparent icon (see
      - radioIconIsTransparent) — a real card treatment around a logo that's
      - just floating on transparency looks like a broken image rather than a
      - clean logo. -->
-    <cover-art
+    <component
+      :is="source.cover"
       v-else
       contain
-      :radio-favicon="radioFavicon"
+      :radio-favicon="source.radio?.favicon ?? null"
+      :src="source.radio?.logoUrl ?? null"
       :size="artSize"
       fallback-icon="mdi-radio"
       :class="radioIconIsTransparent ? 'radio-cover-art--transparent' : 'cover-shadow'"
@@ -19,30 +28,15 @@
 </template>
 
 <script lang="ts">
-import CoverArt from '@/components/library/CoverArt.vue'
-import type { RadioFaviconRequest } from '@/services/connect/radio'
-import type { Song } from '@/types/library'
+import { nowPlayingSourceMixin } from '@/components/now-playing/useSource'
 
 export default {
   name: 'NowPlayingArtwork',
-  components: { CoverArt },
+  mixins: [nowPlayingSourceMixin],
   props: {
-    /** The current song, or null for radio (which shows the station logo). */
-    song: {
-      type: Object as () => Song | null,
-      default: null,
-    },
-    radioFavicon: {
-      type: Object as () => RadioFaviconRequest | null,
-      default: null,
-    },
     /** A CSS size string from the parent's own artSize — a plain CSS value
      * cannot read a component's computed prop, so it is passed down. */
     artSize: {
-      type: String,
-      required: true,
-    },
-    glowColor: {
       type: String,
       required: true,
     },
@@ -60,11 +54,19 @@ export default {
       radioIconIsTransparent: false,
     }
   },
+  computed: {
+    /** What identifies the station's logo. Not the radio object itself:
+     * that is rebuilt on every ICY title (and every guest snapshot), and
+     * the cover component only reports transparency when its logo changes. */
+    radioLogo(): unknown {
+      return this.source.radio?.favicon ?? this.source.radio?.logoUrl ?? null
+    },
+  },
   watch: {
     // A different station's logo is a different shape — drop the previous
     // one's treatment the moment the station changes, rather than carrying
     // it until the new logo arrives and <cover-art> reports its own.
-    radioFavicon() {
+    radioLogo() {
       this.radioIconIsTransparent = false
     },
   },
@@ -105,7 +107,7 @@ export default {
  * around an edge that was never actually there.
  *
  * .radio-cover-art--transparent.cover-art (compound, not just the one
- * class) is deliberate — CoverArt.vue's own scoped background rule targets
+ * class) is deliberate — CoverFrame.vue's own scoped background rule targets
  * .cover-art alone, so at equal specificity the one that happens to be
  * later in the built CSS wins, not necessarily this one. Matching both
  * classes outranks it regardless of build order. */

@@ -278,6 +278,41 @@ async def search_stations(
     return merged[:limit]
 
 
+async def _get_stations(path: str, params: dict[str, str]) -> list[dict] | None:
+    """One station-list request, tried against each mirror in turn like
+    _search_one(). None only when every mirror failed."""
+    servers = await _discover_servers()
+    for host in servers:
+        try:
+            r = await _client.get(f"https://{host}{path}", params=params)
+            r.raise_for_status()
+        except httpx.HTTPError as e:
+            logger.info(f"[radio-browser] {host}{path} failed: {type(e).__name__}: {e}")
+            continue
+        data = r.json()
+        if isinstance(data, list):
+            return [_to_station(raw) for raw in data if isinstance(raw, dict)]
+    if servers:
+        logger.warning(f"[radio-browser] every server failed for {path}")
+    return None
+
+
+async def stations_by_uuid(uuids: list[str]) -> list[dict] | None:
+    """The directory's entries for these ids, in one request - the saved
+    stations Beacon knows the directory id of (see the frontend's
+    services/radioBrowserLinks.ts)."""
+    if not uuids:
+        return []
+    return await _get_stations("/json/stations/byuuid", {"uuids": ",".join(uuids)})
+
+
+async def stations_by_url(url: str) -> list[dict] | None:
+    """The directory's entries whose submitted stream URL is exactly `url`,
+    for a station added by hand. Usually one, sometimes the same station
+    submitted twice."""
+    return await _get_stations("/json/stations/byurl", {"url": url})
+
+
 def _to_picklist_entry(raw: dict) -> dict:
     return {"name": raw.get("name") or "", "code": raw.get("iso_3166_1") or ""}
 

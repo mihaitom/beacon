@@ -410,7 +410,7 @@ export default {
     },
     // Checked fresh each read rather than cached in data() at mount — a
     // decorative concern that's fine to be a plain live query, same as
-    // NowPlayingView.vue's own AudioVisualizer reading it once in mounted()
+    // VisualizerBars.vue reading it once in mounted()
     // (that one caches it since it never needs re-checking mid-session;
     // this one's just as happy re-querying, so there's no separate flag to
     // keep in sync). Used by beforeFormLeave()/formEnter() below to skip

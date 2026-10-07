@@ -71,6 +71,9 @@ demuxer   mpc8
 demuxer   tta
 demuxer   shn
 demuxer   loas
+# Not a library format: the party's listen-along encoder reads the raw PCM
+# connect writes into it (core/party_broadcast.py). Configures as pcm_s16le.
+demuxer   s16le
 
 # --- Codecs those containers hold --------------------------------------
 decoder   mp3

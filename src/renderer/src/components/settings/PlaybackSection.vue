@@ -85,6 +85,17 @@
           />
         </div>
         <p class="setting__hint">{{ $t('settings.castQualityHint') }}</p>
+        <!-- Under both quality settings: the doc covers this device and
+         - casting alike, and radio, which neither setting governs. -->
+        <div class="setting__control-row">
+          <v-btn
+            variant="text"
+            prepend-icon="mdi-help-circle-outline"
+            @click="$emitter.emit('openHelp', 'transcoding')"
+          >
+            {{ $t('help.conversion') }}
+          </v-btn>
+        </div>
       </div>
 
       <div class="setting">

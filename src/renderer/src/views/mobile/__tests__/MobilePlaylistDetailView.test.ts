@@ -30,6 +30,7 @@ function makePlaylist(songs: Song[], overrides: Partial<Playlist> = {}): Playlis
     coverArtId: null,
     public: false,
     owner: OWNER,
+    changed: null,
     songs,
     ...overrides,
   }

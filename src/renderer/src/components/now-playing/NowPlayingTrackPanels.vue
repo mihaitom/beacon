@@ -4,17 +4,17 @@
     tag="div"
     class="now-playing__panels"
     :class="{
-      'now-playing__panels--corner': artworkHidden,
+      'now-playing__panels--corner': source.ui.artworkHidden,
       'now-playing__panels--compact': compact,
     }"
     @before-leave="lockLeaveWidth"
   >
     <div
-      v-for="panel in panels"
+      v-for="panel in source.panels"
       :key="panel.key"
       class="now-playing__panel"
       :class="{ 'now-playing__panel--chevrons': panel.kind === 'chevrons' }"
-      :style="panel.kind === 'chevrons' ? { color: `rgb(${visualizerColor})` } : undefined"
+      :style="panel.kind === 'chevrons' ? { color: `rgb(${source.visualizer.color})` } : undefined"
     >
       <template v-if="panel.kind === 'chevrons'">
         <v-icon
@@ -29,21 +29,22 @@
         />
       </template>
       <template v-else>
-        <cover-art
-          v-if="artworkHidden && panel.song"
+        <component
+          :is="source.cover"
+          v-if="source.ui.artworkHidden && panel.song"
           :cover-art-id="panel.song.coverArtId"
+          :src="panel.song.coverUrl"
           :size="miniArtSize || 72"
           class="cover-shadow now-playing__mini-art"
         />
         <div ref="info" class="now-playing__info">
           <div class="eyebrow-label">{{ panel.eyebrow }}</div>
           <h1 class="detail-title now-playing__title">{{ panel.title }}</h1>
-          <!-- A link only where there is an artist page to land on. The
-           - mobile shell has none (its library tab plays an album rather than
-           - opening one), and the desktop view rendered inside it is a table
-           - with no phone layout and nothing to get back with. -->
+          <!-- A link only where there is an artist page to land on: never
+           - on the mobile shell (its library tab plays an album rather than
+           - opening one) and never for a party guest (no library at all). -->
           <router-link
-            v-if="panel.song && !compact"
+            v-if="panel.song && !compact && source.capabilities.artistLinks"
             :to="`/artists/${panel.song.artistId}`"
             class="text-title-large text-medium-emphasis now-playing__artist-link"
           >
@@ -67,15 +68,28 @@
             {{ panel.radioTag }}
           </div>
           <div v-else class="text-title-large text-medium-emphasis" />
+          <!-- Party only: who asked for the song. The app's own panels never
+             - carry one. -->
+          <div v-if="panel.song?.wishedBy" class="now-playing__wish">
+            <v-icon icon="mdi-party-popper" size="14" />
+            {{ $t('party.wishedBy', { name: panel.song.wishedBy }) }}
+          </div>
           <!-- Each shell to its own album page - see
-           - views/mobile/MobileAlbumDetailView.vue. -->
+           - views/mobile/MobileAlbumDetailView.vue. A party guest gets the
+           - plain line, having no album page. -->
           <router-link
-            v-if="panel.song"
+            v-if="panel.song && source.capabilities.artistLinks"
             :to="compact ? `/m/albums/${panel.song.albumId}` : `/albums/${panel.song.albumId}`"
             class="text-body-medium text-medium-emphasis now-playing__album-link"
           >
             {{ panel.song.album }}
           </router-link>
+          <div
+            v-else-if="panel.song"
+            class="text-body-medium text-medium-emphasis now-playing__album-link"
+          >
+            {{ panel.song.album }}
+          </div>
         </div>
       </template>
     </div>
@@ -83,28 +97,15 @@
 </template>
 
 <script lang="ts">
-import CoverArt from '@/components/library/CoverArt.vue'
-import type { NowPlayingPanel } from '@/components/now-playing/types'
+import { nowPlayingSourceMixin } from '@/components/now-playing/useSource'
 
 export default {
   name: 'NowPlayingTrackPanels',
-  components: { CoverArt },
+  mixins: [nowPlayingSourceMixin],
   props: {
-    panels: {
-      type: Array as () => NowPlayingPanel[],
-      required: true,
-    },
-    artworkHidden: {
-      type: Boolean,
-      default: false,
-    },
     compact: {
       type: Boolean,
       default: false,
-    },
-    visualizerColor: {
-      type: String,
-      required: true,
     },
   },
   data() {
@@ -120,7 +121,7 @@ export default {
     // The panels are keyed by song, so the current panel's info element is
     // replaced on every track change — the observer has to be re-pointed at
     // the new one.
-    panels: {
+    'source.panels': {
       handler() {
         void this.$nextTick(() => this.observeInfo())
       },
@@ -431,6 +432,14 @@ export default {
 
 .now-playing__artist-link:hover,
 .now-playing__album-link:hover {
+  color: rgb(var(--v-theme-primary));
+}
+
+/* Who wished for the song, on the party guest page only. */
+.now-playing__wish {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   color: rgb(var(--v-theme-primary));
 }
 

@@ -93,7 +93,7 @@ function artBox(): DOMRect {
   return document.querySelector('.artwork-lightbox__art')!.getBoundingClientRect()
 }
 
-/** CoverArt's own `.cover-art { background: ... }`, restated as a real
+/** CoverFrame's own `.cover-art { background: ... }`, restated as a real
  * stylesheet rule - the stub above cannot carry it inline, because an
  * inline style would be unbeatable and the whole question here is whether
  * the lightbox's rule beats the component's. Kept faint and grey like the

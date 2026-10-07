@@ -37,6 +37,8 @@ connect/.pytest_cache
 connect/.coverage
 connect/coverage.xml
 connect/build
+# The party guest page, built by `pnpm build:party`
+connect/static/party/
 connect/dist
 connect/lastfm_api_key.txt
 connect/fanart_api_key.txt

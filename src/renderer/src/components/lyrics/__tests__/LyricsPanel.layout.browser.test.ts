@@ -52,7 +52,7 @@ async function mountPanel(synced: boolean, lineCount = 12, positionSeconds = 0) 
   // real app does.
   const wrapper = mount(NowPlayingView, {
     attachTo: document.body,
-    global: { plugins: [vuetify, i18n, makeRouter()], stubs: { AudioVisualizer: true } },
+    global: { plugins: [vuetify, i18n, makeRouter()], stubs: { VisualizerBars: true } },
   })
   wrappers.push(wrapper)
   const playback = usePlaybackStore()

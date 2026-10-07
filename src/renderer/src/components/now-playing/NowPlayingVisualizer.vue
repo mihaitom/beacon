@@ -1,15 +1,13 @@
 <template>
-  <!-- Always in the DOM (unlike <audio-visualizer> itself, still v-if'd
-   - below) so its height can *transition* between 0 and its real height
-   - instead of the row just appearing/disappearing — .now-playing__stage is
-   - a grid `auto` sibling, so animating this row's height is what makes the
-   - artwork's cqh-driven size resize smoothly along with it instead of
-   - snapping the instant this mounts/unmounts. <audio-visualizer> itself
-   - stays mounted a moment past `active` going false so its own smoothing
-   - can let the bars settle to 0 first instead of just vanishing — see the
-   - active watcher; that settle plays out over the same
-   - VISUALIZER_HIDE_DELAY_MS this row's own height transition takes, so both
-   - finish together. -->
+  <!-- Always in the DOM so its height can *transition* between 0 and its
+   * real height instead of the row just appearing/disappearing —
+   * .now-playing__stage is a grid `auto` sibling, so animating this row's
+   * height is what makes the artwork's cqh-driven size resize smoothly
+   * along with it instead of snapping the instant this mounts. The bars
+   * stay mounted a moment past `active` going false so their own smoothing
+   * can settle them to 0 first — see the active watcher; that settle plays
+   * out over the same VISUALIZER_HIDE_DELAY_MS this row's own height
+   * transition takes, so both finish together. -->
   <div
     class="now-playing__visualizer-row"
     :class="{
@@ -17,57 +15,49 @@
       'now-playing__visualizer-row--compact': compact,
     }"
   >
-    <audio-visualizer
+    <visualizer-bars
       v-if="mounted"
-      :active="active"
-      :color="color"
-      @debug-frame="$emit('debug-frame', $event)"
+      :active="source.visualizer.active"
+      :color="source.visualizer.color"
+      :sample="source.visualizer.sample"
+      :smoothing="source.visualizer.smoothing"
     />
   </div>
 </template>
 
 <script lang="ts">
-import AudioVisualizer from '@/components/player/AudioVisualizer.vue'
+import VisualizerBars from '@/components/player/VisualizerBars.vue'
+import { nowPlayingSourceMixin } from '@/components/now-playing/useSource'
 
-// How long <audio-visualizer> stays mounted (with active=false) after the
-// `active` prop goes false — long enough for its own smoothing to visibly
-// settle every bar to 0 before it's actually removed.
+// How long the bars stay mounted (with active=false) after the source's
+// active flag goes false — long enough for their own smoothing to visibly
+// settle every bar to 0 before they are actually removed.
 const VISUALIZER_HIDE_DELAY_MS = 400
 
 export default {
   name: 'NowPlayingVisualizer',
-  components: { AudioVisualizer },
+  components: { VisualizerBars },
+  mixins: [nowPlayingSourceMixin],
   props: {
-    /** Whether the visualizer should be showing at all (something playable,
-     * the preference on, and an analyser/backend data source available). */
-    active: {
-      type: Boolean,
-      default: false,
-    },
-    color: {
-      type: String,
-      required: true,
-    },
     compact: {
       type: Boolean,
       default: false,
     },
   },
-  emits: ['debug-frame'],
   data() {
     return {
-      // Whether <audio-visualizer> is actually in the DOM — trails `active`
-      // by VISUALIZER_HIDE_DELAY_MS on the way down so its fall-to-0
-      // animation has time to play before it's removed.
+      // Whether the bars are actually in the DOM — trails the source's
+      // active flag by VISUALIZER_HIDE_DELAY_MS on the way down so their
+      // fall-to-0 animation has time to play before they're removed.
       mounted: false,
       hideTimer: null as ReturnType<typeof setTimeout> | null,
     }
   },
   watch: {
-    // Mount instantly on the way up; on the way down, keep it mounted (with
-    // active=false) for VISUALIZER_HIDE_DELAY_MS so AudioVisualizer's own
+    // Mount instantly on the way up; on the way down, keep them mounted
+    // (with active=false) for VISUALIZER_HIDE_DELAY_MS so their own
     // smoothing can settle every bar to 0 first.
-    active: {
+    'source.visualizer.active': {
       immediate: true,
       handler(active: boolean) {
         if (this.hideTimer) {

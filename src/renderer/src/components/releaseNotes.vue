@@ -1,5 +1,5 @@
 <template>
-  <v-dialog v-model="visible" max-width="920" scrollable transition="dialog-top-transition">
+  <v-dialog v-model="visible" max-width="920" scrollable>
     <v-card class="release-dialog beacon-dialog">
       <div class="release-hero">
         <div class="release-hero__icon-wrap">
@@ -36,7 +36,11 @@
         </div>
 
         <!-- eslint-disable-next-line vue/no-v-html -- selectedHtml is our own CHANGELOG.md, rendered at build time, never user input -->
-        <div v-if="selectedHtml" class="changelog-content" v-html="selectedHtml"></div>
+        <div
+          v-if="selectedHtml"
+          class="changelog-content beacon-markdown"
+          v-html="selectedHtml"
+        ></div>
 
         <div v-else class="empty-state">{{ $t('releaseNotes.empty') }}</div>
       </v-card-text>
@@ -58,6 +62,20 @@ import changelogRaw from '../../../../CHANGELOG.md?raw'
 import packageJson from '../../../../package.json'
 
 const md = new MarkdownIt({ html: false, linkify: true })
+
+// Every link opens in a window of its own. Followed in place, a link takes
+// the app itself off to the page; Electron hands a new window to the system
+// browser instead (src/main/index.ts's setWindowOpenHandler).
+md.renderer.rules.link_open = (tokens, idx, options, _env, self) => {
+  tokens[idx]!.attrSet('target', '_blank')
+  tokens[idx]!.attrSet('rel', 'noopener noreferrer')
+  return self.renderToken(tokens, idx, options)
+}
+
+/** A version's notes as HTML. */
+export function renderNotes(markdown: string): string {
+  return md.render(markdown)
+}
 
 // beacon. prefix added when this became account-scoped (see storageKey()
 // below) — matches every other settings key's convention. A returning user
@@ -133,7 +151,7 @@ export default defineComponent({
       return this.changelogEntries.find((entry) => entry.version === this.selectedVersion) ?? null
     },
     selectedHtml(): string {
-      return this.selectedEntry ? md.render(this.selectedEntry.body) : ''
+      return this.selectedEntry ? renderNotes(this.selectedEntry.body) : ''
     },
     storageKey(): string {
       return accountScopedKey(`${STORAGE_PREFIX}:${this.appVersion}`)
@@ -270,11 +288,10 @@ export default defineComponent({
   min-width: 220px;
 }
 
-/* selectedHtml is markdown-it's rendered output, injected via v-html — it
- * never gets Vue's scope-id, so every selector reaching into it needs
- * :deep(). Styled to loosely match the old hand-rolled section cards
- * (heading pill, indented lists) while actually rendering the markdown
- * (bold, links, nested lists, blockquotes, code) instead of flattening it. */
+/* Lists, links, code and the rest come from base.css's .beacon-markdown;
+ * only the changelog's own section headings (Added, Fixed, ...) are drawn
+ * as pills here. selectedHtml comes in via v-html and never gets Vue's
+ * scope id, hence :deep(). */
 .changelog-content :deep(h3) {
   margin: 1.25rem 0 0.5rem;
   padding: 0.5rem 0.9rem;
@@ -287,54 +304,6 @@ export default defineComponent({
 
 .changelog-content :deep(h3:first-child) {
   margin-top: 0;
-}
-
-.changelog-content :deep(p) {
-  margin: 0.5rem 0;
-}
-
-.changelog-content :deep(ul) {
-  margin: 0.25rem 0 0.25rem 1.25rem;
-  padding-left: 0;
-}
-
-.changelog-content :deep(li) {
-  margin-bottom: 0.35rem;
-}
-
-.changelog-content :deep(li > ul) {
-  margin-top: 0.35rem;
-}
-
-.changelog-content :deep(strong) {
-  color: rgb(var(--v-theme-on-surface));
-}
-
-.changelog-content :deep(a) {
-  color: rgb(var(--v-theme-primary));
-}
-
-.changelog-content :deep(code) {
-  background: color-mix(in srgb, rgb(var(--v-theme-on-surface)) 12%, transparent);
-  padding: 0.1em 0.35em;
-  border-radius: 4px;
-  font-size: 0.9em;
-}
-
-.changelog-content :deep(blockquote) {
-  margin: 0.75rem 0;
-  padding: 0.5rem 0.9rem;
-  border-left: 3px solid rgb(var(--v-theme-primary));
-  background: color-mix(
-    in srgb,
-    rgb(var(--v-theme-surface)) 95%,
-    rgb(var(--v-theme-on-surface)) 5%
-  );
-  border-radius: 0 8px 8px 0;
-}
-
-.changelog-content :deep(blockquote p) {
-  margin: 0.2rem 0;
 }
 
 .empty-state {

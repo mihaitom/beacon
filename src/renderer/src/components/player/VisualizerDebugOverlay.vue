@@ -78,16 +78,15 @@
 import { getLogLevel } from '@/services/connect/logLevel'
 import type { VisualizerFrame } from '@/services/connect/types'
 
-// AudioVisualizer.vue's 'cast'-mode sync debug readout — split into its own
-// component, positioned absolutely by NowPlayingView.vue rather than drawn
-// inside AudioVisualizer itself, after an earlier version that lived there
-// either sat on top of the bars (covering them) or took real flex space
-// away from them (visibly compressing them) — reported live 2026-09-05,
-// twice, once for each layout tried. AudioVisualizer's own box is exactly
-// the bars' box, with nothing to spare either way; this one lives in
-// NowPlayingView's own layout instead; see .now-playing's own CSS for the
-// positioning context, and NowPlayingView.vue for why `debug` is simply
-// whatever AudioVisualizer's own 'debug-frame' event last carried, not
+// The visualizer's 'cast'-mode sync debug readout — its own component,
+// positioned absolutely by NowPlayingPresentation.vue rather than drawn
+// inside the bars, after an earlier version that lived there either sat on
+// top of the bars (covering them) or took real flex space away from them
+// (visibly compressing them) — reported live 2026-09-05, twice, once for
+// each layout tried. The bars' box has nothing to spare either way; this
+// one lives in the presentation's own layout instead; see .now-playing's
+// own CSS for the positioning context. `debug` is simply whatever the
+// latest frame of NowPlayingView's own visualizer stream carried, not
 // fetched independently here — a second GET /visualizer subscription would
 // mean a second reader draining the exact same, single-consumer frames
 // queue (core/audio_analysis.py's AudioAnalyzer.frames), splitting frames
@@ -99,9 +98,9 @@ import type { VisualizerFrame } from '@/services/connect/types'
 export default {
   name: 'VisualizerDebugOverlay',
   props: {
-    // AudioVisualizer.vue's own 'debug-frame' event, forwarded straight
-    // through by NowPlayingView.vue — null whenever nothing has arrived
-    // yet, or 'cast' mode isn't running at all right now.
+    // The latest cast frame's debug payload, handed through the Now
+    // Playing source — null whenever nothing has arrived yet, or 'cast'
+    // mode isn't running at all right now.
     debug: {
       type: Object as () => VisualizerFrame['debug'] | null,
       default: null,
@@ -110,7 +109,7 @@ export default {
   data() {
     return {
       // Whether the account's backend log level is DEBUG/TRACE right now —
-      // fetched once at mount, same reasoning AudioVisualizer.vue's own
+      // fetched once at mount, same reasoning VisualizerBars.vue's own
       // reducedMotion has: this gates a diagnostic overlay, not something
       // that needs to react to Settings being changed in another window
       // mid-session.

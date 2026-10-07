@@ -371,6 +371,160 @@ export default {
     clear: 'Clear queue',
     saveAsPlaylist: 'Save queue as playlist',
   },
+  party: {
+    copied: 'Copied',
+    copyLink: 'Copy link',
+    title: 'Party mode',
+    hint: 'Guests open a link or scan a code and see what is coming up, search your library and wish for songs. They cannot pause, skip or change anything else.',
+    link: 'Invitation link',
+    showPoster: 'Show the code full screen',
+    guests: 'Guests ({count})',
+    noGuests: 'Nobody has joined yet.',
+    removeGuest: 'Remove {name}',
+    hostedElsewhere:
+      'A party is running in another window, which answers the guests. Take it over to host it from here.',
+    runsOnServer: 'Runs on the Beacon server while you cast - this device may lock.',
+    runsLocally: 'Keep Beacon open - the music plays on this device.',
+    runsLocallyPhone:
+      'The music plays on this device, so it must stay awake - locking it ends the party.',
+    rules: 'Rules',
+    limit: 'Open wishes per guest',
+    skip: 'Skip vote',
+    skipOff: 'Off',
+    skipShare: '{share} of the guests',
+    duration: 'Ends after',
+    hours: '{count} hours',
+    end: 'End party',
+    renewLink: 'Renew link',
+    takeOver: 'Take over',
+    start: 'Start party',
+    posterTitle: 'Wish for a song',
+    posterHint: 'Scan with your phone camera',
+    failed: "That didn't work - is the backend reachable?",
+    wishedBy: 'Wished for by {name}',
+    listen: 'Online party',
+    listenOff: 'Off',
+    listenAac: 'AAC {kbps} kbit/s',
+    listenHint:
+      'For a party online, in a voice chat for example: everyone gets your music in their own browser from the party link.',
+    listeners: '{count} listening online - about {mbps} Mbit/s upload',
+    invitation: 'Invitation',
+    probe: {
+      button: 'Test setup',
+      title: 'Online party setup',
+      running: 'Testing…',
+      again: 'Test again',
+      about: "Checks whether guests outside your network can reach this party's link.",
+      dnsNote: "For the public DNS check, Beacon asks Cloudflare's DNS (1.1.1.1) for the name.",
+      steps: {
+        'public-dns': 'Public DNS',
+        'reach-public': 'From the internet',
+        address: 'Address',
+        dns: 'Name lookup here',
+        reach: 'Reaching the party',
+        https: 'HTTPS',
+        proxies: 'Reverse proxy',
+      },
+      codes: {
+        'public-dns': {
+          public: 'For everyone, {host} points to {publicAddresses}.',
+          missing:
+            'Public DNS does not know {host}, so guests outside your network will not find the party.',
+          private:
+            'Public DNS points {host} to {publicAddresses}, an address that only exists inside a network.',
+          unavailable: 'Public DNS could not be asked.',
+        },
+        'reach-public': {
+          ok: 'This Beacon answered through {publicAddresses}, the way guests come in.',
+        },
+        address: {
+          ok: 'The link uses {host}.',
+          'local-address':
+            'The link points to {host}, which only your own network knows. Open Beacon under its public address and start the party from there.',
+        },
+        dns: {
+          public: '{host} resolves to {addresses}.',
+          private: 'Here {host} resolves to {addresses}, an address of your own network.',
+          unresolvable: 'The Beacon server cannot look up {host}.',
+        },
+        reach: {
+          home: 'Inside your network, {host} reaches this Beacon directly.',
+          ok: 'This Beacon answered under {host}.',
+          'local-only':
+            'This Beacon answered, but through your own network - that says nothing yet about guests outside it.',
+          login: 'A login answered instead of Beacon: /party has to get past it.',
+          'not-beacon':
+            'Something other than this Beacon answered under {host} - check where your proxy sends /party.',
+          certificate:
+            "The certificate for {host} is not valid, so guests' browsers will refuse it.",
+          unreachable:
+            'The Beacon server could not reach {host}. That can be the setup, or a router that does not let devices at home reach its own public address.',
+          timeout:
+            '{host} did not answer in time. That can be the setup, or a router that does not let devices at home reach its own public address.',
+        },
+        https: {
+          'no-https':
+            "The party runs over plain HTTP: guests' browsers may warn, and their session is not protected.",
+        },
+        proxies: {
+          'untrusted-proxy':
+            'The proxy at {proxy} is not in TRUSTED_PROXIES, so every guest counts as that proxy and they share its limits.',
+        },
+      },
+      dnsHint:
+        'Guests outside your network look the name up in public DNS. A name that only your router or a local DNS (Pi-hole, AdGuard Home) knows works at home and nowhere else: it needs a public DNS record pointing at your internet address.',
+      phoneHint: 'The surest test is the link on a phone with Wi-Fi switched off.',
+      setups: 'Setups for the common proxies',
+    },
+  },
+  partyGuest: {
+    largeArtwork: 'Large artwork',
+    joinTitle: 'Join the party',
+    joinText: 'Pick a name - it shows next to the songs you wish for.',
+    namePlaceholder: 'Your name',
+    join: 'Join',
+    tabNow: 'Now',
+    tabQueue: 'Up next',
+    tabWish: 'Wish',
+    endedTitle: 'No party right now',
+    endedText: 'This party has ended or the link is no longer valid.',
+    rescanTitle: 'Scan the code again',
+    rescanText: 'Open the party with the QR code or the link you were sent.',
+    offlineTitle: "Can't reach the party",
+    offlineText: "Beacon isn't answering right now. Try again in a moment.",
+    nothingPlaying: 'Nothing is playing right now.',
+    radioTitle: 'Radio is playing',
+    radioText: 'Wishes only work while music from the library is playing.',
+    voteSkip: 'Vote to skip',
+    voted: 'Voted to skip',
+    queueEmpty: 'Nothing queued yet - be the first to wish for a song.',
+    yourWish: 'Your wish',
+    withdraw: 'Withdraw',
+    search: 'Search songs or albums',
+    songs: 'Songs',
+    albums: 'Albums',
+    back: 'Back',
+    noResults: 'Nothing found.',
+    searchHint: 'Search for a song or an album to wish for.',
+    quota: '{left} of {max} wishes left',
+    quotaNone: 'You have used all your wishes - wait until one has played.',
+    wish: 'Wish for this song',
+    wished: 'Wished for!',
+    errLimit: 'You have reached your wish limit.',
+    errDuplicate: 'That song has been wished for already.',
+    errNotFound: "That song couldn't be found.",
+    errRate: 'Slow down a little.',
+    errOffline: "Beacon isn't answering right now.",
+    errGeneric: "That didn't work - try again.",
+    full: 'This party is full.',
+    nameTaken: 'That name is taken - please pick another.',
+    listen: 'Listen along',
+    listenStop: 'Stop listening',
+    listenConnecting: 'Connecting…',
+    listenFailed: "The stream isn't playing - tap to try again.",
+    live: 'Live',
+    project: 'Beacon on GitHub',
+  },
   remoteControl: {
     title: 'Remote Control',
     hint: 'Let a phone on your network control playback - Now Playing, Queue, Playlists, Songs, and Radio.',
@@ -380,6 +534,8 @@ export default {
     pairHint:
       "Scan this code with your phone's camera, or open the address below and enter the PIN.",
     address: 'Address',
+    copyAddress: 'Copy address',
+    copied: 'Copied',
     turnOff: 'Turn off',
     regenerate: 'Regenerate code',
     needsRegenerate:
@@ -467,6 +623,8 @@ export default {
     homeAutomationKeyActive: 'A key is active',
     homeAutomationKeyMissing: 'No key yet',
     homeAutomationKey: 'Key',
+    homeAutomationCopyKey: 'Copy key',
+    homeAutomationKeyCopied: 'Copied',
     homeAutomationKeyOnce:
       'Shown only now. Copy it into your integration; if you lose it, create a new one.',
     homeAutomationGenerate: 'Create key',
@@ -675,6 +833,20 @@ export default {
     byOwner: 'by {owner}',
     deleteTitle: 'Delete playlist?',
     deleteConfirm: 'Delete "{name}"? This cannot be undone.',
+    editedAgo: 'edited {ago}',
+    withArtists: 'With {artists}',
+    withArtistsAndMore: 'With {artists} and {count} more',
+  },
+  features: {
+    title: 'What Beacon can do',
+  },
+  help: {
+    title: 'Help',
+    topic: 'Topic',
+    englishOnly: 'These pages are only available in English.',
+    guides: 'Guides',
+    faq: 'FAQ',
+    conversion: 'What gets converted, and why',
   },
   privacy: {
     title: 'Privacy',
@@ -713,9 +885,10 @@ export default {
       },
       radioBrowser: {
         name: 'Radio Browser',
-        purpose: 'The station directory behind "Discover stations".',
+        purpose:
+          'The station directory behind "Discover stations". Also the tags, country and format of your saved stations on the Radio page.',
         sends:
-          "Your search term and the country you picked. Playing a station you found here reports its id back as a click, which the directory's own rules ask for so that popular stations stay recognisable. A station you added by typing its address yourself is never reported. Voting for a station sends its id as well, only when you press that button yourself.",
+          "Your search term and the country you picked. Playing a station you found here reports its id back as a click, which the directory's own rules ask for so that popular stations stay recognisable. A station you added by typing its address yourself is never reported. Voting for a station sends its id as well, only when you press that button yourself. For the Radio page, the Beacon server looks up your saved stations: by id where known, otherwise by stream address, including ones you added yourself. That is not a click, and it is repeated after several days at the earliest.",
       },
       stationSite: {
         name: "Radio stations' own websites",
@@ -799,6 +972,13 @@ export default {
         sends:
           'A sign-in request, and afterwards your Plex token whenever it is checked. Signing in opens app.plex.tv in your browser. None of this happens with Navidrome or Jellyfin.',
       },
+      publicDns: {
+        name: 'Cloudflare DNS',
+        purpose:
+          'Only when you press "Test setup" for an online party: whether guests outside your network can find the party\'s address.',
+        sends:
+          "The party's hostname, nothing else - the same question any guest's phone asks a public DNS.",
+      },
     },
   },
   radio: {
@@ -850,6 +1030,10 @@ export default {
     titleLogFilterEmpty: "Nothing in this station's log matches “{query}”.",
     titleLogSearch: 'Search your library',
     titleLogYesterday: 'Yesterday',
+    playing: 'Playing',
+    nowPlayingLine: 'Now playing: {title}',
+    lastHeard: 'Last heard: {title} · {ago}',
+    bitrate: '{bitrate} kbit/s',
   },
   favorites: {
     eyebrow: 'Your collection',

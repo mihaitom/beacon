@@ -49,7 +49,11 @@
 # `ffmpeg -demuxers` prints for two of them: Shorten's demuxer configures as
 # `shorten` and reports as `shn`, and DSDIFF (.dff) has no demuxer of its
 # own — it is part of `iff`. required-components carries the reported names.
---enable-demuxer=mp3,flac,ogg,wav,aac,mov,matroska,asf,ape,aiff,wv,dsf,iff,mpc,mpc8,tta,shorten,loas
+#
+# pcm_s16le is not a library format: it is raw PCM on stdin, which the
+# party's listen-along encoder reads (core/party_broadcast.py). Like the
+# muxer of the same name, it reports as `s16le`.
+--enable-demuxer=mp3,flac,ogg,wav,aac,mov,matroska,asf,ape,aiff,wv,dsf,iff,mpc,mpc8,tta,shorten,loas,pcm_s16le
 --enable-decoder=mp3,mp3float,mp2,mp2float,flac,vorbis,opus,aac,aac_latm,alac,ape,wavpack,tta,shorten,mpc7,mpc8,wmav1,wmav2,wmapro,wmalossless,dsd_lsbf,dsd_msbf,dsd_lsbf_planar,dsd_msbf_planar,pcm_s8,pcm_u8,pcm_s16le,pcm_s16be,pcm_s24le,pcm_s24be,pcm_s32le,pcm_s32be,pcm_f32le,pcm_f32be,pcm_f64le,pcm_f64be
 
 # The PCM entries above are every depth *and byte order* a WAV or AIFF can

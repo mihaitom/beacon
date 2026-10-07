@@ -12,7 +12,7 @@ from typing import Any
 
 # Kept in sync with package.json by scripts/sync-connect-version.mjs
 # (runs via the `postversion` hook on `pnpm version`).
-CONNECT_VERSION = "1.5.1"
+CONNECT_VERSION = "1.6.0"
 
 # Shared across providers — some (e.g. SimpMusic) reject requests without one.
 USER_AGENT = f"Beacon/{CONNECT_VERSION} (https://github.com/mihaitom/beacon)"
@@ -92,6 +92,59 @@ def artist_matches(expected: str | None, actual: str | None) -> bool:
     if left in right or right in left:
         return True
     return _distance(left, right) <= ARTIST_TOLERANCE
+
+
+# A leading LRC timestamp, with capture groups for parsing (parse_lyrics
+# below). The same shape as _TIMESTAMP above, which has no groups.
+_TIMESTAMP_TAG = re.compile(r"^\[(\d{1,3}):(\d{2})(?:\.(\d{1,3}))?(?:-\d+)?\]")
+
+
+def _is_credit(text: str) -> bool:
+    return bool(_CREDIT_PREFIX.match(text) or _CREDIT_BY.match(text))
+
+
+def _split_off_credits(lines: list[dict]) -> list[dict]:
+    """Drops the credit lines some sources put at the top of a sheet — same
+    rule as parseLrc.ts's splitOffCredits: only from the front, stopping at
+    the first line that is actually sung."""
+    count = 0
+    while count < len(lines) and _is_credit(lines[count]["text"]):
+        count += 1
+    return lines[count:]
+
+
+def parse_lyrics(text: str) -> tuple[bool, list[dict]]:
+    """LRC text -> (synced, lines), matching parseLrc.ts's parseLyrics: a
+    line may carry several timestamps (a repeated chorus), untimed sheets
+    come back as one line per row with time 0, and credit lines are left
+    out. Used by party mode's lyrics fallback (core/party.py), so guests
+    read the same lines the host's own parser would have produced."""
+    synced: list[dict] = []
+    for raw in text.splitlines():
+        rest = raw
+        times: list[float] = []
+        while True:
+            match = _TIMESTAMP_TAG.match(rest)
+            if match is None:
+                break
+            minutes = int(match.group(1))
+            seconds = int(match.group(2))
+            fraction = match.group(3) or ""
+            # Centiseconds by convention, but 3 digits (milliseconds) in the
+            # wild - pad/truncate to milliseconds either way, as the TS side
+            # does.
+            millis = int(fraction.ljust(3, "0")[:3] or 0)
+            times.append(minutes * 60 + seconds + millis / 1000)
+            rest = rest[match.end() :]
+        if not times:
+            continue
+        text_line = rest.strip()
+        synced.extend({"time": t, "text": text_line} for t in times)
+    if synced:
+        synced.sort(key=lambda line: line["time"])
+        return True, _split_off_credits(synced)
+    plain = [{"time": 0.0, "text": line.strip()} for line in text.splitlines() if line.strip()]
+    return False, _split_off_credits(plain)
 
 
 def has_sung_lines(text: str) -> bool:

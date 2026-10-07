@@ -23,9 +23,16 @@ RUN pnpm install
 # Only what `pnpm run build:web` actually touches — an unrelated repo change
 # (e.g. in connect/) shouldn't bust this layer and trigger a needless rebuild.
 COPY src ./src
-COPY CHANGELOG.md web.vite.config.ts tsconfig.json tsconfig.app.json tsconfig.node.json ./
+COPY CHANGELOG.md web.vite.config.ts party.vite.config.ts tsconfig.json tsconfig.app.json tsconfig.node.json ./
+# The docs the in-app help bundles (src/renderer/src/services/help/docs.ts),
+# README.md for its Features section.
+COPY README.md ./
+COPY docs/faq.md docs/party-mode.md docs/transcoding-decisions.md docs/home-automation.md ./docs/
 
 RUN pnpm run build:web
+# The party guest page, which connect serves itself under /party/ (see
+# routes/party.py) - built into connect/static/party/ and copied over below.
+RUN pnpm run build:party
 
 
 # --- Build minimal ffmpeg (audio-only, statically linked)
@@ -164,6 +171,8 @@ COPY connect/pyproject.toml ./
 COPY connect/uv.lock ./
 COPY --from=python-builder /app/.venv /app/.venv
 COPY connect/. .
+# After the line above, so a build left over in a local checkout can't win.
+COPY --from=frontend-builder /app/connect/static/party ./static/party
 
 COPY start.sh /start.sh
 RUN chmod +x /start.sh

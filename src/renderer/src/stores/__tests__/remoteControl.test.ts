@@ -9,6 +9,7 @@ import * as commands from '@/services/remoteControl/commands'
 import { RemoteAgentEventSource } from '@/services/remoteControl/agent'
 import { makeSong, makeStatus } from './fixtures'
 import { useRadioMetadataStore } from '../radioMetadata'
+import { usePartyStore } from '../party'
 
 vi.mock('@/services/remoteControl/http', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/services/remoteControl/http')>()
@@ -287,6 +288,31 @@ describe('remoteControl store', () => {
       expect(remoteHttp.pushRemoteState).toHaveBeenCalledTimes(1)
     })
 
+    it('keeps the relay for a party this window hosts', () => {
+      const store = useRemoteControlStore()
+      store.startRelay()
+      const party = usePartyStore()
+      party.enabled = true
+      party.hostedHere = true
+
+      store.stopRelayUnlessNeeded()
+
+      expect(FakeAgent.instances[0]!.stopped).toBe(false)
+    })
+
+    it('stops the relay once another window has taken the party over', () => {
+      const store = useRemoteControlStore()
+      store.startRelay()
+      // Still running, just not answered from here any more.
+      const party = usePartyStore()
+      party.enabled = true
+      party.hostedHere = false
+
+      store.stopRelayUnlessNeeded()
+
+      expect(FakeAgent.instances[0]!.stopped).toBe(true)
+    })
+
     it('revoking the key keeps the relay running while phones are on', async () => {
       const store = useRemoteControlStore()
       await store.generateIntegrationKey()
@@ -513,6 +539,25 @@ describe('remoteControl store', () => {
       expect(radio.buffering).toBe(true)
     })
 
+    it('sends a new station tag on its own, without waiting for playback to change', async () => {
+      const playback = usePlaybackStore()
+      playback.radioStation = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example/live',
+        homePageUrl: null,
+      }
+      await enableStore()
+      vi.mocked(remoteHttp.pushRemoteState).mockClear()
+
+      useRadioMetadataStore().nowPlaying = 'Artist - Next Track'
+      await vi.waitFor(() => expect(remoteHttp.pushRemoteState).toHaveBeenCalled())
+
+      const calls = vi.mocked(remoteHttp.pushRemoteState).mock.calls
+      const radio = (calls[calls.length - 1]![0] as { radio: { now_playing: string } }).radio
+      expect(radio.now_playing).toBe('Artist - Next Track')
+    })
+
     it('sends a station with no tag as an explicit absence, not a missing field', async () => {
       // So the phone never has to tell "this station sends no tag" apart
       // from "an older desktop that never sent one".
@@ -574,6 +619,22 @@ describe('remoteControl store', () => {
       >
       expect(snapshot.current_song).toMatchObject({ id: 'a', title: 'Track A' })
       expect(snapshot.queue).toEqual([expect.objectContaining({ id: 'a' })])
+    })
+
+    it('carries the read-only party status for Home Assistant', async () => {
+      await enableStore()
+      vi.mocked(remoteHttp.pushRemoteState).mockClear()
+      const party = usePartyStore()
+      party.enabled = true
+      party.guests = [{ guest_id: 'g1', name: 'Guest', joined_at: 0, connected: true }]
+      party.listeners = 2
+
+      await vi.waitFor(() => expect(remoteHttp.pushRemoteState).toHaveBeenCalled())
+      const snapshot = vi.mocked(remoteHttp.pushRemoteState).mock.calls.at(-1)![0] as Record<
+        string,
+        unknown
+      >
+      expect(snapshot.party).toEqual({ running: true, guests: 1, listeners: 2, listen_kbps: 0 })
     })
   })
 

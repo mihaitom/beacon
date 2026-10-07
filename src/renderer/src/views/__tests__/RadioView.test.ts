@@ -8,8 +8,9 @@ import { i18n } from '@/i18n'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import RadioView from '../RadioView.vue'
-import RadioStationCard from '@/components/library/RadioStationCard.vue'
-import TileSkeleton from '@/components/library/TileSkeleton.vue'
+import RadioStationRow from '@/components/library/RadioStationRow.vue'
+import RowSkeleton from '@/components/library/RowSkeleton.vue'
+import { useRadioStationInfoStore } from '@/stores/radioStationInfo'
 import * as radioBrowser from '@/services/connect/radioBrowser'
 import type { RadioStation } from '@/types/library'
 
@@ -17,6 +18,12 @@ vi.mock('@/services/connect/radioBrowser', () => ({
   searchRadioBrowser: vi.fn(),
   listRadioBrowserCountries: vi.fn(),
   registerRadioBrowserClick: vi.fn(),
+}))
+
+// The rows' details come from connect, which no test here runs.
+vi.mock('@/services/connect/radio', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/connect/radio')>()),
+  fetchRadioStationInfo: vi.fn().mockResolvedValue({}),
 }))
 
 const vuetify = createVuetify({ components, directives })
@@ -93,11 +100,11 @@ describe('RadioView', () => {
       useLibraryStore().radioStations = makeStations(9)
       const wrapper = mountRadioView()
 
-      expect(wrapper.findAllComponents({ name: 'RadioStationCard' })).toHaveLength(9)
+      expect(wrapper.findAllComponents({ name: 'RadioStationRow' })).toHaveLength(9)
 
       await withFilterQuery(wrapper, 'Station 3')
 
-      const cards = wrapper.findAllComponents({ name: 'RadioStationCard' })
+      const cards = wrapper.findAllComponents({ name: 'RadioStationRow' })
       expect(cards).toHaveLength(1)
       expect(cards[0]!.props('station').name).toBe('Station 3')
     })
@@ -112,7 +119,7 @@ describe('RadioView', () => {
 
       await withFilterQuery(wrapper, 'Statoin 3')
 
-      expect(wrapper.findAllComponents({ name: 'RadioStationCard' })).toHaveLength(0)
+      expect(wrapper.findAllComponents({ name: 'RadioStationRow' })).toHaveLength(0)
     })
 
     it('tells "nothing saved yet" apart from "nothing matches this search"', async () => {
@@ -129,13 +136,13 @@ describe('RadioView', () => {
   })
 
   describe('while the station list is still loading', () => {
-    it('holds the layout still with tile-shaped placeholders instead of a spinner', async () => {
+    it('holds the layout still with row-shaped placeholders instead of a spinner', async () => {
       const library = useLibraryStore()
       library.loadingCount = 1
       const wrapper = mountRadioView()
       await wrapper.vm.$nextTick()
 
-      expect(wrapper.findAllComponents(TileSkeleton).length).toBeGreaterThan(0)
+      expect(wrapper.findAllComponents(RowSkeleton).length).toBeGreaterThan(0)
       // A spinner in the flow was what pushed everything below it down
       // while it was there, and back up when it went.
       expect(wrapper.findComponent({ name: 'VProgressCircular' }).exists()).toBe(false)
@@ -153,8 +160,22 @@ describe('RadioView', () => {
       const wrapper = mountRadioView()
       await wrapper.vm.$nextTick()
 
-      expect(wrapper.findAllComponents(TileSkeleton)).toHaveLength(0)
-      expect(wrapper.findAllComponents(RadioStationCard)).toHaveLength(3)
+      expect(wrapper.findAllComponents(RowSkeleton)).toHaveLength(0)
+      expect(wrapper.findAllComponents(RadioStationRow)).toHaveLength(3)
     })
+  })
+
+  it("loads the rows' details for the stations shown, and again when the list changes", async () => {
+    const library = useLibraryStore()
+    library.radioStations = makeStations(2)
+    const load = vi.spyOn(useRadioStationInfoStore(), 'load').mockResolvedValue()
+
+    const wrapper = mountRadioView()
+    expect(load).toHaveBeenLastCalledWith(library.radioStations)
+
+    library.radioStations = makeStations(3)
+    await wrapper.vm.$nextTick()
+    expect(load).toHaveBeenCalledTimes(2)
+    expect(load.mock.lastCall?.[0]).toHaveLength(3)
   })
 })

@@ -106,6 +106,12 @@ export default defineConfig(() => {
                         });
                     },
                 },
+                // Party guests, like nginx's own /party/ location: straight
+                // through and deliberately without the token - guests
+                // authenticate with their own cookie (routes/party.py).
+                '/party': {
+                    target: `http://127.0.0.1:${port}`,
+                },
                 '/stream': {
                     target: `http://127.0.0.1:${port}`,
                     changeOrigin: true,

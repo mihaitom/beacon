@@ -69,7 +69,7 @@ jobs:
             # Required for package:connect (PyInstaller); uv installs the
             # Python version itself.
             - name: Install uv
-              uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+              uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
 
             - name: Install build tools (arm64 native compile)
               if: matrix.arm64_build_tools
@@ -92,7 +92,7 @@ jobs:
 
             - name: Set up MSYS2 (Windows ffmpeg build)
               if: startsWith(matrix.os, 'windows')
-              uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2.32.0
+              uses: msys2/setup-msys2@ec48f7c5447b3140e2b088413ae3a55687bccb6e # v2.33.0
               with:
                   msystem: MINGW64
                   update: false

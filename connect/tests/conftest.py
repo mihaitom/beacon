@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from core import auth, state
 from core import claims as claims_module
+from core import party as party_module
 from core import remote as remote_module
 from core import session as session_module
 from core.session import DEFAULT_SESSION_ID, SessionState
@@ -316,6 +317,16 @@ def _isolate_radio_title_history(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_radio_station_info_cache(tmp_path, monkeypatch):
+    """core/radio_station_info.py keeps Radio Browser's answers in a file
+    under CONNECT_DATA_DIR, resolved at import time - same reasoning as the
+    two fixtures around this one."""
+    monkeypatch.setattr("core.radio_station_info._PATH", str(tmp_path / "station-info.json"))
+    monkeypatch.setattr("core.radio_station_info._cache", None)
+    monkeypatch.setattr("core.radio_station_info._resolved", {})
+
+
+@pytest.fixture(autouse=True)
 def _isolate_radio_favicon_disk_cache(tmp_path, monkeypatch):
     """routes/radio.py keeps resolved station logos in a directory under
     CONNECT_DATA_DIR so they survive a restart (see its _disk_store()). In
@@ -355,9 +366,24 @@ def reset_state():
     }
     remote_module.remote.disable()
     remote_module.remote.renderer_connected = False
+    remote_module.remote.renderer_connections = 0
     remote_module.remote._attempts.clear()
     remote_module.remote._lockout_until.clear()
     remote_module.remote._lockout_strikes.clear()
+    party_module.party.disable()
+    party_module.party.streams.clear()
+    party_module.party.host_session_id = None
+    party_module.party.current_song_id = None
+    party_module.party.settings = party_module.Settings()
+    party_module.party.tab_snapshot_at = 0.0
+    from routes import party as party_routes_module
+
+    party_routes_module._listeners.clear()
+    party_routes_module._listen_visualizers = 0
+    party_routes_module._waveforms_running.clear()
+    from core import party_probe as party_probe_module
+
+    party_probe_module._nonces.clear()
     yield
 
 

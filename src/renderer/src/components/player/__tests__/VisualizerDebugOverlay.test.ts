@@ -1,7 +1,7 @@
 // The sync readout shown to whoever has turned the backend log level up to
 // chase a cast-sync bug. What is pinned here is that it only appears for
 // them, and that the legend explaining its four numbers is reachable —
-// the numbers themselves are AudioVisualizer's, forwarded straight through.
+// the numbers themselves are the cast frame's, forwarded straight through.
 import { describe, expect, it, vi, beforeEach } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createVuetify } from 'vuetify'

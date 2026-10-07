@@ -751,6 +751,12 @@ def radio_is_buffering(session: SessionState) -> bool:
     return st.clock.elapsed_since_stream_start() < lead
 
 
+# Fields a feature adds to the status of sessions it has a stake in - party
+# mode's wishes, for the host's cast (core/party_queue.py). Registered
+# rather than imported here, so this module does not depend on them.
+STATUS_EXTRAS: list = []
+
+
 def build_status_dict(
     session: SessionState,
     displaced: bool = False,
@@ -871,7 +877,7 @@ def build_status_dict(
         "loop_lag": peak_lag(30.0),
     }
 
-    return {
+    status = {
         "current_song": current_track,
         "stream_info": stream_info,
         # The full queue (history included) and where current_track sits in
@@ -915,6 +921,9 @@ def build_status_dict(
         "orphaned": orphaned,
         "delivery_error": delivery_error,
     }
+    for extra in STATUS_EXTRAS:
+        status.update(extra(session))
+    return status
 
 
 async def mark_interrupted(session: SessionState) -> None:

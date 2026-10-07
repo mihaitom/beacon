@@ -29,4 +29,20 @@ describe('PlaybackSection', () => {
 
     expect(wrapper.findComponent({ name: 'SegmentedControl' }).exists()).toBe(true)
   })
+
+  it('opens the doc on what gets converted', async () => {
+    const emit = vi.fn()
+    const wrapper = mount(PlaybackSection, {
+      global: {
+        plugins: [vuetify, i18n],
+        mocks: { $emitter: { emit, on: vi.fn(), off: vi.fn() } },
+      },
+    })
+    const text = wrapper.vm.$t('help.conversion')
+    await wrapper
+      .findAllComponents({ name: 'VBtn' })
+      .find((b) => b.text() === text)!
+      .trigger('click')
+    expect(emit).toHaveBeenCalledWith('openHelp', 'transcoding')
+  })
 })

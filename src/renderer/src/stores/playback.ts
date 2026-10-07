@@ -1926,11 +1926,21 @@ export const usePlaybackStore = defineStore('playback', {
         this.addToQueue(songs) // peeks on its own, see its own comment
         return
       }
+      this.insertAt(this.currentIndex + 1, songs)
+    },
+
+    /** Inserts `songs` at queue position `index` (after the current song at
+     * the earliest). In the unshuffled order they follow whatever precedes
+     * them here, so turning shuffle off keeps them where they were put.
+     * Returns what actually went in - dedupeForQueue() may hand back
+     * copies. */
+    insertAt(index: number, songs: Song[]): Song[] {
+      const at = Math.min(Math.max(index, this.currentIndex + 1, 0), this.queue.length)
       const toInsert = dedupeForQueue(songs, this.queue)
-      this.queue.splice(this.currentIndex + 1, 0, ...toInsert)
-      // queuedSong — same reasoning as toggleShuffle()'s own use of it.
-      const current = this.queuedSong
-      const originalIndex = current ? this.originalQueue.findIndex((t) => t.id === current.id) : -1
+      // Read before the splice: the song the new ones follow.
+      const before = at > 0 ? this.queue[at - 1] : undefined
+      this.queue.splice(at, 0, ...toInsert)
+      const originalIndex = before ? this.originalQueue.findIndex((t) => t.id === before.id) : -1
       if (originalIndex >= 0) {
         this.originalQueue.splice(originalIndex + 1, 0, ...toInsert)
       } else {
@@ -1938,6 +1948,7 @@ export const usePlaybackStore = defineStore('playback', {
       }
       this.syncCastQueue()
       useDrawersStore().peekQueueDrawer(toInsert)
+      return toInsert
     },
 
     removeFromQueue(index: number): void {

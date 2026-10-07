@@ -3,6 +3,14 @@
 # look consistent in `docker logs`.
 log_format connect '$time_iso8601 [nginx] INFO $remote_addr - "$request" $status $body_bytes_sent';
 
+# Party guests may arrive through a TLS-terminating proxy in front of this
+# one; keep the scheme it reports so connect can mark the guest cookie
+# Secure. Without such a proxy, this nginx's own scheme is the answer.
+map $http_x_forwarded_proto $party_forwarded_proto {
+  default $http_x_forwarded_proto;
+  ""      $scheme;
+}
+
 server {
   listen ${WEB_PORT};
   listen [::]:${WEB_PORT};
@@ -86,6 +94,29 @@ server {
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Connect-Token "${CONNECT_TOKEN}";
+  }
+
+  # Party mode's guest page and API (connect/routes/party.py). Its own
+  # prefix so a reverse proxy can let exactly this past its login, and the
+  # one location here that never injects X-Connect-Token: everything under
+  # it authenticates with the guest's own cookie instead.
+  location = /party {
+    proxy_pass http://127.0.0.1:${PORT}/party;
+    proxy_set_header Host $host;
+  }
+
+  location /party/ {
+    proxy_pass http://127.0.0.1:${PORT}/party/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $party_forwarded_proto;
+    # The token injected for /api/ must not ride along on a request that
+    # carries one of its own by accident - cleared rather than left out.
+    proxy_set_header X-Connect-Token "";
+    # Same SSE reasoning as /api/ above (/party/api/events).
+    proxy_http_version 1.1;
+    proxy_buffering off;
   }
 
   location /stream {

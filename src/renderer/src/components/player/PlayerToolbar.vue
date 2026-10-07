@@ -28,6 +28,7 @@
      - feature. No Docker/web equivalent: there's no separate desktop
      - instance to pair against there. -->
     <remote-control-button v-if="isElectron" />
+    <party-mode-button />
     <connect-button />
     <template v-if="!volumeCollapsed">
       <v-btn
@@ -178,6 +179,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useAutoplayStore } from '@/stores/autoplay'
 import ConnectButton from '@/components/connect/ConnectButton.vue'
 import RemoteControlButton from '@/components/settings/RemoteControlButton.vue'
+import PartyModeButton from '@/components/party/PartyModeButton.vue'
 import TouchVolumeSlider from '@/components/mobile/TouchVolumeSlider.vue'
 import { isCoarsePointer } from '@/services/coarsePointer'
 import { volumeAfterWheel } from '@/services/volumeWheel'
@@ -190,7 +192,7 @@ import type { ConnectDeviceRef } from '@/services/connect/types'
 
 export default {
   name: 'PlayerToolbar',
-  components: { ConnectButton, RemoteControlButton, TouchVolumeSlider },
+  components: { ConnectButton, PartyModeButton, RemoteControlButton, TouchVolumeSlider },
   props: {
     // Driven by PlayerBar.vue's own ResizeObserver, off the *whole bar's*
     // real rendered width, not something this element could determine by

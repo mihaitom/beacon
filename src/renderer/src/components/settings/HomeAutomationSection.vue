@@ -29,21 +29,32 @@
             variant="solo-filled"
             density="compact"
             spellcheck="false"
-            append-inner-icon="mdi-content-copy"
             hide-details
             class="home-automation__field"
-            @click:append-inner="copy(newKey)"
-          />
+          >
+            <!-- The checkmark for a moment, like the other copy buttons in
+             - the app - a toast is too much for something this small. -->
+            <template #append-inner>
+              <v-icon
+                :icon="keyCopied ? 'mdi-check' : 'mdi-content-copy'"
+                :color="keyCopied ? 'success' : undefined"
+                :title="
+                  keyCopied
+                    ? $t('settings.homeAutomationKeyCopied')
+                    : $t('settings.homeAutomationCopyKey')
+                "
+                @click="copy(newKey)"
+              />
+            </template>
+          </v-text-field>
           <p class="setting__hint">{{ $t('settings.homeAutomationKeyOnce') }}</p>
         </template>
 
         <div class="home-automation__actions">
           <v-btn
             variant="text"
-            :href="DOCS_URL"
-            target="_blank"
-            rel="noopener noreferrer"
-            append-icon="mdi-open-in-new"
+            prepend-icon="mdi-help-circle-outline"
+            @click="$emitter.emit('openHelp', 'home-automation')"
           >
             {{ $t('settings.homeAutomationDocs') }}
           </v-btn>
@@ -129,7 +140,6 @@ type ConnectPortInfo = Awaited<
   ReturnType<NonNullable<Window['api']>['appConfig']['getConnectPort']>
 >
 
-const DOCS_URL = 'https://github.com/mihaitom/beacon/blob/main/home-assistant/README.md'
 // Same range main accepts (main/index.ts): below 1024 needs root on
 // Linux/macOS.
 const MIN_PORT = 1024
@@ -147,10 +157,11 @@ export default {
   name: 'HomeAutomationSection',
   data() {
     return {
-      DOCS_URL,
       busy: false,
       /** Only right after generating: the key is never sent again. */
       newKey: '',
+      keyCopied: false,
+      keyCopiedTimer: undefined as ReturnType<typeof setTimeout> | undefined,
       portInfo: null as ConnectPortInfo | null,
       portInput: '' as string | number,
       portBusy: false,
@@ -197,6 +208,9 @@ export default {
   },
   created() {
     if (this.isElectron) void this.loadPort()
+  },
+  beforeUnmount() {
+    clearTimeout(this.keyCopiedTimer)
   },
   methods: {
     async loadPort() {
@@ -261,7 +275,13 @@ export default {
         await navigator.clipboard.writeText(text)
       } catch (error) {
         console.error('[settings] Failed to copy:', error)
+        return
       }
+      clearTimeout(this.keyCopiedTimer)
+      this.keyCopied = true
+      this.keyCopiedTimer = setTimeout(() => {
+        this.keyCopied = false
+      }, 2000)
     },
     toastError(error: unknown) {
       this.$emitter.emit('toast', {

@@ -35,6 +35,7 @@ from core.log_level import apply as _apply_log_level
 from core.log_level import initial_level as _initial_log_level
 from core.log_level import is_at_least
 from core.loop_health import monitor_loop_lag
+from core.party import party, reap_stale_party
 from core.remote import reap_stale_remote, remote
 from core.session import reap_stale_sessions, registry
 from core.state import PORT, get_local_ip
@@ -59,6 +60,9 @@ from routes.log_level import router as log_level_router
 from routes.lyrics import router as lyrics_router
 from routes.pairing import reap_stale_pairings
 from routes.pairing import router as pairing_router
+from routes.party import add_security_headers as add_party_security_headers
+from routes.party import host_router as party_host_router
+from routes.party import router as party_router
 from routes.playback import router as playback_router
 from routes.plex_auth import router as plex_auth_router
 from routes.proxy import close as close_proxy_client
@@ -286,6 +290,7 @@ async def lifespan(_: FastAPI):
     discovery_task = asyncio.create_task(_periodic_discovery())
     reaper_task = asyncio.create_task(reap_stale_sessions())
     remote_reaper_task = asyncio.create_task(reap_stale_remote())
+    party_reaper_task = asyncio.create_task(reap_stale_party())
     pairing_reaper_task = asyncio.create_task(reap_stale_pairings())
     loop_lag_task = asyncio.create_task(monitor_loop_lag())
     upnp_renewal_task = asyncio.create_task(_renew_upnp_subscriptions())
@@ -294,6 +299,7 @@ async def lifespan(_: FastAPI):
         discovery_task,
         reaper_task,
         remote_reaper_task,
+        party_reaper_task,
         pairing_reaper_task,
         loop_lag_task,
         upnp_renewal_task,
@@ -319,6 +325,7 @@ async def lifespan(_: FastAPI):
         # `connect` from a previous launch (the dev flow) never inherits a
         # stale enabled state for the next one.
         remote.disable()
+        party.disable()
         await mdns.shutdown()
         await close_proxy_client()
         await jellyfin_bridge.close()
@@ -483,7 +490,12 @@ if is_at_least("DEBUG"):
 # /remote/app/{path:path} static-file catch-all) must be registered before
 # proxy_router's broader /{path:path}.
 app.include_router(remote_router)
+app.include_router(party_host_router)
+app.include_router(party_router)
 app.include_router(proxy_router)
+# Last, so it is the outermost middleware: it has to see the answers the
+# error boundary and CORSMiddleware produce in order to correct them.
+app.middleware("http")(add_party_security_headers)
 
 
 if __name__ == "__main__":

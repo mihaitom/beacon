@@ -71,7 +71,7 @@ async function mountShell() {
         $emitter: { emit: () => {}, on: () => {}, off: () => {} },
         $router: { push: () => {} },
       },
-      stubs: { AudioVisualizer: true, VisualizerDebugOverlay: true, RouterLink: true },
+      stubs: { VisualizerBars: true, VisualizerDebugOverlay: true, RouterLink: true },
     },
   })
   wrappers.push(wrapper)
@@ -253,7 +253,7 @@ describe('Now Playing on the phone', () => {
           $emitter: { emit: () => {}, on: () => {}, off: () => {} },
           $router: { push: () => {} },
         },
-        stubs: { AudioVisualizer: true, VisualizerDebugOverlay: true, RouterLink: true },
+        stubs: { VisualizerBars: true, VisualizerDebugOverlay: true, RouterLink: true },
       },
     })
     await new Promise((resolve) => setTimeout(resolve, 60))
@@ -278,7 +278,7 @@ describe('Now Playing on the phone', () => {
           $emitter: { emit: () => {}, on: () => {}, off: () => {} },
           $router: { push: () => {} },
         },
-        stubs: { AudioVisualizer: true, VisualizerDebugOverlay: true, RouterLink: true },
+        stubs: { VisualizerBars: true, VisualizerDebugOverlay: true, RouterLink: true },
       },
     })
     wrappers.push(wrapper)

@@ -9,6 +9,7 @@ import pytest
 
 import routes.lyrics as lyrics_routes
 from lyrics import LyricSource, artist_matches, has_sung_lines, order_search_results
+from lyrics.shared import parse_lyrics
 from routes.lyrics import GET_FETCHERS, SEARCH_FETCHERS, _parse_sources, _reset_cache
 
 
@@ -181,6 +182,39 @@ def test_has_sung_lines_rejects_a_sheet_that_is_only_credits():
     assert not has_sung_lines("[00:00.00-1] 作词 : Darryl Reid\n[00:00.00-1] 作曲 : Darryl Reid")
     assert not has_sung_lines("[ar:Some Artist]\n[ti:Some Title]")
     assert not has_sung_lines("")
+
+
+# ── parse_lyrics ───────────────────────────────────────────────────────────
+
+
+def test_parse_lyrics_times_a_synced_sheet():
+    synced, lines = parse_lyrics("[00:01.50] First line\n[00:10.00] Second line")
+    assert synced is True
+    assert lines == [
+        {"time": 1.5, "text": "First line"},
+        {"time": 10.0, "text": "Second line"},
+    ]
+
+
+def test_parse_lyrics_repeats_a_shared_chorus_line():
+    _, lines = parse_lyrics("[00:10.00][00:40.00]Chorus")
+    assert lines == [{"time": 10.0, "text": "Chorus"}, {"time": 40.0, "text": "Chorus"}]
+
+
+def test_parse_lyrics_sorts_lines_by_time():
+    _, lines = parse_lyrics("[00:40.00] Later\n[00:10.00] Earlier")
+    assert [line["time"] for line in lines] == [10.0, 40.0]
+
+
+def test_parse_lyrics_reads_plain_text_as_unsynced():
+    synced, lines = parse_lyrics("Just words\nMore words")
+    assert synced is False
+    assert lines == [{"time": 0.0, "text": "Just words"}, {"time": 0.0, "text": "More words"}]
+
+
+def test_parse_lyrics_leaves_credits_out():
+    _, lines = parse_lyrics("[00:00.00] 作词 : X\n[00:13.06] Common love isn't for us")
+    assert lines == [{"time": 13.06, "text": "Common love isn't for us"}]
 
 
 # ── _parse_sources ────────────────────────────────────────────────────────

@@ -11,7 +11,10 @@
    - the moment it is most needed. Also disabled wherever the target simply is
    - not there — the view is mounted on its own in tests, and a Teleport
    - pointed at nothing does not degrade, it throws on unmount. -->
-  <Teleport to="#mobile-app-bar-actions" :disabled="!compact || !canDock">
+  <!-- `defer` resolves the target after this render, so the guest page's
+   - header (rendered in the same pass as this toolbar, unlike the app's
+   - separate app-bar component) is in the document by then. -->
+  <Teleport to="#mobile-app-bar-actions" :disabled="!compact || !canDock" defer>
     <div
       v-if="hasPlayable"
       class="now-playing__toolbar"
@@ -30,11 +33,11 @@
       <v-btn
         v-if="hasPlayable"
         :icon="isRadio ? 'mdi-history' : 'mdi-script-text-outline'"
-        :color="showLyrics ? 'primary' : undefined"
+        :color="source.ui.lyricsOpen ? 'primary' : undefined"
         variant="text"
         density="comfortable"
         :title="isRadio ? $t('radio.titleLog') : $t('lyrics.title')"
-        @click="drawersStore.lyricsPanelOpen = !showLyrics"
+        @click="source.setLyricsOpen(!source.ui.lyricsOpen)"
       />
       <!-- PlayerBar.vue's own Autoplay button (next to Queue) is outside
        - .now-playing entirely, so it's unreachable in fullscreen, making this
@@ -46,14 +49,14 @@
        - Disabled during radio for the reason PlayerBar's copy gives: there is
        - no queue for autoplay to top up while a live stream plays. -->
       <v-btn
-        v-if="isFullscreen && authStore.capabilities.songRadio"
+        v-if="isFullscreen && source.capabilities.autoplay"
         icon="mdi-infinity"
-        :color="!radioStation && autoplayStore.enabled ? 'primary' : undefined"
+        :color="!source.radio && source.autoplayEnabled() ? 'primary' : undefined"
         variant="text"
         density="comfortable"
-        :disabled="!!radioStation"
+        :disabled="!!source.radio"
         :title="$t('player.autoplay')"
-        @click="playbackStore.setAutoplayEnabled(!autoplayStore.enabled)"
+        @click="source.toggleAutoplay()"
       />
       <!-- Hidden rather than disabled where there is nothing to visualize: a
        - phone plays without a Web Audio graph so that it keeps going while
@@ -62,44 +65,44 @@
        - Still there while casting, whose data comes from the backend
        - instead. -->
       <v-btn
-        v-if="visualizerAvailable"
+        v-if="source.visualizer.available"
         icon="mdi-equalizer"
-        :color="showVisualizer ? 'primary' : undefined"
+        :color="source.ui.showVisualizer ? 'primary' : undefined"
         variant="text"
         density="comfortable"
         :title="$t('nowPlaying.toggleVisualizer')"
-        @click="$emit('toggle-visualizer')"
+        @click="source.toggleVisualizer()"
       />
       <!-- Brings the album artwork back, large, over the artist background.
        - Only once there is a background loaded: without one the artwork is
        - already what the stage shows, so there is nothing to toggle. Lit
        - while the artwork is the thing on screen, like the other toggles. -->
       <v-btn
-        v-if="artistBackground"
+        v-if="source.backdrop.isArtist"
         icon="mdi-album"
-        :color="!artworkHidden ? 'primary' : undefined"
+        :color="!source.ui.artworkHidden ? 'primary' : undefined"
         variant="text"
         density="comfortable"
         :title="$t('nowPlaying.toggleArtwork')"
-        @click="$emit('toggle-artwork')"
+        @click="source.toggleArtwork()"
       />
       <!-- Steps to the artist's next Fanart.tv background. Only when there
        - is more than one to step through - with a single image the button
        - would do nothing. -->
       <v-btn
-        v-if="canCycleBackground"
+        v-if="source.backdrop.backgrounds.length > 1"
         icon="mdi-wallpaper"
         variant="text"
         density="comfortable"
         :title="$t('nowPlaying.nextBackground')"
-        @click="$emit('cycle-background')"
+        @click="source.cycleBackground()"
       />
       <!-- Not a mobile feature — MobileTransportControls.vue/the tab bar
        - already own the phone's actual full screen; hiding *that* app chrome
        - behind the Fullscreen API here wouldn't gain anything and isn't what
        - "fullscreen" reads as on a phone anyway. -->
       <v-btn
-        v-if="!compact"
+        v-if="!compact && source.capabilities.fullscreen"
         :icon="isFullscreen ? 'mdi-fullscreen-exit' : 'mdi-fullscreen'"
         :color="isFullscreen ? 'primary' : undefined"
         variant="text"
@@ -107,6 +110,8 @@
         :title="$t('nowPlaying.toggleFullscreen')"
         @click="$emit('toggle-fullscreen')"
       />
+      <!-- A party guest's own control (the skip vote) goes here. -->
+      <slot />
       <!-- A test bench for the title log's entrance animation: a station
        - changes title every few minutes, which is a long wait to watch a
        - three-tenths-of-a-second transition. Each press hands the log one
@@ -120,70 +125,36 @@
        - backend's log level is DEBUG or TRACE, the same switch
        - VisualizerDebugOverlay.vue hides behind. -->
       <v-btn
-        v-if="debugEnabled && radioStation"
+        v-if="source.capabilities.debug && source.radio"
         icon="mdi-playlist-plus"
         variant="text"
         density="comfortable"
         title="Debug: add a made-up title"
-        @click="$emit('add-debug-title')"
+        @click="source.addDebugTitle()"
       />
     </div>
   </Teleport>
 </template>
 
 <script lang="ts">
-import { usePlaybackStore } from '@/stores/playback'
-import { useDrawersStore } from '@/stores/drawers'
-import { useAuthStore } from '@/stores/auth'
-import { useAutoplayStore } from '@/stores/autoplay'
+import { nowPlayingSourceMixin } from '@/components/now-playing/useSource'
 
 export default {
   name: 'NowPlayingToolbar',
+  mixins: [nowPlayingSourceMixin],
   props: {
     compact: {
       type: Boolean,
       default: false,
     },
+    /** Fullscreen is the presentation's own concern (it owns the element),
+     * so it is passed in rather than read from the source. */
     isFullscreen: {
       type: Boolean,
       default: false,
     },
-    showVisualizer: {
-      type: Boolean,
-      default: false,
-    },
-    visualizerAvailable: {
-      type: Boolean,
-      default: false,
-    },
-    /** The loaded Fanart.tv background; the artwork toggle only appears once
-     * there is something to reveal. */
-    artistBackground: {
-      type: String as () => string | null,
-      default: null,
-    },
-    artworkHidden: {
-      type: Boolean,
-      default: false,
-    },
-    /** Whether there is more than one artist background to step through;
-     * the cycle button is hidden otherwise. */
-    canCycleBackground: {
-      type: Boolean,
-      default: false,
-    },
-    debugEnabled: {
-      type: Boolean,
-      default: false,
-    },
   },
-  emits: [
-    'toggle-visualizer',
-    'toggle-artwork',
-    'cycle-background',
-    'toggle-fullscreen',
-    'add-debug-title',
-  ],
+  emits: ['toggle-fullscreen'],
   data() {
     return {
       /** Whether MobileLayout.vue's app bar is on the page to hang the
@@ -193,34 +164,13 @@ export default {
     }
   },
   computed: {
-    playbackStore() {
-      return usePlaybackStore()
-    },
-    drawersStore() {
-      return useDrawersStore()
-    },
-    authStore() {
-      return useAuthStore()
-    },
-    autoplayStore() {
-      return useAutoplayStore()
-    },
-    currentSong() {
-      return this.playbackStore.currentSong
-    },
-    radioStation() {
-      return this.playbackStore.radioStation
-    },
     hasPlayable(): boolean {
-      return this.currentSong != null || this.radioStation != null
-    },
-    showLyrics(): boolean {
-      return this.drawersStore.lyricsPanelOpen
+      return this.source.song != null || this.source.radio != null
     },
     /** Radio with no track of its own: the lyrics button becomes the title
      * log's switch. */
     isRadio(): boolean {
-      return this.radioStation != null && this.currentSong == null
+      return this.source.radio != null && this.source.song == null
     },
     docked(): boolean {
       return this.compact && this.canDock
@@ -233,6 +183,15 @@ export default {
     // toolbar from rendering over the artwork for a frame first.
     this.canDock = document.getElementById('mobile-app-bar-actions') !== null
   },
+  mounted() {
+    // The guest page renders its header in the same pass as this toolbar
+    // (there is no separate app-bar component ahead of a router view), so
+    // the target can miss the created() check; look again once mounted, and
+    // the Teleport docks on the re-render.
+    if (!this.canDock) {
+      this.canDock = document.getElementById('mobile-app-bar-actions') !== null
+    }
+  },
 }
 </script>
 
@@ -243,6 +202,10 @@ export default {
   right: 24px;
   z-index: 2;
   display: flex;
+  /* The guest's skip vote is a text button, taller than an icon button; the
+   * row centres every button on a common line rather than top-aligning the
+   * shorter ones. */
+  align-items: center;
   gap: 4px;
   /* A translucent panel under the icons: with the artwork hidden they sit
    * directly on the artist photo, where a plain white icon can vanish. */
@@ -270,7 +233,9 @@ export default {
   right: 8px;
   /* Stacked, not a row — a phone screen is narrow enough that even two icon
    * buttons side by side reached noticeably into the artwork underneath
-   * instead of staying clear of it in the corner. */
+   * instead of staying clear of it in the corner. (Both the app and the
+   * guest page dock the toolbar into their app bar, so this is only the
+   * fallback where there is no bar to dock into.) */
   flex-direction: column;
 }
 </style>

@@ -6,6 +6,8 @@
   <keyboard-shortcuts-dialog />
   <artwork-lightbox />
   <song-info-dialog />
+  <help-dialog />
+  <features-dialog />
 </template>
 
 <script lang="ts">
@@ -18,11 +20,14 @@ import UpdateToast from '@/components/UpdateToast.vue'
 import KeyboardShortcutsDialog from '@/components/KeyboardShortcutsDialog.vue'
 import ArtworkLightbox from '@/components/library/ArtworkLightbox.vue'
 import SongInfoDialog from '@/components/library/SongInfoDialog.vue'
+import HelpDialog from '@/components/HelpDialog.vue'
+import FeaturesDialog from '@/components/FeaturesDialog.vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
 import { useConnectStore } from '@/stores/connect'
 import { useLibraryStore } from '@/stores/library'
 import { useRemoteControlStore } from '@/stores/remoteControl'
+import { usePartyStore } from '@/stores/party'
 import { useUpdateStore } from '@/stores/update'
 import { useIsMobileWeb } from '@/composables/useIsMobileWeb'
 import { initKeyboardShortcuts } from '@/services/keyboardShortcuts'
@@ -38,6 +43,8 @@ export default {
     KeyboardShortcutsDialog,
     ArtworkLightbox,
     SongInfoDialog,
+    HelpDialog,
+    FeaturesDialog,
   },
   // Composition API escape hatch just for useIsMobileWeb() — everything else
   // here stays Options API, matching the rest of the renderer. Refs returned
@@ -125,19 +132,25 @@ export default {
     // is Electron-only — see SettingsView.vue's identical `isElectron` gate.
     // A Docker/web deployment has no separate desktop instance to pair
     // against, and the mobile web view covers that use case directly.
-    if (window.api) {
-      void useAuthStore()
-        .loadConnectDefaults()
-        .then(() => {
-          // Not gated on media-server auth — Remote Control lives at the
-          // connect level (same as casting's own connectToken/apiUrl),
-          // independent of which account happens to be logged into this
-          // window. See refreshStatus()'s own comment for why this call is
-          // needed at all (reconciling a renderer reload against connect's
-          // still-running state).
-          void useRemoteControlStore().refreshStatus()
-        })
-    }
+    void useAuthStore()
+      .loadConnectDefaults()
+      .then(() => {
+        // Not gated on media-server auth — Remote Control lives at the
+        // connect level (same as casting's own connectToken/apiUrl),
+        // independent of which account happens to be logged into this
+        // window. See refreshStatus()'s own comment for why this call is
+        // needed at all (reconciling a renderer reload against connect's
+        // still-running state).
+        if (window.api) void useRemoteControlStore().refreshStatus()
+        // Party mode is the one relay user the web build has too: guests
+        // reach it under /party/ on the same origin.
+        void usePartyStore().refreshStatus()
+      })
+    // A phone coming back from its lock screen: a party may have been
+    // started, ended or taken over by another window meanwhile.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') void usePartyStore().refreshStatus()
+    })
     // window.api is absent in the web build (no Electron main process to
     // ask this of) — casting there just keeps running until the backend's
     // own session-idle reaper eventually cleans it up, same as it always
@@ -149,6 +162,8 @@ export default {
         if (connect.isActive) await connect.stopAll()
         const remoteControl = useRemoteControlStore()
         if (remoteControl.enabled) await remoteControl.disable()
+        const party = usePartyStore()
+        if (party.enabled) await party.disable()
       } catch (error) {
         console.error('[app] Failed to stop casting/remote control before quit:', error)
       } finally {

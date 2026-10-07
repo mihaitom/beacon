@@ -18,7 +18,15 @@ export default defineConfigWithVueTs(
   // out/ is electron-vite's build output, gitignored like dist/ but
   // missing here — so a local `pnpm build` left `pnpm lint` reporting
   // errors in bundled, minified vendor code nobody can act on.
-  globalIgnores(['**/dist/**', '**/dist-ssr/**', '**/coverage/**', '**/out/**']),
+  // connect/static/party/ is the party guest page's build output (pnpm
+  // build:party), the same kind of thing.
+  globalIgnores([
+    '**/dist/**',
+    '**/dist-ssr/**',
+    '**/coverage/**',
+    '**/out/**',
+    'connect/static/party/**',
+  ]),
 
   ...pluginVue.configs['flat/essential'],
   vueTsConfigs.recommended,

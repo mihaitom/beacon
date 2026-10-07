@@ -407,6 +407,16 @@ does not.
 Desktop rows get their hover from `--beacon-hover`; a plain `v-list` opts in
 with `.beacon-list` on its container.
 
+The desktop Playlists and Radio pages are lists of large rows in one
+`.beacon-panel--flush` rather than grids of tiles (`PlaylistRow.vue`,
+`RadioStationRow.vue`, placeholders from `RowSkeleton.vue`): artwork on the
+left, a name at 1.15rem/600 (Inter - the serif is never for a row), a
+quiet meta line, one line saying what is in it (a playlist's main artists,
+the last title heard on a station) and tonal genre chips; the actions sit as
+plain buttons, not pills, centred on the right. A playlist's artwork is made
+from its own albums and only cycles while the row is hovered. No backdrop -
+a page of rows each with its own moving picture is too much at once.
+
 `.mobile-row__text` clips both of its lines itself - a row is a fixed 60px,
 so a long title has nowhere to wrap to. No list component says
 `text-truncate` on its own lines.
@@ -537,9 +547,38 @@ does not scroll, which is what "the cap is clipping" looks like.
 
 - `scrollable` on the `v-dialog`, and never a second scroll region nested
   inside the body.
-- Close: an `mdi-close` icon button at the top right, and/or a text button in
-  `v-card-actions`. A dialog with a picture-backed header uses the icon only,
-  since the footer button would sit under a header that already offers one.
+- Close: a text button ("Close", `common.close`) at the right of
+  `v-card-actions`, after a `v-spacer`. Not an `mdi-close` icon at the top
+  right instead - the one exception is a dialog with a picture-backed
+  header, which uses the icon only, since the footer button would sit under
+  a header that already offers one.
+- An exception to "never a second scroll region": inside `.beacon-markdown`
+  (below), a code block or a table scrolls sideways on its own. Neither can
+  wrap, and on a phone one would otherwise widen the whole dialog.
+
+### Rendered markdown
+
+Our own markdown files shown in the app - the release notes, the bundled
+docs in the help dialog - go into a `.beacon-markdown` element:
+
+```html
+<div class="beacon-markdown" v-html="html" />
+```
+
+It carries headings, lists, links, inline code, code blocks, tables and
+quotes, in `base.css` rather than as `:deep()` rules in each dialog, since
+v-html content never gets a component's scope id. A dialog only adds what is
+its own, like the release notes' pill-shaped section headings.
+
+A `### ` section of a bundled doc whose `#### ` subsections are alternatives -
+one reverse proxy's setup out of five - can be shown as tabs, by naming it in
+`services/help/docs.ts`'s `TABBED_SECTIONS`. On GitHub it stays plain
+headings, so the doc reads the same there; the tabs' look is in `base.css`
+with the rest of `.beacon-markdown`.
+
+A doc that wants a help entry somewhere in the app goes into
+`services/help/docs.ts` and is opened with `emitter.emit('openHelp', id)`
+from where its question comes up, not from a central help page.
 
 ## Motion
 
