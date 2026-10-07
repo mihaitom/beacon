@@ -17,7 +17,13 @@ async def async_setup_entry(
     hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
     source = entry.runtime_data
-    async_add_entities([BeaconQueueSensor(source, entry), BeaconNowPlayingSensor(source, entry)])
+    async_add_entities(
+        [
+            BeaconQueueSensor(source, entry),
+            BeaconNowPlayingSensor(source, entry),
+            BeaconPartySensor(source, entry),
+        ]
+    )
 
 
 class BeaconQueueSensor(BeaconEntity, SensorEntity):
@@ -75,4 +81,34 @@ class BeaconNowPlayingSensor(BeaconEntity, SensorEntity):
         return {
             "album": song.get("album"),
             "playing": bool(self.coordinator.snapshot.get("playing")),
+        }
+
+
+class BeaconPartySensor(BeaconEntity, SensorEntity):
+    """Party mode, read-only: how many guests have joined as the state, with
+    whether one is running, how many listen along online and the online
+    bitrate as attributes. Unknown while no party runs, so "0 guests" only
+    ever means a party nobody has joined yet."""
+
+    _attr_name = "Party"
+    _attr_icon = "mdi:party-popper"
+    _attr_native_unit_of_measurement = "guests"
+
+    _key = "party"
+
+    def __init__(self, source, entry: ConfigEntry) -> None:
+        super().__init__(source, entry, "sensor")
+
+    @property
+    def native_value(self) -> int | None:
+        party = self.coordinator.snapshot.get("party") or {}
+        return party.get("guests") if party.get("running") else None
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        party = self.coordinator.snapshot.get("party") or {}
+        return {
+            "running": bool(party.get("running")),
+            "listeners": party.get("listeners") or 0,
+            "listen_kbps": party.get("listen_kbps") or 0,
         }

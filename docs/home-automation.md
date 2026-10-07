@@ -86,8 +86,14 @@ The fields an integration is likely to need:
 | `casting`              | The speakers being cast to, each with `type` and `name`                                 |
 | `interrupted`          | A speaker dropped out; `resume-interrupted` picks it back up                            |
 | `autoplay`             | Whether Autoplay is on                                                                  |
+| `party`                | Party mode, read-only: `running`, `guests` (how many joined), `listeners` (how many listen along online), `listen_kbps` (the online bitrate, 0 when off) |
 | `song_radio_supported` | Whether `play-song-radio` works with this music server                                  |
 | `session_id`           | Needed for cover art, see below                                                         |
+
+`party` is read-only: there is no command to start or end one. A party is
+driven from the app, and the same `party` object is what the bundled
+integration turns into `sensor.beacon_party`. `guests` and `listeners` are
+both 0 while `running` is false.
 
 Ignore `cover_art_url` and `favicon_url`: they are relative to the phone
 remote's own page and lack a credential. Build the cover URL from

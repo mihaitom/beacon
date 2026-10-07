@@ -330,6 +330,16 @@ export const useRemoteControlStore = defineStore('remoteControl', {
           // Which window this is, so connect hands guests only the host's
           // view of things (core/party.py's receive_snapshot).
           party_tab: usePartyStore().hostedHere ? partyTabId() : null,
+          // Read-only party status for Home Assistant, the one thing about a
+          // party that is safe to hand an integration: how many guests are
+          // in, how many listen along online, and the online bitrate (0 when
+          // off). Never the invite link - see /party-host/status on why.
+          party: {
+            running: usePartyStore().enabled,
+            guests: usePartyStore().guests.length,
+            listeners: usePartyStore().listeners,
+            listen_kbps: usePartyStore().listenKbps,
+          },
           casting: connect.activeTargets,
           // A cast device dropped out on its own and playback can be picked
           // back up. State rather than an event, because this channel only

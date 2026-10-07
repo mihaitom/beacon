@@ -620,6 +620,22 @@ describe('remoteControl store', () => {
       expect(snapshot.current_song).toMatchObject({ id: 'a', title: 'Track A' })
       expect(snapshot.queue).toEqual([expect.objectContaining({ id: 'a' })])
     })
+
+    it('carries the read-only party status for Home Assistant', async () => {
+      await enableStore()
+      vi.mocked(remoteHttp.pushRemoteState).mockClear()
+      const party = usePartyStore()
+      party.enabled = true
+      party.guests = [{ guest_id: 'g1', name: 'Guest', joined_at: 0, connected: true }]
+      party.listeners = 2
+
+      await vi.waitFor(() => expect(remoteHttp.pushRemoteState).toHaveBeenCalled())
+      const snapshot = vi.mocked(remoteHttp.pushRemoteState).mock.calls.at(-1)![0] as Record<
+        string,
+        unknown
+      >
+      expect(snapshot.party).toEqual({ running: true, guests: 1, listeners: 2, listen_kbps: 0 })
+    })
   })
 
   describe('device volume poll + reportDeviceVolume', () => {

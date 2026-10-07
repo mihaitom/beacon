@@ -33,6 +33,7 @@ in use (see [More than one computer](#more-than-one-computer)):
 | `switch.beacon_autoplay`          | Autoplay: keeps playing similar songs when the queue runs out.                                                                        |
 | `sensor.beacon_now_playing`       | "Artist – Title" as plain text, so the history and logbook list the songs.                                                            |
 | `sensor.beacon_queue`             | How many songs are queued; the next ones are in its `up_next` attribute.                                                              |
+| `sensor.beacon_party`             | Party mode: how many guests have joined as the state, with whether one is running, how many listen along online and the online bitrate as attributes. Read-only. |
 | `button.beacon_resume_cast`       | Picks a cast back up after a speaker dropped out. Only available while that is the case.                                              |
 | `button.beacon_scan_for_speakers` | Looks for speakers on the network again.                                                                                              |
 | `select.beacon_instance`          | Which Beacon instance the above follow: `Automatic`, or one pinned.                                                                   |
@@ -41,6 +42,10 @@ Each Beacon instance also gets a device of its own, named after the
 computer ("Beacon on my-pc"), with the same entities for that instance
 alone, plus a switch per speaker (`switch.beacon_on_my_pc_cast_<speaker>`):
 turning several on casts to all of them at once.
+
+Party mode is read-only here: a running party shows up on
+`sensor.beacon_party` with its guests and online listeners, but it is
+started and ended in the app itself.
 
 In Home Assistant's **media browser** the player offers the queue, your
 playlists, your albums (grouped by letter) and your radio stations, plus a
