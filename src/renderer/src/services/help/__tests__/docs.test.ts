@@ -168,3 +168,52 @@ describe('FEATURES_PAGE', () => {
     expect(inApp.map((link) => link.dataset.helpPage)).toContain('party-mode')
   })
 })
+
+describe('tabbed sections', () => {
+  const page = parse(renderHelpPage(pageFor('party-mode')))
+  const group = page.querySelector('.help-tabs')!
+
+  it('show each reverse proxy setup as a tab, the first one open', () => {
+    const tabs = [...group.querySelectorAll<HTMLElement>('[role="tab"]')]
+    expect(tabs.map((tab) => tab.textContent)).toContain('Authelia')
+    const panels = [...group.querySelectorAll<HTMLElement>('[role="tabpanel"]')]
+    expect(panels).toHaveLength(tabs.length)
+    expect(panels[0]!.hidden).toBe(false)
+    expect(panels.slice(1).every((panel) => panel.hidden)).toBe(true)
+  })
+
+  it('keep the ids GitHub gives those headings, so links to them still work', () => {
+    const tab = page.getElementById(slugify('Traefik (file provider)'))
+    expect(tab?.getAttribute('role')).toBe('tab')
+    expect(pageFor('party-mode').anchors.has(slugify('Traefik (file provider)'))).toBe(true)
+  })
+
+  it('keep a code block whole, lines in it that look like headings included', () => {
+    const body = [
+      '### Example setups',
+      '',
+      '#### First',
+      '',
+      '```',
+      '## not a heading',
+      '#### nor this',
+      '```',
+      '',
+      '#### Second',
+      '',
+      'Text.',
+    ].join('\n')
+    const own = parse(renderHelpPage({ ...pageFor('party-mode'), body }))
+    expect([...own.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual([
+      'First',
+      'Second',
+    ])
+    expect(own.getElementById('first-panel')!.querySelector('pre')!.textContent).toContain(
+      '#### nor this',
+    )
+  })
+
+  it('leave what follows the section as it was', () => {
+    expect(page.getElementById('client-addresses')?.closest('.help-tabs')).toBeNull()
+  })
+})

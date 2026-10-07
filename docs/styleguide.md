@@ -570,6 +570,12 @@ quotes, in `base.css` rather than as `:deep()` rules in each dialog, since
 v-html content never gets a component's scope id. A dialog only adds what is
 its own, like the release notes' pill-shaped section headings.
 
+A `### ` section of a bundled doc whose `#### ` subsections are alternatives -
+one reverse proxy's setup out of five - can be shown as tabs, by naming it in
+`services/help/docs.ts`'s `TABBED_SECTIONS`. On GitHub it stays plain
+headings, so the doc reads the same there; the tabs' look is in `base.css`
+with the rest of `.beacon-markdown`.
+
 A doc that wants a help entry somewhere in the app goes into
 `services/help/docs.ts` and is opened with `emitter.emit('openHelp', id)`
 from where its question comes up, not from a central help page.

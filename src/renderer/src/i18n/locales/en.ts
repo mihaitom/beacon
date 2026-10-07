@@ -409,6 +409,73 @@ export default {
       'For a party online, in a voice chat for example: everyone gets your music in their own browser from the party link.',
     listeners: '{count} listening online - about {mbps} Mbit/s upload',
     invitation: 'Invitation',
+    probe: {
+      button: 'Test setup',
+      title: 'Online party setup',
+      running: 'Testing…',
+      again: 'Test again',
+      about: "Checks whether guests outside your network can reach this party's link.",
+      dnsNote: "For the public DNS check, Beacon asks Cloudflare's DNS (1.1.1.1) for the name.",
+      steps: {
+        'public-dns': 'Public DNS',
+        'reach-public': 'From the internet',
+        address: 'Address',
+        dns: 'Name lookup here',
+        reach: 'Reaching the party',
+        https: 'HTTPS',
+        proxies: 'Reverse proxy',
+      },
+      codes: {
+        'public-dns': {
+          public: 'For everyone, {host} points to {publicAddresses}.',
+          missing:
+            'Public DNS does not know {host}, so guests outside your network will not find the party.',
+          private:
+            'Public DNS points {host} to {publicAddresses}, an address that only exists inside a network.',
+          unavailable: 'Public DNS could not be asked.',
+        },
+        'reach-public': {
+          ok: 'This Beacon answered through {publicAddresses}, the way guests come in.',
+        },
+        address: {
+          ok: 'The link uses {host}.',
+          'local-address':
+            'The link points to {host}, which only your own network knows. Open Beacon under its public address and start the party from there.',
+        },
+        dns: {
+          public: '{host} resolves to {addresses}.',
+          private: 'Here {host} resolves to {addresses}, an address of your own network.',
+          unresolvable: 'The Beacon server cannot look up {host}.',
+        },
+        reach: {
+          home: 'Inside your network, {host} reaches this Beacon directly.',
+          ok: 'This Beacon answered under {host}.',
+          'local-only':
+            'This Beacon answered, but through your own network - that says nothing yet about guests outside it.',
+          login: 'A login answered instead of Beacon: /party has to get past it.',
+          'not-beacon':
+            'Something other than this Beacon answered under {host} - check where your proxy sends /party.',
+          certificate:
+            "The certificate for {host} is not valid, so guests' browsers will refuse it.",
+          unreachable:
+            'The Beacon server could not reach {host}. That can be the setup, or a router that does not let devices at home reach its own public address.',
+          timeout:
+            '{host} did not answer in time. That can be the setup, or a router that does not let devices at home reach its own public address.',
+        },
+        https: {
+          'no-https':
+            "The party runs over plain HTTP: guests' browsers may warn, and their session is not protected.",
+        },
+        proxies: {
+          'untrusted-proxy':
+            'The proxy at {proxy} is not in TRUSTED_PROXIES, so every guest counts as that proxy and they share its limits.',
+        },
+      },
+      dnsHint:
+        'Guests outside your network look the name up in public DNS. A name that only your router or a local DNS (Pi-hole, AdGuard Home) knows works at home and nowhere else: it needs a public DNS record pointing at your internet address.',
+      phoneHint: 'The surest test is the link on a phone with Wi-Fi switched off.',
+      setups: 'Setups for the common proxies',
+    },
   },
   partyGuest: {
     largeArtwork: 'Large artwork',
@@ -904,6 +971,13 @@ export default {
           'Only if you sign in with a Plex account: Plex runs sign-in through plex.tv rather than through your own server.',
         sends:
           'A sign-in request, and afterwards your Plex token whenever it is checked. Signing in opens app.plex.tv in your browser. None of this happens with Navidrome or Jellyfin.',
+      },
+      publicDns: {
+        name: 'Cloudflare DNS',
+        purpose:
+          'Only when you press "Test setup" for an online party: whether guests outside your network can find the party\'s address.',
+        sends:
+          "The party's hostname, nothing else - the same question any guest's phone asks a public DNS.",
       },
     },
   },

@@ -75,6 +75,18 @@
             <v-btn variant="tonal" block prepend-icon="mdi-fullscreen" @click="showPoster = true">
               {{ $t('party.showPoster') }}
             </v-btn>
+            <!-- Only for the online party: a party in the room is reached on
+             - the local network, where there is nothing to test. -->
+            <v-btn
+              v-if="store.listenKbps"
+              variant="tonal"
+              block
+              prepend-icon="mdi-lan-check"
+              class="party-probe-button"
+              @click="showProbe = true"
+            >
+              {{ $t('party.probe.button') }}
+            </v-btn>
           </section>
 
           <section class="party-column party-column--rules">
@@ -178,6 +190,8 @@
 
     <!-- The QR code on its own, large, for a screen or tablet put up where
      - the guests are. -->
+    <party-probe-dialog v-if="inviteOrigin" v-model="showProbe" :origin="inviteOrigin" />
+
     <v-dialog v-model="showPoster" fullscreen>
       <div class="party-poster" @click="showPoster = false">
         <v-icon icon="mdi-lighthouse-on" color="primary" size="48" />
@@ -192,6 +206,7 @@
 <script lang="ts">
 import QRCode from 'qrcode'
 import { usePartyStore } from '@/stores/party'
+import PartyProbeDialog from './PartyProbeDialog.vue'
 import { isMobileWebNow } from '@/composables/useIsMobileWeb'
 
 const LIMITS = [1, 2, 3, 5, 10]
@@ -202,6 +217,7 @@ const DURATIONS = [2, 4, 8, 12, 24, 48]
 
 export default {
   name: 'PartyModeDialog',
+  components: { PartyProbeDialog },
   props: {
     modelValue: {
       type: Boolean,
@@ -213,6 +229,7 @@ export default {
     return {
       busy: null as 'start' | 'end' | 'rotate' | null,
       showPoster: false,
+      showProbe: false,
       linkCopied: false,
       isPhone: false,
       linkCopiedTimer: undefined as ReturnType<typeof setTimeout> | undefined,
@@ -221,6 +238,9 @@ export default {
   computed: {
     store() {
       return usePartyStore()
+    },
+    inviteOrigin(): string | null {
+      return this.store.inviteUrl ? new URL(this.store.inviteUrl).origin : null
     },
     /** Running, and answered by this window: the invitation and the guest
      * list are this window's to show. */
@@ -398,6 +418,10 @@ export default {
 .party-qr canvas,
 .party-poster__qr {
   border-radius: 4px;
+}
+
+.party-probe-button {
+  margin-top: 8px;
 }
 
 .party-listeners {

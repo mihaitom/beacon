@@ -83,3 +83,27 @@ export interface PartyLyrics {
 export function pushPartyLyrics(body: PartyLyrics): Promise<{ success: boolean }> {
   return fetchConnect<{ success: boolean }>('/party-host/lyrics', { method: 'POST', body })
 }
+
+export type ProbeStatus = 'ok' | 'warn' | 'fail' | 'unclear' | 'skipped'
+
+export interface ProbeStep {
+  id: 'address' | 'dns' | 'public-dns' | 'reach' | 'reach-public' | 'https' | 'proxies'
+  status: ProbeStatus
+  /** What was found - a key under party.probe.codes, empty for a plain ok. */
+  code: string
+  detail: string
+}
+
+export interface ProbeResult {
+  steps: ProbeStep[]
+  /** What the name resolves to on the Beacon server. */
+  addresses: string[]
+  /** What public DNS (Cloudflare) has for it. */
+  public_addresses: string[]
+}
+
+/** The online party's "Test setup": connect opens the party under `origin`
+ * the way a guest would (connect/core/party_probe.py). */
+export function probeParty(origin: string): Promise<ProbeResult> {
+  return fetchConnect<ProbeResult>('/party-host/probe', { method: 'POST', body: { origin } })
+}

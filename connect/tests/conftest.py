@@ -381,6 +381,9 @@ def reset_state():
     party_routes_module._listeners.clear()
     party_routes_module._listen_visualizers = 0
     party_routes_module._waveforms_running.clear()
+    from core import party_probe as party_probe_module
+
+    party_probe_module._nonces.clear()
     yield
 
 

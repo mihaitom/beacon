@@ -44,6 +44,21 @@ import {
   type HelpTarget,
 } from '@/services/help/docs'
 
+/** Shows `tab`'s panel and hides its siblings' - the tab groups
+ * services/help/docs.ts renders into the page as plain HTML. */
+function showTab(tab: HTMLElement): void {
+  const group = tab.closest('.help-tabs')
+  if (!group) return
+  for (const other of group.querySelectorAll<HTMLElement>('[data-help-tab]')) {
+    const selected = other === tab
+    other.setAttribute('aria-selected', String(selected))
+    const panel = group.querySelector<HTMLElement>(
+      `[id="${CSS.escape(other.getAttribute('aria-controls') ?? '')}"]`,
+    )
+    if (panel) panel.hidden = !selected
+  }
+}
+
 type PageOption = { title: string; value: string } | { type: 'subheader'; title: string }
 
 /** The bundled docs (services/help/docs.ts), each opened from where its
@@ -101,6 +116,11 @@ export default {
     /** Links between the bundled docs and within one stay in the dialog;
      * everything else was given target="_blank" when it was rendered. */
     onContentClick(event: MouseEvent) {
+      const tab = (event.target as Element | null)?.closest<HTMLElement>('[data-help-tab]')
+      if (tab) {
+        showTab(tab)
+        return
+      }
       const link = (event.target as Element | null)?.closest<HTMLAnchorElement>('a[data-help-page]')
       if (!link) return
       event.preventDefault()
@@ -118,7 +138,16 @@ export default {
       await this.$nextTick()
       const body = (this.$refs.body as { $el?: HTMLElement } | undefined)?.$el
       if (!body) return
-      const target = anchor ? body.querySelector(`[id="${CSS.escape(anchor)}"]`) : null
+      const target = anchor ? body.querySelector<HTMLElement>(`[id="${CSS.escape(anchor)}"]`) : null
+      // A link to one of a tab group's setups, or to something inside one,
+      // opens that tab first.
+      const panel = target?.closest<HTMLElement>('.help-tabs__panel')
+      const tab = target?.matches('[data-help-tab]')
+        ? target
+        : panel
+          ? body.querySelector<HTMLElement>(`[aria-controls="${CSS.escape(panel.id)}"]`)
+          : null
+      if (tab) showTab(tab)
       if (target) target.scrollIntoView?.({ block: 'start' })
       else body.scrollTop = 0
     },

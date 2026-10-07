@@ -413,6 +413,74 @@ export default {
       'Para una fiesta online, por ejemplo en un chat de voz: todos reciben tu música en su navegador desde el enlace de la fiesta.',
     listeners: '{count} escuchando online - unos {mbps} Mbit/s de subida',
     invitation: 'Invitación',
+    probe: {
+      button: 'Probar configuración',
+      title: 'Configuración de la fiesta online',
+      running: 'Probando…',
+      again: 'Probar de nuevo',
+      about: 'Comprueba si los invitados fuera de tu red pueden llegar al enlace de esta fiesta.',
+      dnsNote:
+        'Para la comprobación en el DNS público, Beacon consulta el nombre al DNS de Cloudflare (1.1.1.1).',
+      steps: {
+        'public-dns': 'DNS público',
+        'reach-public': 'Desde internet',
+        address: 'Dirección',
+        dns: 'Resolución de nombre aquí',
+        reach: 'Acceso a la fiesta',
+        https: 'HTTPS',
+        proxies: 'Proxy inverso',
+      },
+      codes: {
+        'public-dns': {
+          public: 'Para todos, {host} apunta a {publicAddresses}.',
+          missing:
+            'El DNS público no conoce {host}, así que los invitados fuera de tu red no encontrarán la fiesta.',
+          private:
+            'El DNS público hace apuntar {host} a {publicAddresses}, una dirección que solo existe dentro de una red.',
+          unavailable: 'No se pudo consultar el DNS público.',
+        },
+        'reach-public': {
+          ok: 'Este Beacon respondió a través de {publicAddresses}, el camino que siguen los invitados.',
+        },
+        address: {
+          ok: 'El enlace usa {host}.',
+          'local-address':
+            'El enlace apunta a {host}, que solo conoce tu propia red. Abre Beacon con su dirección pública e inicia la fiesta desde ahí.',
+        },
+        dns: {
+          public: '{host} resuelve a {addresses}.',
+          private: 'Aquí {host} resuelve a {addresses}, una dirección de tu propia red.',
+          unresolvable: 'El servidor de Beacon no puede resolver {host}.',
+        },
+        reach: {
+          home: 'Dentro de tu red, {host} llega directamente a este Beacon.',
+          ok: 'Este Beacon respondió en {host}.',
+          'local-only':
+            'Este Beacon respondió, pero a través de tu propia red; eso aún no dice nada de los invitados de fuera.',
+          login: 'Respondió un inicio de sesión en lugar de Beacon: /party tiene que saltárselo.',
+          'not-beacon':
+            'En {host} respondió algo distinto de este Beacon; revisa adónde envía tu proxy /party.',
+          certificate:
+            'El certificado de {host} no es válido, así que los navegadores de los invitados lo rechazarán.',
+          unreachable:
+            'El servidor de Beacon no pudo llegar a {host}. Puede ser la configuración o un router que no deja a los dispositivos de casa llegar a su propia dirección pública.',
+          timeout:
+            '{host} no respondió a tiempo. Puede ser la configuración o un router que no deja a los dispositivos de casa llegar a su propia dirección pública.',
+        },
+        https: {
+          'no-https':
+            'La fiesta funciona con HTTP sin cifrar: los navegadores de los invitados pueden avisar y su sesión no está protegida.',
+        },
+        proxies: {
+          'untrusted-proxy':
+            'El proxy en {proxy} no está en TRUSTED_PROXIES, así que cada invitado cuenta como ese proxy y comparten sus límites.',
+        },
+      },
+      dnsHint:
+        'Los invitados fuera de tu red buscan el nombre en el DNS público. Un nombre que solo conoce tu router o un DNS local (Pi-hole, AdGuard Home) funciona en casa y en ningún otro sitio: necesita un registro DNS público que apunte a tu dirección de internet.',
+      phoneHint: 'La prueba más segura es abrir el enlace en un móvil con el wifi apagado.',
+      setups: 'Configuración para los proxies habituales',
+    },
   },
   partyGuest: {
     largeArtwork: 'Portada grande',
@@ -910,6 +978,13 @@ export default {
           'Solo si inicias sesión con una cuenta de Plex: Plex gestiona el inicio de sesión a través de plex.tv, no de tu propio servidor.',
         sends:
           'Una petición de inicio de sesión y, después, tu token de Plex cada vez que se comprueba. Para iniciar sesión se abre app.plex.tv en el navegador. Con Navidrome o Jellyfin no ocurre nada de esto.',
+      },
+      publicDns: {
+        name: 'Cloudflare DNS',
+        purpose:
+          'Solo cuando pulsas «Probar configuración» en una fiesta online: si los invitados fuera de tu red encuentran la dirección de la fiesta.',
+        sends:
+          'El nombre de host de la fiesta, nada más: la misma pregunta que el móvil de cualquier invitado hace a un DNS público.',
       },
     },
   },

@@ -252,7 +252,92 @@ md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
   return self.renderToken(tokens, idx, options)
 }
 
+/** `### ` sections whose `#### ` subsections the dialog shows as tabs, one
+ * per subsection: alternatives of which a reader wants exactly one, like one
+ * reverse proxy's setup out of five. On GitHub they stay plain headings. */
+const TABBED_SECTIONS: Partial<Record<HelpDocId, string[]>> = {
+  'party-mode': ['Example setups'],
+}
+
+type Part = { markdown: string } | { heading: string; intro: string; tabs: Tab[] }
+type Tab = { title: string; markdown: string }
+
+/** `body` cut into plain markdown and the tabbed sections in it. A heading
+ * line inside a code block is left alone - a YAML comment is a `#` too. */
+function partsOf(body: string, tabbed: string[]): Part[] {
+  const parts: Part[] = []
+  let plain: string[] = []
+  let section: {
+    heading: string
+    intro: string[]
+    tabs: { title: string; lines: string[] }[]
+  } | null = null
+  let fenced = false
+  const close = () => {
+    if (!section) return
+    parts.push({
+      heading: section.heading,
+      intro: section.intro.join('\n'),
+      tabs: section.tabs.map((tab) => ({ title: tab.title, markdown: tab.lines.join('\n') })),
+    })
+    section = null
+  }
+  for (const line of body.split('\n')) {
+    if (/^\s*(```|~~~)/.test(line)) fenced = !fenced
+    const heading = fenced ? null : line.match(/^(#{2,4}) +(.+?)\s*$/)
+    if (heading && heading[1]!.length <= 3) {
+      close()
+      if (heading[1] === '###' && tabbed.includes(heading[2]!)) {
+        if (plain.length) parts.push({ markdown: plain.join('\n') })
+        plain = []
+        section = { heading: heading[2]!, intro: [], tabs: [] }
+        continue
+      }
+    }
+    if (!section) {
+      plain.push(line)
+    } else if (heading && heading[1] === '####') {
+      section.tabs.push({ title: heading[2]!, lines: [] })
+    } else if (section.tabs.length) {
+      section.tabs.at(-1)!.lines.push(line)
+    } else {
+      section.intro.push(line)
+    }
+  }
+  close()
+  if (plain.length) parts.push({ markdown: plain.join('\n') })
+  return parts
+}
+
+/** A tab group as plain HTML: the dialog switches the tabs itself (see
+ * HelpDialog.vue's onContentClick), since what markdown-it renders is put
+ * in with v-html. Each tab keeps the id GitHub gives its heading, so a link
+ * to one still lands on it - and opens it. */
+function renderTabs(part: Extract<Part, { tabs: Tab[] }>, env: RenderEnv): string {
+  const escape = md.utils.escapeHtml
+  let html = md.render(`### ${part.heading}\n\n${part.intro}`, env)
+  const tabs = part.tabs.map((tab) => ({ id: env.nextId(tab.title), title: tab.title, tab }))
+  const panels = tabs.map(({ id, tab }) => ({ id, html: md.render(tab.markdown, env) }))
+  html += '<div class="help-tabs"><div class="help-tabs__list" role="tablist">'
+  tabs.forEach(({ id, title }, i) => {
+    html +=
+      `<button type="button" role="tab" class="help-tabs__tab" id="${escape(id)}" ` +
+      `aria-controls="${escape(id)}-panel" aria-selected="${i === 0}" data-help-tab>` +
+      `${escape(title)}</button>`
+  })
+  html += '</div>'
+  panels.forEach(({ id, html: panel }, i) => {
+    html +=
+      `<div class="help-tabs__panel" role="tabpanel" id="${escape(id)}-panel" ` +
+      `aria-labelledby="${escape(id)}"${i === 0 ? '' : ' hidden'}>${panel}</div>`
+  })
+  return `${html}</div>`
+}
+
 export function renderHelpPage(page: HelpPage): string {
   const env: RenderEnv = { page, nextId: headingIds() }
-  return md.render(page.body, env)
+  const tabbed = page.doc ? (TABBED_SECTIONS[page.doc] ?? []) : []
+  return partsOf(page.body, tabbed)
+    .map((part) => ('tabs' in part ? renderTabs(part, env) : md.render(part.markdown, env)))
+    .join('')
 }

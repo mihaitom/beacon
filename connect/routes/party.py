@@ -34,7 +34,7 @@ from fastapi.responses import (
 )
 from pydantic import BaseModel
 
-from core import fanart, party_library, party_queue, waveform
+from core import fanart, party_library, party_probe, party_queue, waveform
 from core.audio_fanout import send_sentinel
 from core.auth import require_token
 from core.party import (
@@ -247,6 +247,28 @@ class LyricsRequest(BaseModel):
     synced: bool = False
     offset: float = 0.0
     lines: list[dict] = []
+
+
+class ProbeRequest(BaseModel):
+    origin: str
+
+
+@host_router.post("/probe")
+async def probe_party(req: ProbeRequest):
+    """ "Test setup" for the online party: can a guest reach the party under
+    the address it was started from? See core/party_probe.py."""
+    if not party.is_active():
+        raise HTTPException(status_code=404)
+    parts = urlsplit(req.origin)
+    if parts.scheme not in ("http", "https") or not parts.hostname or parts.path not in ("", "/"):
+        raise HTTPException(status_code=422, detail="Not an origin")
+    origin = f"{parts.scheme}://{parts.netloc}"
+    result = await party_probe.probe(origin)
+    logger.info(
+        f"[party] Setup test for {origin}: "
+        + ", ".join(f"{step.id}={step.status}" for step in result.steps)
+    )
+    return result.as_dict()
 
 
 @host_router.post("/lyrics")
@@ -623,6 +645,29 @@ async def radio_logo(guest: Guest = Depends(require_guest)):
         raise HTTPException(status_code=404)
     homepage, hint = party.radio_logo
     return await radio_favicon(url=homepage, min_size=RADIO_LOGO_SIZE, hint=hint)
+
+
+PROBES_PER_IP = (30, 600)
+
+
+@router.get("/api/probe")
+async def probe_answer(request: Request, n: str = Query(...)):
+    """The far end of the setup test (core/party_probe.py): answers only a
+    nonce connect has just handed out itself, so a guest learns nothing
+    here, and says whether a proxy in front went untrusted."""
+    _require_active()
+    if not party.limiter.hit(f"probe:{_ip(request)}", *PROBES_PER_IP):
+        raise HTTPException(status_code=429)
+    if not party_probe.nonce_valid(n):
+        raise HTTPException(status_code=404)
+    forwarded = request.headers.get("x-forwarded-for")
+    untrusted = party_probe.forwarded_untrusted(forwarded, is_trusted_proxy)
+    hops = [h.strip() for h in (forwarded or "").split(",") if h.strip()]
+    return {
+        "nonce": n,
+        "forwarded_untrusted": untrusted,
+        "proxy": hops[-1] if untrusted else "",
+    }
 
 
 # Waveform decodes already running, by song: guests of one party all ask for

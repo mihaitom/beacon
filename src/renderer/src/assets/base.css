@@ -687,6 +687,51 @@ body {
   border-top: 1px solid var(--beacon-hairline);
 }
 
+/* Tabs inside rendered markdown: a group of alternatives of which a reader
+ * wants one (services/help/docs.ts's TABBED_SECTIONS). Drawn like the app's
+ * own tabs - the chosen one in amber with an amber underline over the
+ * section's hairline - and wrapping onto a second row rather than scrolling
+ * on a phone. */
+.beacon-markdown .help-tabs {
+  margin: 0.75rem 0 1rem;
+}
+
+.beacon-markdown .help-tabs__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  border-bottom: 1px solid var(--beacon-hairline);
+}
+
+.beacon-markdown .help-tabs__tab {
+  padding: 8px 12px;
+  margin-bottom: -1px;
+  /* A <button>'s own grey box and bevelled border, which nothing else here
+   * takes away. */
+  background: none;
+  border: none;
+  border-radius: 0;
+  border-bottom: 2px solid transparent;
+  color: rgba(var(--v-theme-on-surface), var(--v-medium-emphasis-opacity));
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s;
+}
+
+.beacon-markdown .help-tabs__tab:hover {
+  color: rgb(var(--v-theme-on-surface));
+}
+
+.beacon-markdown .help-tabs__tab[aria-selected='true'] {
+  color: rgb(var(--v-theme-primary));
+  border-bottom-color: rgb(var(--v-theme-primary));
+}
+
+.beacon-markdown .help-tabs__panel {
+  padding-top: 0.25rem;
+}
+
 /* Opt-in for plain v-list-item rows (genre/search results, anywhere else
  * that's just a browsable v-list rather than a custom row component) —
  * swaps Vuetify's own grey hover overlay for the shared warm tint above,

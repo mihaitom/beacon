@@ -59,9 +59,11 @@ while the host casts or plays locally, and a radio station too. Nothing
 changes for the host, who listens as always.
 
 The online party is a web build feature (the Docker image, reached under its
-public address - see [Over the internet](#over-the-internet)). The desktop
-app's party link is this machine's LAN address, which nobody outside the
-room can reach, so its party dialog does not offer it.
+public address). It needs Beacon behind a reverse proxy, reachable from
+the internet - see [Over the internet](#over-the-internet) for what that
+takes and setups for the common proxies. The desktop app's party link is
+this machine's LAN address, which nobody outside the room can reach, so its
+party dialog does not offer it.
 
 Everyone listening online is a few seconds behind the host - the buffer
 that carries a phone through a dead spot on mobile data - and the guests are
@@ -131,60 +133,125 @@ proxy open `/party/` to the outside without opening anything else.
 
 ## Over the internet
 
-Guests on the venue's Wi-Fi need nothing more than the QR code. For guests
-on mobile data, put Beacon (the Docker image, `WEB_PORT` 7070 by default)
-behind your reverse proxy. Whichever proxy it is:
+Guests on the same Wi-Fi as Beacon need nothing more than the QR code. For
+anyone else - guests on mobile data, and **every guest of an online party**,
+who by definition are not on your network - Beacon has to be reachable from
+the internet, which means putting the Docker image (`WEB_PORT` 7070 by
+default) behind a reverse proxy with a public hostname and a certificate.
+Without that, an online party has nobody who can join it. Whichever proxy it
+is:
 
 - **`/party` and `/party/` have to get past the login in front of Beacon.**
-  If Beacon sits behind Authentik or another forward-auth, give that path a
-  route of its own without it - the examples below do exactly that. Without a
-  forward-auth, an ordinary proxy host is enough and nothing else changes:
-  `/party/` is the only part a guest can use without Beacon's own login.
-  The online party's stream is part of it (`/party/api/listen`), so
-  nothing else needs opening for it.
+  If Beacon sits behind Authentik, Authelia or another forward-auth, that
+  path has to be let through without it - the setups below show how for
+  each. Without a forward-auth, an ordinary proxy host is enough and nothing
+  else changes: `/party/` is the only part a guest can use without Beacon's
+  own login. The online party's stream is part of it (`/party/api/listen`),
+  so nothing else needs opening for it.
 - **The `Host` header goes through unchanged.** Changing requests are
-  checked against it (see "Browser hardening" above). All three proxies
-  below do that by default.
-- **No response buffering.** The page's live updates are a long-running
-  event stream. Beacon sends `X-Accel-Buffering: no`, which nginx (Nginx
-  Proxy Manager too) honours, and Caddy and Traefik pass such a stream
-  through as it comes.
+  checked against it (see "Browser hardening" above). All the proxies below
+  do that by default.
+- **No response buffering.** The page's live updates and the online party's
+  audio are long-running streams. Beacon sends `X-Accel-Buffering: no`,
+  which nginx (Nginx Proxy Manager too) honours, and Caddy and Traefik pass
+  such a stream through as it comes.
 - **Start the party with Beacon open under the public address**
-  (`https://beacon.example.com`), not under its LAN address: the QR code
-  points at the address the party was started from.
+  (`https://beacon.example.com`), not under its LAN address: the QR code and
+  the link point at the address the party was started from.
 
 Then set `TRUSTED_PROXIES` as described under
 [Client addresses](#client-addresses).
 
-### Traefik + Authentik
+**Test setup.** With an online party running, the party dialog has a "Test
+setup" button. The Beacon server then opens the party's own link the way a
+guest would - proxy, certificate, the login in front, the route to `/party/`
 
-Give `/party` its own router without the Authentik middleware and a higher
-priority than the protected one:
+- and says what it found at each step, down to a proxy missing from
+  `TRUSTED_PROXIES`. It looks the name up twice: on the server, and in public
+  DNS, by asking Cloudflare's resolver (1.1.1.1) - the only thing it sends
+  there is the name. That catches the most common reason guests on mobile data
+  get nowhere: a name only your own DNS knows, which works at home and nowhere
+  else. Where public DNS has a different address than your own DNS (split DNS,
+  or Cloudflare's proxy in front), the test also reaches the party through
+  that address, which is the way guests come in. One thing it cannot tell from
+  inside: a router that does not let devices at home reach its own public
+  address makes a working setup look unreachable, and the test says when that
+  could be the case. The final word is the link on a phone with Wi-Fi switched
+  off.
+
+### Example setups
+
+Each one opens `/party` to guests and leaves the rest of Beacon behind your
+login. Without a login in front of Beacon, any of them shortened to the
+plain proxy host does the job.
+
+#### Traefik (Docker labels)
+
+Give `/party` its own router without the forward-auth middleware and a
+higher priority than the protected one:
 
 ```yaml
 labels:
   # The protected app, as before
   - traefik.http.routers.beacon.rule=Host(`beacon.example.com`)
   - traefik.http.routers.beacon.middlewares=authentik@docker
-  # Party guests, past Authentik
+  # Party guests, past the login
   - traefik.http.routers.beacon-party.rule=Host(`beacon.example.com`) && (Path(`/party`) || PathPrefix(`/party/`))
   - traefik.http.routers.beacon-party.priority=100
   - traefik.http.routers.beacon-party.service=beacon
 ```
 
-Use `PathPrefix(`/party/`)` with the trailing slash. Without it, Traefik also
-matches any other path that happens to start with `/party`.
+With Authelia the middleware is `authelia@docker` instead, the rest is the
+same. Use `PathPrefix(`/party/`)` with the trailing slash. Without it,
+Traefik also matches any other path that happens to start with `/party`.
 
-### Nginx Proxy Manager + Authentik
+#### Traefik (file provider)
+
+The same two routers in Traefik's dynamic configuration, for a Traefik that
+reads its routes from a file rather than from container labels:
+
+```yaml
+http:
+  routers:
+    # The protected app, as before
+    beacon:
+      rule: Host(`beacon.example.com`)
+      entryPoints: [websecure]
+      middlewares: [authentik]
+      service: beacon
+      tls:
+        certResolver: letsencrypt
+    # Party guests, past the login
+    beacon-party:
+      rule: Host(`beacon.example.com`) && (Path(`/party`) || PathPrefix(`/party/`))
+      entryPoints: [websecure]
+      priority: 100
+      service: beacon
+      tls:
+        certResolver: letsencrypt
+  services:
+    beacon:
+      loadBalancer:
+        servers:
+          - url: http://192.168.1.10:7070
+```
+
+`authentik` is whatever your forward-auth middleware is called in that file
+(`authelia` for Authelia), and `websecure`/`letsencrypt` stand for your own
+entry point and certificate resolver. If Traefik reaches Beacon over a
+Docker network rather than the LAN, the URL is the container's
+(`http://beacon:7070`).
+
+#### Nginx Proxy Manager
 
 The proxy host points at Beacon as usual (Details tab: `http`, Beacon's
-address, port `7070`). Authentik's own guide for Nginx Proxy Manager puts a
+address, port `7070`). The guides for Authentik and Authelia both put a
 `location /` block with `auth_request` into the Advanced tab. Add these two
 locations next to it, in the same Advanced tab - they are matched ahead of
 `/` and carry no `auth_request`:
 
 ```nginx
-# Party guests, past Authentik
+# Party guests, past the login
 location = /party {
     proxy_pass $forward_scheme://$server:$port;
     proxy_set_header Host $host;
@@ -204,10 +271,10 @@ the address only lives in one place. Locations added in the Advanced tab
 don't get the headers Nginx Proxy Manager adds on its own, which is why
 they are set here.
 
-Without Authentik, none of this is needed: an ordinary proxy host with an SSL
-certificate is all.
+Without a login in front, none of this is needed: an ordinary proxy host
+with an SSL certificate is all.
 
-### Caddy + Authentik
+#### Caddy
 
 A named matcher for the party path, handled before the protected rest:
 
@@ -215,7 +282,7 @@ A named matcher for the party path, handled before the protected rest:
 beacon.example.com {
 	@party path /party /party/*
 
-	# Party guests, past Authentik
+	# Party guests, past the login
 	handle @party {
 		reverse_proxy 192.168.1.10:7070
 	}
@@ -237,8 +304,34 @@ beacon.example.com {
 
 `path /party /party/*` rather than `/party*`, which would also match any
 other path starting with `/party`. Caddy keeps the `Host` header and sets
-`X-Forwarded-For` and `X-Forwarded-Proto` on its own. Without Authentik,
+`X-Forwarded-For` and `X-Forwarded-Proto` on its own. With Authelia, the
+`forward_auth` block is the one from Authelia's guide for Caddy; the
+`@party` handle stays as it is. Without a login in front,
 `reverse_proxy 192.168.1.10:7070` alone is the whole site block.
+
+#### Authelia
+
+Whichever proxy sits in front, Authelia can let the party through on its
+own: a `bypass` rule for the path, above the rule that protects the rest of
+Beacon. Authelia uses the first rule that matches, so the order matters.
+
+```yaml
+access_control:
+  rules:
+    # Party guests, past the login
+    - domain: beacon.example.com
+      resources:
+        - '^/party([/?].*)?$'
+      policy: bypass
+    # The rest of Beacon, as before
+    - domain: beacon.example.com
+      policy: one_factor
+```
+
+The expression matches `/party` and everything under `/party/`, but not
+another path that happens to start with `/party`. With this rule in place,
+the proxy needs no route of its own for the party: the forward-auth in
+front of Beacon asks Authelia, and Authelia waves `/party` through.
 
 ### Client addresses
 
@@ -273,9 +366,10 @@ Vuetify writes its theme into a `<style>` element at runtime. Instead of
 allowing inline styles, connect puts a fresh nonce into every page it serves
 and allows only the style element carrying it.
 
-The visualizer only runs while casting: connect analyses what the speakers
-play then. During local playback the analyser lives in the host's browser,
-and guests see no bars.
+The visualizer comes from connect, which analyses what the speakers play
+while the host casts. During local playback the analyser lives in the host's
+browser, so guests in the room see no bars then; guests of an online party
+still do, from the stream they hear.
 
 ## Things to know
 

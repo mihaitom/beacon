@@ -63,4 +63,23 @@ describe('HelpDialog', () => {
     expect((wrapper.vm as unknown as { pageId: string }).pageId).toBe(page.id)
     expect(content().querySelector(`[id="${anchor}"]`)).not.toBeNull()
   })
+
+  it('switches between the setups of a tab group', async () => {
+    await openOn('party-mode')
+    const tab = content().querySelector<HTMLElement>('#authelia')!
+    const panel = content().querySelector<HTMLElement>('#authelia-panel')!
+    expect(panel.hidden).toBe(true)
+    tab.click()
+    expect(panel.hidden).toBe(false)
+    expect(tab.getAttribute('aria-selected')).toBe('true')
+    const first = content().querySelector<HTMLElement>('.help-tabs__panel')!
+    expect(first.hidden).toBe(true)
+  })
+
+  it('opens the tab a link points into', async () => {
+    const wrapper = await openOn('party-mode')
+    ;(wrapper.vm as unknown as { scrollTo(anchor: string): Promise<void> }).scrollTo('authelia')
+    await flushPromises()
+    expect(content().querySelector<HTMLElement>('#authelia-panel')!.hidden).toBe(false)
+  })
 })
