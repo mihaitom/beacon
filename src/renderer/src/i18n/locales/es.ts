@@ -388,7 +388,7 @@ export default {
       'Hay una fiesta en otra ventana, que es la que responde a los invitados. Tómala para dirigirla desde aquí.',
     runsOnServer:
       'Se ejecuta en el servidor de Beacon mientras emites - este dispositivo puede bloquearse.',
-    runsLocally: 'Mantén esta ventana abierta - la música suena aquí.',
+    runsLocally: 'Mantén Beacon abierto - la música suena en este dispositivo.',
     runsLocallyPhone:
       'La música suena en este dispositivo, que debe permanecer despierto - bloquearlo acaba la fiesta.',
     rules: 'Reglas',

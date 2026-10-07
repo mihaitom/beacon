@@ -388,7 +388,7 @@ export default {
       'Une fête tourne dans une autre fenêtre, qui répond aux invités. Reprends-la pour l’animer d’ici.',
     runsOnServer:
       'Tourne sur le serveur Beacon pendant que tu diffuses - cet appareil peut se verrouiller.',
-    runsLocally: 'Garde cette fenêtre ouverte - la musique joue ici.',
+    runsLocally: 'Garde Beacon ouvert - la musique joue sur cet appareil.',
     runsLocallyPhone:
       'La musique joue sur cet appareil, qui doit rester éveillé - le verrouiller met fin à la fête.',
     rules: 'Règles',

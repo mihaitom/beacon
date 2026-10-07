@@ -384,7 +384,7 @@ export default {
     hostedElsewhere:
       'A party is running in another window, which answers the guests. Take it over to host it from here.',
     runsOnServer: 'Runs on the Beacon server while you cast - this device may lock.',
-    runsLocally: 'Keep this window open - the music plays here.',
+    runsLocally: 'Keep Beacon open - the music plays on this device.',
     runsLocallyPhone:
       'The music plays on this device, so it must stay awake - locking it ends the party.',
     rules: 'Rules',

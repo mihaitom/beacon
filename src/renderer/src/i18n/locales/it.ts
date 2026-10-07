@@ -387,7 +387,7 @@ export default {
     hostedElsewhere:
       "C'è una festa in un'altra finestra, che risponde agli ospiti. Prendila per gestirla da qui.",
     runsOnServer: 'Gira sul server Beacon mentre trasmetti - questo dispositivo può bloccarsi.',
-    runsLocally: 'Tieni aperta questa finestra - la musica suona qui.',
+    runsLocally: 'Tieni aperto Beacon - la musica suona su questo dispositivo.',
     runsLocallyPhone:
       'La musica suona su questo dispositivo, che deve restare sveglio - bloccarlo termina la festa.',
     rules: 'Regole',

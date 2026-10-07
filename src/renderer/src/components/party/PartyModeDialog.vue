@@ -181,10 +181,16 @@
           </v-btn>
         </template>
         <v-spacer />
+        <v-btn v-if="store.enabled" color="primary" @click="onClose(false)">
+          {{ $t('common.done') }}
+        </v-btn>
+        <v-btn v-if="store.enabled" color="primary" @click="onClose(false)">
+          {{ $t('common.done') }}
+        </v-btn>
+        <v-btn v-else variant="text" @click="onClose(false)">{{ $t('common.cancel') }}</v-btn>
         <v-btn v-if="!store.enabled" color="primary" :loading="busy === 'start'" @click="start">
           {{ $t('party.start') }}
         </v-btn>
-        <v-btn v-else color="primary" @click="onClose(false)">{{ $t('common.done') }}</v-btn>
       </v-card-actions>
     </v-card>
 
