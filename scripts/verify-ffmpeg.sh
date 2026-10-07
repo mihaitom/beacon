@@ -178,11 +178,12 @@ fi
 rm -f "$work/relay.mp3"
 
 # core/party_broadcast.py: a song decoded to raw PCM, and the listen-along
-# encoder reading that PCM from stdin.
-smoke "decode to stereo s16le" -i "$t" -vn -ac 2 -ar 44100 -f s16le "$work/pcm"
+# encoder reading that PCM from stdin. make_source rather than smoke for the
+# PCM, which smoke would delete as soon as it has checked it.
+make_source "decode to stereo s16le" "$work/pcm" -i "$t" -vn -ac 2 -ar 44100 -f s16le
 if "$bin" -hide_banner -loglevel error -y -f s16le -ar 44100 -ac 2 -i pipe:0 \
     -acodec aac -b:a 192k -ar 44100 -f adts -flush_packets 1 "$work/listen.aac" \
-    < "$work/pcm" 2> "$work/stderr"; then
+    < "$work/pcm" 2> "$work/stderr" && [ -s "$work/listen.aac" ]; then
     echo "[verify-ffmpeg]   ok: listen-along encode from pipe:0"
 else
     echo "[verify-ffmpeg] FAILED: listen-along encode from pipe:0" >&2
