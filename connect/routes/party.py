@@ -37,7 +37,7 @@ from core import fanart, party_library, party_queue
 from core.auth import require_token
 from core.party import (
     DEFAULT_DURATION_HOURS,
-    MAX_STREAMS_PER_IP,
+    MAX_STREAMS_PER_GUEST,
     MAX_STREAMS_TOTAL,
     Guest,
     clean_name,
@@ -356,13 +356,11 @@ async def get_state(guest: Guest = Depends(require_guest)):
 
 @router.get("/api/events")
 async def guest_events(request: Request, guest: Guest = Depends(require_guest)):
-    ip = _ip(request)
-    total = sum(party.streams_per_ip.values())
-    if party.streams_per_ip.get(ip, 0) >= MAX_STREAMS_PER_IP or total >= MAX_STREAMS_TOTAL:
+    total = sum(party.streams.values())
+    if party.streams.get(guest.guest_id, 0) >= MAX_STREAMS_PER_GUEST or total >= MAX_STREAMS_TOTAL:
         raise HTTPException(status_code=429, detail="Too many open connections")
     queue = party.event_bus.subscribe()
     party.streams[guest.guest_id] = party.streams.get(guest.guest_id, 0) + 1
-    party.streams_per_ip[ip] = party.streams_per_ip.get(ip, 0) + 1
     sid = request.cookies.get(COOKIE_NAME)
 
     async def generator():
@@ -389,9 +387,6 @@ async def guest_events(request: Request, guest: Guest = Depends(require_guest)):
             party.streams[guest.guest_id] -= 1
             if party.streams[guest.guest_id] <= 0:
                 party.streams.pop(guest.guest_id, None)
-            party.streams_per_ip[ip] -= 1
-            if party.streams_per_ip[ip] <= 0:
-                party.streams_per_ip.pop(ip, None)
 
     return StreamingResponse(
         generator(),

@@ -66,9 +66,12 @@ proxy open `/party/` to the outside without opening anything else.
   endpoint triggers exactly one action (wish, withdraw, vote), and a skip is
   only sent once the vote threshold is reached.
 - **Limits.** Joining with a wrong token locks the address out after ten
-  tries in ten minutes. Wishes, withdrawals, votes, searches and covers are
-  rate-limited per guest, open live connections per address and in total,
-  and a party holds at most 100 guests.
+  tries in ten minutes, and an address can join at most twenty times in ten
+  minutes. Everything after joining counts per guest, not per address, so
+  guests sharing one (an office, a venue) don't share limits: wishes,
+  withdrawals, votes, searches and covers are rate-limited per guest, live
+  connections are capped per guest and in total, and a party holds at most
+  100 guests.
 - **Nothing leaks.** Guests get a filtered view of the player: no session
   ids, no speakers, no volume, no stream details, and other guests appear by
   name only. Covers are served as image bytes by Beacon itself (never a
@@ -195,11 +198,11 @@ other path starting with `/party`. Caddy keeps the `Host` header and sets
 
 ### Client addresses
 
-The rate limits work per client address. Beacon only trusts an
+Joining is limited per client address. Beacon only trusts an
 `X-Forwarded-For` header from a proxy listed in `TRUSTED_PROXIES`
 (comma-separated addresses or networks, default `127.0.0.1/32,::1/128`, which
 is the nginx inside the container). Add the address your proxy reaches Beacon
-from, or every guest counts as the proxy and they all share one set of
+from, or every guest counts as the proxy and they all share the join
 limits:
 
 | Proxy                                                         | Add, for example                       |

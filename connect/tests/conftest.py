@@ -372,7 +372,6 @@ def reset_state():
     remote_module.remote._lockout_strikes.clear()
     party_module.party.disable()
     party_module.party.streams.clear()
-    party_module.party.streams_per_ip.clear()
     party_module.party.host_session_id = None
     party_module.party.current_song_id = None
     party_module.party.settings = party_module.Settings()

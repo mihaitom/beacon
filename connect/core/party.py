@@ -34,7 +34,10 @@ logger = logging.getLogger("connect.party")
 DEFAULT_DURATION_HOURS = 12
 MAX_DURATION_HOURS = 48
 MAX_GUESTS = 100
-MAX_STREAMS_PER_IP = 4
+# Live connections are counted per guest, not per address: guests behind one
+# NAT (an office, a venue) share an address. Opening one needs a guest
+# cookie, which only the token gives, so the address adds nothing here.
+MAX_STREAMS_PER_GUEST = 3
 MAX_STREAMS_TOTAL = 200
 NAME_MAX_LENGTH = 24
 # What a guest may see of the queue. A party queue longer than this is the
@@ -138,7 +141,6 @@ class PartyState:
         self.sessions: dict[str, Guest] = {}
         self.event_bus = EventBus()
         self.streams: dict[str, int] = {}  # guest_id -> open SSE streams
-        self.streams_per_ip: dict[str, int] = {}
         self.limiter = RateLimiter()
         self.snapshot: dict = {}
         self.host_session_id: str | None = None

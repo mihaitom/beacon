@@ -728,10 +728,18 @@ def test_party_settings_default():
     assert Settings().max_pending_per_guest == 3
 
 
-def test_open_streams_are_capped_per_address(client, guest_client):
+def test_open_streams_are_capped_per_guest(client, guest_client):
     token = _start(client)
     _join(guest_client, token)
-    party.streams_per_ip["testclient"] = party_routes.MAX_STREAMS_PER_IP
+    (guest,) = party.sessions.values()
+    party.streams[guest.guest_id] = party_routes.MAX_STREAMS_PER_GUEST
+    assert guest_client.get("/party/api/events").status_code == 429
+
+
+def test_open_streams_are_capped_in_total(client, guest_client):
+    token = _start(client)
+    _join(guest_client, token)
+    party.streams["someone-else"] = party_routes.MAX_STREAMS_TOTAL
     assert guest_client.get("/party/api/events").status_code == 429
 
 
@@ -788,7 +796,22 @@ async def test_events_open_with_the_guests_own_view():
     finally:
         await gen.aclose()
     assert guest.guest_id not in party.streams
-    assert party.streams_per_ip == {}
+
+
+async def test_guests_sharing_an_address_each_get_their_streams():
+    # An office or a venue: every guest arrives from the same address.
+    party.enable()
+    for name in ("Ben", "Cleo"):
+        _, other = party.join(name, "203.0.113.5")
+        party.streams[other.guest_id] = party_routes.MAX_STREAMS_PER_GUEST
+    sid, guest = party.join("Anna", "203.0.113.5")
+    resp = await party_routes.guest_events(_events_request(sid), guest)
+    gen = resp.body_iterator
+    try:
+        await gen.__anext__()  # retry
+        assert '"me": {"name": "Anna"}' in await gen.__anext__()
+    finally:
+        await gen.aclose()
 
 
 async def test_events_end_when_the_guest_is_removed():
