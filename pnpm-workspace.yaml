@@ -1,3 +1,7 @@
 allowBuilds:
   electron-winstaller: true
   esbuild: true
+
+overrides:
+  # concurrently pins shell-quote 1.9.0 exactly (command injection, fixed in 1.11.0)
+  shell-quote: ^1.11.0
