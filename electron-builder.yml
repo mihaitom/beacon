@@ -74,10 +74,13 @@ mac:
           arch:
               - arm64
     category: public.app-category.music
-    # Unsigned/local builds — no Apple Developer ID configured. Set `identity`
-    # to a real signing identity (and drop hardenedRuntime/notarize) once one
-    # exists; without that, macOS Gatekeeper will warn on install.
-    identity: null
+    # Ad-hoc signed ('-'), since there is no Apple Developer ID. `null` (no
+    # signature at all) is not an option: electron-builder rewrites the
+    # bundle after Electron signed it, and on Apple Silicon a downloaded app
+    # with a broken signature is reported as "damaged" with no way to open
+    # it but the terminal (#46). Ad-hoc signed, Gatekeeper still warns, but
+    # System Settings > Privacy & Security offers "Open Anyway".
+    identity: '-'
     hardenedRuntime: false
     # Required on macOS 14+ (Sonoma) for the local-network-access permission
     # prompt to work at all — without it, macOS can't show a proper prompt

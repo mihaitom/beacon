@@ -188,6 +188,8 @@ That's it - Beacon asks for your server URL, username, and password on first lau
 
 ## Electron (desktop app)
 
+**Installing on macOS:** the app is not signed with an Apple Developer ID, so the first launch is blocked with "Apple could not verify Beacon is free of malware". Click Done, then open System Settings > Privacy & Security and choose "Open Anyway" next to the Beacon message. If macOS reports the app as damaged instead (versions up to 1.6.0), remove the download quarantine in the terminal: `xattr -dr com.apple.quarantine /Applications/Beacon.app`.
+
 The Connect backend starts and stops automatically alongside the Electron app - no separate Python installation needed in the packaged build. Its port is selected dynamically at startup (from 7071), so it never conflicts with anything else already using that port.
 
 **Development** (Node with pnpm, and Python with [uv](https://docs.astral.sh/uv/) for the backend):

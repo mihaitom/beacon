@@ -149,3 +149,14 @@ jobs:
                   fi
                   echo "Packaged backend: $backend ($(du -h "$backend" | cut -f1))"
                   test -x "$backend" || { echo "MISSING: $backend is not executable"; exit 1; }
+
+            # An app whose signature doesn't hold up is "damaged" to macOS
+            # once downloaded (#46), and nothing else here would notice.
+            - name: Check the app's code signature (macOS)
+              if: startsWith(matrix.os, 'macos')
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  app="$(find dist -maxdepth 2 -type d -name '*.app' | sed -n 1p)"
+                  codesign --verify --deep --strict --verbose=2 "$app"
+                  codesign --display --verbose=2 "$app" 2>&1 | grep -E 'Signature|Identifier'

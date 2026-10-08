@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- On Apple Silicon Macs, the downloaded app was reported as damaged and could not be opened. It now opens after confirming it once under System Settings > Privacy & Security (reported by @ampcat3, #46)
+
 ## [1.6.0] - 2026-10-07
 
 ### Highlights
