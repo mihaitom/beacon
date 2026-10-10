@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Fixed
 
 - On Apple Silicon Macs, the downloaded app was reported as damaged and could not be opened. It now opens after confirming it once under System Settings > Privacy & Security (reported by @ampcat3, #46)
+- On an iPhone or iPad, music played on the device itself stopped at the end of a song once the screen had locked instead of moving on to the next one. It now carries on through the lock screen, and no longer falls silent when the ringer switch is set to silent
 
 ## [1.6.0] - 2026-10-07
 

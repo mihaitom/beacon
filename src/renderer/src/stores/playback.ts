@@ -24,6 +24,7 @@ import type { Artist, RadioStation, Song } from '@/types/library'
 import { emitter } from '@/emitter'
 import { i18n } from '@/i18n'
 import { initMediaSession } from '@/services/mediaSession'
+import { initAudioSession } from '@/services/audioSession'
 import { createPositionTracker } from '@/services/playback/positionTracker'
 import { createSequenceGuard } from '@/services/playback/sequenceGuard'
 import { createKeyedGuard } from '@/services/playback/keyedGuard'
@@ -541,6 +542,12 @@ export const usePlaybackStore = defineStore('playback', {
           reportRadioSilence(radioConnectionId, seconds)
         }
       }
+
+      // Declares this page a playback session — what lets local audio carry
+      // on into the next track with the screen locked, see that service's
+      // own comment. Before initMediaSession() so the lock-screen controls
+      // are set up against an already-declared session.
+      initAudioSession()
 
       // OS media keys / lock-screen / GNOME-KDE media widget — see that
       // service's own comment. Works the same whether casting or playing
