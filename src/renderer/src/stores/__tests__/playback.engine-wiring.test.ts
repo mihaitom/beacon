@@ -12,11 +12,15 @@ import { makeSong, makeStatus } from './fixtures'
 import { useRadioMetadataStore } from '../radioMetadata'
 import { useRadioSettingsStore } from '../radioSettings'
 import { reportRadioSilence } from '@/services/connect/radio'
+import { reassertActionHandlers } from '@/services/mediaSession'
 
 vi.mock('@/services/audioEngine', () => ({ getAudioEngine: vi.fn() }))
 // Reaches for navigator.mediaSession, which jsdom has no implementation of
 // — and what it wires is covered by services/mediaSession.ts's own tests.
-vi.mock('@/services/mediaSession', () => ({ initMediaSession: vi.fn() }))
+vi.mock('@/services/mediaSession', () => ({
+  initMediaSession: vi.fn(),
+  reassertActionHandlers: vi.fn(),
+}))
 vi.mock('@/services/connect/radio', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/services/connect/radio')>()
   return { ...actual, reportRadioSilence: vi.fn() }
@@ -48,6 +52,7 @@ interface WiredEngine {
   onReconnectStateChange: ((reconnecting: boolean) => void) | null
   onConnectionLost: (() => void) | null
   onSilence: ((seconds: number) => void) | null
+  onPlaying: (() => void) | null
 }
 
 let engine: WiredEngine
@@ -97,6 +102,7 @@ describe('the store wiring the audio engine', () => {
       onReconnectStateChange: null,
       onConnectionLost: null,
       onSilence: null,
+      onPlaying: null,
     }
     vi.mocked(getAudioEngine).mockReturnValue(
       engine as unknown as ReturnType<typeof getAudioEngine>,
@@ -105,6 +111,14 @@ describe('the store wiring the audio engine', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+  it('registers the lock-screen controls again once sound starts', () => {
+    usePlaybackStore().init()
+
+    engine.onPlaying?.()
+
+    expect(reassertActionHandlers).toHaveBeenCalledOnce()
   })
 
   it('hands the element the restored volume rather than starting at full blast', () => {

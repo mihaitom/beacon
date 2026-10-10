@@ -23,8 +23,7 @@ import type { ConnectDeviceRef, ConnectStatus, PlayResponse } from '@/services/c
 import type { Artist, RadioStation, Song } from '@/types/library'
 import { emitter } from '@/emitter'
 import { i18n } from '@/i18n'
-import { initMediaSession } from '@/services/mediaSession'
-import { initAudioSession } from '@/services/audioSession'
+import { initMediaSession, reassertActionHandlers } from '@/services/mediaSession'
 import { createPositionTracker } from '@/services/playback/positionTracker'
 import { createSequenceGuard } from '@/services/playback/sequenceGuard'
 import { createKeyedGuard } from '@/services/playback/keyedGuard'
@@ -511,6 +510,9 @@ export const usePlaybackStore = defineStore('playback', {
       engine.onEnded = () => {
         if (!this.isCasting) void this.advanceOnSongEnd()
       }
+      // The lock screen's previous/next only appear once registered after
+      // playback has begun - see reassertActionHandlers().
+      engine.onPlaying = () => reassertActionHandlers()
       engine.onError = (message) => {
         console.error('[playback]', message)
         this.isPlaying = false
@@ -542,12 +544,6 @@ export const usePlaybackStore = defineStore('playback', {
           reportRadioSilence(radioConnectionId, seconds)
         }
       }
-
-      // Declares this page a playback session — what lets local audio carry
-      // on into the next track with the screen locked, see that service's
-      // own comment. Before initMediaSession() so the lock-screen controls
-      // are set up against an already-declared session.
-      initAudioSession()
 
       // OS media keys / lock-screen / GNOME-KDE media widget — see that
       // service's own comment. Works the same whether casting or playing
@@ -1644,13 +1640,15 @@ export const usePlaybackStore = defineStore('playback', {
       } else if (
         this.currentSong &&
         this.activeLocalStream &&
-        this.activeLocalStream.quality.format !== 'original'
+        this.activeLocalStream.quality.format !== 'original' &&
+        !prefersHls()
       ) {
         // A transcode has no length to seek within — the position is
         // fetched rather than scrubbed to. See startLocalSong(), which
         // explains why, and note that the byte-range seek this replaces
         // already re-ran ffmpeg from the target second: the cost is the
-        // same, only the arithmetic in between is gone.
+        // same, only the arithmetic in between is gone. Not as HLS, whose
+        // playlist covers the whole track and is seeked in like a file.
         this.startLocalSong(this.currentSong, position, this.isPlaying)
       } else {
         getAudioEngine().seek(position)
@@ -1713,7 +1711,7 @@ export const usePlaybackStore = defineStore('playback', {
     /** Starts (or, with `autoplay: false`, only loads) `song` on the local
      * element at `position`.
      *
-     * The one place that decides between the two ways a local stream can
+     * The one place that decides between the ways a local stream can
      * be positioned, so every caller gets the same answer:
      *
      * - The untouched file is served by the media server with a real
@@ -1726,6 +1724,12 @@ export const usePlaybackStore = defineStore('playback', {
      *   position is a fresh request that starts there (see playFrom() and
      *   routes/local_stream.py's `start`), and the format is free to be
      *   whatever sounds best per bit.
+     * - The same transcode as HLS (WebKit only, see prefersHls()) is a
+     *   playlist of the whole track, so it is played like the file: the
+     *   element seeks in it, and its clock is the song's. That clock is
+     *   what an iPhone's lock screen shows and scrubs, whatever position
+     *   the page reports (see connect/core/hls.py). `start` only says
+     *   where to begin.
      *
      * A transcode costs nothing extra for this: a byte-range seek already
      * started a new ffmpeg at the requested second, so the same work
@@ -1736,9 +1740,10 @@ export const usePlaybackStore = defineStore('playback', {
       const url = this.localStreamUrl(song, hls)
       const gain = this.replayGainMultiplier
       const engine = getAudioEngine()
-      if (this.activeLocalStream?.quality.format === 'original') {
-        if (autoplay) engine.play(url, position, gain)
-        else engine.load(url, position, gain)
+      if (this.activeLocalStream?.quality.format === 'original' || hls) {
+        const src = hls ? `${url}&start=${Math.max(0, position).toFixed(3)}` : url
+        if (autoplay) engine.play(src, position, gain)
+        else engine.load(src, position, gain)
         return
       }
       // `start` on every request, including the one for the beginning: its
@@ -1747,16 +1752,15 @@ export const usePlaybackStore = defineStore('playback', {
       // element a length to seek against for as long as the track played
       // from the top.
       const urlFor = (seconds: number): string => `${url}&start=${Math.max(0, seconds).toFixed(3)}`
-      // A transcoded stream declares no length (or, as HLS, only that of
-      // what is left from `position`), so the element never reports the
-      // track's duration. The library already knows how long the
+      // A transcoded stream declares no length, so the element never
+      // reports the track's duration. The library already knows how long the
       // track is — and the engine needs the same number for a second
       // reason: without it, a stream cut off mid-track is indistinguishable
       // from one that finished, and the next song starts instead of the
       // connection being picked back up (see playFrom()).
       const duration = song.duration ?? 0
-      if (autoplay) engine.playFrom(urlFor, position, gain, duration || null, hls)
-      else engine.loadFrom(urlFor, position, gain, duration || null, hls)
+      if (autoplay) engine.playFrom(urlFor, position, gain, duration || null)
+      else engine.loadFrom(urlFor, position, gain, duration || null)
       this.duration = duration
     },
 

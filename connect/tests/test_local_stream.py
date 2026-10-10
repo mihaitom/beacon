@@ -872,9 +872,7 @@ def _hls_requests(client, default_session, urls: list[str], info=None, chunks=No
     return responses, procs
 
 
-def test_the_hls_playlist_lists_the_track_from_start_with_the_query_on_every_uri(
-    client, default_session
-):
+def test_the_hls_playlist_lists_the_whole_track_and_begins_at_start(client, default_session):
     (response,), procs = _hls_requests(
         client, default_session, ["/stream/local/1/hls/index.m3u8?fmt=aac&br=192&start=60"]
     )
@@ -883,11 +881,16 @@ def test_the_hls_playlist_lists_the_track_from_start_with_the_query_on_every_uri
     assert response.headers["content-type"].startswith("application/vnd.apple.mpegurl")
     text = response.text
     durations = [float(line[8:-1]) for line in text.splitlines() if line.startswith("#EXTINF:")]
-    assert sum(durations) == pytest.approx(_DURATION - 60)
+    assert sum(durations) == pytest.approx(_DURATION)
+    assert "#EXT-X-START:TIME-OFFSET=60.000,PRECISE=YES" in text
     assert '#EXT-X-MAP:URI="init.mp4?fmt=aac&br=192&start=60"' in text
     assert "0.m4s?fmt=aac&br=192&start=60" in text
+    # Encoding starts at the boundary of the segment holding 60s.
     cmd = procs[0][0]
-    assert cmd[cmd.index("-ss") + 1] == "60.000"
+    begins_at = float(cmd[cmd.index("-ss") + 1])
+    segment = durations[0]
+    assert begins_at <= 60 < begins_at + segment
+    assert begins_at / segment == pytest.approx(round(begins_at / segment))
     assert cmd.index("-ss") < cmd.index("-i")
     assert cmd[cmd.index("-f") + 1] == "mp4"
 
@@ -931,9 +934,9 @@ def test_the_hls_segments_of_one_stream_come_from_one_encode(client, default_ses
     assert len(procs) == 1
 
 
-def test_a_seek_stops_the_encode_of_the_position_it_left(client, default_session):
-    """Each position is its own playlist, and the one before it would
-    otherwise encode on to the end of the track for nobody."""
+def test_another_quality_stops_the_encode_of_the_one_it_replaced(client, default_session):
+    """The old one would otherwise encode on to the end of the track for
+    nobody. A different track keeps its own."""
     client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
     default_session.authenticated = True
     procs: list[_FakeProc] = []
@@ -954,7 +957,7 @@ def test_a_seek_stops_the_encode_of_the_position_it_left(client, default_session
     ):
         client.get("/stream/local/1/hls/index.m3u8?fmt=aac&br=192&start=0")
         client.get("/stream/local/2/hls/index.m3u8?fmt=aac&br=192&start=0")
-        client.get("/stream/local/1/hls/index.m3u8?fmt=aac&br=192&start=90")
+        client.get("/stream/local/1/hls/index.m3u8?fmt=opus&br=128&start=0")
 
     assert procs[0].killed is True
     assert procs[1].killed is False
@@ -970,8 +973,8 @@ async def test_requests_that_arrive_together_share_one_encode(default_session):
         patch("media.SubsonicClient.get_stream_url", lambda self, track_id: "http://nav/x"),
     ):
         first, second = await asyncio.gather(
-            local_stream._hls_encode(default_session, "1", "aac", 192, 0.0),
-            local_stream._hls_encode(default_session, "1", "aac", 192, 0.0),
+            local_stream._hls_transcode(default_session, "1", "aac", 192),
+            local_stream._hls_transcode(default_session, "1", "aac", 192),
         )
 
     assert first is second
@@ -1015,11 +1018,14 @@ def test_an_hls_request_for_an_unknown_format_is_rejected(client, default_sessio
 @pytest.mark.parametrize(
     "query", ["fmt=aac&br=192", "fmt=mp3&br=192", "fmt=flac", "fmt=opus&br=128"]
 )
-def test_an_hls_stream_plays_back_as_the_whole_track_from_start(
-    query, tmp_path, client, default_session
+@pytest.mark.parametrize("start", [2.5, 12.5])
+def test_an_hls_stream_plays_back_as_the_whole_track(
+    query, start, tmp_path, client, default_session
 ):
     """Through the routes, the real probe and a real encode: what a player
-    assembles from the playlist decodes, and lasts as long as it promised."""
+    assembles from the playlist decodes, and lasts as long as it promised.
+    From 12.5s the segments before it come from a second encode, the one a
+    seek back would start."""
     source = tmp_path / "source.wav"
     with wave.open(str(source), "wb") as out:
         out.setnchannels(2)
@@ -1031,12 +1037,12 @@ def test_an_hls_stream_plays_back_as_the_whole_track_from_start(
     base = "/stream/local/1/hls"
 
     with patch("media.SubsonicClient.get_stream_url", lambda self, track_id: str(source)):
-        playlist = client.get(f"{base}/index.m3u8?{query}&start=2.5").text
+        playlist = client.get(f"{base}/index.m3u8?{query}&start={start}").text
         uris = [line for line in playlist.splitlines() if line and not line.startswith("#")]
         parts = (
             []
             if query.startswith("fmt=mp3")
-            else [client.get(f"{base}/init.mp4?{query}&start=2.5")]
+            else [client.get(f"{base}/init.mp4?{query}&start={start}")]
         )
         parts += [client.get(f"{base}/{uri}") for uri in uris]
 
@@ -1070,4 +1076,4 @@ def test_an_hls_stream_plays_back_as_the_whole_track_from_start(
         check=True,
     )
     assert decoded.stderr == b""
-    assert len(decoded.stdout) / 4 / 44100 == pytest.approx(17.5, abs=0.1)
+    assert len(decoded.stdout) / 4 / 44100 == pytest.approx(20.0, abs=0.1)

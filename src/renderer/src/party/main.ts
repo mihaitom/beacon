@@ -10,7 +10,6 @@ import PartyGuestApp from './PartyGuestApp.vue'
 import { i18n } from '../i18n'
 import { emitter } from '../emitter'
 import { beaconTheme } from '../plugins/theme'
-import { initAudioSession } from '../services/audioSession'
 
 // connect puts a fresh nonce into this meta tag for every page it serves
 // and allows exactly that one inline <style> in its CSP (routes/party.py's
@@ -30,7 +29,4 @@ app.use(vuetify)
 app.use(i18n)
 // VisualizerBars reports reduced motion through the app's event bus.
 app.config.globalProperties.$emitter = emitter
-// The guest's listen-along player is a plain <audio> too; the session
-// declaration is what keeps it (and its ringer-switch bypass) working.
-initAudioSession()
 app.mount('#app')

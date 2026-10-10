@@ -534,12 +534,13 @@ async def local_stream(
 # Chromium's own HLS player refuses mp3 segments of either kind, while the
 # plain stream above plays everywhere else.
 #
-# `start` means what it means above: the playlist begins there, and seeking
-# stays a new request rather than a seek within the playlist.
+# Unlike above, `start` does not change what is served: the playlist always
+# lists the whole track and only says where playback begins, and seeking is
+# the player's own, within it - see core/hls.py for why.
 
-_hls_encodes = hls.EncodeRegistry()
-# Encodes being set up, so requests that arrive together - a player fetching
-# two segments at once - share one instead of each starting its own.
+_hls_transcodes = hls.TranscodeRegistry()
+# Transcodes being set up, so requests that arrive together - a player
+# fetching two segments at once - share one instead of each starting its own.
 _hls_pending: dict[tuple, asyncio.Future] = {}
 
 _HLS_SEGMENT_RE = re.compile(r"^(\d+)\.(m4s|mp3)$")
@@ -547,34 +548,34 @@ _HLS_SEGMENT_RE = re.compile(r"^(\d+)\.(m4s|mp3)$")
 
 def reset_hls_encodes() -> None:
     """Stop and drop every HLS encode (tests, shutdown)."""
-    _hls_encodes.clear()
+    _hls_transcodes.clear()
     _hls_pending.clear()
 
 
-async def _hls_encode(
-    session: SessionState, track_id: str, fmt: str, br: int | None, start: float
-) -> hls.Encode | JSONResponse | None:
-    """The encode for this stream, set up if it is not kept already. None
+async def _hls_transcode(
+    session: SessionState, track_id: str, fmt: str, br: int | None
+) -> hls.Transcode | JSONResponse | None:
+    """The transcode for this stream, set up if it is not kept already. None
     when the source's duration or output sample rate is unknown, which a
     playlist cannot be written without."""
     error = _format_error(fmt, br)
     if error is not None:
         return error
-    key = (session.session_id, track_id, fmt, br, round(start, 3))
-    encode = _hls_encodes.get(key)
-    if encode is not None:
-        return encode
+    key = (session.session_id, track_id, fmt, br)
+    transcode = _hls_transcodes.get(key)
+    if transcode is not None:
+        return transcode
     pending = _hls_pending.get(key)
     if pending is None:
-        pending = asyncio.ensure_future(_new_hls_encode(key, session, track_id, fmt, br, start))
+        pending = asyncio.ensure_future(_new_hls_transcode(key, session, track_id, fmt, br))
         _hls_pending[key] = pending
         pending.add_done_callback(lambda _: _hls_pending.pop(key, None))
     return await asyncio.shield(pending)
 
 
-async def _new_hls_encode(
-    key: tuple, session: SessionState, track_id: str, fmt: str, br: int | None, start: float
-) -> hls.Encode | JSONResponse | None:
+async def _new_hls_transcode(
+    key: tuple, session: SessionState, track_id: str, fmt: str, br: int | None
+) -> hls.Transcode | JSONResponse | None:
     source_url = await _resolve_source(session, track_id)
     if isinstance(source_url, JSONResponse):
         return source_url
@@ -589,24 +590,26 @@ async def _new_hls_encode(
         return None
 
     layout = hls.segment_layout(
-        max(0.0, info.duration - start),
-        sample_rate,
-        hls.frame_samples(fmt, FLAC_FRAME_SAMPLES),
+        info.duration, sample_rate, hls.frame_samples(fmt, FLAC_FRAME_SAMPLES)
     )
     packed = hls.is_packed(fmt)
-    cmd = [FFMPEG_BIN, "-hide_banner", "-loglevel", "warning", *http_reconnect_args(source_url)]
-    if start > 0:
-        cmd += ["-ss", f"{start:.3f}"]
-    cmd += ["-i", source_url, "-vn", *args, *hls.container_args(layout, packed), "pipe:1"]
 
-    logger.info(
-        f"[local-hls] {track_id}: {info.codec} → {fmt}{f' {br}k' if br else ''}"
-        f"{f', from {start:.1f}s' if start else ''}, {layout.count} segments"
-    )
-    encode = hls.Encode(cmd, layout, packed, sample_rate)
-    # A seek asks for the same track from somewhere else, and the encode it
-    # replaces would otherwise run on to the end of the track for nobody.
-    return _hls_encodes.add(key, encode, supersedes=lambda other: other[:2] == key[:2])
+    def command(start: float) -> list[str]:
+        cmd = [FFMPEG_BIN, "-hide_banner", "-loglevel", "warning"]
+        cmd += http_reconnect_args(source_url)
+        if start > 0:
+            # A segment boundary: whole encoder frames, not whole milliseconds.
+            cmd += ["-ss", f"{start:.6f}"]
+        cmd += ["-i", source_url, "-vn", *args, *hls.container_args(layout, packed), "pipe:1"]
+        logger.info(
+            f"[local-hls] {track_id}: {info.codec} → {fmt}{f' {br}k' if br else ''}"
+            f"{f', from {start:.1f}s' if start else ''}, {layout.count} segments"
+        )
+        return cmd
+
+    transcode = hls.Transcode(layout, packed, sample_rate, command)
+    # The same track at another quality: what the player switched away from.
+    return _hls_transcodes.add(key, transcode, supersedes=lambda other: other[:2] == key[:2])
 
 
 @router.get("/stream/local/{track_id}/hls/index.m3u8")
@@ -615,19 +618,19 @@ async def local_hls_playlist(
     request: Request,
     fmt: str = Query(description="mp3 | aac | opus | flac"),
     br: int | None = Query(None, description="bitrate in kbps, see ALLOWED_BITRATES; not for flac"),
-    start: float = Query(0.0, ge=0.0, description="seconds the playlist begins at"),
+    start: float = Query(0.0, ge=0.0, description="seconds playback begins at"),
     session: SessionState = Depends(require_authenticated_session),
 ):
-    encode = await _hls_encode(session, track_id, fmt, br, start)
-    if isinstance(encode, JSONResponse):
-        return encode
-    if encode is None:
+    transcode = await _hls_transcode(session, track_id, fmt, br)
+    if isinstance(transcode, JSONResponse):
+        return transcode
+    if transcode is None:
         # Nothing to write a playlist from. The plain stream still plays,
         # which beats refusing the track outright.
         return RedirectResponse(f"../../{quote(track_id, safe='')}?{request.url.query}", 307)
-    encode.start()
+    transcode.begin_at(start)
     return Response(
-        hls.playlist(encode.layout, encode.packed, request.url.query),
+        hls.playlist(transcode.layout, transcode.packed, request.url.query, start),
         media_type="application/vnd.apple.mpegurl",
         headers={"Cache-Control": "no-store"},
     )
@@ -638,13 +641,12 @@ async def local_hls_init(
     track_id: str,
     fmt: str = Query(),
     br: int | None = Query(None),
-    start: float = Query(0.0, ge=0.0),
     session: SessionState = Depends(require_authenticated_session),
 ):
-    encode = await _hls_encode(session, track_id, fmt, br, start)
-    if isinstance(encode, JSONResponse):
-        return encode
-    init = None if encode is None or encode.packed else await encode.init_segment()
+    transcode = await _hls_transcode(session, track_id, fmt, br)
+    if isinstance(transcode, JSONResponse):
+        return transcode
+    init = None if transcode is None or transcode.packed else await transcode.init_segment()
     if init is None:
         return JSONResponse({"error": "No init segment"}, status_code=404)
     return Response(init, media_type="audio/mp4", headers={"Cache-Control": "no-store"})
@@ -656,22 +658,21 @@ async def local_hls_segment(
     segment: str,
     fmt: str = Query(),
     br: int | None = Query(None),
-    start: float = Query(0.0, ge=0.0),
     session: SessionState = Depends(require_authenticated_session),
 ):
     match = _HLS_SEGMENT_RE.match(segment)
     if match is None:
         return JSONResponse({"error": f"Unknown segment '{segment}'"}, status_code=404)
-    encode = await _hls_encode(session, track_id, fmt, br, start)
-    if isinstance(encode, JSONResponse):
-        return encode
-    if encode is None or match.group(2) != hls.segment_extension(encode.packed):
+    transcode = await _hls_transcode(session, track_id, fmt, br)
+    if isinstance(transcode, JSONResponse):
+        return transcode
+    if transcode is None or match.group(2) != hls.segment_extension(transcode.packed):
         return JSONResponse({"error": f"Unknown segment '{segment}'"}, status_code=404)
-    body = await encode.segment(int(match.group(1)))
+    body = await transcode.segment(int(match.group(1)))
     if body is None:
         return JSONResponse({"error": f"Segment {segment} was not produced"}, status_code=404)
     return Response(
         body,
-        media_type="audio/mpeg" if encode.packed else "audio/mp4",
+        media_type="audio/mpeg" if transcode.packed else "audio/mp4",
         headers={"Cache-Control": "no-store"},
     )

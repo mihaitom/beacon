@@ -154,3 +154,46 @@ describe('lock-screen position', () => {
     expect(navigator.mediaSession.playbackState).toBe('playing')
   })
 })
+
+describe('lock-screen controls', () => {
+  async function startAndReassert(): Promise<ReturnType<typeof vi.fn>> {
+    vi.resetModules()
+    const { initMediaSession, reassertActionHandlers } = await import('@/services/mediaSession')
+    initMediaSession()
+    const setActionHandler = vi.mocked(navigator.mediaSession.setActionHandler)
+    setActionHandler.mockClear()
+    reassertActionHandlers()
+    return setActionHandler
+  }
+
+  function registered(setActionHandler: ReturnType<typeof vi.fn>): Record<string, unknown> {
+    return Object.fromEntries(
+      setActionHandler.mock.calls.map(([action, handler]) => [action, handler]),
+    )
+  }
+
+  it('registers previous/next and the rest again once sound starts', async () => {
+    const handlers = registered(await startAndReassert())
+
+    for (const action of ['play', 'pause', 'previoustrack', 'nexttrack', 'seekto']) {
+      expect(handlers[action]).toBeTypeOf('function')
+    }
+  })
+
+  it('keeps previous/next withdrawn for a station', async () => {
+    playback.radioStation = { name: 'Station' }
+
+    const handlers = registered(await startAndReassert())
+
+    expect(handlers.nexttrack).toBeNull()
+    expect(handlers.play).toBeTypeOf('function')
+  })
+
+  it('still reaches the queue from a handler registered again', async () => {
+    const handlers = registered(await startAndReassert())
+
+    ;(handlers.nexttrack as () => void)()
+
+    expect(playback.playNext).toHaveBeenCalled()
+  })
+})

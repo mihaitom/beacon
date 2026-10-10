@@ -1474,22 +1474,39 @@ describe('playback transport', () => {
       expect(duration).toBe(playback.currentSong!.duration)
     })
 
-    /** Which shape the same transcode arrives in matters to the engine as
-     * well: only an HLS playlist says how many seconds it is holding, and
-     * so only that one has a buffered band to report (see the engine's
-     * reportBuffered()). */
-    it('says whether the transcode is an HLS playlist or one plain stream', () => {
-      const playback = playingTranscoded({ format: 'aac', bitrate: 192 })
-      vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('maybe')
-      const vendor = vi.spyOn(navigator, 'vendor', 'get')
+    /** WebKit gets the same transcode as an HLS playlist of the whole track
+     * (see prefersHls()), and an iPhone's lock screen shows and scrubs that
+     * element's own clock - so it is played and seeked like the file, with
+     * `start` only saying where to begin. */
+    describe('as HLS on WebKit', () => {
+      beforeEach(() => {
+        vi.spyOn(HTMLMediaElement.prototype, 'canPlayType').mockReturnValue('maybe')
+        vi.spyOn(navigator, 'vendor', 'get').mockReturnValue('Apple Computer, Inc.')
+      })
 
-      vendor.mockReturnValue('Apple Computer, Inc.')
-      playback.startLocalSong(playback.currentSong!, 0, true)
-      expect(engine.playFrom.mock.calls.at(-1)![4]).toBe(true)
+      it('is played like the file, from where it was asked to begin', () => {
+        const playback = playingTranscoded({ format: 'aac', bitrate: 192 })
 
-      vendor.mockReturnValue('Google Inc.')
-      playback.startLocalSong(playback.currentSong!, 0, true)
-      expect(engine.playFrom.mock.calls.at(-1)![4]).toBe(false)
+        playback.startLocalSong(playback.currentSong!, 73.5, true)
+
+        expect(engine.playFrom).not.toHaveBeenCalled()
+        const [url, position] = engine.play.mock.calls.at(-1)!
+        expect(url).toContain('start=73.500')
+        expect(position).toBe(73.5)
+      })
+
+      it('is seeked in place rather than fetched again', async () => {
+        const playback = playingTranscoded({ format: 'aac', bitrate: 192 })
+        playback.startLocalSong(playback.currentSong!, 0, true)
+        playback.isPlaying = true
+        engine.play.mockClear()
+
+        await playback.seek(42)
+
+        expect(engine.seek).toHaveBeenCalledWith(42)
+        expect(engine.play).not.toHaveBeenCalled()
+        expect(engine.playFrom).not.toHaveBeenCalled()
+      })
     })
 
     /** A transcode declares no duration, so the element never reports one.

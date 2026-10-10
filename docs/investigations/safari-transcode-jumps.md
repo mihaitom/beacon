@@ -119,3 +119,27 @@ Audio there (see `webAudioAllowed()` in services/audioEngine.ts) - on a phone it
 does not. WebKit has a history of `createMediaElementSource()` giving silence
 for HLS sources. No Mac was available to check whether that still holds; if
 it does, a transcode on a Mac would play silent rather than jump.
+
+## Follow-up 2026-10-10: the lock screen scrubber went back to 0:00
+
+**Status: fixed, confirmed on the phone the same day.**
+
+With a transcode on an iPhone, scrubbing on the lock screen (or seeking in the
+app) showed the lock screen's position back at the start, although the app
+itself was right.
+
+- **Why:** WebKit overwrites the position a page reports through
+  `navigator.mediaSession.setPositionState()` with the element's own
+  `currentTime` whenever the element's position changes
+  (`MediaElementSession::clientCharacteristicsChanged` in WebKit's source). A
+  seek fetched a new playlist that *began* at the target second, so the
+  element's clock was at 0:00 there.
+- **Ruled out: moving the segments' timestamps onto the song's own** (`tfdt`
+  in fMP4, the ID3 timestamp for packed mp3). Did not change the element's
+  clock on the phone. Apple's own word on it: a client may assume no relation
+  between the first segment's timestamp and the presentation time.
+- **Fix:** the playlist always lists the whole track and says where to begin
+  with `EXT-X-START`; the element seeks in it like in a file. A segment no
+  running encode is about to reach starts an encode from that segment on, and
+  the timestamp shift above is kept for that: segments of two encodes in one
+  playlist line up (checked against a real ffmpeg in `connect/tests/test_hls.py`).

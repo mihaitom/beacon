@@ -459,6 +459,16 @@ describe('AudioEngine', () => {
       expect(onError).toHaveBeenCalledWith('Playback error: connection lost')
     })
 
+    it('says so each time the element starts producing sound', () => {
+      const onPlaying = vi.fn()
+      engine.onPlaying = onPlaying
+      engine.play('song.mp3')
+
+      audio.dispatchEvent(new Event('playing'))
+
+      expect(onPlaying).toHaveBeenCalledOnce()
+    })
+
     it('resets the attempt count once a reconnect actually succeeds', async () => {
       const onError = vi.fn()
       engine.onError = onError
@@ -1667,35 +1677,6 @@ describe('AudioEngine', () => {
       const onBufferedChange = vi.fn()
       playingAt()
       engine.onBufferedChange = onBufferedChange
-      audio.setBuffered([[0, 45]])
-
-      audio.dispatchEvent(new Event('progress'))
-
-      expect(onBufferedChange).toHaveBeenLastCalledWith(0)
-    })
-
-    it("draws one for the same transcode as HLS, in the song's own time", () => {
-      // The opposite case: a VOD playlist lists every segment's duration
-      // up front (connect/core/hls.py), so these seconds are real — they
-      // are just counted from the playlist's own start, which is the 180s
-      // this began at.
-      const onBufferedChange = vi.fn()
-      engine.playFrom(urlFor, 180, 1, 600, true)
-      engine.onBufferedChange = onBufferedChange
-      audio.settleAt(20)
-      audio.setBuffered([[0, 45]])
-
-      audio.dispatchEvent(new Event('progress'))
-
-      expect(onBufferedChange).toHaveBeenLastCalledWith(225)
-    })
-
-    it('stops drawing one once a plain stream follows an HLS one', () => {
-      const onBufferedChange = vi.fn()
-      engine.playFrom(urlFor, 180, 1, 600, true)
-      engine.playFrom(urlFor, 180, 1, 600)
-      engine.onBufferedChange = onBufferedChange
-      audio.settleAt(20)
       audio.setBuffered([[0, 45]])
 
       audio.dispatchEvent(new Event('progress'))

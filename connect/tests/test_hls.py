@@ -71,6 +71,24 @@ def test_the_playlist_carries_the_query_on_every_uri():
     assert text.rstrip().endswith("#EXT-X-ENDLIST")
 
 
+def test_a_playlist_beginning_partway_still_lists_the_whole_track():
+    """The element's clock is the playlist's, and the lock screen shows that
+    clock - so a position to begin at goes in as a start point, never as a
+    shorter playlist (see the module docstring)."""
+    layout = hls.segment_layout(200.0, 44100, 1024)
+
+    text = hls.playlist(layout, packed=False, query="", start=93.25)
+
+    assert "#EXT-X-START:TIME-OFFSET=93.250,PRECISE=YES" in text
+    assert text.count("#EXTINF:") == layout.count
+
+
+def test_a_playlist_from_the_top_has_no_start_point():
+    text = hls.playlist(hls.segment_layout(20.0, 44100, 1024), packed=False, query="")
+
+    assert "EXT-X-START" not in text
+
+
 def test_a_packed_playlist_has_no_init_segment():
     text = hls.playlist(hls.segment_layout(20.0, 44100, 1152), packed=True, query="q=1")
 
@@ -109,6 +127,40 @@ def test_fmp4_is_split_into_an_init_and_one_segment_per_fragment():
     assert segments == fragments
 
 
+def _moof_with_tfdt(ticks: int, version: int = 1) -> bytes:
+    value = struct.pack(">q" if version == 1 else ">I", ticks)
+    return _box(b"moof", _box(b"tfdt", bytes([version, 0, 0, 0]) + value) + b"trailer")
+
+
+@pytest.mark.parametrize("version", [0, 1])
+def test_the_fragment_timeline_is_moved_onto_the_tracks_own(version):
+    """ffmpeg's fragmented output starts the media timeline at 0 whatever it
+    skipped (no flag moves it), so the splitter restores the track's own -
+    segments of one playlist from different encodes have to line up."""
+    start_ticks = round(5.0 * 44100)
+    init = _box(b"ftyp") + _box(b"moov")
+    split = hls.Fmp4Splitter(start_ticks=start_ticks)
+
+    got_init, segments = split.feed(
+        init + _moof_with_tfdt(265216, version) + _box(b"mdat", b"x" * 8)
+    )
+
+    assert got_init == init
+    at = segments[0].find(b"tfdt") + 8
+    width = 8 if version == 1 else 4
+    moved = int.from_bytes(segments[0][at : at + width], "big", signed=version == 1)
+    assert moved == 265216 + start_ticks
+
+
+def test_a_splitter_with_no_offset_leaves_the_tfdt_alone():
+    init = _box(b"ftyp") + _box(b"moov")
+    split = hls.Fmp4Splitter()
+
+    _, segments = split.feed(init + _moof_with_tfdt(1234) + _box(b"mdat", b"x" * 8))
+
+    assert segments[0] == _moof_with_tfdt(1234) + _box(b"mdat", b"x" * 8)
+
+
 def _mp3_frame(fill: int) -> bytes:
     # MPEG-1 Layer III, 128 kbps, 44.1 kHz, no padding: 417 bytes.
     return bytes.fromhex("fffb9064") + bytes([fill]) * 413
@@ -138,6 +190,18 @@ def test_mp3_is_packed_into_frames_per_segment_behind_their_timestamp():
     ]
     tag = len(hls.id3_timestamp(0))
     assert [s[tag:] for s in segments] == [b"".join(frames[0:3]), b"".join(frames[3:6]), frames[6]]
+
+
+def test_the_packed_timestamp_is_counted_from_the_tracks_first_frame():
+    """The same shift as the fMP4 path, on the ID3 timestamp a packed-audio
+    segment carries instead."""
+    frames = [_mp3_frame(i) for i in range(4)]
+    packer = hls.Mp3Packer(frames_per_segment=3, sample_rate=44100, first_frame=6)
+
+    segments = packer.feed(b"".join(frames))[1] + packer.flush()
+
+    frame = 1152 * 90000 / 44100
+    assert [_id3_pts(s) for s in segments] == [round(6 * frame), round(9 * frame)]
 
 
 def test_an_mp3_stream_that_loses_sync_is_an_error():
@@ -202,9 +266,9 @@ async def _settle():
         await asyncio.sleep(0)
 
 
-def _encode(count_seconds: float = 18.0) -> hls.Encode:
+def _encode(count_seconds: float = 18.0, first: int = 0) -> hls.Encode:
     layout = hls.segment_layout(count_seconds, 44100, 1024)
-    return hls.Encode(["ffmpeg"], layout, packed=False, sample_rate=44100)
+    return hls.Encode(["ffmpeg"], layout, packed=False, sample_rate=44100, first=first)
 
 
 async def test_a_segment_is_answered_once_the_encoder_reaches_it():
@@ -243,6 +307,30 @@ async def test_the_last_segment_is_everything_the_encode_made_from_there_on():
     encode.close()
 
 
+async def test_a_packed_last_segment_carries_one_timestamp_however_much_it_holds():
+    """The source ran a segment longer than reported: the frames of that
+    extra segment go on the end of the last listed one, without the
+    timestamp tag that would otherwise sit in the middle of the audio."""
+    spawner = _Spawner()
+    seconds = 3 * 1152 / 44100
+    layout = hls.SegmentLayout(
+        frames_per_segment=3, segment_seconds=seconds, count=2, last_seconds=seconds
+    )
+    encode = hls.Encode(["ffmpeg"], layout, packed=True, sample_rate=44100)
+    frames = [_mp3_frame(i) for i in range(9)]
+    with patch("asyncio.create_subprocess_exec", spawner):
+        pending = asyncio.create_task(encode.segment(1))
+        await _settle()
+        spawner.procs[0].queue.put_nowait(b"".join(frames))
+        spawner.procs[0].queue.put_nowait(b"")
+
+        last = await _within(pending)
+
+    assert last.count(b"ID3") == 1
+    assert last[len(hls.id3_timestamp(0)) :] == b"".join(frames[3:])
+    encode.close()
+
+
 async def test_a_segment_the_encode_never_made_is_none():
     spawner = _Spawner()
     encode = _encode(18.0)
@@ -277,6 +365,37 @@ async def test_a_closed_encode_answers_a_waiting_request_with_nothing_and_stays_
         assert len(spawner.procs) == 1
 
 
+async def test_an_encode_from_a_later_segment_answers_by_the_tracks_numbering():
+    spawner = _Spawner()
+    encode = _encode(60.0, first=4)
+    chunks = _fmp4(2)
+    with patch("asyncio.create_subprocess_exec", spawner):
+        pending = asyncio.create_task(encode.segment(5))
+        await _settle()
+        spawner.procs[0].queue.put_nowait(b"".join(chunks))
+
+        assert await _within(pending) == chunks[2]
+        assert await encode.segment(4) == chunks[1]
+        assert await encode.segment(3) is None
+    encode.close()
+
+
+async def test_an_encode_covers_what_it_has_and_what_it_is_about_to_make():
+    spawner = _Spawner()
+    encode = _encode(120.0, first=4)
+    with patch("asyncio.create_subprocess_exec", spawner):
+        encode.start()
+        await _settle()
+        spawner.procs[0].queue.put_nowait(b"".join(_fmp4(2)))
+        await _settle()
+
+        assert not encode.covers(3)
+        assert encode.covers(5)
+        assert encode.covers(5 + hls.REUSE_AHEAD_SEGMENTS)
+        assert not encode.covers(6 + hls.REUSE_AHEAD_SEGMENTS)
+    encode.close()
+
+
 async def test_a_failed_encode_answers_nothing():
     spawner = _Spawner(returncode=1)
     encode = _encode()
@@ -290,47 +409,199 @@ async def test_a_failed_encode_answers_nothing():
     encode.close()
 
 
+# ── Transcode ───────────────────────────────────────────────────────────────
+
+
+class _Commands:
+    """The command factory a Transcode is given, recording each start."""
+
+    def __init__(self):
+        self.starts: list[float] = []
+
+    def __call__(self, start: float) -> list[str]:
+        self.starts.append(start)
+        return ["ffmpeg", "-ss", str(start)]
+
+
+def _transcode(seconds: float = 120.0) -> tuple[hls.Transcode, _Commands]:
+    commands = _Commands()
+    layout = hls.segment_layout(seconds, 44100, 1024)
+    return hls.Transcode(layout, False, 44100, commands), commands
+
+
+async def test_playback_beginning_partway_is_encoded_from_its_segment():
+    spawner = _Spawner()
+    transcode, commands = _transcode()
+    seg = transcode.layout.segment_seconds
+    with patch("asyncio.create_subprocess_exec", spawner):
+        transcode.begin_at(3.5 * seg)
+        await _settle()
+
+        assert commands.starts == [3 * seg]
+        assert len(spawner.procs) == 1
+    transcode.close()
+
+
+async def test_the_next_segments_wait_for_the_encode_already_running():
+    spawner = _Spawner()
+    transcode, commands = _transcode()
+    chunks = _fmp4(3)
+    with patch("asyncio.create_subprocess_exec", spawner):
+        first = asyncio.create_task(transcode.segment(0))
+        second = asyncio.create_task(transcode.segment(1))
+        await _settle()
+        spawner.procs[0].queue.put_nowait(b"".join(chunks))
+
+        assert await _within(first) == chunks[1]
+        assert await _within(second) == chunks[2]
+        assert commands.starts == [0.0]
+    transcode.close()
+
+
+async def test_a_seek_past_what_is_coming_starts_an_encode_from_there():
+    spawner = _Spawner()
+    transcode, commands = _transcode()
+    seg = transcode.layout.segment_seconds
+    far = 1 + hls.REUSE_AHEAD_SEGMENTS + 5
+    with patch("asyncio.create_subprocess_exec", spawner):
+        asyncio.create_task(transcode.segment(0))
+        await _settle()
+        pending = asyncio.create_task(transcode.segment(far))
+        await _settle()
+        spawner.procs[1].queue.put_nowait(b"".join(_fmp4(1)))
+
+        assert commands.starts == [0.0, far * seg]
+        assert await _within(pending) == _fmp4(1)[1]
+        assert not spawner.procs[0].killed
+    transcode.close()
+
+
+async def test_a_seek_back_starts_an_encode_from_there_too():
+    spawner = _Spawner()
+    transcode, commands = _transcode()
+    seg = transcode.layout.segment_seconds
+    with patch("asyncio.create_subprocess_exec", spawner):
+        transcode.begin_at(10 * seg)
+        await _settle()
+        asyncio.create_task(transcode.segment(2))
+        await _settle()
+
+        assert commands.starts == [10 * seg, 2 * seg]
+    transcode.close()
+
+
+async def test_the_encode_used_longest_ago_is_closed_beyond_the_limit():
+    """A stale request from before a seek may start an encode of its own; it
+    must not close the one the player is waiting on now."""
+    spawner = _Spawner()
+    transcode, _ = _transcode(600.0)
+    with patch("asyncio.create_subprocess_exec", spawner):
+        for index in (0, 40, 80):
+            transcode.begin_at(index * transcode.layout.segment_seconds)
+            await _settle()
+
+        assert [proc.killed for proc in spawner.procs] == [True, False, False]
+        transcode.close()
+        await _settle()
+        assert all(proc.killed for proc in spawner.procs)
+
+
+async def test_an_encode_still_being_asked_for_is_not_the_one_closed():
+    spawner = _Spawner()
+    transcode, _ = _transcode(600.0)
+    seg = transcode.layout.segment_seconds
+    with patch("asyncio.create_subprocess_exec", spawner):
+        transcode.begin_at(0)
+        transcode.begin_at(40 * seg)
+        await _settle()
+        asyncio.create_task(transcode.segment(1))
+        await _settle()
+
+        transcode.begin_at(80 * seg)
+        await _settle()
+
+        assert [proc.killed for proc in spawner.procs] == [False, True, False]
+        transcode.close()
+        await _settle()
+
+
+async def test_a_segment_outside_the_track_is_none():
+    transcode, commands = _transcode(18.0)
+
+    assert await transcode.segment(transcode.layout.count) is None
+    assert await transcode.segment(-1) is None
+    assert commands.starts == []
+
+
+async def test_the_init_segment_comes_from_the_encode_playback_began_with():
+    spawner = _Spawner()
+    transcode, commands = _transcode()
+    seg = transcode.layout.segment_seconds
+    chunks = _fmp4(1)
+    with patch("asyncio.create_subprocess_exec", spawner):
+        transcode.begin_at(5 * seg)
+        pending = asyncio.create_task(transcode.init_segment())
+        await _settle()
+        spawner.procs[0].queue.put_nowait(b"".join(chunks))
+
+        assert await _within(pending) == chunks[0]
+        assert commands.starts == [5 * seg]
+    transcode.close()
+
+
 # ── Registry ────────────────────────────────────────────────────────────────
 
 
-async def test_a_new_encode_closes_the_ones_it_supersedes():
+async def test_a_new_transcode_closes_the_ones_it_supersedes():
     spawner = _Spawner()
-    registry = hls.EncodeRegistry()
+    registry = hls.TranscodeRegistry()
     with patch("asyncio.create_subprocess_exec", spawner):
-        old = registry.add(("s", "track", 0.0), _encode(), supersedes=lambda key: False)
-        other = registry.add(("s", "other", 0.0), _encode(), supersedes=lambda key: False)
-        old.start()
-        other.start()
+        old = registry.add(("s", "track", "aac"), _transcode()[0], supersedes=lambda key: False)
+        other = registry.add(("s", "other", "aac"), _transcode()[0], supersedes=lambda key: False)
+        old.begin_at(0)
+        other.begin_at(0)
         await _settle()
 
         registry.add(
-            ("s", "track", 60.0), _encode(), supersedes=lambda key: key[:2] == ("s", "track")
+            ("s", "track", "opus"),
+            _transcode()[0],
+            supersedes=lambda key: key[:2] == ("s", "track"),
         )
         await _settle()
 
         assert spawner.procs[0].killed
         assert not spawner.procs[1].killed
-        assert registry.get(("s", "track", 0.0)) is None
-        assert registry.get(("s", "other", 0.0)) is other
+        assert registry.get(("s", "track", "aac")) is None
+        assert registry.get(("s", "other", "aac")) is other
     registry.clear()
 
 
-async def test_a_failed_encode_is_not_handed_out_again():
-    registry = hls.EncodeRegistry()
-    encode = registry.add("key", _encode(), supersedes=lambda key: False)
-    encode.failed = True
+async def test_a_failed_transcode_is_not_handed_out_again():
+    spawner = _Spawner(returncode=1)
+    registry = hls.TranscodeRegistry()
+    transcode = registry.add("key", _transcode()[0], supersedes=lambda key: False)
+    with patch("asyncio.create_subprocess_exec", spawner):
+        pending = asyncio.create_task(transcode.segment(0))
+        await _settle()
+        spawner.procs[0].queue.put_nowait(b"")
+        await _within(pending)
 
     assert registry.get("key") is None
     registry.clear()
 
 
-async def test_an_idle_encode_is_closed():
-    registry = hls.EncodeRegistry()
-    encode = registry.add("key", _encode(), supersedes=lambda key: False)
-    encode.touched_at -= hls.IDLE_SECONDS + 1
+async def test_an_idle_transcode_is_closed():
+    spawner = _Spawner()
+    registry = hls.TranscodeRegistry()
+    transcode = registry.add("key", _transcode()[0], supersedes=lambda key: False)
+    with patch("asyncio.create_subprocess_exec", spawner):
+        transcode.begin_at(0)
+        await _settle()
+        transcode.touched_at -= hls.IDLE_SECONDS + 1
 
-    assert registry.get("key") is None
-    assert encode._spool.closed
+        assert registry.get("key") is None
+        await _settle()
+        assert spawner.procs[0].killed
 
 
 # ── Against a real ffmpeg ───────────────────────────────────────────────────
@@ -391,6 +662,46 @@ async def test_every_fmp4_segment_holds_exactly_the_frames_it_was_listed_with(fm
     for segment in segments[:-1]:
         assert _trun_sample_count(segment) == encode.layout.frames_per_segment
     encode.close()
+
+
+def _tfdt(segment: bytes) -> int:
+    index = segment.index(b"tfdt")
+    width = 8 if segment[index + 4] == 1 else 4
+    return int.from_bytes(segment[index + 8 : index + 8 + width], "big")
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="needs a real ffmpeg")
+@pytest.mark.parametrize("fmt", ["aac", "opus", "flac", "mp3"])
+async def test_an_encode_begun_at_a_later_segment_lines_up_with_one_from_the_top(fmt, tmp_path):
+    """What lets one playlist hand out segments of two encodes: the one begun
+    after a seek carries the timestamps and the frame count the encode from
+    the top has for the same segment."""
+    source = tmp_path / "source.wav"
+    _write_noise_wav(source, 31.0)
+    args, rate = _args_for(fmt)
+    layout = hls.segment_layout(31.0, rate, hls.frame_samples(fmt, FLAC_FRAME_SAMPLES))
+    packed = hls.is_packed(fmt)
+
+    def encode_from(first: int) -> hls.Encode:
+        cmd = [shutil.which("ffmpeg"), "-hide_banner", "-loglevel", "error"]
+        if first:
+            cmd += ["-ss", f"{first * layout.segment_seconds:.6f}"]
+        cmd += ["-i", str(source), "-vn", *args, *hls.container_args(layout, packed), "pipe:1"]
+        return hls.Encode(cmd, layout, packed, rate, first)
+
+    whole, seeked = encode_from(0), encode_from(2)
+    expected, got = await whole.segment(2), await seeked.segment(2)
+    following = await seeked.segment(3)
+
+    if packed:
+        assert _id3_pts(got) == _id3_pts(expected)
+        assert _id3_pts(following) == _id3_pts(await whole.segment(3))
+    else:
+        assert _tfdt(got) == _tfdt(expected)
+        assert _trun_sample_count(got) == layout.frames_per_segment
+        assert _tfdt(following) == _tfdt(await whole.segment(3))
+    whole.close()
+    seeked.close()
 
 
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="needs a real ffmpeg")

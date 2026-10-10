@@ -229,12 +229,6 @@ export class AudioEngine {
   // seek back to, so the URL itself has to be asked for again at the
   // position playback had reached.
   private offsetStream = false
-  // Whether that offset stream is an HLS playlist rather than one
-  // continuous length-less response. Only reportBuffered() asks: a VOD
-  // playlist lists every segment's real duration (core/hls.py), so the
-  // element's `buffered` there is media time worth drawing, while the
-  // plain stream's is not.
-  private hlsStream = false
   // How an offset stream's URL is built for a given second. Held so a
   // reconnect can ask for the same stream again from where it dropped —
   // see reconnectOnDrop(). Null for every other kind of source.
@@ -265,10 +259,6 @@ export class AudioEngine {
   // alongside — the playhead, the track length — is in reported time, and
   // reporting them unshifted put the band three minutes behind the
   // playhead, where SongWaveform.vue's own clamp then hid it entirely.
-  // An HLS transcode is what that shift is actually for (see
-  // reportBuffered()); of the other two, a live stream has the whole seek
-  // bar replaced by RadioLiveStatus.vue and a continuous transcode
-  // reports no band at all.
   private positionOffset = 0
   // The track's real length, for an offset stream that carries none of its
   // own (see playFrom()). Only ever used to tell a stream that ended from
@@ -331,6 +321,9 @@ export class AudioEngine {
    * relay could notice it, and a held connection (LIVE_HOLD_SECONDS) rides
    * it out without an event of its own. */
   onSilence: ((seconds: number) => void) | null = null
+  /** Fires each time the element actually starts producing sound - a
+   * start, a resume, the next track, a reconnect landing. */
+  onPlaying: (() => void) | null = null
 
   constructor() {
     this.audio = new Audio()
@@ -442,6 +435,7 @@ export class AudioEngine {
       // moment the button is pressed, before anything is even loaded.
       this.reconnecting = false
       this.onReconnectStateChange?.(false)
+      this.onPlaying?.()
     })
     this.audio.addEventListener('error', () => {
       const code = (this.audio.error as { code?: number } | null)?.code
@@ -503,16 +497,9 @@ export class AudioEngine {
    * straight through without a single 'waiting' event. A band that says
    * two seconds while seven minutes are in hand is not a smaller truth,
    * it is the wrong one — and it is wrong in the direction that makes a
-   * healthy stream look like it is about to run dry.
-   *
-   * The same transcode as HLS is the opposite case: the playlist lists
-   * every segment's duration up front (core/hls.py), so the element knows
-   * exactly how many seconds it is holding and its `buffered` is the real
-   * figure. Those seconds are counted from the playlist's own start,
-   * which is where playback was asked to begin, so positionOffset puts
-   * them back into the song's own time. */
+   * healthy stream look like it is about to run dry. */
   private reportBuffered(): void {
-    if (this.offsetStream && !this.hlsStream) {
+    if (this.offsetStream) {
       this.onBufferedChange?.(0)
       return
     }
@@ -910,20 +897,14 @@ export class AudioEngine {
    * stream does not carry. Only ever used to tell a stream that ended from
    * one that was cut off — see the 'ended' handler. Left out, a truncated
    * stream is indistinguishable from a finished one and the next song
-   * starts instead.
-   *
-   * `hls` says `urlFor` builds playlists rather than one continuous
-   * response — everything above holds either way, and the difference is
-   * only in how much of the buffer the element can account for (see
-   * reportBuffered()). */
+   * starts instead. */
   playFrom(
     urlFor: (seconds: number) => string,
     seconds: number,
     gain = 1,
     duration: number | null = null,
-    hls = false,
   ): void {
-    this.loadFrom(urlFor, seconds, gain, duration, hls)
+    this.loadFrom(urlFor, seconds, gain, duration)
     this.start()
   }
 
@@ -934,9 +915,8 @@ export class AudioEngine {
     seconds: number,
     gain = 1,
     duration: number | null = null,
-    hls = false,
   ): void {
-    this.loadSource(urlFor(seconds), seconds, gain, false, true, hls)
+    this.loadSource(urlFor(seconds), seconds, gain, false, true)
     this.urlForPosition = urlFor
     this.expectedDuration = duration
   }
@@ -971,7 +951,6 @@ export class AudioEngine {
     gain: number,
     live: boolean,
     offsetStream = false,
-    hls = false,
   ): void {
     this.cancelStartPositionRetry?.()
     this.cancelReconnect()
@@ -979,7 +958,6 @@ export class AudioEngine {
     this.liveStream = live
     this.holdsConnection = false
     this.offsetStream = offsetStream
-    this.hlsStream = hls
     this.positionOffset = offsetStream ? startPosition : 0
     // Cleared here rather than in each caller, so a plain file or a
     // station can never reconnect through the previous song's factory, and

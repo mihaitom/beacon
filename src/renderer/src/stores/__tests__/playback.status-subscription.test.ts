@@ -8,7 +8,10 @@ import { getAudioEngine } from '@/services/audioEngine'
 import { makeSong, makeStatus } from './fixtures'
 
 vi.mock('@/services/audioEngine', () => ({ getAudioEngine: vi.fn() }))
-vi.mock('@/services/mediaSession', () => ({ initMediaSession: vi.fn() }))
+vi.mock('@/services/mediaSession', () => ({
+  initMediaSession: vi.fn(),
+  reassertActionHandlers: vi.fn(),
+}))
 vi.mock('@/services/connect/radioMetadata', () => ({
   startRadioMetadataWatch: vi.fn(),
   stopRadioMetadataWatch: vi.fn(),

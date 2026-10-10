@@ -156,10 +156,14 @@ function updatePositionState(): void {
  * position tick, and re-registering three handlers that many times a second
  * is work for nothing. */
 function updateQueueHandlers(): void {
-  const playback = usePlaybackStore()
-  const wanted = playback.radioStation == null
+  const wanted = usePlaybackStore().radioStation == null
   if (wanted === lastQueueHandlersSet) return
   lastQueueHandlersSet = wanted
+  setQueueHandlers(wanted)
+}
+
+function setQueueHandlers(wanted: boolean): void {
+  const playback = usePlaybackStore()
   setHandler('previoustrack', wanted ? () => void playback.playPrevious() : null)
   setHandler('nexttrack', wanted ? () => void playback.playNext() : null)
   setHandler(
@@ -183,6 +187,47 @@ export function initMediaSession(): void {
   if (!('mediaSession' in navigator)) return
   const playback = usePlaybackStore()
 
+  setTransportHandlers()
+
+  // detached: true — initMediaSession() is called from playbackStore.init(),
+  // which itself runs inside App.vue's created(); an attached subscription
+  // would be dropped with that component instance and never restored, so
+  // the OS media widget would freeze on whatever it last showed.
+  playback.$subscribe(
+    () => {
+      updateMetadata()
+      updatePlaybackState()
+      updateQueueHandlers()
+      updatePositionState()
+    },
+    { detached: true },
+  )
+  updateMetadata()
+  updatePlaybackState()
+  updateQueueHandlers()
+  updatePositionState()
+}
+
+/** Registers every handler again, for the local element starting to play.
+ *
+ * WebKit tells the OS about an action only when setActionHandler() is
+ * called while its command listener exists, and that listener comes and
+ * goes with the page's media sessions, not with the page. Registered once
+ * at startup, the handlers evidently arrived before it: the actions still
+ * reached them, but the OS was never told which ones there are, so an
+ * iPhone drew its default skip-10-seconds buttons instead of
+ * previous/next (seen 2026-10-10; MediaSession::setActionHandler and
+ * RemoteCommandListenerCocoa::updateSupportedCommands in WebKit's source).
+ * Asserting them again whenever sound starts covers that, and a listener
+ * replaced later on. */
+export function reassertActionHandlers(): void {
+  if (!('mediaSession' in navigator) || lastQueueHandlersSet === null) return
+  setTransportHandlers()
+  setQueueHandlers(lastQueueHandlersSet)
+}
+
+function setTransportHandlers(): void {
+  const playback = usePlaybackStore()
   // Checked against the current state before ever calling togglePlay() —
   // these are directional (the OS is asking "make it play"/"make it
   // pause"), not a toggle. Chromium is only supposed to invoke 'play' while
@@ -203,22 +248,4 @@ export function initMediaSession(): void {
   setHandler('stop', () => {
     if (playback.isPlaying) void playback.togglePlay()
   })
-
-  // detached: true — initMediaSession() is called from playbackStore.init(),
-  // which itself runs inside App.vue's created(); an attached subscription
-  // would be dropped with that component instance and never restored, so
-  // the OS media widget would freeze on whatever it last showed.
-  playback.$subscribe(
-    () => {
-      updateMetadata()
-      updatePlaybackState()
-      updateQueueHandlers()
-      updatePositionState()
-    },
-    { detached: true },
-  )
-  updateMetadata()
-  updatePlaybackState()
-  updateQueueHandlers()
-  updatePositionState()
 }

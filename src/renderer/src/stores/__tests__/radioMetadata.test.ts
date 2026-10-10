@@ -11,7 +11,10 @@ import { makeStatus } from './fixtures'
 vi.mock('@/services/audioEngine', () => ({ getAudioEngine: vi.fn() }))
 // Reaches for navigator.mediaSession, which jsdom has no implementation of
 // — and what it wires is covered by services/mediaSession.ts's own tests.
-vi.mock('@/services/mediaSession', () => ({ initMediaSession: vi.fn() }))
+vi.mock('@/services/mediaSession', () => ({
+  initMediaSession: vi.fn(),
+  reassertActionHandlers: vi.fn(),
+}))
 vi.mock('@/services/connect/radioMetadata', () => ({
   startRadioMetadataWatch: vi.fn(),
   stopRadioMetadataWatch: vi.fn(),
