@@ -22,8 +22,8 @@ import type { Song } from '@/types/library'
  * mean "the whole queue" now say so explicitly. */
 
 // How long peekQueueDrawer() leaves the drawer open before auto-closing it
-// again, absent a mouseenter (cancelQueueDrawerAutoCloseTimer()) telling it
-// the user's actually looking. Long enough to register "oh, that's what got
+// again, absent a pointerenter (cancelQueueDrawerAutoCloseTimer()) telling
+// it the user's actually looking. Long enough to register "oh, that's what got
 // picked" at a glance, short enough not to just sit open indefinitely for
 // someone who's moved on.
 const QUEUE_DRAWER_PEEK_MS = 4000
@@ -35,7 +35,7 @@ let queueDrawerAutoCloseTimer: ReturnType<typeof setTimeout> | null = null
 /** The one place queueDrawerOpen is written, so that what is on screen and
  * what is remembered for next time cannot come apart. Every route in here
  * counts, a peek included: a peek that the user then keeps open (the
- * mouseenter cancels its auto-close) never passes through
+ * pointerenter cancels its auto-close) never passes through
  * setQueueDrawerOpen(), so persisting only "deliberate" changes would
  * forget exactly the arrangement somebody settled on. */
 function applyQueueDrawerOpen(store: { queueDrawerOpen: boolean }, open: boolean): void {
@@ -188,7 +188,7 @@ export const useDrawersStore = defineStore('drawers', {
       // let that stale countdown cut the fresh one off partway through.
       // queueDrawerAutoCloseTimer !== null is exactly the right signal for
       // "still open because of a peek, not because of the user": a manual
-      // open and a mouseenter (cancelQueueDrawerAutoClose()) both clear it,
+      // open and a pointerenter (cancelQueueDrawerAutoClose()) both clear it,
       // and nothing else ever sets it besides armQueueDrawerAutoCloseTimer()
       // itself — so it still being set here can only mean an unexpired peek
       // countdown, never state the user set up themselves that this
@@ -197,10 +197,13 @@ export const useDrawersStore = defineStore('drawers', {
       if (!wasAlreadyOpen || queueDrawerAutoCloseTimer !== null) armQueueDrawerAutoCloseTimer(this)
     },
 
-    // QueueDrawer.vue's own @mouseenter — one touch of the mouse is enough
-    // to mean "I'm actually looking at this", cancelling the pending
-    // auto-close for good (not just deferring it), so it then stays open
-    // the same as if it had been opened manually.
+    // QueueDrawer.vue's own @pointerenter — the mouse arriving over it, or
+    // a finger landing on it, is enough to mean "I'm actually looking at
+    // this", cancelling the pending auto-close for good (not just deferring
+    // it), so it then stays open the same as if it had been opened
+    // manually. Pointer, not mouse: a touch scroll fires no mouse events,
+    // so on an iPad a peeked queue closed under the finger scrolling it
+    // (#47).
     cancelQueueDrawerAutoClose(): void {
       cancelQueueDrawerAutoCloseTimer()
     },

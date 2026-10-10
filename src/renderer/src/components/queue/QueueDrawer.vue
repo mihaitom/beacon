@@ -39,7 +39,7 @@
     color="#0B0D13"
     class="beacon-drawer"
     @update:model-value="$emit('update:modelValue', $event)"
-    @mouseenter="drawersStore.cancelQueueDrawerAutoClose()"
+    @pointerenter="drawersStore.cancelQueueDrawerAutoClose()"
   >
     <div class="beacon-drawer__body">
       <v-toolbar

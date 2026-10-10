@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - In the mobile layout, a long queue, playlist or station list froze while its covers loaded: it would not scroll and taps did nothing, sometimes for over a minute (reported by @ampcat3, #47)
 - Turning a tablet between upright and sideways (or resizing a browser window across the mobile layout's width) kept the page from the other layout, which on Now Playing showed two player bars. The page now switches along with the layout
+- On a touchscreen, the queue that slides out briefly when something is added closed again while it was being scrolled. Touching it now keeps it open, as pointing at it with the mouse already did (reported by @ampcat3, #47)
 
 ## [1.7.0] - 2026-10-10
 

@@ -114,6 +114,21 @@ describe('QueueDrawer', () => {
     expect(revealDelays(wrapper)).toEqual([undefined, '200ms', undefined])
   })
 
+  it('keeps a peeked drawer open once a finger lands on it', async () => {
+    // A touch scroll fires no mouse events, so on an iPad the peek used to
+    // close under the finger scrolling it (#47).
+    vi.useFakeTimers()
+    const playback = usePlaybackStore()
+    const drawers = useDrawersStore()
+    const wrapper = mountDrawer()
+
+    playback.queueNext([makeSong('new')])
+    await wrapper.find('.beacon-drawer').trigger('pointerenter', { pointerType: 'touch' })
+    vi.advanceTimersByTime(10_000)
+
+    expect(drawers.queueDrawerOpen).toBe(true)
+  })
+
   it('starts the stagger from 0 for a live update while the drawer is already open', async () => {
     // Regression test (reported live 2026-08-25): "Play Next" into an
     // already-open drawer used to hide and re-reveal the *entire* queue at
