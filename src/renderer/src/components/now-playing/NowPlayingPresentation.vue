@@ -2,6 +2,7 @@
   <div
     ref="root"
     class="now-playing"
+    :style="{ '--photo-scrim': scrimStrength }"
     :class="{
       'now-playing--compact': compact,
       'now-playing--landscape': isLandscape,
@@ -15,14 +16,10 @@
       :is-artist="source.backdrop.isArtist"
       :scrim-style="source.ambientStyle"
     />
-    <!-- On a phone the text (and sideways the controls) sits low over the
-     - picture: darkened from the bottom up, more over a light photo than a
-     - dark one. -->
-    <div
-      v-if="bottomScrim"
-      class="now-playing__bottom-scrim"
-      :style="{ '--bottom-scrim': scrimStrength }"
-    />
+    <!-- Wherever the text (and on a phone held sideways the controls) sits
+     - low over the picture: darkened from the bottom up, more over a light
+     - photo than a dark one. -->
+    <div v-if="bottomScrim" class="now-playing__bottom-scrim" />
 
     <now-playing-toolbar
       v-if="!isLandscape"
@@ -190,10 +187,11 @@ export default {
     photoOnly(): boolean {
       return this.isLandscape && this.source.ui.artworkHidden && !this.source.ui.lyricsOpen
     },
-    /** Sideways always, the text being over the backdrop either way;
-     * upright only where it sits on the photo with the artwork hidden. */
+    /** On a phone held sideways always, the text being over the backdrop
+     * either way; otherwise where it sits on the photo with the artwork
+     * hidden. */
     bottomScrim(): boolean {
-      return this.isLandscape || (this.compact && this.source.ui.artworkHidden)
+      return this.isLandscape || this.source.ui.artworkHidden
     },
     /** The photo the scrim is measured against. Only a sharp artist photo
      * varies enough to need it: the blurred cover is darkened already. */
@@ -203,12 +201,12 @@ export default {
     scrimStrength(): number {
       return bottomScrimStrength(this.bottomColour)
     },
-    /** The bars' colour, which the whole app's accent follows. Sideways the
-     * controls sit right on the photo, so it is lifted until it stands off
-     * what is behind them there. */
+    /** The bars' colour, which the whole app's accent follows. Where the
+     * text (and on a phone held sideways the controls) sits on the photo, it
+     * is lifted until it stands off what is behind them there. */
     accent(): string {
       const color = this.source.visualizer.color
-      if (!this.isLandscape || !this.bottomColour) return color
+      if (!this.bottomColour) return color
       return liftForContrast(color, colourBehindControls(this.bottomColour, this.scrimStrength))
     },
   },
@@ -416,6 +414,17 @@ export default {
   /* Opaque fallback behind the two layers below — matters for radio, where
    * the backdrop has no image to show. */
   background: #12141c;
+  /* What the lyrics stand on, in every stage: a soft darkening that fades
+   * out towards every edge of their box, so it reads as shade behind the
+   * text rather than as a panel. As strong as the photo needs (see
+   * --photo-scrim, set from the measured photo). */
+  --lyrics-ground: radial-gradient(
+    ellipse farthest-side,
+    rgba(0, 0, 0, calc(var(--photo-scrim) * 0.75)) 0%,
+    rgba(0, 0, 0, calc(var(--photo-scrim) * 0.5)) 50%,
+    rgba(0, 0, 0, calc(var(--photo-scrim) * 0.15)) 82%,
+    rgba(0, 0, 0, 0) 100%
+  );
 }
 
 /* Mirrors the toolbar's own corner placement (opposite side, so
@@ -521,20 +530,21 @@ export default {
   pointer-events: none;
   background: linear-gradient(
     to top,
-    rgba(0, 0, 0, var(--bottom-scrim)) 0%,
-    rgba(0, 0, 0, calc(var(--bottom-scrim) * 0.55)) 40%,
+    rgba(0, 0, 0, var(--photo-scrim)) 0%,
+    rgba(0, 0, 0, calc(var(--photo-scrim) * 0.55)) 40%,
     rgba(0, 0, 0, 0) 75%
   );
 }
 
-/* Upright the text is a short block at the bottom of a tall screen: the
- * same darkening, kept to the band it and the visualizer below it occupy. */
+/* Upright and on the desktop the text is a short block at the bottom of a
+ * tall stage: the same darkening, kept to the band it and the visualizer
+ * below it occupy. */
 .now-playing:not(.now-playing--landscape) .now-playing__bottom-scrim {
   background: linear-gradient(
     to top,
-    rgba(0, 0, 0, var(--bottom-scrim)) 0%,
-    rgba(0, 0, 0, calc(var(--bottom-scrim) * 0.55)) 18%,
-    rgba(0, 0, 0, 0) 42%
+    rgba(0, 0, 0, var(--photo-scrim)) 0%,
+    rgba(0, 0, 0, calc(var(--photo-scrim) * 0.55)) 25%,
+    rgba(0, 0, 0, 0) 55%
   );
 }
 

@@ -1178,17 +1178,6 @@ describe('NowPlayingView next up', () => {
     expect(preloadImage).toHaveBeenCalledWith('https://assets.fanart.tv/Artist B.jpg')
   })
 
-  it('colours the chevrons like the visualizer', async () => {
-    const { wrapper, playback } = await mountWithQueue([first(), second()])
-    playback.duration = 100
-    playback.localPosition = 92
-    await flushPromises()
-
-    const vm = wrapper.vm as unknown as { visualizerColor: string }
-    const chevrons = wrapper.find('.now-playing__panel--chevrons')
-    expect(chevrons.attributes('style')).toContain(`rgb(${vm.visualizerColor})`)
-  })
-
   it('uses the preloaded answer on the change instead of looking it up again', async () => {
     const { wrapper, playback } = await mountWithQueue([first(), second()])
     expect(getArtistArt).toHaveBeenCalledWith('Artist B')

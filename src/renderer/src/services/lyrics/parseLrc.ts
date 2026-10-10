@@ -30,6 +30,24 @@ export interface ParsedLyrics {
 // that writes them unpadded, is still a valid timestamp.
 const LEADING_TAG = /^\[(\d{1,3}):(\d{2})(?:\.(\d{1,3}))?(?:-\d+)?\]/
 
+/** Spaces a line must not break at: no-break, figure and narrow no-break.
+ * NetEase separates the words of some sheets with nothing else (401 of them
+ * against 30 plain spaces in one, measured 2026-10-10), and a line made of
+ * them is one unbreakable word to the browser - it ran off the side of the
+ * lyrics panel instead of wrapping. */
+const NON_BREAKING_SPACE = /[\u00a0\u2007\u202f]/g
+
+/** A lyric's text as it is shown: plain spaces, trimmed. */
+function lyricText(value: string): string {
+  return value.replace(NON_BREAKING_SPACE, ' ').trim()
+}
+
+/** Lines parsed before the above existed, as the lyrics cache still holds
+ * them, brought up to how they are parsed now. */
+export function withPlainSpaces(lines: LyricLine[]): LyricLine[] {
+  return lines.map((line) => ({ ...line, text: lyricText(line.text) }))
+}
+
 function parseLine(line: string): LyricLine[] {
   let rest = line
   const times: number[] = []
@@ -43,7 +61,7 @@ function parseLine(line: string): LyricLine[] {
     times.push(Number(minutes) * 60 + Number(seconds) + millis / 1000)
     rest = rest.slice(match[0].length)
   }
-  const text = rest.trim()
+  const text = lyricText(rest)
   return times.map((time) => ({ time, text }))
 }
 
@@ -61,7 +79,7 @@ export function parseLyrics(raw: string): ParsedLyrics {
     return { synced: true, ...splitOffCredits(synced.sort((a, b) => a.time - b.time)) }
   }
 
-  const plain = rawLines.map((line) => line.trim()).filter((line) => line.length > 0)
+  const plain = rawLines.map(lyricText).filter((line) => line.length > 0)
   return { synced: false, ...splitOffCredits(plain.map((text) => ({ time: 0, text }))) }
 }
 
@@ -147,7 +165,7 @@ function splitOffCredits(lines: LyricLine[]): { lines: LyricLine[]; credits: str
  * replaceAll over a regex on purpose — a literal NUL inside a regex is
  * exactly what no-control-regex exists to flag. */
 function cleanLyricText(value: string): string {
-  return value.replaceAll('\u0000', '').trim()
+  return lyricText(value.replaceAll('\u0000', ''))
 }
 
 /** Converts OpenSubsonic's getLyricsBySongId.view shape (already split

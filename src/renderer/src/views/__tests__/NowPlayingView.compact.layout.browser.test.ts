@@ -521,8 +521,9 @@ describe('Now Playing on a phone held sideways', () => {
       usePlaybackStore().setQueue([makeSong('s1')], 0)
       await mountShell()
       await new Promise((resolve) => setTimeout(resolve, 200))
-      const scrim = document.querySelector('.now-playing__bottom-scrim') as HTMLElement
-      const strength = parseFloat(scrim.style.getPropertyValue('--bottom-scrim'))
+      expect(document.querySelector('.now-playing__bottom-scrim')).not.toBeNull()
+      const view = document.querySelector('.now-playing') as HTMLElement
+      const strength = parseFloat(view.style.getPropertyValue('--photo-scrim'))
       while (wrappers.length) wrappers.pop()?.unmount()
       document.body.innerHTML = ''
       setActivePinia(createPinia())

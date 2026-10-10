@@ -182,13 +182,10 @@ export default {
   margin-bottom: 0;
 }
 
-/* In the artwork-hidden corner the card shrinks to its contents, or the
- * glass panel would cover the whole screen instead of wrapping the cover
- * and text. Bottom-aligned and centred: the panel sits along the bottom edge
- * with the artwork and labels in the middle of the screen. Shrinkable and
- * capped to the stage: a long label must ellipsise inside the panel, not run
- * off the right of the screen (the cover keeps its size via its own
- * flex-shrink: 0). */
+/* With the artwork hidden the front face holds only the track text, which
+ * sits centred along the bottom edge over the scrim. Shrinkable and capped
+ * to the stage: a long label must wrap or clamp inside it, not run off the
+ * right of the screen. */
 .now-playing__content--corner .now-playing__flip-card {
   display: flex;
   align-items: flex-end;
@@ -203,11 +200,10 @@ export default {
   flex-shrink: 1;
 }
 
-/* The back face fills the whole phone screen. The panel would otherwise be
- * a flat slab of the base 0.62, which would bury the artist background the
- * view exists to show: dark enough in the middle - where the active line
- * sits - to stay readable, fading out top and bottom so the photo shows
- * through. No radius: a full-bleed panel has no corner to round. */
+/* The back face fills the stage (upright the whole screen, sideways the
+ * artwork's column), on the presentation's --lyrics-ground: dark enough in
+ * the middle - where the active line sits - to stay readable, fading out
+ * towards every edge so the photo shows through and no box edge shows. */
 .now-playing__lyrics {
   position: absolute;
   inset: 0;
@@ -223,14 +219,7 @@ export default {
   container-type: size;
   --lyrics-flip-font-size: clamp(0.95rem, min(6cqw, 8cqh), 1.9rem);
   --lyrics-flip-line-padding: 10px 20px;
-  background: linear-gradient(
-    to bottom,
-    rgba(18, 20, 28, 0.15) 0%,
-    rgba(18, 20, 28, 0.6) 26%,
-    rgba(18, 20, 28, 0.6) 74%,
-    rgba(18, 20, 28, 0.15) 100%
-  );
-  border-radius: 0;
+  background: var(--lyrics-ground);
 }
 
 /* The log takes the lyrics' full-screen box but none of their ground: its

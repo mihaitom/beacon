@@ -21,8 +21,8 @@
 
             <!-- The track panel(s). Normally just the current song; near the
              - end of a track animated chevrons and the next one are added to
-             - the right (see the source's panels), the next glass card sliding
-             - left into the current's place on the change. With the artwork
+             - the right (see the source's panels), the next one sliding left
+             - into the current's place on the change. With the artwork
              - hidden each panel is the small cover + labels; with the artwork
              - shown the single panel is just the labels under it. -->
             <now-playing-track-panels />
@@ -175,12 +175,10 @@ export default {
 
 /* The lyrics get their own ground to sit on - the amber glow the active line
  * carries is not enough over a bright backdrop, and over a sharp artist photo
- * it is not enough at all. A translucent, blurred panel, the same idea as the
- * app's other scrims. */
+ * it is not enough at all. Shade rather than a panel: see the presentation's
+ * --lyrics-ground. */
 .now-playing__lyrics {
-  background: rgba(18, 20, 28, 0.62);
-  backdrop-filter: blur(10px);
-  border-radius: 18px;
+  background: var(--lyrics-ground);
   /* Tall, bounded reading area — LyricsPanel scrolls within whatever height
    * it's given. A fixed target width (not flex: 1) so the enter/leave
    * transition below has a concrete value to animate from/to; overflow hidden
@@ -203,8 +201,6 @@ export default {
  * is a slab of grey for nothing. */
 .now-playing__lyrics--title-log {
   background: none;
-  backdrop-filter: none;
-  border-radius: 0;
 }
 
 .now-playing-lyrics-enter-active,

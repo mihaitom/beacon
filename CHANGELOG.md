@@ -12,10 +12,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
-- On a phone with the artist background showing, the title now sits centred over the darkened bottom of the photo instead of on a glass card, so more of the picture stays visible
+- With the artist background showing, Now Playing's title no longer sits on a glass card: it stands over the darkened bottom of the photo, on the desktop in the corner beside a small cover (with what comes next beside it near the end of a track), on a phone centred. The lyrics no longer sit on a panel either, but on soft shade that fades out towards its edges. More of the picture stays visible, and the accent colour lightens where it would blend into the photo
 
 ### Fixed
 
+- Lyrics from some sources ran off the side of the screen instead of wrapping onto a second line
 - Party guests on a screen between 840 and 960 pixels wide (a small tablet, a phone on its side) got the desktop layout instead of the phone one
 - On Apple Silicon Macs, the downloaded app was reported as damaged and could not be opened. It now opens after confirming it once under System Settings > Privacy & Security (reported by @ampcat3, #46)
 - On an iPhone or iPad, dragging the lock-screen scrubber while a song played at a reduced quality (a converted stream) jumped the shown position back to the beginning. It now follows the real position, as it already did for untouched files

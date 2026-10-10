@@ -173,4 +173,28 @@ describe('lyrics cache re-check', () => {
 
     expect(getLyricsBySongId).not.toHaveBeenCalled()
   })
+
+  it('shows lyrics cached before no-break spaces were cleaned up with plain ones', async () => {
+    // Cached as parsed, so a sheet stored before the parser learnt this
+    // would keep running off the panel for as long as it is cached.
+    const song = makeSong('a')
+    localStorage.setItem(
+      'beacon.lyricsCache',
+      JSON.stringify({
+        [song.id]: {
+          synced: true,
+          lines: [{ time: 1, text: 'You\u00a0the\u00a0best' }],
+          source: 'netease',
+          remoteId: '1',
+          cachedAt: Date.now(),
+        },
+      }),
+    )
+    const { lyrics, auth } = await loadStores()
+    auth.serverType = 'subsonic'
+
+    await lyrics.ensureLoaded(song)
+
+    expect(lyrics.lines[0]?.text).toBe('You the best')
+  })
 })

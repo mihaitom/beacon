@@ -491,7 +491,7 @@ describe('NowPlayingView layout', () => {
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(391)
   })
 
-  it('puts the hidden-artwork corner on a glass panel over the background', async () => {
+  it('puts the hidden-artwork corner in the bottom left over a darkened photo', async () => {
     await page.viewport(1280, 900)
     vi.mocked(getArtistArt).mockResolvedValue({
       banner: null,
@@ -513,12 +513,12 @@ describe('NowPlayingView layout', () => {
     const panel = wrapper.get('.now-playing__panel').element
     const content = wrapper.get('.now-playing__content').element
 
-    // Content-sized and anchored left, so the panel wraps the corner rather
+    // Content-sized and anchored left, so it sits in the corner rather
     // than spanning the row.
     expect(rect(panel).width).toBeLessThan(rect(content).width)
     expect(rect(panel).left).toBeLessThan(rect(content).left + rect(content).width / 2)
-    // And it is the app's translucent glass, not a flat fill.
-    expect(getComputedStyle(panel).backdropFilter).toContain('blur')
+    // And legible on the photo: darkened from the bottom up, where it sits.
+    expect(wrapper.find('.now-playing__bottom-scrim').exists()).toBe(true)
   })
 
   it('ellipsises the corner labels to one line each on the desktop', async () => {
@@ -646,8 +646,6 @@ describe('NowPlayingView layout', () => {
     expect(chevrons.left).toBeGreaterThanOrEqual(current.right - 1)
     expect(next.left).toBeGreaterThanOrEqual(chevrons.right - 1)
     expect(Math.abs(next.bottom - current.bottom)).toBeLessThan(2)
-    // The chevrons are a bare marker, not another glass card.
-    expect(getComputedStyle(panels[1]!.element).backdropFilter).toBe('none')
     // The right-hand panel is the next track's.
     expect(wrapper.findAll('.now-playing__title')[1]!.text()).toContain('Second')
   })

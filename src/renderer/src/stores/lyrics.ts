@@ -1,7 +1,12 @@
 import { defineStore } from 'pinia'
 import { autoLyrics, getLyricsByRemoteId, searchLyrics } from '@/services/connect/lyrics'
 import type { LyricSearchResult } from '@/services/connect/types'
-import { fromStructuredLyrics, parseLyrics, type LyricLine } from '@/services/lyrics/parseLrc'
+import {
+  fromStructuredLyrics,
+  parseLyrics,
+  withPlainSpaces,
+  type LyricLine,
+} from '@/services/lyrics/parseLrc'
 import { useLibraryStore } from '@/stores/library'
 import { useAuthStore } from '@/stores/auth'
 import { useLyricsProvidersStore } from '@/stores/lyricsProviders'
@@ -383,7 +388,7 @@ export const useLyricsStore = defineStore('lyrics', {
           this.remoteId = null
         } else {
           this.synced = cached.synced
-          this.lines = cached.lines
+          this.lines = withPlainSpaces(cached.lines)
           this.credits = cached.credits ?? []
           this.source = cached.source
           this.remoteId = cached.remoteId

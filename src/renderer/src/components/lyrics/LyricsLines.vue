@@ -409,8 +409,18 @@ export default {
   max-width: 78%;
 }
 
+/* Drawn on the picture with only soft shade behind them (see Now Playing's
+ * --lyrics-ground), so each line carries the same dark halo the track text
+ * does - the active one on top of its amber glow. */
+.lyrics-lines--immersive .lyrics-panel__line {
+  text-shadow: 0 1px 6px rgba(0, 0, 0, 0.7);
+}
+
 .lyrics-lines--immersive .lyrics-panel__line--active {
   transform: scale(1.25);
+  text-shadow:
+    0 0 24px rgba(245, 169, 78, 0.45),
+    0 1px 6px rgba(0, 0, 0, 0.7);
 }
 
 .lyrics-lines--immersive .lyrics-panel__line--plain {

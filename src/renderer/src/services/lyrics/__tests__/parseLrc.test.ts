@@ -241,3 +241,27 @@ describe('credits naming the same people', () => {
     expect(parsed.credits).toEqual(['Written by Someone'])
   })
 })
+
+describe('spaces a line cannot wrap at', () => {
+  // NetEase separates the words of some sheets with no-break spaces only, so
+  // a long line was one unbreakable word and ran off the side of the panel.
+  const nbsp = ' '
+
+  it('turns them into plain spaces in a synced sheet', () => {
+    const parsed = parseLyrics(`[00:10.00]You${nbsp}the${nbsp}best,${nbsp}shawty`)
+    expect(parsed.lines[0]!.text).toBe('You the best, shawty')
+  })
+
+  it('turns them into plain spaces in plain text', () => {
+    const parsed = parseLyrics(`Back${nbsp}it${nbsp}up\nlike that`)
+    expect(parsed.lines.map((line) => line.text)).toEqual(['Back it up', 'like that'])
+  })
+
+  it('turns them into plain spaces in lyrics read from the file', () => {
+    const parsed = fromStructuredLyrics({
+      synced: true,
+      line: [{ start: 1000, value: `Work${nbsp}it${nbsp}in${nbsp}place` }],
+    } as Parameters<typeof fromStructuredLyrics>[0])
+    expect(parsed.lines[0]!.text).toBe('Work it in place')
+  })
+})

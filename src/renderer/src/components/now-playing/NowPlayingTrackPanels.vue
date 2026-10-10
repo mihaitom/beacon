@@ -17,7 +17,6 @@
       :key="panel.key"
       class="now-playing__panel"
       :class="{ 'now-playing__panel--chevrons': panel.kind === 'chevrons' }"
-      :style="panel.kind === 'chevrons' ? { color: `rgb(${source.visualizer.color})` } : undefined"
     >
       <template v-if="panel.kind === 'chevrons'">
         <v-icon
@@ -137,8 +136,9 @@ export default {
     }
   },
   computed: {
-    /** The desktop's hidden-artwork corner: the glass card with the small
-     * cover. A phone shows plain text over a scrim instead. */
+    /** The desktop's hidden-artwork corner: the small cover beside the
+     * text, and near a track's end the next one beside it. (The phone has
+     * its own placements - see `landscape` and `miniCover`.) */
     corner(): boolean {
       return this.source.ui.artworkHidden && !this.compact
     },
@@ -211,8 +211,8 @@ export default {
   align-items: center;
 }
 
-/* With the artwork hidden each panel is a bottom-left glass corner: the
- * small cover beside the track text. The current one, then - near the end
+/* With the artwork hidden each panel sits in the bottom-left corner: the
+ * small cover beside the track text, over the presentation's scrim. The current one, then - near the end
  * of a track - animated chevrons and the next one to its right. */
 .now-playing__panels--corner {
   flex-direction: row;
@@ -225,33 +225,20 @@ export default {
   align-items: flex-end;
   gap: 16px;
   text-align: left;
-  /* A glassy panel behind the mini cover and track text, so both stay
-   * readable where they sit directly on the artist background. Same recipe
-   * as the lyrics panel (rgba + backdrop blur + radius). */
-  background: rgba(18, 20, 28, 0.5);
-  -webkit-backdrop-filter: blur(14px);
-  backdrop-filter: blur(14px);
-  border-radius: 18px;
-  padding: 16px 20px;
 }
 
 /* The "next" marker between the two panels: two chevrons nudging right in a
- * loop, so the second card reads as what follows the first. No glass of its
- * own - the panel modifier has to outrank the corner panel's own glass rule
- * above. The colour comes inline from the visualizer's own (see the
- * template), so the marker and the bars read as one. */
+ * loop, so the second reads as what follows the first. In the accent, which
+ * follows the bars' colour - lifted where it would vanish into the photo
+ * (see NowPlayingPresentation's accent), which the bars' own is not. */
 .now-playing__panels--corner .now-playing__panel--chevrons {
   gap: 0;
-  /* A fixed marker between the two cards, never grown or shrunk by them. */
+  color: rgb(var(--v-theme-primary));
+  /* A fixed marker between the two, never grown or shrunk by them. */
   flex: none;
   /* Same soft shadow the track text carries, so the marker stays legible
    * where it sits directly on the artist background. */
   filter: drop-shadow(0 1px 5px rgba(0, 0, 0, 0.7));
-  padding: 0;
-  background: none;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-  border-radius: 0;
   align-self: center;
 }
 
