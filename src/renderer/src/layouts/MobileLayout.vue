@@ -11,7 +11,10 @@
        - No `density` prop either — Vuetify's compact density overrode the
        - height outright rather than adjusting it, leaving the bar at 41px
        - however large the number here said. -->
-    <v-app-bar height="56" color="#0B0D13" class="mobile-app-bar">
+    <!-- Both bars step aside on Now Playing while the phone is on its
+       - side: together they are a third of its height. Hidden rather than
+       - removed, so the toolbar's dock target stays in the document. -->
+    <v-app-bar height="56" color="#0B0D13" class="mobile-app-bar" :model-value="!immersive">
       <!-- Same size as every other icon in this bar. It was 16 while the
          - bar held nothing but a title; sitting next to 24px buttons it
          - just read as a small version of them. -->
@@ -54,7 +57,7 @@
      - way around. Only shown off the Now Playing tab itself, where the full
      - transport controls already cover the same ground (see
      - MobileNowPlayingView.vue). -->
-    <mobile-tab-bar />
+    <mobile-tab-bar :active="!immersive" />
     <mobile-player-bar v-if="!onNowPlaying" />
     <cast-takeover-confirm-dialog />
   </v-app>
@@ -65,13 +68,19 @@ import MobileTabBar from '@/components/mobile/MobileTabBar.vue'
 import MobilePlayerBar from '@/components/mobile/MobilePlayerBar.vue'
 import CastTakeoverConfirmDialog from '@/components/connect/CastTakeoverConfirmDialog.vue'
 import PartyModeButton from '@/components/party/PartyModeButton.vue'
+import { phoneLandscapeMixin } from '@/composables/phoneLandscape'
 
 export default {
   name: 'MobileLayout',
   components: { MobileTabBar, MobilePlayerBar, CastTakeoverConfirmDialog, PartyModeButton },
+  mixins: [phoneLandscapeMixin],
   computed: {
     onNowPlaying() {
       return this.$route.name === 'm-now-playing'
+    },
+    /** Now Playing on a phone held sideways gets the whole screen. */
+    immersive(): boolean {
+      return this.onNowPlaying && this.phoneLandscape
     },
   },
   // On <html> rather than in a scoped block: the rules below have to reach

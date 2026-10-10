@@ -6,8 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Now Playing on a phone held sideways: the cover fills the left half, with the title centred over the controls beside it and the app bar and tabs out of the way. The lyrics turn over in place of the cover, so the controls stay usable. With the artist background instead of the cover, the photo gets the whole screen, the title sits in its bottom-left corner beside a small cover and the lyrics take the full height. The bottom of the photo is darkened under the text, more so for a light photo. Party guests get the same layout
+
+### Changed
+
+- On a phone with the artist background showing, the title now sits centred over the darkened bottom of the photo instead of on a glass card, so more of the picture stays visible
+
 ### Fixed
 
+- Party guests on a screen between 840 and 960 pixels wide (a small tablet, a phone on its side) got the desktop layout instead of the phone one
 - On Apple Silicon Macs, the downloaded app was reported as damaged and could not be opened. It now opens after confirming it once under System Settings > Privacy & Security (reported by @ampcat3, #46)
 - On an iPhone or iPad, dragging the lock-screen scrubber while a song played at a reduced quality (a converted stream) jumped the shown position back to the beginning. It now follows the real position, as it already did for untouched files
 - On an iPhone or iPad, the lock screen offered buttons to skip 10 seconds instead of previous and next track. It now shows previous and next

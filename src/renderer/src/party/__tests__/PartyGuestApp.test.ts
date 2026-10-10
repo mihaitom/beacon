@@ -12,6 +12,29 @@ import { GITHUB_URL } from '@/services/project'
 import type { GuestSnapshot } from '../api'
 
 const DESKTOP_WIDTH = window.innerWidth
+const realMatchMedia = window.matchMedia
+
+/** The phone/desktop choice reads the width through a media query (see
+ * useIsMobileWeb.ts), which jsdom's stub never matches - answered from the
+ * given width here. */
+function setWidth(width: number) {
+  window.innerWidth = width
+  window.matchMedia = ((query: string) => ({
+    matches: Number(/max-width: ([\d.]+)px/.exec(query)?.[1] ?? -1) >= width,
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  })) as unknown as typeof window.matchMedia
+}
+
+function resetWidth() {
+  window.innerWidth = DESKTOP_WIDTH
+  window.matchMedia = realMatchMedia
+}
 
 function snapshot(radio: GuestSnapshot['radio']): GuestSnapshot {
   return {
@@ -35,7 +58,7 @@ function snapshot(radio: GuestSnapshot['radio']): GuestSnapshot {
 }
 
 async function mountApp(radio: GuestSnapshot['radio'], width = DESKTOP_WIDTH) {
-  window.innerWidth = width
+  setWidth(width)
   const store = usePartyGuestStore()
   vi.spyOn(store, 'start').mockResolvedValue()
   store.phase = 'app'
@@ -55,7 +78,7 @@ describe('PartyGuestApp while a radio station plays', () => {
   })
 
   afterEach(() => {
-    window.innerWidth = DESKTOP_WIDTH
+    resetWidth()
   })
 
   it('explains instead of offering what is next and the search', async () => {
@@ -107,11 +130,11 @@ describe('PartyGuestApp with the shared Now Playing', () => {
   })
 
   afterEach(() => {
-    window.innerWidth = DESKTOP_WIDTH
+    resetWidth()
   })
 
   it('offers the skip vote but none of the host lyrics tools', async () => {
-    window.innerWidth = DESKTOP_WIDTH
+    setWidth(DESKTOP_WIDTH)
     const store = usePartyGuestStore()
     vi.spyOn(store, 'start').mockResolvedValue()
     store.phase = 'app'
@@ -152,7 +175,7 @@ describe('PartyGuestApp with the shared Now Playing', () => {
         }
       },
     )
-    window.innerWidth = 390
+    setWidth(390)
     const store = usePartyGuestStore()
     vi.spyOn(store, 'start').mockResolvedValue()
     store.phase = 'app'

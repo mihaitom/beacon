@@ -2,6 +2,7 @@
   <v-bottom-navigation
     app
     grow
+    :active="active"
     density="comfortable"
     color="primary"
     :height="BAR_HEIGHT + gestureGap"
@@ -46,7 +47,7 @@ const AT_SCREEN_EDGE =
   '(display-mode: standalone), (display-mode: fullscreen), (display-mode: minimal-ui)'
 
 /** ...and the gesture strip itself only exists where the screen is the
- * input. The mobile shell is chosen on viewport width alone
+ * input. The mobile shell is chosen mostly on viewport width
  * (useIsMobileWeb.ts), so the installed desktop PWA lands in it too once
  * its window is dragged under 960px - standalone, at the screen edge, and
  * with nothing down there to swipe. Kept as its own query rather than
@@ -56,6 +57,13 @@ const TOUCH_INPUT = '(pointer: coarse)'
 
 export default {
   name: 'MobileTabBar',
+  props: {
+    /** False slides the bar away and hands its height back to the page. */
+    active: {
+      type: Boolean,
+      default: true,
+    },
+  },
   data() {
     return {
       BAR_HEIGHT,

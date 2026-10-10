@@ -5,13 +5,16 @@
       :class="{
         'now-playing__content--split': hasPlayable && source.ui.lyricsOpen,
         'now-playing__content--corner': source.ui.artworkHidden,
+        'now-playing__content--landscape': landscape,
       }"
     >
       <template v-if="hasPlayable">
         <div class="now-playing__flip-card">
           <div class="now-playing__primary">
             <now-playing-artwork v-if="!source.ui.artworkHidden" :art-size="artSize" compact />
-            <now-playing-track-panels compact />
+            <!-- Sideways, the track text is in the presentation's right
+             - column, so turning the card to the lyrics leaves it readable. -->
+            <now-playing-track-panels v-if="!landscape" compact />
           </div>
 
           <transition name="now-playing-lyrics">
@@ -66,6 +69,14 @@ export default {
     NowPlayingTrackPanels,
   },
   mixins: [nowPlayingSourceMixin],
+  props: {
+    /** The phone on its side: this stage is the left column and holds the
+     * artwork alone. */
+    landscape: {
+      type: Boolean,
+      default: false,
+    },
+  },
   computed: {
     hasPlayable(): boolean {
       return this.source.song != null || this.source.radio != null
@@ -77,6 +88,9 @@ export default {
      * and padding under the artwork. 90cqw rather than the ~98 the box would
      * tolerate: the last few percent are margin, not waste. */
     artSize(): string {
+      // Sideways there is nothing under the artwork: the whole column, less
+      // .now-playing__content's padding.
+      if (this.landscape) return 'clamp(88px, min(calc(100cqh - 24px), calc(100cqw - 32px)), 480px)'
       return 'clamp(88px, min(58cqh, 90cqw, calc(100cqh - 100px)), 480px)'
     },
   },
@@ -161,6 +175,11 @@ export default {
   transform: rotateY(0deg);
   backface-visibility: hidden;
   -webkit-backface-visibility: hidden;
+}
+
+/* Nothing below the artwork to keep a gap to. */
+.now-playing__content--landscape .now-playing__art-wrap {
+  margin-bottom: 0;
 }
 
 /* In the artwork-hidden corner the card shrinks to its contents, or the

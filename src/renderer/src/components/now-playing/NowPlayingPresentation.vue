@@ -4,6 +4,9 @@
     class="now-playing"
     :class="{
       'now-playing--compact': compact,
+      'now-playing--landscape': isLandscape,
+      'now-playing--wide-stage': isLandscape && source.ui.artworkHidden,
+      'now-playing--photo': photoOnly,
       'now-playing--artwork-hidden': source.ui.artworkHidden,
     }"
   >
@@ -12,8 +15,17 @@
       :is-artist="source.backdrop.isArtist"
       :scrim-style="source.ambientStyle"
     />
+    <!-- On a phone the text (and sideways the controls) sits low over the
+     - picture: darkened from the bottom up, more over a light photo than a
+     - dark one. -->
+    <div
+      v-if="bottomScrim"
+      class="now-playing__bottom-scrim"
+      :style="{ '--bottom-scrim': scrimStrength }"
+    />
 
     <now-playing-toolbar
+      v-if="!isLandscape"
       :compact="compact"
       :is-fullscreen="isFullscreen"
       @toggle-fullscreen="toggleFullscreen"
@@ -40,9 +52,28 @@
        - layouts share almost nothing. `compact` is fixed per route (the
        - mobile shell hardcodes it), so this never swaps on a mounted view —
        - no live remount. -->
-      <now-playing-stage-mobile v-if="compact" />
+      <now-playing-stage-mobile v-if="compact" :landscape="isLandscape" />
       <now-playing-stage-desktop v-else />
     </div>
+
+    <!-- On a phone held sideways the stage is one column, holding the
+     - artwork or the lyrics behind it; the toolbar, the track text and the
+     - host's controls take the other. See the grid in <style>. -->
+    <template v-if="isLandscape">
+      <div class="now-playing__side-toolbar">
+        <now-playing-toolbar compact inline :is-fullscreen="isFullscreen">
+          <slot name="toolbar-actions" />
+        </now-playing-toolbar>
+      </div>
+      <now-playing-track-panels
+        v-if="hasPlayable"
+        compact
+        landscape
+        :align-start="photoOnly"
+        :mini-cover="photoOnly"
+        class="now-playing__side-info"
+      />
+    </template>
 
     <!-- Real audio-reactive either way: a local Web Audio analyser during
      - local playback, or the backend's own real-time analysis (see
@@ -51,6 +82,10 @@
      - NowPlayingVisualizer.vue (its own height transition, mount/hide delay
      - and compact height). -->
     <now-playing-visualizer :compact="compact" />
+
+    <div v-if="isLandscape" class="now-playing__side-controls">
+      <slot name="controls" />
+    </div>
 
     <!-- Positioned in .now-playing's own layout (which is already
      - `position: relative`, see its own CSS), not inside the bars or
@@ -76,8 +111,10 @@ import NowPlayingStageDesktop from '@/components/now-playing/NowPlayingStageDesk
 import NowPlayingBackdrop from '@/components/now-playing/NowPlayingBackdrop.vue'
 import NowPlayingVisualizer from '@/components/now-playing/NowPlayingVisualizer.vue'
 import NowPlayingToolbar from '@/components/now-playing/NowPlayingToolbar.vue'
+import NowPlayingTrackPanels from '@/components/now-playing/NowPlayingTrackPanels.vue'
 import { nowPlayingSourceMixin } from '@/components/now-playing/useSource'
 import { appAccent } from '@/services/appAccent'
+import { bottomScrimStrength, measureBottomBrightness } from '@/services/imageBrightness'
 
 // Warm amber — the same signal color the app is named after (see main.ts's
 // 'beacon' theme) — used whenever there's nothing to extract a color from
@@ -89,7 +126,10 @@ const FALLBACK_COLOR = '245, 169, 78'
  * debug overlay, all read from the injected source. Rendered by the host
  * view and, for party guests, by their own shell. It owns everything that is
  * about the screen rather than the data: the flip/slide mechanics, the
- * accent colour and fullscreen. */
+ * accent colour and fullscreen.
+ *
+ * The `controls` slot is the host's transport, shown here only in
+ * landscape; upright, each host places its own under the presentation. */
 export default {
   name: 'NowPlayingPresentation',
   components: {
@@ -98,10 +138,17 @@ export default {
     NowPlayingBackdrop,
     NowPlayingVisualizer,
     NowPlayingToolbar,
+    NowPlayingTrackPanels,
   },
   mixins: [nowPlayingSourceMixin],
   props: {
     compact: {
+      type: Boolean,
+      default: false,
+    },
+    /** A phone on its side (see composables/phoneLandscape.ts): two columns
+     * instead of one. Only read together with `compact`. */
+    landscape: {
       type: Boolean,
       default: false,
     },
@@ -119,9 +166,49 @@ export default {
       // its own (Esc key, an OS-level shortcut), and the button's icon/title
       // need to reflect that either way.
       isFullscreen: false,
+      // Of the artist photo's bottom band, for the landscape scrim - null
+      // until measured, or where it cannot be.
+      backdropBrightness: null as number | null,
     }
   },
+  computed: {
+    isLandscape(): boolean {
+      return this.compact && this.landscape
+    },
+    hasPlayable(): boolean {
+      return this.source.song != null || this.source.radio != null
+    },
+    /** Sideways with neither artwork nor lyrics: nothing to give a column
+     * to, so the photo has the screen and the text and controls line its
+     * bottom edge. */
+    photoOnly(): boolean {
+      return this.isLandscape && this.source.ui.artworkHidden && !this.source.ui.lyricsOpen
+    },
+    /** Sideways always, the text being over the backdrop either way;
+     * upright only where it sits on the photo with the artwork hidden. */
+    bottomScrim(): boolean {
+      return this.isLandscape || (this.compact && this.source.ui.artworkHidden)
+    },
+    /** The photo the scrim is measured against. Only a sharp artist photo
+     * varies enough to need it: the blurred cover is darkened already. */
+    scrimPhoto(): string | null {
+      return this.bottomScrim && this.source.backdrop.isArtist ? this.source.backdrop.source : null
+    },
+    scrimStrength(): number {
+      return bottomScrimStrength(this.backdropBrightness)
+    },
+  },
   watch: {
+    scrimPhoto: {
+      immediate: true,
+      async handler(url: string | null) {
+        this.backdropBrightness = null
+        if (!url) return
+        const brightness = await measureBottomBrightness(url)
+        // A later photo may have arrived while this one was measured.
+        if (this.scrimPhoto === url) this.backdropBrightness = brightness
+      },
+    },
     // The whole app's accent follows the bars for as long as this view is on
     // screen: the artist background's own colour takes over the theme's
     // primary, so buttons, the player bar and everything else tint along
@@ -371,6 +458,112 @@ export default {
    * height with whatever sits below it. 100% instead just fills whatever
    * height that already-correctly-sized grid cell gives it. */
   height: 100%;
+}
+
+/* Sideways: the stage on the left, at full height - as wide as the screen
+ * is tall while it holds the artwork, so the cover can take that height
+ * (100svh because both shells hide their bars here, which makes it the
+ * screen's height). The right column has the toolbar at the top and, from
+ * the bottom up, the controls, the track text centred over them and the
+ * visualizer. */
+.now-playing.now-playing--landscape {
+  grid-template-columns: minmax(0, min(100svh, 50%)) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto auto auto;
+  grid-template-areas:
+    'stage .'
+    'stage visualizer'
+    'stage info'
+    'stage controls';
+  justify-items: stretch;
+}
+
+/* With the artwork hidden there is no square to size the stage by: the
+ * lyrics take everything left of the controls' column. */
+.now-playing.now-playing--landscape.now-playing--wide-stage {
+  grid-template-columns: minmax(0, 1fr) minmax(0, min(400px, 50%));
+}
+
+/* Nothing on the stage at all: the text in the bottom-left corner, the
+ * controls bottom right, the visualizer across the screen above them. */
+.now-playing.now-playing--landscape.now-playing--photo {
+  grid-template-columns: minmax(0, 1fr) minmax(0, min(420px, 55%));
+  grid-template-rows: minmax(0, 1fr) auto auto;
+  grid-template-areas:
+    'stage stage'
+    'visualizer visualizer'
+    'info controls';
+}
+
+/* Not clipped at the column's edge, where the artwork's glow would end in a
+ * hard line; .now-playing itself still clips at the screen's. */
+.now-playing--landscape .now-playing__stage {
+  grid-area: stage;
+  overflow: visible;
+}
+
+.now-playing--landscape .now-playing__visualizer-row {
+  grid-area: visualizer;
+}
+
+/* Under everything that is content (z-index 1), over the photo. */
+.now-playing__bottom-scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    to top,
+    rgba(0, 0, 0, var(--bottom-scrim)) 0%,
+    rgba(0, 0, 0, calc(var(--bottom-scrim) * 0.55)) 40%,
+    rgba(0, 0, 0, 0) 75%
+  );
+}
+
+/* Upright the text is a short block at the bottom of a tall screen: the
+ * same darkening, kept to the band it and the visualizer occupy. */
+.now-playing:not(.now-playing--landscape) .now-playing__bottom-scrim {
+  background: linear-gradient(
+    to top,
+    rgba(0, 0, 0, var(--bottom-scrim)) 0%,
+    rgba(0, 0, 0, calc(var(--bottom-scrim) * 0.55)) 18%,
+    rgba(0, 0, 0, 0) 42%
+  );
+}
+
+/* Placed by line rather than by area: over the photo-only layout's stage
+ * it shares the top-right corner with it. */
+.now-playing__side-toolbar {
+  grid-row: 1;
+  grid-column: 2;
+  justify-self: end;
+  align-self: start;
+  position: relative;
+  z-index: 2;
+  padding: 12px 16px 0;
+}
+
+/* A container so the text's cqw sizes measure its own column. */
+.now-playing__side-info {
+  grid-area: info;
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+  container-type: inline-size;
+  padding: 0 16px 4px;
+}
+
+/* Level with the bottom of the controls beside it. */
+.now-playing--photo .now-playing__side-info {
+  align-self: end;
+  padding-bottom: 18px;
+}
+
+/* Clear of the screen's bottom edge, where both phone platforms listen for
+ * their swipe-up gesture. */
+.now-playing__side-controls {
+  grid-area: controls;
+  position: relative;
+  z-index: 1;
+  padding-bottom: 12px;
 }
 
 .now-playing--compact .now-playing__visualizer-debug {

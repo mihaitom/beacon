@@ -43,7 +43,9 @@
     <!-- A phone: the mobile app's shape - one page at a time, tab bar at
      - the bottom. -->
     <template v-else-if="compact">
-      <header class="guest-app__bar">
+      <!-- Hidden rather than removed while Now Playing has the whole
+       - screen (see immersive), so the toolbar's dock target stays. -->
+      <header v-show="!immersive" class="guest-app__bar">
         <v-icon icon="mdi-lighthouse-on" color="primary" />
         <span class="guest-app__brand">Beacon</span>
         <span class="text-body-small text-medium-emphasis guest-app__me">{{ meName }}</span>
@@ -53,20 +55,34 @@
       </header>
       <main
         class="guest-app__page"
-        :class="{ 'guest-app__page--flush': tab === 'now', 'guest-app__page--online': online }"
+        :class="{
+          'guest-app__page--flush': tab === 'now',
+          'guest-app__page--online': online,
+          'guest-app__page--immersive': immersive,
+        }"
       >
         <guest-project-link v-if="tab === 'now'" compact />
-        <now-playing-presentation v-if="tab === 'now'" compact>
+        <now-playing-presentation v-if="tab === 'now'" compact :landscape="phoneLandscape">
           <template #toolbar-actions>
             <guest-skip-button @notify="notify" />
+          </template>
+          <template #controls>
+            <guest-player-bar v-if="online" compact />
           </template>
         </now-playing-presentation>
         <guest-radio-hint v-else-if="radio" />
         <guest-queue v-else-if="tab === 'queue'" @notify="notify" />
         <guest-wish v-else @notify="notify" />
       </main>
-      <guest-player-bar v-if="online" compact />
-      <v-bottom-navigation v-model="tab" grow color="primary" class="guest-app__tabs" mandatory>
+      <guest-player-bar v-if="online && !immersive" compact />
+      <v-bottom-navigation
+        v-model="tab"
+        grow
+        color="primary"
+        class="guest-app__tabs"
+        mandatory
+        :active="!immersive"
+      >
         <v-btn value="now" prepend-icon="mdi-play-circle-outline" stacked>
           {{ $t('partyGuest.tabNow') }}
         </v-btn>
@@ -130,6 +146,8 @@ import GuestProjectLink from './components/GuestProjectLink.vue'
 import GuestQueue from './components/GuestQueue.vue'
 import GuestRadioHint from './components/GuestRadioHint.vue'
 import GuestWish from './components/GuestWish.vue'
+import { phoneLandscapeMixin } from '@/composables/phoneLandscape'
+import { useIsMobileWeb } from '@/composables/useIsMobileWeb'
 
 export default {
   name: 'PartyGuestApp',
@@ -141,6 +159,12 @@ export default {
     GuestQueue,
     GuestRadioHint,
     GuestWish,
+  },
+  mixins: [phoneLandscapeMixin],
+  // The same escape hatch App.vue uses, for the same test of what a phone
+  // is - see compact.
+  setup() {
+    return { isMobileWeb: useIsMobileWeb() }
   },
   provide() {
     // The guest's own Now Playing source, and everything behind it (view
@@ -173,9 +197,16 @@ export default {
     store() {
       return usePartyGuestStore()
     },
-    /** The app's own phone breakpoint (useIsMobileWeb's). */
+    /** The app's own phone test, not Vuetify's `smAndDown`: since Vuetify 4
+     * that ends at 840px, so a guest between 840 and 960 got the desktop
+     * layout where the app shows its phone one. */
     compact(): boolean {
-      return this.$vuetify.display.smAndDown
+      return this.isMobileWeb
+    },
+    /** Now Playing on a phone held sideways gets the whole screen, as in
+     * the app's own mobile shell. */
+    immersive(): boolean {
+      return this.compact && this.tab === 'now' && this.phoneLandscape
     },
     radio(): boolean {
       return Boolean(this.store.snapshot?.radio)
@@ -303,6 +334,13 @@ export default {
 .guest-app__page--flush {
   padding: 0;
   overflow: hidden;
+}
+
+/* No bars at all. This page draws under the notch (viewport-fit=cover),
+ * which a phone on its side has at one of the long edges. */
+.guest-app__page.guest-app__page--immersive {
+  height: 100dvh;
+  padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 
 .guest-app__tabs {

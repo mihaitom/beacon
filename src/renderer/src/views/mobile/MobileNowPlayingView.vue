@@ -1,9 +1,14 @@
 <template>
-  <div class="mobile-now-playing">
+  <div class="mobile-now-playing" :class="{ 'mobile-now-playing--landscape': phoneLandscape }">
     <div class="mobile-now-playing__art">
-      <now-playing-view compact />
+      <!-- Sideways the controls go into the presentation's right column
+       - instead of under it. Either here or there, never both, so rotating
+       - remounts them - which costs one volume reading and nothing else. -->
+      <now-playing-view compact :landscape="phoneLandscape">
+        <template #controls><mobile-transport-controls /></template>
+      </now-playing-view>
     </div>
-    <mobile-transport-controls />
+    <mobile-transport-controls v-if="!phoneLandscape" />
   </div>
 </template>
 
@@ -11,15 +16,18 @@
 // Reuses NowPlayingView.vue as-is (cover art, title/artist, visualizer,
 // lyrics) rather than forking it — its layout is already flexible (no fixed
 // widths/hover-only affordances, see the mobile plan's reusability
-// research), so only the transport controls below it need a mobile-specific
-// build (PlayerBar.vue's own layout is desktop-fixed-width, its store calls
-// aren't — see MobileTransportControls.vue).
+// research), so only the transport controls below it (beside it, on a phone
+// held sideways) need a mobile-specific build (PlayerBar.vue's own layout is
+// desktop-fixed-width, its store calls aren't — see
+// MobileTransportControls.vue).
 import NowPlayingView from '@/views/NowPlayingView.vue'
 import MobileTransportControls from '@/components/mobile/MobileTransportControls.vue'
+import { phoneLandscapeMixin } from '@/composables/phoneLandscape'
 
 export default {
   name: 'MobileNowPlayingView',
   components: { NowPlayingView, MobileTransportControls },
+  mixins: [phoneLandscapeMixin],
 }
 </script>
 
@@ -67,6 +75,10 @@ export default {
    * it, sized to its own content. */
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.mobile-now-playing--landscape {
+  grid-template-rows: minmax(0, 1fr);
 }
 
 .mobile-now-playing__art {

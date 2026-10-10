@@ -1,4 +1,5 @@
 import { onBeforeUnmount, onMounted, ref, type Ref } from 'vue'
+import { PHONE_LANDSCAPE_QUERY } from './phoneLandscape'
 
 // Matches Vuetify's default 'sm' breakpoint upper bound (960px) — deliberately
 // not read off the Vuetify instance itself (via useDisplay()) so this can be
@@ -6,12 +7,19 @@ import { onBeforeUnmount, onMounted, ref, type Ref } from 'vue'
 // by router/index.ts's navigation guard before any component has mounted.
 const MOBILE_BREAKPOINT_PX = 960
 
+/** Narrow, or a phone on its side: the larger phones are wider than the
+ * breakpoint in landscape and would otherwise rotate into the desktop shell.
+ * A touch screen only - a short desktop window keeps the desktop layout. A
+ * comma list rather than Media Queries 4's `or`, which an engine that does
+ * not know it reads as "never matches". */
 function mobileMediaQuery(): MediaQueryList {
-  return window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT_PX - 0.02}px)`)
+  return window.matchMedia(
+    `(max-width: ${MOBILE_BREAKPOINT_PX - 0.02}px), (pointer: coarse) and ${PHONE_LANDSCAPE_QUERY}`,
+  )
 }
 
 /** Web-build-only (Electron never shows the mobile layout — see App.vue's
- * `layout` computed) narrow-viewport check. `window.api` is only ever
+ * `layout` computed) phone-sized-viewport check. `window.api` is only ever
  * present in the Electron build (see stores/auth.ts's loadConnectDefaults()
  * for the same idiom), so this is false there regardless of window size. Not
  * reactive on its own — see useIsMobileWeb() for a reactive Composition API

@@ -4,8 +4,11 @@
     tag="div"
     class="now-playing__panels"
     :class="{
-      'now-playing__panels--corner': source.ui.artworkHidden,
+      'now-playing__panels--corner': corner,
       'now-playing__panels--compact': compact,
+      'now-playing__panels--landscape': landscape,
+      'now-playing__panels--start': alignStart,
+      'now-playing__panels--mini-cover': miniCover,
     }"
     @before-leave="lockLeaveWidth"
   >
@@ -31,7 +34,7 @@
       <template v-else>
         <component
           :is="source.cover"
-          v-if="source.ui.artworkHidden && panel.song"
+          v-if="(corner || miniCover) && panel.song"
           :cover-art-id="panel.song.coverArtId"
           :src="panel.song.coverUrl"
           :size="miniArtSize || 72"
@@ -107,6 +110,22 @@ export default {
       type: Boolean,
       default: false,
     },
+    /** On a phone on its side, beside the artwork rather than under it. */
+    landscape: {
+      type: Boolean,
+      default: false,
+    },
+    /** Read from the left edge instead of centred. */
+    alignStart: {
+      type: Boolean,
+      default: false,
+    },
+    /** The small cover beside the text, as the corner card has it, but
+     * without the card. */
+    miniCover: {
+      type: Boolean,
+      default: false,
+    },
   },
   data() {
     return {
@@ -116,6 +135,13 @@ export default {
       infoObserver: null as ResizeObserver | null,
       miniArtSize: 0,
     }
+  },
+  computed: {
+    /** The desktop's hidden-artwork corner: the glass card with the small
+     * cover. A phone shows plain text over a scrim instead. */
+    corner(): boolean {
+      return this.source.ui.artworkHidden && !this.compact
+    },
   },
   watch: {
     // The panels are keyed by song, so the current panel's info element is
@@ -209,10 +235,6 @@ export default {
   padding: 16px 20px;
 }
 
-.now-playing__panels--corner.now-playing__panels--compact .now-playing__panel {
-  gap: 12px;
-}
-
 /* The "next" marker between the two panels: two chevrons nudging right in a
  * loop, so the second card reads as what follows the first. No glass of its
  * own - the panel modifier has to outrank the corner panel's own glass rule
@@ -277,65 +299,6 @@ export default {
 
 .next-up-leave-active {
   position: absolute;
-}
-
-/* The panel is the flex row now, so it (and the group it sits in) is what
- * has to be allowed to shrink for a long label to ellipsise inside it. */
-.now-playing__panels--corner.now-playing__panels--compact {
-  min-width: 0;
-  max-width: 100%;
-}
-
-.now-playing__panels--corner.now-playing__panels--compact .now-playing__panel {
-  min-width: 0;
-  max-width: 100%;
-}
-
-/* On a phone the corner is a tight row: each label is one ellipsised line
- * (no wrapping - a wrapped line would push the block taller than the cover,
- * and long text would run off the screen), and the type is a step down so
- * the whole block stays small. */
-.now-playing__panels--corner.now-playing__panels--compact .now-playing__info {
-  min-width: 0;
-}
-
-.now-playing__panels--corner.now-playing__panels--compact .now-playing__info > * {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-/* The title is a multi-line clamp by default (see its own rule); in the
- * corner it is a single ellipsised line like the rest. */
-.now-playing__panels--corner.now-playing__panels--compact .now-playing__title {
-  display: block;
-  font-size: clamp(1rem, min(2.1cqw, 7cqh), 1.6rem);
-}
-
-.now-playing__panels--corner.now-playing__panels--compact .now-playing__info .eyebrow-label {
-  font-size: clamp(0.55rem, min(1.4cqw, 1.8cqh), 0.75rem);
-}
-
-.now-playing__panels--corner.now-playing__panels--compact
-  .now-playing__info
-  .now-playing__artist-link,
-.now-playing__panels--corner.now-playing__panels--compact
-  .now-playing__info
-  .now-playing__artist-label {
-  font-size: clamp(0.68rem, min(2cqw, 2.8cqh), 1.05rem);
-}
-
-.now-playing__panels--corner.now-playing__panels--compact
-  .now-playing__info
-  .now-playing__album-link {
-  font-size: clamp(0.58rem, min(1.5cqw, 2cqh), 0.85rem);
-}
-
-/* The mini cover carries no shadow: the glass panel behind it already
- * separates it from the artist background, and a shadow there would spill
- * out of the panel (and get clipped by the stage). */
-.now-playing__panels--corner.now-playing__panels--compact .now-playing__mini-art {
-  box-shadow: none;
 }
 
 /* The small cover the hidden-artwork corner shows beside the text - see the
@@ -472,6 +435,44 @@ export default {
   font-size: clamp(0.68rem, min(1.8cqw, 2.4cqh), 1rem);
 }
 
+/* Beside the artwork the text may take its column's whole width (which is
+ * what cqw measures here, see NowPlayingPresentation's
+ * .now-playing__side-info), a step up from the upright phone's sizes. */
+.now-playing__panels--landscape .now-playing__info {
+  max-width: 100%;
+  /* Upright the stage centres it; out here there is nothing to inherit. */
+  text-align: center;
+}
+
+.now-playing__panels--landscape .now-playing__title {
+  font-size: clamp(1.25rem, 6cqw, 2rem);
+}
+
+.now-playing__panels--landscape .now-playing__info .now-playing__artist-link,
+.now-playing__panels--landscape .now-playing__info .now-playing__artist-label,
+.now-playing__panels--landscape .now-playing__radio-tag {
+  font-size: clamp(0.9rem, 3.6cqw, 1.25rem);
+}
+
+.now-playing__panels--start,
+.now-playing__panels--start .now-playing__panel {
+  align-items: flex-start;
+}
+
+.now-playing__panels--start .now-playing__info {
+  text-align: left;
+}
+
+.now-playing__panels--mini-cover .now-playing__panel {
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 14px;
+}
+
+.now-playing__panels--mini-cover .now-playing__info {
+  min-width: 0;
+}
+
 /* The eyebrow, the title and the artist line, evenly spaced. The parent's
  * artSize counts on this block's height, so the gaps live here as one rule
  * rather than as a margin on each line. */
@@ -479,23 +480,9 @@ export default {
   margin-bottom: 8px;
 }
 
-/* Tighter in the corner: the compact fonts are roughly half the desktop's,
- * so the same 8px reads as twice the gap. Scoped to the artwork-hidden
- * corner, where artSize (which counts on the 8px above) is not in play. No
- * gap after the last line, so the block (and the cover sized to it) hugs
- * its content. */
-.now-playing__panels--corner.now-playing__panels--compact .now-playing__info > * {
-  margin-bottom: 4px;
-}
-
-.now-playing__panels--corner.now-playing__panels--compact .now-playing__info > *:last-child {
-  margin-bottom: 0;
-}
-
-/* The desktop corner's labels are one ellipsised line each, like the
- * phone's — a wrapped line would grow the block, and with it the mini cover
- * measured from its height. */
-.now-playing__panels--corner:not(.now-playing__panels--compact) .now-playing__info > * {
+/* The corner's labels are one ellipsised line each — a wrapped line would
+ * grow the block, and with it the mini cover measured from its height. */
+.now-playing__panels--corner .now-playing__info > * {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -504,17 +491,17 @@ export default {
 /* The title drops its three-line clamp for that single line (see its own
  * rule), and the album link has to be a real block for the ellipsis to
  * apply at all — text-overflow does nothing on an inline box. */
-.now-playing__panels--corner:not(.now-playing__panels--compact) .now-playing__title {
+.now-playing__panels--corner .now-playing__title {
   display: block;
 }
 
-.now-playing__panels--corner:not(.now-playing__panels--compact) .now-playing__album-link {
+.now-playing__panels--corner .now-playing__album-link {
   display: block;
 }
 
 /* Allowed to shrink so the next-up panel has something to bite into instead
  * of overflowing the row. */
-.now-playing__panels--corner:not(.now-playing__panels--compact) {
+.now-playing__panels--corner {
   min-width: 0;
   max-width: 100%;
 }
@@ -527,13 +514,13 @@ export default {
  * narrower one stops growing (and later stops shrinking) at its own width
  * while the wider one takes the rest. min-width: 0 lets a card and its
  * labels shrink below their content and ellipsise. */
-.now-playing__panels--corner:not(.now-playing__panels--compact) .now-playing__panel {
+.now-playing__panels--corner .now-playing__panel {
   flex: 1 1 0;
   min-width: 0;
   max-width: max-content;
 }
 
-.now-playing__panels--corner:not(.now-playing__panels--compact) .now-playing__info {
+.now-playing__panels--corner .now-playing__info {
   min-width: 0;
 }
 </style>

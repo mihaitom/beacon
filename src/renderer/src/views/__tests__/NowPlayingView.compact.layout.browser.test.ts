@@ -52,6 +52,16 @@ const PORTRAIT: [number, number][] = [
 ]
 const ALL: [number, number][] = [...PORTRAIT, [844, 390], [768, 1024]]
 
+/** Phones on their side, from the smallest common one to a large Android
+ * that is wider than the 960px breakpoint. */
+const LANDSCAPE: [number, number][] = [
+  [667, 375],
+  [740, 360],
+  [844, 390],
+  [932, 430],
+  [998, 448],
+]
+
 async function mountShell() {
   document.body.setAttribute('style', 'margin:0')
   // What MobileLayout.vue's app bar provides — the view is mounted on its
@@ -313,32 +323,22 @@ describe('Now Playing on the phone', () => {
     expect(card.width).toBeCloseTo(stage.width - padX, -1)
   })
 
-  it('centres the mini cover at the bottom over the artist background', async () => {
+  it('centres the track text at the bottom of the artist background', async () => {
+    // The glass card it sat on used to cover a slab of the photo; plain text
+    // over a scrim from the bottom leaves the picture to the picture.
     await mountSongWithBackground(390, 844)
     const stage = box('.now-playing__stage')
-    const content = box('.now-playing__content')
-    const contentStyle = getComputedStyle(document.querySelector('.now-playing__content')!)
-    // The glass panel wraps the cover and the text; it is the thing that
-    // has to sit along the bottom.
-    const panel = box('.now-playing__primary')
-    const mini = box('.now-playing__mini-art')
     const info = box('.now-playing__info')
+    const bars = box('.now-playing__visualizer-row')
 
-    // Centred horizontally on the screen...
-    expect(Math.abs(panel.left + panel.width / 2 - (stage.left + stage.width / 2))).toBeLessThan(2)
-    // ...and resting on the content's own bottom padding, not floating.
-    const padBottom = parseFloat(contentStyle.paddingBottom)
-    expect(Math.abs(panel.bottom - (content.bottom - padBottom))).toBeLessThan(2)
-    // Bottom-aligned with the track text, both at the panel's bottom.
-    expect(Math.abs(mini.bottom - info.bottom)).toBeLessThan(4)
-    // No drop shadow on the cover: the glass panel is the separation, and a
-    // shadow would spill out of it and get clipped by the stage.
-    expect(getComputedStyle(document.querySelector('.now-playing__mini-art')!).boxShadow).toBe(
-      'none',
-    )
+    expect(Math.abs(info.left + info.width / 2 - (stage.left + stage.width / 2))).toBeLessThan(2)
+    expect(info.bottom).toBeGreaterThan(stage.bottom - 40)
+    // Above the visualizer, whose bars rise from the stage's lower edge.
+    expect(info.bottom).toBeLessThanOrEqual(bars.top + 1)
+    expect(document.querySelector('.now-playing__bottom-scrim')).not.toBeNull()
   })
 
-  it('ellipsises a long title instead of running off the screen', async () => {
+  it('keeps a long title on the screen', async () => {
     await mountSongWithBackground(
       390,
       844,
@@ -346,14 +346,185 @@ describe('Now Playing on the phone', () => {
       'A Very Long Song Title That Could Never Fit In The Corner Panel At All',
     )
     const stage = box('.now-playing__stage')
-    const panel = box('.now-playing__primary')
-    const title = document.querySelector('.now-playing__title') as HTMLElement
+    const title = box('.now-playing__title')
 
-    // One line, clipped with an ellipsis - not wrapped, which would push the
-    // block taller than the cover.
-    expect(getComputedStyle(title).whiteSpace).toBe('nowrap')
-    expect(title.scrollWidth).toBeGreaterThan(title.clientWidth)
-    // And the panel stays inside the stage rather than running off it.
-    expect(panel.right).toBeLessThanOrEqual(stage.right + 1)
+    expect(title.left).toBeGreaterThanOrEqual(stage.left)
+    expect(title.right).toBeLessThanOrEqual(stage.right + 1)
+    expect(title.bottom).toBeLessThanOrEqual(stage.bottom)
+  })
+})
+
+describe('Now Playing on a phone held sideways', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.mocked(getArtistArt).mockResolvedValue(null)
+  })
+
+  afterEach(async () => {
+    while (wrappers.length) wrappers.pop()?.unmount()
+    document.body.innerHTML = ''
+    document.body.removeAttribute('style')
+    await page.viewport(1280, 900)
+  })
+
+  it.each(LANDSCAPE)('gives the artwork its whole column at %ix%i', async (w, h) => {
+    // Upright, the artwork shares its column with the text and the
+    // controls; sideways it has the left one to itself. Under them it came
+    // out 88px at 844x390 and ran off the top of the stage. On a 16:9 phone
+    // the column's width is the limit, the controls needing the rest.
+    await mountAt(w, h)
+    const stage = box('.now-playing__stage')
+    const art = box('.now-playing__primary .cover-art')
+    const style = getComputedStyle(document.querySelector('.now-playing__content')!)
+    const padX = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight)
+    const padY = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom)
+    const room = Math.min(stage.width - padX, stage.height - padY)
+
+    expect(art.height / room).toBeGreaterThan(0.9)
+    expect(art.top).toBeGreaterThanOrEqual(stage.top)
+    expect(art.bottom).toBeLessThanOrEqual(stage.bottom)
+  })
+
+  it.each(LANDSCAPE)('keeps the track text and every control on screen at %ix%i', async (w, h) => {
+    await mountAt(w, h)
+    const art = box('.now-playing__primary .cover-art')
+    const info = box('.now-playing__info')
+    const controls = document.querySelector('.mobile-transport')!
+
+    for (const part of [info, controls.getBoundingClientRect()]) {
+      // Beside the artwork, not over it...
+      expect(part.left).toBeGreaterThanOrEqual(art.right)
+      // ...and inside the screen, not clipped off its edge.
+      expect(part.right).toBeLessThanOrEqual(w + 1)
+      expect(part.top).toBeGreaterThanOrEqual(0)
+      expect(part.bottom).toBeLessThanOrEqual(h + 1)
+    }
+    // Every button reachable: none squeezed to nothing or pushed past the
+    // column.
+    for (const button of controls.querySelectorAll('.v-btn')) {
+      const rect = button.getBoundingClientRect()
+      expect(rect.width).toBeGreaterThan(24)
+      expect(rect.right).toBeLessThanOrEqual(w + 1)
+    }
+    // The text sits centred right above the controls rather than running
+    // into them or off at the top of the column.
+    const below = controls.getBoundingClientRect()
+    const bars = box('.now-playing__visualizer-row')
+    expect(info.bottom).toBeLessThanOrEqual(below.top + 1)
+    expect(info.bottom).toBeGreaterThan(below.top - 40)
+    expect(bars.bottom).toBeLessThanOrEqual(info.top + 1)
+    expect(Math.abs(info.left + info.width / 2 - (below.left + below.width / 2))).toBeLessThan(2)
+    // Centred line by line too, not a left-aligned block in the middle.
+    const title = document.querySelector('.now-playing__title')!
+    expect(getComputedStyle(title).textAlign).toBe('center')
+  })
+
+  it('renders the controls once, beside the artwork instead of under it', async () => {
+    // Upright they sit below the presentation; two copies would mean two
+    // volume pollers and two device pickers.
+    await mountAt(844, 390)
+
+    expect(document.querySelectorAll('.mobile-transport')).toHaveLength(1)
+    expect(document.querySelector('.now-playing__side-controls .mobile-transport')).not.toBeNull()
+  })
+
+  it('turns only the artwork over for the title log, leaving the controls usable', async () => {
+    await mountAt(844, 390, true)
+    const stage = box('.now-playing__stage')
+    const log = box('.now-playing__lyrics')
+    const controls = box('.mobile-transport')
+
+    // The log takes the artwork's column, all of it...
+    expect(log.right).toBeLessThanOrEqual(stage.right + 1)
+    expect(log.height).toBeGreaterThan(300)
+    // ...and the controls stay where they were, uncovered.
+    expect(controls.left).toBeGreaterThanOrEqual(log.right)
+  })
+
+  it('keeps the toolbar on screen, with the app bar out of the way', async () => {
+    // The app bar is hidden sideways; docked into it, the lyrics switch
+    // would be gone with it.
+    await mountAt(844, 390)
+    const toolbar = document.querySelector('.now-playing__toolbar')!
+
+    expect(document.querySelector('#mobile-app-bar-actions')!.contains(toolbar)).toBe(false)
+    expect(document.querySelector('.now-playing__side-toolbar')!.contains(toolbar)).toBe(true)
+  })
+
+  it.each(LANDSCAPE)(
+    'puts the text in the bottom-left corner with artwork and lyrics hidden at %ix%i',
+    async (w, h) => {
+      // No large cover to give a column to: the photo has the screen, the
+      // text and the controls line its bottom edge.
+      await mountSongWithBackground(w, h)
+      const info = box('.now-playing__info')
+      const controls = box('.mobile-transport')
+
+      // The small cover leads the text from the corner, level with it.
+      const mini = box('.now-playing__mini-art')
+      expect(mini.left).toBeLessThan(w * 0.1)
+      expect(mini.right).toBeLessThanOrEqual(info.left)
+      expect(Math.abs(mini.bottom - info.bottom)).toBeLessThan(4)
+      expect(mini.height).toBeLessThanOrEqual(info.height + 1)
+      expect(info.bottom).toBeGreaterThan(h * 0.8)
+      expect(info.bottom).toBeLessThanOrEqual(h)
+      expect(controls.left).toBeGreaterThanOrEqual(info.right)
+      expect(controls.right).toBeLessThanOrEqual(w + 1)
+      expect(controls.bottom).toBeLessThanOrEqual(h)
+    },
+  )
+
+  it.each(LANDSCAPE)(
+    'gives the lyrics the full height left of the controls over the photo at %ix%i',
+    async (w, h) => {
+      // A square column for them, with no cover to match, wrapped every
+      // line and left two on screen; across the full width they got a strip.
+      await mountSongWithBackground(w, h, true)
+      const lyrics = box('.now-playing__lyrics')
+      const info = box('.now-playing__info')
+      const controls = box('.mobile-transport')
+
+      expect(lyrics.height).toBeGreaterThan(h * 0.85)
+      expect(lyrics.width).toBeGreaterThan(w * 0.4)
+      expect(lyrics.right).toBeLessThanOrEqual(controls.left)
+      // The text back over the controls, centred, once the lyrics take the
+      // corner it had.
+      expect(info.left).toBeGreaterThanOrEqual(lyrics.right)
+      expect(info.bottom).toBeLessThanOrEqual(controls.top + 1)
+      expect(
+        Math.abs(info.left + info.width / 2 - (controls.left + controls.width / 2)),
+      ).toBeLessThan(2)
+    },
+  )
+
+  it('darkens the bottom of a light photo more than of a dark one', async () => {
+    // White labels over a pale photo washed out under the scrim a dark one
+    // needs.
+    async function scrimOver(colour: string): Promise<number> {
+      const canvas = document.createElement('canvas')
+      canvas.width = canvas.height = 64
+      const ctx = canvas.getContext('2d')!
+      ctx.fillStyle = colour
+      ctx.fillRect(0, 0, 64, 64)
+      const photo = canvas.toDataURL('image/png')
+      vi.mocked(getArtistArt).mockResolvedValue({
+        banner: null,
+        background: photo,
+        backgrounds: [photo],
+        logo: null,
+      })
+      await page.viewport(844, 390)
+      usePlaybackStore().setQueue([makeSong('s1')], 0)
+      await mountShell()
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      const scrim = document.querySelector('.now-playing__bottom-scrim') as HTMLElement
+      const strength = parseFloat(scrim.style.getPropertyValue('--bottom-scrim'))
+      while (wrappers.length) wrappers.pop()?.unmount()
+      document.body.innerHTML = ''
+      setActivePinia(createPinia())
+      return strength
+    }
+
+    expect(await scrimOver('#f4f4f4')).toBeGreaterThan(await scrimOver('#181818'))
   })
 })

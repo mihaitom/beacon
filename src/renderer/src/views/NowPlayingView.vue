@@ -1,5 +1,7 @@
 <template>
-  <now-playing-presentation :compact="compact" />
+  <now-playing-presentation :compact="compact" :landscape="landscape">
+    <template #controls><slot name="controls" /></template>
+  </now-playing-presentation>
 </template>
 
 <script lang="ts">
@@ -117,6 +119,11 @@ export default {
     // its sizing differs; everything else (backdrop, toolbar, visualizer,
     // flip mechanics) is shared.
     compact: {
+      type: Boolean,
+      default: false,
+    },
+    /** The phone on its side - see NowPlayingPresentation's own prop. */
+    landscape: {
       type: Boolean,
       default: false,
     },

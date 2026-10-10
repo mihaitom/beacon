@@ -109,4 +109,35 @@ describe('PartyGuestApp phone shell', () => {
       setActivePinia(createPinia())
     }
   })
+
+  it('gives Now Playing the whole screen on a phone held sideways', async () => {
+    await page.viewport(844, 390)
+    const store = usePartyGuestStore()
+    vi.spyOn(store, 'start').mockResolvedValue()
+    vi.spyOn(store, 'loadWaveform').mockResolvedValue()
+    store.phase = 'app'
+    store.snapshot = { ...songSnapshot(), listen: { enabled: true, epoch: null, timeline: [] } }
+
+    const wrapper = mount(PartyGuestApp, {
+      attachTo: document.body,
+      global: { plugins: [vuetify, i18n] },
+    })
+    wrappers.push(wrapper)
+    await new Promise((resolve) => setTimeout(resolve, 80))
+
+    const stage = document.querySelector('.now-playing')!.getBoundingClientRect()
+    const bar = document.querySelector('.guest-player-bar')!.getBoundingClientRect()
+    const art = document.querySelector('.now-playing__primary .cover-art')!.getBoundingClientRect()
+
+    // No header, no tabs: the presentation is the screen.
+    expect(stage.height).toBeCloseTo(window.innerHeight, -1)
+    // The listen-along bar beside the artwork rather than under it, and on
+    // screen.
+    expect(document.querySelectorAll('.guest-player-bar')).toHaveLength(1)
+    expect(bar.left).toBeGreaterThanOrEqual(art.right)
+    expect(bar.bottom).toBeLessThanOrEqual(window.innerHeight)
+    // The skip vote stays reachable with the header gone.
+    const head = document.querySelector('.now-playing__side-toolbar')!
+    expect(head.querySelector('.guest-skip')).not.toBeNull()
+  })
 })

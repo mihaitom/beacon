@@ -14,13 +14,14 @@
   <!-- `defer` resolves the target after this render, so the guest page's
    - header (rendered in the same pass as this toolbar, unlike the app's
    - separate app-bar component) is in the document by then. -->
-  <Teleport to="#mobile-app-bar-actions" :disabled="!compact || !canDock" defer>
+  <Teleport to="#mobile-app-bar-actions" :disabled="!compact || !canDock || inline" defer>
     <div
       v-if="hasPlayable"
       class="now-playing__toolbar"
       :class="{
         'now-playing__toolbar--docked': docked,
-        'now-playing__toolbar--compact': compact && !docked,
+        'now-playing__toolbar--inline': inline,
+        'now-playing__toolbar--compact': compact && !docked && !inline,
       }"
     >
       <!-- The only lyrics button in the app, on every layout. It used to be
@@ -153,6 +154,12 @@ export default {
       type: Boolean,
       default: false,
     },
+    /** Placed in its parent's layout rather than docked or floated: the
+     * phone on its side, whose app bar is hidden. */
+    inline: {
+      type: Boolean,
+      default: false,
+    },
   },
   emits: ['toggle-fullscreen'],
   data() {
@@ -173,7 +180,7 @@ export default {
       return this.source.radio != null && this.source.song == null
     },
     docked(): boolean {
-      return this.compact && this.canDock
+      return this.compact && this.canDock && !this.inline
     },
   },
   created() {
@@ -226,6 +233,12 @@ export default {
   border-radius: 0;
   background: none;
   backdrop-filter: none;
+}
+
+/* In the flow, but still on its pill: it sits on the backdrop. */
+.now-playing__toolbar--inline {
+  position: static;
+  flex-shrink: 0;
 }
 
 .now-playing__toolbar--compact {
