@@ -29,14 +29,18 @@
     <v-alert v-if="!playlist.songs.length" type="info" variant="tonal" class="view-notice">
       {{ $t('playlists.noSongsYet') }}
     </v-alert>
+    <!-- Virtualized for the reason MobileQueueView's list is. -->
     <div v-else class="mobile-playlist-detail__list">
-      <mobile-song-row
-        v-for="(song, index) in playlist.songs"
-        :key="`${song.id}-${index}`"
-        :song="song"
-        @play="play(index)"
-        @open-actions="openActions(song, index)"
-      />
+      <v-virtual-scroll renderless :items="playlist.songs" :item-height="MOBILE_ROW_HEIGHT">
+        <template #default="{ item: song, index }">
+          <mobile-song-row
+            :key="`${song.id}-${index}`"
+            :song="song"
+            @play="play(index)"
+            @open-actions="openActions(song, index)"
+          />
+        </template>
+      </v-virtual-scroll>
     </div>
 
     <mobile-song-action-sheet
@@ -62,6 +66,7 @@ import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
 import CoverArt from '@/components/library/CoverArt.vue'
 import MobileSongRow from '@/components/mobile/MobileSongRow.vue'
+import { MOBILE_ROW_HEIGHT } from '@/components/mobile/rowMetrics'
 import MobileSongActionSheet from '@/components/mobile/MobileSongActionSheet.vue'
 import PlaylistNotice from '@/components/library/PlaylistNotice.vue'
 import {
@@ -75,6 +80,7 @@ export default {
   components: { CoverArt, MobileSongRow, MobileSongActionSheet, PlaylistNotice },
   data() {
     return {
+      MOBILE_ROW_HEIGHT,
       playlist: null as Awaited<
         ReturnType<ReturnType<typeof useLibraryStore>['fetchPlaylist']>
       > | null,

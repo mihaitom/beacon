@@ -12,20 +12,28 @@
       />
     </div>
 
+    <!-- Virtualized, riding the shell's scrolling pane: every mounted row
+     - carries a cover with its own observer and an animated skeleton, and
+     - a few hundred of those at once froze WebKit - scrolling and taps
+     - stalled until the visible covers had loaded (iPad and iPhone, a
+     - 300-song playlist). -->
     <div v-if="playbackStore.queue.length" ref="listEl" class="mobile-queue__list">
-      <mobile-queue-row
-        v-for="(song, index) in playbackStore.queue"
-        :key="rowKey(song)"
-        :song="song"
-        :index="index"
-        :is-current="index === playbackStore.currentIndex"
-        :audible="index === playbackStore.currentIndex && !playbackStore.radioStation"
-        :drag-over-position="dragIndex !== index ? dragOverPosition(index) : null"
-        :dragging="dragIndex === index"
-        @play="onRowPlay(index)"
-        @remove="playbackStore.removeFromQueue(index)"
-        @drag-start="onDragStart(index, $event)"
-      />
+      <v-virtual-scroll renderless :items="playbackStore.queue" :item-height="MOBILE_ROW_HEIGHT">
+        <template #default="{ item: song, index }">
+          <mobile-queue-row
+            :key="rowKey(song)"
+            :song="song"
+            :index="index"
+            :is-current="index === playbackStore.currentIndex"
+            :audible="index === playbackStore.currentIndex && !playbackStore.radioStation"
+            :drag-over-position="dragIndex !== index ? dragOverPosition(index) : null"
+            :dragging="dragIndex === index"
+            @play="onRowPlay(index)"
+            @remove="playbackStore.removeFromQueue(index)"
+            @drag-start="onDragStart(index, $event)"
+          />
+        </template>
+      </v-virtual-scroll>
     </div>
 
     <v-alert v-else type="info" variant="tonal">{{ $t('queue.empty') }}</v-alert>
@@ -35,6 +43,7 @@
 <script lang="ts">
 import { usePlaybackStore } from '@/stores/playback'
 import MobileQueueRow from '@/components/mobile/MobileQueueRow.vue'
+import { MOBILE_ROW_HEIGHT } from '@/components/mobile/rowMetrics'
 import type { Song } from '@/types/library'
 
 // Only reached when a drag ends without the browser synthesising any click
@@ -63,6 +72,7 @@ export default {
   components: { MobileQueueRow },
   data() {
     return {
+      MOBILE_ROW_HEIGHT,
       // Pointer-based reorder (not HTML5 drag-and-drop, which doesn't fire
       // reliably from touch) — mirrors the interaction pattern already
       // validated in the LAN remote's connect/static/remote/js/views/
@@ -112,10 +122,11 @@ export default {
       if (this.dragIndex === null) return
       const list = this.$refs.listEl as HTMLElement | undefined
       if (!list) return
-      for (const row of Array.from(list.children)) {
+      // Rows only: the virtual scroller's spacers sit between them too.
+      for (const row of Array.from(list.querySelectorAll<HTMLElement>(':scope > [data-index]'))) {
         const rect = row.getBoundingClientRect()
         if (event.clientY < rect.top || event.clientY > rect.bottom) continue
-        const index = Number((row as HTMLElement).dataset.index)
+        const index = Number(row.dataset.index)
         if (!Number.isNaN(index)) {
           this.overIndex = index
           this.overHalf = event.clientY > rect.top + rect.height / 2 ? 'after' : 'before'

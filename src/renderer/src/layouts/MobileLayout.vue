@@ -100,8 +100,15 @@ export default {
   // On <html> rather than in a scoped block: the rules below have to reach
   // the document itself, and only while this shell is the one on screen -
   // the desktop app scrolls its own pages normally.
-  mounted() {
+  //
+  // Before mount, not on it: children mount first, and a virtualized list
+  // looks for its scrolling parent as it does - without the class, the
+  // pane isn't one yet and the list attaches to the document, which never
+  // scrolls here.
+  beforeMount() {
     document.documentElement.classList.add('mobile-shell')
+  },
+  mounted() {
     window.addEventListener('resize', this.resetDocumentScroll)
   },
   beforeUnmount() {

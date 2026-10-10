@@ -9,3 +9,11 @@
  * — the two are meant to move together.
  */
 export const MOBILE_ROW_ART_SIZE = 48
+
+/**
+ * The height every mobile list row renders at — `.mobile-row`'s min-height
+ * in assets/base.css, which the rows' own padding and borders stay under.
+ * The long lists (Queue, a playlist) are virtualized and lay themselves out
+ * from this number, so it has to move together with that rule.
+ */
+export const MOBILE_ROW_HEIGHT = 60

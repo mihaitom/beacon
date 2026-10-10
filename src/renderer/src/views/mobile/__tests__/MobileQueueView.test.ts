@@ -144,6 +144,27 @@ describe('MobileQueueView', () => {
       expect(leaveRadio).not.toHaveBeenCalled()
       expect(playback.radioStation).not.toBeNull()
     })
+
+    /** The drop target is found by hit-testing the rows under the finger,
+     * and in the virtualized list they share their parent with the
+     * scroller's spacers. */
+    it('drops below the row the pointer is over the lower half of', async () => {
+      const wrapper = mountView()
+      const playback = usePlaybackStore()
+      const reorderQueue = vi.spyOn(playback, 'reorderQueue')
+      for (const row of wrapper.findAllComponents(MobileQueueRow)) {
+        const top = row.props('index') * 60
+        vi.spyOn(row.element, 'getBoundingClientRect').mockReturnValue(
+          DOMRect.fromRect({ x: 0, y: top, width: 300, height: 60 }),
+        )
+      }
+
+      wrapper.findAllComponents(MobileQueueRow)[0]!.vm.$emit('drag-start', new Event('pointerdown'))
+      window.dispatchEvent(new MouseEvent('pointermove', { clientY: 60 + 45 }))
+      window.dispatchEvent(new Event('pointerup'))
+
+      expect(reorderQueue).toHaveBeenCalledWith(0, 1)
+    })
   })
 
   // Same split QueueRow.vue makes on the desktop: the queue survives a

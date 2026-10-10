@@ -199,6 +199,11 @@ body {
   border-bottom: none;
 }
 
+/* In a virtualized list the last row is followed by the scroller's spacer. */
+.mobile-row:has(+ .v-virtual-scroll__spacer:last-child) {
+  border-bottom: none;
+}
+
 /* Square, deliberately, and stated here so a new row does not reach for a
  * radius of its own. Four of these lists used to round their corners at
  * 8px, which with a separator underneath reads as a stack of cards rather
