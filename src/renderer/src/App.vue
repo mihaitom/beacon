@@ -27,10 +27,12 @@ import { useLibraryStore } from '@/stores/library'
 import { useRemoteControlStore } from '@/stores/remoteControl'
 import { usePartyStore } from '@/stores/party'
 import { useUpdateStore } from '@/stores/update'
+import { useDrawersStore } from '@/stores/drawers'
 import { useIsMobileWeb } from '@/composables/useIsMobileWeb'
 import { initKeyboardShortcuts } from '@/services/keyboardShortcuts'
 import { initNavigationHistory } from '@/services/navigationHistory'
 import { initAccountScopedStores } from '@/services/accountScopedStores'
+import { routeInOtherShell } from '@/services/shellRoutes'
 
 export default {
   name: 'App',
@@ -63,6 +65,14 @@ export default {
     },
   },
   watch: {
+    // The layout follows the viewport live, so the page has to follow the
+    // layout - see routeInOtherShell().
+    isMobileWeb(mobile: boolean) {
+      const target = routeInOtherShell(this.$route, mobile)
+      if (!target) return
+      if (target.queueDrawer) useDrawersStore().setQueueDrawerOpen(true)
+      void this.$router.replace(target.to)
+    },
     'authStore.authenticated': {
       // No `immediate: true` — main.ts mounts the app without waiting for
       // router.isReady(), so an immediate fire would run with the initial
