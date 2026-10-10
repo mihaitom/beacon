@@ -723,6 +723,9 @@ export default {
     ffmpegMissing: 'Falta ffmpeg - la transmisión no funcionará sin él.',
     version: 'Versión {version}',
     updateAvailable: 'La versión {version} está disponible.',
+    updateDownloading:
+      'La versión {version} se está descargando en segundo plano y se instalará automáticamente la próxima vez que reinicies Beacon.',
+    updateBadge: 'Actualización disponible',
     updateAvailableLink: 'Ver versión',
   },
   lastfm: {
@@ -1117,12 +1120,5 @@ export default {
     tabQueue: 'Cola',
     playOn: 'Reproducir en',
     needsPairing: 'Necesita emparejarse primero en la aplicación Beacon',
-  },
-  updateToast: {
-    title: 'Actualización disponible',
-    electronMessage:
-      'La versión {version} se está descargando en segundo plano y se instalará automáticamente la próxima vez que reinicies Beacon.',
-    webMessage: 'La versión {version} está disponible.',
-    remindLater: 'Recordarme más tarde',
   },
 } satisfies typeof de

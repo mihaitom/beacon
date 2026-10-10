@@ -35,13 +35,24 @@
       <!-- On every route like the settings button beside it: the party is
          - this window's, whatever the phone happens to be showing. -->
       <party-mode-button class="mobile-app-bar__action" />
+      <!-- The dot: see DefaultLayout.vue's settings entry. -->
       <v-btn
-        icon="mdi-cog-outline"
+        icon
         variant="text"
         density="comfortable"
         class="mobile-app-bar__action"
+        :aria-label="$t('nav.settings')"
         @click="$router.push('/settings')"
-      />
+      >
+        <v-badge
+          dot
+          color="primary"
+          :model-value="updateStore.unseen"
+          :label="$t('settings.updateBadge')"
+        >
+          <v-icon icon="mdi-cog-outline" />
+        </v-badge>
+      </v-btn>
     </v-app-bar>
 
     <v-main>
@@ -69,6 +80,7 @@ import MobilePlayerBar from '@/components/mobile/MobilePlayerBar.vue'
 import CastTakeoverConfirmDialog from '@/components/connect/CastTakeoverConfirmDialog.vue'
 import PartyModeButton from '@/components/party/PartyModeButton.vue'
 import { phoneLandscapeMixin } from '@/composables/phoneLandscape'
+import { useUpdateStore } from '@/stores/update'
 
 /** Roughly how long iOS takes to animate a rotation; the reset is repeated
  * after it in case the offset is only applied at its end. */
@@ -89,6 +101,9 @@ export default {
     }
   },
   computed: {
+    updateStore() {
+      return useUpdateStore()
+    },
     onNowPlaying() {
       return this.$route.name === 'm-now-playing'
     },

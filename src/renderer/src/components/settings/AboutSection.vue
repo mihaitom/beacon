@@ -59,7 +59,7 @@
           density="compact"
           class="settings-progress"
         >
-          {{ $t('settings.updateAvailable', { version: updateStore.latestVersion }) }}
+          {{ updateMessage }}
           <a
             v-if="updateStore.releaseUrl"
             :href="updateStore.releaseUrl"
@@ -112,6 +112,27 @@ export default {
     },
     ffmpegFound(): boolean {
       return this.authStore.health?.ffmpeg ?? true
+    },
+    // The desktop app downloads the update on its own and installs it on the
+    // next quit (src/main/index.ts) - nothing for anyone to do there. The
+    // web build has no such mechanism, so "available" is all it can say.
+    updateMessage(): string {
+      const version = this.updateStore.latestVersion
+      return window.api
+        ? this.$t('settings.updateDownloading', { version })
+        : this.$t('settings.updateAvailable', { version })
+    },
+  },
+  watch: {
+    // Settings opens on the tab this notice is on, so being mounted means
+    // it is in front of someone - which is what puts the dot on the
+    // settings button out. Watched rather than done once: the check may
+    // only answer while this page is already open.
+    'updateStore.latestVersion': {
+      handler() {
+        this.updateStore.markSeen()
+      },
+      immediate: true,
     },
   },
   methods: {

@@ -716,6 +716,9 @@ export default {
     ffmpegMissing: "ffmpeg missing - casting won't work without it.",
     version: 'Version {version}',
     updateAvailable: 'Version {version} is available.',
+    updateDownloading:
+      'Version {version} is downloading in the background and will install automatically the next time you restart Beacon.',
+    updateBadge: 'Update available',
     updateAvailableLink: 'View release',
   },
   lastfm: {
@@ -1107,12 +1110,5 @@ export default {
     tabQueue: 'Queue',
     playOn: 'Play on',
     needsPairing: 'Needs pairing in the Beacon app first',
-  },
-  updateToast: {
-    title: 'Update available',
-    electronMessage:
-      'Version {version} is downloading in the background and will install automatically the next time you restart Beacon.',
-    webMessage: 'Version {version} is available.',
-    remindLater: 'Remind me later',
   },
 } satisfies typeof de

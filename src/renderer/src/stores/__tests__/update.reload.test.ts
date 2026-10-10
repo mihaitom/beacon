@@ -3,11 +3,10 @@ import { setActivePinia, createPinia } from 'pinia'
 import { useUpdateStore } from '../update'
 import { useAuthStore } from '../auth'
 
-/** update.ts's state() bakes dismissedVersion/snoozedUntil in at store
- * creation — this store gets created at App.vue's created(), before
- * login/restore() resolves an account (see services/accountKey.ts's
- * onAccountChange()), so reload() is what actually picks up the real
- * account's own dismiss/snooze state once it's known. */
+/** update.ts's state() bakes seenVersion in at store creation — this store
+ * gets created at App.vue's created(), before login/restore() resolves an
+ * account (see services/accountKey.ts's onAccountChange()), so reload() is
+ * what actually picks up the real account's own value once it's known. */
 describe('update store — account-scoped reload', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
@@ -18,34 +17,36 @@ describe('update store — account-scoped reload', () => {
     const store = useUpdateStore()
     // Simulates the pre-login state() read finding nothing (nobody logged
     // in yet at store-creation time).
-    expect(store.dismissedVersion).toBeNull()
+    expect(store.seenVersion).toBeNull()
 
     const auth = useAuthStore()
     auth.serverType = 'subsonic'
     auth.serverUrl = 'https://music.example.com'
     auth.username = 'alice'
+    store.available = true
     store.latestVersion = '2.0.0'
-    store.dismiss()
+    store.markSeen()
 
     // A second store instance, as if the app were freshly booted again —
     // its state() factory would still see the same account this time
     // (unlike the very first pre-login boot), matching reload()'s result.
     store.reload()
-    expect(store.dismissedVersion).toBe('2.0.0')
+    expect(store.seenVersion).toBe('2.0.0')
   })
 
-  it("does not leak one account's dismissed version into another's reload()", () => {
+  it("does not leak one account's seen version into another's reload()", () => {
     const store = useUpdateStore()
     const auth = useAuthStore()
     auth.serverType = 'subsonic'
     auth.serverUrl = 'https://music.example.com'
     auth.username = 'alice'
+    store.available = true
     store.latestVersion = '2.0.0'
-    store.dismiss()
+    store.markSeen()
 
     auth.username = 'bob'
     store.reload()
 
-    expect(store.dismissedVersion).toBeNull()
+    expect(store.seenVersion).toBeNull()
   })
 })

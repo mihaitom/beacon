@@ -723,6 +723,9 @@ export default {
     ffmpegMissing: 'ffmpeg mancante: la trasmissione non funzionerà senza di esso.',
     version: 'Versione {version}',
     updateAvailable: 'La versione {version} è disponibile.',
+    updateDownloading:
+      'La versione {version} si sta scaricando in background e verrà installata automaticamente al prossimo riavvio di Beacon.',
+    updateBadge: 'Aggiornamento disponibile',
     updateAvailableLink: 'Vedi versione',
   },
   lastfm: {
@@ -1117,12 +1120,5 @@ export default {
     tabQueue: 'Coda',
     playOn: 'Riproduci su',
     needsPairing: "Deve prima essere associato nell'app Beacon",
-  },
-  updateToast: {
-    title: 'Aggiornamento disponibile',
-    electronMessage:
-      'La versione {version} si sta scaricando in background e verrà installata automaticamente al prossimo riavvio di Beacon.',
-    webMessage: 'La versione {version} è disponibile.',
-    remindLater: 'Ricordamelo più tardi',
   },
 } satisfies typeof de

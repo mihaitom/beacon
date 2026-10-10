@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Changed
 
 - In the mobile layout, the library scrolls through the whole catalogue without a "Load more" button
+- A new version is announced by a small dot on the settings button instead of a notice in the corner. The dot goes away once Settings has been opened, where the update is described as before
 
 ### Fixed
 

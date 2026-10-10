@@ -3,11 +3,11 @@ export default interface Toast {
   title: string
   message: string
   /** Turns the toast into something you can act on: rendered as a real
-   * button next to the message, the way UpdateToast.vue does it. Replaces
-   * an earlier "the whole toast is clickable" flag — a toast that offers to
-   * do something has to *look* like it does, and clicking anywhere on a
-   * notification is both undiscoverable and easy to trigger by accident
-   * while reaching for its close button. */
+   * button next to the message. Replaces an earlier "the whole toast is
+   * clickable" flag — a toast that offers to do something has to *look*
+   * like it does, and clicking anywhere on a notification is both
+   * undiscoverable and easy to trigger by accident while reaching for its
+   * close button. */
   action?: {
     label: string
     onClick: () => void

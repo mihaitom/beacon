@@ -723,6 +723,10 @@ export default {
     ffmpegMissing: 'ffmpeg fehlt - Casting funktioniert nicht ohne.',
     version: 'Version {version}',
     updateAvailable: 'Version {version} ist verfügbar.',
+    updateDownloading:
+      'Version {version} wird im Hintergrund heruntergeladen und beim nächsten Neustart automatisch installiert.',
+    // The dot on the settings button, for screen readers.
+    updateBadge: 'Update verfügbar',
     updateAvailableLink: 'Release ansehen',
   },
   lastfm: {
@@ -1118,12 +1122,5 @@ export default {
     tabQueue: 'Nächste',
     playOn: 'Wiedergeben auf',
     needsPairing: 'Muss zuerst in der Beacon-App gepairt werden',
-  },
-  updateToast: {
-    title: 'Update verfügbar',
-    electronMessage:
-      'Version {version} wird im Hintergrund heruntergeladen und beim nächsten Neustart automatisch installiert.',
-    webMessage: 'Version {version} ist verfügbar.',
-    remindLater: 'Später erinnern',
   },
 }

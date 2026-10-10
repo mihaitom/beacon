@@ -49,7 +49,21 @@
 
       <template #append>
         <v-list density="compact" nav>
-          <v-list-item to="/settings" prepend-icon="mdi-cog" :title="$t('nav.settings')" />
+          <v-list-item to="/settings" :title="$t('nav.settings')">
+            <!-- A newer Beacon is out and Settings, which says so, hasn't
+             - been opened since. Deliberately this quiet: releases come
+             - often, and none of them needs anyone to act right away. -->
+            <template #prepend>
+              <v-badge
+                dot
+                color="primary"
+                :model-value="updateStore.unseen"
+                :label="$t('settings.updateBadge')"
+              >
+                <v-icon icon="mdi-cog" />
+              </v-badge>
+            </template>
+          </v-list-item>
         </v-list>
       </template>
     </v-navigation-drawer>
@@ -123,6 +137,7 @@ import NavHistoryControls from '@/components/NavHistoryControls.vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { useDrawersStore } from '@/stores/drawers'
 import { useAuthStore } from '@/stores/auth'
+import { useUpdateStore } from '@/stores/update'
 import { loadSidebarCollapsed, saveSidebarCollapsed } from '@/services/sidebarSetting'
 
 // How wide the rail is with its labels showing — see the drawer's own
@@ -151,6 +166,9 @@ export default {
     }
   },
   computed: {
+    updateStore() {
+      return useUpdateStore()
+    },
     SIDEBAR_WIDTH: () => SIDEBAR_WIDTH,
     isElectron(): boolean {
       return !!window.api

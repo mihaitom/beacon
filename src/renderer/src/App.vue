@@ -2,7 +2,6 @@
   <component :is="layout" />
   <toast-snackbar />
   <release-notes />
-  <update-toast />
   <keyboard-shortcuts-dialog />
   <artwork-lightbox />
   <song-info-dialog />
@@ -16,7 +15,6 @@ import AuthLayout from '@/layouts/AuthLayout.vue'
 import MobileLayout from '@/layouts/MobileLayout.vue'
 import ToastSnackbar from '@/components/toast.vue'
 import ReleaseNotes from '@/components/releaseNotes.vue'
-import UpdateToast from '@/components/UpdateToast.vue'
 import KeyboardShortcutsDialog from '@/components/KeyboardShortcutsDialog.vue'
 import ArtworkLightbox from '@/components/library/ArtworkLightbox.vue'
 import SongInfoDialog from '@/components/library/SongInfoDialog.vue'
@@ -39,7 +37,6 @@ export default {
   components: {
     ToastSnackbar,
     ReleaseNotes,
-    UpdateToast,
     KeyboardShortcutsDialog,
     ArtworkLightbox,
     SongInfoDialog,
@@ -116,7 +113,7 @@ export default {
     initNavigationHistory()
     // Not gated on media-server auth — same reasoning as the Remote Control
     // status refresh below, just checking GitHub instead of connect. Not
-    // awaited: UpdateToast.vue/SettingsView.vue both read the store
+    // awaited: the settings dot and AboutSection.vue both read the store
     // reactively and just show nothing until this resolves.
     void useUpdateStore().check()
     // loadConnectDefaults() resolves connectUrl/apiUrl/connectToken for this

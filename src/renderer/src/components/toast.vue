@@ -205,8 +205,7 @@ export default defineComponent({
   --toast-accent: rgb(var(--v-theme-error));
 }
 
-/* Same shape as UpdateToast.vue's own action row, so the two read as one
- * pattern rather than two kinds of actionable notification. */
+/* The toast's action, as a row of text buttons under the message. */
 .toast-actions {
   display: flex;
   gap: 0.75rem;
