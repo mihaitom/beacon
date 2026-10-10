@@ -872,7 +872,10 @@ def _hls_requests(client, default_session, urls: list[str], info=None, chunks=No
     return responses, procs
 
 
-def test_the_hls_playlist_lists_the_whole_track_and_begins_at_start(client, default_session):
+def test_the_hls_playlist_lists_the_whole_track_and_encodes_from_start(client, default_session):
+    """The element's clock is the playlist's, and the lock screen shows that
+    clock - so a position to begin at never shortens the playlist, and is no
+    EXT-X-START either (see core/hls.py). It only gets the encode going."""
     (response,), procs = _hls_requests(
         client, default_session, ["/stream/local/1/hls/index.m3u8?fmt=aac&br=192&start=60"]
     )
@@ -882,7 +885,7 @@ def test_the_hls_playlist_lists_the_whole_track_and_begins_at_start(client, defa
     text = response.text
     durations = [float(line[8:-1]) for line in text.splitlines() if line.startswith("#EXTINF:")]
     assert sum(durations) == pytest.approx(_DURATION)
-    assert "#EXT-X-START:TIME-OFFSET=60.000,PRECISE=YES" in text
+    assert "EXT-X-START" not in text
     assert '#EXT-X-MAP:URI="init.mp4?fmt=aac&br=192&start=60"' in text
     assert "0.m4s?fmt=aac&br=192&start=60" in text
     # Encoding starts at the boundary of the segment holding 60s.

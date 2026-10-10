@@ -1490,9 +1490,12 @@ describe('playback transport', () => {
         playback.startLocalSong(playback.currentSong!, 73.5, true)
 
         expect(engine.playFrom).not.toHaveBeenCalled()
-        const [url, position] = engine.play.mock.calls.at(-1)!
+        const [url, position, , options] = engine.play.mock.calls.at(-1)!
         expect(url).toContain('start=73.500')
         expect(position).toBe(73.5)
+        // What has the engine hold the position back until Safari's player
+        // has media - see the engine's writePosition().
+        expect(options).toEqual({ hls: true })
       })
 
       it('is seeked in place rather than fetched again', async () => {

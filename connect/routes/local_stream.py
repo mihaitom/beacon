@@ -535,8 +535,9 @@ async def local_stream(
 # plain stream above plays everywhere else.
 #
 # Unlike above, `start` does not change what is served: the playlist always
-# lists the whole track and only says where playback begins, and seeking is
-# the player's own, within it - see core/hls.py for why.
+# lists the whole track, and seeking is the player's own, within it - see
+# core/hls.py for why. `start` only gets the encode going from there, ahead
+# of the player seeking to it.
 
 _hls_transcodes = hls.TranscodeRegistry()
 # Transcodes being set up, so requests that arrive together - a player
@@ -618,7 +619,7 @@ async def local_hls_playlist(
     request: Request,
     fmt: str = Query(description="mp3 | aac | opus | flac"),
     br: int | None = Query(None, description="bitrate in kbps, see ALLOWED_BITRATES; not for flac"),
-    start: float = Query(0.0, ge=0.0, description="seconds playback begins at"),
+    start: float = Query(0.0, ge=0.0, description="seconds the player will seek to first"),
     session: SessionState = Depends(require_authenticated_session),
 ):
     transcode = await _hls_transcode(session, track_id, fmt, br)
@@ -630,7 +631,7 @@ async def local_hls_playlist(
         return RedirectResponse(f"../../{quote(track_id, safe='')}?{request.url.query}", 307)
     transcode.begin_at(start)
     return Response(
-        hls.playlist(transcode.layout, transcode.packed, request.url.query, start),
+        hls.playlist(transcode.layout, transcode.packed, request.url.query),
         media_type="application/vnd.apple.mpegurl",
         headers={"Cache-Control": "no-store"},
     )

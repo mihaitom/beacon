@@ -229,6 +229,10 @@ export class AudioEngine {
   // seek back to, so the URL itself has to be asked for again at the
   // position playback had reached.
   private offsetStream = false
+  // Whether what is loaded is an HLS playlist for the browser's own player
+  // (Safari's), which cannot take a seek before it has media buffered - see
+  // writePosition().
+  private hlsStream = false
   // How an offset stream's URL is built for a given second. Held so a
   // reconnect can ask for the same stream again from where it dropped —
   // see reconnectOnDrop(). Null for every other kind of source.
@@ -868,9 +872,9 @@ export class AudioEngine {
    * services/replayGain.ts) — defaults to 1 so callers with nothing to
    * normalize (radio streams) don't need to pass it explicitly, and so it's
    * always set explicitly rather than silently carrying over the previous
-   * song's value. */
-  load(url: string, startPosition = 0, gain = 1): void {
-    this.loadSource(url, startPosition, gain, false)
+   * song's value. `hls` says `url` is an HLS playlist (see hlsStream). */
+  load(url: string, startPosition = 0, gain = 1, { hls = false } = {}): void {
+    this.loadSource(url, startPosition, gain, false, false, hls)
   }
 
   /** Loads and starts a transcode that begins at `seconds` and carries no
@@ -951,6 +955,7 @@ export class AudioEngine {
     gain: number,
     live: boolean,
     offsetStream = false,
+    hls = false,
   ): void {
     this.cancelStartPositionRetry?.()
     this.cancelReconnect()
@@ -958,6 +963,7 @@ export class AudioEngine {
     this.liveStream = live
     this.holdsConnection = false
     this.offsetStream = offsetStream
+    this.hlsStream = hls
     this.positionOffset = offsetStream ? startPosition : 0
     // Cleared here rather than in each caller, so a plain file or a
     // station can never reconnect through the previous song's factory, and
@@ -1002,6 +1008,24 @@ export class AudioEngine {
    * before and the retry is purely additive. */
   private applyStartPosition(position: number): void {
     if (position <= 0) return
+    this.writePosition(position)
+  }
+
+  /** applyStartPosition() without the start-of-song shortcut: a seek to 0
+   * still has to move a playhead that is somewhere else.
+   *
+   * For an HLS stream, nothing is written before the player holds media.
+   * Safari's own HLS player hangs on a seek made earlier: 'seeking' with no
+   * 'seeked', the element reporting 'playing' with its clock standing
+   * still, and every later seek stuck behind that one. Seeks made once it
+   * has data complete in a fraction of a second (both traced on an iPhone,
+   * 2026-10-10). The playlist's own start point, EXT-X-START, hung the same
+   * way. */
+  private writePosition(position: number): void {
+    if (this.hlsStream && this.audio.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) {
+      this.applyPositionOn('canplay', position)
+      return
+    }
     try {
       this.audio.currentTime = position
     } catch (error) {
@@ -1009,6 +1033,12 @@ export class AudioEngine {
       // the browsers this retry is for, and not worth surfacing.
       console.debug('[audio-engine] Deferring start position until metadata:', error)
     }
+    this.applyPositionOn('loadedmetadata', position)
+  }
+
+  /** Writes `position` once `event` fires, unless the element is already
+   * there. seek() and every new source cancel it. */
+  private applyPositionOn(event: 'loadedmetadata' | 'canplay', position: number): void {
     const retry = (): void => {
       this.cancelStartPositionRetry = null
       // Only when the early write above was actually dropped. Anything that
@@ -1019,15 +1049,15 @@ export class AudioEngine {
         this.audio.currentTime = position
       }
     }
-    this.audio.addEventListener('loadedmetadata', retry, { once: true })
+    this.audio.addEventListener(event, retry, { once: true })
     this.cancelStartPositionRetry = () => {
       this.cancelStartPositionRetry = null
-      this.audio.removeEventListener('loadedmetadata', retry)
+      this.audio.removeEventListener(event, retry)
     }
   }
 
-  play(url: string, startPosition = 0, gain = 1): void {
-    this.load(url, startPosition, gain)
+  play(url: string, startPosition = 0, gain = 1, options: { hls?: boolean } = {}): void {
+    this.load(url, startPosition, gain, options)
     this.start()
   }
 
@@ -1107,7 +1137,19 @@ export class AudioEngine {
     // retry a moment later.
     this.cancelStartPositionRetry?.()
     this.lastKnownPosition = position
-    this.audio.currentTime = position
+    const ready = this.hlsStream
+      ? HTMLMediaElement.HAVE_FUTURE_DATA
+      : HTMLMediaElement.HAVE_METADATA
+    if (this.audio.readyState >= ready) {
+      this.audio.currentTime = position
+      return
+    }
+    // Before metadata, which an iPhone does not load for a paused element
+    // until play is pressed, Safari drops this write or throws on it - so a
+    // song restored paused at startup could not be scrubbed until
+    // something had played. The start position's retry covers it, and the
+    // HLS case's wait for data with it (see writePosition()).
+    this.writePosition(position)
   }
 
   /** Applied through the Web Audio graph rather than the element's own

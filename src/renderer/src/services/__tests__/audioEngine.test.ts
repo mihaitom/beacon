@@ -42,6 +42,7 @@ class FakeAudio extends EventTarget {
 
   dropWritesBeforeMetadata = false
   metadataLoaded = false
+  readyState = 0
   /** Built fresh per call so start()'s catch is attached in the same tick a
    * rejection is created — a pre-built rejected promise would surface as an
    * unhandled rejection before the engine ever gets to it. */
@@ -1421,6 +1422,89 @@ describe('AudioEngine', () => {
       audio.emitLoadedMetadata()
 
       expect(audio.currentTime).toBe(90)
+    })
+
+    it('lets a seek before metadata stand where the browser drops it', () => {
+      // An iPhone loads nothing for a paused element, so a song restored at
+      // startup has no metadata until play is pressed.
+      audio.dropWritesBeforeMetadata = true
+      engine.load('song.mp3', 30)
+
+      engine.seek(90)
+      audio.emitLoadedMetadata()
+
+      expect(audio.currentTime).toBe(90)
+    })
+
+    it('survives a seek the element rejects before metadata', () => {
+      audio.dropWritesBeforeMetadata = true
+      engine.load('song.mp3', 30)
+      const failing = vi.spyOn(audio, 'currentTime', 'set').mockImplementationOnce(() => {
+        throw domError('InvalidStateError', 'The object is in an invalid state.')
+      })
+
+      expect(() => engine.seek(90)).not.toThrow()
+      failing.mockRestore()
+
+      audio.emitLoadedMetadata()
+      expect(audio.currentTime).toBe(90)
+    })
+
+    it('takes a seek back to the start before metadata too', () => {
+      audio.dropWritesBeforeMetadata = true
+      engine.load('song.mp3', 30)
+
+      engine.seek(0)
+      audio.settleAt(30)
+      audio.emitLoadedMetadata()
+
+      expect(audio.currentTime).toBe(0)
+    })
+
+    describe('as HLS', () => {
+      // Safari's own HLS player hangs on a seek made before it holds media,
+      // so the position waits for 'canplay'.
+      function canPlay(): void {
+        audio.readyState = 3
+        audio.dispatchEvent(new Event('canplay'))
+      }
+
+      it('holds the start position back until the player has media', () => {
+        engine.load('index.m3u8', 164.8, 1, { hls: true })
+        audio.emitLoadedMetadata()
+        expect(audio.currentTime).toBe(0)
+
+        canPlay()
+
+        expect(audio.currentTime).toBe(164.8)
+      })
+
+      it('holds a seek back the same way', () => {
+        engine.load('index.m3u8', 0, 1, { hls: true })
+        audio.emitLoadedMetadata()
+
+        engine.seek(90)
+        expect(audio.currentTime).toBe(0)
+        canPlay()
+
+        expect(audio.currentTime).toBe(90)
+      })
+
+      it('seeks straight away once the player has media', () => {
+        engine.load('index.m3u8', 0, 1, { hls: true })
+        canPlay()
+
+        engine.seek(90)
+
+        expect(audio.currentTime).toBe(90)
+      })
+
+      it('goes back to writing early for a file loaded after it', () => {
+        engine.load('index.m3u8', 0, 1, { hls: true })
+        engine.load('song.mp3', 30)
+
+        expect(audio.currentTime).toBe(30)
+      })
     })
 
     it('does not resurrect a position on an element that was stopped', () => {

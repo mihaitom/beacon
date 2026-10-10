@@ -11,6 +11,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - On Apple Silicon Macs, the downloaded app was reported as damaged and could not be opened. It now opens after confirming it once under System Settings > Privacy & Security (reported by @ampcat3, #46)
 - On an iPhone or iPad, dragging the lock-screen scrubber while a song played at a reduced quality (a converted stream) jumped the shown position back to the beginning. It now follows the real position, as it already did for untouched files
 - On an iPhone or iPad, the lock screen offered buttons to skip 10 seconds instead of previous and next track. It now shows previous and next
+- On an iPhone or iPad, the song Beacon reopens with could not be scrubbed until something had played
+
+### Known Issues
+
+- On an iPhone or iPad with Beacon added to the home screen, pressing play on the lock screen after pausing there stays silent until Beacon is opened again. This is a limitation of Safari for home-screen apps; in a Safari tab it works
 
 ## [1.6.0] - 2026-10-07
 

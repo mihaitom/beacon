@@ -25,8 +25,9 @@ Segments are spooled to a temporary file rather than kept in memory: Safari
 fetches the whole track as fast as it is encoded (measured on a LAN), and a
 lossless rescue of a long hi-res source is hundreds of MB.
 
-The playlist always lists the whole track, and a position to begin at is an
-`EXT-X-START` in it, never a playlist that begins there. WebKit hands the
+The playlist always lists the whole track, never only the part from where
+playback is to begin; the player is told where to begin by seeking, as in a
+file. WebKit hands the
 lock screen the element's own clock: it overwrites the position a page
 reports through the Media Session API with the element's `currentTime` on
 every seek (MediaElementSession::clientCharacteristicsChanged), and a
@@ -35,6 +36,14 @@ segments' timestamps onto the track's own did not move that clock on the
 phone (2026-10-10): Safari counts it from the playlist. So the element seeks
 within the track like it does in a file, and a segment no running encode is
 about to reach starts an encode of its own from there (see Transcode).
+
+Nor does the playlist carry `EXT-X-START` for that start point: Safari's own
+jump to it never finished (`seeking` without `seeked`), the element sat
+"playing" with its clock still, and every seek after it hung the same way
+(traced on the phone, 2026-10-10). A seek from the page made before the
+player holds media hangs just the same, so the frontend waits for that
+before seeking to where playback is to begin - see writePosition() in
+src/renderer/src/services/audioEngine.ts.
 """
 
 import asyncio
@@ -124,9 +133,8 @@ def segment_layout(duration: float, sample_rate: int, frame_samples: int) -> Seg
     return SegmentLayout(frames, seconds, count, last)
 
 
-def playlist(layout: SegmentLayout, packed: bool, query: str, start: float = 0.0) -> str:
-    """The media playlist of the whole track, starting playback at `start`.
-    `query` is appended to every URI, because the token and session travel
+def playlist(layout: SegmentLayout, packed: bool, query: str) -> str:
+    """The media playlist of the whole track. `query` is appended to every URI, because the token and session travel
     as query parameters (see streamUrl() in services/subsonic/client.ts) and
     a relative URI does not inherit them."""
     suffix = f"?{query}" if query else ""
@@ -138,9 +146,6 @@ def playlist(layout: SegmentLayout, packed: bool, query: str, start: float = 0.0
         "#EXT-X-PLAYLIST-TYPE:VOD",
         "#EXT-X-INDEPENDENT-SEGMENTS",
     ]
-    if start > 0:
-        # PRECISE: from that very sample rather than the start of its segment.
-        lines.append(f"#EXT-X-START:TIME-OFFSET={start:.3f},PRECISE=YES")
     if not packed:
         lines.append(f'#EXT-X-MAP:URI="init.mp4{suffix}"')
     extension = segment_extension(packed)
@@ -537,13 +542,18 @@ class Transcode:
         self._encodes.clear()
 
     def _encode_for(self, index: int) -> Encode:
-        for encode in self._encodes:
-            if encode.covers(index):
-                # Most recently used last, so the one closed below is the
-                # one nobody has asked anything of for longest.
-                self._encodes.remove(encode)
-                self._encodes.append(encode)
-                return encode
+        covering = [encode for encode in self._encodes if encode.covers(index)]
+        if covering:
+            # The one begun last, which is what playback from there on is
+            # using: two encodes both holding the segments past the later
+            # one's start would otherwise take turns, and every join between
+            # two encodes is a click (see the module docstring).
+            encode = max(covering, key=lambda encode: encode.first)
+            # Most recently used last, so the one closed below is the one
+            # nobody has asked anything of for longest.
+            self._encodes.remove(encode)
+            self._encodes.append(encode)
+            return encode
         seconds = index * self.layout.segment_seconds
         encode = Encode(self._command(seconds), self.layout, self.packed, self._sample_rate, index)
         self._encodes.append(encode)

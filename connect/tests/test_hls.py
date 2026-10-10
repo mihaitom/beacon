@@ -71,24 +71,6 @@ def test_the_playlist_carries_the_query_on_every_uri():
     assert text.rstrip().endswith("#EXT-X-ENDLIST")
 
 
-def test_a_playlist_beginning_partway_still_lists_the_whole_track():
-    """The element's clock is the playlist's, and the lock screen shows that
-    clock - so a position to begin at goes in as a start point, never as a
-    shorter playlist (see the module docstring)."""
-    layout = hls.segment_layout(200.0, 44100, 1024)
-
-    text = hls.playlist(layout, packed=False, query="", start=93.25)
-
-    assert "#EXT-X-START:TIME-OFFSET=93.250,PRECISE=YES" in text
-    assert text.count("#EXTINF:") == layout.count
-
-
-def test_a_playlist_from_the_top_has_no_start_point():
-    text = hls.playlist(hls.segment_layout(20.0, 44100, 1024), packed=False, query="")
-
-    assert "EXT-X-START" not in text
-
-
 def test_a_packed_playlist_has_no_init_segment():
     text = hls.playlist(hls.segment_layout(20.0, 44100, 1152), packed=True, query="q=1")
 
@@ -521,6 +503,32 @@ async def test_an_encode_still_being_asked_for_is_not_the_one_closed():
         await _settle()
 
         assert [proc.killed for proc in spawner.procs] == [False, True, False]
+        transcode.close()
+        await _settle()
+
+
+async def test_segments_both_encodes_hold_come_from_the_one_begun_later():
+    """Playback past a seek is using the later one; taking turns between the
+    two would put a join, a click, at every segment boundary."""
+    spawner = _Spawner()
+    transcode, _ = _transcode(600.0)
+    seg = transcode.layout.segment_seconds
+    with patch("asyncio.create_subprocess_exec", spawner):
+        transcode.begin_at(10 * seg)
+        await _settle()
+        asyncio.create_task(transcode.segment(0))
+        await _settle()
+        spawner.procs[0].queue.put_nowait(b"".join(_fmp4(3)))
+        spawner.procs[1].queue.put_nowait(b"".join(_fmp4(14)))
+        await _settle()
+
+        served = []
+        for index in (10, 11, 12):
+            pending = asyncio.create_task(transcode.segment(index))
+            await _settle()
+            served.append(await _within(pending))
+
+        assert served == _fmp4(3)[1:]
         transcode.close()
         await _settle()
 

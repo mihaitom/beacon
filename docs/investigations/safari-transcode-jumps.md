@@ -138,8 +138,32 @@ itself was right.
   in fMP4, the ID3 timestamp for packed mp3). Did not change the element's
   clock on the phone. Apple's own word on it: a client may assume no relation
   between the first segment's timestamp and the presentation time.
-- **Fix:** the playlist always lists the whole track and says where to begin
-  with `EXT-X-START`; the element seeks in it like in a file. A segment no
-  running encode is about to reach starts an encode from that segment on, and
-  the timestamp shift above is kept for that: segments of two encodes in one
-  playlist line up (checked against a real ffmpeg in `connect/tests/test_hls.py`).
+- **Fix:** the playlist always lists the whole track; the element seeks in it
+  like in a file. A segment no running encode is about to reach starts an
+  encode from that segment on, and the timestamp shift above is kept for
+  that: segments of two encodes in one playlist line up (checked against a
+  real ffmpeg in `connect/tests/test_hls.py`). Where two encodes both hold a
+  segment, the one begun later serves it, so playback from a seek does not
+  alternate between two encodes and click at every boundary.
+
+### Safari's HLS player hangs on a seek before it has media
+
+Found the same day, once the above worked after a track change but not for
+the song Beacon reopens with (traced through a temporary log the phone
+posted into connect's):
+
+- **`EXT-X-START` for the start point** (tried first): Safari's own jump to it
+  reported `seeking` and never `seeked`; the element then sat "playing" with
+  its clock still, and every seek after it hung the same way.
+- **The same seek from the page, at `loadedmetadata`** (playlist loaded, no
+  segment yet): exactly the same hang, while Safari fetched segments from 0
+  as if nothing had been asked.
+- **A seek once the player holds media** (`canplay`, or any seek during
+  playback): `seeked` within 0.2-0.5 s, every time.
+
+So the audio engine holds every position for an HLS stream (the start
+point, and a seek made in the meantime) until `canplay`. No jump from the
+song's start was audible on the phone. Separately, a paused song an iPhone
+has not loaded yet (it loads nothing for a paused element) dropped a seek
+or threw on it; seek() now takes the same deferred path as the start
+position for that.

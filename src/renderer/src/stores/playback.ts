@@ -1728,8 +1728,8 @@ export const usePlaybackStore = defineStore('playback', {
      *   playlist of the whole track, so it is played like the file: the
      *   element seeks in it, and its clock is the song's. That clock is
      *   what an iPhone's lock screen shows and scrubs, whatever position
-     *   the page reports (see connect/core/hls.py). `start` only says
-     *   where to begin.
+     *   the page reports (see connect/core/hls.py). `start` only has
+     *   connect start encoding where the element is about to seek to.
      *
      * A transcode costs nothing extra for this: a byte-range seek already
      * started a new ffmpeg at the requested second, so the same work
@@ -1740,10 +1740,15 @@ export const usePlaybackStore = defineStore('playback', {
       const url = this.localStreamUrl(song, hls)
       const gain = this.replayGainMultiplier
       const engine = getAudioEngine()
-      if (this.activeLocalStream?.quality.format === 'original' || hls) {
-        const src = hls ? `${url}&start=${Math.max(0, position).toFixed(3)}` : url
-        if (autoplay) engine.play(src, position, gain)
-        else engine.load(src, position, gain)
+      if (this.activeLocalStream?.quality.format === 'original') {
+        if (autoplay) engine.play(url, position, gain)
+        else engine.load(url, position, gain)
+        return
+      }
+      if (hls) {
+        const src = `${url}&start=${Math.max(0, position).toFixed(3)}`
+        if (autoplay) engine.play(src, position, gain, { hls })
+        else engine.load(src, position, gain, { hls })
         return
       }
       // `start` on every request, including the one for the beginning: its
