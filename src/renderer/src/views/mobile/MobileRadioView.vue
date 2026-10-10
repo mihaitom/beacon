@@ -41,16 +41,20 @@
        - one tile per line at this width anyway, so all the box around each
        - entry contributed was chrome. MobileRadioRow sits beside the
        - other Mobile* rows and is measured against the phone remote's own
-       - radio tab — see __tests__/mobileRemoteParity.test.ts. -->
+       - radio tab — see __tests__/mobileRemoteParity.test.ts. Virtualized
+       - for the reason MobileQueueView's list is. -->
     <div v-if="filteredStations.length" class="mobile-radio-list">
-      <mobile-radio-row
-        v-for="station in filteredStations"
-        :key="station.id"
-        :station="station"
-        @play="play"
-        @edit="openEdit"
-        @delete="remove"
-      />
+      <v-virtual-scroll renderless :items="filteredStations" :item-height="MOBILE_ROW_HEIGHT">
+        <template #default="{ item: station }">
+          <mobile-radio-row
+            :key="station.id"
+            :station="station"
+            @play="play"
+            @edit="openEdit"
+            @delete="remove"
+          />
+        </template>
+      </v-virtual-scroll>
     </div>
 
     <v-alert v-else-if="!showSkeletons" type="info" variant="tonal">
@@ -126,6 +130,7 @@ import { usePlaybackStore } from '@/stores/playback'
 import { matchesAllTerms } from '@/services/textSearch'
 import RadioDiscoverDialog from '@/components/radio/RadioDiscoverDialog.vue'
 import MobileRadioRow from '@/components/mobile/MobileRadioRow.vue'
+import { MOBILE_ROW_HEIGHT } from '@/components/mobile/rowMetrics'
 import StickyFilter from '@/components/StickyFilter.vue'
 import type { RadioStation } from '@/types/library'
 
@@ -136,6 +141,7 @@ export default {
   components: { RadioDiscoverDialog, MobileRadioRow, StickyFilter },
   data() {
     return {
+      MOBILE_ROW_HEIGHT,
       discoverOpen: false,
       editDialog: false,
       editingId: null as string | null,
@@ -214,7 +220,6 @@ export default {
 .mobile-radio-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
 }
 
 /* The add/edit station form: URL-shaped fields in a column. */

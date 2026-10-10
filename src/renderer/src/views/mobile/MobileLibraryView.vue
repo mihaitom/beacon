@@ -33,35 +33,31 @@
 
     <v-progress-circular v-if="libraryStore.loading" indeterminate class="view-notice" />
 
+    <!-- The whole catalogue, virtualized: the scroll reaches its end
+     - without anything to tap, and only the rows near the screen are
+     - mounted - see MobileQueueView's list for what mounting them all did. -->
     <div class="mobile-library__list">
-      <template v-if="showingSongs">
-        <mobile-song-row
-          v-for="(song, index) in visibleSongs"
-          :key="song.id"
-          :song="song"
-          @play="play(index)"
-          @open-actions="openActions(song)"
-        />
-      </template>
-      <template v-else>
-        <mobile-album-row
-          v-for="album in visibleAlbums"
-          :key="album.id"
-          :album="album"
-          @play="playAlbum(album)"
-        />
-      </template>
+      <v-virtual-scroll
+        v-if="showingSongs"
+        renderless
+        :items="filteredSongs"
+        :item-height="MOBILE_ROW_HEIGHT"
+      >
+        <template #default="{ item: song }">
+          <mobile-song-row
+            :key="song.id"
+            :song="song"
+            @play="play(song)"
+            @open-actions="openActions(song)"
+          />
+        </template>
+      </v-virtual-scroll>
+      <v-virtual-scroll v-else renderless :items="filteredAlbums" :item-height="MOBILE_ROW_HEIGHT">
+        <template #default="{ item: album }">
+          <mobile-album-row :key="album.id" :album="album" @play="playAlbum(album)" />
+        </template>
+      </v-virtual-scroll>
     </div>
-
-    <v-btn
-      v-if="hasMore"
-      block
-      variant="tonal"
-      class="mobile-library__more"
-      @click="pageSize += PAGE_SIZE"
-    >
-      {{ $t('common.loadMore') }}
-    </v-btn>
 
     <v-alert v-if="showEmptyState" type="info" variant="tonal">{{ emptyMessage }}</v-alert>
 
@@ -78,13 +74,8 @@ import MobileAlbumRow from '@/components/mobile/MobileAlbumRow.vue'
 import MobileSongActionSheet from '@/components/mobile/MobileSongActionSheet.vue'
 import SegmentedControl from '@/components/SegmentedControl.vue'
 import StickyFilter from '@/components/StickyFilter.vue'
+import { MOBILE_ROW_HEIGHT } from '@/components/mobile/rowMetrics'
 import type { Album, Song } from '@/types/library'
-
-// Rendered as a plain list (no virtualization, unlike desktop's SongTable.vue
-// v-virtual-scroll) — simple "load more" paging keeps a 20k+-song catalog
-// from ever mounting more rows at once than a phone needs to scroll through,
-// same idea the LAN remote's own library view already validated.
-const PAGE_SIZE = 50
 
 let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -99,11 +90,10 @@ export default {
   },
   data() {
     return {
-      PAGE_SIZE,
+      MOBILE_ROW_HEIGHT,
       view: 'songs' as 'songs' | 'albums',
       filterQuery: '',
       debouncedQuery: '',
-      pageSize: PAGE_SIZE,
       actionsOpen: false,
       activeSong: null as Song | null,
     }
@@ -138,17 +128,6 @@ export default {
         matchesAllTerms(query, [album.name, album.artist], { exact: true }),
       )
     },
-    visibleSongs(): Song[] {
-      return this.filteredSongs.slice(0, this.pageSize)
-    },
-    visibleAlbums(): Album[] {
-      return this.filteredAlbums.slice(0, this.pageSize)
-    },
-    hasMore(): boolean {
-      return this.showingSongs
-        ? this.visibleSongs.length < this.filteredSongs.length
-        : this.visibleAlbums.length < this.filteredAlbums.length
-    },
     showEmptyState(): boolean {
       if (this.libraryStore.loading) return false
       return this.showingSongs ? this.filteredSongs.length === 0 : this.filteredAlbums.length === 0
@@ -170,17 +149,14 @@ export default {
       clearTimeout(debounceTimer)
       debounceTimer = setTimeout(() => {
         this.debouncedQuery = value ?? ''
-        this.pageSize = PAGE_SIZE
       }, 200)
     },
     /** The search deliberately survives the switch: noticing you are in the
      * wrong half is usually what makes you switch in the first place, and
      * having to retype the term you just entered is a penalty for one tap.
      * The field is clearable, which is the cheaper way out for the rarer
-     * case of actually wanting a fresh search. Only the paging counter
-     * resets, since that is genuinely about the list now showing. */
+     * case of actually wanting a fresh search. */
     view() {
-      this.pageSize = PAGE_SIZE
       if (!this.showingSongs) void this.libraryStore.fetchAlbums()
       this.rememberSearch()
     },
@@ -215,7 +191,6 @@ export default {
       if (typeof term !== 'string' || !term) return
       this.filterQuery = term
       this.debouncedQuery = term
-      this.pageSize = PAGE_SIZE
     },
     /** Puts the search and the half being browsed in the address, so coming
      * back from an album (this list is the only way to one, see
@@ -247,9 +222,7 @@ export default {
      * `queueWholeList`), and as this view's own action sheet, whose Play
      * already did exactly this - tapping the row and picking Play from the
      * "..." menu were two different actions until now. */
-    async play(index: number) {
-      const song = this.visibleSongs[index]
-      if (!song) return
+    async play(song: Song) {
       await usePlaybackStore().playSongList([song], 0)
     },
     /** Natural track order, not shuffled, and pinFirst false — an album is
@@ -277,10 +250,5 @@ export default {
 .mobile-library__list {
   display: flex;
   flex-direction: column;
-}
-
-/* The "load more" button, set off from the last row above it. */
-.mobile-library__more {
-  margin-top: 12px;
 }
 </style>

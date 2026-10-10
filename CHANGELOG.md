@@ -6,9 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- In the mobile layout, the library scrolls through the whole catalogue without a "Load more" button
+
 ### Fixed
 
-- On an iPhone or iPad, a long queue or playlist froze while its covers loaded: it would not scroll and taps did nothing, sometimes for over a minute (reported by @ampcat3, #47)
+- In the mobile layout, a long queue, playlist or station list froze while its covers loaded: it would not scroll and taps did nothing, sometimes for over a minute (reported by @ampcat3, #47)
 
 ## [1.7.0] - 2026-10-10
 

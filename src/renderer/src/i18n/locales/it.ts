@@ -12,7 +12,6 @@ export default {
     delete: 'Elimina',
     done: 'Fatto',
     retry: 'Riprova',
-    loadMore: 'Carica altro',
     name: 'Nome',
     addToQueue: 'Aggiungi alla coda',
     addToPlaylistMenu: 'Aggiungi alla playlist',

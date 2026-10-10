@@ -12,7 +12,6 @@ export default {
     delete: 'Eliminar',
     done: 'Hecho',
     retry: 'Reintentar',
-    loadMore: 'Cargar más',
     name: 'Nombre',
     addToQueue: 'Añadir a la cola',
     addToPlaylistMenu: 'Añadir a la lista de reproducción',

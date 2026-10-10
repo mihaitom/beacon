@@ -10,7 +10,6 @@ export default {
     delete: 'Löschen',
     done: 'Fertig',
     retry: 'Erneut versuchen',
-    loadMore: 'Mehr laden',
     name: 'Name',
     addToQueue: 'Zur Warteschlange hinzufügen',
     addToPlaylistMenu: 'Zu Playlist hinzufügen',

@@ -1,5 +1,5 @@
-// Real-browser test for the phone's two long lists, Queue and a playlist -
-// run via `pnpm test:layout`. Which rows get mounted depends on the height
+// Real-browser test for the phone's long lists - Queue, a playlist, the
+// library and radio - run via `pnpm test:layout`. Which rows get mounted depends on the height
 // of the shell's scrolling pane, which jsdom does not lay out.
 //
 // Every mounted row carries a cover with its own observer and skeleton; a
@@ -7,7 +7,7 @@
 // covers had loaded (GitHub #47).
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
-import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { flushPromises, mount, RouterLinkStub, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
@@ -24,6 +24,9 @@ import { makeSong } from '@/stores/__tests__/fixtures'
 import MobileLayout from '@/layouts/MobileLayout.vue'
 import MobileQueueView from '../MobileQueueView.vue'
 import MobilePlaylistDetailView from '../MobilePlaylistDetailView.vue'
+import MobileLibraryView from '../MobileLibraryView.vue'
+import MobileRadioView from '../MobileRadioView.vue'
+import type { Album, RadioStation } from '@/types/library'
 
 const vuetify = createVuetify({ components, directives })
 const wrappers: VueWrapper[] = []
@@ -31,13 +34,25 @@ const wrappers: VueWrapper[] = []
 const SONG_COUNT = 300
 const songs = Array.from({ length: SONG_COUNT }, (_, index) => makeSong(`s${index}`))
 
-function mountShell(view: object) {
+// Only the fields the rows render, as rowHairline.browser.test.ts does.
+const albums = Array.from(
+  { length: SONG_COUNT },
+  (_, index) =>
+    ({ id: `al${index}`, name: `Album ${index}`, artist: 'A', coverArtId: null }) as Album,
+)
+const stations = Array.from(
+  { length: SONG_COUNT },
+  (_, index) =>
+    ({ id: `r${index}`, name: `Station ${index}`, streamUrl: 'http://s/x' }) as RadioStation,
+)
+
+function mountShell(view: object, query: Record<string, string> = {}) {
   const wrapper = mount(MobileLayout, {
     attachTo: document.body,
     global: {
       plugins: [vuetify, i18n],
       mocks: {
-        $route: { path: '/m/queue', name: 'm-queue', params: { id: 'p1' } },
+        $route: { path: '/m/queue', name: 'm-queue', params: { id: 'p1' }, query },
         $router: { push: vi.fn() },
         $emitter: emitter,
       },
@@ -47,6 +62,7 @@ function mountShell(view: object) {
         MobilePlayerBar: true,
         CastTakeoverConfirmDialog: true,
         CoverArt: true,
+        RouterLink: RouterLinkStub,
       },
     },
   })
@@ -57,6 +73,25 @@ function mountShell(view: object) {
 async function settle() {
   await flushPromises()
   await new Promise((resolve) => setTimeout(resolve, 80))
+}
+
+/** Mounts `view`, checks that only part of the list is in the DOM, and that
+ * scrolling to the end brings its last entry in. */
+async function expectWindowed(
+  view: object,
+  rowSelector: string,
+  lastText: string,
+  query: Record<string, string> = {},
+) {
+  mountShell(view, query)
+  await settle()
+
+  const rows = () => [...document.querySelectorAll(rowSelector)]
+  expect(rows().length).toBeGreaterThan(0)
+  expect(rows().length).toBeLessThan(SONG_COUNT / 4)
+
+  await scrollToEnd()
+  expect(rows().some((row) => row.textContent?.includes(lastText))).toBe(true)
 }
 
 /** Scrolls the pane to its end and waits for the scroller to catch up. */
@@ -107,15 +142,34 @@ describe('long mobile lists', () => {
       changed: null,
       songs: [...songs],
     })
-    mountShell(MobilePlaylistDetailView)
-    await settle()
+    await expectWindowed(MobilePlaylistDetailView, '.mobile-song-row', songs.at(-1)!.title)
+  })
 
-    const rows = () => document.querySelectorAll('.mobile-song-row')
-    expect(rows().length).toBeGreaterThan(0)
-    expect(rows().length).toBeLessThan(SONG_COUNT / 4)
+  describe('the library', () => {
+    beforeEach(() => {
+      const library = useLibraryStore()
+      library.allSongs = [...songs]
+      vi.spyOn(library, 'fetchAllSongs').mockResolvedValue()
+    })
 
-    await scrollToEnd()
-    const titles = [...rows()].map((row) => row.textContent ?? '')
-    expect(titles.some((text) => text.includes(songs[SONG_COUNT - 1]!.title))).toBe(true)
+    it('mounts only the song rows near the screen', async () => {
+      await expectWindowed(MobileLibraryView, '.mobile-song-row', songs.at(-1)!.title)
+    })
+
+    it('mounts only the album rows near the screen', async () => {
+      const library = useLibraryStore()
+      library.albums = [...albums]
+      vi.spyOn(library, 'fetchAlbums').mockResolvedValue()
+      await expectWindowed(MobileLibraryView, '.mobile-album-row', albums.at(-1)!.name, {
+        tab: 'albums',
+      })
+    })
+  })
+
+  it('mounts only the radio rows near the screen', async () => {
+    const library = useLibraryStore()
+    library.radioStations = [...stations]
+    vi.spyOn(library, 'fetchRadioStations').mockResolvedValue()
+    await expectWindowed(MobileRadioView, '.radio-row', stations.at(-1)!.name)
   })
 })
