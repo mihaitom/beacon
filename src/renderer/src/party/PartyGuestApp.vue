@@ -175,7 +175,9 @@ export default {
     // and `tab` straight away, and neither exists before data() returns.
     this.guestNp = useGuestNowPlayingSource({
       isCompact: () => this.compact,
-      isOnScreen: () => !this.compact || this.tab === 'now',
+      // Sideways there are no bars to feed - see NowPlayingView's
+      // visualizerActive.
+      isOnScreen: () => (!this.compact || this.tab === 'now') && !this.immersive,
     })
     // The shared Now Playing presentation reads this instead of any store,
     // so guests and the host render the same components.
@@ -337,9 +339,11 @@ export default {
 }
 
 /* No bars at all. This page draws under the notch (viewport-fit=cover),
- * which a phone on its side has at one of the long edges. */
+ * which a phone on its side has at one of the long edges. A size container
+ * for Now Playing's artwork column, as in the app's own shell. */
 .guest-app__page.guest-app__page--immersive {
   height: 100dvh;
+  container-type: size;
   padding: 0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 

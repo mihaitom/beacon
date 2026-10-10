@@ -8,17 +8,17 @@ export const PHONE_LANDSCAPE_QUERY = '(orientation: landscape) and (max-height: 
 
 /** Options-API mixin: `phoneLandscape`, kept live across rotations. */
 export const phoneLandscapeMixin = defineComponent({
+  // Read in data() rather than created(): provide() runs in between, and
+  // what it builds may already depend on the answer.
   data() {
+    const query = window.matchMedia(PHONE_LANDSCAPE_QUERY)
     return {
-      phoneLandscape: false,
-      phoneLandscapeQuery: null as MediaQueryList | null,
+      phoneLandscape: query.matches,
+      phoneLandscapeQuery: query as MediaQueryList | null,
     }
   },
   created() {
-    const query = window.matchMedia(PHONE_LANDSCAPE_QUERY)
-    this.phoneLandscape = query.matches
-    query.addEventListener('change', this.onPhoneLandscapeChange)
-    this.phoneLandscapeQuery = query
+    this.phoneLandscapeQuery?.addEventListener('change', this.onPhoneLandscapeChange)
   },
   beforeUnmount() {
     this.phoneLandscapeQuery?.removeEventListener('change', this.onPhoneLandscapeChange)

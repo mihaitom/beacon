@@ -64,9 +64,10 @@
        - the screen is locked (see services/audioEngine.ts), and a control
        - that could only ever produce empty bars is worse than no control.
        - Still there while casting, whose data comes from the backend
-       - instead. -->
+       - instead. Nor sideways on a phone (`inline`), which shows no bars at
+       - all - see NowPlayingView's visualizerActive. -->
       <v-btn
-        v-if="source.visualizer.available"
+        v-if="source.visualizer.available && !inline"
         icon="mdi-equalizer"
         :color="source.ui.showVisualizer ? 'primary' : undefined"
         variant="text"

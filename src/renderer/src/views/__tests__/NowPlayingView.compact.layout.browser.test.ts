@@ -32,6 +32,12 @@ import { makeSong } from '@/stores/__tests__/fixtures'
 import { useRadioMetadataStore } from '@/stores/radioMetadata'
 import { useLyricsStore } from '@/stores/lyrics'
 import { getArtistArt } from '@/services/connect/fanart'
+import { appAccent } from '@/services/appAccent'
+import {
+  bottomScrimStrength,
+  colourBehindControls,
+  measureBottomColor,
+} from '@/services/imageBrightness'
 
 // A network lookup the layout under test does not care about.
 vi.mock('@/services/connect/fanart', async (importOriginal) => ({
@@ -409,10 +415,8 @@ describe('Now Playing on a phone held sideways', () => {
     // The text sits centred right above the controls rather than running
     // into them or off at the top of the column.
     const below = controls.getBoundingClientRect()
-    const bars = box('.now-playing__visualizer-row')
     expect(info.bottom).toBeLessThanOrEqual(below.top + 1)
     expect(info.bottom).toBeGreaterThan(below.top - 40)
-    expect(bars.bottom).toBeLessThanOrEqual(info.top + 1)
     expect(Math.abs(info.left + info.width / 2 - (below.left + below.width / 2))).toBeLessThan(2)
     // Centred line by line too, not a left-aligned block in the middle.
     const title = document.querySelector('.now-playing__title')!
@@ -526,5 +530,41 @@ describe('Now Playing on a phone held sideways', () => {
     }
 
     expect(await scrimOver('#f4f4f4')).toBeGreaterThan(await scrimOver('#181818'))
+  })
+
+  it('lifts the accent until the controls stand off a photo of the same colour', async () => {
+    // A stage photo bathed in violet light gave violet buttons, which
+    // vanished into it.
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = 64
+    const ctx = canvas.getContext('2d')!
+    ctx.fillStyle = '#5a1fa8'
+    ctx.fillRect(0, 0, 64, 64)
+    const photo = canvas.toDataURL('image/png')
+    vi.mocked(getArtistArt).mockResolvedValue({
+      banner: null,
+      background: photo,
+      backgrounds: [photo],
+      logo: null,
+    })
+    await page.viewport(844, 390)
+    usePlaybackStore().setQueue([makeSong('s1')], 0)
+    await mountShell()
+    await new Promise((resolve) => setTimeout(resolve, 300))
+
+    const bottom = (await measureBottomColor(photo))!
+    const behind = colourBehindControls(bottom, bottomScrimStrength(bottom))
+    const lum = (channels: number[]) => {
+      const [r, g, b] = channels.map((channel) => {
+        const value = channel / 255
+        return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+      })
+      return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!
+    }
+    const accent = lum(appAccent.value.split(',').map(Number))
+    const ground = lum(behind)
+    expect(
+      (Math.max(accent, ground) + 0.05) / (Math.min(accent, ground) + 0.05),
+    ).toBeGreaterThanOrEqual(3)
   })
 })

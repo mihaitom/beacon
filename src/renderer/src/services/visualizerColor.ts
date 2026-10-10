@@ -40,6 +40,49 @@ export function visualizerBarColor(rgb: string | null): string {
   )
 }
 
+/** The contrast a control needs against what it sits on (WCAG's 3:1 for
+ * non-text). */
+const MIN_CONTROL_CONTRAST = 3
+/** How far lightness may be raised before the colour stops reading as one. */
+const MAX_LIFTED_LIGHTNESS = 0.9
+
+/** `rgb` raised in lightness, hue and saturation kept, until it stands off
+ * `background` by MIN_CONTROL_CONTRAST - or as far as MAX_LIFTED_LIGHTNESS
+ * allows. HSL lightness is not what the eye sees: a violet at the bars'
+ * 0.55 is far darker than an amber at the same number, and over a violet
+ * photo it vanished. Unchanged where it already stands off. */
+export function liftForContrast(rgb: string, background: [number, number, number]): string {
+  const parts = rgb.split(',').map((part) => Number(part.trim()))
+  if (parts.length !== 3 || parts.some((value) => !Number.isFinite(value))) return rgb
+  const behind = relativeLuminance(background)
+  if (
+    contrast(relativeLuminance(parts as [number, number, number]), behind) >= MIN_CONTROL_CONTRAST
+  ) {
+    return rgb
+  }
+  const [h, s, l] = rgbToHsl(parts[0]!, parts[1]!, parts[2]!)
+  let lifted = rgb
+  for (let lightness = l; lightness <= MAX_LIFTED_LIGHTNESS + 1e-9; lightness += 0.02) {
+    lifted = hslToRgbString(h, s, lightness)
+    const channels = lifted.split(',').map(Number) as [number, number, number]
+    if (contrast(relativeLuminance(channels), behind) >= MIN_CONTROL_CONTRAST) break
+  }
+  return lifted
+}
+
+/** WCAG relative luminance of 0-255 channels. */
+function relativeLuminance([r, g, b]: [number, number, number]): number {
+  const linear = (channel: number): number => {
+    const value = channel / 255
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4
+  }
+  return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
+}
+
+function contrast(a: number, b: number): number {
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05)
+}
+
 /** All three in 0..1. */
 function rgbToHsl(r: number, g: number, b: number): [number, number, number] {
   const red = r / 255

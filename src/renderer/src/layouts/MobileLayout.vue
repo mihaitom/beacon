@@ -70,10 +70,24 @@ import CastTakeoverConfirmDialog from '@/components/connect/CastTakeoverConfirmD
 import PartyModeButton from '@/components/party/PartyModeButton.vue'
 import { phoneLandscapeMixin } from '@/composables/phoneLandscape'
 
+/** Roughly how long iOS takes to animate a rotation; the reset is repeated
+ * after it in case the offset is only applied at its end. */
+const ROTATION_SETTLE_MS = 500
+
 export default {
   name: 'MobileLayout',
-  components: { MobileTabBar, MobilePlayerBar, CastTakeoverConfirmDialog, PartyModeButton },
+  components: {
+    MobileTabBar,
+    MobilePlayerBar,
+    CastTakeoverConfirmDialog,
+    PartyModeButton,
+  },
   mixins: [phoneLandscapeMixin],
+  data() {
+    return {
+      scrollResetTimer: null as ReturnType<typeof setTimeout> | null,
+    }
+  },
   computed: {
     onNowPlaying() {
       return this.$route.name === 'm-now-playing'
@@ -88,9 +102,27 @@ export default {
   // the desktop app scrolls its own pages normally.
   mounted() {
     document.documentElement.classList.add('mobile-shell')
+    window.addEventListener('resize', this.resetDocumentScroll)
   },
   beforeUnmount() {
     document.documentElement.classList.remove('mobile-shell')
+    window.removeEventListener('resize', this.resetDocumentScroll)
+    if (this.scrollResetTimer) clearTimeout(this.scrollResetTimer)
+  },
+  methods: {
+    /** Installed to the home screen, iOS keeps the upright status bar's
+     * 47px as the document's scroll offset after the phone turns, while
+     * reporting scrollY 0 (measured on the phone: a tap's pageY was its
+     * clientY - 47): the page was drawn that far down, and taps were
+     * hit-tested 47px above the finger. The document never scrolls on its
+     * own here (see the rules below), so nothing reset it - this does, once
+     * the rotation has settled. Only a real iPhone shows it; no desktop
+     * browser's emulation does. */
+    resetDocumentScroll(): void {
+      if (this.scrollResetTimer) clearTimeout(this.scrollResetTimer)
+      requestAnimationFrame(() => window.scrollTo(0, 0))
+      this.scrollResetTimer = setTimeout(() => window.scrollTo(0, 0), ROTATION_SETTLE_MS)
+    },
   },
 }
 </script>

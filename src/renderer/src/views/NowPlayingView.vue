@@ -385,8 +385,10 @@ export default {
       }
       return getAudioEngine().hasAnalyser
     },
+    /** Not on a phone held sideways: its bars only read as a floor along
+     * the screen's own bottom edge, which the controls take there. */
     visualizerActive() {
-      return this.hasPlayable && this.showVisualizer && this.visualizerAvailable
+      return this.hasPlayable && this.showVisualizer && this.visualizerAvailable && !this.landscape
     },
     /** 'local' has a real <audio> element to tap (services/audioEngine.ts),
      * 'cast' gets real data from the backend instead

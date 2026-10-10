@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
@@ -11,6 +11,13 @@ import MobileLayout from '../MobileLayout.vue'
 
 const vuetify = createVuetify({ components, directives })
 const realMatchMedia = window.matchMedia
+const wrappers: VueWrapper[] = []
+
+// Each shell listens on the window; one left mounted answers the next
+// test's events too.
+afterEach(() => {
+  while (wrappers.length) wrappers.pop()?.unmount()
+})
 
 /** jsdom has no orientation to turn, so the one query that asks is answered
  * here; everything else stays unmatched. */
@@ -29,7 +36,7 @@ function holdPhone(sideways: boolean) {
 
 function mountLayout(routeName: string) {
   setActivePinia(createPinia())
-  return mount(MobileLayout, {
+  const wrapper = mount(MobileLayout, {
     global: {
       plugins: [vuetify, i18n],
       mocks: { $route: { name: routeName }, $router: { push: () => {} } },
@@ -42,6 +49,8 @@ function mountLayout(routeName: string) {
       },
     },
   })
+  wrappers.push(wrapper)
+  return wrapper
 }
 
 describe('the mobile shell on a phone held sideways', () => {
@@ -71,5 +80,40 @@ describe('the mobile shell on a phone held sideways', () => {
 
     expect(wrapper.getComponent(VAppBar).props('modelValue')).toBe(true)
     expect(wrapper.getComponent({ name: 'MobileTabBar' }).props('active')).toBe(true)
+  })
+})
+
+describe('the mobile shell after the phone turns', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  it('scrolls the document back to its top, once straight away and once it has settled', () => {
+    // The installed iOS app keeps the upright status bar's offset as the
+    // document's scroll after a rotation, which only a scroll resets - see
+    // resetDocumentScroll.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame'] })
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+    mountLayout('m-now-playing')
+
+    window.dispatchEvent(new Event('resize'))
+    vi.advanceTimersToNextFrame()
+    expect(scrollTo).toHaveBeenCalledTimes(1)
+    expect(scrollTo).toHaveBeenLastCalledWith(0, 0)
+
+    vi.advanceTimersByTime(1000)
+    expect(scrollTo).toHaveBeenCalledTimes(2)
+  })
+
+  it('stops listening once the shell is gone', () => {
+    const scrollTo = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'requestAnimationFrame'] })
+    mountLayout('m-library').unmount()
+    wrappers.length = 0
+
+    window.dispatchEvent(new Event('resize'))
+    vi.advanceTimersByTime(1000)
+    expect(scrollTo).not.toHaveBeenCalled()
   })
 })

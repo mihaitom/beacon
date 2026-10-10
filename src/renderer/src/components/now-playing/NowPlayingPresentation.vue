@@ -81,7 +81,7 @@
      - actually run against. The row itself lives in
      - NowPlayingVisualizer.vue (its own height transition, mount/hide delay
      - and compact height). -->
-    <now-playing-visualizer :compact="compact" />
+    <now-playing-visualizer v-if="!isLandscape" :compact="compact" />
 
     <div v-if="isLandscape" class="now-playing__side-controls">
       <slot name="controls" />
@@ -114,7 +114,13 @@ import NowPlayingToolbar from '@/components/now-playing/NowPlayingToolbar.vue'
 import NowPlayingTrackPanels from '@/components/now-playing/NowPlayingTrackPanels.vue'
 import { nowPlayingSourceMixin } from '@/components/now-playing/useSource'
 import { appAccent } from '@/services/appAccent'
-import { bottomScrimStrength, measureBottomBrightness } from '@/services/imageBrightness'
+import {
+  bottomScrimStrength,
+  colourBehindControls,
+  measureBottomColor,
+  type Rgb,
+} from '@/services/imageBrightness'
+import { liftForContrast } from '@/services/visualizerColor'
 
 // Warm amber — the same signal color the app is named after (see main.ts's
 // 'beacon' theme) — used whenever there's nothing to extract a color from
@@ -166,9 +172,9 @@ export default {
       // its own (Esc key, an OS-level shortcut), and the button's icon/title
       // need to reflect that either way.
       isFullscreen: false,
-      // Of the artist photo's bottom band, for the landscape scrim - null
-      // until measured, or where it cannot be.
-      backdropBrightness: null as number | null,
+      // The artist photo's bottom band, for the scrim and the accent over
+      // it - null until measured, or where it cannot be.
+      bottomColour: null as Rgb | null,
     }
   },
   computed: {
@@ -195,25 +201,33 @@ export default {
       return this.bottomScrim && this.source.backdrop.isArtist ? this.source.backdrop.source : null
     },
     scrimStrength(): number {
-      return bottomScrimStrength(this.backdropBrightness)
+      return bottomScrimStrength(this.bottomColour)
+    },
+    /** The bars' colour, which the whole app's accent follows. Sideways the
+     * controls sit right on the photo, so it is lifted until it stands off
+     * what is behind them there. */
+    accent(): string {
+      const color = this.source.visualizer.color
+      if (!this.isLandscape || !this.bottomColour) return color
+      return liftForContrast(color, colourBehindControls(this.bottomColour, this.scrimStrength))
     },
   },
   watch: {
     scrimPhoto: {
       immediate: true,
       async handler(url: string | null) {
-        this.backdropBrightness = null
+        this.bottomColour = null
         if (!url) return
-        const brightness = await measureBottomBrightness(url)
+        const colour = await measureBottomColor(url)
         // A later photo may have arrived while this one was measured.
-        if (this.scrimPhoto === url) this.backdropBrightness = brightness
+        if (this.scrimPhoto === url) this.bottomColour = colour
       },
     },
     // The whole app's accent follows the bars for as long as this view is on
     // screen: the artist background's own colour takes over the theme's
     // primary, so buttons, the player bar and everything else tint along
     // with the picture. Reset on the way out (beforeUnmount).
-    'source.visualizer.color': {
+    accent: {
       immediate: true,
       handler(color: string) {
         this.applyPrimary(color)
@@ -461,17 +475,17 @@ export default {
 }
 
 /* Sideways: the stage on the left, at full height - as wide as the screen
- * is tall while it holds the artwork, so the cover can take that height
- * (100svh because both shells hide their bars here, which makes it the
- * screen's height). The right column has the toolbar at the top and, from
- * the bottom up, the controls, the track text centred over them and the
- * visualizer. */
+ * is tall while it holds the artwork, so the cover can take that height.
+ * cqh: each shell makes the box this fills a size container, so the column
+ * follows its real height (without one, cqh falls back to svh). The right column has the toolbar at the top and, from
+ * the bottom up, the controls and the track text centred over them. No
+ * visualizer: its bars only read as a floor along the screen's own bottom
+ * edge, which the controls take here. */
 .now-playing.now-playing--landscape {
-  grid-template-columns: minmax(0, min(100svh, 50%)) minmax(0, 1fr);
-  grid-template-rows: minmax(0, 1fr) auto auto auto;
+  grid-template-columns: minmax(0, min(100cqh, 50%)) minmax(0, 1fr);
+  grid-template-rows: minmax(0, 1fr) auto auto;
   grid-template-areas:
     'stage .'
-    'stage visualizer'
     'stage info'
     'stage controls';
   justify-items: stretch;
@@ -484,13 +498,12 @@ export default {
 }
 
 /* Nothing on the stage at all: the text in the bottom-left corner, the
- * controls bottom right, the visualizer across the screen above them. */
+ * controls bottom right. */
 .now-playing.now-playing--landscape.now-playing--photo {
   grid-template-columns: minmax(0, 1fr) minmax(0, min(420px, 55%));
-  grid-template-rows: minmax(0, 1fr) auto auto;
+  grid-template-rows: minmax(0, 1fr) auto;
   grid-template-areas:
     'stage stage'
-    'visualizer visualizer'
     'info controls';
 }
 
@@ -499,10 +512,6 @@ export default {
 .now-playing--landscape .now-playing__stage {
   grid-area: stage;
   overflow: visible;
-}
-
-.now-playing--landscape .now-playing__visualizer-row {
-  grid-area: visualizer;
 }
 
 /* Under everything that is content (z-index 1), over the photo. */
@@ -519,7 +528,7 @@ export default {
 }
 
 /* Upright the text is a short block at the bottom of a tall screen: the
- * same darkening, kept to the band it and the visualizer occupy. */
+ * same darkening, kept to the band it and the visualizer below it occupy. */
 .now-playing:not(.now-playing--landscape) .now-playing__bottom-scrim {
   background: linear-gradient(
     to top,

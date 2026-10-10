@@ -271,6 +271,20 @@ describe('NowPlayingView', () => {
   })
 
   describe('visualizer availability', () => {
+    it('stays off on a phone held sideways, switched on or not', async () => {
+      // Its bars only read as a floor along the screen's bottom edge, which
+      // the controls take there - and no bars means no feed to keep open.
+      const sideways = await mountView({ compact: true, landscape: true })
+      const upright = await mountView({ compact: true })
+      usePlaybackStore().setQueue([makeSong('a', { title: 'Track A' })], 0)
+      await sideways.wrapper.vm.$nextTick()
+
+      const active = (mounted: typeof sideways) =>
+        (mounted.wrapper.vm as unknown as { visualizerActive: boolean }).visualizerActive
+      expect(active(upright)).toBe(true)
+      expect(active(sideways)).toBe(false)
+    })
+
     it('is available during local (non-casting) playback', async () => {
       const { wrapper } = await mountWithSongFor()
       expect((wrapper.vm as unknown as { visualizerAvailable: boolean }).visualizerAvailable).toBe(

@@ -10,17 +10,21 @@ import { usePartyGuestStore } from '../store'
 import { PartyApiError } from '../api'
 import { GITHUB_URL } from '@/services/project'
 import type { GuestSnapshot } from '../api'
+import { PHONE_LANDSCAPE_QUERY } from '@/composables/phoneLandscape'
 
 const DESKTOP_WIDTH = window.innerWidth
 const realMatchMedia = window.matchMedia
 
 /** The phone/desktop choice reads the width through a media query (see
  * useIsMobileWeb.ts), which jsdom's stub never matches - answered from the
- * given width here. */
-function setWidth(width: number) {
+ * given width here, and the phone's orientation from `sideways`. */
+function setWidth(width: number, sideways = false) {
   window.innerWidth = width
   window.matchMedia = ((query: string) => ({
-    matches: Number(/max-width: ([\d.]+)px/.exec(query)?.[1] ?? -1) >= width,
+    matches:
+      query === PHONE_LANDSCAPE_QUERY
+        ? sideways
+        : Number(/max-width: ([\d.]+)px/.exec(query)?.[1] ?? -1) >= width,
     media: query,
     onchange: null,
     addListener: () => {},
@@ -199,6 +203,44 @@ describe('PartyGuestApp with the shared Now Playing', () => {
     await wrapper.findAll('.guest-app__tabs .v-btn').at(1)!.trigger('click')
 
     expect(opened.map((source) => source.readyState)).toEqual([2])
+    vi.unstubAllGlobals()
+  })
+
+  it('opens no visualizer feed on a phone held sideways, which shows no bars', async () => {
+    const opened: unknown[] = []
+    vi.stubGlobal(
+      'EventSource',
+      class {
+        readyState = 1
+        constructor() {
+          opened.push(this)
+        }
+        close() {
+          this.readyState = 2
+        }
+      },
+    )
+    setWidth(844, true)
+    const store = usePartyGuestStore()
+    vi.spyOn(store, 'start').mockResolvedValue()
+    store.phase = 'app'
+    store.snapshot = {
+      ...snapshot(null),
+      casting: true,
+      current_song: {
+        id: 's1',
+        title: 'Harbor Lights',
+        artist: 'The Tide',
+        album: null,
+        duration: 200,
+        cover: null,
+      },
+    }
+    const vuetify = createVuetify({ components, directives })
+    const wrapper = mount(PartyGuestApp, { global: { plugins: [vuetify, i18n] } })
+    await wrapper.vm.$nextTick()
+
+    expect(opened).toEqual([])
     vi.unstubAllGlobals()
   })
 })

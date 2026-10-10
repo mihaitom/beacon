@@ -2,8 +2,8 @@
   <div class="mobile-now-playing" :class="{ 'mobile-now-playing--landscape': phoneLandscape }">
     <div class="mobile-now-playing__art">
       <!-- Sideways the controls go into the presentation's right column
-       - instead of under it. Either here or there, never both, so rotating
-       - remounts them - which costs one volume reading and nothing else. -->
+         - instead of under it. Either here or there, never both, so rotating
+         - remounts them - which costs one volume reading and nothing else. -->
       <now-playing-view compact :landscape="phoneLandscape">
         <template #controls><mobile-transport-controls /></template>
       </now-playing-view>
@@ -77,8 +77,11 @@ export default {
   grid-template-rows: minmax(0, 1fr) auto;
 }
 
+/* Sideways the controls are inside the presentation (see the template). A
+ * size container so its artwork column can be as wide as this is tall. */
 .mobile-now-playing--landscape {
   grid-template-rows: minmax(0, 1fr);
+  container-type: size;
 }
 
 .mobile-now-playing__art {

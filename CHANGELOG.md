@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
-- Now Playing on a phone held sideways: the cover fills the left half, with the title centred over the controls beside it and the app bar and tabs out of the way. The lyrics turn over in place of the cover, so the controls stay usable. With the artist background instead of the cover, the photo gets the whole screen, the title sits in its bottom-left corner beside a small cover and the lyrics take the full height. The bottom of the photo is darkened under the text, more so for a light photo. Party guests get the same layout
+- Now Playing on a phone held sideways: the cover fills the left half, with the title centred over the controls beside it and the app bar and tabs out of the way. The lyrics turn over in place of the cover, so the controls stay usable. With the artist background instead of the cover, the photo gets the whole screen, the title sits in its bottom-left corner beside a small cover and the lyrics take the full height. The bottom of the photo is darkened under the text, more so for a light photo, and the accent colour lightens where it would blend into the picture. Party guests get the same layout
 
 ### Changed
 
