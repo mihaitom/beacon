@@ -219,6 +219,8 @@ async def configure(req: ConfigRequest, session: SessionState = Depends(get_sess
 
     session.media = media
     session.authenticated = True
+    # Issued for the previous login, which may have been someone else.
+    session.navidrome_token = ""
     session.account_server_type = server_type_name(media)
     session.account_server_url = (account.server_id if account else "") or req.url
     session.account_username = account.username if account else ""
@@ -290,6 +292,11 @@ async def health(session: SessionState = Depends(get_session)):
         # the frontend gate Navidrome/Jellyfin-specific UI correctly even in
         # an unlocked, multi-server deployment (see services/capabilities.ts).
         "session_server_type": (server_type_name(session.media) if session.authenticated else None),
+        # Which Subsonic server it is ("navidrome"), for the features only
+        # one of them has. Empty where the server does not say.
+        "session_server_software": (
+            getattr(session.media, "server_software", "") if session.authenticated else None
+        ),
     }
 
 

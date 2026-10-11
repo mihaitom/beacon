@@ -58,6 +58,7 @@ from routes.local_stream import reset_hls_encodes
 from routes.local_stream import router as local_stream_router
 from routes.log_level import router as log_level_router
 from routes.lyrics import router as lyrics_router
+from routes.navidrome import router as navidrome_router
 from routes.pairing import reap_stale_pairings
 from routes.pairing import router as pairing_router
 from routes.party import add_security_headers as add_party_security_headers
@@ -469,6 +470,7 @@ app.include_router(radio_router)
 app.include_router(recommendations_router)
 app.include_router(fanart_router)
 app.include_router(lastfm_router)
+app.include_router(navidrome_router)
 app.include_router(listenbrainz_router)
 app.include_router(coverart_router)
 app.include_router(upnp_router)

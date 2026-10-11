@@ -88,6 +88,10 @@ class SessionState:
         self.account_server_url: str = ""
         self.account_username: str = ""
         self.account_is_admin: bool = False
+        # Navidrome's own API token for the smart playlist editor (see
+        # routes/navidrome.py). Memory only, like the session itself; the
+        # password it was issued for is never kept.
+        self.navidrome_token: str = ""
         self.state = AppState()
         # Serializes /play, /play-url, /pause, /resume, /seek, /stop for this
         # session — without it, two concurrent dispatches (e.g. rapid

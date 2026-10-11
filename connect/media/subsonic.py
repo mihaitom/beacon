@@ -30,6 +30,10 @@ class SubsonicClient:
         self._credential = credential  # pre-built Subsonic auth query string
         self.app_name = "navispot"
         self.api_version = "1.16.1"
+        # What the server says it is (OpenSubsonic's `type`, "navidrome" for
+        # Navidrome), learnt from the first ping. Empty for a server that
+        # predates OpenSubsonic.
+        self.server_software = ""
 
     def _auth_params(self) -> dict:
         if self._credential:
@@ -132,7 +136,7 @@ class SubsonicClient:
 
     def ping(self) -> bool:
         try:
-            self._get("ping.view")
+            self.server_software = self._get("ping.view").get("type", "")
             return True
         except Exception as e:
             # /config only surfaces a generic "credential rejected" to the
@@ -171,3 +175,40 @@ class SubsonicClient:
         if isinstance(users, dict):
             users = [users]
         return users if isinstance(users, list) else []
+
+    # ── Navidrome's own API ──────────────────────────────────────────────
+    # Smart playlist rules exist only there (see
+    # docs/plans/smart-playlist-builder.md). It takes a JWT issued for a
+    # username and password instead of the Subsonic credential above.
+
+    @property
+    def username(self) -> str:
+        return self.user or self._auth_params().get("u", "")
+
+    def navidrome_login(self, username: str, password: str) -> str | None:
+        """The JWT for these credentials, or None when Navidrome refuses
+        them. Any other failure raises."""
+        response = http_client.post(
+            f"{self.internal_url}/auth/login",
+            json={"username": username, "password": password},
+            timeout=10,
+        )
+        if response.status_code == 401:
+            return None
+        response.raise_for_status()
+        return response.json()["token"]
+
+    def navidrome_request(
+        self, method: str, path: str, token: str, body: dict | None = None, params=None
+    ):
+        """One call to Navidrome's /api, authorised by `token`. Returns the
+        raw response: the caller decides what a 401 means, and picks up the
+        refreshed token Navidrome sends back with every answer."""
+        return http_client.client().request(
+            method,
+            f"{self.internal_url}/api/{path}",
+            headers={"X-ND-Authorization": f"Bearer {token}"},
+            json=body,
+            params=params,
+            timeout=15,
+        )

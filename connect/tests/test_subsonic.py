@@ -1,5 +1,7 @@
 """Tests for SubsonicClient — especially the internal_url logic."""
 
+import pytest
+
 from media import SubsonicClient, http_client
 
 # Captured at import time, before conftest's autouse _stub_media_ping
@@ -228,6 +230,27 @@ def test_ping_uses_internal_url(monkeypatch):
     assert captured["url"].startswith("http://nav:4533"), (
         f"_get() sollte internal_url nutzen, nutzte aber: {captured['url']}"
     )
+
+
+@pytest.mark.parametrize(("reported", "expected"), [("navidrome", "navidrome"), (None, "")])
+def test_ping_records_what_the_server_says_it_is(monkeypatch, reported, expected):
+    import httpx
+
+    body = {"status": "ok", "version": "1.16.1"}
+    if reported:
+        body["type"] = reported
+
+    def fake_get(url, **kwargs):
+        return httpx.Response(
+            200, json={"subsonic-response": body}, request=httpx.Request("GET", url)
+        )
+
+    monkeypatch.setattr("media.http_client.get", fake_get)
+    monkeypatch.setattr(SubsonicClient, "ping", _REAL_PING)
+    c = SubsonicClient("http://nav:4533", credential="u=a&t=b&s=c")
+
+    assert c.ping() is True
+    assert c.server_software == expected
 
 
 def test_ping_returns_false_and_logs_on_failure(monkeypatch, caplog):
