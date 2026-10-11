@@ -39,6 +39,8 @@ function makePlaylist(id: string, overrides: Partial<Playlist> = {}): Playlist {
     coverArtId: null,
     owner: 'thomas',
     changed: null,
+    readonly: false,
+    smart: false,
     songs: [],
     ...overrides,
   }
@@ -91,6 +93,22 @@ describe('library mutations', () => {
   })
 
   afterEach(() => emitter.all.clear())
+
+  it('offers only playlists that take songs as targets, owner or not', async () => {
+    const library = useLibraryStore()
+    library.playlists = [
+      makePlaylist('mine'),
+      makePlaylist('smart', { readonly: true, smart: true }),
+      makePlaylist('theirs', { owner: 'anna', readonly: true }),
+      // Jellyfin and Plex name no owner, and those playlists are writable.
+      makePlaylist('bridged', { owner: '' }),
+    ]
+
+    expect(library.playlistsAcceptingSongs.map((playlist) => playlist.id)).toEqual([
+      'mine',
+      'bridged',
+    ])
+  })
 
   it('writes a deleted playlist out of the cache, not just out of memory', async () => {
     // Otherwise the next mount reads the cache-first path and, within the

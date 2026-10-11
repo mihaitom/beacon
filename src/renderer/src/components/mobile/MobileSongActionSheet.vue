@@ -46,10 +46,10 @@
           <template #prepend><v-icon icon="mdi-plus" /></template>
           <v-list-item-title>{{ $t('common.createNewPlaylist') }}</v-list-item-title>
         </v-list-item>
-        <template v-if="libraryStore.playlists.length">
+        <template v-if="libraryStore.playlistsAcceptingSongs.length">
           <v-divider />
           <v-list-item
-            v-for="playlist in libraryStore.playlists"
+            v-for="playlist in libraryStore.playlistsAcceptingSongs"
             :key="playlist.id"
             @click="addToPlaylist(playlist.id)"
           >

@@ -140,6 +140,8 @@ describe('long mobile lists', () => {
       public: false,
       owner: 'thomas',
       changed: null,
+      readonly: false,
+      smart: false,
       songs: [...songs],
     })
     await expectWindowed(MobilePlaylistDetailView, '.mobile-song-row', songs.at(-1)!.title)

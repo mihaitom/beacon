@@ -14,6 +14,7 @@
         {{ $t('playlists.songCount', { count: playlist.songs.length }) }}
         <template v-if="durationLabel"> · {{ durationLabel }}</template>
         <template v-if="playlist.public"> · {{ $t('playlists.public') }}</template>
+        <template v-if="playlist.smart"> · {{ $t('playlists.smart') }}</template>
       </template>
       <template #actions>
         <v-btn
@@ -48,19 +49,20 @@
      - capabilities.ts's emptyPlaylistCreation) — without this the page
      - ends on a column-heading row with nothing under it. -->
     <v-alert v-if="!playlist.songs.length" type="info" variant="tonal" class="view-notice">
-      {{ $t('playlists.noSongsYet') }}
+      {{ playlist.smart ? $t('playlists.smartEmpty') : $t('playlists.noSongsYet') }}
     </v-alert>
     <!-- Reordering and removing: only your own playlists. A shared one
      - belongs to whoever made it, and the server rejects the write anyway
      - (Navidrome answers createPlaylist for someone else's playlist with a
-     - not-authorized error). -->
+     - not-authorized error). Your own smart playlist is refused the same
+     - way: its rules decide the songs. -->
     <song-table
       v-else
       :songs="playlist.songs"
       :queue-whole-list="false"
       :default-sort-key="null"
-      :reorderable="isOwnPlaylist"
-      :removable="isOwnPlaylist"
+      :reorderable="songsEditable"
+      :removable="songsEditable"
       @reorder="onReorder"
       @remove="onRemove"
     />
@@ -119,6 +121,9 @@ export default {
     },
     isOwnPlaylist(): boolean {
       return this.playlist?.owner === this.authStore.username
+    },
+    songsEditable(): boolean {
+      return this.isOwnPlaylist && !this.playlist?.readonly
     },
     // Summed from the tracks, not the playlist's own duration — which,
     // like the songCount beside it in the heading, is what the server sent

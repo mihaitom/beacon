@@ -31,6 +31,8 @@ function makePlaylist(songs: Song[], overrides: Partial<Playlist> = {}): Playlis
     public: false,
     owner: OWNER,
     changed: null,
+    readonly: false,
+    smart: false,
     songs,
     ...overrides,
   }
@@ -244,5 +246,10 @@ describe('MobilePlaylistDetailView', () => {
 
     const theirs = await mountAgainstServer(songs, { owner: 'someone-else' })
     expect(theirs.wrapper.findComponent(MobileSongActionSheet).props('removable')).toBe(false)
+  })
+
+  it('does not offer it on your own smart playlist, whose rules pick the songs', async () => {
+    const smart = await mountAgainstServer([makeSong('a')], { readonly: true, smart: true })
+    expect(smart.wrapper.findComponent(MobileSongActionSheet).props('removable')).toBe(false)
   })
 })

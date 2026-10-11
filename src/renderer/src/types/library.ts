@@ -123,6 +123,12 @@ export interface Playlist {
   owner: string
   /** ISO 8601. Null where the server does not say. */
   changed: string | null
+  /** The server refuses changes to the song list: someone else's playlist,
+   * one synced from a file, or a smart playlist. Renaming and deleting are
+   * a separate question - see the views that check `owner`. */
+  readonly: boolean
+  /** Filled from rules by the server rather than by hand. */
+  smart: boolean
   songs: Song[]
 }
 

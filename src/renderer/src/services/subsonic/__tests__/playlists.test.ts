@@ -51,6 +51,55 @@ describe('SubsonicClient playlist songs', () => {
   })
 })
 
+/** Navidrome reports both through OpenSubsonic fields; a server that does
+ * not know them must not end up with every playlist locked. */
+describe('SubsonicClient playlist flags', () => {
+  const client = new SubsonicClient('http://connect:8080', 'u=bob&t=abc&s=xyz', 'connect-token')
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('reads readonly, and validUntil as the sign of a smart playlist', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          'subsonic-response': {
+            status: 'ok',
+            playlists: {
+              playlist: [
+                {
+                  id: 'smart',
+                  name: 'Unplayed',
+                  songCount: 0,
+                  duration: 0,
+                  readonly: true,
+                  validUntil: '2026-10-11T12:00:00Z',
+                },
+                { id: 'synced', name: 'From m3u', songCount: 0, duration: 0, readonly: true },
+                { id: 'plain', name: 'Old server', songCount: 0, duration: 0 },
+              ],
+            },
+          },
+        }),
+      })),
+    )
+
+    const flags = (await client.getPlaylists()).map(({ id, readonly, smart }) => ({
+      id,
+      readonly,
+      smart,
+    }))
+    expect(flags).toEqual([
+      { id: 'smart', readonly: true, smart: true },
+      { id: 'synced', readonly: true, smart: false },
+      { id: 'plain', readonly: false, smart: false },
+    ])
+  })
+})
+
 /** Whether Settings offers a library rescan at all hangs on this answer,
  * and the three states are genuinely different: an admin, a listener, and
  * a server that never answered the question. */

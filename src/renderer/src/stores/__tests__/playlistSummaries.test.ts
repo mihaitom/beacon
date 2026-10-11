@@ -16,6 +16,8 @@ function makePlaylist(id: string, overrides: Partial<Playlist> = {}): Playlist {
     public: false,
     owner: 'thomas',
     changed: '2026-01-01T00:00:00Z',
+    readonly: false,
+    smart: false,
     songs: [],
     ...overrides,
   }

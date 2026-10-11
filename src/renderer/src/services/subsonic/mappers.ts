@@ -97,6 +97,8 @@ export function mapPlaylist(raw: RawPlaylist): Playlist {
     public: raw.public ?? false,
     owner: raw.owner ?? '',
     changed: raw.changed ?? null,
+    readonly: raw.readonly ?? false,
+    smart: raw.validUntil != null,
     songs: (raw.entry ?? []).map(mapSong),
   }
 }

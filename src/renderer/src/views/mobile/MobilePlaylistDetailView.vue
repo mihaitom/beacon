@@ -11,6 +11,7 @@
         <h1 class="page-title">{{ playlist.name }}</h1>
         <div class="text-body-small text-medium-emphasis">
           {{ $t('playlists.songCount', { count: playlist.songs.length }) }}
+          <template v-if="playlist.smart"> · {{ $t('playlists.smart') }}</template>
         </div>
       </div>
       <v-btn
@@ -27,7 +28,7 @@
 
     <!-- See the desktop page's own note on when a playlist can be empty. -->
     <v-alert v-if="!playlist.songs.length" type="info" variant="tonal" class="view-notice">
-      {{ $t('playlists.noSongsYet') }}
+      {{ playlist.smart ? $t('playlists.smartEmpty') : $t('playlists.noSongsYet') }}
     </v-alert>
     <!-- Virtualized for the reason MobileQueueView's list is. -->
     <div v-else class="mobile-playlist-detail__list">
@@ -46,7 +47,7 @@
     <mobile-song-action-sheet
       v-model="actionsOpen"
       :song="activeSong"
-      :removable="isOwnPlaylist"
+      :removable="songsEditable"
       @remove="onRemove"
     />
   </v-container>
@@ -103,9 +104,10 @@ export default {
     },
     /** Same gate the desktop page puts on its table: a shared playlist
      * belongs to whoever made it, and the server refuses the write anyway
-     * — offering the entry would only produce an error toast. */
-    isOwnPlaylist(): boolean {
-      return this.playlist?.owner === this.authStore.username
+     * — offering the entry would only produce an error toast. Likewise for
+     * your own smart playlist, whose songs come from its rules. */
+    songsEditable(): boolean {
+      return this.playlist?.owner === this.authStore.username && !this.playlist.readonly
     },
   },
   created() {

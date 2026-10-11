@@ -179,6 +179,7 @@ export default {
       const parts = [
         this.$t('playlists.songCount', { count: this.playlist.songCount }),
         formatTotalDuration(this.playlist.duration, this.$t),
+        this.playlist.smart ? this.$t('playlists.smart') : '',
         ago ? this.$t('playlists.editedAgo', { ago }) : '',
       ]
       if (this.showOwner && this.playlist.owner) {

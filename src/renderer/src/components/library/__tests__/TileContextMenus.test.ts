@@ -100,6 +100,8 @@ const playlist: Playlist = {
   public: false,
   owner: 'thomas',
   changed: null,
+  readonly: false,
+  smart: false,
   songs: [],
 }
 

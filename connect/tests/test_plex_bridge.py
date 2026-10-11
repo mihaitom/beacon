@@ -757,6 +757,31 @@ def test_get_playlists_reports_when_a_playlist_last_changed(client, plex_session
     ]
 
 
+def test_get_playlists_marks_smart_playlists_read_only(client, plex_session, monkeypatch):
+    fake_client, _calls = _fake_px_client(
+        {
+            "/playlists": {
+                "MediaContainer": {
+                    "Metadata": [
+                        {"ratingKey": "1", "title": "Recently Added", "smart": True},
+                        {"ratingKey": "2", "title": "Road Trip", "smart": False},
+                    ]
+                }
+            }
+        }
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getPlaylists.view")
+    smart, regular = r.json()["subsonic-response"]["playlists"]["playlist"]
+    assert smart["readonly"] is True
+    assert "validUntil" in smart
+    # Absent rather than false: a regular one keeps whatever the frontend
+    # decides from ownership, as before.
+    assert "readonly" not in regular
+    assert "validUntil" not in regular
+
+
 def test_get_playlist_includes_entries(client, plex_session, monkeypatch):
     fake_client, _calls = _fake_px_client(
         {

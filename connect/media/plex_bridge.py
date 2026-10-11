@@ -808,6 +808,12 @@ def _map_playlist(item: dict) -> dict:
         "public": False,
     }
     _set(playlist, "changed", _epoch_to_iso(item.get("updatedAt") or item.get("addedAt")))
+    # The OpenSubsonic fields Navidrome sends for its own smart playlists.
+    # Plex works the songs out from the filter on every request, so they are
+    # valid as of now; and the filter, not the user, decides what is in it.
+    if item.get("smart"):
+        playlist["readonly"] = True
+        playlist["validUntil"] = datetime.now(UTC).isoformat()
     return playlist
 
 

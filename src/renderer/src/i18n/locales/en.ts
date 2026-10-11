@@ -821,6 +821,8 @@ export default {
     createTitle: 'New playlist',
     noPlaylistsYet: 'No playlists yet.',
     noSongsYet: 'This playlist is empty.',
+    smart: 'Smart playlist',
+    smartEmpty: "No songs match this smart playlist's rules right now.",
     created: 'Created “{name}”',
     addedOne: 'Added to “{name}”',
     addedMany: 'Added {count} tracks to “{name}”',

@@ -666,7 +666,7 @@ export default {
       )
     },
     playlistNames(): string[] {
-      return this.libraryStore.playlists.map((playlist) => playlist.name)
+      return this.libraryStore.playlistsAcceptingSongs.map((playlist) => playlist.name)
     },
     /** v-combobox hands back `null` when cleared, the same as the genre
      * field above. */
@@ -683,12 +683,14 @@ export default {
      * "last.fm charts" are the same playlist to anyone reading the list -
      * and creating a second one differing only in case is never what was
      * meant. Two playlists really sharing a name (which Subsonic permits)
-     * resolve to the first; there is nothing here to tell them apart by. */
+     * resolve to the first; there is nothing here to tell them apart by.
+     * One that cannot take songs (a smart playlist, someone else's) is not
+     * offered for updating - the name then simply creates a new one. */
     existingPlaylist(): Playlist | null {
       const wanted = this.playlistName.trim().toLowerCase()
       if (!wanted) return null
       return (
-        this.libraryStore.playlists.find(
+        this.libraryStore.playlistsAcceptingSongs.find(
           (playlist) => playlist.name.trim().toLowerCase() === wanted,
         ) ?? null
       )

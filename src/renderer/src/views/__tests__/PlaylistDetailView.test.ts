@@ -7,6 +7,7 @@ import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { useLibraryStore } from '@/stores/library'
+import { useAuthStore } from '@/stores/auth'
 import PlaylistDetailView from '../PlaylistDetailView.vue'
 import PlaylistDeleteDialog from '@/components/library/PlaylistDeleteDialog.vue'
 import SongTable from '@/components/library/SongTable.vue'
@@ -26,6 +27,8 @@ function makePlaylist(overrides: Partial<Playlist> = {}): Playlist {
     public: false,
     owner: 'thomas',
     changed: null,
+    readonly: false,
+    smart: false,
     songs: [],
     ...overrides,
   }
@@ -467,6 +470,36 @@ describe('PlaylistDetailView', () => {
       // One re-read, by the write that was last in the queue.
       expect(fetchPlaylist.mock.calls.length).toBe(fetchesAfterMount + 1)
       expect(vm.playlist.songs.map((song) => song.id)).toEqual(['c'])
+    })
+  })
+
+  describe('a smart playlist', () => {
+    async function mountOwn(overrides: Partial<Playlist>) {
+      useAuthStore().username = 'thomas'
+      vi.spyOn(useLibraryStore(), 'fetchPlaylist').mockResolvedValue(makePlaylist(overrides))
+      return (await mountView()).wrapper
+    }
+
+    it('offers reordering and removing on your own regular playlist', async () => {
+      const wrapper = await mountOwn({ songs: [makeSong('a')], songCount: 1 })
+      const table = wrapper.findComponent(SongTable)
+      expect(table.props('reorderable')).toBe(true)
+      expect(table.props('removable')).toBe(true)
+    })
+
+    it('offers neither on your own smart one, but still lets you rename it', async () => {
+      // Navidrome refuses song changes to a smart playlist even from its
+      // owner, but renaming and deleting it are allowed.
+      const wrapper = await mountOwn({ songs: [makeSong('a')], readonly: true, smart: true })
+      const table = wrapper.findComponent(SongTable)
+      expect(table.props('reorderable')).toBe(false)
+      expect(table.props('removable')).toBe(false)
+      expect(wrapper.find('.mdi-pencil-outline').exists()).toBe(true)
+    })
+
+    it('blames the rules, not the user, when nothing matches', async () => {
+      const wrapper = await mountOwn({ readonly: true, smart: true })
+      expect(wrapper.text()).toContain(i18n.global.t('playlists.smartEmpty'))
     })
   })
 })

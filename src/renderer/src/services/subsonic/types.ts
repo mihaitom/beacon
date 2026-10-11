@@ -140,6 +140,9 @@ export interface RawPlaylist {
   public?: boolean
   owner?: string
   changed?: string
+  // OpenSubsonic. validUntil is only ever sent for a smart playlist.
+  readonly?: boolean
+  validUntil?: string
   entry?: RawSong[]
 }
 

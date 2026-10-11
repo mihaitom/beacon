@@ -50,7 +50,8 @@ export default {
     meta(): string {
       const count = this.$t('playlists.songCount', { count: this.playlist.songCount })
       const duration = this.formatDuration(this.playlist.duration)
-      const parts = [count, duration].filter(Boolean)
+      const smart = this.playlist.smart ? (this.$t('playlists.smart') as string) : ''
+      const parts = [count, duration, smart].filter(Boolean)
       if (this.showOwner && this.playlist.owner) {
         parts.push(this.$t('playlists.byOwner', { owner: this.playlist.owner }) as string)
       }

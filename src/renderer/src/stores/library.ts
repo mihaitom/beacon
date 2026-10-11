@@ -477,6 +477,10 @@ export const useLibraryStore = defineStore('library', {
       return counts
     },
     loading: (state): boolean => state.loadingCount > 0,
+    /** What "Add to playlist" offers. Not filtered by owner: Jellyfin and
+     * Plex playlists carry none, and those are still the user's own. */
+    playlistsAcceptingSongs: (state): Playlist[] =>
+      state.playlists.filter((playlist) => !playlist.readonly),
     /** Derived from allSongs rather than its own fetch — every field a
      * Genre needs (name, songCount, distinct albumCount) is already right
      * there on each song, so a whole separate getGenres.view round trip

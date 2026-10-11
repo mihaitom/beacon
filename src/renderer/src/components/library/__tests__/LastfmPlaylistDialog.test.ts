@@ -634,6 +634,16 @@ describe('LastfmPlaylistDialog', () => {
       expect(vm.playlistNames).toContain('Weekly Charts')
     })
 
+    it('does not offer a playlist it cannot write to, such as a smart one', async () => {
+      const { vm } = await searchWithPlaylists([
+        { id: 'p1', name: 'Weekly Charts', readonly: true } as { id: string; name: string },
+      ])
+
+      vm.playlistName = 'Weekly Charts'
+      expect(vm.existingPlaylist).toBeNull()
+      expect(vm.playlistNames).not.toContain('Weekly Charts')
+    })
+
     it('survives the name field being cleared', async () => {
       const { vm } = await searchWithPlaylists([{ id: 'p1', name: 'Weekly Charts' }])
       vm.playlistNameValue = null

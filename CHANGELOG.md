@@ -6,12 +6,17 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Smart playlists from Navidrome and Plex are labelled as such. Their rules pick the songs, so Beacon no longer offers to reorder, remove or add songs there
+
 ### Changed
 
 - The mouse wheel sets the volume anywhere on the player bar, not only over the volume slider, for party guests too
 
 ### Fixed
 
+- "Add to playlist" no longer lists playlists the server refuses to change, such as other users' shared ones
 - Turning a tablet from upright to sideways with the queue open, or remembered open, lit up the queue button but showed no queue until it was tapped off and on again (reported by @ampcat3, #47)
 
 ## [1.7.1] - 2026-10-10

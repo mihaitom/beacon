@@ -829,6 +829,8 @@ export default {
     createTitle: 'Neue Playlist',
     noPlaylistsYet: 'Noch keine Playlists.',
     noSongsYet: 'Diese Playlist ist leer.',
+    smart: 'Smart Playlist',
+    smartEmpty: 'Gerade passt kein Song zu den Regeln dieser Smart Playlist.',
     created: '„{name}“ erstellt',
     addedOne: 'Zu „{name}“ hinzugefügt',
     addedMany: '{count} Titel zu „{name}“ hinzugefügt',

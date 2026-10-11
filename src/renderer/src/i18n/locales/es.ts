@@ -828,6 +828,8 @@ export default {
     createTitle: 'Nueva lista de reproducción',
     noPlaylistsYet: 'Todavía no hay listas de reproducción.',
     noSongsYet: 'Esta lista de reproducción está vacía.',
+    smart: 'Lista inteligente',
+    smartEmpty: 'Ahora mismo ninguna canción cumple las reglas de esta lista inteligente.',
     created: '“{name}” creada',
     addedOne: 'Añadido a “{name}”',
     addedMany: '{count} pistas añadidas a “{name}”',
