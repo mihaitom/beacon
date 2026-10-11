@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Turning a tablet from upright to sideways with the queue open, or remembered open, lit up the queue button but showed no queue until it was tapped off and on again (reported by @ampcat3, #47)
+
 ## [1.7.1] - 2026-10-10
 
 ### Changed

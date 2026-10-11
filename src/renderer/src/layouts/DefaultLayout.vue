@@ -212,14 +212,25 @@ export default {
     },
   },
   watch: {
-    'drawersStore.queueDrawerOpen'(open: boolean) {
-      if (open) this.queueDrawerEverOpened = true
+    // Immediate: this layout can mount with the drawer already open - an
+    // iPad turned from the phone shell, where it was opened or remembered
+    // open out of sight. Without it the button showed the queue open and
+    // no drawer was ever mounted (#47).
+    'drawersStore.queueDrawerOpen': {
+      immediate: true,
+      handler(open: boolean) {
+        if (open) this.queueDrawerEverOpened = true
+      },
     },
     // Fires exactly once, right after the mount this same tick's v-if
     // triggers — see the queue-drawer's own model-value comment above for
-    // why this can't just be true from the start.
-    queueDrawerEverOpened(everOpened: boolean) {
-      if (everOpened) this.$nextTick(() => (this.queueDrawerFirstMountSettled = true))
+    // why this can't just be true from the start. Immediate for the case
+    // above, where the flag is already true before this watcher exists.
+    queueDrawerEverOpened: {
+      immediate: true,
+      handler(everOpened: boolean) {
+        if (everOpened) this.$nextTick(() => (this.queueDrawerFirstMountSettled = true))
+      },
     },
   },
   methods: {
