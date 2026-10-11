@@ -43,6 +43,7 @@ async def test_lrcred_live():
     assert results[0]["_lyrics"]
 
 
+@pytest.mark.skip(reason="SimpMusic only answers its own app (403), disabled in lyrics/__init__.py")
 async def test_simpmusic_live():
     await _search_and_fetch(simpmusic)
 

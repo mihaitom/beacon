@@ -1007,6 +1007,7 @@ export default {
       recommendationsPartial: 'Teilweise abschaltbar unter Empfehlungen',
       fanart: 'Abschaltbar über Einstellungen',
     },
+    disabled: 'Derzeit abgeschaltet, wird nicht kontaktiert',
     services: {
       updateCheck: {
         name: 'GitHub',

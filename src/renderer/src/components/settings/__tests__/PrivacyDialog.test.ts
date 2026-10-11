@@ -115,6 +115,22 @@ describe('PrivacyDialog', () => {
     }
   })
 
+  it('says a service is switched off when its code is kept but never called', () => {
+    // SimpMusic stays in connect's code (so the host test above still
+    // finds it), but connect no longer asks it. Listing it like the others
+    // would claim a connection that is never made.
+    mountDialog()
+    const switchedOff = i18n.global.t('privacy.disabled')
+    const entries = [...document.querySelectorAll('.privacy-service')]
+    const simpmusic = entries.find((entry) =>
+      entry.textContent?.includes('api-lyrics.simpmusic.org'),
+    )
+    const lrclib = entries.find((entry) => entry.textContent?.includes('lrclib.net'))
+
+    expect(simpmusic?.textContent).toContain(switchedOff)
+    expect(lrclib?.textContent).not.toContain(switchedOff)
+  })
+
   it('says how the two builds differ, since the split above means less in one', () => {
     // In the desktop app the Beacon server runs on this same machine, so
     // the second section's requests leave from this address after all —

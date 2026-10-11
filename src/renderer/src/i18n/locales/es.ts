@@ -1006,6 +1006,7 @@ export default {
       recommendationsPartial: 'Parcialmente desactivable en Recomendaciones',
       fanart: 'Se puede desactivar en Ajustes',
     },
+    disabled: 'Desactivado por ahora, no se contacta',
     services: {
       updateCheck: {
         name: 'GitHub',

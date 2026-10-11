@@ -67,7 +67,7 @@ describe('lyrics store — provider gating', () => {
 
     expect(connectLyrics.autoLyrics).toHaveBeenCalledWith(
       expect.objectContaining({ name: song.title, artist: song.artist }),
-      ['lrclib.net', 'lrc.red', 'NetEase', 'SimpMusic'],
+      ['lrclib.net', 'lrc.red', 'NetEase'],
     )
   })
 

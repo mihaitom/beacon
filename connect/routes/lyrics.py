@@ -30,6 +30,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from core.auth import require_token
 from lyrics import (
+    ACTIVE_SOURCES,
+    DISABLED_SOURCES,
     LyricSource,
     artist_matches,
     has_sung_lines,
@@ -243,7 +245,7 @@ def _reset_cache() -> None:
 
 def _parse_sources(sources: str | None) -> list[LyricSource]:
     if not sources:
-        return list(LyricSource)
+        return list(ACTIVE_SOURCES)
 
     parsed = []
     for raw in sources.split(","):
@@ -251,7 +253,10 @@ def _parse_sources(sources: str | None) -> list[LyricSource]:
             parsed.append(LyricSource(raw.strip()))
         except ValueError:
             continue
-    return parsed or list(LyricSource)
+    # A disabled source is dropped like an unknown one: an app that still
+    # has it stored in its selection must not reach it through here.
+    parsed = [source for source in parsed if source not in DISABLED_SOURCES]
+    return parsed or list(ACTIVE_SOURCES)
 
 
 def _fmt_sources(sources: list[LyricSource]) -> str:
@@ -505,7 +510,7 @@ async def auto_for_party(song: dict) -> dict | None:
         # the providers twice.
         "duration": float(duration) if duration is not None else None,
     }
-    wanted = list(LyricSource)
+    wanted = list(ACTIVE_SOURCES)
     result = await _lookup(_key("auto", params, wanted), lambda: _do_auto(params, wanted))
     if result is _UNAVAILABLE or not result:
         return None
@@ -527,9 +532,11 @@ async def _do_by_remote_id(source: str, id: str) -> tuple[str | None, bool]:
     try:
         src = LyricSource(source)
     except ValueError:
-        logger.warning(f"[by-remote-id] unknown source: {source!r}")
-        # A source this build doesn't know will never become one it does
-        # without a restart, so this is worth remembering.
+        src = None
+    if src is None or src in DISABLED_SOURCES:
+        logger.warning(f"[by-remote-id] unknown or disabled source: {source!r}")
+        # Neither becomes askable without a restart, so this is worth
+        # remembering.
         return None, True
 
     try:

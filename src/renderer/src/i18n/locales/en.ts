@@ -999,6 +999,7 @@ export default {
       recommendationsPartial: 'Partly switchable under Recommendations',
       fanart: 'Can be switched off in Settings',
     },
+    disabled: 'Currently switched off, not contacted',
     services: {
       updateCheck: {
         name: 'GitHub',

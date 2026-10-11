@@ -43,6 +43,9 @@
               <v-chip v-if="service.optOut" size="x-small" variant="tonal" color="primary">
                 {{ $t(`privacy.optOut.${service.optOut}`) }}
               </v-chip>
+              <v-chip v-if="service.disabled" size="x-small" variant="tonal">
+                {{ $t('privacy.disabled') }}
+              </v-chip>
             </div>
             <p class="privacy-service__purpose text-body-small">
               {{ $t(`privacy.services.${service.key}.purpose`) }}
@@ -109,11 +112,14 @@ const SERVICES = {
     { key: 'lrclib', host: 'lrclib.net', url: 'https://lrclib.net/', optOut: 'lyrics' },
     { key: 'lrcred', host: 'lrc.red', url: 'https://lrc.red/', optOut: 'lyrics' },
     { key: 'netease', host: 'music.163.com', url: 'https://music.163.com/', optOut: 'lyrics' },
+    // Still in connect's code, so still listed - but switched off there
+    // (connect/lyrics/__init__.py's DISABLED_SOURCES), and the dialog says
+    // so rather than claiming a connection that is never made.
     {
       key: 'simpmusic',
       host: 'api-lyrics.simpmusic.org',
       url: 'https://simpmusic.org/',
-      optOut: 'lyrics',
+      disabled: true,
     },
     {
       key: 'musicbrainz',
@@ -180,7 +186,13 @@ export default {
         { key: 'viaServer', services: SERVICES.viaServer },
       ] as {
         key: string
-        services: readonly { key: string; host: string; url: string; optOut?: string }[]
+        services: readonly {
+          key: string
+          host: string
+          url: string
+          optOut?: string
+          disabled?: boolean
+        }[]
       }[]
     },
   },

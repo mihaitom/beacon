@@ -1011,6 +1011,7 @@ export default {
       recommendationsPartial: 'Partiellement désactivable sous Recommandations',
       fanart: 'Désactivable dans les réglages',
     },
+    disabled: 'Désactivé pour le moment, jamais contacté',
     services: {
       updateCheck: {
         name: 'GitHub',

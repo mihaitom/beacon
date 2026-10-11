@@ -6,7 +6,10 @@ import { pushAccountSettings } from '@/services/connect/accountSettings'
 // travel as-is in the `sources` query param routes/lyrics.py parses back
 // into that same enum (_parse_sources). Brand names, not translated, same
 // as "Navidrome"/"Jellyfin"/"Plex" elsewhere in this app.
-export const LYRIC_PROVIDERS = ['lrclib.net', 'lrc.red', 'NetEase', 'SimpMusic'] as const
+// SimpMusic is missing on purpose: connect no longer asks it (see
+// connect/lyrics/__init__.py's DISABLED_SOURCES), and a selection stored
+// with it is filtered down like any other value this build doesn't offer.
+export const LYRIC_PROVIDERS = ['lrclib.net', 'lrc.red', 'NetEase'] as const
 
 export type LyricProvider = (typeof LYRIC_PROVIDERS)[number]
 
@@ -15,7 +18,7 @@ const ENABLED_KEY = 'beacon.lyrics-providers'
 // Opt-out, same convention as recommendations' enabled-by-default (see
 // stores/recommendations.ts's own comment) — Settings has a control for
 // anyone who'd rather title/artist/album/duration never go to lrclib.net/
-// lrc.red/NetEase/SimpMusic at all (see stores/lyrics.ts's ensureLoaded()), but
+// lrc.red/NetEase at all (see stores/lyrics.ts's ensureLoaded()), but
 // that's the toggle, not the default. Absent (never configured) means
 // every provider this build knows about, not an empty list — only an
 // *explicit* stored selection (including a deliberately emptied one) is

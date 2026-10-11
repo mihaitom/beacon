@@ -8,7 +8,13 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 import routes.lyrics as lyrics_routes
-from lyrics import LyricSource, artist_matches, has_sung_lines, order_search_results
+from lyrics import (
+    ACTIVE_SOURCES,
+    LyricSource,
+    artist_matches,
+    has_sung_lines,
+    order_search_results,
+)
 from lyrics.shared import parse_lyrics
 from routes.lyrics import GET_FETCHERS, SEARCH_FETCHERS, _parse_sources, _reset_cache
 
@@ -255,19 +261,46 @@ def test_parse_lyrics_leaves_credits_out():
 
 
 def test_parse_sources_defaults_to_all():
-    assert _parse_sources(None) == list(LyricSource)
-    assert _parse_sources("") == list(LyricSource)
+    assert _parse_sources(None) == list(ACTIVE_SOURCES)
+    assert _parse_sources("") == list(ACTIVE_SOURCES)
 
 
 def test_parse_sources_filters_unknown():
-    assert _parse_sources("lrclib.net,unknown,SimpMusic") == [
+    assert _parse_sources("lrclib.net,unknown,NetEase") == [
         LyricSource.LRCLIB,
-        LyricSource.SIMPMUSIC,
+        LyricSource.NETEASE,
     ]
 
 
 def test_parse_sources_falls_back_to_all_when_nothing_recognized():
-    assert _parse_sources("unknown") == list(LyricSource)
+    assert _parse_sources("unknown") == list(ACTIVE_SOURCES)
+
+
+def test_simpmusic_is_never_asked():
+    # Its API only answers its own app (403 for everyone else, 2026-10-11).
+    # An app that still has it in its stored selection must not reach it.
+    assert LyricSource.SIMPMUSIC not in _parse_sources(None)
+    assert _parse_sources("lrclib.net,SimpMusic") == [LyricSource.LRCLIB]
+
+
+async def test_party_fallback_does_not_ask_a_disabled_source():
+    simpmusic = AsyncMock(return_value=None)
+    others = {source: AsyncMock(return_value=None) for source in ACTIVE_SOURCES}
+    with patch.dict(SEARCH_FETCHERS, {**others, LyricSource.SIMPMUSIC: simpmusic}):
+        await lyrics_routes.auto_for_party({"title": "Song", "artist": "Artist"})
+
+    simpmusic.assert_not_awaited()
+    assert all(fetch.await_count == 1 for fetch in others.values())
+
+
+def test_by_remote_id_does_not_ask_a_disabled_source(client):
+    fetch = AsyncMock(return_value="[00:01.00] a line")
+    with patch.dict(GET_FETCHERS, {LyricSource.SIMPMUSIC: fetch}):
+        r = client.get("/lyrics/by-remote-id", params={"source": "SimpMusic", "id": "abc"})
+
+    assert r.status_code == 200
+    assert r.json() is None
+    fetch.assert_not_awaited()
 
 
 # ── /lyrics/search ────────────────────────────────────────────────────────
@@ -277,35 +310,35 @@ def test_search_groups_results_by_source(client):
     lrclib_results = AsyncMock(
         return_value=[{"id": "1", "name": "Song", "source": "lrclib.net", "_lyrics": "a line"}]
     )
-    simpmusic_results = AsyncMock(return_value=None)
+    netease_results = AsyncMock(return_value=None)
 
     with patch.dict(
         SEARCH_FETCHERS,
-        {LyricSource.LRCLIB: lrclib_results, LyricSource.SIMPMUSIC: simpmusic_results},
+        {LyricSource.LRCLIB: lrclib_results, LyricSource.NETEASE: netease_results},
     ):
         r = client.get("/lyrics/search", params={"name": "Song", "artist": "Artist"})
 
     assert r.status_code == 200
     data = r.json()
     assert data["lrclib.net"] == [{"id": "1", "name": "Song", "source": "lrclib.net"}]
-    assert data["SimpMusic"] == []
+    assert data["NetEase"] == []
 
 
 def test_search_respects_sources_param(client):
     lrclib_results = AsyncMock(return_value=[])
-    simpmusic_results = AsyncMock(return_value=[])
+    netease_results = AsyncMock(return_value=[])
 
     with patch.dict(
         SEARCH_FETCHERS,
-        {LyricSource.LRCLIB: lrclib_results, LyricSource.SIMPMUSIC: simpmusic_results},
+        {LyricSource.LRCLIB: lrclib_results, LyricSource.NETEASE: netease_results},
     ):
         r = client.get("/lyrics/search", params={"name": "Song", "sources": "lrclib.net"})
 
     assert r.status_code == 200
     assert "lrclib.net" in r.json()
-    assert "SimpMusic" not in r.json()
+    assert "NetEase" not in r.json()
     lrclib_results.assert_awaited_once()
-    simpmusic_results.assert_not_awaited()
+    netease_results.assert_not_awaited()
 
 
 def test_search_reports_a_lookup_no_provider_answered_as_unavailable(client, caplog):
@@ -819,18 +852,18 @@ def test_auto_refuses_a_close_title_by_a_different_artist(client):
             "id": "wrong-artist",
             "isSync": True,
             "name": "Drowning in the Sound",
-            "source": "SimpMusic",
+            "source": "NetEase",
         }
     ]
     get_fn = AsyncMock(return_value="[00:14.09] You worship the sun")
 
     with (
-        patch.dict(SEARCH_FETCHERS, {LyricSource.SIMPMUSIC: AsyncMock(return_value=search_result)}),
-        patch.dict(GET_FETCHERS, {LyricSource.SIMPMUSIC: get_fn}),
+        patch.dict(SEARCH_FETCHERS, {LyricSource.NETEASE: AsyncMock(return_value=search_result)}),
+        patch.dict(GET_FETCHERS, {LyricSource.NETEASE: get_fn}),
     ):
         r = client.get(
             "/lyrics/auto",
-            params={"name": "Drowning in Beauty", "artist": "Massappeals", "sources": "SimpMusic"},
+            params={"name": "Drowning in Beauty", "artist": "Massappeals", "sources": "NetEase"},
         )
 
     assert r.json() is None
@@ -842,24 +875,24 @@ def test_auto_skips_a_source_whose_search_fails(client):
     others still get a chance."""
     failing = AsyncMock(side_effect=RuntimeError("provider down"))
     good_result = [
-        {"artist": "Artist", "id": "42", "isSync": True, "name": "Song", "source": "SimpMusic"}
+        {"artist": "Artist", "id": "42", "isSync": True, "name": "Song", "source": "NetEase"}
     ]
     with (
         patch.dict(
             SEARCH_FETCHERS,
             {
                 LyricSource.LRCLIB: failing,
-                LyricSource.SIMPMUSIC: AsyncMock(return_value=good_result),
+                LyricSource.NETEASE: AsyncMock(return_value=good_result),
             },
         ),
         patch.dict(
             GET_FETCHERS,
-            {LyricSource.SIMPMUSIC: AsyncMock(return_value="[00:01.00]La la la")},
+            {LyricSource.NETEASE: AsyncMock(return_value="[00:01.00]La la la")},
         ),
     ):
         r = client.get(
             "/lyrics/auto",
-            params={"name": "Song", "artist": "Artist", "sources": "lrclib.net,SimpMusic"},
+            params={"name": "Song", "artist": "Artist", "sources": "lrclib.net,NetEase"},
         )
 
     assert r.json()["lyrics"] == "[00:01.00]La la la"

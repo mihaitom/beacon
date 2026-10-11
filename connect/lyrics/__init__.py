@@ -10,7 +10,7 @@ Genius is the only provider left out for that reason (Electron-only).
 Sub-modules:
   lrclib    lrclib.net (LRC plain/synced lyrics)
   lrcred    lrc.red (plain/synced lyrics, by ISRC or search)
-  simpmusic SimpMusic API (plain/synced lyrics)
+  simpmusic SimpMusic API (plain/synced lyrics) - disabled, see below
   netease   NetEase API (plain/synced lyrics, no translation merge)
   shared    fuzzy search-result ranking
 """
@@ -28,7 +28,16 @@ class LyricSource(str, Enum):
     SIMPMUSIC = "SimpMusic"
 
 
+# SimpMusic's API answers every request with 403 "This API is only available
+# to SimpMusic clients" (since at least 2026-10-11). Kept in the code in
+# case that changes, but nothing asks it while it is listed here.
+DISABLED_SOURCES = frozenset({LyricSource.SIMPMUSIC})
+ACTIVE_SOURCES = [source for source in LyricSource if source not in DISABLED_SOURCES]
+
+
 __all__ = [
+    "ACTIVE_SOURCES",
+    "DISABLED_SOURCES",
     "LyricSource",
     "artist_matches",
     "has_sung_lines",

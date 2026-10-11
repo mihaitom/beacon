@@ -43,6 +43,14 @@ describe('lyricsProviders store', () => {
     expect(useLyricsProvidersStore().enabled).toEqual(['lrclib.net', 'NetEase'])
   })
 
+  it('drops SimpMusic from a selection saved while it was still offered', () => {
+    localStorage.setItem(
+      'beacon.lyrics-providers',
+      JSON.stringify(['lrclib.net', 'NetEase', 'SimpMusic']),
+    )
+    expect(useLyricsProvidersStore().enabled).toEqual(['lrclib.net', 'NetEase'])
+  })
+
   it('falls back to the default when nothing in a stored array is recognized', () => {
     // Not the same as a deliberate empty selection (see the test above) —
     // this is a stored value with nothing this build can make sense of at
@@ -52,6 +60,6 @@ describe('lyricsProviders store', () => {
   })
 
   it('lists every provider connect actually supports', () => {
-    expect(LYRIC_PROVIDERS).toEqual(['lrclib.net', 'lrc.red', 'NetEase', 'SimpMusic'])
+    expect(LYRIC_PROVIDERS).toEqual(['lrclib.net', 'lrc.red', 'NetEase'])
   })
 })

@@ -17,6 +17,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The mouse wheel sets the volume anywhere on the player bar, not only over the volume slider, for party guests too
 - The waveform seek bar is drawn as evenly spaced, rounded bars that keep their size however wide the player is, in the app, the Remote Control and for party guests
 
+### Removed
+
+- SimpMusic is no longer used for lyrics: SimpMusic now blocks every app except its own from its lyrics service
+
 ### Fixed
 
 - "Add to playlist" no longer lists playlists the server refuses to change, such as other users' shared ones
