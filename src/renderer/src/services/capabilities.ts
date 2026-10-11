@@ -99,6 +99,12 @@ export interface ServerCapabilities {
    * that route's own docstring), so this is UI-gating, not real
    * enforcement, same caveat as libraryScan's. */
   logLevelControl: boolean
+  /** Creating smart playlists and editing their rules. Navidrome only: the
+   * rules live in its own API, which no other Subsonic server shares and
+   * Jellyfin and Plex have no equivalent of (see
+   * docs/plans/smart-playlist-builder.md). Decided by what the server
+   * says it is rather than by server type - see capabilitiesFor(). */
+  smartPlaylistEditor: boolean
 }
 
 const SUBSONIC_CAPABILITIES: ServerCapabilities = {
@@ -113,6 +119,7 @@ const SUBSONIC_CAPABILITIES: ServerCapabilities = {
   fileLyrics: true,
   playHistoryStats: true,
   logLevelControl: true,
+  smartPlaylistEditor: false,
 }
 
 const JELLYFIN_CAPABILITIES: ServerCapabilities = {
@@ -134,6 +141,7 @@ const JELLYFIN_CAPABILITIES: ServerCapabilities = {
   fileLyrics: true,
   playHistoryStats: true,
   logLevelControl: true,
+  smartPlaylistEditor: false,
 }
 
 // Plex bridges browsing — artists/albums/songs/search/cover art — plus
@@ -187,6 +195,7 @@ const PLEX_CAPABILITIES: ServerCapabilities = {
   fileLyrics: true,
   playHistoryStats: true,
   logLevelControl: true,
+  smartPlaylistEditor: false,
 }
 
 /**
@@ -210,6 +219,8 @@ const PLEX_CAPABILITIES: ServerCapabilities = {
 export function capabilitiesFor(
   serverType: string,
   isAdmin: boolean | null = null,
+  /** What a Subsonic server says it is (OpenSubsonic's `type`). */
+  serverSoftware: string | null = null,
 ): ServerCapabilities {
   const base =
     serverType === 'jellyfin'
@@ -220,6 +231,7 @@ export function capabilitiesFor(
   const capabilities: ServerCapabilities = {
     ...base,
     castPermissions: base.castPermissions && isAdmin === true,
+    smartPlaylistEditor: base === SUBSONIC_CAPABILITIES && serverSoftware === 'navidrome',
   }
   if (isAdmin === false) {
     return {

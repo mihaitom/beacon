@@ -144,6 +144,9 @@ export interface HealthResponse {
   // an unlocked, multi-server deployment uses to gate Navidrome/Jellyfin-
   // specific UI (see services/capabilities.ts).
   session_server_type: string | null
+  // Which Subsonic server it is, as it says itself ("navidrome"); empty
+  // where it does not say, null pre-login. Absent from an older connect.
+  session_server_software?: string | null
 }
 
 export interface ConfigRequest {

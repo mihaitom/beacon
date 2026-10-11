@@ -30,8 +30,11 @@ logger = logging.getLogger("connect.navidrome")
 router = APIRouter(prefix="/navidrome", dependencies=[Depends(require_token)])
 
 # What the frontend reads to ask for the password (again): no token yet, or
-# Navidrome no longer accepts the one there was.
+# Navidrome no longer accepts the one there was. Both are 403s with a detail,
+# never 401: the frontend reads a 401 from connect as its own session having
+# lapsed and signs the user out of Beacon (services/connect/http.ts).
 LOGIN_REQUIRED = "navidrome_login_required"
+PASSWORD_REJECTED = "navidrome_password_rejected"
 
 # Navidrome's ids are base62 today; older ones were UUIDs.
 _PLAYLIST_ID = re.compile(r"[A-Za-z0-9-]+")
@@ -62,7 +65,7 @@ async def login(
         logger.warning(f"[navidrome] Login request failed: {e}")
         raise HTTPException(status_code=502, detail="Navidrome could not be reached") from e
     if token is None:
-        raise HTTPException(status_code=401, detail="Navidrome rejected the password")
+        raise HTTPException(status_code=403, detail=PASSWORD_REJECTED)
     session.navidrome_token = token
     return {"status": "ok"}
 
@@ -72,7 +75,7 @@ async def _forward(
 ) -> Response:
     media = _navidrome(session)
     if not session.navidrome_token:
-        raise HTTPException(status_code=401, detail=LOGIN_REQUIRED)
+        raise HTTPException(status_code=403, detail=LOGIN_REQUIRED)
     try:
         response = await asyncio.to_thread(
             media.navidrome_request, method, path, session.navidrome_token, body, params
@@ -82,12 +85,20 @@ async def _forward(
         raise HTTPException(status_code=502, detail="Navidrome could not be reached") from e
     if response.status_code == 401:
         session.navidrome_token = ""
-        raise HTTPException(status_code=401, detail=LOGIN_REQUIRED)
+        raise HTTPException(status_code=403, detail=LOGIN_REQUIRED)
     # Navidrome extends the token's life with every answer; keeping the
     # newest one is what stops it from expiring while the editor is open.
     refreshed = response.headers.get("x-nd-authorization")
     if refreshed:
         session.navidrome_token = refreshed
+    if response.status_code >= 400:
+        # Navidrome's own refusal, as a detail: a bare 403 reads to the
+        # frontend as something in front of connect blocking it, and makes
+        # it back off all polling (services/connect/pollGate.ts).
+        raise HTTPException(
+            status_code=response.status_code if response.status_code < 500 else 502,
+            detail=_navidrome_error(response),
+        )
     return Response(
         content=response.content,
         status_code=response.status_code,
@@ -131,3 +142,12 @@ def _segment(playlist_id: str) -> str:
     if not _PLAYLIST_ID.fullmatch(playlist_id):
         raise HTTPException(status_code=400, detail="Invalid playlist id")
     return playlist_id
+
+
+def _navidrome_error(response) -> str:
+    """Navidrome's own message from an error answer ({"error": "..."})."""
+    try:
+        message = response.json().get("error")
+    except Exception:
+        message = None
+    return f"Navidrome: {message or response.status_code}"

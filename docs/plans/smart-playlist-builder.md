@@ -1,8 +1,8 @@
 # Plan: a smart playlist builder for Navidrome
 
-Status: steps 1 (connect) and 2 (rules model, preview) done 2026-10-11.
-Neither tried against a real Navidrome yet (the test account in
-`connect/.env` is rejected). Steps 3-5 open.
+Status: steps 1-3 (connect, rules model and preview, client and
+capability) done 2026-10-11. Not yet tried against a real Navidrome (the
+test account in `connect/.env` is rejected). Steps 4-5 open.
 
 Beacon already recognises smart playlists (Navidrome's and Plex's): they are
 labelled, and their song lists are read-only. This plan is the second step:
@@ -103,8 +103,12 @@ unless the user picks it; an existing value is kept.
   Refused for a session that is not a Navidrome one.
 - **`/navidrome/api/playlist`** and **`/navidrome/api/playlist/{id}`**
   (`GET`, `POST`, `PUT` only) forward to Navidrome with the token, keep the
-  refreshed token from each response, and answer a `401` with a clear "log
-  in again" for the frontend. The token reaches nothing else of Navidrome's
+  refreshed token from each response, and answer a `403` with the detail
+  `navidrome_login_required` when the frontend has to log in (again). Not
+  a 401: the frontend reads any 401 from connect as its own session having
+  lapsed and signs the user out of Beacon. Navidrome's own refusals come
+  back as a `detail` too, since a bare 403 makes the frontend back off all
+  polling (`pollGate.ts`). The token reaches nothing else of Navidrome's
   API, least of all user administration. (Other paths under the prefix fall
   through to `routes/proxy.py`'s older catch-all to the same API, which
   never attaches it.)
@@ -112,9 +116,9 @@ unless the user picks it; an existing value is kept.
   servers say so in every response (`type: "navidrome"`), so the `ping` at
   `/config` can record it on the session, and the frontend gets it as a
   capability.
-- Tests: the login (right body, password not kept, failure), the allowlist
-  (anything else is a 404), token refresh, the 401 path, a non-Navidrome
-  session.
+- Tests: the login (right body, password not kept, failure), the token
+  reaching nothing but the playlist endpoints, token refresh, an expired
+  token, a non-Navidrome session.
 
 ## Frontend
 
@@ -137,8 +141,8 @@ unless the user picks it; an existing value is kept.
   deliberately does not carry (the artist arrays and full genre lists were
   kept off it for memory; see `RawSongDetail` in `subsonic/types.ts`). The
   genre is a song's first one, the artist is read from its credit string.
-- **`services/navidrome/client.ts`**: the connect calls above. A `401`
-  re-sends the stored password once without asking. With no stored
+- **`services/navidrome/client.ts`**: the connect calls above. "Login
+  required" re-sends the stored password once without asking. With no stored
   password (a login taken over from Remote, say), the editor asks for it.
 
 ### The editor

@@ -197,4 +197,20 @@ describe('auth session handling', () => {
       expect(connect).toHaveBeenCalledOnce()
     })
   })
+
+  it('offers the smart playlist editor once connect says the server is Navidrome', () => {
+    const auth = useAuthStore()
+    auth.serverType = 'subsonic'
+    expect(auth.capabilities.smartPlaylistEditor).toBe(false)
+
+    auth.health = {
+      ffmpeg: true,
+      navidrome_configured: true,
+      server_lock: null,
+      session_server_type: 'subsonic',
+      session_server_software: 'navidrome',
+    }
+
+    expect(auth.capabilities.smartPlaylistEditor).toBe(true)
+  })
 })

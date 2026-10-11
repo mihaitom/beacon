@@ -141,4 +141,15 @@ describe('capabilitiesFor', () => {
     expect(capabilitiesFor('subsonic', null).logLevelControl).toBe(true)
     expect(capabilitiesFor('subsonic').logLevelControl).toBe(true)
   })
+
+  it('offers the smart playlist editor on Navidrome alone, admin or not', () => {
+    expect(capabilitiesFor('subsonic', null, 'navidrome').smartPlaylistEditor).toBe(true)
+    expect(capabilitiesFor('subsonic', false, 'navidrome').smartPlaylistEditor).toBe(true)
+    // Another Subsonic server, or one that does not say what it is.
+    expect(capabilitiesFor('subsonic', null, 'gonic').smartPlaylistEditor).toBe(false)
+    expect(capabilitiesFor('subsonic').smartPlaylistEditor).toBe(false)
+    // A bridge never speaks Navidrome's own API, whatever it were to report.
+    expect(capabilitiesFor('jellyfin', null, 'navidrome').smartPlaylistEditor).toBe(false)
+    expect(capabilitiesFor('plex', null, 'navidrome').smartPlaylistEditor).toBe(false)
+  })
 })

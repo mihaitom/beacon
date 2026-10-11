@@ -9,7 +9,7 @@ import pytest
 from media import http_client
 from media.jellyfin import JellyfinClient
 from media.subsonic import SubsonicClient
-from routes.navidrome import LOGIN_REQUIRED
+from routes.navidrome import LOGIN_REQUIRED, PASSWORD_REJECTED
 
 
 @pytest.fixture
@@ -101,7 +101,9 @@ def test_login_says_so_when_navidrome_refuses_the_password(client, navidrome, mo
 
     r = client.post("/navidrome/session", json={"password": "wrong"})
 
-    assert r.status_code == 401
+    # Not a 401, which the frontend would take for its own session lapsing.
+    assert r.status_code == 403
+    assert r.json()["detail"] == PASSWORD_REJECTED
     assert navidrome.navidrome_token == ""
 
 
@@ -156,7 +158,7 @@ def test_forwarding_without_a_token_asks_for_the_login_and_sends_nothing(
 
     r = client.get("/navidrome/api/playlist/pl1")
 
-    assert r.status_code == 401
+    assert r.status_code == 403
     assert r.json()["detail"] == LOGIN_REQUIRED
     assert calls == []
 
@@ -227,12 +229,13 @@ def test_an_expired_token_is_dropped_and_the_login_asked_for(client, navidrome, 
 
     r = client.get("/navidrome/api/playlist/pl1")
 
-    assert r.status_code == 401
+    assert r.status_code == 403
     assert r.json()["detail"] == LOGIN_REQUIRED
     assert navidrome.navidrome_token == ""
 
 
-def test_navidrome_s_own_refusal_reaches_the_frontend(client, navidrome, navidrome_api):
+def test_navidrome_s_own_refusal_reaches_the_frontend_as_a_detail(client, navidrome, navidrome_api):
+    # A 403 without a detail would make the frontend back off all polling.
     _calls, answers = navidrome_api
     navidrome.navidrome_token = "jwt-1"
     answers.append(httpx.Response(403, json={"error": "not the owner"}))
@@ -240,7 +243,18 @@ def test_navidrome_s_own_refusal_reaches_the_frontend(client, navidrome, navidro
     r = client.put("/navidrome/api/playlist/pl1", json={"rules": {"all": []}})
 
     assert r.status_code == 403
-    assert r.json() == {"error": "not the owner"}
+    assert r.json() == {"detail": "Navidrome: not the owner"}
+
+
+def test_a_navidrome_failure_is_reported_as_a_bad_gateway(client, navidrome, navidrome_api):
+    _calls, answers = navidrome_api
+    navidrome.navidrome_token = "jwt-1"
+    answers.append(httpx.Response(500, text="boom"))
+
+    r = client.post("/navidrome/api/playlist", json={"name": "x", "rules": {"all": []}})
+
+    assert r.status_code == 502
+    assert r.json()["detail"] == "Navidrome: 500"
 
 
 def test_an_unreachable_server_is_reported_as_such(client, navidrome, monkeypatch):

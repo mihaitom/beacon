@@ -110,7 +110,11 @@ export const useAuthStore = defineStore('auth', {
      * services/capabilities.ts. Views should check this instead of
      * comparing serverType directly. */
     capabilities(state): ServerCapabilities {
-      return capabilitiesFor(state.serverType, state.isAdmin)
+      return capabilitiesFor(
+        state.serverType,
+        state.isAdmin,
+        state.health?.session_server_software ?? null,
+      )
     },
   },
 
