@@ -902,6 +902,7 @@ export default {
     saveFailed: 'Impossible d’enregistrer la playlist intelligente',
     yes: 'Oui',
     no: 'Non',
+    chooseDate: 'Choisir une date',
     choosePlaylist: 'Choisir une playlist',
     valueLabel: 'Valeur',
     password: {

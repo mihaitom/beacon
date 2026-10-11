@@ -92,20 +92,41 @@
       />
     </template>
 
-    <v-text-field
+    <v-menu
       v-else-if="shape === 'date'"
-      :model-value="typeof value === 'string' ? value : ''"
-      type="date"
-      :readonly="readonly"
-      :error="invalid"
-      variant="solo-filled"
-      density="compact"
-      flat
-      hide-details
-      single-line
-      class="smart-value__date"
-      @update:model-value="$emit('update', $event || null)"
-    />
+      v-model="dateMenu"
+      :close-on-content-click="false"
+      :disabled="readonly"
+      location="bottom start"
+    >
+      <template #activator="{ props: menuProps }">
+        <v-text-field
+          v-bind="menuProps"
+          :model-value="dateLabel"
+          :placeholder="$t('smartPlaylists.chooseDate')"
+          prepend-inner-icon="mdi-calendar-blank-outline"
+          readonly
+          :error="invalid"
+          variant="solo-filled"
+          density="compact"
+          flat
+          hide-details
+          single-line
+          class="smart-value__date"
+        />
+      </template>
+      <!-- In the app's language: Vuetify's own locale stays English
+       - app-wide, so the picker gets the matching one here. -->
+      <v-locale-provider :locale="$i18n.locale" :messages="vuetifyMessages">
+        <v-date-picker
+          :model-value="dateValue"
+          color="primary"
+          hide-header
+          show-adjacent-months
+          @update:model-value="pickDate"
+        />
+      </v-locale-provider>
+    </v-menu>
 
     <v-btn-toggle
       v-else-if="shape === 'boolean'"
@@ -159,7 +180,9 @@
 <script lang="ts">
 import type { PropType } from 'vue'
 import CoverArt from '@/components/library/CoverArt.vue'
+import { de, en, es, fr, it } from 'vuetify/locale'
 import { DAYS_PER, splitDays, type DayUnit } from '@/services/navidrome/dayUnits'
+import { dateToDay, dayToDate } from '@/services/navidrome/dates'
 import {
   fieldDef,
   valueShape,
@@ -199,6 +222,8 @@ export default {
       // Held here rather than derived from the days alone: someone who
       // picked "weeks" and typed 3 should keep seeing weeks, not 21 days.
       chosenDayUnit: null as DayUnit | null,
+      dateMenu: false,
+      vuetifyMessages: { de, en, es, fr, it },
     }
   },
   computed: {
@@ -234,6 +259,16 @@ export default {
       if (typeof this.value !== 'number') return null
       return this.value / DAYS_PER[this.dayUnit]
     },
+    dateValue(): Date | null {
+      return typeof this.value === 'string' ? dayToDate(this.value) : null
+    },
+    /** The day as people write it in the app's language. */
+    dateLabel(): string {
+      if (!this.dateValue) return ''
+      return new Intl.DateTimeFormat(this.$i18n.locale, { dateStyle: 'medium' }).format(
+        this.dateValue,
+      )
+    },
     dayUnitItems(): { title: string; value: DayUnit }[] {
       return (Object.keys(DAYS_PER) as DayUnit[]).map((unit) => ({
         title: this.$t(`smartPlaylists.units.${unit}`),
@@ -266,6 +301,11 @@ export default {
     setDayAmount(amount: number | null): void {
       this.chosenDayUnit = this.dayUnit
       this.$emit('update', amount === null ? null : Math.round(amount * DAYS_PER[this.dayUnit]))
+    },
+    pickDate(picked: unknown): void {
+      if (!(picked instanceof Date)) return
+      this.$emit('update', dateToDay(picked))
+      this.dateMenu = false
     },
     setDayUnit(unit: DayUnit): void {
       const amount = this.dayAmount

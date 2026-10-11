@@ -77,6 +77,32 @@ describe('SmartRuleValue', () => {
     expect(emitted(wrapper)).toEqual([null])
   })
 
+  it('shows a date the way the app’s language writes it', () => {
+    const wrapper = mountValue(rule('dateadded', 'before', '2020-01-05'))
+
+    const shown = (wrapper.find('input').element as HTMLInputElement).value
+    expect(shown).toBe(
+      new Intl.DateTimeFormat(i18n.global.locale as unknown as string, {
+        dateStyle: 'medium',
+      }).format(new Date(2020, 0, 5)),
+    )
+  })
+
+  it('saves the day picked in the calendar and closes it', async () => {
+    const wrapper = mountValue(rule('dateadded', 'before', null))
+    const vm = wrapper.vm as unknown as { dateMenu: boolean }
+    vm.dateMenu = true
+    await wrapper.vm.$nextTick()
+
+    wrapper
+      .findComponent({ name: 'VDatePicker' })
+      .vm.$emit('update:modelValue', new Date(2021, 5, 30))
+    await wrapper.vm.$nextTick()
+
+    expect(emitted(wrapper)).toEqual(['2021-06-30'])
+    expect(vm.dateMenu).toBe(false)
+  })
+
   it('shows stars for a rating', () => {
     const wrapper = mountValue(rule('rating', 'gt', 3))
 

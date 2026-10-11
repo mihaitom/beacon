@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import de from '@/i18n/locales/de'
 import en from '@/i18n/locales/en'
 import es from '@/i18n/locales/es'
@@ -7,6 +7,7 @@ import italian from '@/i18n/locales/it'
 import { makeSong } from '@/stores/__tests__/fixtures'
 import type { Artist } from '@/types/library'
 import { splitDays } from '../dayUnits'
+import { dateToDay, dayToDate } from '../dates'
 import { PRESETS } from '../presets'
 import {
   FIELDS,
@@ -28,6 +29,34 @@ describe('splitDays', () => {
     [0, { amount: 0, unit: 'days' }],
   ])('reads %i days in the largest unit that fits', (days, expected) => {
     expect(splitDays(days)).toEqual(expected)
+  })
+})
+
+describe('dates', () => {
+  // East of Greenwich, where reading a day through UTC lands on the one
+  // before. Node picks a changed TZ up for every Date made afterwards.
+  const originalTz = process.env.TZ
+  beforeEach(() => {
+    process.env.TZ = 'Europe/Berlin'
+  })
+  afterEach(() => {
+    process.env.TZ = originalTz
+  })
+
+  it('reads a day as that calendar day', () => {
+    const date = dayToDate('2020-01-05')!
+
+    expect([date.getFullYear(), date.getMonth(), date.getDate()]).toEqual([2020, 0, 5])
+  })
+
+  it('writes a picked day back the same way, also just after midnight', () => {
+    // 00:30 in Berlin is still the 4th in UTC.
+    expect(dateToDay(new Date(2020, 0, 5, 0, 30))).toBe('2020-01-05')
+    expect(dateToDay(dayToDate('1999-12-31')!)).toBe('1999-12-31')
+  })
+
+  it('reads nothing from a day in another shape', () => {
+    expect(dayToDate('05.01.2020')).toBeNull()
   })
 })
 

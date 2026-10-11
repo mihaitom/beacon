@@ -897,6 +897,7 @@ export default {
     saveFailed: 'No se pudo guardar la lista inteligente',
     yes: 'Sí',
     no: 'No',
+    chooseDate: 'Elige una fecha',
     choosePlaylist: 'Elige una lista',
     valueLabel: 'Valor',
     password: {

@@ -1,4 +1,9 @@
-import { createRouter, createWebHashHistory } from 'vue-router'
+import {
+  createRouter,
+  createWebHashHistory,
+  type RouteLocationNormalizedGeneric,
+  type RouteLocationRaw,
+} from 'vue-router'
 import { nextTick } from 'vue'
 import { useAuthStore } from '@/stores/auth'
 import { isMobileWebNow } from '@/composables/useIsMobileWeb'
@@ -204,6 +209,18 @@ const CAPABILITY_ROUTES: Partial<
   'm-radio': 'internetRadio',
   stats: 'playHistoryStats',
   favorites: 'favorites',
+  'smart-playlist-new': 'smartPlaylistEditor',
+  'smart-playlist-rules': 'smartPlaylistEditor',
+}
+
+/** Where a route the server cannot back sends someone instead: Home,
+ * unless there is somewhere nearer to what they were after. */
+function withoutCapability(to: RouteLocationNormalizedGeneric): RouteLocationRaw {
+  if (to.name === 'smart-playlist-new') return { name: 'playlists' }
+  if (to.name === 'smart-playlist-rules') {
+    return { name: 'playlist-detail', params: { id: to.params.id } }
+  }
+  return { name: 'home' }
 }
 
 // Shared by both post-auth paths below (already-authenticated and
@@ -217,10 +234,10 @@ const CAPABILITY_ROUTES: Partial<
 // as-is) — bouncing every one of those back here would just break the tap
 // instead of leaving it a (imperfect but functional) desktop view rendered
 // inside the mobile shell.
-function afterAuth(to: { name?: string | symbol | null }): true | { name: string } {
+function afterAuth(to: RouteLocationNormalizedGeneric): true | RouteLocationRaw {
   const requiredCapability = typeof to.name === 'string' ? CAPABILITY_ROUTES[to.name] : undefined
   if (requiredCapability && !authStoreCapabilityOk(requiredCapability)) {
-    return { name: 'home' }
+    return withoutCapability(to)
   }
   if (to.name === 'home' && isMobileWebNow()) {
     return { name: 'm-now-playing' }

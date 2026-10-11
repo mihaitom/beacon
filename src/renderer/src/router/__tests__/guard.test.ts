@@ -12,6 +12,9 @@ vi.mock('../../views/ServerLoginView.vue', () => stub)
 vi.mock('../../views/HomeView.vue', () => stub)
 vi.mock('../../views/FavoritesView.vue', () => stub)
 vi.mock('../../views/mobile/MobileNowPlayingView.vue', () => stub)
+vi.mock('../../views/PlaylistsView.vue', () => stub)
+vi.mock('../../views/PlaylistDetailView.vue', () => stub)
+vi.mock('../../views/SmartPlaylistEditorView.vue', () => stub)
 
 vi.mock('@/composables/useIsMobileWeb', () => ({ isMobileWebNow: vi.fn(() => false) }))
 vi.mock('@/services/audioEngine', () => ({ getAudioEngine: vi.fn(() => ({ stop: vi.fn() })) }))
@@ -79,6 +82,63 @@ describe('the router auth guard', () => {
 
     expect(auth.capabilities.favorites).toBe(false)
     expect(router.currentRoute.value.name).toBe('home')
+  })
+
+  describe('the smart playlist editor', () => {
+    function signIn(serverSoftware: string) {
+      const auth = useAuthStore()
+      auth.authenticated = true
+      auth.serverType = 'subsonic'
+      auth.health = {
+        ffmpeg: true,
+        navidrome_configured: true,
+        server_lock: null,
+        session_server_type: 'subsonic',
+        session_server_software: serverSoftware,
+      }
+    }
+
+    it('opens on Navidrome', async () => {
+      const router = await freshRouter()
+      signIn('navidrome')
+
+      await router.push('/playlists/smart/new')
+
+      expect(router.currentRoute.value.name).toBe('smart-playlist-new')
+    })
+
+    it('sends a new one back to the playlists on any other server', async () => {
+      const router = await freshRouter()
+      signIn('gonic')
+
+      await router.push('/playlists/smart/new')
+
+      expect(router.currentRoute.value.name).toBe('playlists')
+    })
+
+    it('sends "edit rules" back to the playlist it was for', async () => {
+      const router = await freshRouter()
+      signIn('')
+
+      await router.push('/playlists/pl1/rules')
+
+      expect(router.currentRoute.value.fullPath).toBe('/playlists/pl1')
+    })
+
+    it('waits for a silent restore to say what the server is before deciding', async () => {
+      // A reload straight onto the editor: nothing is known until restore()
+      // has asked connect, and that answer has to be the one that counts.
+      const router = await freshRouter()
+      const auth = useAuthStore()
+      vi.spyOn(auth, 'restore').mockImplementation(async () => {
+        signIn('navidrome')
+        return true
+      })
+
+      await router.push('/playlists/smart/new')
+
+      expect(router.currentRoute.value.name).toBe('smart-playlist-new')
+    })
   })
 
   it('lands mobile web on its own shell rather than the desktop home page', async () => {

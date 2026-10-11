@@ -890,6 +890,7 @@ export default {
     saveFailed: 'Could not save the smart playlist',
     yes: 'Yes',
     no: 'No',
+    chooseDate: 'Choose a date',
     choosePlaylist: 'Choose a playlist',
     valueLabel: 'Value',
     password: {

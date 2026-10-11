@@ -898,6 +898,7 @@ export default {
     saveFailed: 'Die Smart Playlist konnte nicht gespeichert werden',
     yes: 'Ja',
     no: 'Nein',
+    chooseDate: 'Datum wählen',
     choosePlaylist: 'Playlist wählen',
     valueLabel: 'Wert',
     password: {
