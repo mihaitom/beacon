@@ -60,7 +60,8 @@ async def get_search_results(params: dict[str, Any]) -> list[dict[str, Any]] | N
             r.raise_for_status()
     except httpx.HTTPError as e:
         logger.warning(f"[netease] search request failed: {type(e).__name__}: {e}")
-        return None
+        # Raised, not None, for the same reason as get_lyrics_by_song_id().
+        raise
 
     songs = r.json().get("result", {}).get("songs")
     if not songs:

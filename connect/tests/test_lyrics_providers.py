@@ -72,17 +72,25 @@ async def test_lrclib_get_lyrics_returns_none_when_neither_field_present():
     assert result is None
 
 
-async def test_lrclib_get_lyrics_returns_none_and_logs_on_request_failure(caplog):
+async def test_lrclib_get_lyrics_raises_and_logs_on_request_failure(caplog):
+    # Not None: that reads as "no lyrics" and is remembered as such.
     with patch.object(lrclib, "_client") as client:
         client.get = AsyncMock(side_effect=httpx.ConnectError("refused"))
-        result = await lrclib.get_lyrics_by_song_id("123")
-    assert result is None
+        with pytest.raises(httpx.ConnectError):
+            await lrclib.get_lyrics_by_song_id("123")
     assert "lrclib" in caplog.text
 
 
-async def test_lrclib_get_lyrics_returns_none_on_http_error_status():
+async def test_lrclib_get_lyrics_raises_on_http_error_status():
     with patch.object(lrclib, "_client") as client:
-        client.get = AsyncMock(return_value=_response(lrclib.FETCH_URL, {}, status=500))
+        client.get = AsyncMock(return_value=_response(lrclib.FETCH_URL, {}, status=503))
+        with pytest.raises(httpx.HTTPStatusError):
+            await lrclib.get_lyrics_by_song_id("123")
+
+
+async def test_lrclib_get_lyrics_returns_none_for_an_id_lrclib_does_not_have():
+    with patch.object(lrclib, "_client") as client:
+        client.get = AsyncMock(return_value=_response(lrclib.FETCH_URL, {}, status=404))
         result = await lrclib.get_lyrics_by_song_id("123")
     assert result is None
 
@@ -157,11 +165,16 @@ async def test_lrclib_get_search_results_returns_none_when_response_is_not_a_lis
     assert result is None
 
 
-async def test_lrclib_get_search_results_returns_none_and_logs_on_request_failure(caplog):
+async def test_lrclib_get_search_results_raises_and_logs_on_request_failure(caplog):
+    # lrclib answered a search with 503 (2026-10-11); returned as None, that
+    # was kept as "lrclib has nothing for this song" and its match went
+    # missing from the picker.
     with patch.object(lrclib, "_client") as client:
-        client.get = AsyncMock(side_effect=httpx.ConnectError("refused"))
-        result = await lrclib.get_search_results({"name": "x"})
-    assert result is None
+        client.get = AsyncMock(
+            return_value=_response(lrclib.SEARCH_URL, {"error": "busy"}, status=503)
+        )
+        with pytest.raises(httpx.HTTPStatusError):
+            await lrclib.get_search_results({"name": "x"})
     assert "lrclib" in caplog.text
 
 
@@ -244,10 +257,12 @@ async def test_netease_get_search_results_returns_none_when_no_songs_found():
     assert result is None
 
 
-async def test_netease_get_search_results_returns_none_and_logs_on_request_failure(caplog):
-    with _patch_async_client(netease, httpx.ConnectError("refused")):
-        result = await netease.get_search_results({"name": "Song"})
-    assert result is None
+async def test_netease_get_search_results_raises_and_logs_on_request_failure(caplog):
+    with (
+        _patch_async_client(netease, httpx.ConnectError("refused")),
+        pytest.raises(httpx.ConnectError),
+    ):
+        await netease.get_search_results({"name": "Song"})
     assert "netease" in caplog.text
 
 

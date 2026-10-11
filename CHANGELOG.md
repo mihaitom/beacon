@@ -28,6 +28,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Turning a tablet from upright to sideways with the queue open, or remembered open, lit up the queue button but showed no queue until it was tapped off and on again (reported by @ampcat3, #47)
 - The list of other lyrics matches only offers matches that actually have words, instead of many that turned out empty or showed only the songwriter credits. Instrumentals no longer get NetEase's "pure music" note shown as their lyrics
 - The list of other lyrics matches only asks the sources switched on in Settings. Before, it asked all of them
+- A lyrics source that was briefly unreachable no longer counts as having nothing for a song, which used to leave its lyrics missing until Beacon was restarted
 
 ## [1.7.1] - 2026-10-10
 

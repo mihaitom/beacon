@@ -26,16 +26,24 @@ TIMEOUT = 20.0
 _client = httpx.AsyncClient(timeout=TIMEOUT, headers={"User-Agent": USER_AGENT})
 
 
+# A failed request raises in both functions below rather than answering
+# None: routes/lyrics.py remembers "nothing found" (for a day, 30 days for a
+# search), and lrclib answering 503 for a moment (seen 2026-10-11) must not
+# turn into a song without lyrics.
+
+
 async def get_lyrics_by_song_id(song_id: str) -> str | None:
     start = time.perf_counter()
     try:
         r = await _client.get(f"{FETCH_URL}/{song_id}")
+        if r.status_code == 404:
+            return None
         r.raise_for_status()
     except httpx.HTTPError as e:
         logger.warning(
             f"[lrclib] lyrics request failed for song_id={song_id}: {type(e).__name__}: {e}"
         )
-        return None
+        raise
 
     logger.info(
         f"[lrclib] fetched lyrics for song_id={song_id} in {time.perf_counter() - start:.2f}s"
@@ -61,7 +69,7 @@ async def get_search_results(params: dict[str, Any]) -> list[dict[str, Any]] | N
         logger.warning(
             f"[lrclib] search request failed for query={query!r}: {type(e).__name__}: {e}"
         )
-        return None
+        raise
 
     logger.info(
         f"[lrclib] fetched search results for query={query!r} in {time.perf_counter() - start:.2f}s"
