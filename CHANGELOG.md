@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Changed
 
 - The mouse wheel sets the volume anywhere on the player bar, not only over the volume slider, for party guests too
+- The waveform seek bar is drawn as evenly spaced, rounded bars that keep their size however wide the player is, in the app, the Remote Control and for party guests
 
 ### Fixed
 

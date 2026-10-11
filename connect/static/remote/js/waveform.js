@@ -14,6 +14,24 @@ import { fetchWaveform } from './api.js';
 const PLAYED_COLOR = 'rgba(245, 169, 78, 0.85)';
 const UNPLAYED_COLOR = 'rgba(255, 255, 255, 0.22)';
 const MARKER_COLOR = 'rgba(255, 255, 255, 0.9)';
+// Fixed bar size in CSS px, the bar count follows the width - also as in
+// WaveformBars.vue.
+const BAR_WIDTH = 2;
+const BAR_GAP = 1;
+
+/** Fits the peaks to `count` bars, each the loudest peak it covers, so a
+ * single loud hit isn't lost when there are fewer bars than peaks. */
+function resamplePeaks(source, count) {
+  const result = [];
+  for (let i = 0; i < count; i++) {
+    const start = Math.floor((i * source.length) / count);
+    const end = Math.max(start + 1, Math.floor(((i + 1) * source.length) / count));
+    let loudest = 0;
+    for (let j = start; j < end; j++) loudest = Math.max(loudest, source[j]);
+    result.push(loudest);
+  }
+  return result;
+}
 
 /** The seek bar as one object: an element to place, and the handful of
  * setters a render() calls on every snapshot.
@@ -63,16 +81,29 @@ export function createWaveform({ onPreview, onSeek }) {
       ctx.fillStyle = PLAYED_COLOR;
       ctx.fillRect(0, y, playedX, 2);
     } else {
-      const barWidth = width / peaks.length;
-      const gap = barWidth > 3 ? 1 : 0;
-      for (let i = 0; i < peaks.length; i++) {
-        const x = i * barWidth;
-        // Only the upper half: the bars grow up from the bottom edge
-        // rather than mirroring around a centre line.
-        const barHeight = Math.max(1, peaks[i] * height * 0.9);
-        ctx.fillStyle = x < playedX ? PLAYED_COLOR : UNPLAYED_COLOR;
-        ctx.fillRect(x, height - barHeight, Math.max(0.5, barWidth - gap), barHeight);
-      }
+      const ratio = window.devicePixelRatio || 1;
+      const barWidth = BAR_WIDTH * ratio;
+      const gap = BAR_GAP * ratio;
+      const barCount = Math.max(1, Math.floor((width + gap) / (barWidth + gap)));
+      // The leftover from flooring goes into the gaps, so the bars span the
+      // full width and line up with the playhead.
+      const step = barCount > 1 ? (width - barWidth) / (barCount - 1) : 0;
+      const bars = resamplePeaks(peaks, barCount);
+      const paintBars = (color, isPlayed) => {
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        bars.forEach((peak, i) => {
+          const x = i * step;
+          if (x + barWidth / 2 < playedX !== isPlayed) return;
+          // Only the upper half: the bars grow up from the bottom edge
+          // rather than mirroring around a centre line.
+          const barHeight = Math.max(barWidth, peak * height * 0.9);
+          ctx.roundRect(x, height - barHeight, barWidth, barHeight, barWidth / 2);
+        });
+        ctx.fill();
+      };
+      paintBars(UNPLAYED_COLOR, false);
+      paintBars(PLAYED_COLOR, true);
     }
 
     ctx.fillStyle = MARKER_COLOR;

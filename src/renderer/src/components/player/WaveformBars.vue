@@ -33,6 +33,26 @@ const LOAD_TRACK_COLOR = 'rgba(255, 255, 255, 0.1)'
 // own row rather than a plinth the bars stand on.
 const LOAD_BAR_HEIGHT = 2
 const LOAD_BAR_GAP = 1
+// The bars have a fixed size in CSS px, and their number follows the width:
+// stretching the backend's 300 peaks across whatever width there is gave
+// hairlines with no gap on a narrow bar and slabs on a wide one.
+const BAR_WIDTH = 2
+const BAR_GAP = 1
+
+/** Fits the peaks to `count` bars, each the loudest peak it covers, so a
+ * single loud hit isn't averaged away when there are fewer bars than peaks.
+ * With more bars than peaks a peak simply repeats. */
+export function resamplePeaks(peaks: number[], count: number): number[] {
+  const result: number[] = []
+  for (let i = 0; i < count; i++) {
+    const start = Math.floor((i * peaks.length) / count)
+    const end = Math.max(start + 1, Math.floor(((i + 1) * peaks.length) / count))
+    let loudest = 0
+    for (let j = start; j < end; j++) loudest = Math.max(loudest, peaks[j]!)
+    result.push(loudest)
+  }
+  return result
+}
 
 /** The waveform seek bar itself: the bars, the playhead and the load strip,
  * and dragging along it. Store-free, so the party guest page draws the same
@@ -224,22 +244,31 @@ export default {
         return
       }
 
-      const barCount = this.peaks.length
-      // width/barCount is always positive regardless of how narrow the
-      // container gets — a fixed gap-then-subtract formula (like
-      // VisualizerBars.vue's) can go negative at 300 bars in a cramped
-      // layout, since this component's width isn't capped the way that
-      // one's BAR_COUNT was sized for.
-      const barWidth = width / barCount
-      const gap = barWidth > 3 ? 1 : 0
-      for (let i = 0; i < barCount; i++) {
-        const x = i * barWidth
-        // Only the upper half — bars grow up from a bottom baseline
-        // instead of mirroring above/below a center line.
-        const barHeight = Math.max(1, this.peaks[i]! * baseline * 0.9)
-        ctx.fillStyle = x < playedX ? playedColor : UNPLAYED_COLOR
-        ctx.fillRect(x, baseline - barHeight, Math.max(0.5, barWidth - gap), barHeight)
+      const barWidth = BAR_WIDTH * ratio
+      const barCount = Math.max(
+        1,
+        Math.floor((width + BAR_GAP * ratio) / (barWidth + BAR_GAP * ratio)),
+      )
+      // The leftover from flooring goes into the gaps, so the bars still
+      // span the full width and line up with the playhead's time scale.
+      const step = barCount > 1 ? (width - barWidth) / (barCount - 1) : 0
+      const radius = barWidth / 2
+      const bars = resamplePeaks(this.peaks, barCount)
+      const paintBars = (color: string, isPlayed: boolean) => {
+        ctx.fillStyle = color
+        ctx.beginPath()
+        bars.forEach((peak, i) => {
+          const x = i * step
+          if (x + barWidth / 2 < playedX !== isPlayed) return
+          // Only the upper half — bars grow up from a bottom baseline
+          // instead of mirroring above/below a center line.
+          const barHeight = Math.max(barWidth, peak * baseline * 0.9)
+          ctx.roundRect(x, baseline - barHeight, barWidth, barHeight, radius)
+        })
+        ctx.fill()
       }
+      paintBars(UNPLAYED_COLOR, false)
+      paintBars(playedColor, true)
 
       ctx.fillStyle = MARKER_COLOR
       ctx.fillRect(Math.min(width - 1.5, playedX), 0, 1.5, height)
