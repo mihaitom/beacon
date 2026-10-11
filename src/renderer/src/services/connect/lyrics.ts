@@ -1,11 +1,13 @@
 import { fetchConnect } from './http'
 import type { AutoLyricsResult, LyricSearchResult } from './types'
 
-interface LyricsQuery {
+export interface LyricsQuery {
   name?: string
   artist?: string
   album?: string
   duration?: number
+  /** The recording's ISRCs from its tags, for lrc.red's direct lookup. */
+  isrc?: string[]
 }
 
 function buildParams(query: LyricsQuery, extra: Record<string, string> = {}): URLSearchParams {
@@ -14,6 +16,7 @@ function buildParams(query: LyricsQuery, extra: Record<string, string> = {}): UR
   if (query.artist) params.set('artist', query.artist)
   if (query.album) params.set('album', query.album)
   if (query.duration != null) params.set('duration', String(query.duration))
+  for (const isrc of query.isrc ?? []) params.append('isrc', isrc)
   return params
 }
 

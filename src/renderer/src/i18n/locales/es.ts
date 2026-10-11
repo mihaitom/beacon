@@ -1038,6 +1038,12 @@ export default {
         sends:
           'El título y el artista de la canción. Su álbum y su duración permanecen en tu servidor; allí solo se usan para elegir el resultado más parecido.',
       },
+      lrcred: {
+        name: 'lrc.red',
+        purpose: 'Buscar letras cuando el archivo no trae ninguna.',
+        sends:
+          'El título y el artista de la canción, y su ISRC (un código que identifica la grabación) si sus etiquetas lo incluyen. Su álbum y su duración permanecen en tu servidor; allí solo se usan para elegir el resultado más parecido.',
+      },
       netease: {
         name: 'NetEase',
         purpose: 'Buscar letras cuando el archivo no trae ninguna.',

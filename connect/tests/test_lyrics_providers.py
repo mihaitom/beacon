@@ -1,5 +1,5 @@
 """Tests for the individual lyrics providers' own request/parsing logic
-(lyrics/lrclib.py, lyrics/netease.py, lyrics/simpmusic.py) — as opposed to
+(lyrics/lrclib.py, lyrics/lrcred.py, lyrics/netease.py, lyrics/simpmusic.py) — as opposed to
 test_lyrics.py, which only exercises routes/lyrics.py's own dispatch against
 mocked fetchers. See test_lyrics_live.py for the (opt-in, real-network)
 end-to-end equivalent of these same providers."""
@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
-from lyrics import lrclib, netease, simpmusic
+from lyrics import lrclib, lrcred, netease, simpmusic
 
 # ── shared test doubles ──────────────────────────────────────────────────────
 
@@ -331,3 +331,141 @@ async def test_simpmusic_get_search_results_returns_none_and_logs_on_request_fai
         result = await simpmusic.get_search_results({"name": "Song"})
     assert result is None
     assert "simpmusic" in caplog.text
+
+
+# ── lrcred.py ─────────────────────────────────────────────────────────────
+
+
+def _lrcred_client(routes: dict[str, httpx.Response | Exception]) -> httpx.AsyncClient:
+    """A real client over a fake transport, answering by path - the ISRC
+    lookup and the search are different requests in one call, so a single
+    canned answer does not cover it. Unlisted paths are lrc.red's 404."""
+    requested: list[httpx.Request] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        requested.append(request)
+        answer = routes.get(request.url.path, httpx.Response(404, text="Not found"))
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(handle))
+    client.requested = requested
+    return client
+
+
+_WEIRD_FISHES = (
+    "[ti:Weird Fishes / Arpeggi]\n[ar:Radiohead]\n[al:In Rainbows]\n[length:05:18]\n\n"
+    "[00:58.00]<00:58.00>In <00:58.34>the <00:58.55>deepest <00:59.32>ocean <01:00.54>\n"
+)
+
+
+def _hit(isrc: str, title: str, artist: str = "Radiohead", duration: float = 318.2) -> dict:
+    return {"isrc": isrc, "title": title, "artist": artist, "duration": duration}
+
+
+async def test_lrcred_get_lyrics_drops_the_per_word_timing():
+    # Nothing in Beacon highlights single words, and both parsers would
+    # show "<00:58.34>the" as text.
+    client = _lrcred_client({"/s/GBSTK0700004.lrc": httpx.Response(200, text=_WEIRD_FISHES)})
+    with patch.object(lrcred, "_client", client):
+        sheet = await lrcred.get_lyrics_by_song_id("GBSTK0700004")
+    assert "[00:58.00]In the deepest ocean" in sheet.splitlines()
+    assert "<" not in sheet
+
+
+async def test_lrcred_get_lyrics_returns_none_for_an_unknown_isrc():
+    with patch.object(lrcred, "_client", _lrcred_client({})):
+        assert await lrcred.get_lyrics_by_song_id("XX0000000000") is None
+
+
+async def test_lrcred_get_lyrics_raises_when_lrcred_cannot_be_asked():
+    # Not None: that would read as "no lyrics" and be remembered as such.
+    client = _lrcred_client({"/s/A.lrc": httpx.Response(503, text="down")})
+    with patch.object(lrcred, "_client", client), pytest.raises(httpx.HTTPStatusError):
+        await lrcred.get_lyrics_by_song_id("A")
+
+
+async def test_lrcred_get_search_results_returns_none_with_nothing_to_ask():
+    client = _lrcred_client({})
+    with patch.object(lrcred, "_client", client):
+        assert await lrcred.get_search_results({}) is None
+    assert client.requested == []
+
+
+async def test_lrcred_get_search_results_puts_the_isrc_match_first():
+    # The ISRC names the very recording, so it leads however differently the
+    # tags title it (see order_search_results for the ranking itself).
+    client = _lrcred_client(
+        {
+            "/s/GBSTK0700004.lrc": httpx.Response(200, text=_WEIRD_FISHES),
+            "/search.json": httpx.Response(
+                200,
+                json={
+                    "hits": [
+                        _hit("COVER", "Weird Fishes (Remastered)", artist="Radiohead"),
+                        _hit("GBSTK0700004", "Weird Fishes / Arpeggi"),
+                    ]
+                },
+            ),
+        }
+    )
+    params = {"name": "Weird Fishes (Remastered)", "artist": "Radiohead", "duration": 318.0}
+    with patch.object(lrcred, "_client", client):
+        results = await lrcred.get_search_results({**params, "isrc": ["GBSTK0700004"]})
+
+    exact = results[0]
+    assert exact["id"] == "GBSTK0700004"
+    assert exact["name"] == "Weird Fishes / Arpeggi"
+    assert exact["artist"] == "Radiohead"
+    assert exact["duration"] == 318.0
+    assert exact["isSync"] is True
+    assert exact["_lyrics"].startswith("[ti:Weird Fishes / Arpeggi]")
+    # What /auto's ranking across all providers goes by.
+    assert exact["_exact"] is True
+    # Listed once, though the search found it too.
+    assert [r["id"] for r in results] == ["GBSTK0700004", "COVER"]
+
+
+async def test_lrcred_get_search_results_searches_when_the_isrc_is_unknown():
+    client = _lrcred_client(
+        {"/search.json": httpx.Response(200, json={"hits": [_hit("A", "Song", "Artist")]})}
+    )
+    with patch.object(lrcred, "_client", client):
+        results = await lrcred.get_search_results(
+            {"name": "Song", "artist": "Artist", "isrc": ["UNKNOWN00000"]}
+        )
+
+    assert [r["id"] for r in results] == ["A"]
+    # Unknown until fetched - the search carries no sheet.
+    assert results[0]["isSync"] is None
+    assert "_lyrics" not in results[0]
+    search = next(r for r in client.requested if r.url.path == "/search.json")
+    assert search.url.params["q"] == "Artist Song"
+
+
+async def test_lrcred_get_search_results_keeps_only_the_closest_hits():
+    # The picker fetches every listed candidate's sheet, so the list is
+    # bounded - by closeness, not by the order lrc.red answered in.
+    hits = [_hit(f"C{i}", f"Song (Karaoke {i})", "Someone Else") for i in range(30)]
+    hits.append(_hit("REAL", "Song", "Artist"))
+    client = _lrcred_client({"/search.json": httpx.Response(200, json={"hits": hits})})
+    with patch.object(lrcred, "_client", client):
+        results = await lrcred.get_search_results({"name": "Song", "artist": "Artist"})
+
+    assert len(results) == lrcred.MAX_SEARCH_RESULTS
+    assert results[0]["id"] == "REAL"
+
+
+async def test_lrcred_get_search_results_returns_none_without_hits():
+    client = _lrcred_client({"/search.json": httpx.Response(200, json={"hits": []})})
+    with patch.object(lrcred, "_client", client):
+        assert await lrcred.get_search_results({"name": "Instrumental"}) is None
+
+
+async def test_lrcred_get_search_results_raises_when_the_search_fails():
+    # The route counts that as "could not ask" (503, nothing remembered),
+    # where returning None would be cached as "nothing found".
+    client = _lrcred_client({"/search.json": httpx.ConnectError("refused")})
+    with patch.object(lrcred, "_client", client), pytest.raises(httpx.ConnectError):
+        await lrcred.get_search_results({"name": "Song"})

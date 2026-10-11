@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Smart playlists can be created and their rules edited in Beacon on Navidrome, on a page of their own with a live preview from your library whose songs play with a click, and ideas to start from (desktop layout only)
 - Smart playlists from Navidrome and Plex are labelled as such. Their rules pick the songs, so Beacon no longer offers to reorder, remove or add songs there
+- lrc.red as a new source for lyrics. Songs whose tags carry an ISRC are found there as exactly that recording rather than by title. If you have picked your lyrics sources yourself in Settings, it needs switching on there
 
 ### Changed
 
@@ -22,6 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - With Jellyfin and Plex, your own playlists appear under "My playlists" and can be renamed, deleted, reordered and edited there. Before, they were treated as someone else's. Renaming on Jellyfin needs version 10.9 or newer
 - Turning a tablet from upright to sideways with the queue open, or remembered open, lit up the queue button but showed no queue until it was tapped off and on again (reported by @ampcat3, #47)
 - The list of other lyrics matches only offers matches that actually have words, instead of many that turned out empty or showed only the songwriter credits. Instrumentals no longer get NetEase's "pure music" note shown as their lyrics
+- The list of other lyrics matches only asks the sources switched on in Settings. Before, it asked all of them
 
 ## [1.7.1] - 2026-10-10
 

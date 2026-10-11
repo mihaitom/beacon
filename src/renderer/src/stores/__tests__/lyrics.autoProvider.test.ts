@@ -67,8 +67,70 @@ describe('lyrics store — provider gating', () => {
 
     expect(connectLyrics.autoLyrics).toHaveBeenCalledWith(
       expect.objectContaining({ name: song.title, artist: song.artist }),
-      ['lrclib.net', 'NetEase', 'SimpMusic'],
+      ['lrclib.net', 'lrc.red', 'NetEase', 'SimpMusic'],
     )
+  })
+
+  function stubSongDetails(library: LibraryStore, getSongDetails: () => Promise<unknown>) {
+    const client = {
+      getLyricsBySongId: vi.fn(async () => []),
+      getSongDetails: vi.fn(getSongDetails),
+    }
+    vi.spyOn(library, 'client').mockReturnValue(
+      client as unknown as ReturnType<LibraryStore['client']>,
+    )
+    return client
+  }
+
+  it("hands lrc.red the song's ISRC from its tags", async () => {
+    // The one lookup that names the recording itself rather than every
+    // song called the same.
+    const song = makeSong('a')
+    vi.mocked(connectLyrics.autoLyrics).mockResolvedValue(null)
+    const { lyrics, library, auth, providers } = await loadStores()
+    auth.serverType = 'subsonic'
+    providers.setEnabled(['lrc.red'])
+    stubSongDetails(library, async () => ({ id: 'a', isrc: ['GBSTK0700004'] }))
+
+    await lyrics.ensureLoaded(song)
+
+    expect(connectLyrics.autoLyrics).toHaveBeenCalledWith(
+      expect.objectContaining({ name: song.title, isrc: ['GBSTK0700004'] }),
+      ['lrc.red'],
+    )
+  })
+
+  it('does not ask the server for the ISRC when lrc.red is not enabled', async () => {
+    const song = makeSong('a')
+    vi.mocked(connectLyrics.autoLyrics).mockResolvedValue(null)
+    const { lyrics, library, auth, providers } = await loadStores()
+    auth.serverType = 'subsonic'
+    providers.setEnabled(['lrclib.net'])
+    const client = stubSongDetails(library, async () => ({ id: 'a', isrc: ['X'] }))
+
+    await lyrics.ensureLoaded(song)
+
+    expect(client.getSongDetails).not.toHaveBeenCalled()
+    expect(vi.mocked(connectLyrics.autoLyrics).mock.calls[0]?.[0].isrc).toBeUndefined()
+  })
+
+  it('still looks the song up by title when the server cannot name its ISRC', async () => {
+    const song = makeSong('a')
+    vi.mocked(connectLyrics.autoLyrics).mockResolvedValue(null)
+    const { lyrics, library, auth, providers } = await loadStores()
+    auth.serverType = 'subsonic'
+    providers.setEnabled(['lrc.red'])
+    stubSongDetails(library, async () => {
+      throw new Error('server down')
+    })
+
+    await lyrics.ensureLoaded(song)
+
+    expect(connectLyrics.autoLyrics).toHaveBeenCalledWith(
+      expect.objectContaining({ name: song.title, artist: song.artist }),
+      ['lrc.red'],
+    )
+    expect(vi.mocked(connectLyrics.autoLyrics).mock.calls[0]?.[0].isrc).toBeUndefined()
   })
 
   it('never calls autoLyrics once every provider has been deselected', async () => {

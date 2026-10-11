@@ -1039,6 +1039,12 @@ export default {
         sends:
           'Titolo e artista del brano. Album e durata restano sul tuo server; lì servono solo a scegliere il risultato più vicino.',
       },
+      lrcred: {
+        name: 'lrc.red',
+        purpose: 'Cercare i testi quando il file non ne contiene.',
+        sends:
+          'Titolo e artista del brano, e il suo ISRC (un codice che identifica la registrazione) se i tag ne contengono uno. Album e durata restano sul tuo server; lì servono solo a scegliere il risultato più vicino.',
+      },
       netease: {
         name: 'NetEase',
         purpose: 'Cercare i testi quando il file non ne contiene.',

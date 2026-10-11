@@ -1,10 +1,11 @@
 /** Each provider's own web page for one lyric sheet, keyed by the source
  * name connect reports (connect/lyrics/__init__.py's LyricSource). The id
  * is whatever that provider answered the search with: lrclib's own track
- * id, NetEase's song id, and for SimpMusic the YouTube video id its
- * database is keyed by. */
+ * id, lrc.red's ISRC, NetEase's song id, and for SimpMusic the YouTube
+ * video id its database is keyed by. */
 const PAGE_URLS: Record<string, (id: string) => string> = {
   'lrclib.net': (id) => `https://lrclib.net/tracks/${encodeURIComponent(id)}`,
+  'lrc.red': (id) => `https://lrc.red/s/${encodeURIComponent(id)}`,
   NetEase: (id) => `https://music.163.com/#/song?id=${encodeURIComponent(id)}`,
   SimpMusic: (id) => `https://lyrics.simpmusic.org/#/video/${encodeURIComponent(id)}`,
 }

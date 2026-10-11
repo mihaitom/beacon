@@ -194,7 +194,11 @@ def order_search_results(
 
     For the same reason length outranks synced-vs-plain: timed lyrics
     belonging to a different edit are worse than untimed ones belonging to
-    this one."""
+    this one.
+
+    A result found by the track's ISRC (`_exact`, see lyrics/lrcred.py) is
+    that recording by definition: it counts as a perfect name match and
+    leads among results of the same length and timing."""
     name = params.get("name")
     artist = params.get("artist")
     duration = params.get("duration")
@@ -204,7 +208,9 @@ def order_search_results(
         name_score = _distance(name, item.get("name")) if name else 0.0
         artist_score = _distance(artist, item.get("artist")) if artist else 0.0
 
-        if name and artist:
+        if item.get("_exact"):
+            score = 0.0
+        elif name and artist:
             score = max(name_score, artist_score)
         else:
             score = name_score or artist_score
@@ -215,6 +221,7 @@ def order_search_results(
         key=lambda r: (
             _duration_rank(duration, r.get("duration")),
             0 if r.get("isSync") else 1,
+            0 if r.get("_exact") else 1,
             r["score"],
         )
     )

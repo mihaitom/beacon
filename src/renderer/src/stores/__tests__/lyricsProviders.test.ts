@@ -52,6 +52,6 @@ describe('lyricsProviders store', () => {
   })
 
   it('lists every provider connect actually supports', () => {
-    expect(LYRIC_PROVIDERS).toEqual(['lrclib.net', 'NetEase', 'SimpMusic'])
+    expect(LYRIC_PROVIDERS).toEqual(['lrclib.net', 'lrc.red', 'NetEase', 'SimpMusic'])
   })
 })

@@ -1038,6 +1038,12 @@ export default {
         sends:
           'Titel und Künstler des Songs. Album und Länge bleiben auf deinem Server; sie dienen dort nur dazu, das passendste Ergebnis auszuwählen.',
       },
+      lrcred: {
+        name: 'lrc.red',
+        purpose: 'Songtexte suchen, wenn die Datei selbst keinen mitbringt.',
+        sends:
+          'Titel und Künstler des Songs, dazu seine ISRC (eine Kennung der Aufnahme), wenn die Tags eine enthalten. Album und Länge bleiben auf deinem Server; sie dienen dort nur dazu, das passendste Ergebnis auszuwählen.',
+      },
       netease: {
         name: 'NetEase',
         purpose: 'Songtexte suchen, wenn die Datei selbst keinen mitbringt.',

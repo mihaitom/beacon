@@ -1,5 +1,10 @@
 import { defineStore } from 'pinia'
-import { autoLyrics, getLyricsByRemoteId, searchLyrics } from '@/services/connect/lyrics'
+import {
+  autoLyrics,
+  getLyricsByRemoteId,
+  searchLyrics,
+  type LyricsQuery,
+} from '@/services/connect/lyrics'
 import type { LyricSearchResult } from '@/services/connect/types'
 import {
   fromStructuredLyrics,
@@ -20,7 +25,7 @@ import {
 import type { Song } from '@/types/library'
 
 // Source id for a song's own embedded/ID3-tag lyrics (getLyricsBySongId.view)
-// — kept alongside the three connect.LyricSource values ('lrclib.net',
+// — kept alongside connect's LyricSource values ('lrclib.net', 'lrc.red',
 // 'SimpMusic', 'NetEase') as the value of CachedLyrics.source /
 // LyricsState.source, distinguished by not being a valid search-candidate
 // source (the file isn't something you can "pick a different match" from).
@@ -48,7 +53,7 @@ interface LyricsState {
   // Per-source search results for the "pick a different match" flow. Held
   // for as long as the song is playing rather than only while the picker
   // is open: finding the right sheet usually takes several tries, and
-  // re-running the search on every open meant three third-party lookups
+  // re-running the search on every open meant a lookup at every provider
   // and a spinner between each one. Dropped on a song change, by the
   // watcher in LyricsPanel.vue — see loadCandidates() below.
   candidates: Record<string, LyricSearchResult[]> | null
@@ -87,7 +92,7 @@ interface CachedNegative {
 type CacheEntry = CachedPositive | CachedNegative
 
 // How long a confirmed "nothing found anywhere" result blocks a refetch —
-// long enough that normal replays of a song don't keep re-hitting three
+// long enough that normal replays of a song don't keep re-hitting the
 // uncached third-party APIs for something that isn't there, short enough
 // that a source adding the song later (or a metadata fix) isn't stuck
 // forever.
@@ -293,6 +298,27 @@ function writeStoredOffset(songId: string, offset: number): void {
   }
 }
 
+/** What the providers are asked with. The ISRC is only worth a request to
+ * the user's own server when lrc.red, the one provider that looks it up, is
+ * among them - Song deliberately doesn't carry it (see RawSongDetail). A
+ * server that cannot answer just means the search goes by title. */
+async function lyricsQuery(song: Song, sources: readonly string[]): Promise<LyricsQuery> {
+  const query: LyricsQuery = {
+    name: song.title,
+    artist: song.artist,
+    album: song.album,
+    duration: song.duration,
+  }
+  if (!sources.includes('lrc.red')) return query
+  try {
+    const details = await useLibraryStore().client().getSongDetails(song.id)
+    const isrc = details.isrc?.filter((code) => code.trim().length > 0)
+    return isrc?.length ? { ...query, isrc } : query
+  } catch {
+    return query
+  }
+}
+
 /** The song's own embedded/ID3-tag lyrics, if its server exposes them —
  * tried before the third-party lookup below since it matches this exact
  * file rather than "some song with this name/artist" that may be a
@@ -428,15 +454,7 @@ export const useLyricsStore = defineStore('lyrics', {
           const enabledSources = useLyricsProvidersStore().enabled
           if (enabledSources.length > 0) {
             queriedProviders = true
-            const result = await autoLyrics(
-              {
-                name: song.title,
-                artist: song.artist,
-                album: song.album,
-                duration: song.duration,
-              },
-              enabledSources,
-            )
+            const result = await autoLyrics(await lyricsQuery(song, enabledSources), enabledSources)
             const parsed = result ? parseLyrics(result.lyrics) : null
             // Lines, not just a result: a sheet can come back holding
             // nothing but the songwriter credits, which parseLyrics moves
@@ -486,19 +504,24 @@ export const useLyricsStore = defineStore('lyrics', {
     async loadCandidates(song: Song): Promise<void> {
       // Already searched for this song, or searching for it right now:
       // reopening the picker shows what was found instead of asking the
-      // three providers again.
+      // providers again.
       if (this.candidatesSongId === song.id && this.candidates) return
       if (this.candidatesLoading) return
 
+      // The same opt-out the automatic lookup honours: with nothing enabled
+      // there is nobody to ask, and connect would read an empty list as
+      // "every provider".
+      const enabledSources = useLyricsProvidersStore().enabled
+      if (enabledSources.length === 0) {
+        this.candidates = {}
+        this.candidatesSongId = song.id
+        return
+      }
+
       this.candidatesLoading = true
       try {
-        const results = await searchLyrics({
-          name: song.title,
-          artist: song.artist,
-          album: song.album,
-          duration: song.duration,
-        })
-        // The song can change while three providers are being asked.
+        const results = await searchLyrics(await lyricsQuery(song, enabledSources), enabledSources)
+        // The song can change while the providers are being asked.
         // Storing the result anyway would file one song's matches under
         // the next one's name and hand them straight back from the cache.
         if (this.songId !== song.id) return

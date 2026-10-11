@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { makeSong } from './fixtures'
 import * as connectLyrics from '@/services/connect/lyrics'
 import { useLyricsStore } from '../lyrics'
+import { useLyricsProvidersStore } from '../lyricsProviders'
 import type { LyricSearchResult } from '@/services/connect/types'
 
 vi.mock('@/services/connect/lyrics', () => ({
@@ -29,6 +30,9 @@ function result(id: string): LyricSearchResult {
 describe('lyrics store — held candidates', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    // The provider selection persists, and a test switching it off would
+    // otherwise leave every later one asking nobody.
+    localStorage.clear()
     vi.mocked(connectLyrics.searchLyrics).mockReset()
     vi.mocked(connectLyrics.searchLyrics).mockResolvedValue({ lrclib: [result('1')] })
   })
@@ -46,6 +50,29 @@ describe('lyrics store — held candidates', () => {
 
     expect(connectLyrics.searchLyrics).toHaveBeenCalledTimes(1)
     expect(lyrics.candidates).toEqual({ lrclib: [result('1')] })
+  })
+
+  it('asks only the providers enabled in Settings', async () => {
+    // The picker used to ask every provider, whatever had been switched off.
+    const lyrics = useLyricsStore()
+    lyrics.songId = 'a'
+    useLyricsProvidersStore().setEnabled(['lrclib.net'])
+
+    await lyrics.loadCandidates(makeSong('a'))
+
+    expect(vi.mocked(connectLyrics.searchLyrics).mock.calls[0]?.[1]).toEqual(['lrclib.net'])
+  })
+
+  it('asks nobody with every provider switched off', async () => {
+    // connect reads an empty provider list as "all of them".
+    const lyrics = useLyricsStore()
+    lyrics.songId = 'a'
+    useLyricsProvidersStore().setEnabled([])
+
+    await lyrics.loadCandidates(makeSong('a'))
+
+    expect(connectLyrics.searchLyrics).not.toHaveBeenCalled()
+    expect(lyrics.candidates).toEqual({})
   })
 
   it('searches again for a different song', async () => {

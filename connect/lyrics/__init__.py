@@ -9,6 +9,7 @@ Genius is the only provider left out for that reason (Electron-only).
 
 Sub-modules:
   lrclib    lrclib.net (LRC plain/synced lyrics)
+  lrcred    lrc.red (plain/synced lyrics, by ISRC or search)
   simpmusic SimpMusic API (plain/synced lyrics)
   netease   NetEase API (plain/synced lyrics, no translation merge)
   shared    fuzzy search-result ranking
@@ -16,12 +17,13 @@ Sub-modules:
 
 from enum import Enum
 
-from . import lrclib, netease, simpmusic
+from . import lrclib, lrcred, netease, simpmusic
 from .shared import artist_matches, has_sung_lines, order_search_results
 
 
 class LyricSource(str, Enum):
     LRCLIB = "lrclib.net"
+    LRCRED = "lrc.red"
     NETEASE = "NetEase"
     SIMPMUSIC = "SimpMusic"
 
@@ -31,6 +33,7 @@ __all__ = [
     "artist_matches",
     "has_sung_lines",
     "lrclib",
+    "lrcred",
     "netease",
     "order_search_results",
     "simpmusic",

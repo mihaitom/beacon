@@ -1,6 +1,6 @@
 """Live smoke tests for each remote lyrics provider.
 
-These hit the real lrclib.net / SimpMusic / NetEase APIs, so they're excluded
+These hit the real lrclib.net / lrc.red / SimpMusic / NetEase APIs, so they're excluded
 from the default test run (see `addopts` in pyproject.toml) and from CI —
 third-party APIs can be flaky/rate-limited/down, which would make CI flaky
 for reasons unrelated to this codebase.
@@ -11,7 +11,7 @@ Run locally with:
 
 import pytest
 
-from lyrics import lrclib, netease, simpmusic
+from lyrics import lrclib, lrcred, netease, simpmusic
 
 pytestmark = pytest.mark.live
 
@@ -30,6 +30,17 @@ async def _search_and_fetch(provider) -> None:
 
 async def test_lrclib_live():
     await _search_and_fetch(lrclib)
+
+
+async def test_lrcred_live():
+    # One test, not two: lrcred's shared client is bound to the event loop
+    # of its first request, and every test gets a fresh one.
+    await _search_and_fetch(lrcred)
+
+    # Billie Jean's single version, as lrc.red itself lists it.
+    results = await lrcred.get_search_results({**PARAMS, "isrc": ["USSM19902991"]})
+    assert results[0]["id"] == "USSM19902991"
+    assert results[0]["_lyrics"]
 
 
 async def test_simpmusic_live():

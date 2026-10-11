@@ -5,11 +5,11 @@ process IPC). The web/Docker build has no Electron main process, so the
 renderer falls back to these endpoints when not running in Electron.
 
 Answers are cached in memory (see _cache below). Every one of them costs
-requests to third-party services — up to three searches plus a fetch for a
+requests to third-party services — one search per provider plus a fetch for a
 single song — and those are requests that carry this deployment's listening
 habits off it, so not making them twice matters here for more than speed:
 one shared cache means a second device, a second person and a browser that
-reloaded are all answered without lrclib/NetEase/SimpMusic hearing about it
+reloaded are all answered without any provider hearing about it
 again. The browser keeps its own copy too (src/renderer/src/stores/
 lyrics.ts); this is what makes that copy cheap to rebuild and what covers
 every client at once.
@@ -26,7 +26,7 @@ import time
 from collections import OrderedDict
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from core.auth import require_token
 from lyrics import (
@@ -34,6 +34,7 @@ from lyrics import (
     artist_matches,
     has_sung_lines,
     lrclib,
+    lrcred,
     netease,
     order_search_results,
     simpmusic,
@@ -49,11 +50,13 @@ router = APIRouter(prefix="/lyrics", dependencies=[Depends(require_token)])
 # iterates over whatever keys are present.
 SEARCH_FETCHERS = {
     LyricSource.LRCLIB: lrclib.get_search_results,
+    LyricSource.LRCRED: lrcred.get_search_results,
     LyricSource.SIMPMUSIC: simpmusic.get_search_results,
     LyricSource.NETEASE: netease.get_search_results,
 }
 GET_FETCHERS = {
     LyricSource.LRCLIB: lrclib.get_lyrics_by_song_id,
+    LyricSource.LRCRED: lrcred.get_lyrics_by_song_id,
     LyricSource.SIMPMUSIC: simpmusic.get_lyrics_by_song_id,
     LyricSource.NETEASE: netease.get_lyrics_by_song_id,
 }
@@ -212,9 +215,13 @@ def _answer(result: Any) -> Any:
 
 def _key(endpoint: str, params: dict, wanted: list[LyricSource]) -> _CacheKey:
     """What makes two lookups the same one. The providers are part of it,
-    not just the song: asking lrclib alone and asking all three are
+    not just the song: asking lrclib alone and asking all of them are
     different questions with legitimately different answers, and the
-    frontend changes that set from Settings."""
+    frontend changes that set from Settings.
+
+    The ISRC is not: it names the same song the rest already does, and
+    party mode's fallback (auto_for_party) asks without one - leaving it
+    out is what lets the two share an entry instead of asking twice."""
     return (
         endpoint,
         params["name"],
@@ -276,7 +283,8 @@ def _seed_sheets(
     already in hand: lrclib's search response carries one (see
     lyrics/lrclib.py), the others' were fetched by _fetch_missing_sheets().
     The sheets must not travel on to the app, whose candidate list is
-    deliberately metadata only.
+    deliberately metadata only - nor must anything else a provider handed
+    over under a leading underscore.
     """
     if not found:
         return found
@@ -285,7 +293,7 @@ def _seed_sheets(
         sheet = item.get("_lyrics")
         if sheet:
             _cache_put(("by-remote-id", source.value, item["id"]), sheet, ttl)
-        cleaned.append({k: v for k, v in item.items() if k != "_lyrics"})
+        cleaned.append({k: v for k, v in item.items() if not k.startswith("_")})
     return cleaned
 
 
@@ -306,7 +314,7 @@ async def _fetch_missing_sheets(source: LyricSource, found: list[dict[str, Any]]
             logger.warning(f"[search] fetch {source} {item['id']}: {e}")
             return False
         item["_lyrics"] = sheet
-        # Settles NetEase's and SimpMusic's "unknown", now that it is known.
+        # Settles an "unknown" from a search that carried no sheet.
         if sheet and item.get("isSync") is None:
             item["isSync"] = parse_lyrics(sheet)[0]
         return True
@@ -331,8 +339,9 @@ async def search(
     album: str | None = None,
     duration: float | None = None,
     sources: str | None = None,
+    isrc: list[str] | None = Query(None),
 ) -> dict[str, list[dict[str, Any]]]:
-    params = {"album": album, "artist": artist, "duration": duration, "name": name}
+    params = {"album": album, "artist": artist, "duration": duration, "name": name, "isrc": isrc}
     wanted = _parse_sources(sources)
     return _answer(
         await _lookup(_key("search", params, wanted), lambda: _do_search(params, wanted))
@@ -375,8 +384,9 @@ async def auto(
     album: str | None = None,
     duration: float | None = None,
     sources: str | None = None,
+    isrc: list[str] | None = Query(None),
 ) -> dict[str, Any] | None:
-    params = {"album": album, "artist": artist, "duration": duration, "name": name}
+    params = {"album": album, "artist": artist, "duration": duration, "name": name, "isrc": isrc}
     wanted = _parse_sources(sources)
     return _answer(await _lookup(_key("auto", params, wanted), lambda: _do_auto(params, wanted)))
 
@@ -436,7 +446,8 @@ async def _do_auto(params: dict, wanted: list[LyricSource]) -> tuple[dict[str, A
             break
         # Checked separately from the score, which is lenient enough to let
         # a different act through on a similar title — see artist_matches().
-        if not artist_matches(artist, candidate.get("artist")):
+        # An ISRC match is this recording however its artist is billed.
+        if not candidate.get("_exact") and not artist_matches(artist, candidate.get("artist")):
             logger.info(
                 f"[auto] {candidate['name']!r} by {candidate.get('artist')!r}: other artist, next"
             )

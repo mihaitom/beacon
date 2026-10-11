@@ -44,7 +44,7 @@ def _is_local(host) -> bool:
 
 
 @pytest.fixture(autouse=True)
-def _block_real_network(monkeypatch):
+def _block_real_network(monkeypatch, request):
     """No test opens a connection to the internet or the LAN. A radio test
     posted http://example.com/stream.mp3 unmocked, and the relay behind
     /play-url connected to it for real (found 2026-09-27). Refused here
@@ -54,7 +54,11 @@ def _block_real_network(monkeypatch):
 
     Loopback stays open (the test client and asyncio use it), and so does
     UDP: get_local_ip() "connects" a datagram socket only to read which
-    interface the route goes through, which sends nothing."""
+    interface the route goes through, which sends nothing. So does
+    everything for a `live` test, whose whole point is the real network -
+    and which only runs when asked for by name (see pyproject.toml)."""
+    if request.node.get_closest_marker("live"):
+        return
     real_getaddrinfo = socket.getaddrinfo
     real_connect = socket.socket.connect
     real_connect_ex = socket.socket.connect_ex

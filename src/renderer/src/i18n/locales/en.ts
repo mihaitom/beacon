@@ -1030,6 +1030,12 @@ export default {
         sends:
           "The song's title and artist. Its album and length stay on your server; they are only used there, to pick the closest of the results.",
       },
+      lrcred: {
+        name: 'lrc.red',
+        purpose: 'Looking up lyrics when the file itself carries none.',
+        sends:
+          "The song's title and artist, and its ISRC (a code naming the recording) if its tags have one. Its album and length stay on your server; they are only used there, to pick the closest of the results.",
+      },
       netease: {
         name: 'NetEase',
         purpose: 'Looking up lyrics when the file itself carries none.',

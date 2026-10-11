@@ -107,6 +107,7 @@ const SERVICES = {
     },
     { key: 'stationSite', host: '', url: '' },
     { key: 'lrclib', host: 'lrclib.net', url: 'https://lrclib.net/', optOut: 'lyrics' },
+    { key: 'lrcred', host: 'lrc.red', url: 'https://lrc.red/', optOut: 'lyrics' },
     { key: 'netease', host: 'music.163.com', url: 'https://music.163.com/', optOut: 'lyrics' },
     {
       key: 'simpmusic',

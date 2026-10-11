@@ -1043,6 +1043,12 @@ export default {
         sends:
           "Le titre et l'artiste du morceau. Son album et sa durée restent sur votre serveur ; ils y servent uniquement à retenir le résultat le plus proche.",
       },
+      lrcred: {
+        name: 'lrc.red',
+        purpose: "Chercher des paroles quand le fichier n'en contient pas.",
+        sends:
+          "Le titre et l'artiste du morceau, ainsi que son ISRC (un code qui identifie l'enregistrement) si ses tags en contiennent un. Son album et sa durée restent sur votre serveur ; ils y servent uniquement à retenir le résultat le plus proche.",
+      },
       netease: {
         name: 'NetEase',
         purpose: "Chercher des paroles quand le fichier n'en contient pas.",

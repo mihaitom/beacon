@@ -141,6 +141,33 @@ def test_order_search_results_ignores_length_when_the_track_has_none():
 # ── artist_matches / has_sung_lines ───────────────────────────────────────
 
 
+def test_order_search_results_puts_an_isrc_match_ahead_of_a_closer_name():
+    # The tags call it a remaster, a search hit happens to be titled the
+    # same - but only the ISRC match is provably this recording.
+    params = {"name": "Song (Remastered)", "artist": "Artist", "duration": 200}
+    results = [
+        {"name": "Song (Remastered)", "artist": "Artist", "isSync": True, "duration": 200},
+        {"name": "Song", "artist": "Artist", "isSync": True, "duration": 200, "_exact": True},
+    ]
+
+    ranked = order_search_results(params, results)
+
+    assert ranked[0].get("_exact")
+    assert ranked[0]["score"] == 0.0
+
+
+def test_order_search_results_still_prefers_the_right_length_to_an_isrc_match():
+    # Length stays first: an ISRC can be shared by tracks a tagger got wrong,
+    # and a sheet timed for another edit drifts however it was found.
+    params = {"name": "Song", "artist": "Artist", "duration": 200}
+    results = [
+        {"name": "Song", "artist": "Artist", "isSync": True, "duration": 260, "_exact": True},
+        {"name": "Song", "artist": "Artist", "isSync": True, "duration": 201},
+    ]
+
+    assert order_search_results(params, results)[0]["duration"] == 201
+
+
 def test_artist_matches_accepts_the_same_act_billed_differently():
     # A featured artist, a dropped article, a spacing difference — all the
     # same act, and all of them fail a plain similarity check.
@@ -534,6 +561,73 @@ def test_auto_uses_the_sheet_from_search_without_fetching_it(client):
     assert r.status_code == 200
     assert r.json()["lyrics"] == "[00:01.00]La la la"
     get_fn.assert_not_awaited()
+
+
+def test_auto_passes_the_isrc_on_to_the_providers(client):
+    search = AsyncMock(return_value=[])
+    with patch.dict(SEARCH_FETCHERS, {LyricSource.LRCRED: search}):
+        client.get(
+            "/lyrics/auto",
+            params={"name": "Song", "sources": "lrc.red", "isrc": ["A1", "B2"]},
+        )
+
+    assert search.await_args.args[0]["isrc"] == ["A1", "B2"]
+
+
+def test_auto_takes_an_isrc_match_whatever_its_title_and_billing(client):
+    # Found by ISRC means this recording: a title or artist that reads
+    # differently in lrc.red than in the tags is no reason to discard it.
+    search = AsyncMock(
+        return_value=[
+            {
+                "artist": "Künstler feat. Jemand Ganz Anderes",
+                "id": "ISRC1",
+                "isSync": True,
+                "name": "Ein ganz anderer Titel",
+                "source": "lrc.red",
+                "_lyrics": "[00:01.00] a line",
+                "_exact": True,
+            }
+        ]
+    )
+    with patch.dict(SEARCH_FETCHERS, {LyricSource.LRCRED: search}):
+        r = client.get(
+            "/lyrics/auto",
+            params={"name": "Song", "artist": "Artist", "sources": "lrc.red", "isrc": "ISRC1"},
+        )
+
+    assert r.json()["id"] == "ISRC1"
+    assert "_exact" not in r.json()
+
+
+def test_the_isrc_does_not_split_a_songs_cache_entry(client):
+    # Party mode's fallback asks without one; it must be answered from the
+    # host's own lookup rather than asking every provider again.
+    search = AsyncMock(return_value=[])
+    params = {"name": "Song", "artist": "Artist", "sources": "lrc.red"}
+    with patch.dict(SEARCH_FETCHERS, {LyricSource.LRCRED: search}):
+        client.get("/lyrics/auto", params={**params, "isrc": "ISRC1"})
+        client.get("/lyrics/auto", params=params)
+
+    assert search.await_count == 1
+
+
+def test_search_keeps_internal_markers_out_of_its_answer(client):
+    found = AsyncMock(
+        return_value=[
+            {
+                "id": "ISRC1",
+                "name": "Song",
+                "source": "lrc.red",
+                "_lyrics": "a line",
+                "_exact": True,
+            }
+        ]
+    )
+    with patch.dict(SEARCH_FETCHERS, {LyricSource.LRCRED: found}):
+        r = client.get("/lyrics/search", params={"name": "Song", "sources": "lrc.red"})
+
+    assert r.json()["lrc.red"] == [{"id": "ISRC1", "name": "Song", "source": "lrc.red"}]
 
 
 def test_auto_returns_none_when_no_results(client):
