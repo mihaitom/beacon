@@ -31,6 +31,14 @@
             {{ $t('listenbrainz.title') }}
           </v-btn>
           <v-btn
+            v-if="authStore.capabilities.smartPlaylistEditor"
+            prepend-icon="mdi-auto-fix"
+            color="primary"
+            rounded="pill"
+            to="/playlists/smart/new"
+            >{{ $t('smartPlaylists.newButton') }}</v-btn
+          >
+          <v-btn
             prepend-icon="mdi-plus"
             color="primary"
             rounded="pill"

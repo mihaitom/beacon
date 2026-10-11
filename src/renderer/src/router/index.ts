@@ -88,6 +88,17 @@ const router = createRouter({
       name: 'playlist-detail',
       component: () => import('../views/PlaylistDetailView.vue'),
     },
+    // Navidrome's smart playlists, desktop only (see the view).
+    {
+      path: '/playlists/smart/new',
+      name: 'smart-playlist-new',
+      component: () => import('../views/SmartPlaylistEditorView.vue'),
+    },
+    {
+      path: '/playlists/:id/rules',
+      name: 'smart-playlist-rules',
+      component: () => import('../views/SmartPlaylistEditorView.vue'),
+    },
     {
       path: '/radio',
       name: 'radio',

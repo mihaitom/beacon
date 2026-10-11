@@ -29,6 +29,14 @@
       </template>
       <template #top-right>
         <v-btn
+          v-if="canEditRules"
+          icon="mdi-tune-variant"
+          variant="text"
+          :title="$t('smartPlaylists.editRules')"
+          :aria-label="$t('smartPlaylists.editRules')"
+          :to="`/playlists/${playlist.id}/rules`"
+        />
+        <v-btn
           v-if="isOwnPlaylist"
           icon="mdi-pencil-outline"
           variant="text"
@@ -122,6 +130,14 @@ export default {
     },
     isOwnPlaylist(): boolean {
       return !!this.playlist && isOwnedBy(this.playlist, this.authStore.username)
+    },
+    /** Navidrome lets only the owner change the rules. */
+    canEditRules(): boolean {
+      return (
+        this.authStore.capabilities.smartPlaylistEditor &&
+        this.isOwnPlaylist &&
+        !!this.playlist?.smart
+      )
     },
     songsEditable(): boolean {
       return this.isOwnPlaylist && !this.playlist?.readonly

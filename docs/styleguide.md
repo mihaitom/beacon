@@ -580,6 +580,29 @@ A doc that wants a help entry somewhere in the app goes into
 `services/help/docs.ts` and is opened with `emitter.emit('openHelp', id)`
 from where its question comes up, not from a central help page.
 
+## Editors that read as sentences
+
+The smart playlist editor (`views/SmartPlaylistEditorView.vue`,
+`components/smartPlaylist/`) is a form, and is built not to look like one:
+each rule is a line of text - field, how, what - rather than three boxed
+inputs.
+
+- **The words are buttons without a face.** The field is its amber icon and
+  its name at 600, the operator a quieter word after it; both are `<button>`s
+  for the keyboard and open a menu, and only show a background when pointed
+  at. A plain `<button>` brings the browser's grey face along, so
+  `appearance: none; background: none; border: 0` comes first.
+- **The value gets the control its kind deserves** - stars for a rating,
+  yes/no for a flag, a number and a unit for a span of time - and only the
+  value is a filled field.
+- **Menus of many choices are grouped**, with the context menus' section
+  heading (`ContextMenuSection`), not sorted alphabetically.
+- **Two kinds of marked row.** A red border means "fix this before it can be
+  saved"; an amber border with a faint amber fill means "this is why the
+  result looks the way it does". The second is information, never an error.
+- **A name that is edited in place** wears the title's own type
+  (`.detail-title`) and shows it is a field only on hover and focus.
+
 ## Motion
 
 Two speeds carry almost everything, and a new component should reach for one

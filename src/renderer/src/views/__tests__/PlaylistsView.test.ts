@@ -42,7 +42,8 @@ async function mountView(playlists: Playlist[]) {
     global: {
       plugins: [vuetify, i18n],
       stubs: {
-        DetailHeader: true,
+        // The header's own look is not under test; its action buttons are.
+        DetailHeader: { template: '<div><slot name="actions" /></div>' },
         StickyFilter: { template: '<div><slot /></div>' },
         PlaylistRow: true,
         LastfmPlaylistDialog: true,
@@ -72,6 +73,23 @@ describe('PlaylistsView', () => {
 
     expect(playback.shuffle).toBe(true)
     expect(play).toHaveBeenCalledWith(songs, 0, false, true)
+  })
+
+  it('offers a new smart playlist only on Navidrome', async () => {
+    const label = i18n.global.t('smartPlaylists.newButton')
+    const plain = await mountView([])
+    expect(plain.findAll('.v-btn').some((button) => button.text() === label)).toBe(false)
+
+    setActivePinia(createPinia())
+    useAuthStore().health = {
+      ffmpeg: true,
+      navidrome_configured: true,
+      server_lock: null,
+      session_server_type: 'subsonic',
+      session_server_software: 'navidrome',
+    }
+    const navidrome = await mountView([])
+    expect(navidrome.findAll('.v-btn').some((button) => button.text() === label)).toBe(true)
   })
 
   it('files Jellyfin and Plex playlists by what the bridge says, not by owner name', async () => {

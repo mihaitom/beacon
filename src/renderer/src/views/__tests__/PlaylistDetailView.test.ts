@@ -496,6 +496,42 @@ describe('PlaylistDetailView', () => {
     })
   })
 
+  describe('editing the rules', () => {
+    function editRulesButton(wrapper: Awaited<ReturnType<typeof mountView>>['wrapper']) {
+      return wrapper.find('.mdi-tune-variant')
+    }
+
+    async function mountAs(overrides: Partial<Playlist>, navidrome: boolean) {
+      const auth = useAuthStore()
+      auth.username = 'thomas'
+      auth.health = {
+        ffmpeg: true,
+        navidrome_configured: true,
+        server_lock: null,
+        session_server_type: 'subsonic',
+        session_server_software: navidrome ? 'navidrome' : '',
+      }
+      vi.spyOn(useLibraryStore(), 'fetchPlaylist').mockResolvedValue(makePlaylist(overrides))
+      return (await mountView()).wrapper
+    }
+
+    it('is offered on your own smart playlist on Navidrome', async () => {
+      const wrapper = await mountAs({ smart: true, readonly: true }, true)
+
+      expect(editRulesButton(wrapper).exists()).toBe(true)
+    })
+
+    it.each([
+      ['a playlist that is not smart', { smart: false }, true],
+      ['someone else’s smart playlist', { smart: true, readonly: true, owner: 'anna' }, true],
+      ['a server that is not Navidrome', { smart: true, readonly: true }, false],
+    ] as const)('is not offered on %s', async (_label, overrides, navidrome) => {
+      const wrapper = await mountAs(overrides, navidrome)
+
+      expect(editRulesButton(wrapper).exists()).toBe(false)
+    })
+  })
+
   describe('a smart playlist', () => {
     async function mountOwn(overrides: Partial<Playlist>) {
       useAuthStore().username = 'thomas'

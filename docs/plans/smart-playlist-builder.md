@@ -1,8 +1,9 @@
 # Plan: a smart playlist builder for Navidrome
 
-Status: steps 1-3 (connect, rules model and preview, client and
-capability) done 2026-10-11. Not yet tried against a real Navidrome (the
-test account in `connect/.env` is rejected). Steps 4-5 open.
+Status: implemented 2026-10-11, steps 1-5. Checked in a real browser with
+a made-up library, but not yet against a real Navidrome (the test account
+in `connect/.env` is rejected) - the login, create and update round trip is
+still unseen.
 
 Beacon already recognises smart playlists (Navidrome's and Plex's): they are
 labelled, and their song lists are read-only. This plan is the second step:
@@ -206,8 +207,9 @@ What makes it more than a form:
   indentation level.
 - **An opaque rule is visible, not hidden**: a row with a lock, its JSON in
   readable form, "kept as it is", deletable but not editable.
-- **On a phone** the page stacks: rules first, the preview collapsed into
-  a count bar fixed above the player bar that opens it as a sheet.
+- **Desktop only.** Decided after the first draft: a page this dense does
+  not fit a phone, so the phone shell has no way in. A narrow desktop
+  window stacks the preview under the rules instead.
 - Motion: rows enter and leave with the queue's 0.3s/0.2s, everything else
   0.15s; reduced motion turns both off.
 
@@ -219,8 +221,7 @@ building any of it, and add the editor's own decisions to it afterwards.
 
 ### Entry points
 
-- "New smart playlist" beside "New" on the playlists page (desktop and
-  phone).
+- "Smart playlist" beside "New" on the desktop playlists page.
 - "Edit rules" on your own smart playlist's page. For a playlist from an
   `.nsp` file the page says the file will win at the next library scan and
   shows the rules read-only.
@@ -231,16 +232,16 @@ building any of it, and add the editor's own decisions to it afterwards.
 The rules model and the preview evaluator thoroughly (they compute); the
 page on behaviour: adding and removing a rule, the value control following
 the operator, an opaque rule surviving a save, a preset filling the rules,
-the password prompt. Layout only where jsdom cannot answer (the two-column
-split and the phone stack, in a browser test).
+the password prompt. Layout only where jsdom cannot answer (the preview
+beside the rules or under them, in a browser test).
 
 ## Order
 
 1. Connect: session login and the forwarding route, with tests.
 2. `smartRules.ts` with its round-trip tests, and `preview.ts`.
 3. Client and capability.
-4. The editor page and its entry points, checked in the running app at
-   desktop and phone width.
+4. The editor page and its entry points, checked in a real browser at a
+   wide and a narrow width.
 5. Changelog, the style guide, and `docs/` for the password going to
    connect.
 
