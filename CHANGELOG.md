@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
-- Smart playlists can be created and their rules edited in Beacon on Navidrome, on a page of their own with a live preview from your library and ideas to start from (desktop layout only)
+- Smart playlists can be created and their rules edited in Beacon on Navidrome, on a page of their own with a live preview from your library whose songs play with a click, and ideas to start from (desktop layout only)
 - Smart playlists from Navidrome and Plex are labelled as such. Their rules pick the songs, so Beacon no longer offers to reorder, remove or add songs there
 
 ### Changed

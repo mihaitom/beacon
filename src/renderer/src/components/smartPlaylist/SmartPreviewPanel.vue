@@ -42,13 +42,23 @@
 
       <ol v-if="preview.songs.length" class="smart-preview__songs">
         <li v-for="song in firstSongs" :key="song.id" class="smart-preview__song">
-          <cover-art :cover-art-id="song.coverArtId" :size="36" class="smart-preview__song-cover" />
-          <div class="smart-preview__song-text">
-            <div class="smart-preview__title" :title="song.title">{{ song.title }}</div>
-            <div class="smart-preview__artist text-body-small text-medium-emphasis">
-              {{ song.artist }}
-            </div>
-          </div>
+          <button
+            type="button"
+            class="smart-preview__song-button"
+            :aria-label="`${$t('library.play')}: ${song.title}`"
+            @click="play(song)"
+          >
+            <span class="smart-preview__song-cover">
+              <cover-art :cover-art-id="song.coverArtId" :size="36" />
+              <v-icon icon="mdi-play" size="20" class="smart-preview__song-play" />
+            </span>
+            <span class="smart-preview__song-text">
+              <span class="smart-preview__title" :title="song.title">{{ song.title }}</span>
+              <span class="smart-preview__artist text-body-small text-medium-emphasis">
+                {{ song.artist }}
+              </span>
+            </span>
+          </button>
         </li>
       </ol>
       <div
@@ -78,6 +88,8 @@ import type { PropType } from 'vue'
 import CoverArt from '@/components/library/CoverArt.vue'
 import { formatTotalDuration } from '@/services/totalDuration'
 import type { Preview } from '@/services/navidrome/preview'
+import { usePlaybackStore } from '@/stores/playback'
+import type { Song } from '@/types/library'
 
 /** How many songs the list shows before "and N more". */
 const LISTED_SONGS = 8
@@ -128,6 +140,13 @@ export default {
     },
     firstSongs() {
       return this.preview?.songs.slice(0, LISTED_SONGS) ?? []
+    },
+  },
+  methods: {
+    /** Only the clicked song, as for any playlist being edited: the preview
+     * is a guess at what the rules pick, not a queue anybody meant. */
+    play(song: Song) {
+      void usePlaybackStore().playSongList([song], 0)
     },
   },
 }
@@ -194,31 +213,72 @@ export default {
   flex-direction: column;
 }
 
-.smart-preview__song {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 6px 0;
-}
-
 .smart-preview__song + .smart-preview__song {
   border-top: 1px solid var(--beacon-hairline);
 }
 
+/* The negative margin lets the hover tint reach past the text while the
+ * cover and title stay in line with the rest of the panel. */
+.smart-preview__song-button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: calc(100% + 12px);
+  margin: 0 -6px;
+  padding: 6px;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.smart-preview__song-button:hover,
+.smart-preview__song-button:focus-visible {
+  background: var(--beacon-hover);
+}
+
 .smart-preview__song-cover {
+  position: relative;
   flex: 0 0 auto;
   border-radius: 4px;
+  overflow: hidden;
+}
+
+.smart-preview__song-play {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.smart-preview__song-button:hover .smart-preview__song-cover::after,
+.smart-preview__song-button:focus-visible .smart-preview__song-cover::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.smart-preview__song-button:hover .smart-preview__song-play,
+.smart-preview__song-button:focus-visible .smart-preview__song-play {
+  opacity: 1;
+  z-index: 1;
 }
 
 /* Takes what the cover leaves and no more, so a long title ends in an
  * ellipsis instead of running out of the panel. */
 .smart-preview__song-text {
+  display: block;
   flex: 1;
   min-width: 0;
 }
 
 .smart-preview__title,
 .smart-preview__artist {
+  display: block;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
