@@ -856,13 +856,50 @@ def test_remove_from_playlist_ignores_positions_the_playlist_does_not_have(
     assert delete_calls[0][2]["EntryIds"] == "pi-1"
 
 
-def test_update_playlist_rename_only_fails_cleanly(client, jellyfin_session, monkeypatch):
-    fake_client, _calls = _fake_jf_client()
+def test_update_playlist_renames_without_touching_visibility(client, jellyfin_session, monkeypatch):
+    fake_client, calls = _fake_jf_client()
     monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
 
-    r = client.get("/rest/updatePlaylist.view?playlistId=p1&name=New+Name")
-    assert r.status_code == 200
+    # The edit dialog always sends `public` along; the playlist reads as
+    # private here, so passing it on would withdraw OpenAccess set in Jellyfin.
+    r = client.get("/rest/updatePlaylist.view?playlistId=p1&name=New+Name&public=false")
+    assert r.json()["subsonic-response"]["status"] == "ok"
+    method, url, _params, body = calls[0]
+    assert method == "POST"
+    assert url.endswith("/Playlists/p1")
+    assert body == {"Name": "New Name"}
+
+
+def test_update_playlist_with_nothing_to_do_fails_cleanly(client, jellyfin_session, monkeypatch):
+    fake_client, calls = _fake_jf_client()
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/updatePlaylist.view?playlistId=p1&public=true")
     assert r.json()["subsonic-response"]["status"] == "failed"
+    assert calls == []
+
+
+def test_get_playlists_says_whose_playlist_it_is(client, jellyfin_session, monkeypatch):
+    fake_client, calls = _fake_jf_client(
+        {
+            "/Items": {
+                "Items": [
+                    {"Id": "mine", "Name": "Mine", "CanDelete": True},
+                    {"Id": "shared", "Name": "Shared with me", "CanDelete": False},
+                ]
+            }
+        }
+    )
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get("/rest/getPlaylists.view")
+    mine, shared = r.json()["subsonic-response"]["playlists"]["playlist"]
+    # Jellyfin only sends CanDelete when asked for it in a list.
+    assert "CanDelete" in calls[0][2]["Fields"].split(",")
+    assert mine["owned"] is True
+    assert "readonly" not in mine
+    assert shared["owned"] is False
+    assert shared["readonly"] is True
 
 
 def test_delete_playlist_hits_items_endpoint(client, jellyfin_session, monkeypatch):

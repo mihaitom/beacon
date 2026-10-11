@@ -774,6 +774,9 @@ def test_get_playlists_marks_smart_playlists_read_only(client, plex_session, mon
 
     r = client.get("/rest/getPlaylists.view")
     smart, regular = r.json()["subsonic-response"]["playlists"]["playlist"]
+    # Smart or not, every playlist Plex lists is the account's own.
+    assert smart["owned"] is True
+    assert regular["owned"] is True
     assert smart["readonly"] is True
     assert "validUntil" in smart
     # Absent rather than false: a regular one keeps whatever the frontend

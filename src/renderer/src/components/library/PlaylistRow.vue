@@ -112,6 +112,7 @@ import { formatTotalDuration } from '@/services/totalDuration'
 import { timeAgo } from '@/services/relativeTime'
 import { getLocale } from '@/i18n'
 import { emitter } from '@/emitter'
+import { isOwnedBy } from '@/services/library/playlistOwnership'
 import type { Playlist } from '@/types/library'
 
 const COVER_SIZE = 112
@@ -170,7 +171,7 @@ export default {
     },
     /** Same rule as PlaylistDetailView.vue's own edit/delete buttons. */
     isOwnPlaylist(): boolean {
-      return this.playlist.owner === useAuthStore().username
+      return isOwnedBy(this.playlist, useAuthStore().username)
     },
     meta(): string {
       const ago = this.playlist.changed

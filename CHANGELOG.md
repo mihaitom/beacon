@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Fixed
 
 - "Add to playlist" no longer lists playlists the server refuses to change, such as other users' shared ones
+- With Jellyfin and Plex, your own playlists appear under "My playlists" and can be renamed, deleted, reordered and edited there. Before, they were treated as someone else's. Renaming on Jellyfin needs version 10.9 or newer
 - Turning a tablet from upright to sideways with the queue open, or remembered open, lit up the queue button but showed no queue until it was tapped off and on again (reported by @ampcat3, #47)
 
 ## [1.7.1] - 2026-10-10

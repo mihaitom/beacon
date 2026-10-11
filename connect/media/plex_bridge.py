@@ -806,6 +806,10 @@ def _map_playlist(item: dict) -> dict:
         "duration": int((item.get("duration") or 0) / 1000),
         "coverArt": _cover_art_id(item, item["ratingKey"]),
         "public": False,
+        # /playlists only ever lists the account's own. Not an owner name:
+        # the one Beacon compares against can differ from Plex's, or be
+        # missing altogether.
+        "owned": True,
     }
     _set(playlist, "changed", _epoch_to_iso(item.get("updatedAt") or item.get("addedAt")))
     # The OpenSubsonic fields Navidrome sends for its own smart playlists.

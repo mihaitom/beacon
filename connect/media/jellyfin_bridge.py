@@ -312,11 +312,11 @@ def _map_artist(item: dict) -> dict:
 
 
 def _map_playlist(item: dict) -> dict:
-    # Jellyfin's own playlist sharing model (OwnerUserId + per-user access
-    # grants) doesn't map cleanly onto Subsonic's single public/owner pair —
-    # left at safe defaults (private, no owner shown) rather than guessing;
-    # renaming/visibility changes are correspondingly not bridged either
-    # (see update_playlist below).
+    # Jellyfin names no owner, and its sharing model (per-user grants plus
+    # OpenAccess) doesn't map onto Subsonic's owner/public pair, so public
+    # stays false. Whether the playlist is the user's own comes from
+    # CanDelete instead, which Jellyfin grants the owner - and an admin,
+    # who is thereby treated as owning a playlist shared with them.
     playlist = {
         "id": item["Id"],
         "name": item.get("Name", "Unknown"),
@@ -330,6 +330,14 @@ def _map_playlist(item: dict) -> dict:
     # fraction, so the later one is also the larger string.
     dates = [d for d in (item.get("DateLastMediaAdded"), item.get("DateCreated")) if d]
     _set(playlist, "changed", max(dates) if dates else None)
+    can_delete = item.get("CanDelete")
+    if can_delete is not None:
+        playlist["owned"] = can_delete
+        # Someone else's: Jellyfin only lets its owner, or a share granted
+        # editing, change the songs - and which shares grant that takes a
+        # request per playlist to find out.
+        if not can_delete:
+            playlist["readonly"] = True
     return playlist
 
 
@@ -652,7 +660,7 @@ async def get_playlists(_params: dict, media: JellyfinClient) -> dict:
         media,
         IncludeItemTypes="Playlist",
         Recursive="true",
-        Fields="DateCreated,DateLastMediaAdded",
+        Fields="DateCreated,DateLastMediaAdded,CanDelete",
     )
     return {"playlists": {"playlist": _map_all(_map_playlist, data.get("Items", []))}}
 
@@ -795,9 +803,16 @@ async def update_playlist(params, media: JellyfinClient) -> dict:
         await _remove_from_playlist(playlist_id, [int(i) for i in indexes_to_remove], media)
         return {}
     # The only remaining reason client.ts calls updatePlaylist.view is a
-    # rename/visibility change (see _map_playlist's comment on why that's
-    # not bridged) — fail clearly rather than silently no-op "succeeding".
-    raise ValueError("Renaming or changing visibility is not supported for Jellyfin playlists")
+    # rename. `public` is left alone: the playlist always reads as private
+    # here (see _map_playlist), so passing it on would quietly withdraw
+    # OpenAccess from one shared in Jellyfin itself.
+    name = params.get("name")
+    if name is not None:
+        await _jf_request(
+            "POST", media, f"/Playlists/{_quote_id(playlist_id)}", json_body={"Name": name}
+        )
+        return {}
+    raise ValueError("updatePlaylist.view requires songIdToAdd, songIndexToRemove, or name")
 
 
 async def delete_playlist(params: dict, media: JellyfinClient) -> dict:

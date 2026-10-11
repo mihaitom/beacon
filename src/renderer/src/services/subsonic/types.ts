@@ -143,6 +143,8 @@ export interface RawPlaylist {
   // OpenSubsonic. validUntil is only ever sent for a smart playlist.
   readonly?: boolean
   validUntil?: string
+  // Beacon's own, from the Jellyfin and Plex bridges only.
+  owned?: boolean
   entry?: RawSong[]
 }
 

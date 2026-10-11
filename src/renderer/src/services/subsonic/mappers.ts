@@ -99,6 +99,7 @@ export function mapPlaylist(raw: RawPlaylist): Playlist {
     changed: raw.changed ?? null,
     readonly: raw.readonly ?? false,
     smart: raw.validUntil != null,
+    ...(raw.owned !== undefined && { ownedByUser: raw.owned }),
     songs: (raw.entry ?? []).map(mapSong),
   }
 }

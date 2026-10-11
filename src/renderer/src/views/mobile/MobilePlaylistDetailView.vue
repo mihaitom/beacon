@@ -74,6 +74,7 @@ import {
   removeFromPlaylist,
   type PlaylistNotice as Notice,
 } from '@/services/library/playlistRemoval'
+import { isOwnedBy } from '@/services/library/playlistOwnership'
 import type { Song } from '@/types/library'
 
 export default {
@@ -107,7 +108,11 @@ export default {
      * — offering the entry would only produce an error toast. Likewise for
      * your own smart playlist, whose songs come from its rules. */
     songsEditable(): boolean {
-      return this.playlist?.owner === this.authStore.username && !this.playlist.readonly
+      return (
+        !!this.playlist &&
+        isOwnedBy(this.playlist, this.authStore.username) &&
+        !this.playlist.readonly
+      )
     },
   },
   created() {

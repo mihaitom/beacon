@@ -98,6 +98,32 @@ describe('SubsonicClient playlist flags', () => {
       { id: 'plain', readonly: false, smart: false },
     ])
   })
+
+  it('keeps what a bridge says about ownership, and leaves it out where it says nothing', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({
+        ok: true,
+        json: async () => ({
+          'subsonic-response': {
+            status: 'ok',
+            playlists: {
+              playlist: [
+                { id: 'mine', name: 'A', songCount: 0, duration: 0, owned: true },
+                { id: 'shared', name: 'B', songCount: 0, duration: 0, owned: false },
+                { id: 'named', name: 'C', songCount: 0, duration: 0, owner: 'bob' },
+              ],
+            },
+          },
+        }),
+      })),
+    )
+
+    const [mine, shared, named] = await client.getPlaylists()
+    expect(mine!.ownedByUser).toBe(true)
+    expect(shared!.ownedByUser).toBe(false)
+    expect(named).not.toHaveProperty('ownedByUser')
+  })
 })
 
 /** Whether Settings offers a library rescan at all hangs on this answer,

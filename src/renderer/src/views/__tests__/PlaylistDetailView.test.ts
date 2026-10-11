@@ -473,6 +473,29 @@ describe('PlaylistDetailView', () => {
     })
   })
 
+  describe('a Jellyfin or Plex playlist', () => {
+    it('can be renamed when the bridge says it is yours, with no owner named', async () => {
+      useAuthStore().username = 'thomas'
+      vi.spyOn(useLibraryStore(), 'fetchPlaylist').mockResolvedValue(
+        makePlaylist({ owner: '', ownedByUser: true }),
+      )
+      const { wrapper } = await mountView()
+
+      expect(wrapper.find('.mdi-pencil-outline').exists()).toBe(true)
+    })
+
+    it('names no owner rather than an empty one when it is not yours', async () => {
+      useAuthStore().username = 'thomas'
+      vi.spyOn(useLibraryStore(), 'fetchPlaylist').mockResolvedValue(
+        makePlaylist({ owner: '', ownedByUser: false, readonly: true }),
+      )
+      const { wrapper } = await mountView()
+
+      expect(wrapper.find('.mdi-pencil-outline').exists()).toBe(false)
+      expect(wrapper.find('.detail-header__subtitle').exists()).toBe(false)
+    })
+  })
+
   describe('a smart playlist', () => {
     async function mountOwn(overrides: Partial<Playlist>) {
       useAuthStore().username = 'thomas'

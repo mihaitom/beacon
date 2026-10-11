@@ -65,6 +65,7 @@ import { usePlaybackStore } from '@/stores/playback'
 import { matchesAllTerms } from '@/services/textSearch'
 import MobilePlaylistRow from '@/components/mobile/MobilePlaylistRow.vue'
 import StickyFilter from '@/components/StickyFilter.vue'
+import { isOwnedBy } from '@/services/library/playlistOwnership'
 import type { Playlist } from '@/types/library'
 
 let debounceTimer: ReturnType<typeof setTimeout> | undefined
@@ -93,10 +94,10 @@ export default {
       )
     },
     personalPlaylists(): Playlist[] {
-      return this.filteredPlaylists.filter((p) => p.owner === this.authStore.username)
+      return this.filteredPlaylists.filter((p) => isOwnedBy(p, this.authStore.username))
     },
     globalPlaylists(): Playlist[] {
-      return this.filteredPlaylists.filter((p) => p.owner !== this.authStore.username)
+      return this.filteredPlaylists.filter((p) => !isOwnedBy(p, this.authStore.username))
     },
   },
   watch: {

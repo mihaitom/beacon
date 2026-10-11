@@ -152,6 +152,7 @@ import PlaylistEditDialog from '@/components/library/PlaylistEditDialog.vue'
 import LastfmPlaylistDialog from '@/components/library/LastfmPlaylistDialog.vue'
 import PlaylistDeleteDialog from '@/components/library/PlaylistDeleteDialog.vue'
 import StickyFilter from '@/components/StickyFilter.vue'
+import { isOwnedBy } from '@/services/library/playlistOwnership'
 import type { Playlist } from '@/types/library'
 
 // Enough placeholder rows to read as a list rather than as one stray box.
@@ -220,10 +221,10 @@ export default {
     // Own playlists first, everything else (public playlists shared by
     // other users) below in its own section.
     personalPlaylists(): Playlist[] {
-      return this.filteredPlaylists.filter((p) => p.owner === this.authStore.username)
+      return this.filteredPlaylists.filter((p) => isOwnedBy(p, this.authStore.username))
     },
     globalPlaylists(): Playlist[] {
-      return this.filteredPlaylists.filter((p) => p.owner !== this.authStore.username)
+      return this.filteredPlaylists.filter((p) => !isOwnedBy(p, this.authStore.username))
     },
   },
   watch: {

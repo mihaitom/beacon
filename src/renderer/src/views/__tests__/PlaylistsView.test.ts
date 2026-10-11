@@ -73,4 +73,20 @@ describe('PlaylistsView', () => {
     expect(playback.shuffle).toBe(true)
     expect(play).toHaveBeenCalledWith(songs, 0, false, true)
   })
+
+  it('files Jellyfin and Plex playlists by what the bridge says, not by owner name', async () => {
+    const wrapper = await mountView([
+      makePlaylist('mine'),
+      makePlaylist('anna', { owner: 'anna' }),
+      makePlaylist('plex', { owner: '', ownedByUser: true }),
+      makePlaylist('shared', { owner: '', ownedByUser: false }),
+    ])
+    const vm = wrapper.vm as unknown as {
+      personalPlaylists: Playlist[]
+      globalPlaylists: Playlist[]
+    }
+
+    expect(vm.personalPlaylists.map((playlist) => playlist.id)).toEqual(['mine', 'plex'])
+    expect(vm.globalPlaylists.map((playlist) => playlist.id)).toEqual(['anna', 'shared'])
+  })
 })

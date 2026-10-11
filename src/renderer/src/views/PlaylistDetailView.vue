@@ -7,7 +7,7 @@
       :eyebrow="$t('library.playlist')"
       :title="playlist.name"
     >
-      <template v-if="!isOwnPlaylist" #subtitle>
+      <template v-if="!isOwnPlaylist && playlist.owner" #subtitle>
         {{ $t('playlists.byOwner', { owner: playlist.owner }) }}
       </template>
       <template #meta>
@@ -90,6 +90,7 @@ import {
   removeFromPlaylist,
   type PlaylistNotice as Notice,
 } from '@/services/library/playlistRemoval'
+import { isOwnedBy } from '@/services/library/playlistOwnership'
 import type { Playlist, Song } from '@/types/library'
 
 export default {
@@ -120,7 +121,7 @@ export default {
       return useAuthStore()
     },
     isOwnPlaylist(): boolean {
-      return this.playlist?.owner === this.authStore.username
+      return !!this.playlist && isOwnedBy(this.playlist, this.authStore.username)
     },
     songsEditable(): boolean {
       return this.isOwnPlaylist && !this.playlist?.readonly
