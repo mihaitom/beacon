@@ -25,11 +25,16 @@ function mountToolbar(props: Record<string, unknown> = {}) {
   })
 }
 
-/** A real wheel event over the volume slider, so the test can also check
- * whether the toolbar claimed it (preventDefault) or left it alone. */
-function scroll(wrapper: ReturnType<typeof mountToolbar>, deltaY: number): WheelEvent {
-  const event = new WheelEvent('wheel', { deltaY, cancelable: true, bubbles: true })
-  wrapper.getComponent({ name: 'VSlider' }).element.dispatchEvent(event)
+/** A real wheel event handed to the toolbar the way PlayerBar.vue forwards
+ * one from anywhere on the bar, so the test can also check whether the
+ * toolbar claimed it (preventDefault) or left it alone. */
+function scroll(
+  wrapper: ReturnType<typeof mountToolbar>,
+  deltaY: number,
+  init: WheelEventInit = {},
+): WheelEvent {
+  const event = new WheelEvent('wheel', { deltaY, cancelable: true, bubbles: true, ...init })
+  ;(wrapper.vm as unknown as { onVolumeWheel(e: WheelEvent): void }).onVolumeWheel(event)
   return event
 }
 
@@ -103,6 +108,21 @@ describe('PlayerToolbar', () => {
       await wrapper.vm.$nextTick()
       scroll(wrapper, 120)
       expect(setVolumeSpy).toHaveBeenLastCalledWith(0.5)
+    })
+
+    it('leaves sideways scrolling and ctrl+wheel zoom alone', async () => {
+      const wrapper = mountToolbar()
+      const playback = usePlaybackStore()
+      const setVolumeSpy = vi.spyOn(playback, 'setVolume')
+      playback.volume = 0.5
+      await wrapper.vm.$nextTick()
+
+      const sideways = scroll(wrapper, 0, { deltaX: 120 })
+      const zoom = scroll(wrapper, -120, { ctrlKey: true })
+
+      expect(setVolumeSpy).not.toHaveBeenCalled()
+      expect(sideways.defaultPrevented).toBe(false)
+      expect(zoom.defaultPrevented).toBe(false)
     })
 
     it('ignores the wheel while casting, when the local slider controls nothing', async () => {

@@ -60,7 +60,6 @@
         @update:model-value="onDeviceVolumeChange"
         @start="onVolumeDragStart"
         @end="onVolumeDragEnd"
-        @wheel="onVolumeWheel"
         @touchcancel="endCancelledSliderTouch"
       />
       <v-slider
@@ -72,7 +71,6 @@
         hide-details
         :disabled="playbackStore.isCasting"
         @update:model-value="playbackStore.setVolume($event)"
-        @wheel="onVolumeWheel"
         @touchcancel="endCancelledSliderTouch"
       />
       <span class="text-body-small text-medium-emphasis volume-value">{{
@@ -385,9 +383,14 @@ export default {
     onVolumeDragEnd() {
       if (this.singleActiveTarget) endVolumeDrag(this.singleActiveTarget)
     },
-    // Same branch toggleMute() makes: with exactly one cast target this
-    // slider is that device's, otherwise it's local playback's.
+    // Called for a wheel anywhere on the bar (PlayerBar.vue forwards it), and
+    // from the popover's slider, which is teleported out of the bar. Same
+    // branch toggleMute() makes: with exactly one cast target this slider is
+    // that device's, otherwise it's local playback's.
     onVolumeWheel(event: WheelEvent) {
+      // Sideways scrolling (shift+wheel, a trackpad swipe) and ctrl+wheel
+      // (zoom, trackpad pinch) keep doing what they did before.
+      if (event.ctrlKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return
       const target = this.singleActiveTarget
       const current = target ? this.deviceVolume : this.playbackStore.volume
       // A disabled slider (a device with no volume support, local playback

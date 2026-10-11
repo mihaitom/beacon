@@ -40,9 +40,9 @@ function snapshot(listen: boolean): GuestSnapshot {
   }
 }
 
-function mountBar() {
+function mountBar(props: Record<string, unknown> = {}) {
   const vuetify = createVuetify({ components, directives })
-  return mount(GuestPlayerBar, { global: { plugins: [vuetify, i18n] } })
+  return mount(GuestPlayerBar, { props, global: { plugins: [vuetify, i18n] } })
 }
 
 describe('the online party player bar', () => {
@@ -99,17 +99,35 @@ describe('the online party player bar', () => {
     expect(localStorage.getItem('beacon_party_volume')).toBe('40')
   })
 
-  it('moves the volume with the mouse wheel, like the app’s own slider', async () => {
+  it('moves the volume with the mouse wheel anywhere on the bar, like the app’s own', async () => {
     const store = usePartyGuestStore()
     store.applySnapshot(snapshot(true))
     store.volumeAdjustable = true
     store.setVolume(40)
-    const slider = mountBar().find('input[type="range"]')
+    const title = mountBar().find('.guest-player-bar__song')
 
-    await slider.trigger('wheel', { deltaY: -100 })
+    await title.trigger('wheel', { deltaY: -100 })
 
     // One notch up is one 5% step, from an off-grid value to the next line.
     expect(store.volume).toBe(45)
+  })
+
+  it('leaves the wheel alone where there is no slider, and for sideways scrolling or zoom', async () => {
+    const store = usePartyGuestStore()
+    store.applySnapshot(snapshot(true))
+    store.volumeAdjustable = true
+    store.setVolume(40)
+    const bar = mountBar().find('.guest-player-bar')
+    const sideways = new WheelEvent('wheel', { deltaX: 100, cancelable: true })
+    const zoom = new WheelEvent('wheel', { deltaY: -100, ctrlKey: true, cancelable: true })
+    bar.element.dispatchEvent(sideways)
+    bar.element.dispatchEvent(zoom)
+
+    const phone = new WheelEvent('wheel', { deltaY: -100, cancelable: true })
+    mountBar({ compact: true }).find('.guest-player-bar').element.dispatchEvent(phone)
+
+    expect(store.volume).toBe(40)
+    expect([sideways, zoom, phone].some((e) => e.defaultPrevented)).toBe(false)
   })
 
   it('offers no slider where the browser ignores it', () => {

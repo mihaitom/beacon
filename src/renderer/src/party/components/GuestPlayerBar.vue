@@ -1,5 +1,11 @@
 <template>
-  <div class="guest-player-bar" :class="{ 'guest-player-bar--compact': compact }">
+  <!-- The mouse wheel sets the volume anywhere on the bar, as in the app's
+   - own player bar. -->
+  <div
+    class="guest-player-bar"
+    :class="{ 'guest-player-bar--compact': compact }"
+    @wheel="onVolumeWheel"
+  >
     <div v-if="!compact" class="guest-player-bar__song">
       <guest-cover :src="coverUrl" :size="56" :fallback-icon="radio ? 'mdi-radio' : 'mdi-music'" />
       <div class="guest-player-bar__labels">
@@ -68,7 +74,6 @@
           :aria-label="$t('player.volume')"
           class="guest-player-bar__slider"
           @update:model-value="store.setVolume($event)"
-          @wheel="onVolumeWheel"
         />
       </template>
     </div>
@@ -151,8 +156,12 @@ export default {
       }
     },
     /** The slider is the guest's own browser volume, so the wheel moves it
-     * the same way the app's slider moves its own (see volumeWheel.ts). */
+     * the same way the app's slider moves its own (see volumeWheel.ts).
+     * Without a slider (a phone, iOS) the wheel is left alone, and so are
+     * sideways scrolling and ctrl+wheel zoom. */
     onVolumeWheel(event: WheelEvent) {
+      if (this.compact || !this.store.volumeAdjustable) return
+      if (event.ctrlKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return
       event.preventDefault()
       const { volume, carry } = volumeAfterWheel(
         event,

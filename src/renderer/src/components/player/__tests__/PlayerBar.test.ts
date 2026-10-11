@@ -6,7 +6,7 @@
 // component. See PlayerBar.layout.browser.test.ts for the real-CSS-layout
 // side of this (grid track sizing, centering, min-width) that jsdom can't
 // meaningfully check at all.
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
@@ -17,6 +17,8 @@ import { i18n } from '@/i18n'
 import PlayerBar from '../PlayerBar.vue'
 
 const vuetify = createVuetify({ components, directives })
+
+const onVolumeWheel = vi.fn()
 
 async function mountBar() {
   const router = createRouter({
@@ -38,7 +40,12 @@ async function mountBar() {
         stubs: {
           SongInfo: true,
           ControlContainer: true,
-          PlayerToolbar: true,
+          PlayerToolbar: {
+            name: 'PlayerToolbar',
+            props: { volumeCollapsed: Boolean },
+            methods: { onVolumeWheel },
+            template: '<div />',
+          },
         },
       },
     },
@@ -50,6 +57,16 @@ async function mountBar() {
 describe('PlayerBar', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    onVolumeWheel.mockClear()
+  })
+
+  it('hands a wheel from anywhere on the bar to the volume', async () => {
+    const { wrapper } = await mountBar()
+
+    await wrapper.findComponent({ name: 'SongInfo' }).trigger('wheel', { deltaY: -120 })
+
+    expect(onVolumeWheel).toHaveBeenCalledTimes(1)
+    expect(onVolumeWheel.mock.calls[0]?.[0].deltaY).toBe(-120)
   })
 
   it('renders song-info, control-container, and the toolbar', async () => {

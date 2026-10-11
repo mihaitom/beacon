@@ -1,9 +1,11 @@
 <template>
-  <v-footer app inset height="88" color="#0B0D13" class="player-bar">
+  <!-- The mouse wheel sets the volume anywhere on the bar, not only over
+   - the slider: nothing in here scrolls, so the wheel is free. -->
+  <v-footer app inset height="88" color="#0B0D13" class="player-bar" @wheel="onWheel">
     <div class="player-bar__row" :style="{ '--player-bar-flank-width': flankWidthPx + 'px' }">
       <song-info />
       <control-container />
-      <player-toolbar :volume-collapsed="volumeCollapsed" />
+      <player-toolbar ref="toolbar" :volume-collapsed="volumeCollapsed" />
     </div>
   </v-footer>
 </template>
@@ -70,6 +72,11 @@ export default {
   },
   beforeUnmount() {
     this.barResizeObserver?.disconnect()
+  },
+  methods: {
+    onWheel(event: WheelEvent) {
+      ;(this.$refs.toolbar as InstanceType<typeof PlayerToolbar>).onVolumeWheel(event)
+    },
   },
 }
 </script>
