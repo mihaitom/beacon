@@ -184,6 +184,13 @@ def test_has_sung_lines_rejects_a_sheet_that_is_only_credits():
     assert not has_sung_lines("")
 
 
+def test_has_sung_lines_rejects_neteases_instrumental_placeholder():
+    # Verbatim from NetEase (Nils Frahm, "Says"; 2026-10-11): a timed line
+    # that reads like lyrics and only says "pure music, please enjoy".
+    assert not has_sung_lines("[00:00.00] 作曲 : Nils Oliver Frahm\n[00:05.00]纯音乐，请欣赏\n")
+    assert not has_sung_lines("[00:05.00]纯音乐，请欣赏")
+
+
 # ── parse_lyrics ───────────────────────────────────────────────────────────
 
 
@@ -240,7 +247,9 @@ def test_parse_sources_falls_back_to_all_when_nothing_recognized():
 
 
 def test_search_groups_results_by_source(client):
-    lrclib_results = AsyncMock(return_value=[{"id": "1", "name": "Song", "source": "lrclib.net"}])
+    lrclib_results = AsyncMock(
+        return_value=[{"id": "1", "name": "Song", "source": "lrclib.net", "_lyrics": "a line"}]
+    )
     simpmusic_results = AsyncMock(return_value=None)
 
     with patch.dict(
@@ -293,7 +302,9 @@ def test_search_still_answers_with_what_the_reachable_providers_found(client):
     # One provider down is not the same as none answering — whatever came
     # back is worth showing, it just isn't worth remembering (see
     # test_search_does_not_remember_a_partial_answer).
-    found = AsyncMock(return_value=[{"id": "1", "name": "Song", "source": "lrclib.net"}])
+    found = AsyncMock(
+        return_value=[{"id": "1", "name": "Song", "source": "lrclib.net", "_lyrics": "a line"}]
+    )
     failing = AsyncMock(side_effect=RuntimeError("provider down"))
 
     with patch.dict(SEARCH_FETCHERS, {LyricSource.LRCLIB: found, LyricSource.NETEASE: failing}):
@@ -335,6 +346,91 @@ def test_search_strips_the_sheet_from_its_answer_and_seeds_it_for_a_tap(client):
 
     assert picked.json() == "[00:01.00] a line"
     fetch.assert_not_awaited()
+
+
+def test_search_leaves_out_candidates_whose_sheet_has_no_words(client):
+    # lrclib's search already says what each candidate's sheet holds, so one
+    # that would show nothing when picked is not offered in the first place.
+    found = AsyncMock(
+        return_value=[
+            {"id": "words", "name": "Song", "source": "lrclib.net", "_lyrics": "[00:01.00] a line"},
+            {"id": "instrumental", "name": "Song", "source": "lrclib.net", "_lyrics": None},
+            {"id": "credits", "name": "Song", "source": "lrclib.net", "_lyrics": "作词 : X"},
+        ]
+    )
+
+    with patch.dict(SEARCH_FETCHERS, {LyricSource.LRCLIB: found}):
+        r = client.get("/lyrics/search", params={"name": "Song", "sources": "lrclib.net"})
+
+    assert [c["id"] for c in r.json()["lrclib.net"]] == ["words"]
+
+
+def _netease_candidate(remote_id: str) -> dict:
+    return {
+        "artist": "Artist",
+        "id": remote_id,
+        "isSync": None,
+        "name": "Song",
+        "source": "NetEase",
+    }
+
+
+def test_search_checks_neteases_candidates_for_words(client):
+    # NetEase's search covers its whole catalogue, and most hits for an
+    # instrumental act carry nothing, only credits or a "pure music" line
+    # (sampled 2026-10-11) - each of which used to be offered and then
+    # showed nothing when picked.
+    sheets = {
+        "timed": "[00:00.00] 作词 : X\n[00:13.06] a line",
+        "plain": "a line",
+        "empty": None,
+        "credits": "[00:00.00-1] 作词 : X\n[00:00.00-1] 作曲 : X",
+        "pure-music": "[00:00.00] 作曲 : X\n[00:05.00]纯音乐，请欣赏",
+    }
+    search = AsyncMock(return_value=[_netease_candidate(remote_id) for remote_id in sheets])
+    fetch = AsyncMock(side_effect=lambda remote_id: sheets[remote_id])
+
+    with (
+        patch.dict(SEARCH_FETCHERS, {LyricSource.NETEASE: search}),
+        patch.dict(GET_FETCHERS, {LyricSource.NETEASE: fetch}),
+    ):
+        r = client.get("/lyrics/search", params={"name": "Song", "sources": "NetEase"})
+        candidates = r.json()["NetEase"]
+        assert [c["id"] for c in candidates] == ["timed", "plain"]
+        # Fetched anyway, so no longer unknown.
+        assert [c["isSync"] for c in candidates] == [True, False]
+        assert all("_lyrics" not in c for c in candidates)
+
+        # The tap is answered from what the check already fetched.
+        picked = client.get("/lyrics/by-remote-id", params={"source": "NetEase", "id": "timed"})
+
+    assert picked.json() == sheets["timed"]
+    assert fetch.await_count == len(sheets)
+
+
+def test_search_keeps_a_candidate_it_could_not_check_and_does_not_remember(client):
+    # A fetch that failed says nothing about the song: the candidate stays
+    # in, unchecked, and the answer is asked again next time rather than
+    # kept for a month without whatever the check would have let through.
+    search = AsyncMock(return_value=[_netease_candidate("1"), _netease_candidate("2")])
+    fetch = AsyncMock(side_effect=lambda remote_id: _raise_for(remote_id, "1", "a line"))
+    params = {"name": "Song", "sources": "NetEase"}
+
+    with (
+        patch.dict(SEARCH_FETCHERS, {LyricSource.NETEASE: search}),
+        patch.dict(GET_FETCHERS, {LyricSource.NETEASE: fetch}),
+    ):
+        candidates = client.get("/lyrics/search", params=params).json()["NetEase"]
+        client.get("/lyrics/search", params=params)
+
+    assert [(c["id"], c["isSync"]) for c in candidates] == [("1", None), ("2", False)]
+    assert search.await_count == 2
+
+
+def _raise_for(remote_id: str, failing_id: str, sheet: str) -> str:
+    if remote_id == failing_id:
+        raise RuntimeError("provider down")
+    return sheet
 
 
 def test_a_prefilled_sheet_is_forgotten_with_the_track(client):
@@ -845,7 +941,9 @@ def test_search_does_not_remember_a_partial_answer(client):
     # Whatever the reachable providers returned is fine to show now, but
     # keeping it would hide the missing provider's results for as long as
     # the entry lives.
-    found = AsyncMock(return_value=[{"id": "1", "name": "Song", "source": "lrclib.net"}])
+    found = AsyncMock(
+        return_value=[{"id": "1", "name": "Song", "source": "lrclib.net", "_lyrics": "a line"}]
+    )
     failing = AsyncMock(side_effect=RuntimeError("provider down"))
     params = {"name": "Song", "sources": "lrclib.net,NetEase"}
 

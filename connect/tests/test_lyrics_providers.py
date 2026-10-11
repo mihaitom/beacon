@@ -7,6 +7,7 @@ end-to-end equivalent of these same providers."""
 from unittest.mock import AsyncMock, patch
 
 import httpx
+import pytest
 
 from lyrics import lrclib, netease, simpmusic
 
@@ -190,10 +191,14 @@ async def test_netease_get_lyrics_returns_none_when_lrc_key_missing_entirely():
     assert result is None
 
 
-async def test_netease_get_lyrics_returns_none_and_logs_on_request_failure(caplog):
-    with _patch_async_client(netease, httpx.ConnectError("refused")):
-        result = await netease.get_lyrics_by_song_id("123")
-    assert result is None
+async def test_netease_get_lyrics_raises_and_logs_on_request_failure(caplog):
+    # Not None: /search drops a candidate whose sheet came back empty, and a
+    # failed request must not be mistaken for that.
+    with (
+        _patch_async_client(netease, httpx.ConnectError("refused")),
+        pytest.raises(httpx.ConnectError),
+    ):
+        await netease.get_lyrics_by_song_id("123")
     assert "netease" in caplog.text
 
 

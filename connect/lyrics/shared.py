@@ -61,6 +61,9 @@ _CREDIT_BY = re.compile(
     r"^\s*(?:lyrics?|music|composed|written|arranged|produced|mixed|mastered|vocals?)\s+by\b",
     re.IGNORECASE,
 )
+# NetEase's stand-in for an instrumental ("纯音乐，请欣赏" - "pure music,
+# please enjoy"), on a timed line of its own as if it were sung.
+_PURE_MUSIC = re.compile(r"^纯音乐.*欣赏")
 
 
 # How different a candidate's artist may read before it counts as somebody
@@ -153,9 +156,10 @@ def has_sung_lines(text: str) -> bool:
 
     Some sources answer with a "lyric sheet" that is only the songwriter
     and composer — NetEase does this for tracks it has no words for
-    (verified 2026-08-27 on "Drowning in Beauty"). Showing those two lines
-    as if they were the song is worse than admitting there are no lyrics,
-    so /auto passes over such a result and tries the next candidate."""
+    (verified 2026-08-27 on "Drowning in Beauty"), and adds its "pure
+    music" line for instrumentals. Showing those as if they were the song
+    is worse than admitting there are no lyrics, so /auto passes over such
+    a result and /search leaves it out of the picker."""
     for raw in text.splitlines():
         line = raw.strip()
         while True:
@@ -165,7 +169,7 @@ def has_sung_lines(text: str) -> bool:
             line = stripped
         if not line or _METADATA_TAG.match(line):
             continue
-        if _CREDIT_PREFIX.match(line) or _CREDIT_BY.match(line):
+        if _CREDIT_PREFIX.match(line) or _CREDIT_BY.match(line) or _PURE_MUSIC.match(line):
             continue
         return True
     return False

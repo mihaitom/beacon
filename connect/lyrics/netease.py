@@ -23,6 +23,9 @@ TIMEOUT = 15.0
 
 
 async def get_lyrics_by_song_id(song_id: str) -> str | None:
+    """None means NetEase has no words for this song. A failed request
+    raises instead: /search decides from this answer whether a candidate is
+    shown at all, and an outage must not read as "no lyrics" there."""
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT, headers={"User-Agent": USER_AGENT}) as client:
             r = await client.get(
@@ -31,7 +34,7 @@ async def get_lyrics_by_song_id(song_id: str) -> str | None:
             r.raise_for_status()
     except httpx.HTTPError as e:
         logger.warning(f"[netease] lyrics request failed: {type(e).__name__}: {e}")
-        return None
+        raise
 
     data = r.json()
     # `.get("lrc", {})` only substitutes the default when the key is

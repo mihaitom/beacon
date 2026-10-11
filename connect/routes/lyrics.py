@@ -38,6 +38,7 @@ from lyrics import (
     order_search_results,
     simpmusic,
 )
+from lyrics.shared import parse_lyrics
 
 logger = logging.getLogger("connect.lyrics")
 router = APIRouter(prefix="/lyrics", dependencies=[Depends(require_token)])
@@ -272,9 +273,10 @@ def _seed_sheets(
 
     The picker exists to try candidates until one fits, so a tap is exactly
     the moment a second request would otherwise be made for a sheet that was
-    already in hand. Only lrclib's search response carries one (see
-    lyrics/lrclib.py); for the others this is a no-op. The sheets must not
-    travel on to the app, whose candidate list is deliberately metadata only.
+    already in hand: lrclib's search response carries one (see
+    lyrics/lrclib.py), the others' were fetched by _fetch_missing_sheets().
+    The sheets must not travel on to the app, whose candidate list is
+    deliberately metadata only.
     """
     if not found:
         return found
@@ -285,6 +287,41 @@ def _seed_sheets(
             _cache_put(("by-remote-id", source.value, item["id"]), sheet, ttl)
         cleaned.append({k: v for k, v in item.items() if k != "_lyrics"})
     return cleaned
+
+
+async def _fetch_missing_sheets(source: LyricSource, found: list[dict[str, Any]]) -> bool:
+    """Fetches the sheet for every candidate whose search result came
+    without one, so the picker can leave out the ones that have no words.
+    NetEase's search covers its whole catalogue, not only songs it has
+    lyrics for: most hits for an instrumental act come back empty, credits
+    only or with a "pure music" line (sampled 2026-10-11).
+
+    Returns whether every fetch got an answer. A candidate whose fetch
+    failed stays in, still unchecked - it may well have words."""
+
+    async def fetch(item: dict[str, Any]) -> bool:
+        try:
+            sheet = await GET_FETCHERS[source](item["id"])
+        except Exception as e:
+            logger.warning(f"[search] fetch {source} {item['id']}: {e}")
+            return False
+        item["_lyrics"] = sheet
+        # Settles NetEase's and SimpMusic's "unknown", now that it is known.
+        if sheet and item.get("isSync") is None:
+            item["isSync"] = parse_lyrics(sheet)[0]
+        return True
+
+    unchecked = [item for item in found if "_lyrics" not in item]
+    return all(await asyncio.gather(*(fetch(item) for item in unchecked)))
+
+
+def _may_have_words(item: dict[str, Any]) -> bool:
+    """False only for a candidate whose sheet is known and has no sung
+    line in it."""
+    if "_lyrics" not in item:
+        return True
+    sheet = item["_lyrics"]
+    return bool(sheet) and has_sung_lines(sheet)
 
 
 @router.get("/search")
@@ -318,6 +355,9 @@ async def _do_search(
             logger.warning(f"[search] {source}: {e}")
             found = None
             reachable = False
+        if found:
+            reachable = await _fetch_missing_sheets(source, found) and reachable
+            found = [item for item in found if _may_have_words(item)]
         results[source.value] = _seed_sheets(source, found, prefill_ttl) or []
 
     total = sum(len(v) for v in results.values())
@@ -443,8 +483,6 @@ async def auto_for_party(song: dict) -> dict | None:
     party mode's fallback (core/party.py) when the host's window has not
     named the song's lyrics. Reuses the same cache as /lyrics/auto, so the
     host's own window looking the song up costs nothing extra."""
-    from lyrics.shared import parse_lyrics
-
     duration = song.get("duration")
     params = {
         "name": song.get("title"),

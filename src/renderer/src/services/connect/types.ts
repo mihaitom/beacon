@@ -452,10 +452,10 @@ export interface PairingStartResponse {
   name: string
 }
 
-/** One /lyrics/search candidate — isSync is only ever known for lrclib.net,
- * whose search response carries the sheet. NetEase's and SimpMusic's search
- * APIs give no such signal, so those start null ("unknown"); the store fills
- * it in once that candidate's sheet has been fetched (see stores/lyrics.ts's
+/** One /lyrics/search candidate. Connect only lists candidates whose sheet
+ * has actual words, so isSync is known for each of them — except one whose
+ * sheet could not be fetched during the search, which comes as null
+ * ("unknown") and is settled once picked (see stores/lyrics.ts's
  * markCandidateSync). */
 export interface LyricSearchResult {
   artist: string

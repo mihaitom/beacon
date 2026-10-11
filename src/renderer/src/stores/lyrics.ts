@@ -538,9 +538,9 @@ export const useLyricsStore = defineStore('lyrics', {
       try {
         const raw = await getLyricsByRemoteId(source, id)
         const parsed = raw ? parseLyrics(raw) : null
-        // The search cannot tell whether this sheet is timed for every
-        // source (NetEase and SimpMusic give no signal, so those candidates
-        // start as "unknown"). The sheet is here now, so settle it.
+        // A candidate connect could not check during the search arrives as
+        // "unknown" (see connect/routes/lyrics.py's _fetch_missing_sheets).
+        // The sheet is here now, so settle it.
         if (parsed) this.markCandidateSync(song, source, id, parsed.synced)
         const positive: CachedPositive | null = parsed
           ? {
