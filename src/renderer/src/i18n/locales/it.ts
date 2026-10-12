@@ -350,6 +350,7 @@ export default {
         browser_unsupported: 'Formato browser',
         device_rejected_stream: 'Rifiutato',
         relay_format_limit: 'Convertita per il dispositivo',
+        transitions: 'Transizioni',
       },
       reasons: {
         device_limit: 'La sorgente supera la qualità supportata da questo dispositivo',
@@ -364,6 +365,8 @@ export default {
           "Il dispositivo ha rifiutato il flusso originale dell'emittente, quindi Beacon lo converte",
         relay_format_limit:
           'La stazione non invia un formato che si possa inoltrare così com’è, quindi Beacon la converte; in Qualità audio puoi scegliere AAC invece di MP3',
+        transitions:
+          "Le transizioni sono attive, quindi Beacon unisce i brani in un unico flusso invece di inviare ogni file così com'è",
       },
     },
   },
@@ -717,6 +720,16 @@ export default {
     castRadioDirectly: 'Riprodurre la radio direttamente dalla stazione',
     castRadioDirectlyHint:
       "Per impostazione predefinita Beacon instrada la radio tramite il proprio backend, sia per un dispositivo di trasmissione sia per questo lettore. Un'unica connessione alla stazione alimenta l'audio e il titolo in riproduzione, e una stazione che cade viene riconnessa da Beacon senza interrompere la riproduzione qui. Se attivato, il dispositivo e questo lettore si collegano direttamente alla stazione: la riproduzione continua anche se Beacon si riavvia, ma un'interruzione si nota solo quando sparisce l'audio, e alcuni dispositivi rifiutano il flusso della stazione.",
+    transitions: 'Transizioni',
+    transitionsOff: 'Disattivate',
+    transitionsGapless: 'Senza pause',
+    transitionsCrossfade: 'Dissolvenza incrociata',
+    crossfadeLength: 'Durata della dissolvenza',
+    crossfadeSeconds: '{value} s',
+    transitionsHint:
+      "Senza pause riproduce i brani uno dopo l'altro senza silenzio. La dissolvenza incrociata fa sfumare un brano nel successivo: dove il ritmo lo consente, Beacon allinea il tempo, fa entrare il basso del brano successivo a tempo e poi sfuma lentamente il precedente. I brani che si susseguono in un album vengono sempre riprodotti senza pause. In entrambi i casi la musica passa da Beacon come un unico flusso continuo, su questo dispositivo come sugli altoparlanti.",
+    transitionsWebkitHint:
+      'In questo browser i brani vengono ancora riprodotti uno alla volta; senza pause e dissolvenza valgono quando si trasmette a un altoparlante.',
     about: 'Informazioni su Beacon',
     whatsNew: 'Novità?',
     ffmpegFound: 'ffmpeg trovato',

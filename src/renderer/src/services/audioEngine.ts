@@ -925,6 +925,15 @@ export class AudioEngine {
     this.expectedDuration = duration
   }
 
+  /** The length of the offset stream that is playing, once it becomes
+   * known after the start - a mix (see services/playback/localMix.ts)
+   * learns where it ends only while it plays. Until then a mix is started
+   * with an infinite one, so a connection that closes early is taken up
+   * again rather than ending playback. */
+  setExpectedDuration(seconds: number | null): void {
+    if (this.offsetStream) this.expectedDuration = seconds
+  }
+
   /** Loads and starts `url` as a live stream — a radio station, the one
    * thing this app plays that has no length, no position and no end.
    *

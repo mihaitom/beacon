@@ -232,6 +232,7 @@ describe('StreamInfoSection', () => {
         'codec_not_castable',
         'codec_unknown',
         'relay_format_limit',
+        'transitions',
       ]) {
         setStreamInfo({ transcoding: true, transcode_reason: reason })
         const wrapper = mountSection()

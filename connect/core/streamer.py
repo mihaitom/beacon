@@ -707,6 +707,14 @@ REASON_RELAY_FORMAT_LIMIT = "relay_format_limit"
 # hands a station's bytes straight to the device by default and only ends
 # up here once that has demonstrably failed.
 REASON_DEVICE_REJECTED_STREAM = "device_rejected_stream"
+# Transitions are on: songs are mixed into one stream (core/mix_engine.py),
+# so nothing can be copied as it is, whatever the source.
+REASON_TRANSITIONS = "transitions"
+
+# What a mix goes out as where nothing asks for less: lossless where the
+# device takes an endless FLAC stream, otherwise the best lossy encode it
+# plays. Mixed audio is 16 bit, 44.1kHz, so these lose nothing audible.
+_MIX_LOSSY_FALLBACK = (("aac", 256), ("mp3", 320))
 
 
 def _fallback(reason: str, duration: float | None = None) -> OutputFormat:
@@ -1374,3 +1382,54 @@ async def stream_tracks(
             raise SourceUnavailableError(failed)
 
     logger.info("[ffmpeg] All tracks streamed")
+
+
+def resolve_mix_format(
+    source: OutputFormat | None,
+    device_codecs: frozenset[str] | None,
+    max_lossy_format: str | None,
+    max_lossy_bitrate_kbps: int | None,
+    continuous_flac: bool,
+) -> OutputFormat:
+    """The format a mix (core/mix_engine.py) goes out in - the counterpart
+    of resolve_output_format() for transitions, which have no copy tier.
+
+    The listener's quality ceiling wins as everywhere else. Without one, a
+    device that takes an endless FLAC stream gets FLAC and anything else
+    AAC 256 or MP3 320. `source` is the first song's own resolved format,
+    kept only for what the stream-info panel shows about the source."""
+    if max_lossy_format and max_lossy_bitrate_kbps:
+        fmt = _codec_for_ceiling(max_lossy_format, device_codecs)
+        args, content_type = lossy_encode_args(fmt, max_lossy_bitrate_kbps)
+        bitrate: int | None = max_lossy_bitrate_kbps
+        label = f"{fmt}-{bitrate}k (mix)"
+    elif continuous_flac and _plays_flac(device_codecs):
+        args, content_type = lossless_encode_args()
+        fmt, bitrate, label = "flac", None, "flac (mix)"
+    else:
+        fmt, bitrate = next(
+            ((f, b) for f, b in _MIX_LOSSY_FALLBACK if device_codecs is None or f in device_codecs),
+            _MIX_LOSSY_FALLBACK[-1],
+        )
+        args, content_type = lossy_encode_args(fmt, bitrate)
+        label = f"{fmt}-{bitrate}k (mix)"
+    if fmt == "mp3":
+        # An endless stream has no length for a Xing header to state, and a
+        # device that reads one may size its buffer by it.
+        args = [*args, "-write_xing", "0", "-id3v2_version", "0"]
+    base = source or OutputFormat()
+    return OutputFormat(
+        ffmpeg_args=args,
+        content_type=content_type,
+        label=label,
+        source_codec=base.source_codec,
+        source_sample_rate=base.source_sample_rate,
+        source_bit_depth=base.source_bit_depth,
+        source_bitrate_kbps=base.source_bitrate_kbps,
+        source_channels=base.source_channels,
+        target_sample_rate=44100,
+        target_bit_depth=16 if fmt == "flac" else None,
+        target_channels=2,
+        target_bitrate_kbps=bitrate,
+        transcode_reason=REASON_TRANSITIONS,
+    )

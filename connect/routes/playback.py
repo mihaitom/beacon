@@ -22,7 +22,7 @@ from core.session import (
     SessionState,
     build_status_dict,
     check_claims,
-    compute_position,
+    clock_position,
     displace_target,
     mark_delivery_failed,
     mark_interrupted,
@@ -51,6 +51,9 @@ from core.streamer import (
 from delivery import SonosDelivery
 from delivery.base import PlaybackFailure
 from delivery.errors import REASON_STATION_REFUSED, delivery_error_response, device_label
+
+from . import mix_cast
+from .mix_cast import SongHint, TransitionSettings, transitions_on
 
 logger = logging.getLogger("connect.playback")
 router = APIRouter(dependencies=[Depends(require_token)])
@@ -424,7 +427,10 @@ async def _resync_position_once(session: SessionState, candidate, generation: in
     # bogus/glitched reading (or has already rolled onto whatever comes
     # after, which our own session doesn't know about yet either way) —
     # not something to recalibrate against.
-    if st.current_track and device_pos > st.current_track.duration + POSITION_RESYNC_THRESHOLD:
+    # A mix spans many songs, so neither guard against the song's own end
+    # below applies to it: its device position is the whole stream's.
+    within_one_song = st.current_track is not None and st.mix is None
+    if within_one_song and device_pos > st.current_track.duration + POSITION_RESYNC_THRESHOLD:
         logger.debug(
             f"[position-resync] {candidate.target}: device={device_pos:.2f}s past track "
             f"duration={st.current_track.duration}s — ignoring"
@@ -446,7 +452,7 @@ async def _resync_position_once(session: SessionState, candidate, generation: in
     # displayed position visibly snapped back toward 0:00 instead (observed
     # live 2026-08-20, a full track stuck until manually restarted).
     if (
-        st.current_track
+        within_one_song
         and wall_elapsed >= st.current_track.duration - POSITION_RESYNC_THRESHOLD
         and device_pos < wall_elapsed - POSITION_RESYNC_THRESHOLD
     ):
@@ -522,7 +528,8 @@ async def _finish_orphaned_track(session: SessionState, generation: int) -> bool
     """
     st = session.state
     track = st.current_track
-    if track is None or not track.duration:
+    if track is None or not track.duration or st.mix is not None:
+        # A mix reports its own end (routes/mix_cast.py's follow()).
         return False
     # elapsed_since_stream_start(), the same measure _resync_position_once()
     # compares against — not elapsed(), whose position_offset is the very
@@ -712,6 +719,8 @@ def _current_reconnect_args(
         url = radio_dispatch_url(session.session_id, st.radio_info)
         return url, st.radio_info["title"], "", None, None, "", content_type
     title, artist, album_art_url, duration, album = _current_track_play_args(session)
+    if st.mix is not None:
+        duration = None  # a mix goes on with the queue
     return (
         stream_url(session.session_id, st.current_output_format.content_type),
         title,
@@ -785,6 +794,12 @@ class PlayRequest(BaseModel):
     # the behaviour every caller from before these fields had.
     max_lossy_format: Literal["mp3", "aac", "opus"] | None = None
     max_lossy_bitrate_kbps: int | None = None
+    # Gapless/crossfade (routes/mix_cast.py). None, or mode "off", plays one
+    # song at a time exactly as before transitions existed - which is also
+    # what every client that does not send this gets.
+    transitions: TransitionSettings | None = None
+    # ReplayGain and album order of the songs coming up, for the mix.
+    song_hints: dict[str, SongHint] = {}
 
 
 def playback_error_reporter(session: SessionState) -> Callable[[PlaybackFailure], Awaitable[None]]:
@@ -909,6 +924,11 @@ async def play_tracks(
             max_lossy_bitrate_kbps=req.max_lossy_bitrate_kbps,
             device_codecs=playable_codecs(target),
         )
+        mixing = transitions_on(req.transitions)
+        if req.song_hints:
+            session.state.song_hints = {k: v.model_dump() for k, v in req.song_hints.items()}
+        if mixing:
+            output_format = mix_cast.mix_output_format(session, target, output_format)
         # After the format, not before it: the URL ends in its extension.
         url = stream_url(session.session_id, output_format.content_type)
 
@@ -952,6 +972,7 @@ async def play_tracks(
         previous_repeat_mode = st.repeat_mode
         previous_autoplay_enabled = st.autoplay_enabled
         previous_autoplay_batch_size = st.autoplay_batch_size
+        previous_mix = st.mix
 
         st.current_track = track
         st.current_track_gain = req.gain
@@ -961,12 +982,24 @@ async def play_tracks(
             session.stop_radio_metadata_watch()
             await session.stop_radio_relay()
         st.radio_info = None
-        st.clock.start(start_position)
-        if req.paused:
-            # Frozen exactly where it was told to start. start() above has
-            # just zeroed position_offset, so resume_offset comes out at
-            # start_position — which is what /resume dispatches from.
-            st.clock.pause(start_position)
+        mix = None
+        if mixing:
+            st.transitions = req.transitions
+            item = replace(mix_cast.mix_item(session, track, queue_index, req.gain), gain=req.gain)
+            mix = mix_cast.new_mix(session, item, start_position)
+            st.mix = mix
+            # A mix's clock counts stream time - see routes/mix_cast.py.
+            st.clock.start(0.0)
+            if req.paused:
+                st.clock.pause(0.0)
+        else:
+            st.mix = None
+            st.clock.start(start_position)
+            if req.paused:
+                # Frozen exactly where it was told to start. start() above has
+                # just zeroed position_offset, so resume_offset comes out at
+                # start_position — which is what /resume dispatches from.
+                st.clock.pause(start_position)
         st.track_ended = False
         st.active_delivery = target
         # Captured right after the write above — see active_delivery_seq's
@@ -991,14 +1024,26 @@ async def play_tracks(
             # internal=True: fetched directly by the cast device, not the browser —
             # see MediaClient.get_cover_art_url's docstring.
             album_art_url = session.media.get_cover_art_url(track.cover_art_id, internal=True)
-            if not _is_duplicate_dispatch(st, f"play:{target}:{track_id}"):
+            if _is_duplicate_dispatch(st, f"play:{target}:{track_id}"):
+                if mix is not None and previous_mix is not None:
+                    # The device was not dispatched again, so it is still
+                    # reading the mix it already has; that one stays.
+                    st.mix = previous_mix
+                    st.clock = previous_clock
+                    mix = None
+            else:
+                if mix is not None:
+                    # Before dispatching: a fast device connects before
+                    # play() even returns (see current_track above).
+                    mix.start()
                 try:
                     await target.play(
                         url,
                         track.title,
                         track.artist,
                         album_art_url,
-                        float(track.duration),
+                        # A mix has no length; it goes on with the queue.
+                        None if mix is not None else float(track.duration),
                         track.album,
                         output_format.content_type,
                     )
@@ -1032,12 +1077,22 @@ async def play_tracks(
                     st.repeat_mode = previous_repeat_mode
                     st.autoplay_enabled = previous_autoplay_enabled
                     st.autoplay_batch_size = previous_autoplay_batch_size
+                    if mix is not None:
+                        mix.stop()
+                    st.mix = previous_mix
                     # Dispatch never actually reached the device — release the
                     # claim just granted above instead of leaving it locked to
                     # this session (device_in_use for everyone else) with
                     # nothing actually playing on it.
                     await _release_claims(target, session)
                     return delivery_error_response(e, target)
+
+        if previous_mix is not None and previous_mix is not st.mix:
+            previous_mix.stop()
+        if mix is not None:
+            if not req.paused and not mix.started:
+                mix.start()
+            asyncio.create_task(mix_cast.follow(session, mix))
 
         if not target:
             logger.info(f"[play] No target — stream available at {url}")
@@ -1480,8 +1535,10 @@ async def pause_playback(session: SessionState = Depends(require_authenticated_s
                 # clock has to go on agreeing with it.
                 logger.exception("[pause] Delivery error")
                 return delivery_error_response(e, st.active_delivery)
-        elapsed = compute_position(session)
+        elapsed = clock_position(session)
         st.clock.pause(elapsed)
+        if st.mix is not None:
+            st.mix.freeze()
         logger.info(f"[pause] ⏸ {elapsed:.1f}s into track")
         await session.event_bus.broadcast(build_status_dict(session))
         return {"paused": True}
@@ -1508,6 +1565,8 @@ async def resume_playback(session: SessionState = Depends(require_authenticated_
             # and lyrics repeatedly snapping back near the last pause point
             # every time a duplicate resume slipped through.
             return {"paused": False}
+        if st.mix is not None:
+            return await mix_cast.resume(session)
         st.clock.resume()
 
         logger.info(f"[resume] ▶ Seeking to {st.clock.resume_offset:.1f}s")
@@ -1613,6 +1672,8 @@ async def seek_playback(
 ):
     async with session.play_lock:
         st = session.state
+        if st.mix is not None:
+            return await mix_cast.seek(session, body.position)
         position = max(0.0, body.position)
         if st.current_track:
             position = min(position, st.current_track.duration)
@@ -1698,6 +1759,8 @@ class QueueRequest(BaseModel):
     # See PlayRequest.autoplay_enabled/autoplay_batch_size.
     autoplay_enabled: bool = False
     autoplay_batch_size: int = 10
+    # See PlayRequest.song_hints.
+    song_hints: dict[str, SongHint] = {}
     # See PlayRequest.seq — shares session.play_seq's ordering with /play and
     # /play-url, since all three write session.state.queue/queue_index and
     # a stale queue edit must not be able to stomp a more recent song switch
@@ -1745,6 +1808,9 @@ async def update_queue(
             st.repeat_mode = req.repeat_mode
             st.autoplay_enabled = req.autoplay_enabled
             st.autoplay_batch_size = req.autoplay_batch_size
+            if req.song_hints:
+                st.song_hints.update({k: v.model_dump() for k, v in req.song_hints.items()})
+            mix_cast.queue_changed(session)
             await session.event_bus.broadcast(build_status_dict(session))
         return {"status": "ok"}
 
@@ -1770,6 +1836,7 @@ async def stop_playback(session: SessionState = Depends(require_authenticated_se
         st.radio_info = None
         session.stop_radio_metadata_watch()
         await session.stop_radio_relay()
+        session.stop_mix()
         st.active_delivery = None
         st.last_dispatch_key = None
         st.queue = []

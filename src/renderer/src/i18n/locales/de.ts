@@ -347,6 +347,7 @@ export default {
         browser_unsupported: 'Browser-Format',
         device_rejected_stream: 'Gerät abgelehnt',
         relay_format_limit: 'Für das Gerät umgewandelt',
+        transitions: 'Übergänge',
       },
       reasons: {
         device_limit: 'Quelle liegt über der Qualität, die dieses Gerät unterstützt',
@@ -361,6 +362,8 @@ export default {
           'Das Gerät hat den Stream des Senders abgelehnt, Beacon wandelt ihn deshalb um',
         relay_format_limit:
           'Der Sender liefert kein Format, das so weitergereicht wird, deshalb wandelt Beacon ihn um - unter Audioqualität lässt sich statt MP3 auch AAC wählen',
+        transitions:
+          'Übergänge sind an, deshalb mischt Beacon die Songs zu einem durchgehenden Stream, statt jede Datei unverändert zu senden',
       },
     },
   },
@@ -717,6 +720,16 @@ export default {
     castRadioDirectly: 'Radio direkt vom Sender abspielen',
     castRadioDirectlyHint:
       'Standardmäßig leitet Beacon Radio über sein eigenes Backend - für ein Cast-Gerät wie für diesen Player. Ein einziger Abruf der Station versorgt Ton und Titelanzeige, und einen abgerissenen Sender verbindet Beacon neu, ohne die Wiedergabe hier zu unterbrechen. Aktiviert, verbinden sich Gerät und Player stattdessen direkt mit der Station: die Wiedergabe läuft dann weiter, auch wenn Beacon neu startet, ein Abriss fällt aber erst auf, wenn der Ton weg ist, und manche Geräte lehnen den Stream der Station ab.',
+    transitions: 'Übergänge',
+    transitionsOff: 'Aus',
+    transitionsGapless: 'Lückenlos',
+    transitionsCrossfade: 'Überblenden',
+    crossfadeLength: 'Länge der Überblendung',
+    crossfadeSeconds: '{value} s',
+    transitionsHint:
+      'Lückenlos spielt die Songs ohne Pause hintereinander. Überblenden lässt einen Song in den nächsten übergehen: Wo der Beat es zulässt, gleicht Beacon das Tempo an, holt den Bass des nächsten Songs auf dem Beat rein und blendet den vorigen dann langsam aus. Songs, die auf einem Album aufeinander folgen, laufen immer lückenlos. In beiden Fällen läuft die Musik als ein durchgehender Stream über Beacon, auf diesem Gerät wie auf Lautsprechern.',
+    transitionsWebkitHint:
+      'In diesem Browser laufen Songs vorerst einzeln; Lückenlos und Überblenden gelten beim Streamen auf einen Lautsprecher.',
     about: 'Über Beacon',
     whatsNew: 'Was ist neu?',
     ffmpegFound: 'ffmpeg gefunden',

@@ -1,8 +1,16 @@
 import { fetchConnect } from './http'
 import type { ConnectDeviceRef, PlayResponse, QueueResponse } from './types'
 import type { TranscodeFormat } from '@/services/streamQuality'
+import type { SongHint } from '@/services/playback/castPayload'
 
-interface PlayOptions {
+/** Transitions and song hints for a mix - see buildCastMixPayload().
+ * Absent means one song at a time, as before transitions existed. */
+interface MixOptions {
+  transitions?: { mode: string; crossfade_seconds: number }
+  song_hints?: Record<string, SongHint>
+}
+
+interface PlayOptions extends MixOptions {
   targets?: ConnectDeviceRef[]
   gain?: number
   startPosition?: number
@@ -132,8 +140,15 @@ export async function play(songId: string, options: PlayOptions = {}): Promise<P
             max_lossy_bitrate_kbps: options.max_lossy_bitrate_kbps,
           }
         : {}),
+      ...mixBody(options),
     },
   })
+}
+
+function mixBody(options: MixOptions): MixOptions {
+  return options.transitions
+    ? { transitions: options.transitions, song_hints: options.song_hints ?? {} }
+    : {}
 }
 
 export async function playUrl(
@@ -212,7 +227,7 @@ export async function stop(): Promise<void> {
 export async function updateQueue(
   songIds: string[],
   queueIndex: number,
-  options: {
+  options: MixOptions & {
     originalQueue?: string[]
     shuffle?: boolean
     repeatMode?: 'off' | 'all' | 'one'
@@ -231,6 +246,7 @@ export async function updateQueue(
       autoplay_enabled: options.autoplayEnabled ?? false,
       autoplay_batch_size: options.autoplayBatchSize ?? 10,
       seq: nextSeq(),
+      ...(options.song_hints ? { song_hints: options.song_hints } : {}),
     },
   })
 }

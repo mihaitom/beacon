@@ -19,7 +19,7 @@ from fastapi import Header, HTTPException, Query
 from delivery import BaseDelivery, DeliveryManager
 from media import MediaClient, SubsonicClient
 
-from . import icy_metadata, radio_ads, radio_history, title_match
+from . import icy_metadata, local_mixes, radio_ads, radio_history, title_match
 from .claims import claims
 from .device_volume import pushes_volume
 from .loop_health import peak_lag
@@ -580,6 +580,12 @@ class SessionState:
         self.last_radio_redispatch = 0.0
         return relay
 
+    def stop_mix(self) -> None:
+        """End the running mix, if any - see AppState.mix."""
+        mix, self.state.mix = self.state.mix, None
+        if mix is not None:
+            mix.stop()
+
     async def stop_radio_relay(self) -> None:
         # radio_position_tracker (core/radio_position.py) shares this exact
         # lifetime boundary — both represent "radio is currently casting"
@@ -680,9 +686,24 @@ def compute_position(session: SessionState) -> float:
     if not st.is_streaming or not st.clock.play_start_time:
         return 0.0
     elapsed = st.clock.elapsed()
+    if st.mix is not None:
+        # A mix's clock counts stream time; the timeline says where in which
+        # song that is (core/mix_timeline.py).
+        heard = st.mix.timeline.at_time(max(elapsed, 0.0))
+        elapsed = heard.position if heard is not None and heard.song_id else 0.0
     if st.current_track:
         return min(elapsed, float(st.current_track.duration))
     return elapsed
+
+
+def clock_position(session: SessionState) -> float:
+    """Where to freeze the clock when playback stops: the song position,
+    or for a mix its stream time - what its clock counts, and what a
+    resume maps back to a song (routes/mix_cast.py)."""
+    st = session.state
+    if st.mix is not None:
+        return max(st.clock.elapsed(), 0.0) if st.is_streaming else st.clock.resume_offset
+    return compute_position(session)
 
 
 def radio_is_buffering(session: SessionState) -> bool:
@@ -968,9 +989,11 @@ async def mark_interrupted(session: SessionState) -> None:
     to the user whichever target it came from.
     """
     st = session.state
-    position = compute_position(session)
+    position = clock_position(session)
     st.is_streaming = False
     st.clock.pause(position)
+    if st.mix is not None:
+        st.mix.freeze()
     await session.event_bus.broadcast(build_status_dict(session, interrupted=True))
 
 
@@ -983,9 +1006,11 @@ async def mark_delivery_failed(session: SessionState, delivery_error: dict) -> N
     as mark_interrupted() does, for the same reasons, but offers no resume:
     nothing had started that could be picked up again."""
     st = session.state
-    position = compute_position(session)
+    position = clock_position(session)
     st.is_streaming = False
     st.clock.pause(position)
+    if st.mix is not None:
+        st.mix.freeze()
     await session.event_bus.broadcast(build_status_dict(session, delivery_error=delivery_error))
 
 
@@ -1271,6 +1296,8 @@ async def reap_once() -> list[str]:
         await session.visualizer.shutdown()
         session.stop_radio_metadata_watch()
         await session.stop_radio_relay()
+        session.stop_mix()
+        local_mixes.stop_session(session.session_id)
         await claims.release_all_for_session(session.session_id)
         await registry.remove(session.session_id)
         reaped.append(session.session_id)

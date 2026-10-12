@@ -94,6 +94,23 @@ being converted — before this, Original converted an AAC station to MP3.
 Picking MP3 by hand still forces MP3, which is the escape hatch for a device
 whose declared codecs turn out to be optimistic.
 
+## D. With transitions on (gapless or crossfade)
+
+Songs are mixed into one stream (`core/mix_engine.py`), so nothing is ever
+copied: every row is a conversion, told as `transitions`.
+
+| Path        | Setting  | Result                                                                                  |
+| ----------- | -------- | --------------------------------------------------------------------------------------- |
+| cast        | a limit  | the limit's format and bitrate, narrowed to what the device plays                       |
+| cast        | Original | FLAC where the device class takes an endless FLAC stream, else AAC 256, else MP3 320    |
+| this device | Original | FLAC (the lossless re-wrap target, or its lossy stand-in where the browser has no FLAC) |
+| this device | a format | that format at that bitrate                                                             |
+
+Decided in `resolve_mix_format()` (`core/streamer.py`) for casts and
+`mixQuality()` (`services/streamQuality.ts`) locally. No device declares
+`CONTINUOUS_FLAC_OK` until it has been measured (see
+`docs/investigations/continuous-stream-on-devices.md`).
+
 ## What the listener is shown
 
 The stream-info panel names the reason from the same key the decision

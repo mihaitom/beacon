@@ -690,9 +690,20 @@ class VisualizerFeed:
         # this was decided. Whatever startup delay remains (spawning ffmpeg,
         # its first fetch) is absorbed by _release_frames() dropping the
         # frames it makes it late for — see _MAX_LATENESS_SECONDS.
-        position = st.clock.elapsed()
+        if st.mix is not None:
+            # A mix's clock counts stream time, not this song's position.
+            from .session import compute_position
+
+            def position_fn() -> float:
+                return compute_position(self._session)
+        else:
+
+            def position_fn() -> float:
+                return st.clock.elapsed()
+
+        position = position_fn()
         analyzer = AudioAnalyzer(
-            elapsed_fn=lambda: st.clock.elapsed(),
+            elapsed_fn=position_fn,
             source_url=source_url,
             start_offset=position,
             gain=st.current_track_gain,
@@ -706,7 +717,7 @@ class VisualizerFeed:
             # when the two clocks feeding it are identical by construction.
             # Reported live 2026-09-05: the listener wanting the overlay
             # available for track casts too, not just Sonos radio.
-            debug_cast_elapsed_fn=lambda: st.clock.elapsed(),
+            debug_cast_elapsed_fn=position_fn,
         )
         await analyzer.start()
         if not analyzer.started:

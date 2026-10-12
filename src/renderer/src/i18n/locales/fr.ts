@@ -350,6 +350,7 @@ export default {
         browser_unsupported: 'Format navigateur',
         device_rejected_stream: 'Refusé',
         relay_format_limit: 'Convertie pour l’appareil',
+        transitions: 'Transitions',
       },
       reasons: {
         device_limit: 'La source dépasse la qualité prise en charge par cet appareil',
@@ -364,6 +365,8 @@ export default {
           "L'appareil a refusé le flux d'origine de la station, Beacon le convertit donc",
         relay_format_limit:
           'La station n’envoie pas un format transmissible tel quel ; Beacon la convertit donc - dans Qualité audio, vous pouvez demander de l’AAC plutôt que du MP3',
+        transitions:
+          "Les transitions sont activées : Beacon mélange les morceaux en un seul flux au lieu d'envoyer chaque fichier tel quel",
       },
     },
   },
@@ -720,6 +723,16 @@ export default {
     castRadioDirectly: 'Lire la radio directement depuis la station',
     castRadioDirectlyHint:
       "Par défaut, Beacon route la radio via son propre backend, aussi bien pour un appareil de diffusion que pour ce lecteur. Une seule connexion à la station alimente le son et le titre en cours, et une station qui décroche est reconnectée par Beacon sans interrompre la lecture ici. Activé, l'appareil et ce lecteur se connectent directement à la station : la lecture continue même si Beacon redémarre, mais une coupure ne se remarque qu'une fois le son parti, et certains appareils refusent le flux de la station.",
+    transitions: 'Transitions',
+    transitionsOff: 'Désactivées',
+    transitionsGapless: 'Sans blanc',
+    transitionsCrossfade: 'Fondu enchaîné',
+    crossfadeLength: 'Durée du fondu',
+    crossfadeSeconds: '{value} s',
+    transitionsHint:
+      "Sans blanc enchaîne les morceaux sans pause. Le fondu enchaîné fait passer un morceau dans le suivant : quand le rythme le permet, Beacon accorde le tempo, fait entrer la basse du morceau suivant sur le temps puis estompe lentement le précédent. Les morceaux qui se suivent sur un album s'enchaînent toujours sans blanc. Dans les deux cas, la musique passe par Beacon sous forme d'un flux continu, sur cet appareil comme sur les enceintes.",
+    transitionsWebkitHint:
+      "Dans ce navigateur, les morceaux sont encore lus un par un ; sans blanc et fondu enchaîné s'appliquent lors de la diffusion vers une enceinte.",
     about: 'À propos de Beacon',
     whatsNew: 'Quoi de neuf ?',
     ffmpegFound: 'ffmpeg trouvé',

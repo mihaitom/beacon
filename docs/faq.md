@@ -9,6 +9,16 @@ maps out what actually decides the output format on each path, and
 [investigations/](investigations/README.md) keeps the cases that took real
 digging, including the theories that were ruled out.
 
+## Transitions
+
+### Why does my speaker's own app show the wrong song with gapless or crossfade on?
+
+With transitions on, Beacon sends a speaker one continuous stream for the whole queue and changes songs inside it, so there is no gap and the songs can blend. The speaker is only told about the stream once, when it starts, so its own app (the Sonos app, Google Home, an AirPlay display) keeps showing the song the stream started with. Beacon itself always shows the right one. Sending the stream as a radio station would let the title change, but a speaker reports no playing position for a station, and Beacon needs that to keep lyrics and the seek bar in time.
+
+### Why is everything converted when transitions are on?
+
+Blending songs, and even joining them without a gap, means decoding them and putting the result into one new stream - there is no file left to send as it is. Without a quality limit Beacon sends that stream as AAC at 256 kbps or MP3 at 320 kbps, which is more than any mixed 16-bit stream needs; with one, at the limit you set. Lossless FLAC follows for each kind of speaker once it is confirmed to play a FLAC stream that never ends.
+
 ## Formats and converting
 
 ### Do I need ffmpeg installed?

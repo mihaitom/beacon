@@ -7,6 +7,8 @@
  * Used by the getters of the same name in stores/playback.ts. */
 
 import { AUTOPLAY_BATCH_SIZE, useAutoplayStore } from '@/stores/autoplay'
+import { useTransitionsStore } from '@/stores/transitions'
+import { calculateReplayGain, type ReplayGainMode } from '@/services/replayGain'
 import type { StreamQuality, TranscodeFormat } from '@/services/streamQuality'
 import type { Song } from '@/types/library'
 import type { RepeatMode } from './types'
@@ -57,7 +59,10 @@ export function buildCastQueuePayload(state: {
   autoplayBatchSize: number
 } {
   const upToCurrent = state.queue.slice(0, state.currentIndex + 1)
-  const songs = state.repeatMode === 'one' ? upToCurrent : state.queue
+  // A mix (transitions on) loops the song by itself, gaplessly, and so is
+  // given the whole queue - see connect/routes/mix_cast.py's next_item().
+  const truncate = state.repeatMode === 'one' && !useTransitionsStore().enabled
+  const songs = truncate ? upToCurrent : state.queue
   // Told to connect alongside shuffle/repeatMode (not read back from
   // status the way those are — see adoptCastQueue()) purely so
   // routes/stream.py's own fallback top-up (maybeAutoplay()'s backend-
@@ -74,4 +79,45 @@ export function buildCastQueuePayload(state: {
     autoplayEnabled: autoplay.enabled,
     autoplayBatchSize: AUTOPLAY_BATCH_SIZE,
   }
+}
+
+/** How many songs past the current one connect is told about - enough to
+ * cover every song a mix opens before the next /queue arrives. */
+const SONG_HINTS_AHEAD = 10
+
+export interface SongHint {
+  gain: number
+  album_id: string
+  disc: number | null
+  track: number | null
+  bpm: number | null
+}
+
+/** Transitions and what a mix needs to know about the songs coming up
+ * (their ReplayGain, their place on their album), or nothing at all with
+ * transitions off - connect then plays one song at a time exactly as it
+ * did before they existed. Named in connect's snake_case: the fields go
+ * into /play's and /queue's bodies verbatim. */
+export function buildCastMixPayload(state: {
+  queue: Song[]
+  currentIndex: number
+  replayGainMode: ReplayGainMode
+}): {
+  transitions?: { mode: string; crossfade_seconds: number }
+  song_hints?: Record<string, SongHint>
+} {
+  const transitions = useTransitionsStore()
+  if (!transitions.enabled) return {}
+  const start = Math.max(state.currentIndex, 0)
+  const songHints: Record<string, SongHint> = {}
+  for (const song of state.queue.slice(start, start + SONG_HINTS_AHEAD + 1)) {
+    songHints[song.id] = {
+      gain: calculateReplayGain(song, state.replayGainMode),
+      album_id: song.albumId,
+      disc: song.discNumber,
+      track: song.trackNumber,
+      bpm: song.bpm ?? null,
+    }
+  }
+  return { transitions: transitions.payload, song_hints: songHints }
 }

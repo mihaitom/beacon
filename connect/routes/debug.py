@@ -52,6 +52,7 @@ import time
 import wave
 from collections.abc import AsyncGenerator
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import StreamingResponse
@@ -59,8 +60,13 @@ from fastapi.responses import StreamingResponse
 from core.ffmpeg import FFMPEG_BIN
 from core.icy_metadata import DEVICE_METAINT, IcyMuxer
 from core.session import SessionState, build_status_dict, require_authenticated_session
-from core.state import TEST_TONE_TRACK_ID, stream_url, test_tone_url
-from core.streamer import FALLBACK_FORMAT
+from core.state import PORT, TEST_TONE_TRACK_ID, get_local_ip, stream_url, test_tone_url
+from core.streamer import (
+    FALLBACK_FORMAT,
+    LOOKAHEAD_SECONDS,
+    lossless_encode_args,
+    lossy_encode_args,
+)
 from media.base import Track
 
 from .playback import _apply_position_offset
@@ -433,3 +439,167 @@ async def list_test_audio() -> dict:
         "env_var": _TEST_AUDIO_ENV,
         "files": _test_audio_files(),
     }
+
+
+# ── Endless track stream (gapless/transitions spike) ─────────────────────
+#
+# Transitions mix every song into one stream that never ends, and that
+# stream is dispatched to a speaker as a *track* (plain http://), not as a
+# station: a track keeps the device's own position reports, which the
+# playback clock is calibrated against. Whether each device class plays
+# such a stream for an hour, keeps counting its position past any length it
+# was told, and survives pause/resume is what these endpoints measure
+# (docs/investigations/continuous-stream-on-devices.md).
+
+_ENDLESS_FORMATS = ("mp3", "aac", "flac")
+_ENDLESS_SAMPLE_SECONDS = 15.0
+# A length announced to the device for duration=long - far beyond any test.
+_ENDLESS_LONG_DURATION = 36000.0
+
+
+def _endless_cmd(source: str, fmt: str) -> list[str]:
+    """`source` on an endless loop, paced the way a cast track is (a 15s
+    head start, then real time - see core/streamer.py's _READRATE_ARGS),
+    so the device buffers exactly as much as it would for a mix."""
+    if fmt == "flac":
+        args, _ = lossless_encode_args()
+    else:
+        args, _ = lossy_encode_args(fmt, 256 if fmt == "aac" else 320)
+    return [
+        FFMPEG_BIN,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-readrate",
+        "1",
+        "-readrate_initial_burst",
+        f"{LOOKAHEAD_SECONDS:.0f}",
+        "-stream_loop",
+        "-1",
+        "-i",
+        source,
+        "-vn",
+        "-ac",
+        "2",
+        "-ar",
+        "44100",
+        *args,
+        "pipe:1",
+    ]
+
+
+def _endless_content_type(fmt: str) -> str:
+    if fmt == "flac":
+        return lossless_encode_args()[1]
+    return lossy_encode_args(fmt, 256)[1]
+
+
+@router.get("/test-endless.{fmt}")
+async def test_endless(fmt: str, file: str | None = None) -> Response:
+    """The endless stream itself, fetched by the device. No auth, like
+    /test-radio: a speaker sends no credentials."""
+    if fmt not in _ENDLESS_FORMATS:
+        return Response(status_code=404)
+    source = test_tone_url()
+    if file is not None:
+        resolved = _resolve_test_audio(file)
+        if resolved is None:
+            return Response(status_code=404)
+        source = str(resolved)
+
+    async def body() -> AsyncGenerator[bytes]:
+        proc = await asyncio.create_subprocess_exec(
+            *_endless_cmd(source, fmt),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        logger.info(f"[endless] {fmt} stream opened")
+        sent = 0
+        try:
+            while True:
+                chunk = await proc.stdout.read(8192)
+                if not chunk:
+                    return
+                sent += len(chunk)
+                yield chunk
+        finally:
+            if proc.returncode is None:
+                proc.kill()
+                await proc.wait()
+            logger.info(f"[endless] {fmt} stream closed after {sent} bytes")
+
+    headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    return StreamingResponse(body(), media_type=_endless_content_type(fmt), headers=headers)
+
+
+def _endless_targets(target) -> list:
+    return list(getattr(target, "deliveries", None) or [target])
+
+
+async def _sample_endless(session: SessionState, generation: int, started: float) -> None:
+    """Logs each device's position against the wall clock until something
+    else is played, so an hour-long run leaves its record in the log."""
+    st = session.state
+    while st.clock.play_generation == generation:
+        await asyncio.sleep(_ENDLESS_SAMPLE_SECONDS)
+        if st.clock.play_generation != generation or st.active_delivery is None:
+            return
+        wall = time.monotonic() - started
+        for target in _endless_targets(st.active_delivery):
+            try:
+                position = await target.get_position()
+            except Exception as e:
+                position = None
+                logger.info(f"[endless] {target.target}: position failed: {e}")
+            shown = "none" if position is None else f"{position:.2f}s"
+            drift = "" if position is None else f" drift={position - wall:+.2f}s"
+            logger.info(f"[endless] {target.target}: wall={wall:.2f}s device={shown}{drift}")
+
+
+@router.post("/play-endless")
+async def play_endless(
+    fmt: str = "mp3",
+    duration: str = "none",
+    file: str | None = None,
+    session: SessionState = Depends(require_authenticated_session),
+):
+    """Dispatches /test-endless.<fmt> to the session's already-active
+    targets as a track. `duration` is what the device is told: `none` (as
+    for a station) or `long` (a fake ten hours) - the two are what a mix
+    could announce, and AirPlay takes a different path for each.
+
+    Start something normally first (join a device, hit play), then call
+    this; positions are logged every 15s as "[endless]" until anything else
+    is played."""
+    if fmt not in _ENDLESS_FORMATS or duration not in ("none", "long"):
+        return {"error": f"fmt in {_ENDLESS_FORMATS}, duration in ('none', 'long')"}
+    st = session.state
+    target = st.active_delivery
+    if not target:
+        return {"error": "No active delivery — connect a device and start playing something first"}
+    announced = None if duration == "none" else _ENDLESS_LONG_DURATION
+    # A track of its own, long enough that no track-end bookkeeping fires
+    # and with a new clock generation, so the previous track's tasks retire.
+    st.current_track = Track(
+        id=TEST_TONE_TRACK_ID, title="Endless test", artist="Debug", duration=_ENDLESS_LONG_DURATION
+    )
+    st.is_streaming = True
+    st.radio_info = None
+    st.clock.start(0.0)
+    st.track_ended = False
+    generation = st.clock.play_generation
+
+    query = f"?file={quote(file)}" if file else ""
+    url = f"http://{get_local_ip()}:{PORT}/debug/test-endless.{fmt}{query}"
+    try:
+        await target.play(
+            url, "Endless test", "Debug", None, announced, "", _endless_content_type(fmt)
+        )
+    except Exception as e:
+        logger.exception("[endless] dispatch failed")
+        return {"error": str(e)}
+    started = time.monotonic()
+    asyncio.create_task(_sample_endless(session, generation, started))
+    logger.info(f"[endless] ▶ {fmt}, duration={duration}, to {target!r}")
+    await session.event_bus.broadcast(build_status_dict(session))
+    return {"status": "playing", "url": url, "fmt": fmt, "duration": duration}

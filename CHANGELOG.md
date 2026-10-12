@@ -11,6 +11,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Smart playlists can be created and their rules edited in Beacon on Navidrome, on a page of their own with a live preview from your library whose songs play with a click, and ideas to start from (desktop layout only)
 - Smart playlists from Navidrome and Plex are labelled as such. Their rules pick the songs, so Beacon no longer offers to reorder, remove or add songs there
 - lrc.red as a new source for lyrics. Songs whose tags carry an ISRC are found there as exactly that recording rather than by title. If you have picked your lyrics sources yourself in Settings, it needs switching on there
+- Gapless playback: songs follow each other without a pause, in the app and on speakers. Turn it on under Settings, Playback, Transitions (not yet on iPhone and Safari)
+- Crossfade, the way a DJ mixes: where the beat allows it, Beacon matches the next song's tempo, brings its bass in on the beat and then slowly fades out the previous song. Without a clear beat it is an ordinary crossfade, and songs that follow each other on an album still play gaplessly
 
 ### Changed
 

@@ -46,6 +46,7 @@ from core.streamer import (
 )
 from delivery.errors import source_error_response
 
+from . import mix_cast
 from .playback import (
     POSITION_RESYNC_INTERVAL,
     _apply_position_offset,
@@ -334,6 +335,12 @@ async def advance_now(session: SessionState) -> bool:
             await _maybe_autoplay_topup(session)
         if next_index >= len(st.queue):
             return False
+        if st.mix is not None:
+            if not await mix_cast.skip_to(session, next_index):
+                return False
+            session.play_seq = max(session.play_seq, int(time.time() * 1000))
+            logger.info(f"[stream] Party skip to queue entry {next_index} (mix)")
+            return True
         track = await _resolve_track(session, st.queue[next_index], "Party skip")
         if track is None:
             return False
@@ -567,6 +574,13 @@ async def _resume_after_interruption(session: SessionState) -> bool:
     st = session.state
     if not st.active_delivery or st.current_track is None:
         return False
+
+    if st.mix is not None:
+        at = mix_cast.heard_item(session, st.clock.resume_offset)
+        if at is None:
+            return False
+        logger.info(f"[stream] Resuming the mix after an interruption from {at[1]:.1f}s")
+        return await mix_cast.restart(session, *at) is None
 
     if st.clock.is_paused:
         st.clock.resume()
@@ -1162,6 +1176,7 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
     # ever actually starts streaming) and by stream_with_completion()'s own
     # finally (once it does).
     session.state.active_stream_connections += 1
+    mix = session.state.mix
     try:
         track = session.state.current_track
         output_format = session.state.current_output_format
@@ -1171,8 +1186,11 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
         # Subsonic/Jellyfin, but Plex's needs a real network lookup first (see
         # media/plex.py's docstring) — without this, that lookup would block
         # the whole event loop, not just this one request/session.
+        # A mix fetches each song itself (core/mix_engine.py).
         track_url = (
-            test_tone_url()
+            None
+            if mix is not None
+            else test_tone_url()
             if track.id == TEST_TONE_TRACK_ID
             else await asyncio.to_thread(session.media.get_stream_url, track.id)
         )
@@ -1304,13 +1322,18 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
             last_handoff = time.monotonic()
             bytes_delivered = 0
             try:
-                async for chunk in stream_tracks(
-                    [track_url],
-                    on_track_start=on_track_start,
-                    start_offset=offset,
-                    gain=session.state.current_track_gain,
-                    output_format=output_format,
-                ):
+                audio = (
+                    mix_cast.mix_audio(mix, offset, output_format)
+                    if mix is not None
+                    else stream_tracks(
+                        [track_url],
+                        on_track_start=on_track_start,
+                        start_offset=offset,
+                        gain=session.state.current_track_gain,
+                        output_format=output_format,
+                    )
+                )
+                async for chunk in audio:
                     if first_byte_at is None:
                         first_byte_at = time.monotonic()
                     if not offset_consumed:
@@ -1411,10 +1434,12 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
             # after receiving all data doesn't cancel the track-end signal.
             st = session.state
             if (
-                st.is_streaming
+                mix is None
+                and st.is_streaming
                 and not st.clock.is_paused
                 and st.clock.play_generation == my_generation
             ):
+                # (A mix's end is followed by routes/mix_cast.py's follow().)
                 wait = 0.0
                 if st.current_track and st.clock.play_start_time:
                     wait = st.clock.seconds_until(_playback_duration(st))

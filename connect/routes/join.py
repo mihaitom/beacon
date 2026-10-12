@@ -35,6 +35,7 @@ from delivery import (
     SonosDelivery,
 )
 from delivery.errors import delivery_error_response
+from routes import mix_cast
 from routes.playback import _current_reconnect_args, _release_claims, playback_error_reporter
 
 logger = logging.getLogger("connect.devices")
@@ -118,6 +119,14 @@ async def _refit_output_format(session: SessionState, new_d: BaseDelivery) -> bo
     if _encode_capabilities(prospective) == _encode_capabilities(st.active_delivery):
         return False
 
+    if st.mix is not None:
+        # A mix is encoded for every device anyway; what changes is only
+        # which encode the whole set can take (routes/mix_cast.py).
+        fmt = mix_cast.mix_output_format(session, prospective, st.current_output_format)
+        if fmt.ffmpeg_args == st.current_output_format.ffmpeg_args:
+            return False
+        st.current_output_format = fmt
+        return True
     max_rate, max_depth, max_channels = audio_capability_limits(prospective)
     track_url = await asyncio.to_thread(session.media.get_stream_url, st.current_track.id)
     fmt = await resolve_output_format(

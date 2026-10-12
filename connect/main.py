@@ -25,7 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # or exported manually), never via a plain .env file alone.
 load_dotenv()
 
-from core import mdns
+from core import local_mixes, mdns
 from core.auth import TOKEN as _CONNECT_TOKEN
 from core.auth import TOKEN_WAS_GENERATED as _CONNECT_TOKEN_GENERATED
 from core.device_volume import capture_main_loop
@@ -54,6 +54,7 @@ from routes.jellyfin_auth import router as jellyfin_auth_router
 from routes.join import router as join_router
 from routes.lastfm import router as lastfm_router
 from routes.listenbrainz import router as listenbrainz_router
+from routes.local_mix import router as local_mix_router
 from routes.local_stream import reset_hls_encodes
 from routes.local_stream import router as local_stream_router
 from routes.log_level import router as log_level_router
@@ -332,6 +333,7 @@ async def lifespan(_: FastAPI):
         await jellyfin_bridge.close()
         await plex_bridge.close()
         reset_hls_encodes()
+        local_mixes.stop_all()
         # Stop actively-casting devices before the process actually exits —
         # Sonos/Chromecast/DLNA/AirPlay have no way to know this backend
         # died, so they'd otherwise just keep playing whatever they were
@@ -452,6 +454,7 @@ app.include_router(stream_router)
 # segment count, so the two never compete, but keeping them adjacent
 # makes that obvious rather than something to re-derive.
 app.include_router(local_stream_router)
+app.include_router(local_mix_router)
 app.include_router(playback_router)
 app.include_router(devices_router)
 app.include_router(jellyfin_auth_router)

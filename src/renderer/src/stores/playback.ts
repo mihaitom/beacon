@@ -5,6 +5,7 @@ import {
   bitrateFor,
   load as loadStreamQuality,
   save as saveStreamQuality,
+  mixQuality,
   plan,
   prefersHls,
   type LocalStreamPlan,
@@ -16,6 +17,7 @@ import { useConnectStore } from './connect'
 import { useAuthStore } from './auth'
 import { AUTOPLAY_BATCH_SIZE, autoplayCandidateCount, useAutoplayStore } from './autoplay'
 import { useRadioSettingsStore } from './radioSettings'
+import { useTransitionsStore } from './transitions'
 import { useDrawersStore } from './drawers'
 import { useRadioMetadataStore } from './radioMetadata'
 import * as connectPlayback from '@/services/connect/playback'
@@ -33,6 +35,7 @@ import { createEdgeDetector } from '@/services/playback/edgeDetector'
 import { diffCastQueue } from '@/services/playback/queueReconcile'
 import type { RepeatMode } from '@/services/playback/types'
 import { resolveRadioStation } from '@/services/playback/radioStation'
+import { getLocalMix, STALE_PAUSE_MS, upcomingSongs } from '@/services/playback/localMix'
 import { startRadioMetadataWatch, stopRadioMetadataWatch } from '@/services/connect/radioMetadata'
 import {
   localRadioStreamUrl,
@@ -43,7 +46,11 @@ import {
 import { registerRadioBrowserClick } from '@/services/connect/radioBrowser'
 import { radioBrowserIdFor } from '@/services/radioBrowserLinks'
 import { pollingAllowed } from '@/services/connect/pollGate'
-import { buildCastQualityPayload, buildCastQueuePayload } from '@/services/playback/castPayload'
+import {
+  buildCastMixPayload,
+  buildCastQualityPayload,
+  buildCastQueuePayload,
+} from '@/services/playback/castPayload'
 import {
   clearPersistedPlayback,
   loadPersisted,
@@ -275,6 +282,9 @@ const localRadioChangeGuard = createKeyedGuard<string>()
 // when the same song is played again later (a fresh startCurrent() resets
 // this to null first, see below).
 let scrobbledSongId: string | null = null
+// Stream time at which the song this device's mix is playing began - see
+// followLocalMix(). Null until the first song of a run has been heard.
+let mixSongStartedAt: number | null = null
 
 // Smooths cast playback's position — see positionTracker.ts's own comment
 // for why and how. The status tick's position is server-authoritative and
@@ -472,6 +482,10 @@ export const usePlaybackStore = defineStore('playback', {
     castQueuePayload(state): ReturnType<typeof buildCastQueuePayload> {
       return buildCastQueuePayload(state)
     },
+    /** See buildCastMixPayload(). */
+    castMixPayload(state): ReturnType<typeof buildCastMixPayload> {
+      return buildCastMixPayload(state)
+    },
   },
 
   actions: {
@@ -497,8 +511,16 @@ export const usePlaybackStore = defineStore('playback', {
       engine.setVolume(this.volume)
       engine.onTimeUpdate = (position) => {
         if (!this.isCasting) {
-          this.localPosition = position
+          if (getLocalMix().active) this.followLocalMix(position)
+          else this.localPosition = position
           this.checkScrobbleThreshold()
+        }
+      }
+      // connect lost this device's mix (stopped, or restarted) while it
+      // was still playing here: start it over from where it was.
+      getLocalMix().onLost = () => {
+        if (!this.isCasting && this.currentSong) {
+          this.startLocalSong(this.currentSong, this.localPosition, this.isPlaying)
         }
       }
       engine.onDurationChange = (duration) => {
@@ -853,6 +875,7 @@ export const usePlaybackStore = defineStore('playback', {
      * and position, and reconcileFromStatus() the queue and station. */
     yieldToCastPlayback(): void {
       getAudioEngine().stop()
+      getLocalMix().stop()
       // Both belonged to the element that just let go, and nothing refills
       // either while casting: reconnectRadio() (which is what
       // radioConnectionLost offers a button for) refuses to run then, and
@@ -1123,8 +1146,12 @@ export const usePlaybackStore = defineStore('playback', {
         // same staleness guard as the catch block below, see
         // switchToIndexGuard's comment.
         if (preservePause && !wasPlaying && switchToIndexGuard.isCurrent(seq)) {
-          if (this.isCasting) await connectPlayback.pause()
-          else getAudioEngine().pause()
+          if (this.isCasting) {
+            await connectPlayback.pause()
+          } else {
+            getAudioEngine().pause()
+            getLocalMix().pause()
+          }
           this.isPlaying = false
         }
       } catch (error) {
@@ -1346,6 +1373,7 @@ export const usePlaybackStore = defineStore('playback', {
             startPosition,
             gain: this.replayGainMultiplier,
             ...this.castQualityPayload,
+            ...this.castMixPayload,
             fullQueue,
             queueIndex,
             originalQueue,
@@ -1358,6 +1386,11 @@ export const usePlaybackStore = defineStore('playback', {
           localSongChangeGuard.end(song.id)
         }
         if (response.status === 'superseded') return false
+      } else if (this.localMixWanted()) {
+        // Awaited, unlike startLocalSong() below: the mix is started by
+        // connect, and a caller pausing right after (switchToIndex()'s
+        // preservePause) has to find it already loaded.
+        await this.startLocalMix(song, startPosition, true)
       } else {
         this.startLocalSong(song, startPosition, true)
       }
@@ -1434,6 +1467,7 @@ export const usePlaybackStore = defineStore('playback', {
         const engine = getAudioEngine()
         if (this.isPlaying) {
           engine.pause()
+          getLocalMix().pause()
           this.isPlaying = false
         } else if (this.radioStation) {
           // resumeLocalPlayback() deliberately never loads radio into the
@@ -1464,8 +1498,14 @@ export const usePlaybackStore = defineStore('playback', {
           // state, and pressing play on a station has to restart the
           // station, not the track it interrupted.
           await this.startCurrent()
+        } else if (getLocalMix().pausedFor() > STALE_PAUSE_MS && this.currentSong) {
+          // See STALE_PAUSE_MS: a mix paused this long starts over from
+          // where it stood rather than trusting connections idle as long.
+          await this.startLocalMix(this.currentSong, this.localPosition, true)
+          this.isPlaying = true
         } else {
           engine.resume()
+          getLocalMix().resume()
           this.isPlaying = true
         }
       } finally {
@@ -1566,6 +1606,7 @@ export const usePlaybackStore = defineStore('playback', {
      * more thing being fed a station, and the trade-off is the same one.
      */
     startLocalRadio(streamUrl: string): void {
+      getLocalMix().stop()
       const direct = useRadioSettingsStore().castDirectly
       this.radioConnectionLost = false
       // Whatever was waiting belonged to the connection being replaced -
@@ -1637,6 +1678,9 @@ export const usePlaybackStore = defineStore('playback', {
         // it'd keep extrapolating from the pre-seek anchor for up to ~200ms
         // and briefly overwrite this seek with a stale position.
         positionTracker.record(position, performance.now())
+      } else if (this.currentSong && getLocalMix().active) {
+        // A mix is seeked by starting it over from there, like a transcode.
+        this.startLocalSong(this.currentSong, position, this.isPlaying)
       } else if (
         this.currentSong &&
         this.activeLocalStream &&
@@ -1688,7 +1732,10 @@ export const usePlaybackStore = defineStore('playback', {
      * next song start onward, same as any other cast-side setting would. */
     setReplayGainMode(mode: ReplayGainMode): void {
       this.replayGainMode = mode
-      if (!this.isCasting) getAudioEngine().setReplayGain(this.replayGainMultiplier)
+      // A mix applies gain per song itself and is told the new values for
+      // the songs still to come; the element's own stays flat.
+      if (getLocalMix().active) this.syncLocalMixQueue()
+      else if (!this.isCasting) getAudioEngine().setReplayGain(this.replayGainMultiplier)
     },
 
     /** The stream URL for `song`, recording what was actually decided.
@@ -1736,6 +1783,94 @@ export const usePlaybackStore = defineStore('playback', {
      * happens either way - it is only the arithmetic in between that goes
      * away. */
     startLocalSong(song: Song, position: number, autoplay: boolean): void {
+      if (this.localMixWanted()) {
+        void this.startLocalMix(song, position, autoplay)
+        return
+      }
+      getLocalMix().stop()
+      this.startLocalSongDirectly(song, position, autoplay)
+    },
+
+    /** Whether this device plays through a mix (transitions on, see
+     * services/playback/localMix.ts) rather than song by song. Not on
+     * WebKit yet: Safari re-fetches a stream without a length from its
+     * start in 1 MiB blocks (docs/investigations/safari-transcode-jumps.md),
+     * which an endless mix cannot survive. */
+    localMixWanted(): boolean {
+      return useTransitionsStore().enabled && !prefersHls() && !this.radioStation
+    },
+
+    /** Starts (or loads) this device's mix from `song` at `position` - the
+     * transitions counterpart of startLocalSongDirectly(). Falls back to
+     * playing the song on its own if connect cannot start one. */
+    async startLocalMix(song: Song, position: number, autoplay: boolean): Promise<void> {
+      const quality = mixQuality(this.localQuality)
+      this.activeLocalStream = { quality, reason: 'transitions' }
+      this.duration = song.duration
+      mixSongStartedAt = null
+      try {
+        await getLocalMix().start({
+          songs: upcomingSongs(this.queue, this.currentIndex, this.repeatMode, this.replayGainMode),
+          position,
+          repeatMode: this.repeatMode,
+          transitions: useTransitionsStore().payload,
+          quality,
+          autoplay,
+        })
+      } catch (error) {
+        console.error('[playback] Could not start the mix, playing the song on its own:', error)
+        getLocalMix().stop()
+        this.startLocalSongDirectly(song, position, autoplay)
+      }
+    },
+
+    /** Moves this device along with its mix: `streamTime` is how far into
+     * the mix the element is, and the timeline says which song and where
+     * in it that is. A song that begins is taken up the way startCurrent()
+     * takes up one it starts, minus the starting. */
+    followLocalMix(streamTime: number): void {
+      const heard = getLocalMix().heard(streamTime)
+      if (!heard) return
+      if (heard.startedAt !== mixSongStartedAt) {
+        const first = mixSongStartedAt === null
+        mixSongStartedAt = heard.startedAt
+        if (!first) this.localMixSongBegan(heard.songId, heard.queueIndex)
+      }
+      this.localPosition = heard.position
+    },
+
+    localMixSongBegan(songId: string, queueIndex: number): void {
+      const index =
+        this.queue[queueIndex]?.id === songId
+          ? queueIndex
+          : this.queue.findIndex((song) => song.id === songId)
+      if (index < 0) return
+      this.currentIndex = index
+      const song = this.queue[index]!
+      this.duration = song.duration
+      scrobbledSongId = null
+      void useLibraryStore()
+        .client()
+        .scrobble(song.id, false)
+        .catch((error) => console.error('[scrobble] now-playing failed:', error))
+      void this.maybeAutoplay()
+      this.syncLocalMixQueue()
+    },
+
+    /** Tells this device's mix which songs come next - the local
+     * counterpart of syncCastQueue(), and called from it. */
+    syncLocalMixQueue(): void {
+      const mix = getLocalMix()
+      if (!mix.active) return
+      mix.syncQueue(
+        upcomingSongs(this.queue, this.currentIndex, this.repeatMode, this.replayGainMode),
+        this.repeatMode,
+      )
+    },
+
+    /** startLocalSong() without transitions: one song on the element, as
+     * Beacon always played. */
+    startLocalSongDirectly(song: Song, position: number, autoplay: boolean): void {
       const hls = prefersHls()
       const url = this.localStreamUrl(song, hls)
       const gain = this.replayGainMultiplier
@@ -2004,6 +2139,7 @@ export const usePlaybackStore = defineStore('playback', {
      * once nothing's actually playing yet (currentIndex < 0) —
      * startCurrent() sends the initial queue itself. */
     syncCastQueue(): void {
+      if (!this.isCasting) this.syncLocalMixQueue()
       if (!this.isCasting || this.currentIndex < 0) return
       // The backend is dispatching a station, not this queue — pushing the
       // queue at it would only make it look like the session had gone back
@@ -2023,6 +2159,7 @@ export const usePlaybackStore = defineStore('playback', {
       } = this.castQueuePayload
       void connectPlayback
         .updateQueue(fullQueue, queueIndex, {
+          song_hints: this.castMixPayload.song_hints,
           originalQueue,
           shuffle,
           repeatMode,
@@ -2242,6 +2379,7 @@ export const usePlaybackStore = defineStore('playback', {
             // work from the *next* track on - which is the one that goes
             // through startCurrent(). Reported live 2026-09-06.
             ...this.castQualityPayload,
+            ...this.castMixPayload,
             fullQueue,
             queueIndex,
             originalQueue,

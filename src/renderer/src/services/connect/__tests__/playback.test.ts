@@ -37,6 +37,22 @@ describe('connect playback dispatch', () => {
   })
 
   describe('play', () => {
+    it('sends transitions and song hints only when given', async () => {
+      const { play } = await freshModule()
+      await play('song-1')
+      expect(body()).not.toHaveProperty('transitions')
+
+      const hint = { gain: 0.5, album_id: 'al', disc: 1, track: 2, bpm: null }
+      await play('song-1', {
+        transitions: { mode: 'gapless', crossfade_seconds: 10 },
+        song_hints: { 'song-1': hint },
+      })
+      expect(body(1)).toMatchObject({
+        transitions: { mode: 'gapless', crossfade_seconds: 10 },
+        song_hints: { 'song-1': hint },
+      })
+    })
+
     it('sends a single song as a one-song queue, so connect has nothing to advance into', async () => {
       const { play } = await freshModule()
 

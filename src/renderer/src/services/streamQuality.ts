@@ -383,7 +383,7 @@ function hidesUndecodableAlac(suffix: string, bitRate: number | null): boolean {
 const LOSSLESS = new Set(['flac', 'wav', 'alac', 'ape', 'wv', 'aiff', 'aif', 'dsf', 'dff'])
 
 /** Why a track is being converted, as a stream-info reason key. */
-export type LocalTranscodeReason = 'quality_limit' | 'browser_unsupported'
+export type LocalTranscodeReason = 'quality_limit' | 'browser_unsupported' | 'transitions'
 
 export interface LocalStreamPlan {
   /** What to actually request. `original` means the untouched file, even
@@ -473,4 +473,15 @@ export function plan(
     return { quality: { ...setting }, reason: 'quality_limit' }
   }
   return PLAY_ORIGINAL
+}
+
+/**
+ * What a mix (transitions on, see stores/transitions.ts) is fetched as. A
+ * mix is always encoded - it is several songs blended into one stream - so
+ * Original means the lossless encode rather than the untouched file, and
+ * any other setting is taken as it is.
+ */
+export function mixQuality(setting: StreamQuality): LocalStreamQuality {
+  if (setting.format === 'original') return losslessRescue()
+  return { format: setting.format, bitrate: setting.bitrate }
 }

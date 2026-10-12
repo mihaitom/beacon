@@ -7,6 +7,7 @@ import asyncio
 import os
 import socket
 from collections.abc import Awaitable, Callable
+from typing import Any
 
 from delivery import (
     AirPlayDelivery,
@@ -20,6 +21,7 @@ from delivery import (
 from delivery.base import PlaybackFailure
 from media import Track
 
+from .mix_engine import MixEngine
 from .playback_clock import PlaybackClock
 from .streamer import FALLBACK_FORMAT, OutputFormat, stream_extension
 
@@ -174,6 +176,18 @@ class AppState:
         # preference, not queue contents.
         self.autoplay_enabled: bool = False
         self.autoplay_batch_size: int = 10
+        # The running mix while transitions are on (core/mix_engine.py,
+        # routes/mix_cast.py): one stream through song after song, instead
+        # of one file per song. None whenever songs go out one at a time,
+        # which is every path that existed before transitions.
+        self.mix: MixEngine | None = None
+        # The transitions setting the last /play brought (routes/mix_cast.py's
+        # TransitionSettings), for the runs a seek or a skip starts later.
+        self.transitions: Any = None
+        # What the frontend knows about upcoming songs and connect does not
+        # (ReplayGain, album order), keyed by song id - sent with /play and
+        # /queue for the mix's next songs (see routes/playback.py's SongHint).
+        self.song_hints: dict[str, dict] = {}
         # Last-known (volume, muted) per claimed device, keyed like
         # core/claims.py's own "type:name" — pushed by routes/upnp.py's
         # RenderingControl NOTIFY handler (Sonos only for now) and by
@@ -558,6 +572,19 @@ def audio_capability_limits(
         min(depths) if depths else None,
         min(channels) if channels else None,
     )
+
+
+def plays_continuous_flac(delivery: BaseDelivery | DeliveryManager | None) -> bool:
+    """Whether every active delivery takes an endless FLAC stream - see
+    BaseDelivery.CONTINUOUS_FLAC_OK. False with nothing active: a mix with
+    no device to judge goes out in a format everything plays."""
+    if isinstance(delivery, DeliveryManager):
+        deliveries = delivery.deliveries
+    elif delivery is not None:
+        deliveries = [delivery]
+    else:
+        return False
+    return bool(deliveries) and all(d.CONTINUOUS_FLAC_OK for d in deliveries)
 
 
 def playable_codecs(

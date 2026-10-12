@@ -347,6 +347,7 @@ export default {
         browser_unsupported: 'Browser format',
         device_rejected_stream: 'Device refused',
         relay_format_limit: 'Converted for the device',
+        transitions: 'Transitions',
       },
       reasons: {
         device_limit: "Source is beyond this device's supported quality",
@@ -361,6 +362,8 @@ export default {
           "The device refused the station's own stream, so Beacon converts it",
         relay_format_limit:
           'The station does not send a format the device is handed as it is, so Beacon converts it - under Audio quality you can ask for AAC instead of MP3',
+        transitions:
+          'Transitions are on, so Beacon blends the songs into one stream instead of sending each file as it is',
       },
     },
   },
@@ -710,6 +713,16 @@ export default {
     castRadioDirectly: 'Play radio straight from the station',
     castRadioDirectlyHint:
       "Beacon routes radio through its own backend by default - for a cast device and for this player alike. One fetch of the station feeds the audio and the now-playing title, and a station that drops is reconnected by Beacon without interrupting playback here. Turned on, the device and this player connect to the station directly instead: playback then keeps going even if Beacon restarts, but a drop is only noticed once the sound stops, and some devices refuse a station's own stream.",
+    transitions: 'Transitions',
+    transitionsOff: 'Off',
+    transitionsGapless: 'Gapless',
+    transitionsCrossfade: 'Crossfade',
+    crossfadeLength: 'Crossfade length',
+    crossfadeSeconds: '{value} s',
+    transitionsHint:
+      "Gapless plays songs back to back without a pause. Crossfade blends one song into the next: where the beat allows it, Beacon matches the tempo, brings the next song's bass in on the beat and then slowly fades out the previous one. Songs that follow each other on an album always play gaplessly. With either one the music goes through Beacon as one continuous stream, on this device and on speakers alike.",
+    transitionsWebkitHint:
+      'In this browser songs still play one at a time; gapless and crossfade apply when casting to a speaker.',
     about: 'About Beacon',
     whatsNew: "What's new?",
     ffmpegFound: 'ffmpeg found',

@@ -350,6 +350,7 @@ export default {
         browser_unsupported: 'Formato del navegador',
         device_rejected_stream: 'Rechazado',
         relay_format_limit: 'Convertida para el dispositivo',
+        transitions: 'Transiciones',
       },
       reasons: {
         device_limit: 'La fuente supera la calidad que admite este dispositivo',
@@ -364,6 +365,8 @@ export default {
           'El dispositivo rechazó la transmisión original de la emisora, así que Beacon la convierte',
         relay_format_limit:
           'La emisora no envía un formato que pueda entregarse tal cual, por lo que Beacon la convierte; en Calidad de audio puedes elegir AAC en lugar de MP3',
+        transitions:
+          'Las transiciones están activadas, así que Beacon mezcla las canciones en un único stream en lugar de enviar cada archivo tal cual',
       },
     },
   },
@@ -717,6 +720,16 @@ export default {
     castRadioDirectly: 'Reproducir la radio directamente desde la emisora',
     castRadioDirectlyHint:
       'Por defecto, Beacon enruta la radio a través de su propio backend, tanto para un dispositivo de emisión como para este reproductor. Una sola conexión a la emisora alimenta el audio y el título en reproducción, y si la emisora se cae Beacon vuelve a conectarse sin interrumpir la reproducción aquí. Activado, el dispositivo y este reproductor se conectan directamente a la emisora: la reproducción sigue aunque Beacon se reinicie, pero una caída solo se nota cuando desaparece el sonido, y algunos dispositivos rechazan la emisión de la emisora.',
+    transitions: 'Transiciones',
+    transitionsOff: 'Desactivadas',
+    transitionsGapless: 'Sin pausas',
+    transitionsCrossfade: 'Fundido',
+    crossfadeLength: 'Duración del fundido',
+    crossfadeSeconds: '{value} s',
+    transitionsHint:
+      'Sin pausas reproduce las canciones una tras otra sin silencio entre ellas. Fundido mezcla una canción con la siguiente: cuando el ritmo lo permite, Beacon iguala el tempo, introduce el bajo de la siguiente canción a tiempo y luego desvanece poco a poco la anterior. Las canciones que se siguen en un álbum siempre suenan sin pausas. En ambos casos la música pasa por Beacon como un único stream continuo, tanto en este dispositivo como en los altavoces.',
+    transitionsWebkitHint:
+      'En este navegador las canciones todavía se reproducen una a una; sin pausas y fundido se aplican al enviar a un altavoz.',
     about: 'Acerca de Beacon',
     whatsNew: '¿Qué hay de nuevo?',
     ffmpegFound: 'ffmpeg encontrado',

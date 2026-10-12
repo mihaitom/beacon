@@ -14,8 +14,36 @@
          - is also what ReplayGain needs to change the level (see
          - webAudioAllowed() in services/audioEngine.ts) — saying so beats a
          - setting that silently does half of what it claims. -->
-        <p v-if="!hasLocalGain" class="setting__hint">
+        <p v-if="!hasLocalGain && !mixAppliesGain" class="setting__hint">
           {{ $t('settings.replayGainMobileHint') }}
+        </p>
+      </div>
+
+      <div class="setting">
+        <p class="setting__label">{{ $t('settings.transitions') }}</p>
+        <segmented-control
+          v-model="transitionMode"
+          :options="transitionOptions"
+          :label="$t('settings.transitions')"
+        />
+        <!-- A select rather than a slider: Vuetify's slider loses the drag
+         - on a real phone (see docs/investigations/mobile-volume-slider-drag.md),
+         - and a handful of lengths is all anyone picks between. -->
+        <v-select
+          v-if="transitionsStore.mode === 'crossfade'"
+          class="crossfade-length"
+          :model-value="transitionsStore.crossfadeSeconds"
+          :items="crossfadeLengthOptions"
+          :label="$t('settings.crossfadeLength')"
+          variant="solo-filled"
+          hide-details
+          @update:model-value="transitionsStore.set({ crossfadeSeconds: $event })"
+        />
+        <p class="setting__hint">{{ $t('settings.transitionsHint') }}</p>
+        <!-- See localMixWanted() in stores/playback.ts for why WebKit
+         - plays song by song for now. -->
+        <p v-if="transitionsStore.enabled && webkit" class="setting__hint">
+          {{ $t('settings.transitionsWebkitHint') }}
         </p>
       </div>
 
@@ -116,22 +144,27 @@
 <script lang="ts">
 import { usePlaybackStore } from '@/stores/playback'
 import { useRadioSettingsStore } from '@/stores/radioSettings'
+import { useTransitionsStore, type TransitionMode } from '@/stores/transitions'
 import type { ReplayGainMode } from '@/services/replayGain'
 import { getAudioEngine } from '@/services/audioEngine'
 import {
   BITRATES,
   CAST_FORMATS,
   localFormats,
+  prefersHls,
   type StreamFormat,
   type TranscodeFormat,
 } from '@/services/streamQuality'
 import SegmentedControl from '@/components/SegmentedControl.vue'
 import QualityTips from './QualityTips.vue'
 
+/** The crossfade lengths offered, in seconds. */
+const CROSSFADE_LENGTHS = [4, 6, 8, 10, 12, 16, 20, 30]
+
 /**
- * How audio is played and cast: ReplayGain, the quality ceiling for this
- * device and for cast targets, and whether radio goes straight from the
- * station or through Beacon's own relay.
+ * How audio is played and cast: ReplayGain, transitions between songs, the
+ * quality ceiling for this device and for cast targets, and whether radio
+ * goes straight from the station or through Beacon's own relay.
  */
 export default {
   name: 'PlaybackSection',
@@ -143,8 +176,39 @@ export default {
     radioSettingsStore() {
       return useRadioSettingsStore()
     },
+    transitionsStore() {
+      return useTransitionsStore()
+    },
+    transitionMode: {
+      get(): TransitionMode {
+        return this.transitionsStore.mode
+      },
+      set(mode: TransitionMode) {
+        this.transitionsStore.set({ mode })
+      },
+    },
+    transitionOptions(): { title: string; value: TransitionMode }[] {
+      return [
+        { title: this.$t('settings.transitionsOff'), value: 'off' },
+        { title: this.$t('settings.transitionsGapless'), value: 'gapless' },
+        { title: this.$t('settings.transitionsCrossfade'), value: 'crossfade' },
+      ]
+    },
+    crossfadeLengthOptions(): { title: string; value: number }[] {
+      return CROSSFADE_LENGTHS.map((value) => ({
+        title: this.$t('settings.crossfadeSeconds', { value }),
+        value,
+      }))
+    },
     hasLocalGain(): boolean {
       return getAudioEngine().hasAnalyser
+    },
+    webkit(): boolean {
+      return prefersHls()
+    },
+    /** A mix applies ReplayGain itself, so it reaches phones too. */
+    mixAppliesGain(): boolean {
+      return this.transitionsStore.enabled && !this.webkit
     },
     replayGainMode: {
       get(): ReplayGainMode {
@@ -202,6 +266,10 @@ export default {
 </script>
 
 <style scoped>
+.crossfade-length {
+  margin-top: 12px;
+  max-width: 240px;
+}
 /* Format and bitrate side by side, with the format wider — it carries the
  * actual decision, while the bitrate is a number that needs no room. Wraps
  * on a narrow window (the mobile web build) instead of squeezing both into

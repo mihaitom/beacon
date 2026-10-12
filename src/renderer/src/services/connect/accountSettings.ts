@@ -30,6 +30,8 @@ export interface AccountSettingsPayload {
   // stores/fanart.ts. The API key is installation-wide and stays stored;
   // this only decides whether the images are asked for.
   fanartEnabled?: boolean
+  // Gapless and crossfade - see stores/transitions.ts.
+  transitions?: { mode: string; crossfadeSeconds: number }
 }
 
 function identity(): { server_type: string; server_url: string; username: string } {
