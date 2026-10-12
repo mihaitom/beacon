@@ -92,13 +92,16 @@ setting's length, ending on the last downbeat with music; the incoming
 song's first downbeat lands on the overlap's first. First half: incoming
 mids and highs rise (equal-power), its bass stays out. Downbeat at half:
 the basses swap in 15 ms. Second half: outgoing mids and highs fall. The
-incoming song is stretched (`core/timestretch.py`, WSOLA, ±5 ms search)
+incoming song is stretched (`core/timestretch.py`, WSOLA, ±9 ms search)
 through the overlap and eased back to its own tempo over 8 bars; at rate 1
 WSOLA reproduces its input exactly, which is how it hands the song back to
-the plain path without a seam. Kicks of two beat-matched songs land within
-about 5 ms of each other (WSOLA's own timing jitter is ±2 ms on music-like
-material, +3-6 ms on bare clicks); the test holds them inside 12 ms, where
-a flam starts to be heard.
+the plain path without a seam. The search width is a trade: at ±5 ms the
+bass could not be lined up and mids and highs pumped at the 43 Hz hop rate
+("a voice through a fan", heard for the first ~30 s of a mixed-in song); at
+±12 ms the pumping is gone but kicks flam. At ±9 ms the pumping measures at
+ffmpeg atempo's level on real music, and beat-matched kicks on bare clicks
+land within 8 ms of each other; the test holds them inside 12 ms, where a
+flam starts to be heard.
 
 A **crossfade** is the same lanes on a clock; songs following each other on
 an album (same album, next track) are always **gapless**. If the analysis

@@ -26,9 +26,13 @@ import numpy as np
 
 FRAME = 2048
 HOP = FRAME // 2
-# How far a frame may move to fit (~5 ms): enough for a period of anything
-# down to 200 Hz, short enough not to be heard as a timing wobble.
-TOLERANCE = 220
+# How far a frame may move to fit (~9 ms), a trade measured on real music.
+# At 5 ms the bass, which dominates the match, could not be lined up: frames
+# half-cancelled in every overlap and the mids and highs pumped at the hop
+# rate (43 Hz), heard as a voice through a fan. At 12 ms that is gone, but
+# kicks land far enough off the outgoing song's to be heard as a flam
+# (tests/test_mix_crossfade.py). Here the pumping is at ffmpeg atempo's level.
+TOLERANCE = 384
 # Periodic Hann: at 50% overlap, consecutive windows add to exactly 1.
 _WINDOW = (0.5 - 0.5 * np.cos(2 * np.pi * np.arange(FRAME) / FRAME)).astype(np.float64)[:, None]
 
@@ -87,15 +91,19 @@ class Wsola:
         self._trim()
 
     def _best_fit(self, nominal: int) -> int:
-        """Where around `nominal` a frame best continues the last one."""
+        """Where around `nominal` a frame best continues the last one. Only
+        the half that is overlap-added has to match, weighted the way the
+        last frame fades out there; each candidate's correlation is divided
+        by its level so a loud spot does not win on loudness alone."""
         assert self._chosen is not None
-        natural = self._take(self._chosen + HOP, FRAME).sum(axis=1)
-        region = self._take(nominal - TOLERANCE, FRAME + 2 * TOLERANCE).sum(axis=1)
-        size = 1 << int(np.ceil(np.log2(len(region) + FRAME)))
+        natural = self._take(self._chosen + HOP, HOP).sum(axis=1) * _WINDOW[HOP:, 0]
+        region = self._take(nominal - TOLERANCE, HOP + 2 * TOLERANCE).sum(axis=1)
+        size = 1 << int(np.ceil(np.log2(len(region) + HOP)))
         corr = np.fft.irfft(np.fft.rfft(region, size) * np.conj(np.fft.rfft(natural, size)), size)[
             : 2 * TOLERANCE + 1
         ]
-        return nominal - TOLERANCE + int(np.argmax(corr))
+        level = np.convolve(region**2, np.ones(HOP), "valid")
+        return nominal - TOLERANCE + int(np.argmax(corr / np.sqrt(level + 1e-9)))
 
     def _take(self, start: int, length: int) -> np.ndarray:
         i = start - self._base

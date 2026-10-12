@@ -48,6 +48,7 @@ import logging
 import math
 import os
 import struct
+import tempfile
 import time
 import wave
 from collections.abc import AsyncGenerator
@@ -60,7 +61,7 @@ from fastapi.responses import StreamingResponse
 from core.ffmpeg import FFMPEG_BIN
 from core.icy_metadata import DEVICE_METAINT, IcyMuxer
 from core.session import SessionState, build_status_dict, require_authenticated_session
-from core.state import PORT, TEST_TONE_TRACK_ID, get_local_ip, stream_url, test_tone_url
+from core.state import PORT, TEST_TONE_TRACK_ID, get_local_ip, stream_url
 from core.streamer import (
     FALLBACK_FORMAT,
     LOOKAHEAD_SECONDS,
@@ -200,12 +201,34 @@ def _generate_test_tone_wav() -> bytes:
 _cached_wav: bytes | None = None
 
 
-@router.get("/test-tone.wav")
-async def test_tone_wav() -> Response:
+def _test_tone_bytes() -> bytes:
     global _cached_wav
     if _cached_wav is None:
         _cached_wav = _generate_test_tone_wav()
-    return Response(content=_cached_wav, media_type="audio/wav")
+    return _cached_wav
+
+
+@router.get("/test-tone.wav")
+async def test_tone_wav() -> Response:
+    return Response(content=_test_tone_bytes(), media_type="audio/wav")
+
+
+_loop_tone_file: Path | None = None
+
+
+def _loopable_test_tone() -> str:
+    """The test tone as a local file, for the endpoints that loop it.
+    -stream_loop rewinds its input by seeking, and /test-tone.wav serves no
+    byte ranges - looped over HTTP, ffmpeg ends after the tone's
+    _DURATION_S instead of starting over, and the "endless" stream with it."""
+    global _loop_tone_file
+    if _loop_tone_file is None or not _loop_tone_file.exists():
+        with tempfile.NamedTemporaryFile(
+            prefix="beacon-test-tone-", suffix=".wav", delete=False
+        ) as f:
+            f.write(_test_tone_bytes())
+        _loop_tone_file = Path(f.name)
+    return str(_loop_tone_file)
 
 
 @router.post("/play-test-tone")
@@ -396,7 +419,7 @@ async def test_radio(request: Request, file: str | None = None) -> Response:
             )
         source = str(resolved)
     else:
-        source = test_tone_url()
+        source = _loopable_test_tone()
 
     wants_icy = request.headers.get("icy-metadata") == "1"
     headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
@@ -500,7 +523,7 @@ async def test_endless(fmt: str, file: str | None = None) -> Response:
     /test-radio: a speaker sends no credentials."""
     if fmt not in _ENDLESS_FORMATS:
         return Response(status_code=404)
-    source = test_tone_url()
+    source = _loopable_test_tone()
     if file is not None:
         resolved = _resolve_test_audio(file)
         if resolved is None:

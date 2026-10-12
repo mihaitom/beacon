@@ -4,7 +4,8 @@ there). No test runs ffmpeg; what matters is that the stream is paced and
 looped like a cast track, and what the device is told."""
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
+from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -60,3 +61,32 @@ def test_refuses_an_unknown_format_without_touching_the_device():
     result = asyncio.run(debug.play_endless(fmt="wav", duration="none", session=session))
     assert "error" in result
     target.play.assert_not_called()
+
+
+def _source_ffmpeg_is_given(response) -> str:
+    """Starts the response body just far enough to see which input ffmpeg
+    would be pointed at."""
+    seen = {}
+
+    async def fake_exec(*cmd, **kwargs):
+        seen["source"] = cmd[list(cmd).index("-i") + 1]
+        raise RuntimeError("stop here")
+
+    async def first_chunk():
+        with pytest.raises(RuntimeError, match="stop here"):
+            await anext(response.body_iterator)
+
+    with patch.object(debug.asyncio, "create_subprocess_exec", fake_exec):
+        asyncio.run(first_chunk())
+    return seen["source"]
+
+
+def test_the_beep_is_looped_from_a_file_not_over_http():
+    """-stream_loop rewinds by seeking, and /test-tone.wav serves no byte
+    ranges: looped from its URL, every "endless" stream ended after the
+    tone's ten minutes, which read as the speaker giving up."""
+    endless = _source_ffmpeg_is_given(asyncio.run(debug.test_endless("mp3")))
+    station = _source_ffmpeg_is_given(asyncio.run(debug.test_radio(MagicMock(headers={}))))
+
+    for source in (endless, station):
+        assert Path(source).read_bytes() == debug._test_tone_bytes()

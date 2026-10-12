@@ -1,6 +1,6 @@
 # Does a speaker play a stream that never ends? (OPEN, 2026-10-12)
 
-**Status: not measured yet.** Needed before transitions can be called done
+**Status: first Sonos run invalid (harness bug, fixed), rerun pending.** Needed before transitions can be called done
 on speakers - see [the plan](../plans/gapless-and-transitions.md).
 
 ## The question
@@ -52,3 +52,18 @@ is a fail. Leave each combination at least an hour.
 | Chromecast |     |     |      |              |             |          |
 | DLNA       |     |     |      |              |             |          |
 | AirPlay    |     |     |      |              |             |          |
+
+### Sonos, run 1 (2026-10-12) - invalid after 10 minutes
+
+mp3, aac and flac, `duration=none`, an hour each, position polled every
+15 s. All three went to `STOPPED` at exactly 600 s. That was the harness,
+not the speaker: the beep is 600 s long and was looped by ffmpeg from
+`/debug/test-tone.wav`, which serves no byte ranges, so `-stream_loop`
+could not rewind and ffmpeg ended the stream ("Stream ends prematurely at
+44"). `/debug/test-radio` had the same ten-minute limit. Both now loop a
+local copy of the tone.
+
+What the first 600 s do show: Sonos took all three formats, endless FLAC
+without a length included, and the position stayed within -0.1 to +0.9 s
+of the wall clock (Sonos reports whole seconds, so that is its
+resolution). Says nothing yet about the hour mark.

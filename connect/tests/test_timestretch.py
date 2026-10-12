@@ -74,6 +74,44 @@ def test_beats_come_closer_together_when_sped_up():
     assert np.all(np.abs(spacing - period / 1.05) < 0.012)
 
 
+def _bass_under_a_mix(seconds: float, seed: int) -> np.ndarray:
+    """A loud bass under many unrelated partials - the mix that defeats a
+    match too narrow to line the bass up."""
+    rng = np.random.default_rng(seed)
+    t = np.arange(int(seconds * SR)) / SR
+    mono = 0.5 * np.sin(2 * np.pi * 55 * t)
+    for f in rng.uniform(300, 4000, 40):
+        mono += 0.05 * np.sin(2 * np.pi * f * t + rng.uniform(0, 2 * np.pi))
+    return np.stack([mono, mono], axis=1).astype(np.float32)
+
+
+def _hop_rate_pumping_db(y: np.ndarray) -> float:
+    """How far the mids' and highs' envelope stands out at the hop rate
+    over the rates around it."""
+    mono = y[SR // 2 : -SR // 2, 0].astype(np.float64)
+    spectrum = np.fft.rfft(mono)
+    spectrum[np.fft.rfftfreq(len(mono), 1 / SR) < 300] = 0
+    envelope = np.abs(np.fft.irfft(spectrum, len(mono)))
+    envelope = envelope[: len(envelope) // 44 * 44].reshape(-1, 44).mean(axis=1)
+    power = np.abs(np.fft.rfft(envelope - envelope.mean())) ** 2
+    distance = np.abs(np.fft.rfftfreq(len(envelope), 44 / SR) - SR / HOP)
+    return 10 * np.log10(
+        power[distance < 0.3].max() / np.median(power[(distance > 1) & (distance < 6)])
+    )
+
+
+@pytest.mark.parametrize("rate", [0.95, 1.04])
+def test_a_stretched_mix_does_not_pump_at_the_hop_rate(rate):
+    """Frames that half-cancel in every overlap make the mids and highs
+    pump 43 times a second - a voice heard through a fan. That was the
+    first ~30 s of every beatmixed song while it eased back to its tempo."""
+    pumping = [
+        _hop_rate_pumping_db(_stretch(_bass_under_a_mix(4, seed), lambda n: rate, 3 * SR)[0])
+        for seed in range(4)
+    ]
+    assert np.mean(pumping) < 20
+
+
 def test_handing_back_continues_exactly_where_the_stretch_left_off():
     x = _music(4 * SR, seed=5)
     w = Wsola()
