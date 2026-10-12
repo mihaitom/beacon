@@ -18,6 +18,10 @@ follows them instead (docs/plans/party-listen-along.md):
 - **Catch up.** A different song, or a position too far from the host's,
   restarts the decoder where the host is. Near a song's end the next one in
   the host's queue is opened early so the change is seamless.
+- **A mix.** With transitions on, the host hears a mix (core/mix_engine.py)
+  rather than song after song. Then nothing is decoded here: the stream
+  reads the mix's own rendered PCM where the host is in it, so guests hear
+  the same crossfades, and takes its song changes from the mix's timeline.
 
 The encoder's output goes to every guest through core/audio_fanout.py, the
 same fan-out the radio relay serves a station with.
@@ -34,6 +38,7 @@ import secrets
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -47,6 +52,9 @@ from .audio_analysis import (
 from .audio_fanout import AudioFanout
 from .ffmpeg import FFMPEG_BIN
 from .streamer import _HTTP_RECONNECT_ARGS, lossy_encode_args
+
+if TYPE_CHECKING:
+    from .mix_engine import MixEngine
 
 logger = logging.getLogger("connect.party_broadcast")
 
@@ -112,6 +120,9 @@ class Hearing:
     gain: float = 1.0
     # A station instead of a song: decoded live, no position to follow.
     radio_url: str | None = None
+    # The mix the host hears, and where in its stream the host is.
+    mix: "MixEngine | None" = None
+    mix_time: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -197,6 +208,8 @@ class Source:
     stream whether or not audio arrives: what the decoder could not deliver
     in time is played as silence and then skipped, so a slow start or a
     hiccup at the media server never leaves the stream behind the host."""
+
+    mix = False
 
     def __init__(
         self,
@@ -305,6 +318,48 @@ class Source:
                     pass
 
 
+class MixSource:
+    """The host's mix from stream time `start` on, read from the PCM it has
+    already rendered (its head start runs well ahead of the host). Takes
+    the same calls as a Source."""
+
+    radio = False
+    mix = True
+
+    def __init__(self, engine: "MixEngine", start: float) -> None:
+        self.engine = engine
+        self.song_id = f"mix:{engine.epoch}"
+        self.frame = round(start * SAMPLE_RATE)
+        self.produced = False
+
+    @property
+    def position(self) -> float:
+        return self.frame / SAMPLE_RATE
+
+    def open(self) -> None:
+        pass
+
+    def close(self) -> None:
+        pass
+
+    def take(self, frames: int) -> bytes:
+        ring = self.engine.ring
+        if self.frame < ring.base:
+            return b""  # already dropped there: silence until it catches up
+        out = ring.read(self.frame, frames)
+        self.frame += len(out) // _FRAME_BYTES
+        self.produced = self.produced or bool(out)
+        return out
+
+    def skip(self, frames: int) -> None:
+        self.frame += frames
+
+    @property
+    def finished(self) -> bool:
+        ring = self.engine.ring
+        return ring.closed and self.frame >= ring.head
+
+
 class Broadcaster:
     def __init__(
         self,
@@ -331,7 +386,7 @@ class Broadcaster:
         # so a song change halfway through one is marked where it happens.
         self._cursor = 0
         self._t0 = 0.0
-        self._source: Source | None = None
+        self._source: Source | MixSource | None = None
         self._next: Source | None = None
         # The song the stream moved on from by itself, and until when the
         # host may still report it (see _ADVANCE_GRACE_SECONDS).
@@ -471,7 +526,10 @@ class Broadcaster:
             source = self._source
             if source is None:
                 break
+            taken_from = source.frame if isinstance(source, MixSource) else 0
             got = source.take(remaining)
+            if isinstance(source, MixSource):
+                self._follow_mix_timeline(source, taken_from, len(got) // _FRAME_BYTES)
             out += got
             remaining -= len(got) // _FRAME_BYTES
             self._cursor = frames - remaining
@@ -520,6 +578,9 @@ class Broadcaster:
         source = self._source
         if hearing is not None and hearing.radio_url and hearing.playing:
             self._play_radio(hearing.radio_url, now)
+            return
+        if hearing is not None and hearing.mix is not None and hearing.playing:
+            self._play_mix(hearing.mix, hearing.mix_time + airs_in)
             return
         if hearing is None or hearing.song_id is None or not hearing.playing:
             song_id = hearing.song_id if hearing is not None else None
@@ -588,6 +649,44 @@ class Broadcaster:
         self._source.open()
         self._mark(None, 0.0, playing=True)
 
+    def _play_mix(self, engine: "MixEngine", wanted: float) -> None:
+        source = self._source
+        if (
+            isinstance(source, MixSource)
+            and source.engine is engine
+            and abs(source.position - wanted) <= _RESYNC_SECONDS
+        ):
+            return
+        end = engine.end_stream_time
+        if end is not None and wanted >= end - _END_MARGIN_SECONDS:
+            # The mix has ended; whatever the host still reports, there is
+            # nothing left of it to read.
+            if source is not None:
+                self._drop_sources()
+                self._mark(None, 0.0, playing=False)
+            return
+        self._drop_sources()
+        self._advanced_from = None
+        self._source = MixSource(engine, max(wanted, 0.0))
+        heard = engine.timeline.at_time(max(wanted, 0.0))
+        if heard is None or heard.song_id is None:
+            self._mark(None, 0.0, playing=False)
+        else:
+            self._mark(heard.song_id, heard.position, playing=heard.entry.playing)
+
+    def _follow_mix_timeline(self, source: MixSource, start: int, frames: int) -> None:
+        """Marks the song changes, holds and rate steps the mix's timeline
+        has in the `frames` just taken from `start` on, where they fall in
+        this stream."""
+        cursor = self._cursor
+        for entry in source.engine.timeline.changes_in(start, start + frames):
+            self._cursor = cursor + entry.frame - start
+            if entry.song_id is None:
+                self._mark(None, 0.0, playing=False)
+            else:
+                self._mark(entry.song_id, entry.position, playing=entry.playing)
+        self._cursor = cursor
+
     def _maybe_preopen(self, hearing: Hearing, source: Source) -> None:
         if self._next is not None or not hearing.next_song_id or hearing.duration <= 0:
             return
@@ -607,7 +706,7 @@ class Broadcaster:
         self._advance_grace_until = now + _ADVANCE_GRACE_SECONDS
         if self._source is not None:
             self._mark(self._source.song_id, 0.0, playing=True)
-        elif ended.radio:
+        elif ended.radio or ended.mix:
             self._mark(None, 0.0, playing=False)
         else:
             self._mark(ended.song_id, ended.position, playing=False)

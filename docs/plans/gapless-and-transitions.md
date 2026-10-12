@@ -167,6 +167,17 @@ on its own as before.
 Formats: Original becomes FLAC (it is always an encode now), anything else
 as set.
 
+## Party listen-along
+
+While the host hears a mix - cast (`AppState.mix`) or in their window
+(`core/local_mixes.py`, named in the window's snapshot as `party_mix`:
+player, run, stream time) - the guests' broadcaster decodes nothing itself:
+it reads the mix's ring from where the host is in its stream
+(`core/party_broadcast.py`'s `MixSource`), so guests hear the same
+transitions. Song changes, holds and rate steps come from the mix's
+timeline, marked where they fall in the guests' stream. A seek or skip is a
+new run, which the broadcaster follows like any other jump of the host's.
+
 ## ffmpeg
 
 Nothing new in the build: PCM in and out (`s16le` muxer and demuxer) and
@@ -189,6 +200,5 @@ three platforms, still out of process).
   playlist of the mix (EVENT type), the format Apple's own live audio uses.
 - **Listening.** House 120 into 128, drum & bass into half-time, hip-hop,
   pop with tempo drift, a live recording - and WSOLA at the edges of its 8 %.
-- **Party listen-along** follows the host's mapped song and hears a cut at
-  each transition; its broadcaster could read the mix ring instead.
-- **CPU** on the smallest host with two decks stretching.
+- **CPU** on the smallest host: two decks decoding, one of them stretched,
+  during a beatmix.

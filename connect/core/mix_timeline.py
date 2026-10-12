@@ -16,7 +16,7 @@ stretched to another's tempo; a ramp is written as a run of short entries
 rather than as a curve, which keeps the arithmetic here linear.
 """
 
-from bisect import bisect_right
+from bisect import bisect_left, bisect_right
 from dataclasses import dataclass
 from typing import Any
 
@@ -145,6 +145,10 @@ class Timeline:
         if i > 0:
             del self._entries[:i]
             del self._frames[:i]
+
+    def changes_in(self, start: int, end: int) -> list[TimelineEntry]:
+        """The entries marked at frames from `start` up to `end`."""
+        return self._entries[bisect_left(self._frames, start) : bisect_left(self._frames, end)]
 
     def prune_behind(self, head_frame: int) -> None:
         self.prune(head_frame - _KEEP_FRAMES)

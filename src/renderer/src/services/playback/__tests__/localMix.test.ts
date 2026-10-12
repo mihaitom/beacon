@@ -178,6 +178,18 @@ describe('LocalMixPlayer', () => {
     expect(client.stopLocalMix).toHaveBeenCalledWith(mix.player)
   })
 
+  it('tells a party which mix it plays and where in it this tab is', async () => {
+    engine()
+    vi.mocked(client.startLocalMix).mockResolvedValue(state())
+    const mix = new LocalMixPlayer()
+    expect(mix.partyState()).toBeNull()
+    await mix.start(startOptions())
+    mix.heard(37.5)
+    expect(mix.partyState()).toEqual({ player: mix.player, epoch: 'e1', stream_time: 37.5 })
+    mix.stop()
+    expect(mix.partyState()).toBeNull()
+  })
+
   it('does nothing about a mix it does not have', () => {
     const mix = new LocalMixPlayer()
     mix.pause()

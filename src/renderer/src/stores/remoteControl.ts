@@ -18,6 +18,7 @@ import {
   remoteRadioFaviconUrl,
 } from '@/services/remoteControl/commands'
 import { usePlaybackStore } from './playback'
+import { getLocalMix } from '@/services/playback/localMix'
 import { useRadioMetadataStore } from './radioMetadata'
 import { useConnectStore } from './connect'
 import { isBackingOff } from '@/services/connect/pollGate'
@@ -327,6 +328,9 @@ export const useRemoteControlStore = defineStore('remoteControl', {
           // The ReplayGain this window plays the song with, so guests
           // listening along hear it at the same level.
           party_gain: playback.replayGainMultiplier,
+          // The mix this window plays with transitions on, so guests
+          // listening along hear its crossfades too.
+          party_mix: getLocalMix().partyState(),
           // Which window this is, so connect hands guests only the host's
           // view of things (core/party.py's receive_snapshot).
           party_tab: usePartyStore().hostedHere ? partyTabId() : null,

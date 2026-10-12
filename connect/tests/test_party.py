@@ -1837,6 +1837,56 @@ def test_the_stream_follows_the_cast_while_the_host_casts(client, default_sessio
     assert party.host_hearing().playing is False
 
 
+class _FakeEngine:
+    def __init__(self, epoch):
+        from core.mix_timeline import Timeline
+
+        self.epoch = epoch
+        self.stopped = False
+        self.timeline = Timeline()
+        self.timeline.mark(0, "a", 0, 0.0, playing=True)
+
+    def stop(self):
+        self.stopped = True
+
+
+def test_the_windows_mix_is_followed_by_its_stream_time(client, default_session, monkeypatch):
+    """With transitions on, the host's window plays a mix; guests are read
+    the same mix from where the window is in it."""
+    from core import local_mixes
+    from core.local_mixes import LocalMix
+
+    _start(client)
+    engine = _FakeEngine("e1")
+    mix = LocalMix(default_session.session_id, "p1", engine, [])
+    monkeypatch.setitem(local_mixes._mixes, (default_session.session_id, "p1"), mix)
+    about = {"player": "p1", "epoch": "e1", "stream_time": 300.0}
+    snapshot = dict(_snapshot(["a"], session_id=default_session.session_id), party_mix=about)
+    party.update_snapshot(snapshot)
+    party.tab_snapshot_at = time.time() - 2.0
+    hearing = party.host_hearing()
+    assert hearing.mix is engine
+    assert hearing.mix_time == pytest.approx(302.0, abs=0.2)
+    # An answer about an older run of the mix is no answer.
+    party.update_snapshot(dict(snapshot, party_mix=dict(about, epoch="old")))
+    assert party.host_hearing().mix is None
+    party.update_snapshot(dict(snapshot, party_mix=dict(about, player="other")))
+    assert party.host_hearing().mix is None
+
+
+def test_a_cast_mix_is_followed_by_its_clock(client, default_session):
+    _start(client)
+    party.update_snapshot(_snapshot(["x"], session_id=default_session.session_id))
+    _cast(default_session, ["a", "b"], index=0)
+    st = default_session.state
+    st.mix = _FakeEngine("e1")
+    st.clock.start(80.0)
+    hearing = party.host_hearing()
+    assert hearing.mix is st.mix
+    assert hearing.mix_time == pytest.approx(80.0, abs=0.2)
+    st.mix = None
+
+
 async def test_the_stream_is_decoded_from_the_hosts_media_server(
     client, default_session, monkeypatch
 ):

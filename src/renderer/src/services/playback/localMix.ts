@@ -100,6 +100,8 @@ export class LocalMixPlayer {
   private pollTimer: ReturnType<typeof setInterval> | null = null
   private startSeq = 0
   private pausedAt: number | null = null
+  /** The stream time last asked about through heard(): where this tab is. */
+  private heardTime = 0
   /** connect no longer has this mix (it was stopped, or connect restarted)
    * while this tab still played it. */
   onLost: (() => void) | null = null
@@ -135,7 +137,15 @@ export class LocalMixPlayer {
 
   /** What is heard at stream time `streamTime`. */
   heard(streamTime: number): MixHeard | null {
+    this.heardTime = streamTime
     return heardAt(this.timeline, streamTime)
+  }
+
+  /** Which mix this tab plays and where in it, for a party's listen-along:
+   * connect reads guests the same mix from there (core/party.py). */
+  partyState(): { player: string; epoch: string; stream_time: number } | null {
+    if (this.epoch === null) return null
+    return { player: this.player, epoch: this.epoch, stream_time: this.heardTime }
   }
 
   syncQueue(songs: LocalMixSong[], repeatMode: RepeatMode): void {
@@ -173,10 +183,12 @@ export class LocalMixPlayer {
     this.timeline = []
     this.end = null
     this.pausedAt = null
+    this.heardTime = 0
     if (wasActive) void stopLocalMix(this.player).catch(() => {})
   }
 
   private adopt(state: LocalMixState): void {
+    if (state.epoch !== this.epoch) this.heardTime = 0
     this.epoch = state.epoch
     this.timeline = state.timeline
     this.end = state.end

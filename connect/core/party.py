@@ -26,6 +26,8 @@ from collections import deque
 from dataclasses import dataclass, field
 from urllib.parse import quote
 
+from . import local_mixes
+from .mix_engine import MixEngine
 from .party_broadcast import BITRATES_KBPS, Broadcaster, Hearing
 from .remote import KEEPALIVE_TIMEOUT, REAP_INTERVAL, remote
 from .state import EventBus
@@ -983,6 +985,9 @@ class PartyState:
                 duration=float(st.current_track.duration or 0),
                 next_song_id=following,
                 gain=st.current_track_gain,
+                mix=st.mix,
+                # What a mix's clock counts (see compute_position()).
+                mix_time=max(st.clock.elapsed(), 0.0) if st.mix is not None else 0.0,
             )
         raw = self.tab_snapshot
         if not raw:
@@ -1008,6 +1013,7 @@ class PartyState:
         if isinstance(index, int) and 0 <= index < len(queue) - 1:
             following = (queue[index + 1] or {}).get("id")
         gain = raw.get("party_gain")
+        mix, mix_time = self._host_tab_mix(raw, playing)
         return Hearing(
             song_id=current["id"],
             position=position,
@@ -1015,7 +1021,25 @@ class PartyState:
             duration=float(raw.get("duration") or 0),
             next_song_id=following,
             gain=float(gain) if isinstance(gain, int | float) and 0 < gain <= 4 else 1.0,
+            mix=mix,
+            mix_time=mix_time,
         )
+
+    def _host_tab_mix(self, raw: dict, playing: bool) -> tuple[MixEngine | None, float]:
+        """The mix the host's window plays (core/local_mixes.py), and where
+        in its stream the window is - while it is still that same run."""
+        about = raw.get("party_mix")
+        if not isinstance(about, dict) or not self.host_session_id:
+            return None, 0.0
+        player, epoch, at = about.get("player"), about.get("epoch"), about.get("stream_time")
+        if not isinstance(player, str) or not isinstance(at, int | float):
+            return None, 0.0
+        mix = local_mixes.get(self.host_session_id, player)
+        if mix is None or mix.engine.epoch != epoch:
+            return None, 0.0
+        if playing:
+            at += max(time.time() - self.tab_snapshot_at, 0.0)
+        return mix.engine, float(at)
 
     def playing_song_ids(self) -> set[str]:
         """Songs a guest may be hearing right now: the host's current one

@@ -121,10 +121,10 @@ describe('playback with transitions', () => {
       expect(engine.play).toHaveBeenCalled()
     })
 
-    it('not on WebKit, whose player cannot hold an endless stream', async () => {
+    it('on WebKit too, which gets the mix as a live playlist', async () => {
       const webkit = vi.spyOn(streamQuality, 'prefersHls').mockReturnValue(true)
       await playingQueue()
-      expect(mix.start).not.toHaveBeenCalled()
+      expect(mix.start).toHaveBeenCalled()
       webkit.mockRestore()
     })
 

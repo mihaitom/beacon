@@ -11,6 +11,7 @@ import shutil
 import struct
 import wave
 
+import numpy as np
 import pytest
 
 import core.party_broadcast as pb
@@ -483,3 +484,103 @@ def test_from_a_station_back_to_a_song(monkeypatch):
     host.set(song_id="a", position=3.0, playing=True)
     rig.produce(0)
     assert rig.source.song_id == "a" and not rig.source.radio
+
+
+# ── The host's mix ──────────────────────────────────────────────────────────
+
+
+class FakeMix:
+    """What the broadcaster reads of a mix engine: its rendered PCM and its
+    timeline. Frame k of the ring holds the value k % 30000, so where a
+    stream read from can be told by its samples."""
+
+    def __init__(self, seconds: float, epoch: str = "e1"):
+        from core.mix_output import PcmRing
+        from core.mix_timeline import Timeline
+
+        self.epoch = epoch
+        self.ring = PcmRing()
+        frames = int(seconds * SR)
+        values = np.arange(frames) % 30000
+        self.ring.append(np.repeat(values, 2).astype("<i2").tobytes())
+        self.timeline = Timeline()
+        self.timeline.mark(0, "a", 0, 100.0, playing=True)
+
+    @property
+    def end_stream_time(self):
+        end = self.timeline.end_frame
+        return None if end is None else end / SR
+
+
+def _first_value(pcm: bytes) -> int:
+    return struct.unpack("<h", pcm[:2])[0]
+
+
+def test_a_mix_is_read_where_the_host_is_in_it_not_decoded():
+    """With transitions on, guests hear the host's mix itself - its
+    crossfades included - rather than the songs one by one."""
+    mix = FakeMix(30)
+    rig = Rig(Host(song_id="a", position=110.0, playing=True, mix=mix, mix_time=10.0))
+    out = rig.produce()
+    assert _first_value(out) == 10 * SR % 30000
+    assert _first_value(rig.produce()) == (10 * SR + TICK) % 30000
+    assert rig.opened == []
+    assert rig.b.timeline[-1] == pb.TimelineEntry(0.0, "a", 110.0, True)
+
+
+def test_the_mixs_song_changes_are_marked_where_they_fall_in_the_stream():
+    mix = FakeMix(30)
+    mix.timeline.mark(12 * SR, "b", 1, 4.0, playing=True, starts=True)
+    host = Host()
+    rig = Rig(host)
+    for _ in range(60):  # three seconds, the host moving along
+        host.set(song_id="a", position=110.0, playing=True, mix=mix, mix_time=10.0 + rig.now())
+        rig.produce()
+    entry = rig.b.timeline[-1]
+    assert (entry.song_id, entry.position, entry.playing) == ("b", 4.0, True)
+    assert entry.stream_time == pytest.approx(2.0)
+
+
+def test_a_seek_in_the_mix_moves_the_stream_and_a_new_run_replaces_it():
+    host = Host(song_id="a", position=110.0, playing=True, mix=FakeMix(30), mix_time=10.0)
+    rig = Rig(host)
+    rig.produce()
+    host.set(song_id="a", position=110.0, playing=True, mix=host.hearing.mix, mix_time=20.0)
+    assert _first_value(rig.produce()) == (20 * SR) % 30000
+    # A skip by hand is a new mix, starting over at 0.
+    host.set(song_id="c", position=0.0, playing=True, mix=FakeMix(30, "e2"), mix_time=0.0)
+    assert _first_value(rig.produce()) == 0
+    assert rig.source.engine.epoch == "e2"
+
+
+def test_a_small_drift_from_the_host_in_the_mix_is_left_alone():
+    host = Host(song_id="a", position=110.0, playing=True, mix=FakeMix(30), mix_time=10.0)
+    rig = Rig(host)
+    rig.produce()
+    host.set(song_id="a", position=110.0, playing=True, mix=host.hearing.mix, mix_time=11.0)
+    assert _first_value(rig.produce()) == (10 * SR + TICK) % 30000
+
+
+def test_the_end_of_the_mix_is_silence_and_is_not_started_again():
+    mix = FakeMix(10)
+    mix.timeline.mark_end(10 * SR)
+    mix.ring.close()
+    host = Host(song_id="a", position=110.0, playing=True, mix=mix, mix_time=9.9)
+    rig = Rig(host)
+    for _ in range(10):
+        rig.produce()
+    assert rig.source is None
+    assert rig.b.timeline[-1].song_id is None and not rig.b.timeline[-1].playing
+    marks = len(rig.b.timeline)
+    for _ in range(10):
+        assert rig.produce() == bytes(TICK * 4)
+    assert len(rig.b.timeline) == marks
+
+
+def test_a_paused_mix_is_silence():
+    host = Host(song_id="a", position=110.0, playing=True, mix=FakeMix(30), mix_time=10.0)
+    rig = Rig(host)
+    rig.produce()
+    host.set(song_id="a", position=110.0, playing=False, mix=host.hearing.mix, mix_time=10.05)
+    assert rig.produce() == bytes(TICK * 4)
+    assert rig.b.timeline[-1].playing is False
