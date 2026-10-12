@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { heardAt, type MixTimelineEntry } from '../mixTimeline'
+import { heardAt, loadedThrough, type MixTimelineEntry } from '../mixTimeline'
 
 function entry(t: number, song: string | null, index: number | null, extra = {}): MixTimelineEntry {
   return {
@@ -50,5 +50,27 @@ describe('heardAt', () => {
 
   it('is nothing once the mix has ended', () => {
     expect(heardAt(timeline, 301)).toBeNull()
+  })
+})
+
+describe('loadedThrough', () => {
+  // A run started by a seek: stream time 0 is 120s into song a.
+  const timeline = [
+    entry(0, 'a', 0, { position: 120 }),
+    entry(80, 'b', 1),
+    entry(280, null, null, { start: false }),
+  ]
+
+  it("is the loaded end in the heard song's own seconds, not stream time", () => {
+    expect(loadedThrough(timeline, 10, 30)).toBe(150)
+  })
+
+  it('is null once the load has reached past the heard song', () => {
+    expect(loadedThrough(timeline, 10, 90)).toBeNull()
+    expect(loadedThrough(timeline, 90, 300)).toBeNull()
+  })
+
+  it('is 0 when nothing is loaded', () => {
+    expect(loadedThrough(timeline, 10, 0)).toBe(0)
   })
 })

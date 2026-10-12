@@ -285,6 +285,10 @@ let scrobbledSongId: string | null = null
 // Stream time at which the song this device's mix is playing began - see
 // followLocalMix(). Null until the first song of a run has been heard.
 let mixSongStartedAt: number | null = null
+// How far the element holds the mix, in stream time. Kept rather than
+// mapped once, so followLocalMix() can map it into whichever song is
+// heard as one gives way to the next.
+let mixBufferedEnd = 0
 
 // Smooths cast playback's position — see positionTracker.ts's own comment
 // for why and how. The status tick's position is server-authoritative and
@@ -527,7 +531,9 @@ export const usePlaybackStore = defineStore('playback', {
         if (!this.isCasting) this.duration = duration
       }
       engine.onBufferedChange = (end) => {
-        if (!this.isCasting) this.bufferedPosition = end
+        if (this.isCasting) return
+        mixBufferedEnd = end
+        this.bufferedPosition = getLocalMix().active ? this.mixBufferedPosition() : end
       }
       engine.onEnded = () => {
         if (!this.isCasting) void this.advanceOnSongEnd()
@@ -1835,6 +1841,14 @@ export const usePlaybackStore = defineStore('playback', {
         if (!first) this.localMixSongBegan(heard.songId, heard.queueIndex)
       }
       this.localPosition = heard.position
+      this.bufferedPosition = this.mixBufferedPosition()
+    },
+
+    /** The mix's buffered end as seconds into the current song - stream
+     * time is not song time, least of all after a seek, which starts the
+     * stream over at 0 mid-song. */
+    mixBufferedPosition(): number {
+      return Math.min(this.duration, getLocalMix().loadedThrough(mixBufferedEnd) ?? this.duration)
     },
 
     localMixSongBegan(songId: string, queueIndex: number): void {

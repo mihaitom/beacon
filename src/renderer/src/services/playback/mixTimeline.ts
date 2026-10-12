@@ -46,3 +46,20 @@ export function heardAt(timeline: readonly MixTimelineEntry[], t: number): MixHe
   const position = entry.playing ? entry.position + (t - entry.t) * entry.rate : entry.position
   return { songId: entry.song_id, queueIndex: entry.queue_index, position, startedAt }
 }
+
+/** How far the song heard at stream time `t` is loaded, given the stream
+ * is loaded up to stream time `end`: that song's own position at `end`, or
+ * null once `end` lies past it - the rest of the song is in hand. 0 when
+ * nothing is loaded or nothing is heard. */
+export function loadedThrough(
+  timeline: readonly MixTimelineEntry[],
+  t: number,
+  end: number,
+): number | null {
+  if (end <= 0) return 0
+  const now = heardAt(timeline, t)
+  if (!now) return 0
+  const then = heardAt(timeline, end)
+  if (!then || then.startedAt !== now.startedAt) return null
+  return then.position
+}

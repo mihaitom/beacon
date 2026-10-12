@@ -30,7 +30,7 @@ import {
 import { calculateReplayGain, type ReplayGainMode } from '@/services/replayGain'
 import { prefersHls, type LocalStreamQuality } from '@/services/streamQuality'
 import type { Song } from '@/types/library'
-import { heardAt, type MixHeard, type MixTimelineEntry } from './mixTimeline'
+import { heardAt, loadedThrough, type MixHeard, type MixTimelineEntry } from './mixTimeline'
 import type { RepeatMode } from './types'
 
 /** How often the timeline is asked for while playing. A song change is
@@ -152,6 +152,12 @@ export class LocalMixPlayer {
   heard(streamTime: number): MixHeard | null {
     this.heardTime = streamTime
     return heardAt(this.timeline, streamTime)
+  }
+
+  /** How far the song last heard is loaded, given the element holds the
+   * stream up to `streamEnd` - see mixTimeline.ts's loadedThrough(). */
+  loadedThrough(streamEnd: number): number | null {
+    return loadedThrough(this.timeline, this.heardTime, streamEnd)
   }
 
   /** Which mix this tab plays and where in it, for a party's listen-along:

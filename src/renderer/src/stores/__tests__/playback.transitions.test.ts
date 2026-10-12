@@ -25,6 +25,7 @@ function fakeMix() {
   const mix = {
     active: false,
     heard: vi.fn(),
+    loadedThrough: vi.fn((): number | null => 0),
     start: vi.fn(async (_options: unknown) => {
       mix.active = true
       return true
@@ -129,7 +130,7 @@ describe('playback with transitions', () => {
     })
 
     it('follows the mix into the next song without starting anything', async () => {
-      const onTimeUpdate = initEngineCallbacks(usePlaybackStore())
+      const { onTimeUpdate } = initEngineCallbacks(usePlaybackStore())
       const playback = await playingQueue()
       engine.play.mockClear()
       mix.start.mockClear()
@@ -151,6 +152,22 @@ describe('playback with transitions', () => {
       expect(mix.syncQueue).toHaveBeenCalled()
       expect(mix.start).not.toHaveBeenCalled()
       expect(engine.play).not.toHaveBeenCalled()
+    })
+
+    it('shows how far the current song is loaded, not how far the stream is', async () => {
+      const { onTimeUpdate, onBufferedChange } = initEngineCallbacks(usePlaybackStore())
+      const playback = await playingQueue()
+      mix.heard.mockReturnValue({ songId: 'a', queueIndex: 0, position: 120, startedAt: 0 })
+      mix.loadedThrough.mockReturnValue(150)
+      onTimeUpdate(0)
+      onBufferedChange(30)
+      expect(mix.loadedThrough).toHaveBeenLastCalledWith(30)
+      expect(playback.bufferedPosition).toBe(150)
+
+      // Loaded into the next song: all of this one is in hand.
+      mix.loadedThrough.mockReturnValue(null)
+      onBufferedChange(90)
+      expect(playback.bufferedPosition).toBe(200)
     })
 
     it('a seek starts the mix over from there', async () => {
@@ -206,6 +223,10 @@ function initEngineCallbacks(playback: ReturnType<typeof usePlaybackStore>) {
   playback.init()
   const installed = vi.mocked(getAudioEngine).mock.results.at(-1)!.value as {
     onTimeUpdate: (position: number) => void
+    onBufferedChange: (end: number) => void
   }
-  return (position: number) => installed.onTimeUpdate(position)
+  return {
+    onTimeUpdate: (position: number) => installed.onTimeUpdate(position),
+    onBufferedChange: (end: number) => installed.onBufferedChange(end),
+  }
 }
