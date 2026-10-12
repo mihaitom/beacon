@@ -13,11 +13,14 @@
     @drop="$emit('drop', $event)"
     @click="playbackStore.playAtIndex(index)"
   >
+    <!-- A song the mix has settled on stays put - see the playback store's
+     - lockedNextIndex. -->
     <v-icon
-      icon="mdi-drag-vertical"
+      :icon="lockedNext ? 'mdi-lock-outline' : 'mdi-drag-vertical'"
+      :title="lockedNext ? $t('queue.nextLocked') : undefined"
       size="18"
       class="queue-row__handle text-medium-emphasis"
-      draggable="true"
+      :draggable="lockedNext ? 'false' : 'true'"
       @click.stop
       @dragstart="$emit('dragstart', $event)"
       @dragend="$emit('dragend')"
@@ -56,7 +59,7 @@
       icon="mdi-close"
       size="small"
       variant="text"
-      :disabled="isCurrent"
+      :disabled="isCurrent || lockedNext"
       @click.stop="playbackStore.removeFromQueue(index)"
     />
   </div>
@@ -107,6 +110,9 @@ export default {
     },
     isCurrent() {
       return this.index === this.playbackStore.currentIndex
+    },
+    lockedNext() {
+      return this.index === this.playbackStore.lockedNextIndex
     },
     /** isCurrent says where the queue stands; this says whether that is
      * also what's coming out of the speakers. The two only differ while a

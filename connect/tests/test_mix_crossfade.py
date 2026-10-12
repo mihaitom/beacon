@@ -166,6 +166,33 @@ async def test_the_song_change_is_marked_at_the_swap_on_the_delayed_output():
     assert rig.engine.timeline.end_frame == len(rig.engine.ring.read(0, 10**9)) // 4
 
 
+async def test_a_queue_change_during_the_blend_keeps_the_incoming_song():
+    rig = Rig(
+        {"a": tone(440, 30), "b": tone(660, 20), "c": tone(880, 20)}, CROSSFADE, analyse=False
+    )
+    rig.engine.start()
+    for _ in range(600):
+        rig.engine.step()
+        for _ in range(5):
+            await asyncio.sleep(0)
+        rig.clock.now += 0.5
+        if rig.engine.next_committed:
+            break
+    # Nothing of b is in the timeline yet - the swap comes halfway through.
+    assert rig.engine.timeline.next_change(0) is None
+    assert rig.engine.next_locked(0.0)
+    rig.order = ["a", "c"]
+    rig.items["c"] = MixItem("c", 1, duration=20.0)
+    rig.engine.queue_changed()
+    for _ in range(100):
+        rig.engine.step()
+        for _ in range(5):
+            await asyncio.sleep(0)
+        rig.clock.now += 0.5
+    assert rig.engine.timeline.next_change(0).song_id == "b"
+    rig.engine.stop()
+
+
 async def test_the_basses_swap_instead_of_doubling():
     a = tone(55, 30) + tone(3000, 30, 0.1)
     b = tone(82, 20) + tone(4000, 20, 0.1)

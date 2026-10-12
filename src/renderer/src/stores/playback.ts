@@ -94,6 +94,11 @@ interface PlaybackState {
    * derived. Always 0 while casting, which buffers on the device itself,
    * out of this app's reach. */
   bufferedPosition: number
+  /** With transitions on: the mix has settled on the song after the
+   * current one - rendered it, or begun blending it in - so it stays where
+   * it is. From the local mix (followLocalMix()) or, while casting, from
+   * connect's status. See lockedNextIndex. */
+  mixNextLocked: boolean
   duration: number
   volume: number
   shuffle: boolean
@@ -389,6 +394,7 @@ export const usePlaybackStore = defineStore('playback', {
       castInterrupted: false,
       localPosition: 0,
       bufferedPosition: 0,
+      mixNextLocked: false,
       duration: 0,
       volume: 1,
       shuffle: false,
@@ -456,6 +462,17 @@ export const usePlaybackStore = defineStore('playback', {
      * playing; the two only differ for the span of one. */
     queuedSong(state): Song | null {
       return state.currentIndex >= 0 ? (state.queue[state.currentIndex] ?? null) : null
+    },
+    /** The queue position the mix has settled on as the next song (see
+     * mixNextLocked), or -1. Every queue edit keeps that song right after
+     * the current one: connect no longer takes a change there, and a
+     * queue showing something else next would be wrong the moment the
+     * transition is heard. Not under repeat-one, where the mix plays the
+     * current song again whatever comes next in the queue. */
+    lockedNextIndex(state): number {
+      if (!state.mixNextLocked || state.repeatMode === 'one' || state.radioStation) return -1
+      const next = state.currentIndex + 1
+      return next > 0 && next < state.queue.length ? next : -1
     },
     hasNext(state): boolean {
       if (state.repeatMode !== 'off') return state.queue.length > 0
@@ -984,6 +1001,7 @@ export const usePlaybackStore = defineStore('playback', {
       // touching the queue) doesn't wait on anything.
       if (this.shuffle !== status.shuffle) this.shuffle = status.shuffle
       if (this.repeatMode !== status.repeat_mode) this.repeatMode = status.repeat_mode
+      this.mixNextLocked = status.next_locked
       // Same treatment, and for a sharper reason: the backend tops the
       // queue up on its own from this flag (see routes/stream.py's
       // _maybe_autoplay_topup), so a client left showing its own stored
@@ -1789,6 +1807,7 @@ export const usePlaybackStore = defineStore('playback', {
      * happens either way - it is only the arithmetic in between that goes
      * away. */
     startLocalSong(song: Song, position: number, autoplay: boolean): void {
+      this.mixNextLocked = false
       if (this.localMixWanted()) {
         void this.startLocalMix(song, position, autoplay)
         return
@@ -1842,6 +1861,7 @@ export const usePlaybackStore = defineStore('playback', {
       }
       this.localPosition = heard.position
       this.bufferedPosition = this.mixBufferedPosition()
+      this.mixNextLocked = getLocalMix().nextLocked
     },
 
     /** The mix's buffered end as seconds into the current song - stream
@@ -1954,12 +1974,14 @@ export const usePlaybackStore = defineStore('playback', {
       // docstring). Reading null there would reshuffle the queue and leave
       // currentIndex pointing at whatever landed in that slot.
       const current = this.queuedSong
+      const lockedNext = this.queue[this.lockedNextIndex]
       this.queue = this.shuffle
         ? shuffledExcept(this.originalQueue, current)
         : [...this.originalQueue]
       if (current) {
         this.currentIndex = this.queue.findIndex((t) => t.id === current.id)
       }
+      if (lockedNext) this.queue = keptAfter(this.queue, this.currentIndex, lockedNext)
       this.syncCastQueue()
     },
 
@@ -2093,12 +2115,15 @@ export const usePlaybackStore = defineStore('playback', {
     },
 
     /** Inserts `songs` at queue position `index` (after the current song at
-     * the earliest). In the unshuffled order they follow whatever precedes
+     * the earliest, after a locked next one - see lockedNextIndex). In the unshuffled order they follow whatever precedes
      * them here, so turning shuffle off keeps them where they were put.
      * Returns what actually went in - dedupeForQueue() may hand back
      * copies. */
     insertAt(index: number, songs: Song[]): Song[] {
-      const at = Math.min(Math.max(index, this.currentIndex + 1, 0), this.queue.length)
+      const at = Math.min(
+        Math.max(index, this.currentIndex + 1, this.lockedNextIndex + 1, 0),
+        this.queue.length,
+      )
       const toInsert = dedupeForQueue(songs, this.queue)
       // Read before the splice: the song the new ones follow.
       const before = at > 0 ? this.queue[at - 1] : undefined
@@ -2116,6 +2141,7 @@ export const usePlaybackStore = defineStore('playback', {
 
     removeFromQueue(index: number): void {
       if (index === this.currentIndex) return // can't remove what's playing
+      if (index === this.lockedNextIndex) return
       const [removed] = this.queue.splice(index, 1)
       if (index < this.currentIndex) this.currentIndex -= 1
       if (removed) {
@@ -2125,13 +2151,21 @@ export const usePlaybackStore = defineStore('playback', {
       this.syncCastQueue()
     },
 
+    /** Refused when it would take a locked next song (see
+     * lockedNextIndex) away from right after the current one. */
     reorderQueue(from: number, to: number): void {
-      const [moved] = this.queue.splice(from, 1)
+      const lockedNext = this.queue[this.lockedNextIndex]
+      const queue = [...this.queue]
+      const [moved] = queue.splice(from, 1)
       if (!moved) return
-      this.queue.splice(to, 0, moved)
-      if (from === this.currentIndex) this.currentIndex = to
-      else if (from < this.currentIndex && to >= this.currentIndex) this.currentIndex -= 1
-      else if (from > this.currentIndex && to <= this.currentIndex) this.currentIndex += 1
+      queue.splice(to, 0, moved)
+      let current = this.currentIndex
+      if (from === current) current = to
+      else if (from < current && to >= current) current -= 1
+      else if (from > current && to <= current) current += 1
+      if (lockedNext && queue[current + 1] !== lockedNext) return
+      this.queue = queue
+      this.currentIndex = current
       this.syncCastQueue()
     },
 
@@ -2205,8 +2239,9 @@ export const usePlaybackStore = defineStore('playback', {
         this.syncCastQueue()
         return
       }
-      this.originalQueue = [current]
-      this.queue = [current]
+      const lockedNext = this.queue[this.lockedNextIndex]
+      this.originalQueue = lockedNext ? [current, lockedNext] : [current]
+      this.queue = [...this.originalQueue]
       this.currentIndex = 0
       this.syncCastQueue()
     },
@@ -2500,6 +2535,17 @@ export function dedupeForQueue(songs: Song[], existingQueue: Song[]): Song[] {
     seen.add(t)
     return t
   })
+}
+
+/** `queue` with `song` moved to right after `index` - a locked next song
+ * kept in place across a reshuffle (see lockedNextIndex). */
+function keptAfter(queue: Song[], index: number, song: Song): Song[] {
+  const rest = [...queue]
+  const at = rest.indexOf(song)
+  if (at >= 0) rest.splice(at, 1)
+  const after = at >= 0 && at <= index ? index - 1 : index
+  rest.splice(after + 1, 0, song)
+  return rest
 }
 
 export function shuffledExcept(songs: Song[], keepFirst: Song | null | undefined): Song[] {

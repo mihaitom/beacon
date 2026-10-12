@@ -32,14 +32,15 @@
       icon="mdi-close"
       size="small"
       variant="text"
-      :disabled="isCurrent"
+      :disabled="isCurrent || lockedNext"
       @click.stop="$emit('remove')"
     />
     <v-icon
-      icon="mdi-drag-vertical"
+      :icon="lockedNext ? 'mdi-lock-outline' : 'mdi-drag-vertical'"
+      :title="lockedNext ? $t('queue.nextLocked') : undefined"
       size="22"
       class="mobile-queue-row__handle text-medium-emphasis"
-      @pointerdown.stop="$emit('drag-start', $event)"
+      @pointerdown.stop="!lockedNext && $emit('drag-start', $event)"
     />
   </div>
 </template>
@@ -84,6 +85,12 @@ export default {
       default: null,
     },
     dragging: {
+      type: Boolean,
+      default: false,
+    },
+    /** The mix has settled on this song as the next one: it can be neither
+     * removed nor moved - see the playback store's lockedNextIndex. */
+    lockedNext: {
       type: Boolean,
       default: false,
     },

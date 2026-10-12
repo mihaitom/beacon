@@ -48,6 +48,7 @@ def test_starting_a_mix_answers_its_run_and_timeline(configured, default_session
     body = r.json()
     assert body["timeline"][0]["song_id"] == "a"
     assert body["timeline"][0]["position"] == 30
+    assert body["next_committed"] is False
     mix = local_mixes.get(default_session.session_id, PLAYER)
     assert mix.engine.epoch == body["epoch"] and mix.engine.started
 

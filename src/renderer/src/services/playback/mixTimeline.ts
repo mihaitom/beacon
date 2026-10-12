@@ -63,3 +63,19 @@ export function loadedThrough(
   if (!then || then.startedAt !== now.startedAt) return null
   return then.position
 }
+
+/** Whether the timeline already holds another song after the one heard at
+ * `t` - the mix has rendered past the join, so that song is settled. The
+ * end of the mix is not a song. Mirrors connect's Timeline.next_change(). */
+export function songFollows(timeline: readonly MixTimelineEntry[], t: number): boolean {
+  const now = heardAt(timeline, t)
+  if (!now) return false
+  for (const entry of timeline) {
+    if (entry.t <= t) continue
+    if (entry.song_id === null) return false
+    if (entry.start || entry.song_id !== now.songId || entry.queue_index !== now.queueIndex) {
+      return true
+    }
+  }
+  return false
+}

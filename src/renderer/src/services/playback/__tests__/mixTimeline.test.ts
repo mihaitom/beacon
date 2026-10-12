@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { heardAt, loadedThrough, type MixTimelineEntry } from '../mixTimeline'
+import { heardAt, loadedThrough, songFollows, type MixTimelineEntry } from '../mixTimeline'
 
 function entry(t: number, song: string | null, index: number | null, extra = {}): MixTimelineEntry {
   return {
@@ -72,5 +72,31 @@ describe('loadedThrough', () => {
 
   it('is 0 when nothing is loaded', () => {
     expect(loadedThrough(timeline, 10, 0)).toBe(0)
+  })
+})
+
+describe('songFollows', () => {
+  const timeline = [
+    entry(0, 'a', 0),
+    entry(50, 'a', 0, { position: 50, playing: false, start: false }),
+    entry(52, 'a', 0, { position: 50, start: false }),
+    entry(100, 'b', 1),
+    entry(200, null, null, { start: false }),
+  ]
+
+  it('is true once the next song is in the timeline', () => {
+    expect(songFollows(timeline, 10)).toBe(true)
+  })
+
+  it('does not count a hold within the same song', () => {
+    expect(songFollows(timeline.slice(0, 3), 10)).toBe(false)
+  })
+
+  it('does not count the end of the mix as a song', () => {
+    expect(songFollows(timeline, 150)).toBe(false)
+  })
+
+  it('counts the same song starting over', () => {
+    expect(songFollows([entry(0, 'a', 0), entry(100, 'a', 0)], 10)).toBe(true)
   })
 })

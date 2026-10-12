@@ -375,6 +375,7 @@ export default {
     empty: "La file d'attente est vide.",
     clear: "Vider la file d'attente",
     saveAsPlaylist: "Enregistrer la file d'attente comme playlist",
+    nextLocked: 'Joué ensuite : la transition est déjà prête',
   },
   party: {
     copied: 'Copié',

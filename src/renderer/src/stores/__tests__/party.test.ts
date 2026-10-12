@@ -56,6 +56,21 @@ describe('party wishes', () => {
     expect(ids(playback)).toEqual(['now', 'w1', 'host1', 'host2'])
   })
 
+  it('lands behind a next song the mix has settled on', () => {
+    const { playback, party } = setup(['now', 'host1'])
+    playback.mixNextLocked = true
+    party.wish(makeSong('w1'), 'anna', 'Anna', 3)
+    expect(ids(playback)).toEqual(['now', 'host1', 'w1'])
+  })
+
+  it('a song already coming up is not moved in front of it either', () => {
+    const { playback, party } = setup(['now', 'host1', 'host2'])
+    playback.mixNextLocked = true
+    party.wish(makeSong('host2'), 'anna', 'Anna', 3)
+    expect(ids(playback)).toEqual(['now', 'host1', 'host2'])
+    expect(party.requests[0]!.song).toBe(playback.queue[2])
+  })
+
   it('takes turns between guests', () => {
     const { playback, party } = setup(['now', 'host'])
     party.wish(makeSong('a1'), 'anna', 'Anna', 5)
@@ -178,6 +193,15 @@ describe('withdrawing a wish', () => {
     playback.currentIndex = 1
     expect(refusal(() => party.withdraw(id, 'anna'))).toBe('not-found')
     expect(ids(playback)).toEqual(['now', 'a1'])
+  })
+
+  it('refuses a wish the mix has settled on as next', () => {
+    const { playback, party } = setup(['now'])
+    party.wish(makeSong('a1'), 'anna', 'Anna', 3)
+    const id = party.requests[0]!.id
+    playback.mixNextLocked = true
+    expect(refusal(() => party.withdraw(id, 'anna'))).toBe('not-found')
+    expect(party.requests).toHaveLength(1)
   })
 })
 

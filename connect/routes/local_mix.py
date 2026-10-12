@@ -111,6 +111,9 @@ def _describe(mix: local_mixes.LocalMix) -> dict:
         "timeline": engine.timeline.to_json(),
         "end": engine.end_stream_time,
         "rendered": engine.rendered_time,
+        # The rest of "is the next song settled" is in the timeline, read
+        # against where the tab is listening - which only the tab knows.
+        "next_committed": engine.next_committed,
     }
 
 

@@ -347,6 +347,9 @@ export interface ConnectStatus {
    * instead of this one can show "off" over a queue that is visibly
    * growing. Adopted like shuffle/repeat_mode above. */
   autoplay_enabled: boolean
+  /** With transitions on: the song after the current one is settled in the
+   * mix - see stores/playback.ts's lockedNextIndex. */
+  next_locked: boolean
   elapsed: number
   ended: boolean
   paused: boolean

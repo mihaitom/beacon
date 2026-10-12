@@ -23,9 +23,10 @@ vi.mock('@/services/streamQuality', () => ({ prefersHls: vi.fn(() => false) }))
 
 const queue = ['a', 'b', 'c', 'd'].map((id) => makeSong(id))
 const quality = { format: 'flac' as const, bitrate: 0 }
-const state = (epoch = 'e1', end: number | null = null) => ({
+const state = (epoch = 'e1', end: number | null = null, nextCommitted = false) => ({
   epoch,
   end,
+  next_committed: nextCommitted,
   timeline: [
     { t: 0, song_id: 'a', queue_index: 0, position: 0, playing: true, rate: 1, start: true },
   ],
@@ -211,6 +212,23 @@ describe('LocalMixPlayer', () => {
     expect(mix.partyState()).toEqual({ player: mix.player, epoch: 'e1', stream_time: 37.5 })
     mix.stop()
     expect(mix.partyState()).toBeNull()
+  })
+
+  it('says the next song is locked once connect is blending it in', async () => {
+    vi.useFakeTimers()
+    engine()
+    vi.mocked(client.startLocalMix).mockResolvedValue(state())
+    vi.mocked(client.fetchLocalMixTimeline).mockResolvedValue(state('e1', null, true))
+    const mix = new LocalMixPlayer()
+    await mix.start(startOptions())
+    mix.heard(10)
+    expect(mix.nextLocked).toBe(false)
+
+    await vi.advanceTimersByTimeAsync(2000)
+
+    expect(mix.nextLocked).toBe(true)
+    mix.stop()
+    expect(mix.nextLocked).toBe(false)
   })
 
   it('does nothing about a mix it does not have', () => {

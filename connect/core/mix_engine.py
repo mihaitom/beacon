@@ -450,6 +450,22 @@ class MixEngine:
     def rendered_time(self) -> float:
         return self.ring.head / SAMPLE_RATE
 
+    @property
+    def next_committed(self) -> bool:
+        """Whether the song after the one being rendered is settled: it is
+        blending in, or the current one is easing into its tempo. A queue
+        change no longer reaches it from here on (see queue_changed())."""
+        return self._tx is not None or self._stretch is not None
+
+    def next_locked(self, stream_time: float) -> bool:
+        """Whether the song after the one heard at `stream_time` is settled -
+        rendered already, or committed to. Rendering runs a lead ahead of
+        the listener, so this holds well before the transition is heard."""
+        if self.next_committed:
+            return True
+        change = self.timeline.next_change(round(max(stream_time, 0.0) * SAMPLE_RATE))
+        return change is not None and change.song_id is not None
+
     # ── Control ──────────────────────────────────────────────────────────
 
     def freeze(self) -> None:
@@ -472,9 +488,7 @@ class MixEngine:
         """The queue after the current song may be different now. A next
         song already opened is dropped and asked for again; the current one
         plays on."""
-        if self._tx is not None or self._stretch is not None:
-            # The next song is already blending in, or the current one
-            # already easing into its tempo.
+        if self.next_committed:
             return
         self._next_generation += 1
         for task in (self._resolve_task, self._plan_task):

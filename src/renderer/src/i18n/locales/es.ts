@@ -375,6 +375,7 @@ export default {
     empty: 'La cola está vacía.',
     clear: 'Vaciar cola',
     saveAsPlaylist: 'Guardar cola como lista de reproducción',
+    nextLocked: 'Suena a continuación: la transición ya está preparada',
   },
   party: {
     copied: 'Copiado',

@@ -28,6 +28,7 @@
             :audible="index === playbackStore.currentIndex && !playbackStore.radioStation"
             :drag-over-position="dragIndex !== index ? dragOverPosition(index) : null"
             :dragging="dragIndex === index"
+            :locked-next="index === playbackStore.lockedNextIndex"
             @play="onRowPlay(index)"
             @remove="playbackStore.removeFromQueue(index)"
             @drag-start="onDragStart(index, $event)"

@@ -53,6 +53,7 @@ export function makeStatus(overrides: Partial<ConnectStatus> = {}): ConnectStatu
     shuffle: false,
     repeat_mode: 'off',
     autoplay_enabled: false,
+    next_locked: false,
     elapsed: 0,
     ended: false,
     paused: false,

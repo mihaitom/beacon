@@ -20,6 +20,9 @@ export interface LocalMixState {
   timeline: MixTimelineEntry[]
   /** Stream seconds at which the mix ends, once that is known. */
   end: number | null
+  /** The song after the one being rendered is blending in already - see
+   * connect's MixEngine.next_committed. */
+  next_committed: boolean
 }
 
 type RepeatMode = 'off' | 'all' | 'one'

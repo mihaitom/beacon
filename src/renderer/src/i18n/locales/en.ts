@@ -372,6 +372,7 @@ export default {
     empty: 'Queue is empty.',
     clear: 'Clear queue',
     saveAsPlaylist: 'Save queue as playlist',
+    nextLocked: 'Up next - the transition into it is already prepared',
   },
   party: {
     copied: 'Copied',

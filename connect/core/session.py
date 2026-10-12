@@ -930,6 +930,10 @@ def build_status_dict(
         # sent transport commands never corrected it, watched the queue grow
         # anyway, and had no way to find out why.
         "autoplay_enabled": st.autoplay_enabled,
+        # With transitions on: the song after the current one is settled in
+        # the mix, so clients keep it where it is (stores/playback.ts's
+        # lockedNextIndex).
+        "next_locked": st.mix is not None and st.mix.next_locked(clock_position(session)),
         "elapsed": elapsed,
         "ended": st.track_ended,
         "paused": st.clock.is_paused,

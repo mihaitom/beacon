@@ -372,6 +372,7 @@ export default {
     empty: 'Warteschlange ist leer.',
     clear: 'Warteschlange leeren',
     saveAsPlaylist: 'Warteschlange als Playlist speichern',
+    nextLocked: 'Kommt als Nächstes - der Übergang ist schon vorbereitet',
   },
   party: {
     copied: 'Kopiert',

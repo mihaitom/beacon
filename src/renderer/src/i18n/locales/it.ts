@@ -375,6 +375,7 @@ export default {
     empty: 'La coda è vuota.',
     clear: 'Svuota coda',
     saveAsPlaylist: 'Salva la coda come playlist',
+    nextLocked: 'Il prossimo: la transizione è già pronta',
   },
   party: {
     copied: 'Copiato',

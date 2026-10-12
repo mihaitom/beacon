@@ -30,7 +30,13 @@ import {
 import { calculateReplayGain, type ReplayGainMode } from '@/services/replayGain'
 import { prefersHls, type LocalStreamQuality } from '@/services/streamQuality'
 import type { Song } from '@/types/library'
-import { heardAt, loadedThrough, type MixHeard, type MixTimelineEntry } from './mixTimeline'
+import {
+  heardAt,
+  loadedThrough,
+  songFollows,
+  type MixHeard,
+  type MixTimelineEntry,
+} from './mixTimeline'
 import type { RepeatMode } from './types'
 
 /** How often the timeline is asked for while playing. A song change is
@@ -101,6 +107,7 @@ export class LocalMixPlayer {
   private epoch: string | null = null
   private timeline: MixTimelineEntry[] = []
   private end: number | null = null
+  private nextCommitted = false
   private pollTimer: ReturnType<typeof setInterval> | null = null
   private startSeq = 0
   private pausedAt: number | null = null
@@ -154,6 +161,13 @@ export class LocalMixPlayer {
     return heardAt(this.timeline, streamTime)
   }
 
+  /** Whether the song after the one last heard is settled in the mix -
+   * rendered already, or blending in - so a queue edit can no longer
+   * change it. */
+  get nextLocked(): boolean {
+    return this.active && (this.nextCommitted || songFollows(this.timeline, this.heardTime))
+  }
+
   /** How far the song last heard is loaded, given the element holds the
    * stream up to `streamEnd` - see mixTimeline.ts's loadedThrough(). */
   loadedThrough(streamEnd: number): number | null {
@@ -201,6 +215,7 @@ export class LocalMixPlayer {
     this.epoch = null
     this.timeline = []
     this.end = null
+    this.nextCommitted = false
     this.pausedAt = null
     this.heardTime = 0
     if (wasActive) void stopLocalMix(this.player).catch(() => {})
@@ -211,6 +226,7 @@ export class LocalMixPlayer {
     this.epoch = state.epoch
     this.timeline = state.timeline
     this.end = state.end
+    this.nextCommitted = state.next_committed
   }
 
   private applyEnd(): void {

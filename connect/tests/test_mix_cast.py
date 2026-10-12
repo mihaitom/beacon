@@ -316,6 +316,18 @@ def test_the_position_is_mapped_through_the_timeline(default_session):
     assert compute_position(default_session) == pytest.approx(54.0, abs=0.2)
 
 
+def test_the_status_says_when_the_next_song_is_settled(default_session):
+    st = default_session.state
+    assert build_status_dict(default_session)["next_locked"] is False
+    mix = MixEngine(MixItem("1", 0), 0.0, AsyncMock(), AsyncMock())
+    mix.timeline.mark(10 * SR, "2", 1, 0.0, playing=True)
+    st.mix, st.is_streaming, st.current_track = mix, True, TRACKS["1"]
+    st.clock.start(4.0)
+    assert build_status_dict(default_session)["next_locked"] is True
+    st.clock.start(12.0)
+    assert build_status_dict(default_session)["next_locked"] is False
+
+
 async def test_a_device_position_past_the_song_is_not_ignored_in_a_mix(default_session):
     """A mix's device position is the whole stream's - long past the song
     it started on."""

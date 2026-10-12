@@ -8,7 +8,7 @@ import { getAudioEngine } from '@/services/audioEngine'
 import { getLocalMix, STALE_PAUSE_MS } from '@/services/playback/localMix'
 import * as streamQuality from '@/services/streamQuality'
 import type { SubsonicClient } from '@/services/subsonic/client'
-import { makeSong } from './fixtures'
+import { makeSong, makeStatus } from './fixtures'
 
 vi.mock('@/services/audioEngine', () => ({ getAudioEngine: vi.fn() }))
 vi.mock('@/services/connect/accountSettings', () => ({
@@ -26,6 +26,7 @@ function fakeMix() {
     active: false,
     heard: vi.fn(),
     loadedThrough: vi.fn((): number | null => 0),
+    nextLocked: false,
     start: vi.fn(async (_options: unknown) => {
       mix.active = true
       return true
@@ -168,6 +169,95 @@ describe('playback with transitions', () => {
       mix.loadedThrough.mockReturnValue(null)
       onBufferedChange(90)
       expect(playback.bufferedPosition).toBe(200)
+    })
+
+    describe('once the mix has settled on the next song', () => {
+      const five = ['a', 'b', 'c', 'd', 'e'].map((id) => makeSong(id, { duration: 200 }))
+      const ids = (playback: ReturnType<typeof usePlaybackStore>) =>
+        playback.queue.map((song) => song.id)
+
+      async function locked() {
+        const { onTimeUpdate } = initEngineCallbacks(usePlaybackStore())
+        const playback = usePlaybackStore()
+        playback.setQueue(five, 0)
+        await playback.startCurrent()
+        await flushPromises()
+        mix.heard.mockReturnValue({ songId: 'a', queueIndex: 0, position: 190, startedAt: 0 })
+        mix.nextLocked = true
+        onTimeUpdate(190)
+        return playback
+      }
+
+      it('takes the lock from the mix as it plays', async () => {
+        const playback = await locked()
+        expect(playback.lockedNextIndex).toBe(1)
+      })
+
+      it('"play next" goes in after it', async () => {
+        const playback = await locked()
+        playback.queueNext([makeSong('x')])
+        expect(ids(playback)).toEqual(['a', 'b', 'x', 'c', 'd', 'e'])
+      })
+
+      it('it cannot be removed, or moved, or have a song moved in front of it', async () => {
+        const playback = await locked()
+        playback.removeFromQueue(1)
+        playback.reorderQueue(1, 3)
+        playback.reorderQueue(3, 1)
+        playback.reorderQueue(0, 3)
+        expect(ids(playback)).toEqual(['a', 'b', 'c', 'd', 'e'])
+        // Everything behind it still moves.
+        playback.reorderQueue(4, 2)
+        playback.removeFromQueue(3)
+        expect(ids(playback)).toEqual(['a', 'b', 'e', 'd'])
+      })
+
+      it('shuffling keeps it next', async () => {
+        const playback = await locked()
+        // Left to itself, this shuffle moves b to the end.
+        const random = vi.spyOn(Math, 'random').mockReturnValue(0)
+        playback.toggleShuffle()
+        random.mockRestore()
+        expect(ids(playback)).toEqual(['a', 'b', 'c', 'd', 'e'])
+      })
+
+      it('so does switching shuffle off', async () => {
+        const playback = await locked()
+        const [a, b, c, d, e] = playback.queue
+        playback.queue = [a!, d!, b!, c!, e!]
+        playback.shuffle = true
+        playback.toggleShuffle()
+        expect(ids(playback)).toEqual(['a', 'd', 'b', 'c', 'e'])
+      })
+
+      it('clearing the queue keeps it', async () => {
+        const playback = await locked()
+        playback.clearQueue()
+        expect(ids(playback)).toEqual(['a', 'b'])
+      })
+
+      it('not under repeat-one, which plays the current song again', async () => {
+        const playback = await locked()
+        playback.repeatMode = 'one'
+        playback.removeFromQueue(1)
+        expect(ids(playback)).toEqual(['a', 'c', 'd', 'e'])
+      })
+
+      it("while casting, it comes from connect's status", async () => {
+        const playback = usePlaybackStore()
+        playback.setQueue(five, 0)
+        const status = { queue: ids(playback), current_song_index: 0 }
+        await playback.adoptCastQueue(makeStatus({ ...status, next_locked: true }))
+        expect(playback.lockedNextIndex).toBe(1)
+        await playback.adoptCastQueue(makeStatus({ ...status, next_locked: false }))
+        expect(playback.lockedNextIndex).toBe(-1)
+      })
+
+      it('lifts once a new run starts', async () => {
+        const playback = await locked()
+        await playback.seek(10)
+        expect(playback.lockedNextIndex).toBe(-1)
+      })
     })
 
     it('a seek starts the mix over from there', async () => {

@@ -531,8 +531,10 @@ export const usePartyStore = defineStore('party', {
      * those were refused as duplicates - is moved forward to there rather
      * than queued a second time, and left alone if it comes sooner anyway.
      * One already played is queued again. */
-    wishEntry(song: Song, index: number): Song | undefined {
+    wishEntry(song: Song, wanted: number): Song | undefined {
       const playback = usePlaybackStore()
+      // Never in front of a song the mix has settled on as next.
+      const index = Math.max(wanted, playback.lockedNextIndex + 1)
       const queued = playback.queue.findIndex(
         (entry, position) => position > playback.currentIndex && entry.id === song.id,
       )
@@ -549,7 +551,9 @@ export const usePartyStore = defineStore('party', {
     withdraw(requestId: string, guestId: string): void {
       const playback = usePlaybackStore()
       const request = this.activeRequests.find((r) => r.id === requestId)
-      if (!request || request.position <= playback.currentIndex) {
+      // A wish the mix has settled on as next is as good as playing.
+      const playing = Math.max(playback.currentIndex, playback.lockedNextIndex)
+      if (!request || request.position <= playing) {
         throw new PartyRefusal('not-found')
       }
       if (request.guestId !== guestId) throw new PartyRefusal('forbidden')

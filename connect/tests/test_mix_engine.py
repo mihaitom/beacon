@@ -295,6 +295,18 @@ async def test_a_queue_change_drops_the_opened_next_song_and_asks_again():
     assert rig.engine.timeline.at(3 * SR).song_id == "c"
 
 
+async def test_the_next_song_is_locked_once_its_join_is_rendered():
+    a, b = _pcm(3 * SR), _pcm(100, start=1)
+    rig = Rig({"a": a, "b": b}, ["a", "b"], lead=1.0)
+    rig.engine.start()
+    await rig.run(steps=2)
+    assert not rig.engine.next_locked(0.0)
+    await rig.run(steps=20, advance=0.25)
+    assert rig.engine.next_locked(0.0)
+    # Heard from b on, only the end of the mix follows: nothing to keep.
+    assert not rig.engine.next_locked(3.0)
+
+
 async def test_the_next_song_is_asked_for_only_near_the_end():
     rig = Rig({"a": _pcm(120 * SR), "b": _pcm(10)}, ["a", "b"], lead=1.0)
     rig.slow.add("a")

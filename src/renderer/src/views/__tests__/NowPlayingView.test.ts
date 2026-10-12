@@ -503,6 +503,7 @@ describe('NowPlayingView', () => {
         shuffle: false,
         repeat_mode: 'off' as const,
         autoplay_enabled: false,
+        next_locked: false,
         elapsed: 0,
         ended: false,
         paused: false,
