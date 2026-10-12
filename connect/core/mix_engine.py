@@ -26,7 +26,7 @@ With crossfade on, the songs are not just joined but blended
 (core/transition_planner.py plans how, from an analysis of both songs'
 ends, core/beat_analysis.py). Rendering then runs in floating point: each
 song through a band splitter (core/mix_dsp.py) whose bands follow the
-plan's gain lanes, the incoming one stretched to the outgoing tempo where
+plan's gain lanes, the outgoing one eased into the incoming tempo where
 the plan says so (core/timestretch.py), summed, limited and dithered. The
 splitter delays everything by its half length, so in that mode the
 timeline is marked that much later than the samples are written.
@@ -41,7 +41,7 @@ import logging
 import secrets
 import time
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 import numpy as np
@@ -62,7 +62,7 @@ from .transition_planner import (
     crossfade_from,
     plan_transition,
     rate_at,
-    rate_integral,
+    song_seconds,
 )
 
 logger = logging.getLogger("connect.mix")
@@ -88,7 +88,7 @@ _PREOPEN_CROSSFADE_SECONDS = 90.0
 _MAX_DSP_FRAMES_PER_STEP = 2 * SAMPLE_RATE
 # How much of each song's end/start is analysed for a transition.
 _ANALYSE_SECONDS = 60.0
-# While a stretched song eases back to its own tempo, how often its rate
+# While the outgoing song eases into the incoming tempo, how often its rate
 # is written into the timeline.
 _RATE_MARK_SECONDS = 1.0
 # Rendered audio kept behind the listener's position for a reconnect.
@@ -283,11 +283,9 @@ class _Transition:
     plan: TransitionPlan
     incoming: DeckLike
     in_splitter: BandSplitter
-    wsola: Wsola | None
     start_out: int  # ring frame the overlap's first frame was written at
     frame: int = 0
     swapped: bool = False
-    next_rate_mark: int = 0
 
     @property
     def overlap_frames(self) -> int:
@@ -297,16 +295,30 @@ class _Transition:
     def swap_frame(self) -> int:
         return round(self.plan.swap_at * SAMPLE_RATE)
 
-    @property
-    def stretch_end_frame(self) -> int:
-        """Where the incoming song is back at its own tempo - and one more
-        stretch step, which hands it back without a seam (Wsola.handover)."""
-        if not self.plan.in_rate:
-            return 0
-        return round(self.plan.in_rate[-1][0] * SAMPLE_RATE) + 2 * _STRETCH_HOP
-
     def output_frame(self, frame: int) -> int:
         return self.start_out + frame + DELAY_FRAMES
+
+
+@dataclass
+class _Stretch:
+    """The outgoing song at the plan's `out_rate`, from the start of its
+    ease to the end of the overlap. Frames count its output from the ease's
+    start; the overlap begins at `ease_frames`."""
+
+    plan: TransitionPlan
+    wsola: Wsola
+    ready: np.ndarray = field(default_factory=lambda: np.zeros((0, 2), dtype=np.float32))
+    made: int = 0  # frames taken out of the wsola
+    used: int = 0  # frames rendered
+    next_mark: int = 0
+
+    @property
+    def ease_frames(self) -> int:
+        return round(-self.plan.out_rate[0][0] * SAMPLE_RATE)
+
+    def time(self, frame: int) -> float:
+        """Seconds from the overlap's start of output frame `frame`."""
+        return self.plan.out_rate[0][0] + frame / SAMPLE_RATE
 
 
 class MixEngine:
@@ -362,10 +374,11 @@ class MixEngine:
         self._dsp = self.settings.mode == "crossfade"
         self._shared = BandSplitter()
         self._dither = Dither()
-        # Input left over from a stretch, played before the deck itself.
-        self._pending = np.zeros((0, 2), dtype=np.float32)
+        # The last frames played, for a stretch to start from (Wsola.prime).
+        self._tail = np.zeros((0, 2), dtype=np.float32)
         self._plan: TransitionPlan | None = None
         self._plan_task: asyncio.Task | None = None
+        self._stretch: _Stretch | None = None
         self._tx: _Transition | None = None
         # Marked before start(): a mix set up paused still answers what it
         # would play.
@@ -402,6 +415,7 @@ class MixEngine:
         if self._tx is not None:
             self._tx.incoming.close()
             self._tx = None
+        self._stretch = None
         for deck in (self._deck, self._next):
             if deck is not None:
                 deck.close()
@@ -457,8 +471,10 @@ class MixEngine:
         """The queue after the current song may be different now. A next
         song already opened is dropped and asked for again; the current one
         plays on."""
-        if self._tx is not None:
-            return  # the next song is already blending in
+        if self._tx is not None or self._stretch is not None:
+            # The next song is already blending in, or the current one
+            # already easing into its tempo.
+            return
         self._next_generation += 1
         for task in (self._resolve_task, self._plan_task):
             if task is not None and not task.done():
@@ -610,19 +626,24 @@ class MixEngine:
             return 0
         limit = frames
         plan = self._plan
-        if self._next is not None and plan is not None and plan.kind != "gapless":
-            until = int(np.ceil((plan.out_start - deck.position) * SAMPLE_RATE))
-            if until > 0:
-                limit = min(limit, until)
-        if len(self._pending):
-            x, self._pending = self._pending[:limit], self._pending[limit:]
+        stretch = self._stretch
+        if stretch is not None:
+            # Up to the overlap's start, where the transition takes over.
+            x = self._take_stretched(min(limit, stretch.ease_frames - stretch.used), written)
+            if len(x) == 0:
+                return 0
         else:
+            if self._next is not None and plan is not None and plan.kind != "gapless":
+                until = int(np.ceil((plan.stretch_start - deck.position) * SAMPLE_RATE))
+                if until > 0:
+                    limit = min(limit, until)
             n = min(limit, deck.available)
             if n == 0:
                 if deck.finished:
                     return self._advance_dsp(parts, written)
                 return 0
             x = pcm_to_float(deck.take(n)) * np.float32(deck.item.gain)
+        self._tail = np.concatenate([self._tail, x])[-_STRETCH_HOP:]
         self._audio_flowing(written)
         parts.append(self._shared.process(x, split=False)[0])
         return len(x)
@@ -675,7 +696,12 @@ class MixEngine:
 
     def _maybe_begin_transition(self, written: int) -> None:
         deck, nxt = self._deck, self._next
-        if deck is None or nxt is None or self._next_state != "done" or len(self._pending):
+        if deck is None or nxt is None or self._next_state != "done":
+            return
+        stretch = self._stretch
+        if stretch is not None:
+            if stretch.used >= stretch.ease_frames:
+                self._begin_transition(stretch.plan, written)
             return
         plan = self._plan
         if plan is None:
@@ -688,16 +714,94 @@ class MixEngine:
                 self._plan_task.cancel()
             plan = self._plan = plan_transition(self.settings, _facts(deck.item), _facts(nxt.item))
             logger.info(f"[mix] {self.epoch} no analysis in time - {plan.kind} on metadata")
-        if plan.kind == "gapless" or deck.position < plan.out_start - 0.5 / SAMPLE_RATE:
+        if plan.out_rate and deck.position > plan.stretch_start + 0.25:
+            # Too late to ease into the incoming tempo: unmatched, a beat
+            # grid means nothing, so it is an ordinary crossfade instead.
+            plan = self._plan = plan.unstretched()
+        if plan.kind == "gapless" or deck.position < plan.stretch_start - 0.5 / SAMPLE_RATE:
             return
-        if deck.position > plan.out_start + 0.25:
+        if deck.position > plan.stretch_start + 0.25:
             # Planned for a moment already played: fade from here instead.
             late = crossfade_from(self.settings, deck.position, plan.out_end, plan.in_start)
             if late is None:
                 self._plan = TransitionPlan("gapless", plan.out_end, plan.out_end, plan.in_start)
                 return
             plan = self._plan = late
+        if plan.out_rate:
+            self._begin_stretch(plan)
+            if self._stretch is not None and self._stretch.ease_frames > 0:
+                return
         self._begin_transition(plan, written)
+
+    def _begin_stretch(self, plan: TransitionPlan) -> None:
+        wsola = Wsola()
+        tail = self._tail
+        if len(tail) < _STRETCH_HOP:
+            tail = np.concatenate([np.zeros((_STRETCH_HOP - len(tail), 2), np.float32), tail])
+        wsola.prime(tail)
+        self._stretch = _Stretch(plan, wsola)
+        logger.info(
+            f"[mix] {self.epoch} easing {self._deck.item.song_id if self._deck else '?'} "
+            f"into {plan.bpm_in:.1f} BPM from {plan.stretch_start:.1f}s"
+            if plan.bpm_in is not None
+            else f"[mix] {self.epoch} easing from {plan.stretch_start:.1f}s"
+        )
+
+    def _fill_stretched(self, frames: int) -> int:
+        """Makes up to `frames` of the stretched outgoing song ready; how
+        many are."""
+        stretch, deck = self._stretch, self._deck
+        assert stretch is not None and deck is not None
+        while len(stretch.ready) < frames:
+
+            def rate(k: int, base: int = stretch.made) -> float:
+                return rate_at(stretch.plan.out_rate, stretch.time(base + k))
+
+            missing = stretch.wsola.needed(rate(0))
+            if missing > 0:
+                if deck.available == 0:
+                    if not deck.finished:
+                        break
+                    stretch.wsola.push(np.zeros((missing, 2), dtype=np.float32))
+                    continue
+                take = min(deck.available, missing + _STRETCH_HOP * 4)
+                stretch.wsola.push(pcm_to_float(deck.take(take)) * np.float32(deck.item.gain))
+                continue
+            got = stretch.wsola.pull(frames - len(stretch.ready), rate)
+            if len(got) == 0:
+                break
+            stretch.ready = np.concatenate([stretch.ready, got])
+            stretch.made += len(got)
+        return len(stretch.ready)
+
+    def _take_stretched(self, frames: int, written: int) -> np.ndarray:
+        """Up to `frames` of the stretched outgoing song, its position and
+        rate marked while it is still the song playing."""
+        stretch, deck = self._stretch, self._deck
+        assert stretch is not None and deck is not None
+        n = min(frames, self._fill_stretched(frames))
+        x, stretch.ready = stretch.ready[:n], stretch.ready[n:]
+        plan = stretch.plan
+        frame = self.ring.head + written + DELAY_FRAMES
+        # The overlap's start is marked too: the rate holds from there on.
+        while stretch.next_mark <= min(stretch.used + n - 1, stretch.ease_frames):
+            t = stretch.time(stretch.next_mark)
+            self.timeline.mark(
+                frame + stretch.next_mark - stretch.used,
+                deck.item.song_id,
+                deck.item.queue_index,
+                plan.out_start + song_seconds(plan.out_rate, 0.0, t),
+                playing=True,
+                rate=rate_at(plan.out_rate, t),
+                payload=deck.item,
+            )
+            step = round(_RATE_MARK_SECONDS * SAMPLE_RATE)
+            if stretch.next_mark == stretch.ease_frames:
+                stretch.next_mark += 1
+            else:
+                stretch.next_mark = min(stretch.next_mark + step, stretch.ease_frames)
+        stretch.used += n
+        return x
 
     def _begin_transition(self, plan: TransitionPlan, written: int) -> None:
         incoming = self._next
@@ -709,7 +813,6 @@ class MixEngine:
             plan=plan,
             incoming=incoming,
             in_splitter=BandSplitter(),
-            wsola=Wsola() if plan.in_rate else None,
             start_out=self.ring.head + written,
         )
         bpm = (
@@ -727,117 +830,68 @@ class MixEngine:
         deck = self._deck
         assert tx is not None and deck is not None
         plan = tx.plan
-        in_overlap = tx.frame < tx.overlap_frames
-        n = frames
-        if in_overlap:
-            n = min(n, tx.overlap_frames - tx.frame)
-            if not deck.finished:
-                n = min(n, deck.available)
+        n = min(frames, tx.overlap_frames - tx.frame)
         if not tx.swapped and tx.frame < tx.swap_frame:
             n = min(n, tx.swap_frame - tx.frame)
+        if not deck.finished:
+            available = self._fill_stretched(n) if self._stretch else deck.available
+            n = min(n, available)
         if n <= 0:
             return 0
         x_in = self._incoming_audio(tx, n)
         n = len(x_in)
         if n == 0:
             return 0
-        if in_overlap:
-            x_out = pcm_to_float(deck.take(n)) * np.float32(deck.item.gain)
-            if len(x_out) < n:  # the outgoing song ran out before the plan said
-                x_out = np.concatenate([x_out, np.zeros((n - len(x_out), 2), dtype=np.float32)])
-            # The splitters delay by DELAY_FRAMES; the lanes follow the
-            # delayed signal.
-            t = (tx.frame + np.arange(n) - DELAY_FRAMES) / SAMPLE_RATE
-            out_bands = self._shared.process(x_out)
-            in_bands = tx.in_splitter.process(x_in)
-            y = np.zeros((n, 2), dtype=np.float32)
-            for i, band in enumerate(BANDS):
-                out_lane, in_lane = plan.out_lanes[band], plan.in_lanes[band]
-                y += out_bands[i] * np.interp(t, out_lane.times, out_lane.gains)[:, None]
-                y += in_bands[i] * np.interp(t, in_lane.times, in_lane.gains)[:, None]
+        if self._stretch is not None:
+            x_out = self._take_stretched(n, written)
         else:
-            y = tx.in_splitter.process(x_in, split=False)[0]
+            x_out = pcm_to_float(deck.take(n)) * np.float32(deck.item.gain)
+        if len(x_out) < n:  # the outgoing song ran out before the plan said
+            x_out = np.concatenate([x_out, np.zeros((n - len(x_out), 2), dtype=np.float32)])
+        # The splitters delay by DELAY_FRAMES; the lanes follow the delayed
+        # signal.
+        t = (tx.frame + np.arange(n) - DELAY_FRAMES) / SAMPLE_RATE
+        out_bands = self._shared.process(x_out)
+        in_bands = tx.in_splitter.process(x_in)
+        y = np.zeros((n, 2), dtype=np.float32)
+        for i, band in enumerate(BANDS):
+            out_lane, in_lane = plan.out_lanes[band], plan.in_lanes[band]
+            y += out_bands[i] * np.interp(t, out_lane.times, out_lane.gains)[:, None]
+            y += in_bands[i] * np.interp(t, in_lane.times, in_lane.gains)[:, None]
         self._audio_flowing(written)
         parts.append(y.astype(np.float32))
         tx.frame += n
 
         if not tx.swapped and tx.frame >= tx.swap_frame:
             tx.swapped = True
-            t = plan.swap_at
             item = tx.incoming.item
             frame = tx.output_frame(tx.swap_frame)
             self.timeline.mark(
                 frame,
                 item.song_id,
                 item.queue_index,
-                plan.in_start + rate_integral(plan.in_rate, t),
+                plan.in_start + plan.swap_at,
                 playing=True,
-                rate=rate_at(plan.in_rate, t),
                 payload=item,
                 starts=True,
             )
-            tx.next_rate_mark = tx.swap_frame + round(_RATE_MARK_SECONDS * SAMPLE_RATE)
             logger.info(f"[mix] {self.epoch} → {item.song_id} at {frame / SAMPLE_RATE:.2f}s")
             self._changed()
-        if in_overlap and tx.frame >= tx.overlap_frames:
+        if tx.frame >= tx.overlap_frames:
             deck.close()
             self._deck = tx.incoming
             self._shared = tx.in_splitter
-        if tx.wsola is not None and tx.swapped:
-            while tx.frame >= tx.next_rate_mark and tx.next_rate_mark < tx.stretch_end_frame:
-                t = tx.next_rate_mark / SAMPLE_RATE
-                item = tx.incoming.item
-                self.timeline.mark(
-                    tx.output_frame(tx.next_rate_mark),
-                    item.song_id,
-                    item.queue_index,
-                    plan.in_start + rate_integral(plan.in_rate, t),
-                    playing=True,
-                    rate=rate_at(plan.in_rate, t),
-                    payload=item,
-                )
-                tx.next_rate_mark += round(_RATE_MARK_SECONDS * SAMPLE_RATE)
-        stretching = tx.wsola is not None and tx.frame < tx.stretch_end_frame
-        if tx.frame >= tx.overlap_frames and not stretching:
-            if tx.wsola is not None:
-                ready, rest = tx.wsola.handover()
-                self._pending = np.concatenate([ready, rest]).astype(np.float32)
+            self._stretch = None
             self._tx = None
         return n
 
     def _incoming_audio(self, tx: _Transition, frames: int) -> np.ndarray:
-        """Up to `frames` of the incoming song, stretched if the plan says."""
+        """Up to `frames` of the incoming song."""
         deck = tx.incoming
-        gain = np.float32(deck.item.gain)
-        if tx.wsola is None:
-            n = min(frames, deck.available)
-            if n == 0 and deck.finished:
-                return np.zeros((frames, 2), dtype=np.float32)
-            return pcm_to_float(deck.take(n)) * gain
-        plan = tx.plan
-        made: list[np.ndarray] = []
-        total = 0
-        while total < frames:
-
-            def rate(k: int, done: int = total) -> float:
-                return rate_at(plan.in_rate, (tx.frame + done + k) / SAMPLE_RATE)
-
-            missing = tx.wsola.needed(rate(0))
-            if missing > 0:
-                if deck.available == 0:
-                    if not deck.finished:
-                        break
-                    tx.wsola.push(np.zeros((missing, 2), dtype=np.float32))
-                    continue
-                take = min(deck.available, missing + _STRETCH_HOP * 4)
-                tx.wsola.push(pcm_to_float(deck.take(take)) * gain)
-                continue
-            got = tx.wsola.pull(frames - total, rate)
-            if len(got) == 0:
-                break
-            made.append(got)
-            total += len(got)
-        return np.concatenate(made) if made else np.zeros((0, 2), dtype=np.float32)
+        n = min(frames, deck.available)
+        if n == 0 and deck.finished:
+            return np.zeros((frames, 2), dtype=np.float32)
+        return pcm_to_float(deck.take(n)) * np.float32(deck.item.gain)
 
     def _audio_flowing(self, written: int) -> None:
         if self._t0 is None:
@@ -859,6 +913,9 @@ class MixEngine:
             entry.queue_index,
             heard.position,
             playing=False,
+            # Kept for _unhold_at(): a song held while easing into another
+            # tempo resumes at the rate it was at.
+            rate=entry.rate,
             payload=entry.payload,
         )
 
@@ -874,6 +931,7 @@ class MixEngine:
             last.queue_index,
             last.position,
             playing=True,
+            rate=last.rate,
             payload=last.payload,
         )
 

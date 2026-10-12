@@ -1,9 +1,9 @@
 """core/timestretch.py — playing a song faster or slower at the same pitch.
 
-What lets a beatmix line up two songs at different tempos: the incoming one
-is played at the outgoing one's tempo for the overlap, then eased back to
-its own (core/transition_planner.py's `in_rate`). Changes of a few percent,
-which is where WSOLA - waveform-similarity overlap-add - sounds clean:
+What lets a beatmix line up two songs at different tempos: the outgoing one
+eases into the incoming one's tempo and holds it through the overlap
+(core/transition_planner.py's `out_rate`). Changes of a few percent, which
+is where WSOLA - waveform-similarity overlap-add - sounds clean:
 
 - The output is built from frames of the input, overlap-added with a Hann
   window every HOP samples. Playing at `rate`, each next frame is taken
@@ -15,8 +15,8 @@ which is where WSOLA - waveform-similarity overlap-add - sounds clean:
   keeps advancing by HOP * rate regardless.
 - At rate 1 the frame is placed exactly where the previous one continues,
   and Hann windows at half overlap add up to exactly one: the output is
-  then the input, sample for sample. That is what lets the engine hand the
-  song back to its plain path without a seam (see handover()).
+  then the input, sample for sample. That is what lets a stretch start in
+  the middle of a song without a seam (see prime()).
 
 Stereo is stretched with one offset for both channels, from their sum, so
 the image does not wander.
@@ -48,6 +48,16 @@ class Wsola:
         self._acc = np.zeros((FRAME, 2), dtype=np.float64)
         self._ready = np.zeros((0, 2), dtype=np.float32)
         self.input_consumed = 0.0  # nominal input frames advanced so far
+        self._primed = False
+
+    def prime(self, history: np.ndarray) -> None:
+        """Start mid-song: `history` is the HOP frames played just before
+        what is pushed next. A first frame has nothing to overlap with and
+        would fade in; one step at rate 1 over the history fills the
+        overlap instead, and its output - already played - is dropped."""
+        assert self._chosen is None and len(history) == HOP
+        self.push(history)
+        self._primed = True
 
     def push(self, x: np.ndarray) -> None:
         self._input = np.concatenate([self._input, x.astype(np.float64)])
@@ -75,6 +85,9 @@ class Wsola:
         return out
 
     def _step(self, rate: float) -> None:
+        priming = self._primed and self._chosen is None
+        if priming:
+            rate = 1.0
         if self._chosen is None:
             start = round(self._nominal)
         elif rate == 1.0:
@@ -83,7 +96,8 @@ class Wsola:
             start = self._best_fit(round(self._nominal))
         frame = self._take(start, FRAME)
         self._acc += frame * _WINDOW
-        self._ready = np.concatenate([self._ready, self._acc[:HOP].astype(np.float32)])
+        if not priming:
+            self._ready = np.concatenate([self._ready, self._acc[:HOP].astype(np.float32)])
         self._acc = np.concatenate([self._acc[HOP:], np.zeros((HOP, 2))])
         self._chosen = start
         self._nominal += HOP * rate
@@ -120,12 +134,3 @@ class Wsola:
         if drop > 0:
             self._input = self._input[drop:]
             self._base += drop
-
-    def handover(self) -> tuple[np.ndarray, np.ndarray]:
-        """(output already made, input not yet used) once the rate is back
-        at 1: played in that order and followed by the source itself, they
-        continue exactly where the stretched output leaves off. Call only
-        after at least one step at rate 1."""
-        assert self._chosen is not None
-        rest = self._input[self._chosen + HOP - self._base :].astype(np.float32)
-        return self._ready, rest

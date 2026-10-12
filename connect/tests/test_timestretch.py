@@ -112,29 +112,22 @@ def test_a_stretched_mix_does_not_pump_at_the_hop_rate(rate):
     assert np.mean(pumping) < 20
 
 
-def test_handing_back_continues_exactly_where_the_stretch_left_off():
-    x = _music(4 * SR, seed=5)
+def test_primed_with_what_was_just_played_it_carries_on_without_a_seam():
+    """Started mid-song, the first frame has nothing to overlap with. Primed
+    with the frames before, the output at rate 1 is the input from the very
+    first sample - and a stretch from there starts at full level."""
+    x = _music(2 * SR, seed=5)
     w = Wsola()
-    w.push(x[: 3 * SR])
-    rates = iter([1.04] * 40 + [1.0] * 4)
-    made = []
-    for rate in rates:
-        made.append(w.pull(HOP, lambda n, r=rate: r))
-    ready, rest = w.handover()
-    # The last stretch was played at rate 1: it is the input itself, so the
-    # input left over has to follow on from the last output sample.
-    last = np.concatenate(made)[-HOP:]
-    start = np.flatnonzero(
-        np.all(
-            np.isclose(
-                np.lib.stride_tricks.sliding_window_view(x[:, 0], HOP), last[:, 0], atol=1e-6
-            ),
-            axis=1,
-        )
-    )
-    assert len(start) == 1
-    assert len(ready) == 0
-    np.testing.assert_allclose(rest[:1000], x[start[0] + HOP : start[0] + HOP + 1000], atol=1e-6)
+    w.prime(x[:HOP])
+    w.push(x[HOP:])
+    out = w.pull(SR, lambda n: 1.0)
+    np.testing.assert_allclose(out, x[HOP : HOP + SR], atol=1e-6)
+
+    w = Wsola()
+    w.prime(x[:HOP])
+    w.push(x[HOP:])
+    first = w.pull(HOP, lambda n: 1.03)
+    np.testing.assert_allclose(first[:HOP], x[HOP : 2 * HOP], atol=1e-6)
 
 
 def test_nothing_comes_out_until_enough_has_gone_in():

@@ -10,6 +10,8 @@ from core.transition_planner import (
     Settings,
     SongFacts,
     plan_transition,
+    rate_at,
+    song_seconds,
     stretch_for,
 )
 
@@ -70,10 +72,10 @@ def test_beatmix_needs_trusted_grids_and_reachable_tempos():
 
 
 def test_double_and_half_tempo_still_beatmix():
-    assert stretch_for(grid(174, 0, 0), grid(87.5, 0, 0)) == pytest.approx(
-        87 / 87.5 * 1.0, rel=0.01
-    )
-    assert stretch_for(grid(87, 0, 0), grid(172, 0, 0)) == pytest.approx((60 / 172 * 2) / (60 / 87))
+    # The outgoing song's rate: its beat brought to the incoming beat,
+    # counted doubled or halved.
+    assert stretch_for(grid(174, 0, 0), grid(87.5, 0, 0)) == pytest.approx(175 / 174)
+    assert stretch_for(grid(87, 0, 0), grid(172, 0, 0)) == pytest.approx(172 / 174)
     assert stretch_for(grid(128, 0, 0), grid(128 * (1 + MAX_STRETCH + 0.01), 0, 0)) is None
 
 
@@ -82,20 +84,19 @@ def test_double_and_half_tempo_still_beatmix():
 
 def test_a_beatmix_is_whole_bars_ending_on_the_last_downbeat_with_music():
     plan = plan_transition(CROSSFADE, OUT, IN, out_region(), in_region())
-    bar = 4 * 60 / 128
-    assert plan.overlap == pytest.approx(4 * bar)  # 4 bars = 7.5s, the most within 10s
+    # Through the overlap the stream runs at the incoming tempo.
+    assert plan.overlap == pytest.approx(4 * 4 * 60 / 126)  # 4 bars, the most within 10s
     downbeats = out_region().grid.downbeats(180, 238)
     assert plan.out_end == pytest.approx(downbeats[-1])
     assert plan.out_end <= 238.0
-    assert plan.out_start == pytest.approx(plan.out_end - plan.overlap)
+    assert plan.out_start == pytest.approx(plan.out_end - 4 * 4 * 60 / 128)
     # On a downbeat of the incoming song, at or after its music starts.
     assert plan.in_start == pytest.approx(0.5)
 
 
 def test_the_bass_swaps_on_the_middle_downbeat_and_never_doubles():
     plan = plan_transition(CROSSFADE, OUT, IN, out_region(), in_region())
-    bar = 4 * 60 / 128
-    assert plan.swap_at == pytest.approx(2 * bar)
+    assert plan.swap_at == pytest.approx(2 * 4 * 60 / 126)
     for t in np.linspace(0, plan.overlap, 200):
         both = lane_at(plan.out_lanes["low"], t) * lane_at(plan.in_lanes["low"], t)
         assert (
@@ -115,25 +116,48 @@ def test_mids_and_highs_come_in_first_and_go_out_last():
     assert gains == sorted(gains)
 
 
-def test_the_incoming_song_is_stretched_through_the_overlap_then_eased_back():
+def test_the_outgoing_song_eases_into_the_incoming_tempo_before_the_overlap():
+    """The incoming song is never stretched: once it has taken over, it
+    plays as it is."""
     plan = plan_transition(CROSSFADE, OUT, IN, out_region(), in_region())
-    rate = (60 / 126) / (60 / 128)
-    times, rates = zip(*plan.in_rate, strict=True)
-    assert rates[0] == pytest.approx(rate) and rates[1] == pytest.approx(rate)
-    assert times[1] == pytest.approx(plan.overlap)
-    assert rates[-1] == 1.0 and times[-1] > plan.overlap
+    rate = 126 / 128
+    ease_from = plan.out_rate[0][0]
+    assert ease_from < 0
+    assert rate_at(plan.out_rate, ease_from - 0.1) == 1.0
+    assert rate_at(plan.out_rate, ease_from / 2) == pytest.approx((1 + rate) / 2)
+    for t in np.linspace(0, plan.overlap - 0.01, 20):
+        assert rate_at(plan.out_rate, t) == pytest.approx(rate)
+    # Played that way, the outgoing song reaches its last downbeat exactly
+    # where the overlap ends - the beats stay together all the way.
+    assert plan.out_start + song_seconds(plan.out_rate, 0.0, plan.overlap) == pytest.approx(
+        plan.out_end
+    )
+    assert plan.stretch_start == pytest.approx(
+        plan.out_start + song_seconds(plan.out_rate, 0.0, ease_from)
+    )
+
+
+def test_the_ease_stays_inside_what_was_analysed():
+    """It begins where the plan has to be ready by - analysis covers the
+    song's end, so the ease is cut to fit inside it."""
+    region = out_region()
+    late = RegionAnalysis(229.0, 240.0, 229.0, 238.0, region.grid)
+    plan = plan_transition(CROSSFADE, OUT, IN, late, in_region())
+    assert plan.kind == "beatmix"
+    assert plan.stretch_start == pytest.approx(229.0)
 
 
 def test_the_same_tempo_needs_no_stretch():
     plan = plan_transition(CROSSFADE, OUT, IN, out_region(), in_region(bpm=128.0))
-    assert plan.kind == "beatmix" and plan.in_rate == ()
+    assert plan.kind == "beatmix" and plan.out_rate == ()
+    assert plan.stretch_start == plan.out_start
 
 
 def test_a_longer_setting_buys_more_bars():
-    plan = plan_transition(Settings("crossfade", 30.0), OUT, IN, out_region(), in_region())
-    assert plan.overlap == pytest.approx(16 * 4 * 60 / 128)
+    plan = plan_transition(Settings("crossfade", 31.0), OUT, IN, out_region(), in_region())
+    assert plan.overlap == pytest.approx(16 * 4 * 60 / 126)
     short = plan_transition(Settings("crossfade", 2.0), OUT, IN, out_region(), in_region())
-    assert short.overlap == pytest.approx(4 * 60 / 128)  # never under one bar
+    assert short.overlap == pytest.approx(4 * 60 / 126)  # never under one bar
 
 
 # ── A crossfade ────────────────────────────────────────────────────────────

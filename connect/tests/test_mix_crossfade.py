@@ -50,16 +50,17 @@ FLAM_SECONDS = 0.012
 
 
 def click_times(x: np.ndarray, threshold: float = 0.05) -> np.ndarray:
-    """Seconds of each sharp attack: the clicks, by their high frequencies,
-    with attacks inside FLAM_SECONDS of each other counted once."""
-    sharp = np.abs(np.diff(x[:, 0]))
-    found, i = [], 0
-    while i < len(sharp):
-        if sharp[i] > threshold:
-            found.append(i)
-            i += int(FLAM_SECONDS * SR)
-        else:
-            i += 1
+    """Seconds of each sharp attack: the clicks, by their high frequencies.
+    An attack starts after a moment of quiet - not in the ringing tail of
+    the one before - and one inside FLAM_SECONDS of the last is the same
+    hit."""
+    quiet = int(0.003 * SR)
+    found: list[int] = []
+    last_sharp = -quiet
+    for i in np.flatnonzero(np.abs(np.diff(x[:, 0])) > threshold):
+        if i - last_sharp >= quiet and (not found or i - found[-1] >= FLAM_SECONDS * SR):
+            found.append(int(i))
+        last_sharp = i
     return np.array(found) / SR
 
 
@@ -199,9 +200,10 @@ async def test_kicks_of_beatmatched_songs_land_together():
     b = clicks(124, 60, offset=0.37)
     rig = Rig({"a": a, "b": b}, CROSSFADE)
     out = await rig.render_all()
-    plan = rig.engine._plan or None
-    log_kind = [e for e in rig.engine.timeline.entries if e.song_id == "b"]
-    assert log_kind and log_kind[0].rate == pytest.approx(128 / 124, rel=0.01)
+    entries = rig.engine.timeline.entries
+    # The outgoing song is brought to the incoming tempo, never the reverse.
+    assert any(e.song_id == "a" and e.rate == pytest.approx(124 / 128, rel=0.01) for e in entries)
+    assert all(e.rate == 1.0 for e in entries if e.song_id == "b")
     # Through the whole overlap both songs' clicks are audible (their mids
     # and highs overlap); beat-matched they land on top of each other, so
     # attacks come once per outgoing beat - never as a flam, two attacks a
@@ -213,8 +215,25 @@ async def test_kicks_of_beatmatched_songs_land_together():
     ]
     gaps = np.diff(click_times(overlap))
     assert len(gaps) >= 12
-    assert np.all(np.abs(gaps - 60 / 128) < FLAM_SECONDS)
-    del plan
+    assert np.all(np.abs(gaps - 60 / 124) < FLAM_SECONDS)
+
+
+async def test_once_it_has_taken_over_the_incoming_song_plays_untouched():
+    """Stretching leaves a trace however well it is done; the song a
+    listener is now hearing is the one that must not carry it."""
+    a = clicks(128, 60, offset=0.21)
+    b = clicks(124, 60, offset=0.37) + tone(523, 60, 0.05)
+    rig = Rig({"a": a, "b": b}, CROSSFADE)
+    out = await rig.render_all()
+    swap = rig.engine.timeline.next_change(0)
+    assert swap.song_id == "b"
+    # From two bars after the swap - past the overlap - to just before the end.
+    start = swap.frame + int(2 * 4 * 60 / 124 * SR)
+    at = round(swap.position * SR) + start - swap.frame
+    heard = out[start : start + 20 * SR, 0]
+    # Within a sample: the swap's frame is rounded, its position is not.
+    error = min(np.abs(heard - b[at + lag : at + lag + 20 * SR, 0]).max() for lag in (-1, 0, 1))
+    assert error < 2e-4  # dither
 
 
 async def test_without_an_analysis_in_time_it_crossfades_on_the_metadata():
@@ -226,3 +245,40 @@ async def test_without_an_analysis_in_time_it_crossfades_on_the_metadata():
     rig.engine._analyse_fn = never
     await rig.render_all()
     assert rig.engine.timeline.next_change(0).frame == 26 * SR + DELAY_FRAMES
+
+
+def _ease_start(rig) -> int:
+    """Output frame where the outgoing song starts easing into the new tempo."""
+    return next(e.frame for e in rig.engine.timeline.entries if e.song_id == "a" and e.frame > 0)
+
+
+async def test_the_ease_starts_without_a_dip():
+    """A stretch started mid-song has nothing to overlap its first frame
+    with; unprimed, it fades in from silence for 23 ms."""
+    a = clicks(128, 60, offset=0.21) + tone(440, 60, 0.2)
+    rig = Rig({"a": a, "b": clicks(124, 60, offset=0.37)}, CROSSFADE)
+    out = await rig.render_all()
+    start = _ease_start(rig)
+    around = out[start - SR // 5 : start + SR // 5, 0]
+    window = int(0.005 * SR)
+    levels = np.sqrt((around[: len(around) // window * window].reshape(-1, window) ** 2).mean(1))
+    assert levels.min() > 0.5 * np.median(levels)
+
+
+async def test_while_easing_the_timeline_follows_the_outgoing_song():
+    """What lyrics and the visualizer read: through the ease, the position
+    the timeline gives for a moment is where in the song that moment is."""
+    beat, offset = 60 / 128, 0.21
+    a = clicks(128, 60, offset=offset)
+    rig = Rig({"a": a, "b": clicks(124, 60, offset=0.37)}, CROSSFADE)
+    out = await rig.render_all()
+    start = _ease_start(rig)
+    overlap = next(
+        e.frame for e in rig.engine.timeline.entries if e.song_id == "a" and e.rate < 0.97
+    )
+    times = click_times(out[start:overlap]) + start / SR
+    assert len(times) > 20
+    for heard in times:
+        position = rig.engine.timeline.at_time(heard).position
+        nearest = offset + round((position - offset) / beat) * beat
+        assert abs(position - nearest) < FLAM_SECONDS

@@ -22,8 +22,8 @@ the next.
   (`webAudioAllowed()`, and iOS ignores `audio.volume`), and there would be
   two implementations to keep alike.
 - **The DJ way: beatmatch and bass swap.** Both songs' ends are analysed for
-  a beat grid; the incoming song is stretched to the outgoing tempo (up to
-  8 %, double and half tempo included) and eased back afterwards; the basses
+  a beat grid; the outgoing song eases into the incoming tempo (up to 8 %,
+  double and half tempo included) before the overlap; the basses
   swap on a downbeat, mids and highs fade over several bars. Without a
   trustworthy grid, or with tempos too far apart, the same moves run on a
   clock as an ordinary crossfade.
@@ -91,16 +91,27 @@ within 8 %. Its overlap is the most whole bars (1-16) that fit the
 setting's length, ending on the last downbeat with music; the incoming
 song's first downbeat lands on the overlap's first. First half: incoming
 mids and highs rise (equal-power), its bass stays out. Downbeat at half:
-the basses swap in 15 ms. Second half: outgoing mids and highs fall. The
-incoming song is stretched (`core/timestretch.py`, WSOLA, ±9 ms search)
-through the overlap and eased back to its own tempo over 8 bars; at rate 1
-WSOLA reproduces its input exactly, which is how it hands the song back to
-the plain path without a seam. The search width is a trade: at ±5 ms the
-bass could not be lined up and mids and highs pumped at the 43 Hz hop rate
-("a voice through a fan", heard for the first ~30 s of a mixed-in song); at
+the basses swap in 15 ms. Second half: outgoing mids and highs fall.
+
+The stream runs at the incoming tempo through the overlap: the **outgoing**
+song eases into it over the 8 bars before (`core/timestretch.py`, WSOLA,
+±9 ms search) and holds it to the end; the incoming song is never
+stretched. That was the other way round at first - the incoming song
+stretched through the overlap and eased back over 8 bars - and whatever
+trace the stretch leaves then sat on the song that had just taken over,
+for its first ~30 s. Now it sits on the song on its way out, and from the
+swap on the new song is sample for sample what was decoded. WSOLA starts
+mid-song primed with the last frames played (`Wsola.prime()`): at rate 1 it
+reproduces its input exactly, so the ease begins without a seam. A plan
+that arrives after its ease should have begun becomes an ordinary
+crossfade over the same stretch, and a queue change during the ease waits
+for the next song, as during the overlap.
+
+The search width is a trade: at ±5 ms the bass could not be lined up and
+mids and highs pumped at the 43 Hz hop rate ("a voice through a fan"); at
 ±12 ms the pumping is gone but kicks flam. At ±9 ms the pumping measures at
 ffmpeg atempo's level on real music, and beat-matched kicks on bare clicks
-land within 8 ms of each other; the test holds them inside 12 ms, where a
+land within 9 ms of each other; the test holds them inside 12 ms, where a
 flam starts to be heard.
 
 A **crossfade** is the same lanes on a clock; songs following each other on
@@ -111,7 +122,7 @@ where the song is.
 
 The **timeline** (`core/mix_timeline.py`) says which song plays from which
 stream frame, at which position and rate - marked at the swap, every second
-while a song eases back to its tempo, at holds and at the end. Positions on
+while the outgoing song eases into the new tempo, at holds and at the end. Positions on
 a crossfade are marked 23 ms late, by the splitter's delay.
 
 ## Casting

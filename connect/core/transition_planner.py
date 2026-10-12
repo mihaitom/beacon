@@ -12,9 +12,10 @@ kinds of plan:
   trusted and tempos within reach of each other:
   - the overlap is a whole number of bars and ends on a downbeat of the
     song going out, where its music ends;
-  - the incoming song's first downbeat lands on the overlap's first one,
-    stretched to the outgoing tempo (core/timestretch.py) and eased back
-    to its own over a few bars once the old song is gone;
+  - the old song eases into the new one's tempo over a few bars before
+    the overlap and holds it to the end (core/timestretch.py); the new
+    song is never stretched, so once it has taken over, it plays untouched;
+  - the incoming song's first downbeat lands on the overlap's first one;
   - for the first half its mids and highs come up while its bass stays
     out; on the downbeat halfway through, the basses swap; for the second
     half the old song's mids and highs go.
@@ -26,7 +27,8 @@ Times in a plan: `out_*`/`in_*` are seconds in each song's own timeline,
 everything else is seconds from the start of the overlap.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from itertools import pairwise
 from typing import Literal
 
 import numpy as np
@@ -39,12 +41,12 @@ BANDS: tuple[Band, ...] = ("low", "mid", "high")
 
 # Below this, a grid is not trusted for lining songs up.
 MIN_CONFIDENCE = 0.5
-# How far the incoming song may be sped up or slowed down to match: beyond
-# about this, a stretch is heard as one.
+# How far the tempos may lie apart for the outgoing song to be sped up or
+# slowed down to match: beyond about this, a stretch is heard as one.
 MAX_STRETCH = 0.08
 # The bass swap is a cut, not a fade: this short, so it clicks neither.
 SWAP_SECONDS = 0.015
-# How many bars the incoming song takes to ease back to its own tempo.
+# How many bars the outgoing song takes to ease into the incoming tempo.
 EASE_BARS = 8
 # Overlap lengths a beatmix chooses between, in bars.
 _BAR_CHOICES = (16, 8, 4, 2, 1)
@@ -92,11 +94,25 @@ class TransitionPlan:
     swap_at: float = 0.0
     out_lanes: dict[str, Lane] = field(default_factory=dict)
     in_lanes: dict[str, Lane] = field(default_factory=dict)
-    # Incoming song seconds per stream second: (time from overlap start,
-    # rate) points, linear in between, 1 before the first and after the last.
-    in_rate: tuple[tuple[float, float], ...] = ()
+    # Outgoing song seconds per stream second: (time from overlap start,
+    # rate) points, linear in between, 1 outside them. The ease into the
+    # incoming tempo lies before the overlap, at negative times.
+    out_rate: tuple[tuple[float, float], ...] = ()
     bpm_out: float | None = None
     bpm_in: float | None = None
+
+    @property
+    def stretch_start(self) -> float:
+        """Where in the outgoing song the plan takes over from plain
+        playback: the start of the ease, or the overlap without one."""
+        if not self.out_rate:
+            return self.out_start
+        return self.out_start - song_seconds(self.out_rate, self.out_rate[0][0], 0.0)
+
+    def unstretched(self) -> "TransitionPlan":
+        """The same blend as an ordinary crossfade - for a plan that
+        arrived after its ease should have begun."""
+        return replace(self, kind="crossfade", out_rate=())
 
 
 def follows_on_album(out: SongFacts, inn: SongFacts) -> bool:
@@ -156,12 +172,12 @@ def _crossfade(
 
 
 def stretch_for(out: BeatGrid, inn: BeatGrid) -> float | None:
-    """The rate to play the incoming song at so its beat matches the
-    outgoing one's - counting its beats as they are, doubled or halved,
-    whichever needs least - or None when even that is too far."""
+    """The rate to play the outgoing song at so its beat matches the
+    incoming one's - counting the incoming beats as they are, doubled or
+    halved, whichever needs least - or None when even that is too far."""
     best = None
     for factor in (1.0, 2.0, 0.5):
-        rate = (inn.period / factor) / out.period
+        rate = out.period / (inn.period / factor)
         if best is None or abs(rate - 1) < abs(best - 1):
             best = rate
     return best if best is not None and abs(best - 1) <= MAX_STRETCH else None
@@ -180,7 +196,10 @@ def _beatmix(
     rate = stretch_for(out, inn)
     if rate is None:
         return None
+    # A bar in each song's own time, and in the stream's through the
+    # overlap - where the outgoing song plays at the incoming tempo.
     bar = 4 * out.period
+    stream_bar = bar / rate
     # The overlap ends on the last downbeat the outgoing song's music reaches.
     ends = out.downbeats(out_region.start, out_region.sound_end)
     if len(ends) == 0:
@@ -191,34 +210,41 @@ def _beatmix(
     if len(starts) == 0:
         return None
     in_start = float(starts[0])
-    in_room = (in_region.end - in_start) / rate
+    in_room = in_region.end - in_start
     out_room = out_end - out_region.start
     bars = next(
         (
             n
             for n in _BAR_CHOICES
-            if n * bar <= max(settings.crossfade_seconds, bar)
+            if n * stream_bar <= max(settings.crossfade_seconds, stream_bar)
             and n * bar <= out_room
-            and n * bar <= in_room
+            and n * stream_bar <= in_room
         ),
         None,
     )
     if bars is None:
         return None
-    overlap = bars * bar
+    out_start = out_end - bars * bar
+    overlap = bars * stream_bar
     # Halfway, on a downbeat - or for a one-bar mix, on its third beat.
-    swap = (bars // 2) * bar if bars > 1 else 2 * out.period
-    ease = EASE_BARS * bar
+    swap = (bars // 2) * stream_bar if bars > 1 else stream_bar / 2
+    out_rate: tuple[tuple[float, float], ...] = ()
+    if rate != 1.0:
+        # The ease runs through song the analysis has covered, so the plan
+        # is there before it begins; it plays (1 + rate) / 2 song per second.
+        ease = min(EASE_BARS * bar, (out_start - out_region.start) * 2 / (1 + rate))
+        out_rate = ((-ease, 1.0),) if ease > 0 else ()
+        out_rate += ((0.0, rate), (overlap, rate))
     return TransitionPlan(
         "beatmix",
-        out_start=out_end - overlap,
+        out_start=out_start,
         out_end=out_end,
         in_start=in_start,
         overlap=overlap,
         swap_at=swap,
         out_lanes=_out_lanes(swap, overlap),
         in_lanes=_in_lanes(swap),
-        in_rate=((0.0, rate), (overlap, rate), (overlap + ease, 1.0)) if rate != 1.0 else (),
+        out_rate=out_rate,
         bpm_out=out.bpm,
         bpm_in=inn.bpm,
     )
@@ -249,33 +275,27 @@ def _out_lanes(swap: float, overlap: float) -> dict[str, Lane]:
 
 
 def rate_at(points: tuple[tuple[float, float], ...], t: float) -> float:
-    """The incoming song's rate `t` seconds into a transition."""
-    if not points:
+    """The stretched song's rate `t` seconds from the overlap's start."""
+    if not points or t < points[0][0] or t >= points[-1][0]:
         return 1.0
+    return float(np.interp(t, [p[0] for p in points], [p[1] for p in points]))
+
+
+def song_seconds(points: tuple[tuple[float, float], ...], a: float, b: float) -> float:
+    """How far the stretched song advances from stream time `a` to `b`
+    (seconds from the overlap's start): the rate's integral, exact for a
+    rate that is linear between its points."""
+    if b < a:
+        return -song_seconds(points, b, a)
     times = [p[0] for p in points]
-    if t >= times[-1]:
-        return 1.0
-    return float(np.interp(t, times, [p[1] for p in points]))
-
-
-def rate_integral(points: tuple[tuple[float, float], ...], t: float) -> float:
-    """Song seconds the incoming song has advanced `t` seconds into a
-    transition - where it is, relative to where it joined."""
-    if not points or t <= 0:
-        return max(t, 0.0)
-    times = [p[0] for p in points] + [max(t, points[-1][0])]
-    rates = [p[1] for p in points] + [1.0]
+    edges = [a, *(x for x in times if a < x < b), b]
     total = 0.0
-    for (t0, r0), (t1, r1) in zip(
-        zip(times, rates, strict=True), zip(times[1:], rates[1:], strict=True), strict=False
-    ):
-        if t <= t0:
-            break
-        end = min(t, t1)
-        r_end = r0 + (r1 - r0) * (end - t0) / (t1 - t0) if t1 > t0 else r1
-        total += (end - t0) * (r0 + r_end) / 2
-    if t > times[-1]:
-        total += t - times[-1]
+    for x0, x1 in pairwise(edges):
+        if not points or x1 <= times[0] or x0 >= times[-1]:
+            total += x1 - x0
+        else:
+            rates = np.interp([x0, x1], times, [p[1] for p in points])
+            total += (x1 - x0) * float(rates[0] + rates[1]) / 2
     return total
 
 
