@@ -81,7 +81,7 @@ class Rig:
         self.analysed: list[tuple[str, float, float]] = []
         self.engine = MixEngine(
             self.items[order[0]],
-            0.0,
+            self.items[order[0]].start,
             self._url,
             self._next,
             lead_seconds=2.0,
@@ -191,6 +191,23 @@ async def test_a_queue_change_during_the_blend_keeps_the_incoming_song():
         rig.clock.now += 0.5
     assert rig.engine.timeline.next_change(0).song_id == "b"
     rig.engine.stop()
+
+
+async def test_a_preview_blends_excerpts_and_marks_their_song_positions():
+    rig = Rig(
+        {"a": tone(440, 20), "b": tone(660, 20)},
+        Settings("crossfade", 4.0, preview=True),
+        analyse=False,
+        a=MixItem("a", 0, duration=200.0, start=100.0, end=120.0, album_id="x", track=1),
+        b=MixItem("b", 1, duration=200.0, start=50.0, end=70.0, album_id="x", track=2),
+    )
+    out = await rig.render_all()
+    # Album neighbours, and still blended: 20 + 20 - 4 seconds.
+    assert len(out) == pytest.approx((20 + 20 - 4) * SR + DELAY_FRAMES, abs=2)
+    assert rig.engine.timeline.at(SR).position == pytest.approx(101.0, abs=0.01)
+    change = rig.engine.timeline.next_change(0)
+    assert change.song_id == "b"
+    assert change.position == pytest.approx(52.0)  # its start, plus half the overlap
 
 
 async def test_the_basses_swap_instead_of_doubling():

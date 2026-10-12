@@ -1,4 +1,5 @@
 import { fetchConnect } from './http'
+import type { LocalMixSong } from './localMix'
 import type { ConnectDeviceRef, PlayResponse, QueueResponse } from './types'
 import type { TranscodeFormat } from '@/services/streamQuality'
 import type { SongHint } from '@/services/playback/castPayload'
@@ -208,6 +209,22 @@ export async function resumeInterrupted(): Promise<void> {
 
 export async function seek(position: number): Promise<void> {
   await fetchConnect('/seek', { method: 'POST', body: { position } })
+}
+
+/** Previews songs on the speakers being cast to, from songs[index] on -
+ * see connect/routes/mix_cast.py's start_preview(). Also how a preview
+ * moves to another of its excerpts. */
+export async function startPreview(songs: LocalMixSong[], index: number): Promise<void> {
+  const response = await fetchConnect<{ error?: string }>('/preview', {
+    method: 'POST',
+    body: { songs, index },
+  })
+  if (response.error) throw new Error(response.error)
+}
+
+/** Ends a preview: the queue's song back where it was, paused. */
+export async function endPreview(): Promise<void> {
+  await fetchConnect('/preview/end', { method: 'POST' })
 }
 
 export async function stop(): Promise<void> {

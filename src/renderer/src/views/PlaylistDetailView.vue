@@ -17,15 +17,18 @@
         <template v-if="playlist.smart"> · {{ $t('playlists.smart') }}</template>
       </template>
       <template #actions>
-        <v-btn
-          color="primary"
-          rounded="pill"
-          prepend-icon="mdi-play"
-          :disabled="!playlist.songs.length"
-          @click="playAll"
-        >
-          {{ $t('library.play') }}
-        </v-btn>
+        <div class="playlist-actions">
+          <v-btn
+            color="primary"
+            rounded="pill"
+            prepend-icon="mdi-play"
+            :disabled="!playlist.songs.length"
+            @click="playAll"
+          >
+            {{ $t('library.play') }}
+          </v-btn>
+          <preview-button :songs="playlist.songs" />
+        </div>
       </template>
       <template #top-right>
         <v-btn
@@ -93,6 +96,7 @@ import SongTable from '@/components/library/SongTable.vue'
 import PlaylistEditDialog from '@/components/library/PlaylistEditDialog.vue'
 import PlaylistDeleteDialog from '@/components/library/PlaylistDeleteDialog.vue'
 import PlaylistNotice from '@/components/library/PlaylistNotice.vue'
+import PreviewButton from '@/components/library/PreviewButton.vue'
 import PageLoader from '@/components/PageLoader.vue'
 import {
   removeFromPlaylist,
@@ -110,6 +114,7 @@ export default {
     PlaylistDeleteDialog,
     PlaylistNotice,
     PageLoader,
+    PreviewButton,
   },
   data() {
     return {
@@ -280,3 +285,12 @@ export default {
   },
 }
 </script>
+
+<style scoped>
+/* Play and Preview side by side, as on the album page. */
+.playlist-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+</style>

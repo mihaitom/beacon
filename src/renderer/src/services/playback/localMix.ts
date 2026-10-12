@@ -22,6 +22,7 @@ import {
   pauseLocalMix,
   resumeLocalMix,
   startLocalMix,
+  startLocalPreview,
   stopLocalMix,
   updateLocalMixQueue,
   type LocalMixSong,
@@ -71,19 +72,22 @@ export function upcomingSongs(
       else break
     }
   }
-  return indices.map((index) => {
-    const song = queue[index]!
-    return {
-      id: song.id,
-      queue_index: index,
-      gain: calculateReplayGain(song, replayGainMode),
-      duration: song.duration,
-      album_id: song.albumId,
-      disc: song.discNumber,
-      track: song.trackNumber,
-      bpm: song.bpm ?? null,
-    }
-  })
+  return indices.map((index) => mixSong(queue[index]!, index, replayGainMode))
+}
+
+/** `song` as connect's mix takes it, at `index` in whatever list it is
+ * sent with. */
+export function mixSong(song: Song, index: number, replayGainMode: ReplayGainMode): LocalMixSong {
+  return {
+    id: song.id,
+    queue_index: index,
+    gain: calculateReplayGain(song, replayGainMode),
+    duration: song.duration,
+    album_id: song.albumId,
+    disc: song.discNumber,
+    track: song.trackNumber,
+    bpm: song.bpm ?? null,
+  }
 }
 
 function newPlayerId(): string {
@@ -132,27 +136,48 @@ export class LocalMixPlayer {
       transitions: options.transitions,
     })
     if (seq !== this.startSeq) return false
+    this.play(state, options.quality, options.autoplay)
+    return true
+  }
+
+  /** Starts a preview (connect/core/preview.py) from songs[index] and
+   * hands it to the element - a run like a mix's, of excerpts. False when
+   * a newer start or a stop took over. */
+  async startPreview(options: {
+    songs: LocalMixSong[]
+    index: number
+    quality: LocalStreamQuality
+  }): Promise<boolean> {
+    const seq = ++this.startSeq
+    const state = await startLocalPreview(this.player, {
+      songs: options.songs,
+      index: options.index,
+    })
+    if (seq !== this.startSeq) return false
+    this.play(state, options.quality, true)
+    return true
+  }
+
+  private play(state: LocalMixState, quality: LocalStreamQuality, autoplay: boolean): void {
     this.adopt(state)
     const epoch = state.epoch
     const engine = getAudioEngine()
     // Gain is the mixer's (each song at its own); the element's stays flat.
     if (prefersHls()) {
-      const url = localMixHlsUrl(this.player, epoch, options.quality)
-      if (options.autoplay) engine.play(url, 0, 1, { hls: true, mix: true })
+      const url = localMixHlsUrl(this.player, epoch, quality)
+      if (autoplay) engine.play(url, 0, 1, { hls: true, mix: true })
       else engine.load(url, 0, 1, { hls: true, mix: true })
       // A live playlist may start near its live edge; the run plays from
       // its start. The engine holds the seek until the player has media.
       engine.seek(0)
     } else {
-      const urlFor = (from: number): string =>
-        localMixAudioUrl(this.player, epoch, from, options.quality)
-      if (options.autoplay) engine.playFrom(urlFor, 0, 1, Number.POSITIVE_INFINITY)
+      const urlFor = (from: number): string => localMixAudioUrl(this.player, epoch, from, quality)
+      if (autoplay) engine.playFrom(urlFor, 0, 1, Number.POSITIVE_INFINITY)
       else engine.loadFrom(urlFor, 0, 1, Number.POSITIVE_INFINITY)
     }
     this.applyEnd()
-    this.pausedAt = options.autoplay ? null : Date.now()
+    this.pausedAt = autoplay ? null : Date.now()
     this.startPolling()
-    return true
   }
 
   /** What is heard at stream time `streamTime`. */

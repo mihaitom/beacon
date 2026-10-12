@@ -83,6 +83,47 @@ def test_the_queue_update_reaches_the_mix(configured, default_session):
     assert [s.id for s in mix.songs] == ["a", "c"] and mix.repeat_mode == "all"
 
 
+@pytest.fixture
+def waveforms():
+    # 200 s songs: 2/3 s a peak, loud for 20 s from 100 s.
+    loud = [0.0] * 300
+    loud[150:180] = [1.0] * 30
+    with patch("core.waveform.get_waveform", return_value=loud) as get:
+        yield get
+
+
+def _preview(client, *ids, index=0):
+    body = {"songs": _songs(*ids), "index": index}
+    return client.post(f"/stream/local/preview/{PLAYER}", json=body)
+
+
+def test_a_preview_plays_the_loudest_stretch_of_each_song(configured, default_session, waveforms):
+    _start(configured, "x")
+    old = local_mixes.get(default_session.session_id, PLAYER).engine
+    body = _preview(configured, "a", "b", "c", index=1).json()
+    assert old.stopped
+    # Its timeline says where in the song, read like a mix's.
+    assert body["timeline"][0]["song_id"] == "b"
+    assert body["timeline"][0]["queue_index"] == 1
+    assert body["timeline"][0]["position"] == pytest.approx(100.0)
+    mix = local_mixes.get(default_session.session_id, PLAYER)
+    assert mix.preview and mix.engine.settings.preview
+    assert (mix.engine.first.start, mix.engine.first.end) == pytest.approx((100.0, 120.0))
+    waveforms.assert_any_call("b", "u/b")
+
+
+def test_a_preview_ignores_the_queue_and_checks_its_index(configured, default_session, waveforms):
+    _preview(configured, "a", "b")
+    with patch.object(MixEngine, "queue_changed") as changed:
+        r = configured.put(f"/stream/local/mix/{PLAYER}/queue", json={"songs": _songs("z")})
+    assert r.json() == {"status": "ok"}
+    changed.assert_not_called()
+    assert _preview(configured, "a", index=3).status_code == 400
+    assert (
+        configured.post("/stream/local/preview/a.b", json={"songs": _songs("a")}).status_code == 400
+    )
+
+
 def test_pause_and_resume_freeze_the_mix(configured, default_session):
     _start(configured, "a")
     engine = local_mixes.get(default_session.session_id, PLAYER).engine

@@ -77,7 +77,7 @@ describe('MobileAlbumDetailView', () => {
     const wrapper = mountView()
     await flushPromises()
 
-    await wrapper.get('.mobile-header button').trigger('click')
+    await wrapper.get('.mobile-header .mdi-play-circle').trigger('click')
     // pinFirst false: nobody picked the first track, so shuffle may move it.
     expect(playSongList).toHaveBeenLastCalledWith(album.songs, 0, false, true)
 

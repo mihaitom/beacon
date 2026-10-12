@@ -28,6 +28,7 @@
       :class="{ 'song-info__labels--inert': !currentSong }"
       @click="onLabelsClick"
     >
+      <preview-status />
       <div class="text-body-medium">
         {{
           currentSong?.title ??
@@ -76,10 +77,11 @@ import { useLibraryStore } from '@/stores/library'
 import { useAuthStore } from '@/stores/auth'
 import { radioFaviconRequest, type RadioFaviconRequest } from '@/services/connect/radio'
 import CoverArt from '@/components/library/CoverArt.vue'
+import PreviewStatus from './PreviewStatus.vue'
 
 export default {
   name: 'SongInfo',
-  components: { CoverArt },
+  components: { CoverArt, PreviewStatus },
   data() {
     return {
       starringInFlight: false,

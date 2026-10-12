@@ -8,6 +8,9 @@ it can show the song it is hearing; it asks for that alongside.
 
 - POST   /stream/local/mix/{player}          start, or start over (a seek,
                                              a skip, picking a song)
+- POST   /stream/local/preview/{player}      start a preview of excerpts
+                                             instead (core/preview.py) -
+                                             the rest below serves it too
 - PUT    /stream/local/mix/{player}/queue    the songs coming up changed
 - POST   /stream/local/mix/{player}/pause    / resume
 - GET    /stream/local/mix/{player}/timeline
@@ -31,7 +34,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
-from core import hls, local_mixes
+from core import hls, local_mixes, preview
 from core.auth import require_token
 from core.local_mixes import SongEntry
 from core.mix_engine import MixItem
@@ -80,6 +83,13 @@ class MixStart(BaseModel):
     position: float = 0.0
     repeat_mode: Literal["off", "all", "one"] = "off"
     transitions: TransitionSettings
+
+
+class PreviewStart(BaseModel):
+    # The songs to preview, in the order they play; each one's queue_index
+    # is its place in this list.
+    songs: list[MixSong]
+    index: int = 0
 
 
 class MixQueue(BaseModel):
@@ -144,11 +154,40 @@ async def start_mix(
     return _describe(mix)
 
 
+@router.post("/stream/local/preview/{player}")
+async def start_preview(
+    player: str, req: PreviewStart, session: SessionState = Depends(require_authenticated_session)
+):
+    player = _player(player)
+    if not 0 <= req.index < len(req.songs):
+        raise HTTPException(status_code=400, detail="No such song")
+
+    async def url_fn(item: MixItem) -> str | None:
+        return await asyncio.to_thread(session.media.get_stream_url, item.song_id)
+
+    songs = preview.PreviewSongs(_entries(req.songs), url_fn)
+    first = await songs.item(req.index)
+    assert first is not None
+    mix = local_mixes.start_preview(
+        session.session_id,
+        player,
+        first,
+        songs.next_item,
+        url_fn,
+        LOCAL_LEAD_SECONDS,
+        preview.SETTINGS,
+    )
+    logger.info(f"[mix] Local player {player}: preview from {first.song_id} at {first.start:.1f}s")
+    return _describe(mix)
+
+
 @router.put("/stream/local/mix/{player}/queue")
 async def update_mix_queue(
     player: str, req: MixQueue, session: SessionState = Depends(require_authenticated_session)
 ):
     mix = _mix(session, player)
+    if mix.preview:
+        return {"status": "ok"}
     mix.songs = _entries(req.songs)
     mix.repeat_mode = req.repeat_mode
     mix.engine.queue_changed()

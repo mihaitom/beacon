@@ -130,6 +130,7 @@ export default {
     lastPlayed: 'Zuletzt',
     play: 'Abspielen',
     playShuffled: 'Zufällig',
+    preview: 'Reinhören',
     // MusicBrainz's release types, as the server sends them (lower-case;
     // 'dj-mix' looked up as djmix).
     releaseTypes: {
@@ -220,6 +221,8 @@ export default {
     mute: 'Stummschalten',
     volume: 'Lautstärke',
     autoplay: 'Autoplay',
+    preview: 'Vorschau {index}/{count}',
+    playFromHere: 'Ab hier abspielen',
     liveRadio: 'Live · {time}',
     live: 'Live',
     radioConnectionLost: 'Verbindung verloren',

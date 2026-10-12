@@ -70,6 +70,7 @@
       </div>
     </div>
 
+    <preview-status class="mobile-transport__preview" />
     <div class="mobile-transport__seek-row">
       <!-- See RadioLiveStatus.vue: radio replaces the whole bar rather
        - than showing one with nothing to represent, buffering state
@@ -85,7 +86,7 @@
           :model-value="seekPreviewPosition ?? playbackStore.localPosition"
           :duration="playbackStore.duration"
           :buffered="bufferedPosition"
-          :disabled="!hasPlayable"
+          :disabled="!hasPlayable || !!playbackStore.preview"
           :dimmed="!hasPlayable"
           @update:model-value="seekPreviewPosition = $event"
           @end="onSeekEnd"
@@ -152,6 +153,7 @@ import {
 import { writeDeviceVolume } from '@/services/connect/volumeWrite'
 import { endCancelledSliderTouch } from '@/services/sliderTouchCancel'
 import SongWaveform from '@/components/player/SongWaveform.vue'
+import PreviewStatus from '@/components/player/PreviewStatus.vue'
 import RadioLiveStatus from '@/components/player/RadioLiveStatus.vue'
 import { getAudioEngine } from '@/services/audioEngine'
 import MobileDevicePicker from './MobileDevicePicker.vue'
@@ -160,7 +162,13 @@ import type { ConnectDeviceRef } from '@/services/connect/types'
 
 export default {
   name: 'MobileTransportControls',
-  components: { SongWaveform, RadioLiveStatus, MobileDevicePicker, TouchVolumeSlider },
+  components: {
+    SongWaveform,
+    RadioLiveStatus,
+    MobileDevicePicker,
+    TouchVolumeSlider,
+    PreviewStatus,
+  },
   data() {
     return {
       devicePickerOpen: false,
@@ -418,6 +426,12 @@ export default {
 .mobile-transport__row-side .v-btn {
   min-width: 0;
   flex-shrink: 1;
+}
+
+/* Centred over the waveform it explains. */
+.mobile-transport__preview {
+  justify-content: center;
+  margin-bottom: 8px;
 }
 
 /* The position, the waveform and the remaining time on one line. */

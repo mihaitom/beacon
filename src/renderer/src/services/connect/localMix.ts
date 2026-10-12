@@ -43,6 +43,19 @@ export function startLocalMix(
   return fetchConnect<LocalMixState>(path(player), { method: 'POST', body })
 }
 
+/** A preview instead of a mix (connect/core/preview.py): an excerpt of
+ * each of `songs`, from songs[index] on. Each song's queue_index is its
+ * place in `songs`. Served, paused and stopped like a mix. */
+export function startLocalPreview(
+  player: string,
+  body: { songs: LocalMixSong[]; index: number },
+): Promise<LocalMixState> {
+  return fetchConnect<LocalMixState>(`/stream/local/preview/${encodeURIComponent(player)}`, {
+    method: 'POST',
+    body,
+  })
+}
+
 export function updateLocalMixQueue(
   player: string,
   songs: LocalMixSong[],

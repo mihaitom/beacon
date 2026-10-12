@@ -76,6 +76,7 @@
             >
               {{ $t('library.playShuffled') }}
             </v-btn>
+            <preview-button :songs="album.songs" size="large" />
           </div>
         </template>
       </detail-hero>
@@ -119,6 +120,7 @@ import {
 } from '@/services/connect/fanart'
 import { getAlbumBio, type ArtistBio as ArtistBioData } from '@/services/connect/recommendations'
 import ArtistBio from '@/components/library/ArtistBio.vue'
+import PreviewButton from '@/components/library/PreviewButton.vue'
 import { preloadImage } from '@/services/preloadImage'
 import { useFanartStore } from '@/stores/fanart'
 
@@ -128,7 +130,7 @@ const MAX_GENRES = 3
 
 export default {
   name: 'AlbumDetailView',
-  components: { DetailHero, DetailPageBackdrop, SongTable, PageLoader, ArtistBio },
+  components: { DetailHero, DetailPageBackdrop, SongTable, PageLoader, ArtistBio, PreviewButton },
   data() {
     return {
       album: null as Awaited<ReturnType<ReturnType<typeof useLibraryStore>['fetchAlbum']>> | null,

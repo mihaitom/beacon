@@ -19,7 +19,7 @@ import core.mix_engine as me
 from core.mix_engine import MixEngine, MixItem
 from core.mix_timeline import SAMPLE_RATE
 from core.session import build_status_dict, compute_position
-from core.streamer import REASON_TRANSITIONS, resolve_mix_format
+from core.streamer import FALLBACK_FORMAT, REASON_TRANSITIONS, resolve_mix_format
 from delivery import ChromecastDelivery
 from media import Track
 from routes import mix_cast
@@ -512,3 +512,197 @@ async def test_a_device_joining_a_mix_narrows_the_encode_for_the_whole_set(defau
     assert await _refit_output_format(default_session, AirPlayDelivery("Kitchen"))
     assert st.current_output_format.content_type == "audio/mpeg"
     assert st.current_output_format.transcode_reason == REASON_TRANSITIONS
+
+
+def test_a_station_ends_the_mix(client, default_session, media):
+    """Left running, the mix's follow() went on moving current_track through
+    its songs while the station played."""
+    with patch.object(ChromecastDelivery, "play", new=AsyncMock()):
+        _play(client)
+        mix = default_session.state.mix
+        client.post(
+            "/play-url",
+            json={
+                "target_name": "TV",
+                "target_type": "chromecast",
+                "title": "Station",
+                "url": "https://example.com/stream.mp3",
+            },
+        )
+    assert mix.stopped and default_session.state.mix is None
+
+
+# ── Previews ───────────────────────────────────────────────────────────────
+
+
+@pytest.fixture
+def no_waveforms():
+    # Without a waveform an excerpt starts at 35 %: 63-83 s of 180.
+    with patch("core.waveform.get_waveform", new=AsyncMock(return_value=[])):
+        yield
+
+
+def _preview(client, *ids, index=0):
+    songs = [{"id": i, "queue_index": n, "duration": 180} for n, i in enumerate(ids)]
+    return client.post("/preview", json={"songs": songs, "index": index})
+
+
+def _casting_a_queue(client, default_session, **extra):
+    """The queue playing "1" at 42 s on the TV, the way it stands before a
+    preview."""
+    with patch.object(ChromecastDelivery, "play", new=AsyncMock()):
+        _play(client, start_position=42, **extra)
+    st = default_session.state
+    st.clock.start(42.0 if st.mix is None else 0.0)
+
+
+def test_a_preview_plays_excerpts_over_the_queue(client, default_session, media, no_waveforms):
+    _casting_a_queue(client, default_session)
+    queue_mix = default_session.state.mix
+    with patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play:
+        r = _preview(client, "3", "4", index=1)
+    assert r.json() == {"status": "playing"}
+    play.assert_awaited_once()
+    st = default_session.state
+    assert queue_mix.stopped
+    assert st.mix.settings.preview
+    assert st.mix.first.song_id == "4"
+    assert (st.mix.first.start, st.mix.first.end) == pytest.approx((63.0, 83.0))
+    assert st.current_track is TRACKS["4"]
+    # The queue is where it was; the status says what plays instead.
+    assert st.queue == ["1", "2", "3"] and st.queue_index == 0
+    status = build_status_dict(default_session)
+    assert status["preview"] == {
+        "song_ids": ["3", "4"],
+        "index": 1,
+        "resume_at": pytest.approx(42.0, abs=0.5),
+    }
+    assert status["next_locked"] is False
+    # Even with the next excerpt settled: the queue's next song is not.
+    st.mix.timeline.mark(10 * SR, "3", 0, 63.0, playing=True)
+    st.clock.start(0.0)
+    assert st.mix.next_locked(0.0)
+    assert build_status_dict(default_session)["next_locked"] is False
+
+
+def test_a_second_preview_still_goes_back_to_the_queue(
+    client, default_session, media, no_waveforms
+):
+    _casting_a_queue(client, default_session)
+    with (
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()),
+        patch.object(ChromecastDelivery, "pause", new=AsyncMock()),
+    ):
+        _preview(client, "3")
+        _preview(client, "4", "2")
+        client.post("/preview/end")
+    assert default_session.state.current_track is TRACKS["1"]
+    assert compute_position(default_session) == pytest.approx(42.0, abs=0.5)
+
+
+def test_a_preview_the_speaker_refuses_goes_back_to_the_queue(
+    client, default_session, media, no_waveforms
+):
+    _casting_a_queue(client, default_session)
+    with patch.object(ChromecastDelivery, "play", new=AsyncMock(side_effect=OSError("gone"))):
+        r = _preview(client, "3")
+    assert "error" in r.json()
+    st = default_session.state
+    assert st.preview is None and st.current_track is TRACKS["1"] and st.clock.is_paused
+
+
+def test_a_preview_needs_a_speaker(client, default_session, media, no_waveforms):
+    assert "error" in _preview(client, "3").json()
+    assert default_session.state.preview is None
+
+
+def test_a_resume_stays_in_the_preview(client, default_session, media, no_waveforms):
+    _casting_a_queue(client, default_session)
+    with (
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()),
+        patch.object(ChromecastDelivery, "pause", new=AsyncMock()),
+    ):
+        _preview(client, "3", "4")
+        client.post("/pause")
+        client.post("/resume")
+    st = default_session.state
+    assert st.preview is not None and st.mix.settings.preview
+    assert st.mix.first.song_id == "3"
+
+
+def test_a_preview_has_nothing_to_seek_and_leaves_queue_edits_for_later(
+    client, default_session, media, no_waveforms
+):
+    _casting_a_queue(client, default_session)
+    with patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play:
+        _preview(client, "3", "4")
+        client.post("/seek", json={"position": 10})
+    play.assert_awaited_once()
+    with patch.object(MixEngine, "queue_changed") as changed:
+        client.post("/queue", json={"song_ids": ["1", "4"], "queue_index": 0})
+    changed.assert_not_called()
+    assert default_session.state.queue == ["1", "4"]
+
+
+@pytest.mark.parametrize("transitions", [GAPLESS, None])
+def test_stopping_a_preview_goes_back_to_the_queue_song_paused(
+    client, default_session, media, no_waveforms, transitions
+):
+    _casting_a_queue(client, default_session, transitions=transitions)
+    with (
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()),
+        patch.object(ChromecastDelivery, "pause", new=AsyncMock()) as pause,
+    ):
+        _preview(client, "3", "4")
+        client.post("/preview/end")
+    pause.assert_awaited_once()
+    st = default_session.state
+    assert st.preview is None
+    assert st.current_track is TRACKS["1"] and st.clock.is_paused
+    assert (st.mix is not None) == (transitions is not None)
+    assert compute_position(default_session) == pytest.approx(42.0, abs=0.5)
+    assert build_status_dict(default_session)["preview"] is None
+
+
+def test_a_play_ends_the_preview(client, default_session, media, no_waveforms):
+    _casting_a_queue(client, default_session)
+    with patch.object(ChromecastDelivery, "play", new=AsyncMock()):
+        _preview(client, "3", "4")
+        _play(client, song_ids=["2"])
+    assert default_session.state.preview is None
+    assert not default_session.state.mix.settings.preview
+
+
+async def test_follow_moves_the_preview_on_and_ends_it_back_in_the_queue(default_session):
+    from core import preview
+    from core.local_mixes import SongEntry
+
+    st = default_session.state
+    st.queue, st.queue_index, st.is_streaming = ["1", "2"], 1, True
+    st.current_track = TRACKS["3"]
+    st.active_delivery = ChromecastDelivery("TV")
+    st.preview = preview.CastPreview(
+        songs=preview.PreviewSongs([SongEntry("3", 0), SongEntry("4", 1)], AsyncMock()),
+        index=0,
+        resume_track=TRACKS["2"],
+        resume_gain=1.0,
+        resume_format=FALLBACK_FORMAT,
+        resume_position=30.0,
+        resume_mixed=False,
+    )
+    second = MixItem("4", 1, payload=TRACKS["4"])
+    mix = MixEngine(MixItem("3", 0, payload=TRACKS["3"]), 0.0, AsyncMock(), AsyncMock())
+    mix.timeline.mark(int(0.05 * SR), "4", 1, 60.0, playing=True, payload=second, starts=True)
+    mix.timeline.mark_end(int(0.15 * SR))
+    st.mix = mix
+    st.clock.start(0.0)
+    task = asyncio.create_task(mix_cast.follow(default_session, mix))
+    async with asyncio.timeout(3):
+        while st.current_track is not TRACKS["4"]:
+            await asyncio.sleep(0.01)
+    assert st.preview.index == 1 and st.queue_index == 1
+    async with asyncio.timeout(3):
+        await task
+    assert st.preview is None and st.mix is None
+    assert st.current_track is TRACKS["2"] and st.clock.is_paused
+    assert st.clock.resume_offset == 30.0

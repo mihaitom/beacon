@@ -307,6 +307,38 @@ async def test_the_next_song_is_locked_once_its_join_is_rendered():
     assert not rig.engine.next_locked(3.0)
 
 
+async def test_excerpts_play_from_their_start_and_say_where_in_the_song_they_are():
+    a, b = _pcm(SR), _pcm(SR, start=5)
+    items = {
+        "a": MixItem("a", 0, duration=200.0, start=50.0, end=51.0),
+        "b": MixItem("b", 1, duration=200.0, start=80.0, end=81.0),
+    }
+    rig = Rig({"a": a, "b": b}, ["a", "b"], lead=4.0, items=items, position=50.0)
+    rig.engine.start()
+    await rig.run()
+    assert [d.start for d in rig.decks] == [50.0, 80.0]
+    assert rig.rendered() == a + b
+    assert rig.engine.timeline.at(SR // 2).position == pytest.approx(50.5)
+    assert rig.engine.timeline.at(SR + SR // 2).position == pytest.approx(80.5)
+
+
+def test_an_excerpt_is_cut_and_faded_by_its_decoder():
+    whole = me.decode_cmd("u", 50.0)
+    assert "-t" not in whole and "-af" not in whole
+    excerpt = me.decode_cmd("u", 50.0, 70.0)
+    assert excerpt[excerpt.index("-t") + 1] == "20.000"
+    fades = excerpt[excerpt.index("-af") + 1]
+    assert "afade=t=in" in fades and "afade=t=out:st=18.000" in fades
+
+
+def test_an_excerpt_is_analysed_within_its_bounds_only():
+    out = MixItem("a", 0, duration=300.0, start=100.0, end=120.0)
+    inn = MixItem("b", 1, duration=300.0, start=60.0, end=80.0)
+    assert me._analysis_windows(out, inn) == ((100.0, 20.0), (60.0, 20.0))
+    whole = MixItem("a", 0, duration=300.0)
+    assert me._analysis_windows(whole, whole) == ((240.0, 65.0), (0.0, 60.0))
+
+
 async def test_the_next_song_is_asked_for_only_near_the_end():
     rig = Rig({"a": _pcm(120 * SR), "b": _pcm(10)}, ["a", "b"], lead=1.0)
     rig.slow.add("a")
@@ -362,7 +394,13 @@ def _write_wav(path, samples: np.ndarray) -> None:
         w.writeframes(samples.tobytes())
 
 
-async def _mix_files(paths: list[str], durations: list[float]) -> np.ndarray:
+async def _mix_files(paths: list[str], durations: list[float], monkeypatch) -> np.ndarray:
+    """The mix of `paths` through real decoders. What is asked here is
+    whether a join is exact, not how the engine paces itself: on the real
+    clock, its head start at a join is only what it has rendered so far, and
+    a decoder slower than that to start - a CI runner under coverage -
+    gets silence held in its place. So it is never given up on here."""
+    monkeypatch.setattr(me, "_STARVE_LEAD_SECONDS", float("-inf"))
     items = [MixItem(str(i), i, duration=d) for i, d in enumerate(durations)]
 
     async def url(item):
@@ -389,8 +427,22 @@ async def test_a_song_split_into_two_files_comes_out_whole(tmp_path, monkeypatch
     whole = _sine(2 * SR)
     _write_wav(tmp_path / "a.wav", whole[: 2 * 50_000])
     _write_wav(tmp_path / "b.wav", whole[2 * 50_000 :])
-    out = await _mix_files([str(tmp_path / "a.wav"), str(tmp_path / "b.wav")], [1.13, 0.87])
+    paths = [str(tmp_path / "a.wav"), str(tmp_path / "b.wav")]
+    out = await _mix_files(paths, [1.13, 0.87], monkeypatch)
     assert np.array_equal(out, whole)
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="needs a real ffmpeg")
+async def test_an_excerpt_decodes_to_its_length_fading_in_and_out(tmp_path, monkeypatch):
+    monkeypatch.setattr(me, "FFMPEG_BIN", "ffmpeg")
+    _write_wav(tmp_path / "a.wav", _sine(6 * SR))
+    cmd = me.decode_cmd(str(tmp_path / "a.wav"), 1.0, 4.0)
+    done = await asyncio.to_thread(subprocess.run, cmd, capture_output=True, check=True)
+    left = np.frombuffer(done.stdout, dtype="<i2")[0::2].astype(np.int32)
+    assert abs(len(left) - 3 * SR) <= 64
+    assert np.abs(left[:100]).max() < 1000  # fading in
+    assert np.abs(left[SR : SR + 2000]).max() > 11000  # full level between
+    assert np.abs(left[-100:]).max() < 1000  # faded out
 
 
 def _encode_mp3(wav, mp3) -> None:
@@ -413,7 +465,8 @@ async def test_mp3_padding_does_not_open_a_gap_at_the_join(tmp_path, monkeypatch
     _write_wav(tmp_path / "b.wav", whole[split:])
     for name in ("a", "b"):
         await asyncio.to_thread(_encode_mp3, tmp_path / f"{name}.wav", tmp_path / f"{name}.mp3")
-    out = await _mix_files([str(tmp_path / "a.mp3"), str(tmp_path / "b.mp3")], [2.27, 1.73])
+    paths = [str(tmp_path / "a.mp3"), str(tmp_path / "b.mp3")]
+    out = await _mix_files(paths, [2.27, 1.73], monkeypatch)
     assert abs(len(out) - len(whole)) <= 2 * 64
     left = out[0::2].astype(np.int32)
     around = left[split // 2 - 2000 : split // 2 + 2000]

@@ -181,6 +181,9 @@ class AppState:
         # of one file per song. None whenever songs go out one at a time,
         # which is every path that existed before transitions.
         self.mix: MixEngine | None = None
+        # A preview of an album or playlist playing over the queue
+        # (core/preview.py's CastPreview), or None. Always with a mix.
+        self.preview: Any = None
         # The transitions setting the last /play brought (routes/mix_cast.py's
         # TransitionSettings), for the runs a seek or a skip starts later.
         self.transitions: Any = None

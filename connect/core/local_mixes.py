@@ -67,6 +67,9 @@ class LocalMix:
     touched: float = field(default_factory=time.monotonic)
     # The run as HLS, for a WebKit tab (core/mix_hls.py).
     hls: MixHls | None = None
+    # A preview of excerpts (core/preview.py): its list is fixed, and the
+    # tab's queue has nothing to say about it.
+    preview: bool = False
 
     def touch(self) -> None:
         self.touched = time.monotonic()
@@ -141,8 +144,30 @@ def start(
     )
     mix = LocalMix(session_id, player, engine, songs[index:], repeat_mode)
     holder.append(mix)
-    _mixes[(session_id, player)] = mix
-    engine.start()
+    return _install(mix)
+
+
+def start_preview(
+    session_id: str,
+    player: str,
+    first: MixItem,
+    next_fn: Callable[[MixItem], Awaitable[MixItem | None]],
+    url_fn: Callable[[MixItem], Awaitable[str | None]],
+    lead_seconds: float,
+    settings: Settings,
+) -> LocalMix:
+    """A preview for this tab from the excerpt `first` on, the rest from
+    `next_fn` - replacing whatever it had, a mix included."""
+    stop(session_id, player)
+    engine = MixEngine(
+        first, first.start, url_fn, next_fn, lead_seconds=lead_seconds, settings=settings
+    )
+    return _install(LocalMix(session_id, player, engine, [], preview=True))
+
+
+def _install(mix: LocalMix) -> LocalMix:
+    _mixes[(mix.session_id, mix.player)] = mix
+    mix.engine.start()
     _ensure_reaper()
     return mix
 

@@ -88,6 +88,9 @@ _PREOPEN_CROSSFADE_SECONDS = 90.0
 _MAX_DSP_FRAMES_PER_STEP = 2 * SAMPLE_RATE
 # How much of each song's end/start is analysed for a transition.
 _ANALYSE_SECONDS = 60.0
+# An excerpt's fades (decode_cmd()).
+_EXCERPT_FADE_IN_SECONDS = 0.5
+_EXCERPT_FADE_OUT_SECONDS = 2.0
 # While the outgoing song eases into the incoming tempo, how often its rate
 # is written into the timeline.
 _RATE_MARK_SECONDS = 1.0
@@ -112,11 +115,37 @@ class MixItem:
     bpm: float | None = None
     # The owner's own object for the song (the cast path's Track).
     payload: Any = None
+    # An excerpt instead of the whole song (core/preview.py): played from
+    # `start` to `end`, seconds in the song.
+    start: float = 0.0
+    end: float | None = None
+
+    @property
+    def until(self) -> float:
+        """Where the song stops playing: the excerpt's end, else its
+        length (0 when unknown)."""
+        return self.end if self.end is not None else self.duration
 
 
-def decode_cmd(url: str, start: float) -> list[str]:
+def decode_cmd(url: str, start: float, end: float | None = None) -> list[str]:
+    """The decoder for a song from `start`, or for an excerpt up to `end`,
+    which also fades in and out so it neither begins nor stops mid-note -
+    under a crossfade the fades change nothing audible."""
     seek = ["-ss", f"{start:.3f}"] if start > 0 else []
     http = _HTTP_RECONNECT_ARGS if url.startswith(("http://", "https://")) else []
+    excerpt: list[str] = []
+    if end is not None:
+        length = max(end - start, 0.0)
+        fade_out = min(_EXCERPT_FADE_OUT_SECONDS, length / 2)
+        excerpt = [
+            "-t",
+            f"{length:.3f}",
+            "-af",
+            (
+                f"afade=t=in:d={_EXCERPT_FADE_IN_SECONDS},"
+                f"afade=t=out:st={length - fade_out:.3f}:d={fade_out:.3f}"
+            ),
+        ]
     return [
         FFMPEG_BIN,
         "-hide_banner",
@@ -127,6 +156,7 @@ def decode_cmd(url: str, start: float) -> list[str]:
         "-i",
         url,
         "-vn",
+        *excerpt,
         "-ac",
         "2",
         "-ar",
@@ -230,7 +260,7 @@ class Deck:
             if url is None:
                 return
             self._proc = await asyncio.create_subprocess_exec(
-                *decode_cmd(url, self.start),
+                *decode_cmd(url, self.start, self.item.end),
                 stdin=asyncio.subprocess.DEVNULL,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.DEVNULL,
@@ -272,8 +302,27 @@ DeckFactory = Callable[[MixItem, float], DeckLike]
 AnalyseFn = Callable[[MixItem, float, float], Awaitable[RegionAnalysis | None]]
 
 
+def _analysis_windows(
+    out_item: MixItem, in_item: MixItem
+) -> tuple[tuple[float, float], tuple[float, float]]:
+    """(start, length) analysed of each song for a transition: the end of
+    the outgoing one, the start of the incoming one. An excerpt is analysed
+    within its bounds only - a downbeat found past its end would plan a
+    transition into audio its deck never has."""
+    if out_item.end is None:
+        out_window = (max(0.0, out_item.duration - _ANALYSE_SECONDS), _ANALYSE_SECONDS + 5.0)
+    else:
+        start = max(out_item.start, out_item.end - _ANALYSE_SECONDS)
+        out_window = (start, out_item.end - start)
+    if in_item.end is None:
+        in_window = (in_item.start, _ANALYSE_SECONDS)
+    else:
+        in_window = (in_item.start, min(_ANALYSE_SECONDS, in_item.end - in_item.start))
+    return out_window, in_window
+
+
 def _facts(item: MixItem) -> SongFacts:
-    return SongFacts(item.duration, item.album_id, item.disc, item.track)
+    return SongFacts(item.until, item.album_id, item.disc, item.track, item.start)
 
 
 @dataclass
@@ -725,8 +774,8 @@ class MixEngine:
         if plan is None:
             # The analysis has not answered by the last moment a crossfade
             # can still start: go ahead on the metadata alone.
-            latest = deck.item.duration - self.settings.crossfade_seconds - 1.0
-            if deck.item.duration <= 0 or deck.position < latest:
+            latest = deck.item.until - self.settings.crossfade_seconds - 1.0
+            if deck.item.until <= 0 or deck.position < latest:
                 return
             if self._plan_task is not None:
                 self._plan_task.cancel()
@@ -1000,7 +1049,7 @@ class MixEngine:
                 frame,
                 nxt.item.song_id,
                 nxt.item.queue_index,
-                0.0,
+                nxt.position,
                 playing=True,
                 payload=nxt.item,
                 starts=True,
@@ -1017,7 +1066,7 @@ class MixEngine:
         deck = self._deck
         if deck is None or self._next_state is not None or self._tx is not None:
             return
-        remaining = deck.item.duration - deck.position if deck.item.duration > 0 else None
+        remaining = deck.item.until - deck.position if deck.item.until > 0 else None
         ahead = _PREOPEN_CROSSFADE_SECONDS if self._dsp else _PREOPEN_SECONDS
         if not (force or deck.decoder_done or (remaining is not None and remaining <= ahead)):
             return
@@ -1035,7 +1084,7 @@ class MixEngine:
             item = None
         if generation != self._next_generation or self.stopped:
             return
-        self._next = self._open(item, 0.0) if item is not None else None
+        self._next = self._open(item, item.start) if item is not None else None
         self._next_state = "done"
         if self._dsp and item is not None:
             self._plan = None
@@ -1044,15 +1093,12 @@ class MixEngine:
     async def _make_plan(self, out_item: MixItem, in_item: MixItem, generation: int) -> None:
         out_facts, in_facts = _facts(out_item), _facts(in_item)
         plan = plan_transition(self.settings, out_facts, in_facts)
-        if plan.kind != "gapless" and out_item.duration > 0:
+        if plan.kind != "gapless" and out_item.until > 0:
+            out_window, in_window = _analysis_windows(out_item, in_item)
             try:
                 out_region, in_region = await asyncio.gather(
-                    self._analyse_fn(
-                        out_item,
-                        max(0.0, out_item.duration - _ANALYSE_SECONDS),
-                        _ANALYSE_SECONDS + 5.0,
-                    ),
-                    self._analyse_fn(in_item, 0.0, _ANALYSE_SECONDS),
+                    self._analyse_fn(out_item, *out_window),
+                    self._analyse_fn(in_item, *in_window),
                 )
             except asyncio.CancelledError:
                 raise

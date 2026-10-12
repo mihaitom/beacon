@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - lrc.red as a new source for lyrics. Songs whose tags carry an ISRC are found there as exactly that recording rather than by title. If you have picked your lyrics sources yourself in Settings, it needs switching on there
 - Gapless playback: songs follow each other without a pause, in the app and on speakers. Turn it on under Settings, Playback, Transitions. Once the transition into the next song is prepared, that song is locked in place in the queue
 - Crossfade, the way a DJ mixes: where the beat allows it, Beacon matches the next song's tempo, brings its bass in on the beat and then slowly fades out the previous song. Without a clear beat it is an ordinary crossfade, and songs that follow each other on an album still play gaplessly. Party guests listening online hear the same transitions
+- Preview on album and playlist pages: about two minutes of the loudest part of six songs, blended into each other, to get a feel for what is in it. The queue stays as it was, and "Play from here" plays the album or playlist from the song you are hearing. Works on speakers too
 
 ### Changed
 

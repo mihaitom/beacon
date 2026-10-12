@@ -48,6 +48,11 @@ MAX_STRETCH = 0.08
 SWAP_SECONDS = 0.015
 # How many bars the outgoing song takes to ease into the incoming tempo.
 EASE_BARS = 8
+# A preview does not stretch: its excerpts are too short for an ease, and
+# should sound as the songs do. Unstretched, two beat grids drift apart by
+# the tempo difference - 0.5 % is 10 ms two seconds into the overlap, by
+# the bass swap, just under where kicks start to flam (~12 ms).
+PREVIEW_MAX_DRIFT = 0.005
 # Overlap lengths a beatmix chooses between, in bars.
 _BAR_CHOICES = (16, 8, 4, 2, 1)
 # Never more of either song than this share of what was analysed.
@@ -60,6 +65,9 @@ _CURVE_POINTS = 33
 class Settings:
     mode: str = "gapless"
     crossfade_seconds: float = 10.0
+    # A preview of excerpts (core/preview.py): always blended, album
+    # neighbours too, and never stretched - see PREVIEW_MAX_DRIFT.
+    preview: bool = False
 
 
 @dataclass(frozen=True)
@@ -70,6 +78,8 @@ class SongFacts:
     album_id: str | None = None
     disc: int | None = None
     track: int | None = None
+    # Where it starts playing: 0, or an excerpt's start (core/preview.py).
+    start: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -125,8 +135,8 @@ def follows_on_album(out: SongFacts, inn: SongFacts) -> bool:
     return in_disc == out_disc + 1 and inn.track == 1
 
 
-def gapless(out: SongFacts) -> TransitionPlan:
-    return TransitionPlan("gapless", out.duration, out.duration, 0.0)
+def gapless(out: SongFacts, inn: SongFacts) -> TransitionPlan:
+    return TransitionPlan("gapless", out.duration, out.duration, inn.start)
 
 
 def plan_transition(
@@ -136,22 +146,23 @@ def plan_transition(
     out_region: RegionAnalysis | None = None,
     in_region: RegionAnalysis | None = None,
 ) -> TransitionPlan:
-    if settings.mode != "crossfade" or follows_on_album(out, inn):
-        return gapless(out)
+    if settings.mode != "crossfade" or (not settings.preview and follows_on_album(out, inn)):
+        return gapless(out, inn)
     beatmix = _beatmix(settings, out_region, in_region)
     if beatmix is not None:
         return beatmix
-    return _crossfade(settings, out, out_region, in_region)
+    return _crossfade(settings, out, inn, out_region, in_region)
 
 
 def _crossfade(
     settings: Settings,
     out: SongFacts,
+    inn: SongFacts,
     out_region: RegionAnalysis | None,
     in_region: RegionAnalysis | None,
 ) -> TransitionPlan:
     out_end = out_region.sound_end if out_region else out.duration
-    in_start = in_region.sound_start if in_region else 0.0
+    in_start = in_region.sound_start if in_region else inn.start
     available = out_end - (out_region.start if out_region else 0.0)
     overlap = max(0.0, min(settings.crossfade_seconds, available * _MAX_SHARE))
     if in_region is not None:
@@ -196,6 +207,10 @@ def _beatmix(
     rate = stretch_for(out, inn)
     if rate is None:
         return None
+    if settings.preview:
+        if abs(rate - 1) > PREVIEW_MAX_DRIFT:
+            return None
+        rate = 1.0
     # A bar in each song's own time, and in the stream's through the
     # overlap - where the outgoing song plays at the incoming tempo.
     bar = 4 * out.period

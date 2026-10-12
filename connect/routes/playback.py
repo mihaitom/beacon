@@ -14,6 +14,7 @@ from pydantic import BaseModel
 from core import cast_permissions
 from core.auth import require_token
 from core.claims import claims
+from core.local_mixes import SongEntry
 from core.playback_clock import MAX_PLAUSIBLE_POSITION_LEAD, POSITION_RESYNC_THRESHOLD
 from core.playlist_url import resolve_stream_url
 from core.radio_position import RadioPositionTracker
@@ -53,6 +54,7 @@ from delivery.base import PlaybackFailure
 from delivery.errors import REASON_STATION_REFUSED, delivery_error_response, device_label
 
 from . import mix_cast
+from .local_mix import MixSong
 from .mix_cast import SongHint, TransitionSettings, transitions_on
 
 logger = logging.getLogger("connect.playback")
@@ -978,6 +980,8 @@ async def play_tracks(
         st.current_track_gain = req.gain
         st.current_output_format = output_format
         st.is_streaming = True
+        # A song played ends a preview: it only stood in for the queue.
+        previous_preview, st.preview = st.preview, None
         if st.radio_info is not None:
             session.stop_radio_metadata_watch()
             await session.stop_radio_relay()
@@ -1080,6 +1084,7 @@ async def play_tracks(
                     if mix is not None:
                         mix.stop()
                     st.mix = previous_mix
+                    st.preview = previous_preview
                     # Dispatch never actually reached the device — release the
                     # claim just granted above instead of leaving it locked to
                     # this session (device_in_use for everyone else) with
@@ -1415,6 +1420,10 @@ async def play_url(
                     return delivery_error_response(e, target)
 
         st.current_track = None
+        # A station ends a mix, and a preview with it. Left running, the
+        # mix's follow() went on moving current_track through its songs while
+        # the station played.
+        session.stop_mix()
         # What the stream-info panel reads. Three cases, decided here rather
         # than wherever each becomes true, because the dispatch above can
         # still fail and roll everything back — a format set earlier would
@@ -1660,6 +1669,36 @@ async def resume_playback(session: SessionState = Depends(require_authenticated_
 
         await session.event_bus.broadcast(build_status_dict(session))
         return {"paused": False}
+
+
+class PreviewRequest(BaseModel):
+    # The songs to preview, in the order they play; each one's queue_index
+    # is its place in this list (see routes/local_mix.py's MixSong).
+    songs: list[MixSong]
+    index: int = 0
+
+
+@router.post("/preview")
+async def start_preview(
+    req: PreviewRequest, session: SessionState = Depends(require_authenticated_session)
+):
+    """Previews an album or playlist on the speakers being cast to - see
+    routes/mix_cast.py's start_preview(). Also how a preview moves to
+    another of its excerpts."""
+    if not 0 <= req.index < len(req.songs):
+        return {"error": "No such song"}
+    async with session.play_lock:
+        entries = [SongEntry(**song.model_dump()) for song in req.songs]
+        error = await mix_cast.start_preview(session, entries, req.index)
+        return error or {"status": "playing"}
+
+
+@router.post("/preview/end")
+async def end_preview(session: SessionState = Depends(require_authenticated_session)):
+    """Stops a preview: the queue's song back where it was, paused."""
+    async with session.play_lock:
+        await mix_cast.end_preview(session, silence=True)
+        return {"status": "paused"}
 
 
 class SeekRequest(BaseModel):

@@ -15,6 +15,7 @@
         <div class="text-body-small text-medium-emphasis">{{ album.artist }}</div>
         <div class="text-body-small text-medium-emphasis">{{ meta }}</div>
       </div>
+      <preview-button :songs="album.songs" compact />
       <v-btn
         icon="mdi-play-circle"
         color="primary"
@@ -51,13 +52,14 @@
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import CoverArt from '@/components/library/CoverArt.vue'
+import PreviewButton from '@/components/library/PreviewButton.vue'
 import MobileSongRow from '@/components/mobile/MobileSongRow.vue'
 import MobileSongActionSheet from '@/components/mobile/MobileSongActionSheet.vue'
 import type { Album, Song } from '@/types/library'
 
 export default {
   name: 'MobileAlbumDetailView',
-  components: { CoverArt, MobileSongRow, MobileSongActionSheet },
+  components: { CoverArt, MobileSongRow, MobileSongActionSheet, PreviewButton },
   data() {
     return {
       album: null as Album | null,

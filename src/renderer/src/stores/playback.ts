@@ -35,7 +35,8 @@ import { createEdgeDetector } from '@/services/playback/edgeDetector'
 import { diffCastQueue } from '@/services/playback/queueReconcile'
 import type { RepeatMode } from '@/services/playback/types'
 import { resolveRadioStation } from '@/services/playback/radioStation'
-import { getLocalMix, STALE_PAUSE_MS, upcomingSongs } from '@/services/playback/localMix'
+import { getLocalMix, mixSong, STALE_PAUSE_MS, upcomingSongs } from '@/services/playback/localMix'
+import { pickPreviewSongs } from '@/services/playback/preview'
 import { startRadioMetadataWatch, stopRadioMetadataWatch } from '@/services/connect/radioMetadata'
 import {
   localRadioStreamUrl,
@@ -79,6 +80,22 @@ function notifyPlexPassRequired(titleKey: string): void {
   })
 }
 
+/** See PlaybackState.preview and startPreview(). */
+interface PreviewState {
+  /** The album or playlist, whole - "Play from here" plays it. */
+  songs: Song[]
+  /** Which of them the preview plays, in order (pickPreviewSongs()). */
+  picks: number[]
+  /** Where in `picks` it is. */
+  index: number
+  /** Where the queue's song was when the preview began. */
+  resumeAt: number
+  /** Whether `songs` is the whole album or playlist - false for a preview
+   * taken up from another client sharing a cast, which only knows the
+   * songs previewed. */
+  whole: boolean
+}
+
 interface PlaybackState {
   originalQueue: Song[]
   queue: Song[]
@@ -99,6 +116,9 @@ interface PlaybackState {
    * it is. From the local mix (followLocalMix()) or, while casting, from
    * connect's status. See lockedNextIndex. */
   mixNextLocked: boolean
+  /** A preview of an album or playlist playing over the queue, which it
+   * leaves alone - see startPreview(). */
+  preview: PreviewState | null
   duration: number
   volume: number
   shuffle: boolean
@@ -294,6 +314,41 @@ let mixSongStartedAt: number | null = null
 // mapped once, so followLocalMix() can map it into whichever song is
 // heard as one gives way to the next.
 let mixBufferedEnd = 0
+// Preview requests to connect still on their way - see adoptCastPreview(),
+// which leaves the preview alone meanwhile.
+let castPreviewRequests = 0
+
+function sameIds(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((id, i) => id === b[i])
+}
+
+/** The songs for `ids`, in that order: from `known` (this client's own
+ * objects - rows are keyed by them), the library, or the server. Null when
+ * any lookup fails, rather than a list with a hole in it. */
+async function resolveSongs(
+  ids: readonly string[],
+  known: readonly Song[],
+): Promise<Song[] | null> {
+  const library = useLibraryStore()
+  const knownById = new Map(known.map((song) => [song.id, song]))
+  const resolvedById = new Map<string, Song>()
+  await Promise.all(
+    [...new Set(ids)].map(async (id) => {
+      const cached = knownById.get(id) ?? library.allSongs.find((song) => song.id === id)
+      if (cached) {
+        resolvedById.set(id, cached)
+        return
+      }
+      try {
+        resolvedById.set(id, await library.client().getSong(id))
+      } catch (error) {
+        console.error('[playback] Failed to resolve a song connect reported:', id, error)
+      }
+    }),
+  )
+  if (ids.some((id) => !resolvedById.has(id))) return null
+  return ids.map((id) => resolvedById.get(id)!)
+}
 
 // Smooths cast playback's position — see positionTracker.ts's own comment
 // for why and how. The status tick's position is server-authoritative and
@@ -395,6 +450,7 @@ export const usePlaybackStore = defineStore('playback', {
       localPosition: 0,
       bufferedPosition: 0,
       mixNextLocked: false,
+      preview: null,
       duration: 0,
       volume: 1,
       shuffle: false,
@@ -453,6 +509,9 @@ export const usePlaybackStore = defineStore('playback', {
      * to know the queue survived. Queue bookkeeping wants queuedSong
      * below instead. */
     currentSong(state): Song | null {
+      // What is heard, the way a station is - see startPreview().
+      if (state.preview)
+        return state.preview.songs[state.preview.picks[state.preview.index]!] ?? null
       if (state.radioStation) return null
       return state.currentIndex >= 0 ? (state.queue[state.currentIndex] ?? null) : null
     },
@@ -475,6 +534,7 @@ export const usePlaybackStore = defineStore('playback', {
       return next > 0 && next < state.queue.length ? next : -1
     },
     hasNext(state): boolean {
+      if (state.preview) return true // the next excerpt, or the end of it
       if (state.repeatMode !== 'off') return state.queue.length > 0
       return state.currentIndex < state.queue.length - 1
     },
@@ -540,6 +600,10 @@ export const usePlaybackStore = defineStore('playback', {
       // connect lost this device's mix (stopped, or restarted) while it
       // was still playing here: start it over from where it was.
       getLocalMix().onLost = () => {
+        if (this.preview) {
+          this.endPreview()
+          return
+        }
         if (!this.isCasting && this.currentSong) {
           this.startLocalSong(this.currentSong, this.localPosition, this.isPlaying)
         }
@@ -553,7 +617,8 @@ export const usePlaybackStore = defineStore('playback', {
         this.bufferedPosition = getLocalMix().active ? this.mixBufferedPosition() : end
       }
       engine.onEnded = () => {
-        if (!this.isCasting) void this.advanceOnSongEnd()
+        if (this.preview) this.endPreview()
+        else if (!this.isCasting) void this.advanceOnSongEnd()
       }
       // The lock screen's previous/next only appear once registered after
       // playback has begun - see reassertActionHandlers().
@@ -672,7 +737,9 @@ export const usePlaybackStore = defineStore('playback', {
             positionTracker.record(status.elapsed, now)
             this.localPosition = positionTracker.extrapolate(now, this.positionClamp)
           }
-          this.checkScrobbleThreshold()
+          // Not over a preview, whose positions are mid-song - before this
+          // client may even have taken it up (adoptCastPreview()).
+          if (!status.preview) this.checkScrobbleThreshold()
 
           void this.reconcileFromStatus(status)
 
@@ -774,7 +841,8 @@ export const usePlaybackStore = defineStore('playback', {
         repeatMode: this.repeatMode,
         volume: this.volume,
         replayGainMode: this.replayGainMode,
-        localPosition: this.localPosition,
+        // Never the preview's: a reload is back on the queue's song.
+        localPosition: this.preview ? this.preview.resumeAt : this.localPosition,
       })
       // Not just this.isPlaying — resumeLocalPlayback() (the only reader of
       // this) needs to know whether *local* playback specifically was
@@ -872,6 +940,12 @@ export const usePlaybackStore = defineStore('playback', {
         // (see togglePlay()'s own radio branch).
         return
       }
+      // A preview played on the speakers, which are gone: back to the
+      // queue's song where the preview had interrupted it.
+      if (this.preview) {
+        this.localPosition = this.preview.resumeAt
+        this.preview = null
+      }
       const song = this.currentSong
       if (!song) return
       this.startLocalSong(song, this.localPosition, false)
@@ -897,6 +971,7 @@ export const usePlaybackStore = defineStore('playback', {
      * Nothing more is needed to join — the same tick carries the play state
      * and position, and reconcileFromStatus() the queue and station. */
     yieldToCastPlayback(): void {
+      this.preview = null
       getAudioEngine().stop()
       getLocalMix().stop()
       // Both belonged to the element that just let go, and nothing refills
@@ -978,6 +1053,7 @@ export const usePlaybackStore = defineStore('playback', {
       // cleared again and simply stayed on the player bar.
       this.leaveRadio()
 
+      await this.adoptCastPreview(status)
       await this.adoptCastQueue(status)
     },
 
@@ -1035,37 +1111,22 @@ export const usePlaybackStore = defineStore('playback', {
 
       queueReconcileGuard.begin(key)
       try {
-        const library = useLibraryStore()
         // Reuses this client's own existing Song object for any id it
         // already has (from either list) — QueueDrawer.vue/
         // MobileQueueView.vue key their rows off the object, not just the
         // id (see dedupeForQueue()'s comment), so handing them a brand-new
         // object for a song that didn't actually move would needlessly
         // break row identity/animations.
-        const existingById = new Map([...this.queue, ...this.originalQueue].map((t) => [t.id, t]))
         const neededIds = [...new Set([...remoteQueueIds, ...remoteOriginalIds])]
-        const resolvedById = new Map<string, Song>()
-        await Promise.all(
-          neededIds.map(async (id) => {
-            const cached = existingById.get(id) ?? library.allSongs.find((t) => t.id === id)
-            if (cached) {
-              resolvedById.set(id, cached)
-              return
-            }
-            try {
-              resolvedById.set(id, await library.client().getSong(id))
-            } catch (error) {
-              console.error('[playback] Failed to resolve synced queue song:', id, error)
-            }
-          }),
-        )
+        const resolved = await resolveSongs(neededIds, [...this.queue, ...this.originalQueue])
         // Re-check after the awaits — a local action (or a newer status
         // tick resolving first) may have already moved state on.
         if (!queueReconcileGuard.isCurrent(key)) return
         // A lookup failed for something either list needs — leave local
         // state as-is rather than adopting a queue with a hole in it; the
         // next status tick tries again.
-        if (neededIds.some((id) => !resolvedById.has(id))) return
+        if (!resolved) return
+        const resolvedById = new Map(resolved.map((song) => [song.id, song]))
         // The station is left to reconcileFromStatus(), which does it for
         // every tick that reports a song rather than only for the ones
         // that get this far.
@@ -1265,6 +1326,7 @@ export const usePlaybackStore = defineStore('playback', {
       // from casting goes straight to the audio engine, so neither
       // double-counts). Silent for a station Beacon has no Radio Browser
       // id for, which is most of them.
+      this.preview = null
       const browserId = radioBrowserIdFor(station.streamUrl)
       if (browserId) registerRadioBrowserClick(browserId)
 
@@ -1344,6 +1406,9 @@ export const usePlaybackStore = defineStore('playback', {
      * multi-client session should never produce. True otherwise (including
      * always for local, non-cast playback, which has no such race). */
     async startCurrent(startPosition = 0): Promise<boolean> {
+      // Anything started replaces a preview, which only stood in for the
+      // queue's song.
+      this.preview = null
       const song = this.currentSong
       if (!song) return false
       const connect = useConnectStore()
@@ -1439,7 +1504,7 @@ export const usePlaybackStore = defineStore('playback', {
      * once already submitted for this play-through (see scrobbledSongId). */
     checkScrobbleThreshold(): void {
       const song = this.currentSong
-      if (!song || this.radioStation || scrobbledSongId === song.id) return
+      if (!song || this.radioStation || this.preview || scrobbledSongId === song.id) return
       const duration = this.duration || song.duration
       if (!duration) return
       const threshold = Math.min(duration * SCROBBLE_PERCENT, SCROBBLE_MAX_SECONDS)
@@ -1522,6 +1587,8 @@ export const usePlaybackStore = defineStore('playback', {
           // state, and pressing play on a station has to restart the
           // station, not the track it interrupted.
           await this.startCurrent()
+        } else if (this.preview && getLocalMix().pausedFor() > STALE_PAUSE_MS) {
+          await this.playPreviewAt(this.preview.index)
         } else if (getLocalMix().pausedFor() > STALE_PAUSE_MS && this.currentSong) {
           // See STALE_PAUSE_MS: a mix paused this long starts over from
           // where it stood rather than trusting connections idle as long.
@@ -1543,6 +1610,10 @@ export const usePlaybackStore = defineStore('playback', {
      * a manual skip is an explicit "I'm done with this one", same as every
      * other player. */
     async playNext(): Promise<void> {
+      if (this.preview) {
+        await this.previewNext()
+        return
+      }
       if (this.radioStation) return // radio has no queue to advance
       const index = this.nextIndex(1)
       if (index === null) {
@@ -1575,6 +1646,10 @@ export const usePlaybackStore = defineStore('playback', {
     },
 
     async playPrevious(): Promise<void> {
+      if (this.preview) {
+        await this.playPreviewAt(Math.max(0, this.preview.index - 1))
+        return
+      }
       if (this.radioStation) return
       if (this.localPosition > RESTART_THRESHOLD_SECONDS) {
         await this.switchToIndex(this.currentIndex, true)
@@ -1694,6 +1769,7 @@ export const usePlaybackStore = defineStore('playback', {
     },
 
     async seek(position: number): Promise<void> {
+      if (this.preview) return // excerpts, nothing to seek in
       const connect = useConnectStore()
       if (connect.isActive) {
         await connectPlayback.seek(position)
@@ -1847,6 +1923,138 @@ export const usePlaybackStore = defineStore('playback', {
       }
     },
 
+    /** Previews `songs` - an album or a playlist: an excerpt of a few of
+     * them, blended into each other (connect/core/preview.py), here or on
+     * the speakers being cast to. The queue stays as it is, nothing is
+     * scrobbled, and the end is silence, with the queue's song back where
+     * it was (endPreview()). */
+    async startPreview(songs: Song[]): Promise<void> {
+      const picks = pickPreviewSongs(songs)
+      if (!picks.length) return
+      // A preview of something else in the middle of one goes back to
+      // where the queue was before the first. While casting connect keeps
+      // this itself, and its status corrects it (adoptCastPreview()).
+      const resumeAt = this.preview?.resumeAt ?? this.localPosition
+      this.leaveRadio()
+      this.preview = { songs, picks, index: 0, resumeAt, whole: true }
+      await this.playPreviewAt(0)
+    },
+
+    /** Starts the preview over from its `index`-th excerpt - next and
+     * previous, and a resume after a long pause, like a mix's skip. */
+    async playPreviewAt(index: number): Promise<void> {
+      const preview = this.preview
+      if (!preview) return
+      preview.index = index
+      this.duration = this.currentSong?.duration ?? 0
+      this.localPosition = 0
+      this.bufferedPosition = 0
+      this.mixNextLocked = false
+      this.isPlaying = true
+      const songs = preview.picks.map((i, k) => mixSong(preview.songs[i]!, k, this.replayGainMode))
+      if (this.isCasting) {
+        castPreviewRequests++
+        try {
+          await connectPlayback.startPreview(songs, index)
+        } catch (error) {
+          console.error('[playback] Could not start the preview on the speakers:', error)
+          this.endPreview()
+        } finally {
+          castPreviewRequests--
+        }
+        return
+      }
+      const quality = mixQuality(this.localQuality)
+      this.activeLocalStream = { quality, reason: 'transitions' }
+      try {
+        await getLocalMix().startPreview({ songs, index, quality })
+      } catch (error) {
+        console.error('[playback] Could not start the preview:', error)
+        this.endPreview()
+      }
+    },
+
+    async previewNext(): Promise<void> {
+      const preview = this.preview
+      if (!preview) return
+      if (preview.index + 1 < preview.picks.length) await this.playPreviewAt(preview.index + 1)
+      else this.endPreview()
+    },
+
+    /** "Play from here": the album or playlist, from the song previewed
+     * now, as an ordinary play from its start. */
+    async playFromPreview(): Promise<void> {
+      const preview = this.preview
+      if (!preview) return
+      this.preview = null
+      await this.playSongList(preview.songs, preview.picks[preview.index]!)
+    },
+
+    /** Takes up a preview on the speakers from connect's status - one this
+     * client started, or another one sharing the session. One from
+     * elsewhere only knows the songs it previews, so "Play from here" has
+     * no album or playlist to play (`whole`). */
+    async adoptCastPreview(status: ConnectStatus): Promise<void> {
+      // A start, a skip or an end of our own is on its way: the tick in
+      // hand was built before connect had it.
+      if (castPreviewRequests > 0) return
+      const remote = status.preview
+      if (!remote) {
+        this.preview = null
+        return
+      }
+      const own = this.preview
+      if (
+        own &&
+        sameIds(
+          own.picks.map((i) => own.songs[i]!.id),
+          remote.song_ids,
+        )
+      ) {
+        own.index = remote.index
+        own.resumeAt = remote.resume_at
+        return
+      }
+      const resolved = await resolveSongs(remote.song_ids, [])
+      if (castPreviewRequests > 0 || !resolved) return
+      this.preview = {
+        songs: resolved,
+        picks: resolved.map((_, i) => i),
+        index: remote.index,
+        resumeAt: remote.resume_at,
+        whole: false,
+      }
+    },
+
+    /** Ends a preview: silent, with the queue's song loaded paused where
+     * the preview interrupted it - pressing play carries on there. While
+     * casting connect puts the session back the same way. */
+    endPreview(): void {
+      const preview = this.preview
+      if (!preview) return
+      this.preview = null
+      this.isPlaying = false
+      this.bufferedPosition = 0
+      this.localPosition = preview.resumeAt
+      if (this.isCasting) {
+        castPreviewRequests++
+        void connectPlayback
+          .endPreview()
+          .catch((error) => console.error('[playback] Could not end the preview:', error))
+          .finally(() => castPreviewRequests--)
+        return
+      }
+      getLocalMix().stop()
+      const song = this.currentSong
+      if (!song) {
+        getAudioEngine().stop()
+        this.duration = 0
+        return
+      }
+      this.duration = song.duration
+      this.startLocalSong(song, preview.resumeAt, false)
+    },
+
     /** Moves this device along with its mix: `streamTime` is how far into
      * the mix the element is, and the timeline says which song and where
      * in it that is. A song that begins is taken up the way startCurrent()
@@ -1854,6 +2062,16 @@ export const usePlaybackStore = defineStore('playback', {
     followLocalMix(streamTime: number): void {
       const heard = getLocalMix().heard(streamTime)
       if (!heard) return
+      if (this.preview) {
+        // Nothing of the queue moves: no index, no scrobble, no Autoplay.
+        if (heard.queueIndex !== this.preview.index) {
+          this.preview.index = heard.queueIndex
+          this.duration = this.currentSong?.duration ?? 0
+        }
+        this.localPosition = heard.position
+        this.bufferedPosition = this.mixBufferedPosition()
+        return
+      }
       if (heard.startedAt !== mixSongStartedAt) {
         const first = mixSongStartedAt === null
         mixSongStartedAt = heard.startedAt
@@ -2247,6 +2465,10 @@ export const usePlaybackStore = defineStore('playback', {
     },
 
     async stop(): Promise<void> {
+      if (this.preview) {
+        this.endPreview()
+        return
+      }
       const connect = useConnectStore()
       if (connect.isActive) {
         // Also stops this session's radio-metadata watch on the backend,
@@ -2487,6 +2709,8 @@ export const usePlaybackStore = defineStore('playback', {
      * included.
      */
     async applyTargets(desired: ConnectDeviceRef[], force = false): Promise<void> {
+      // A preview plays here only; the queue's song is what gets cast.
+      this.endPreview()
       const connect = useConnectStore()
       const key = (t: ConnectDeviceRef) => `${t.type}:${t.name}`
       const active = connect.activeTargets as ConnectDeviceRef[]

@@ -583,6 +583,7 @@ class SessionState:
     def stop_mix(self) -> None:
         """End the running mix, if any - see AppState.mix."""
         mix, self.state.mix = self.state.mix, None
+        self.state.preview = None
         if mix is not None:
             mix.stop()
 
@@ -933,7 +934,12 @@ def build_status_dict(
         # With transitions on: the song after the current one is settled in
         # the mix, so clients keep it where it is (stores/playback.ts's
         # lockedNextIndex).
-        "next_locked": st.mix is not None and st.mix.next_locked(clock_position(session)),
+        "next_locked": st.mix is not None
+        and st.preview is None
+        and st.mix.next_locked(clock_position(session)),
+        # A preview over the queue (routes/mix_cast.py), which the queue
+        # fields above do not show - see stores/playback.ts's preview.
+        "preview": st.preview.describe() if st.preview is not None else None,
         "elapsed": elapsed,
         "ended": st.track_ended,
         "paused": st.clock.is_paused,

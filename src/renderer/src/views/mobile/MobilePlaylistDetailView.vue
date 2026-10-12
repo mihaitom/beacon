@@ -14,6 +14,7 @@
           <template v-if="playlist.smart"> · {{ $t('playlists.smart') }}</template>
         </div>
       </div>
+      <preview-button :songs="playlist.songs" compact />
       <v-btn
         icon="mdi-play-circle"
         color="primary"
@@ -66,6 +67,7 @@ import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
 import CoverArt from '@/components/library/CoverArt.vue'
+import PreviewButton from '@/components/library/PreviewButton.vue'
 import MobileSongRow from '@/components/mobile/MobileSongRow.vue'
 import { MOBILE_ROW_HEIGHT } from '@/components/mobile/rowMetrics'
 import MobileSongActionSheet from '@/components/mobile/MobileSongActionSheet.vue'
@@ -79,7 +81,7 @@ import type { Song } from '@/types/library'
 
 export default {
   name: 'MobilePlaylistDetailView',
-  components: { CoverArt, MobileSongRow, MobileSongActionSheet, PlaylistNotice },
+  components: { CoverArt, MobileSongRow, MobileSongActionSheet, PlaylistNotice, PreviewButton },
   data() {
     return {
       MOBILE_ROW_HEIGHT,

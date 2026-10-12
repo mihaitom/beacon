@@ -23,6 +23,12 @@ What that changes for the session:
   resume do, which keeps a speaker that dropped its connection while
   paused from mattering.
 
+A **preview** (core/preview.py) plays the same way: a mix of excerpts
+whose list is fixed, over a queue it leaves alone. While one runs
+(session.state.preview), every new run is one of it, follow() does not
+move queue_index, and its end puts the queue's song back, paused, where the
+preview interrupted it.
+
 Every handler that existed before keeps its own path unchanged while
 session.state.mix is None.
 """
@@ -35,9 +41,11 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from core import preview
+from core.local_mixes import SongEntry
 from core.mix_engine import MixEngine, MixItem
 from core.mix_timeline import SAMPLE_RATE
-from core.session import SessionState, build_status_dict
+from core.session import SessionState, build_status_dict, compute_position
 from core.state import playable_codecs, plays_continuous_flac, stream_url
 from core.streamer import LOOKAHEAD_SECONDS, OutputFormat, resolve_mix_format
 from core.transition_planner import Settings
@@ -137,8 +145,22 @@ async def _source_url(session: SessionState, item: MixItem) -> str:
 
 
 def new_mix(session: SessionState, first: MixItem, position: float) -> MixEngine:
+    """A run from `first` at `position` - of the preview while one plays, so
+    that a resume or a reconnect stays in it, else of the queue."""
+
     async def url_fn(item: MixItem) -> str | None:
         return await _source_url(session, item)
+
+    running = session.state.preview
+    if running is not None:
+        return MixEngine(
+            first,
+            position,
+            url_fn,
+            running.songs.next_item,
+            lead_seconds=LOOKAHEAD_SECONDS,
+            settings=preview.SETTINGS,
+        )
 
     async def next_fn(current: MixItem) -> MixItem | None:
         return await next_item(session, current)
@@ -197,6 +219,10 @@ async def follow(session: SessionState, mix: MixEngine) -> None:
             if st.mix is not mix:
                 return
             applied = change.frame
+            if change.song_id is None and st.preview is not None:
+                logger.info("[mix] The preview ran out — back to the queue")
+                await end_preview(session, silence=False)
+                return
             if change.song_id is None:
                 logger.info("[mix] The mix ran out — marking playback complete")
                 st.is_streaming = False
@@ -206,9 +232,7 @@ async def follow(session: SessionState, mix: MixEngine) -> None:
             item: MixItem = change.payload
             st.current_track = item.payload
             st.current_track_gain = item.gain
-            index = locate(st.queue, item)
-            if index is not None:
-                st.queue_index = index
+            _follow_queue(session, item)
             track = item.payload
             logger.info(f"[mix] Now playing {track.artist} — {track.title}")
             await session.event_bus.broadcast(build_status_dict(session))
@@ -247,9 +271,7 @@ async def restart(session: SessionState, item: MixItem, position: float) -> dict
     st.mix = mix
     st.current_track = item.payload
     st.current_track_gain = item.gain
-    index = locate(st.queue, item)
-    if index is not None:
-        st.queue_index = index
+    _follow_queue(session, item)
     st.current_output_format = fmt
     st.is_streaming = True
     st.track_ended = False
@@ -302,8 +324,11 @@ async def resume(session: SessionState) -> dict:
 
 
 async def seek(session: SessionState, position: float) -> dict:
-    """/seek with transitions on: a new mix from the same song, elsewhere."""
+    """/seek with transitions on: a new mix from the same song, elsewhere.
+    Nothing in a preview, which is excerpts."""
     st = session.state
+    if st.preview is not None:
+        return {"position": compute_position(session)}
     at = heard_item(
         session, st.clock.elapsed() if not st.clock.is_paused else st.clock.resume_offset
     )
@@ -338,5 +363,123 @@ async def skip_to(session: SessionState, queue_index: int) -> bool:
 
 
 def queue_changed(session: SessionState) -> None:
-    if session.state.mix is not None:
+    # A preview's list is its own; the queue is for after it.
+    if session.state.mix is not None and session.state.preview is None:
         session.state.mix.queue_changed()
+
+
+def _follow_queue(session: SessionState, item: MixItem) -> None:
+    """Moves queue_index to the song now heard - or, in a preview, which
+    excerpt it is: the queue stays where the preview interrupted it."""
+    st = session.state
+    if st.preview is not None:
+        st.preview.index = item.queue_index or 0
+        return
+    index = locate(st.queue, item)
+    if index is not None:
+        st.queue_index = index
+
+
+# ── Previews ───────────────────────────────────────────────────────────────
+
+
+async def start_preview(session: SessionState, entries: list[SongEntry], index: int) -> dict | None:
+    """Previews `entries` on the session's speakers from entries[index] - a
+    new run of excerpts (core/preview.py). A preview already playing is
+    replaced but keeps what it interrupted. Returns an error body if the
+    device refused, None when it plays.
+
+    Must be called holding session.play_lock."""
+    from .stream import _resolve_track
+
+    st = session.state
+    if st.active_delivery is None:
+        return {"error": "Not casting"}
+
+    async def url_fn(item: MixItem) -> str | None:
+        return await _source_url(session, item)
+
+    async def item_fn(entry: SongEntry) -> MixItem:
+        track = await _resolve_track(session, entry.id, "Preview")
+        if track is None:
+            raise LookupError(f"Song {entry.id} not found")
+        return MixItem(
+            song_id=track.id,
+            queue_index=entry.queue_index,
+            gain=entry.gain,
+            duration=float(track.duration or entry.duration),
+            album_id=entry.album_id,
+            disc=entry.disc,
+            track=entry.track,
+            bpm=entry.bpm,
+            payload=track,
+        )
+
+    songs = preview.PreviewSongs(entries, url_fn, item_fn=item_fn)
+    try:
+        first = await songs.item(index)
+    except LookupError as e:
+        return {"error": str(e)}
+    if first is None:
+        return {"error": "No such song"}
+    if st.preview is None:
+        st.preview = preview.CastPreview(
+            songs=songs,
+            index=index,
+            resume_track=st.current_track,
+            resume_gain=st.current_track_gain,
+            resume_format=st.current_output_format,
+            resume_position=compute_position(session),
+            resume_mixed=st.mix is not None,
+        )
+    else:
+        st.preview.songs, st.preview.index = songs, index
+    if st.radio_info is not None:
+        session.stop_radio_metadata_watch()
+        await session.stop_radio_relay()
+        st.radio_info = None
+    error = await restart(session, first, first.start)
+    if error is not None:
+        await end_preview(session, silence=False)
+    return error
+
+
+async def end_preview(session: SessionState, silence: bool) -> None:
+    """Ends the preview: the queue's song is back where the preview
+    interrupted it, paused - the same state a paused /play leaves, which
+    /resume dispatches from. `silence`: the speaker is still playing the
+    preview and has to be stopped; at its natural end it already has.
+
+    Must be called holding session.play_lock."""
+    st = session.state
+    running, st.preview = st.preview, None
+    if running is None:
+        return
+    target = st.active_delivery
+    if silence and target is not None:
+        try:
+            await target.pause()
+        except Exception:
+            logger.exception("[mix] Pausing the preview failed")
+    old = st.mix
+    track = running.resume_track
+    st.current_track = track
+    st.current_track_gain = running.resume_gain
+    st.current_output_format = running.resume_format
+    st.track_ended = False
+    st.is_streaming = track is not None
+    position = running.resume_position
+    if track is not None and running.resume_mixed:
+        item = mix_item(session, track, st.queue_index, running.resume_gain)
+        st.mix = new_mix(session, item, position)
+        # A mix's clock counts stream time, frozen at the run's start.
+        st.clock.start(0.0)
+        st.clock.pause(0.0)
+        asyncio.create_task(follow(session, st.mix))
+    else:
+        st.mix = None
+        st.clock.start(position)
+        st.clock.pause(position)
+    if old is not None:
+        old.stop()
+    await session.event_bus.broadcast(build_status_dict(session))

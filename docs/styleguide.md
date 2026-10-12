@@ -345,7 +345,9 @@ and wrapping (up to three lines) before it reaches the photo. Over the name
 sits the release type ("Single", "Album · Compilation") rather than a plain
 "Album"; under the meta line, label, edition and reissue year as small
 tonal chips, then the album's Wikipedia paragraph (three lines before "Show
-more"), then Play and Shuffle. The header's height is a minimum, so an
+more"), then Play, Shuffle and Preview (`PreviewButton.vue`, tonal like
+Shuffle; a playlist page has Play and Preview). The header's height is a
+minimum, so an
 expanded paragraph grows it rather than spilling out.
 
 Both are preloaded (`services/preloadImage.ts`) before the layer swaps: a

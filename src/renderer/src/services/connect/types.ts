@@ -350,6 +350,10 @@ export interface ConnectStatus {
   /** With transitions on: the song after the current one is settled in the
    * mix - see stores/playback.ts's lockedNextIndex. */
   next_locked: boolean
+  /** A preview over the queue (connect/routes/mix_cast.py), which the
+   * queue fields above do not show: the songs it plays, which of them now,
+   * and where the queue's song goes back to. */
+  preview: { song_ids: string[]; index: number; resume_at: number } | null
   elapsed: number
   ended: boolean
   paused: boolean

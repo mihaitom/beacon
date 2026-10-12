@@ -71,6 +71,24 @@ def test_beatmix_needs_trusted_grids_and_reachable_tempos():
     assert plan_transition(CROSSFADE, OUT, IN).kind == "crossfade"
 
 
+PREVIEW = Settings("crossfade", 4.0, preview=True)
+
+
+def test_a_preview_blends_album_neighbours_too():
+    out, inn = SongFacts(240.0, "a", 1, 3), SongFacts(200.0, "a", 1, 4)
+    assert plan_transition(CROSSFADE, out, inn).kind == "gapless"
+    assert plan_transition(PREVIEW, out, inn).kind == "crossfade"
+
+
+def test_a_preview_beatmixes_only_tempos_that_need_no_stretch():
+    close = plan_transition(PREVIEW, OUT, IN, out_region(128.0), in_region(128.4))
+    assert close.kind == "beatmix" and close.out_rate == ()
+    assert close.overlap <= 4.0
+    # 128 into 126 would be eased into on a song; a preview has no room.
+    apart = plan_transition(PREVIEW, OUT, IN, out_region(128.0), in_region(126.0))
+    assert apart.kind == "crossfade"
+
+
 def test_double_and_half_tempo_still_beatmix():
     # The outgoing song's rate: its beat brought to the incoming beat,
     # counted doubled or halved.

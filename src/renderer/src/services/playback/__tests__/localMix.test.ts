@@ -9,6 +9,7 @@ import { LocalMixPlayer, upcomingSongs } from '../localMix'
 vi.mock('@/services/audioEngine', () => ({ getAudioEngine: vi.fn() }))
 vi.mock('@/services/connect/localMix', () => ({
   startLocalMix: vi.fn(),
+  startLocalPreview: vi.fn(),
   updateLocalMixQueue: vi.fn().mockResolvedValue({}),
   pauseLocalMix: vi.fn().mockResolvedValue({}),
   resumeLocalMix: vi.fn().mockResolvedValue({}),
@@ -229,6 +230,19 @@ describe('LocalMixPlayer', () => {
     expect(mix.nextLocked).toBe(true)
     mix.stop()
     expect(mix.nextLocked).toBe(false)
+  })
+
+  it('starts a preview and hands it to the element like a mix', async () => {
+    const fake = engine()
+    vi.mocked(client.startLocalPreview).mockResolvedValue(state('p1'))
+    const mix = new LocalMixPlayer()
+    const songs = upcomingSongs(queue, 0, 'off', 'off')
+    expect(await mix.startPreview({ songs, index: 2, quality })).toBe(true)
+    expect(client.startLocalPreview).toHaveBeenCalledWith(mix.player, { songs, index: 2 })
+    expect(client.startLocalMix).not.toHaveBeenCalled()
+    expect(fake.playFrom).toHaveBeenCalled()
+    expect(mix.active).toBe(true)
+    mix.stop()
   })
 
   it('does nothing about a mix it does not have', () => {

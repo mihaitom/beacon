@@ -17,7 +17,7 @@
         :model-value="seekPreviewPosition ?? playbackStore.localPosition"
         :duration="playbackStore.duration"
         :buffered="bufferedPosition"
-        :disabled="!hasPlayable"
+        :disabled="!hasPlayable || !!playbackStore.preview"
         :dimmed="!hasPlayable"
         @update:model-value="seekPreviewPosition = $event"
         @end="onSeekEnd"
