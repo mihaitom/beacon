@@ -40,11 +40,6 @@
           @update:model-value="transitionsStore.set({ crossfadeSeconds: $event })"
         />
         <p class="setting__hint">{{ $t('settings.transitionsHint') }}</p>
-        <!-- See localMixWanted() in stores/playback.ts for why WebKit
-         - plays song by song for now. -->
-        <p v-if="transitionsStore.enabled && webkit" class="setting__hint">
-          {{ $t('settings.transitionsWebkitHint') }}
-        </p>
       </div>
 
       <div class="setting">
@@ -151,7 +146,6 @@ import {
   BITRATES,
   CAST_FORMATS,
   localFormats,
-  prefersHls,
   type StreamFormat,
   type TranscodeFormat,
 } from '@/services/streamQuality'
@@ -203,12 +197,9 @@ export default {
     hasLocalGain(): boolean {
       return getAudioEngine().hasAnalyser
     },
-    webkit(): boolean {
-      return prefersHls()
-    },
     /** A mix applies ReplayGain itself, so it reaches phones too. */
     mixAppliesGain(): boolean {
-      return this.transitionsStore.enabled && !this.webkit
+      return this.transitionsStore.enabled
     },
     replayGainMode: {
       get(): ReplayGainMode {

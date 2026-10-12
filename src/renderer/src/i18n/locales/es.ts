@@ -728,8 +728,6 @@ export default {
     crossfadeSeconds: '{value} s',
     transitionsHint:
       'Sin pausas reproduce las canciones una tras otra sin silencio entre ellas. Fundido mezcla una canción con la siguiente: cuando el ritmo lo permite, Beacon iguala el tempo, introduce el bajo de la siguiente canción a tiempo y luego desvanece poco a poco la anterior. Las canciones que se siguen en un álbum siempre suenan sin pausas. En ambos casos la música pasa por Beacon como un único stream continuo, tanto en este dispositivo como en los altavoces.',
-    transitionsWebkitHint:
-      'En este navegador las canciones todavía se reproducen una a una; sin pausas y fundido se aplican al enviar a un altavoz.',
     about: 'Acerca de Beacon',
     whatsNew: '¿Qué hay de nuevo?',
     ffmpegFound: 'ffmpeg encontrado',

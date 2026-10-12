@@ -9,12 +9,16 @@
  *
  * Every manual change - a seek, a skip, picking a song - starts the mix
  * over (a new `epoch`); songs following each other on their own happen
- * inside the stream. See docs/plans/gapless-and-transitions.md. */
+ * inside the stream. See docs/plans/gapless-and-transitions.md.
+ *
+ * WebKit gets the run as a live HLS playlist instead (see prefersHls()):
+ * the element's clock is stream time there too, from the run's start. */
 
 import { getAudioEngine } from '@/services/audioEngine'
 import {
   fetchLocalMixTimeline,
   localMixAudioUrl,
+  localMixHlsUrl,
   pauseLocalMix,
   resumeLocalMix,
   startLocalMix,
@@ -24,7 +28,7 @@ import {
   type LocalMixState,
 } from '@/services/connect/localMix'
 import { calculateReplayGain, type ReplayGainMode } from '@/services/replayGain'
-import type { LocalStreamQuality } from '@/services/streamQuality'
+import { prefersHls, type LocalStreamQuality } from '@/services/streamQuality'
 import type { Song } from '@/types/library'
 import { heardAt, type MixHeard, type MixTimelineEntry } from './mixTimeline'
 import type { RepeatMode } from './types'
@@ -123,12 +127,21 @@ export class LocalMixPlayer {
     if (seq !== this.startSeq) return false
     this.adopt(state)
     const epoch = state.epoch
-    const urlFor = (from: number): string =>
-      localMixAudioUrl(this.player, epoch, from, options.quality)
     const engine = getAudioEngine()
     // Gain is the mixer's (each song at its own); the element's stays flat.
-    if (options.autoplay) engine.playFrom(urlFor, 0, 1, Number.POSITIVE_INFINITY)
-    else engine.loadFrom(urlFor, 0, 1, Number.POSITIVE_INFINITY)
+    if (prefersHls()) {
+      const url = localMixHlsUrl(this.player, epoch, options.quality)
+      if (options.autoplay) engine.play(url, 0, 1, { hls: true, mix: true })
+      else engine.load(url, 0, 1, { hls: true, mix: true })
+      // A live playlist may start near its live edge; the run plays from
+      // its start. The engine holds the seek until the player has media.
+      engine.seek(0)
+    } else {
+      const urlFor = (from: number): string =>
+        localMixAudioUrl(this.player, epoch, from, options.quality)
+      if (options.autoplay) engine.playFrom(urlFor, 0, 1, Number.POSITIVE_INFINITY)
+      else engine.loadFrom(urlFor, 0, 1, Number.POSITIVE_INFINITY)
+    }
     this.applyEnd()
     this.pausedAt = options.autoplay ? null : Date.now()
     this.startPolling()

@@ -18,6 +18,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 from .mix_engine import MixEngine, MixItem
+from .mix_hls import MixHls
 from .transition_planner import Settings
 
 logger = logging.getLogger("connect.mix")
@@ -64,9 +65,32 @@ class LocalMix:
     songs: list[SongEntry]
     repeat_mode: str = "off"
     touched: float = field(default_factory=time.monotonic)
+    # The run as HLS, for a WebKit tab (core/mix_hls.py).
+    hls: MixHls | None = None
 
     def touch(self) -> None:
         self.touched = time.monotonic()
+
+    def hls_for(self, fmt: str, codec_args: list[str]) -> MixHls:
+        """The run's HLS encode in this quality, replacing one in another -
+        the tab switched quality."""
+        current = self.hls
+        if (
+            current is None
+            or current.closed
+            or (current.fmt, current.codec_args) != (fmt, codec_args)
+        ):
+            if current is not None:
+                current.close()
+            self.hls = MixHls(self.engine, fmt, codec_args)
+            self.hls.start()
+        return self.hls
+
+    def close(self) -> None:
+        if self.hls is not None:
+            self.hls.close()
+            self.hls = None
+        self.engine.stop()
 
     def next_item(self, current: MixItem) -> MixItem | None:
         """The song after `current` in the tab's list. The list starts at
@@ -126,7 +150,7 @@ def start(
 def stop(session_id: str, player: str) -> None:
     mix = _mixes.pop((session_id, player), None)
     if mix is not None:
-        mix.engine.stop()
+        mix.close()
 
 
 def stop_session(session_id: str) -> None:

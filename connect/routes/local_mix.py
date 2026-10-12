@@ -13,6 +13,8 @@ it can show the song it is hearing; it asks for that alongside.
 - GET    /stream/local/mix/{player}/timeline
 - GET    /stream/local/mix/{player}/audio    the stream, from any stream
                                              time still held
+- GET    /stream/local/mix/{player}/hls/...  the same as a live HLS playlist,
+                                             for WebKit (core/mix_hls.py)
 - DELETE /stream/local/mix/{player}
 
 `epoch` names one run of a mix. Every start makes a new one, and an audio
@@ -25,16 +27,22 @@ import logging
 import re
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
-from core import local_mixes
+from core import hls, local_mixes
 from core.auth import require_token
 from core.local_mixes import SongEntry
 from core.mix_engine import MixItem
 from core.session import SessionState, require_authenticated_session
-from core.streamer import OutputFormat, lossless_encode_args, lossy_encode_args
+from core.streamer import (
+    OutputFormat,
+    lossless_codec_args,
+    lossless_encode_args,
+    lossy_codec_args,
+    lossy_encode_args,
+)
 
 from .local_stream import ALLOWED_BITRATES, LOSSLESS_FORMAT
 from .mix_cast import TransitionSettings, mix_audio, planner_settings
@@ -47,6 +55,11 @@ router = APIRouter(dependencies=[Depends(require_token)])
 LOCAL_LEAD_SECONDS = 20.0
 
 _PLAYER_RE = re.compile(r"^[A-Za-z0-9_-]{6,40}$")
+_HLS_SEGMENT_RE = re.compile(r"^(\d+)\.(m4s|mp3)$")
+# How long a playlist request waits for the run's first segment: the mix
+# renders its head start within a second or two once the first song's
+# decoder delivers, and an empty playlist is no use to the player.
+_HLS_FIRST_SEGMENT_TIMEOUT = 15.0
 
 
 class MixSong(BaseModel):
@@ -212,4 +225,90 @@ async def mix_stream(
         audio,
         media_type=content_type,
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+def _codec_args(fmt: str, br: int | None) -> list[str]:
+    """output_args() without the container, which HLS supplies."""
+    output_args(fmt, br)  # the same checks
+    if fmt == LOSSLESS_FORMAT:
+        return lossless_codec_args()
+    assert br is not None
+    return lossy_codec_args(fmt, br)
+
+
+def _mix_hls(session: SessionState, player: str, epoch: str, fmt: str, br: int | None):
+    mix = _mix(session, player, epoch)
+    mix.touch()
+    return mix.hls_for(fmt, _codec_args(fmt, br))
+
+
+def _gone(e: HTTPException) -> JSONResponse:
+    return JSONResponse({"detail": e.detail}, status_code=e.status_code)
+
+
+@router.get("/stream/local/mix/{player}/hls/index.m3u8")
+async def mix_hls_playlist(
+    player: str,
+    request: Request,
+    epoch: str = Query(...),
+    fmt: str = Query(...),
+    br: int | None = Query(None),
+    session: SessionState = Depends(require_authenticated_session),
+):
+    try:
+        stream = _mix_hls(session, player, epoch, fmt, br)
+    except HTTPException as e:
+        return _gone(e)
+    await stream.wait_for_segments(1, _HLS_FIRST_SEGMENT_TIMEOUT)
+    return Response(
+        stream.playlist(request.url.query),
+        media_type="application/vnd.apple.mpegurl",
+        headers={"Cache-Control": "no-store"},
+    )
+
+
+@router.get("/stream/local/mix/{player}/hls/init.mp4")
+async def mix_hls_init(
+    player: str,
+    epoch: str = Query(...),
+    fmt: str = Query(...),
+    br: int | None = Query(None),
+    session: SessionState = Depends(require_authenticated_session),
+):
+    try:
+        stream = _mix_hls(session, player, epoch, fmt, br)
+    except HTTPException as e:
+        return _gone(e)
+    init = None if stream.packed else await stream.init_segment()
+    if init is None:
+        return JSONResponse({"error": "No init segment"}, status_code=404)
+    return Response(init, media_type="audio/mp4", headers={"Cache-Control": "no-store"})
+
+
+@router.get("/stream/local/mix/{player}/hls/{segment}")
+async def mix_hls_segment(
+    player: str,
+    segment: str,
+    epoch: str = Query(...),
+    fmt: str = Query(...),
+    br: int | None = Query(None),
+    session: SessionState = Depends(require_authenticated_session),
+):
+    match = _HLS_SEGMENT_RE.match(segment)
+    if match is None:
+        return JSONResponse({"error": f"Unknown segment '{segment}'"}, status_code=404)
+    try:
+        stream = _mix_hls(session, player, epoch, fmt, br)
+    except HTTPException as e:
+        return _gone(e)
+    if match.group(2) != hls.segment_extension(stream.packed):
+        return JSONResponse({"error": f"Unknown segment '{segment}'"}, status_code=404)
+    body = await stream.segment(int(match.group(1)))
+    if body is None:
+        return JSONResponse({"error": f"Segment {segment} was not produced"}, status_code=404)
+    return Response(
+        body,
+        media_type="audio/mpeg" if stream.packed else "audio/mp4",
+        headers={"Cache-Control": "no-store"},
     )

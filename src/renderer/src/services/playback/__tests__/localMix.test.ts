@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { getAudioEngine } from '@/services/audioEngine'
 import * as client from '@/services/connect/localMix'
 import { ConnectApiError } from '@/services/connect/http'
+import { prefersHls } from '@/services/streamQuality'
 import { makeSong } from '@/stores/__tests__/fixtures'
 import { LocalMixPlayer, upcomingSongs } from '../localMix'
 
@@ -16,7 +17,9 @@ vi.mock('@/services/connect/localMix', () => ({
   localMixAudioUrl: vi.fn(
     (player: string, epoch: string, from: number) => `audio/${player}/${epoch}/${from}`,
   ),
+  localMixHlsUrl: vi.fn((player: string, epoch: string) => `hls/${player}/${epoch}`),
 }))
+vi.mock('@/services/streamQuality', () => ({ prefersHls: vi.fn(() => false) }))
 
 const queue = ['a', 'b', 'c', 'd'].map((id) => makeSong(id))
 const quality = { format: 'flac' as const, bitrate: 0 }
@@ -32,6 +35,9 @@ function engine() {
   const fake = {
     playFrom: vi.fn(),
     loadFrom: vi.fn(),
+    play: vi.fn(),
+    load: vi.fn(),
+    seek: vi.fn(),
     setExpectedDuration: vi.fn(),
   }
   vi.mocked(getAudioEngine).mockReturnValue(fake as never)
@@ -105,6 +111,23 @@ describe('LocalMixPlayer', () => {
     expect(mix.active).toBe(true)
     expect(mix.heard(5)).toMatchObject({ songId: 'a', position: 5 })
     mix.stop()
+  })
+
+  it('on WebKit, plays the run as a live playlist from its start', async () => {
+    vi.mocked(prefersHls).mockReturnValue(true)
+    const fake = engine()
+    vi.mocked(client.startLocalMix).mockResolvedValue(state())
+    const mix = new LocalMixPlayer()
+
+    await mix.start(startOptions())
+
+    expect(fake.play).toHaveBeenCalledWith(`hls/${mix.player}/e1`, 0, 1, { hls: true, mix: true })
+    expect(fake.seek).toHaveBeenCalledWith(0)
+    expect(fake.playFrom).not.toHaveBeenCalled()
+    await mix.start(startOptions(false))
+    expect(fake.load).toHaveBeenCalledWith(`hls/${mix.player}/e1`, 0, 1, { hls: true, mix: true })
+    mix.stop()
+    vi.mocked(prefersHls).mockReturnValue(false)
   })
 
   it('only loads when not asked to play', async () => {

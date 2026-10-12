@@ -233,6 +233,10 @@ export class AudioEngine {
   // (Safari's), which cannot take a seek before it has media buffered - see
   // writePosition().
   private hlsStream = false
+  // Whether what is loaded is a whole mix (services/playback/localMix.ts):
+  // the element's clock is the mix's stream time, and the length it works
+  // out once the mix ends is the mix's, not the song's.
+  private mixStream = false
   // How an offset stream's URL is built for a given second. Held so a
   // reconnect can ask for the same stream again from where it dropped —
   // see reconnectOnDrop(). Null for every other kind of source.
@@ -458,7 +462,7 @@ export class AudioEngine {
       // was sent* — a track resumed at 3:00 reports 1:10 once the stream
       // finishes, which would rescale the seek bar at the very end of the
       // song.
-      if (this.offsetStream) return
+      if (this.offsetStream || this.mixStream) return
       if (Number.isFinite(this.audio.duration)) this.onDurationChange?.(this.audio.duration)
     })
     // 'progress' is what fires as the browser actually receives more of the
@@ -872,9 +876,11 @@ export class AudioEngine {
    * services/replayGain.ts) — defaults to 1 so callers with nothing to
    * normalize (radio streams) don't need to pass it explicitly, and so it's
    * always set explicitly rather than silently carrying over the previous
-   * song's value. `hls` says `url` is an HLS playlist (see hlsStream). */
-  load(url: string, startPosition = 0, gain = 1, { hls = false } = {}): void {
+   * song's value. `hls` says `url` is an HLS playlist (see hlsStream),
+   * `mix` that it is a whole mix (see mixStream). */
+  load(url: string, startPosition = 0, gain = 1, { hls = false, mix = false } = {}): void {
     this.loadSource(url, startPosition, gain, false, false, hls)
+    this.mixStream = mix
   }
 
   /** Loads and starts a transcode that begins at `seconds` and carries no
@@ -973,6 +979,7 @@ export class AudioEngine {
     this.holdsConnection = false
     this.offsetStream = offsetStream
     this.hlsStream = hls
+    this.mixStream = false
     this.positionOffset = offsetStream ? startPosition : 0
     // Cleared here rather than in each caller, so a plain file or a
     // station can never reconnect through the previous song's factory, and
@@ -1065,7 +1072,12 @@ export class AudioEngine {
     }
   }
 
-  play(url: string, startPosition = 0, gain = 1, options: { hls?: boolean } = {}): void {
+  play(
+    url: string,
+    startPosition = 0,
+    gain = 1,
+    options: { hls?: boolean; mix?: boolean } = {},
+  ): void {
     this.load(url, startPosition, gain, options)
     this.start()
   }

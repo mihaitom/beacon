@@ -1792,12 +1792,10 @@ export const usePlaybackStore = defineStore('playback', {
     },
 
     /** Whether this device plays through a mix (transitions on, see
-     * services/playback/localMix.ts) rather than song by song. Not on
-     * WebKit yet: Safari re-fetches a stream without a length from its
-     * start in 1 MiB blocks (docs/investigations/safari-transcode-jumps.md),
-     * which an endless mix cannot survive. */
+     * services/playback/localMix.ts) rather than song by song - on WebKit
+     * as a live HLS playlist. */
     localMixWanted(): boolean {
-      return useTransitionsStore().enabled && !prefersHls() && !this.radioStation
+      return useTransitionsStore().enabled && !this.radioStation
     },
 
     /** Starts (or loads) this device's mix from `song` at `position` - the

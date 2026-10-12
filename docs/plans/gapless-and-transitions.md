@@ -1,8 +1,8 @@
 # Plan: gapless playback and DJ-style transitions
 
 Status: built on `feature/transitions` (2026-10-12), for speakers and for
-this device's player in Chromium/Electron. Not yet on WebKit, and not yet
-checked on real speakers - see "Still open" at the end.
+this device's player, WebKit included as a live HLS playlist. Not yet
+checked on an iPhone or on real speakers - see "Still open" at the end.
 
 ## Why
 
@@ -167,6 +167,22 @@ on its own as before.
 Formats: Original becomes FLAC (it is always an encode now), anything else
 as set.
 
+**WebKit** cannot play a stream without a length (it re-fetches 1 MiB
+blocks from byte 0 and appends them,
+[safari-transcode-jumps.md](../investigations/safari-transcode-jumps.md)),
+and a mix never has one. So a WebKit tab gets the same run as a live HLS
+playlist, `/stream/local/mix/{player}/hls/index.m3u8?epoch` (`core/mix_hls.py`):
+type EVENT, listing every segment of the run from its first, growing as
+segments are made, closed with `EXT-X-ENDLIST` when the mix ends. One
+encoder per run and quality reads the ring from stream time 0, cut by
+`core/hls.py`'s splitters (fMP4; mp3 as packed audio) and spooled for the
+run's life. It is not counted as a listener, so a closed tab's mix is still
+reaped. The element's clock is stream time from the run's start, as with
+the offset stream; the tab seeks to 0 once the player has media, since a
+live playlist may start near its live edge and Safari hangs on a seek made
+earlier. The mix's length is never taken for the song's (`mixStream` in the
+audio engine).
+
 ## Party listen-along
 
 While the host hears a mix - cast (`AppState.mix`) or in their window
@@ -193,11 +209,13 @@ three platforms, still out of process).
   that never ends: `POST /debug/play-endless` measures it, see
   [continuous-stream-on-devices.md](../investigations/continuous-stream-on-devices.md).
   Its result sets `CONTINUOUS_FLAC_OK` per class.
-- **WebKit** (iPhone, Safari): plays no mix yet - Safari re-fetches a stream
-  without a length from its start in 1 MiB blocks
-  ([safari-transcode-jumps.md](../investigations/safari-transcode-jumps.md)),
-  which an endless stream cannot survive. The way there is a live HLS
-  playlist of the mix (EVENT type), the format Apple's own live audio uses.
+- **WebKit on the device** (iPhone, Safari): the live HLS playlist is built
+  and tested against a real ffmpeg, not yet on a phone. To check there:
+  playback starts at the run's start rather than the live edge, a song
+  change inside the mix shows, a pause and a resume, a skip (a new run), the
+  end of the queue, and what the lock screen shows - WebKit hands it the
+  element's clock, which is the mix's stream time, and a live playlist may
+  be shown as a live broadcast.
 - **Listening.** House 120 into 128, drum & bass into half-time, hip-hop,
   pop with tempo drift, a live recording - and WSOLA at the edges of its 8 %.
 - **CPU** on the smallest host: two decks decoding, one of them stretched,

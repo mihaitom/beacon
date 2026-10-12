@@ -728,8 +728,6 @@ export default {
     crossfadeSeconds: '{value} s',
     transitionsHint:
       'Lückenlos spielt die Songs ohne Pause hintereinander. Überblenden lässt einen Song in den nächsten übergehen: Wo der Beat es zulässt, gleicht Beacon das Tempo an, holt den Bass des nächsten Songs auf dem Beat rein und blendet den vorigen dann langsam aus. Songs, die auf einem Album aufeinander folgen, laufen immer lückenlos. In beiden Fällen läuft die Musik als ein durchgehender Stream über Beacon, auf diesem Gerät wie auf Lautsprechern.',
-    transitionsWebkitHint:
-      'In diesem Browser laufen Songs vorerst einzeln; Lückenlos und Überblenden gelten beim Streamen auf einen Lautsprecher.',
     about: 'Über Beacon',
     whatsNew: 'Was ist neu?',
     ffmpegFound: 'ffmpeg gefunden',

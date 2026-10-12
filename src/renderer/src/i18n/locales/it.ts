@@ -728,8 +728,6 @@ export default {
     crossfadeSeconds: '{value} s',
     transitionsHint:
       "Senza pause riproduce i brani uno dopo l'altro senza silenzio. La dissolvenza incrociata fa sfumare un brano nel successivo: dove il ritmo lo consente, Beacon allinea il tempo, fa entrare il basso del brano successivo a tempo e poi sfuma lentamente il precedente. I brani che si susseguono in un album vengono sempre riprodotti senza pause. In entrambi i casi la musica passa da Beacon come un unico flusso continuo, su questo dispositivo come sugli altoparlanti.",
-    transitionsWebkitHint:
-      'In questo browser i brani vengono ancora riprodotti uno alla volta; senza pause e dissolvenza valgono quando si trasmette a un altoparlante.',
     about: 'Informazioni su Beacon',
     whatsNew: 'Novità?',
     ffmpegFound: 'ffmpeg trovato',

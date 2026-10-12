@@ -721,8 +721,6 @@ export default {
     crossfadeSeconds: '{value} s',
     transitionsHint:
       "Gapless plays songs back to back without a pause. Crossfade blends one song into the next: where the beat allows it, Beacon matches the tempo, brings the next song's bass in on the beat and then slowly fades out the previous one. Songs that follow each other on an album always play gaplessly. With either one the music goes through Beacon as one continuous stream, on this device and on speakers alike.",
-    transitionsWebkitHint:
-      'In this browser songs still play one at a time; gapless and crossfade apply when casting to a speaker.',
     about: 'About Beacon',
     whatsNew: "What's new?",
     ffmpegFound: 'ffmpeg found',

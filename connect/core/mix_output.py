@@ -119,6 +119,8 @@ class MixConnection:
         self._proc: asyncio.subprocess.Process | None = None
         self._feeder: asyncio.Task | None = None
         self.closed = False
+        # Whether it counts as somebody listening (MixEngine.listeners).
+        self.counted = True
 
     async def open(self) -> None:
         self._proc = await asyncio.create_subprocess_exec(

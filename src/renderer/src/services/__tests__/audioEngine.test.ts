@@ -1340,6 +1340,21 @@ describe('AudioEngine', () => {
       expect(onDurationChange).toHaveBeenCalledWith(240)
     })
 
+    it("never takes a whole mix's length for the song's", () => {
+      const onDurationChange = vi.fn()
+      engine.onDurationChange = onDurationChange
+      engine.load('mix.m3u8', 0, 1, { hls: true, mix: true })
+      audio.duration = 1800
+
+      audio.dispatchEvent(new Event('durationchange'))
+
+      expect(onDurationChange).not.toHaveBeenCalled()
+      // ...and the next song loaded on its own reports its own again.
+      engine.load('song.mp3')
+      audio.dispatchEvent(new Event('durationchange'))
+      expect(onDurationChange).toHaveBeenCalledWith(1800)
+    })
+
     it('says nothing about the endless duration of a live radio stream', () => {
       const onDurationChange = vi.fn()
       engine.onDurationChange = onDurationChange

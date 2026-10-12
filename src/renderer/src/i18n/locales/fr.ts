@@ -731,8 +731,6 @@ export default {
     crossfadeSeconds: '{value} s',
     transitionsHint:
       "Sans blanc enchaîne les morceaux sans pause. Le fondu enchaîné fait passer un morceau dans le suivant : quand le rythme le permet, Beacon accorde le tempo, fait entrer la basse du morceau suivant sur le temps puis estompe lentement le précédent. Les morceaux qui se suivent sur un album s'enchaînent toujours sans blanc. Dans les deux cas, la musique passe par Beacon sous forme d'un flux continu, sur cet appareil comme sur les enceintes.",
-    transitionsWebkitHint:
-      "Dans ce navigateur, les morceaux sont encore lus un par un ; sans blanc et fondu enchaîné s'appliquent lors de la diffusion vers une enceinte.",
     about: 'À propos de Beacon',
     whatsNew: 'Quoi de neuf ?',
     ffmpegFound: 'ffmpeg trouvé',

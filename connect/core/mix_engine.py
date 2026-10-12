@@ -429,8 +429,9 @@ class MixEngine:
 
     @property
     def listeners(self) -> int:
-        """Connections reading this mix right now."""
-        return sum(1 for c in self._connections if not c.closed)
+        """Connections reading this mix right now, for somebody listening -
+        an HLS encode that only keeps segments ready is not one."""
+        return sum(1 for c in self._connections if not c.closed and c.counted)
 
     @property
     def started(self) -> bool:
@@ -485,9 +486,12 @@ class MixEngine:
         self._next_state = None
         self._plan = None
 
-    async def connect(self, start_time: float, output_args: list[str]) -> MixConnection:
+    async def connect(
+        self, start_time: float, output_args: list[str], counted: bool = True
+    ) -> MixConnection:
         """A listener's encode from `start_time` (stream seconds) on."""
         connection = MixConnection(self.ring, round(start_time * SAMPLE_RATE), output_args)
+        connection.counted = counted
         await connection.open()
         self._connections = [c for c in self._connections if not c.closed]
         self._connections.append(connection)

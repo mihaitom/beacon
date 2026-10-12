@@ -3,6 +3,7 @@ routes/local_mix.py. The mix itself is core/mix_engine.py's and tested
 there; decks are silent stand-ins here, so nothing starts ffmpeg."""
 
 import time
+from typing import ClassVar
 from unittest.mock import patch
 
 import pytest
@@ -211,3 +212,70 @@ def test_a_local_crossfade_mixes_in_floating_point(configured, default_session):
     _start(configured, "a", transitions={"mode": "crossfade", "crossfade_seconds": 6})
     engine = local_mixes.get(default_session.session_id, PLAYER).engine
     assert engine._dsp and engine.settings.crossfade_seconds == 6
+
+
+class FakeHls:
+    """Stands in for core/mix_hls.py's encode, which needs a real ffmpeg
+    (tests/test_mix_hls.py runs that)."""
+
+    made: ClassVar[list["FakeHls"]] = []
+
+    def __init__(self, engine, fmt, codec_args):
+        self.engine, self.fmt, self.codec_args = engine, fmt, codec_args
+        self.packed = fmt == "mp3"
+        self.closed = False
+        FakeHls.made.append(self)
+
+    def start(self):
+        pass
+
+    def close(self):
+        self.closed = True
+
+    async def wait_for_segments(self, count, timeout):
+        pass
+
+    def playlist(self, query):
+        return f"#EXTM3U\n0.m4s?{query}\n"
+
+    async def segment(self, index):
+        return b"seg" if index == 0 else None
+
+
+@pytest.fixture
+def fake_hls(monkeypatch):
+    FakeHls.made = []
+    monkeypatch.setattr(local_mixes, "MixHls", FakeHls)
+    return FakeHls.made
+
+
+def test_webkit_gets_the_run_as_a_live_playlist(configured, fake_hls):
+    epoch = _start(configured, "a").json()["epoch"]
+    params = {"epoch": epoch, "fmt": "aac", "br": 192, "token": "t"}
+    r = configured.get(f"/stream/local/mix/{PLAYER}/hls/index.m3u8", params=params)
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/vnd.apple.mpegurl"
+    assert "token=t" in r.text  # segment URIs carry the auth along
+    assert configured.get(f"/stream/local/mix/{PLAYER}/hls/0.m4s", params=params).content == b"seg"
+    assert configured.get(f"/stream/local/mix/{PLAYER}/hls/1.m4s", params=params).status_code == 404
+    assert configured.get(f"/stream/local/mix/{PLAYER}/hls/0.mp3", params=params).status_code == 404
+    # One encode for every request of the same quality.
+    assert len(fake_hls) == 1
+
+
+def test_another_quality_replaces_the_runs_encode(configured, default_session, fake_hls):
+    epoch = _start(configured, "a").json()["epoch"]
+    url = f"/stream/local/mix/{PLAYER}/hls/index.m3u8"
+    configured.get(url, params={"epoch": epoch, "fmt": "aac", "br": 192})
+    configured.get(url, params={"epoch": epoch, "fmt": "aac", "br": 128})
+    assert [h.closed for h in fake_hls] == [True, False]
+    configured.delete(f"/stream/local/mix/{PLAYER}")
+    assert fake_hls[1].closed
+
+
+def test_an_old_run_or_a_bad_format_gets_no_playlist(configured, fake_hls):
+    epoch = _start(configured, "a").json()["epoch"]
+    url = f"/stream/local/mix/{PLAYER}/hls/index.m3u8"
+    assert configured.get(url, params={"epoch": "old", "fmt": "flac"}).status_code == 410
+    assert configured.get(url, params={"epoch": epoch, "fmt": "wav"}).status_code == 400
+    assert fake_hls == []

@@ -85,3 +85,18 @@ export function localMixAudioUrl(
   if (auth.sessionId) params.set('session', auth.sessionId)
   return `${auth.apiUrl}${path(player, '/audio')}?${params.toString()}`
 }
+
+/** The same run as a live HLS playlist, for WebKit (connect/core/mix_hls.py):
+ * Safari cannot play a stream that declares no length. */
+export function localMixHlsUrl(
+  player: string,
+  epoch: string,
+  quality: { format: string; bitrate: number },
+): string {
+  const auth = useAuthStore()
+  const params = new URLSearchParams({ epoch, fmt: quality.format })
+  if (quality.format !== 'flac') params.set('br', String(quality.bitrate))
+  if (auth.connectToken) params.set('token', auth.connectToken)
+  if (auth.sessionId) params.set('session', auth.sessionId)
+  return `${auth.apiUrl}${path(player, '/hls/index.m3u8')}?${params.toString()}`
+}
