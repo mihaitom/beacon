@@ -105,9 +105,19 @@ for its first ~30 s. Now it sits on the song on its way out, and from the
 swap on the new song is sample for sample what was decoded. WSOLA starts
 mid-song primed with the last frames played (`Wsola.prime()`): at rate 1 it
 reproduces its input exactly, so the ease begins without a seam. A plan
-that arrives after its ease should have begun becomes an ordinary
-crossfade over the same stretch, and a queue change during the ease waits
-for the next song, as during the overlap.
+that arrives after its ease should have begun eases over what is left, down
+to two bars; with less it becomes an ordinary crossfade of the crossfade's
+own length, ending where the beatmix would have. A queue change during the
+ease waits for the next song, as during the overlap; one that leaves the
+next song as it was keeps its deck and its plan.
+
+The analysis itself takes about a second. What used to beat it was the
+render: after a start or a seek it runs a whole lead (20 s for this
+device) ahead at once, and was past where an ease begins before the plan
+was there. While a plan is on its way and the song is inside its analysed
+window, rendering now waits, down to 3 s of lead (above the 1 s where
+silence would be put in), so a seek to a few seconds before the ease still
+gets all of it.
 
 The search width is a trade: at ±5 ms the bass could not be lined up and
 mids and highs pumped at the 43 Hz hop rate ("a voice through a fan"); at

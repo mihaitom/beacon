@@ -27,7 +27,7 @@ Times in a plan: `out_*`/`in_*` are seconds in each song's own timeline,
 everything else is seconds from the start of the overlap.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from itertools import pairwise
 from typing import Literal
 
@@ -46,8 +46,11 @@ MIN_CONFIDENCE = 0.5
 MAX_STRETCH = 0.08
 # The bass swap is a cut, not a fade: this short, so it clicks neither.
 SWAP_SECONDS = 0.015
-# How many bars the outgoing song takes to ease into the incoming tempo.
+# How many bars the outgoing song takes to ease into the incoming tempo -
+# and at the least, for a plan that arrived after its ease should have
+# begun: eased faster, the change of tempo is heard as one.
 EASE_BARS = 8
+MIN_EASE_BARS = 2
 # A preview does not stretch: its excerpts are too short for an ease, and
 # should sound as the songs do. Unstretched, two beat grids drift apart by
 # the tempo difference - 0.5 % is 10 ms two seconds into the overlap, by
@@ -172,6 +175,21 @@ def _crossfade(
     if overlap < 0.5:
         return TransitionPlan("gapless", out_end, out_end, in_start)
     return _crossfade_over(out_end, in_start, overlap)
+
+
+def ease_from(plan: TransitionPlan, position: float) -> TransitionPlan | None:
+    """The same beatmix, its ease begun at `position` (seconds in the
+    outgoing song) and so shorter - for a plan that arrived after its ease
+    should have begun. None when that leaves under MIN_EASE_BARS."""
+    if not plan.out_rate or plan.bpm_out is None:
+        return None
+    room = plan.out_start - position
+    if room < MIN_EASE_BARS * 4 * 60 / plan.bpm_out:
+        return None
+    rate = plan.out_rate[-1][1]
+    # Song advances (1 + rate) / 2 per stream second through the ease.
+    ease = room * 2 / (1 + rate)
+    return replace(plan, out_rate=((-ease, 1.0), (0.0, rate), (plan.overlap, rate)))
 
 
 def as_crossfade(settings: Settings, plan: TransitionPlan) -> TransitionPlan:

@@ -69,7 +69,14 @@ def pcm(x: np.ndarray) -> bytes:
 
 
 class Rig:
-    def __init__(self, songs: dict[str, np.ndarray], settings: Settings, analyse=True, **items):
+    def __init__(
+        self,
+        songs: dict[str, np.ndarray],
+        settings: Settings,
+        analyse=True,
+        lead: float = 2.0,
+        **items,
+    ):
         self.songs = songs
         self.clock = FakeClock()
         order = list(songs)
@@ -84,7 +91,7 @@ class Rig:
             self.items[order[0]].start,
             self._url,
             self._next,
-            lead_seconds=2.0,
+            lead_seconds=lead,
             clock=self.clock,
             deck_factory=lambda item, start: FakeDeck(item, start, pcm(songs[item.song_id]), True),
             settings=settings,
@@ -259,36 +266,70 @@ async def test_a_queue_change_that_leaves_the_next_song_keeps_its_beatmix():
     rig.engine.stop()
 
 
-async def test_a_beatmix_planned_too_late_to_ease_is_a_crossfade_of_its_own_length(caplog):
-    a = clicks(128, 60, offset=0.21)
-    b = clicks(124, 60, offset=0.37)
-    rig = Rig({"a": a, "b": b}, Settings("crossfade", crossfade_seconds=4.0, beatmix_seconds=16.0))
-    late = asyncio.Event()
+# With a 16 s beatmix these two songs ease from 29.5 s, overlap from 44.5 s;
+# without an analysis the crossfade is decided on metadata at 43 s.
+BEATMIX_16 = Settings("crossfade", crossfade_seconds=4.0, beatmix_seconds=16.0)
+
+
+async def _render_with_analysis_held(rig: Rig, release, tick: float = 0.5) -> None:
+    """Renders to the end, the analysis answering only once `release(rig)`;
+    `tick` is the clock between steps."""
+    held = asyncio.Event()
     analyse = rig.engine._analyse_fn
 
     async def slow(item, start, duration):
-        await late.wait()
+        await held.wait()
         return await analyse(item, start, duration)
 
     rig.engine._analyse_fn = slow
     rig.engine.start()
-    for _ in range(600):
+    for _ in range(round(300 / tick)):
         rig.engine.step()
-        deck = rig.engine._deck
-        # After the 8-bar ease began (~28 s), before the metadata's
-        # deadline (60 - 16 - 1 s).
-        if deck is not None and deck.item.song_id == "a" and deck.position > 35.0:
-            late.set()
+        if release(rig):
+            held.set()
         for _ in range(5):
             await asyncio.sleep(0)
-        rig.clock.now += 0.5
+        rig.clock.now += tick
         if rig.engine.ended:
             break
+    rig.engine.stop()
+
+
+def _a_at(rig: Rig) -> float:
+    deck = rig.engine._deck
+    return deck.position if deck is not None and deck.item.song_id == "a" else 0.0
+
+
+async def test_a_beatmix_planned_into_its_ease_eases_over_what_is_left():
+    rig = Rig({"a": clicks(128, 60, offset=0.21), "b": clicks(124, 60, offset=0.37)}, BEATMIX_16)
+    await _render_with_analysis_held(rig, lambda r: _a_at(r) > 35.0)
+    told = rig.engine.transitions()[-1]
+    assert told["kind"] == "beatmix"
+    assert 35.0 < told["start"] < 37.0
+
+
+async def test_a_beatmix_planned_too_late_to_ease_is_a_crossfade_of_its_own_length(caplog):
+    rig = Rig({"a": clicks(128, 60, offset=0.21), "b": clicks(124, 60, offset=0.37)}, BEATMIX_16)
+    # Under two bars (3.75 s) before the overlap, before the metadata's turn.
+    await _render_with_analysis_held(rig, lambda r: _a_at(r) > 41.0)
     assert "planned too late" in caplog.text
     told = rig.engine.transitions()[-1]
     assert told["kind"] == "crossfade"
     assert told["change"] - told["start"] == pytest.approx(2.0)  # half of 4 s
-    rig.engine.stop()
+
+
+async def test_after_a_seek_rendering_waits_for_the_plan_rather_than_racing_past_it():
+    songs = {"a": clicks(128, 60, offset=0.21), "b": clicks(124, 60, offset=0.37)}
+    # Started 9.5 s before the ease, ticking as the render loop does, with a
+    # whole 20 s lead to render at once and an analysis that takes a second.
+    rig = Rig(songs, BEATMIX_16, lead=20.0, a=MixItem("a", 0, duration=60.0, start=20.0))
+    begun = rig.clock.now
+    await _render_with_analysis_held(rig, lambda r: r.clock.now >= begun + 1.0, tick=0.05)
+    told = rig.engine.transitions()[-1]
+    assert told["kind"] == "beatmix"
+    assert told["start"] == pytest.approx(29.492, abs=0.01)  # the whole ease
+    # Waiting cost no silence: nothing was held.
+    assert all(e.playing for e in rig.engine.timeline.entries if e.song_id is not None)
 
 
 async def test_a_preview_blends_excerpts_and_marks_their_song_positions():

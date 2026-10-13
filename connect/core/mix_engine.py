@@ -62,6 +62,7 @@ from .transition_planner import (
     TransitionPlan,
     as_crossfade,
     crossfade_from,
+    ease_from,
     plan_transition,
     rate_at,
     song_seconds,
@@ -90,6 +91,9 @@ _PREOPEN_CROSSFADE_SECONDS = 90.0
 _MAX_DSP_FRAMES_PER_STEP = 2 * SAMPLE_RATE
 # How much of each song's end/start is analysed for a transition.
 _ANALYSE_SECONDS = 60.0
+# Lead kept while rendering waits for a transition's plan (_waits_for_plan):
+# above _STARVE_LEAD_SECONDS, so the wait never turns into silence.
+_PLAN_WAIT_LEAD_SECONDS = 3.0
 # An excerpt's fades (_take_float()), so a preview neither starts nor stops
 # mid-note. Under a crossfade they change nothing audible.
 _EXCERPT_FADE_IN_SECONDS = 0.5
@@ -797,6 +801,8 @@ class MixEngine:
                 until = int(np.ceil((plan.stretch_start - deck.position) * SAMPLE_RATE))
                 if until > 0:
                     limit = min(limit, until)
+            elif self._waits_for_plan(deck, written):
+                return 0
             n = min(limit, deck.available)
             if n == 0:
                 if deck.finished:
@@ -875,10 +881,17 @@ class MixEngine:
             self._plan_out = deck.item
             logger.info(f"[mix] No analysis in time for {deck.item.name} - {plan.kind} on metadata")
         if plan.out_rate and deck.position > plan.stretch_start + 0.25:
-            # Too late to ease into the incoming tempo: unmatched, a beat
-            # grid means nothing, so it is an ordinary crossfade instead.
-            plan = self._plan = as_crossfade(self.settings, plan)
-            logger.info(f"[mix] Beatmix planned too late for {deck.item.name} - crossfade instead")
+            # Too late for the whole ease into the incoming tempo: a shorter
+            # one from here, or - unmatched, a beat grid means nothing - an
+            # ordinary crossfade.
+            shorter = ease_from(plan, deck.position)
+            if shorter is not None:
+                plan = self._plan = shorter
+            else:
+                plan = self._plan = as_crossfade(self.settings, plan)
+                logger.info(
+                    f"[mix] Beatmix planned too late for {deck.item.name} - crossfade instead"
+                )
         if plan.kind == "gapless" or deck.position < plan.stretch_start - 0.5 / SAMPLE_RATE:
             return
         if deck.position > plan.stretch_start + 0.25:
@@ -1058,6 +1071,32 @@ class MixEngine:
         if n == 0 and deck.finished:
             return np.zeros((frames, 2), dtype=np.float32)
         return _take_float(deck, n)
+
+    def _waits_for_plan(self, deck: DeckLike, written: int) -> bool:
+        """Whether rendering holds for the plan of the next transition, which
+        can begin anywhere in what is analysed for it. Right after a start
+        or a seek the render runs a whole lead ahead at once and would be
+        past where a beatmix eases in before the analysis - about a second -
+        has answered. The lead is buffer, so it waits, down to a few
+        seconds of it."""
+        if self.stopped or deck.item.until <= 0:
+            return False
+        asking = self._next_state in ("pending", "checking")
+        planning = (
+            self._next_state == "done"
+            and self._next is not None
+            and self._plan is None
+            and self._plan_task is not None
+            and not self._plan_task.done()
+        )
+        if not (asking or planning):
+            return False
+        if deck.position < deck.item.until - _ANALYSE_SECONDS:
+            return False
+        wall = self._wall_frame()
+        if wall is None:
+            return False
+        return self.ring.head + written - wall > _PLAN_WAIT_LEAD_SECONDS * SAMPLE_RATE
 
     def _audio_flowing(self, written: int) -> None:
         if self._t0 is None:

@@ -6,9 +6,11 @@ import pytest
 from core.beat_analysis import BeatGrid, RegionAnalysis
 from core.transition_planner import (
     MAX_STRETCH,
+    MIN_EASE_BARS,
     SWAP_SECONDS,
     Settings,
     SongFacts,
+    ease_from,
     plan_transition,
     rate_at,
     song_seconds,
@@ -213,3 +215,21 @@ def test_a_very_short_song_is_never_more_than_half_faded():
     short = SongFacts(6.0)
     plan = plan_transition(CROSSFADE, short, IN, RegionAnalysis(0, 6, 0, 6, None))
     assert plan.overlap == 3.0
+
+
+def test_a_late_ease_starts_where_the_song_is_and_keeps_the_rate():
+    plan = plan_transition(CROSSFADE, OUT, IN, out_region(), in_region())
+    assert plan.out_rate
+    later = plan.stretch_start + 3.0
+    shorter = ease_from(plan, later)
+    assert shorter is not None
+    assert shorter.stretch_start == pytest.approx(later)
+    assert shorter.out_rate[-1] == plan.out_rate[-1]
+    assert (shorter.out_start, shorter.overlap) == (plan.out_start, plan.overlap)
+
+
+def test_a_late_ease_needs_two_bars():
+    plan = plan_transition(CROSSFADE, OUT, IN, out_region(), in_region())
+    bar = 4 * 60 / 128
+    assert ease_from(plan, plan.out_start - MIN_EASE_BARS * bar - 0.01) is not None
+    assert ease_from(plan, plan.out_start - MIN_EASE_BARS * bar + 0.01) is None
