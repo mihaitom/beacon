@@ -209,6 +209,9 @@ export default {
 
 <style scoped>
 .now-playing__panels {
+  /* The artwork's own width (see the stage's artSize), which the track text
+   * and the next-up line under it may take. */
+  --now-playing-text-width: min(clamp(180px, min(70cqh, 50cqw), 900px), 58cqw);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -251,11 +254,15 @@ export default {
   align-self: center;
 }
 
+/* As wide as the artwork above (the same cap .now-playing__info has), not
+ * as the text block, which is only as wide as its longest line. */
 .now-playing__next-up-line {
   position: absolute;
   top: 100%;
-  left: 0;
-  right: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: max-content;
+  max-width: var(--now-playing-text-width);
   margin-top: 8px;
   display: flex;
   align-items: center;
@@ -323,7 +330,7 @@ export default {
   /* Capped to the artwork's own width (see the parent's artSize) so a long
    * unbroken title/artist has something concrete to wrap against instead of
    * growing the row past .now-playing__content's max-width. */
-  max-width: min(clamp(180px, min(70cqh, 50cqw), 900px), 58cqw);
+  max-width: var(--now-playing-text-width);
   /* A soft dark shadow under the track text, so it stays readable when the
    * artwork is hidden and it sits directly on the artist background. A
    * drop-shadow on this block, not a text-shadow on each line: the title
@@ -471,7 +478,8 @@ export default {
 }
 
 .now-playing__panels--start .now-playing__next-up-line {
-  justify-content: flex-start;
+  left: 0;
+  transform: none;
 }
 
 .now-playing__panels--start .now-playing__info {

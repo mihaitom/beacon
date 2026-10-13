@@ -26,25 +26,36 @@
           :options="transitionOptions"
           :label="$t('settings.transitions')"
         />
-        <!-- A select rather than a slider: Vuetify's slider loses the drag
-         - on a real phone (see docs/investigations/mobile-volume-slider-drag.md),
-         - and a handful of lengths is all anyone picks between. -->
+        <!-- Steppers rather than sliders: Vuetify's slider loses the drag
+         - on a real phone (see docs/investigations/mobile-volume-slider-drag.md).
+         - A beatmix steps by 2 s: it lasts whole bars, ~1.9 s each at a
+         - club tempo, so a finer step mostly changes nothing. -->
         <div v-if="transitionsStore.mode === 'crossfade'" class="crossfade-lengths">
-          <v-select
+          <v-number-input
             :model-value="transitionsStore.crossfadeSeconds"
-            :items="crossfadeLengthOptions"
             :label="$t('settings.crossfadeLength')"
+            :min="lengthMin"
+            :max="lengthMax"
+            :step="1"
+            suffix="s"
+            control-variant="stacked"
             variant="solo-filled"
+            prepend-inner-icon="mdi-vector-intersection"
             hide-details
-            @update:model-value="transitionsStore.set({ crossfadeSeconds: $event })"
+            @update:model-value="setLength('crossfadeSeconds', $event)"
           />
-          <v-select
+          <v-number-input
             :model-value="transitionsStore.beatmixSeconds"
-            :items="crossfadeLengthOptions"
             :label="$t('settings.beatmixLength')"
+            :min="lengthMin"
+            :max="lengthMax"
+            :step="2"
+            suffix="s"
+            control-variant="stacked"
             variant="solo-filled"
+            prepend-inner-icon="mdi-metronome"
             hide-details
-            @update:model-value="transitionsStore.set({ beatmixSeconds: $event })"
+            @update:model-value="setLength('beatmixSeconds', $event)"
           />
         </div>
         <p class="setting__hint">{{ $t('settings.transitionsHint') }}</p>
@@ -147,7 +158,12 @@
 <script lang="ts">
 import { usePlaybackStore } from '@/stores/playback'
 import { useRadioSettingsStore } from '@/stores/radioSettings'
-import { useTransitionsStore, type TransitionMode } from '@/stores/transitions'
+import {
+  CROSSFADE_SECONDS_MAX,
+  CROSSFADE_SECONDS_MIN,
+  useTransitionsStore,
+  type TransitionMode,
+} from '@/stores/transitions'
 import type { ReplayGainMode } from '@/services/replayGain'
 import { getAudioEngine } from '@/services/audioEngine'
 import {
@@ -159,9 +175,6 @@ import {
 } from '@/services/streamQuality'
 import SegmentedControl from '@/components/SegmentedControl.vue'
 import QualityTips from './QualityTips.vue'
-
-/** The crossfade lengths offered, in seconds. */
-const CROSSFADE_LENGTHS = [4, 6, 8, 10, 12, 16, 20, 30]
 
 /**
  * How audio is played and cast: ReplayGain, transitions between songs, the
@@ -196,11 +209,11 @@ export default {
         { title: this.$t('settings.transitionsCrossfade'), value: 'crossfade' },
       ]
     },
-    crossfadeLengthOptions(): { title: string; value: number }[] {
-      return CROSSFADE_LENGTHS.map((value) => ({
-        title: this.$t('settings.crossfadeSeconds', { value }),
-        value,
-      }))
+    lengthMin(): number {
+      return CROSSFADE_SECONDS_MIN
+    },
+    lengthMax(): number {
+      return CROSSFADE_SECONDS_MAX
     },
     hasLocalGain(): boolean {
       return getAudioEngine().hasAnalyser
@@ -251,6 +264,10 @@ export default {
     },
   },
   methods: {
+    /** A field emptied while typing sends null; the stored length stays. */
+    setLength(key: 'crossfadeSeconds' | 'beatmixSeconds', value: number | null): void {
+      if (value !== null) this.transitionsStore.set({ [key]: value })
+    },
     formatLabel(format: StreamFormat): string {
       return format === 'original' ? this.$t('settings.qualityOriginal') : format.toUpperCase()
     },
@@ -265,14 +282,13 @@ export default {
 </script>
 
 <style scoped>
+/* Two equal halves of the row, one under the other once a half would be
+ * too narrow for its label. */
 .crossfade-lengths {
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 12px;
   margin-top: 12px;
-}
-.crossfade-lengths > * {
-  flex: 0 1 240px;
 }
 /* Format and bitrate side by side, with the format wider — it carries the
  * actual decision, while the bitrate is a number that needs no room. Wraps
