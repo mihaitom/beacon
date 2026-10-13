@@ -1,8 +1,8 @@
 # Plan: previewing an album or playlist with transitions
 
 Status: built on `development` (2026-10-13), for this device's player and
-for casting. Not yet tried on a phone or on every kind of speaker - see
-"Still open" at the end. Builds on the mix from
+for casting; plays on desktop, web and iPhone. Not yet tried on every kind
+of speaker - see "Still open" at the end. Builds on the mix from
 [gapless-and-transitions.md](gapless-and-transitions.md).
 
 ## Why
@@ -95,12 +95,17 @@ at position 0 rather than where its deck opened - invisible while every
 song started at 0.
 
 The deck opens at `item.start`. `decode_cmd()` gets `-t` for an excerpt, so
-the deck simply finishes at its end, and an `afade` in (0.5 s) and out
-(2 s): the first excerpt does not start mid-note, the last does not stop
-mid-note, and in between the fades sit under the crossfade lanes, where
-they change nothing audible. Deck positions are already `start + consumed`,
-so the timeline marks song positions, and the player bar's position and
-waveform show where in the song the excerpt is.
+the deck simply finishes at its end. The fades - in over 0.5 s, out over
+2 s, so the first excerpt does not start mid-note and the last does not
+stop mid-note - are the mixer's (`_take_float()`), not an ffmpeg `afade`:
+the bundled ffmpeg is built from a fixed list of components, and with a
+filter missing from it every decode failed and the preview was silent on
+the server and in the packaged app, while it played with a system ffmpeg
+in development. `test_ffmpeg_contract.py` now reads the mix's decoders too.
+In between the fades sit under the crossfade lanes, where they change
+nothing audible. Deck positions are already `start + consumed`, so the
+timeline marks song positions, and the player bar's position and waveform
+show where in the song the excerpt is.
 
 ### The planner
 
@@ -237,7 +242,6 @@ station sits over the queue:
   pair is the fallback.
 - **Startup time** on the smallest host: the first song's waveform and
   analysis before anything is heard.
-- **WebKit:** that the live HLS path behaves for a run this short.
 - **Speakers:** a preview is a new dispatch per skip, like any manual
   skip in a mix - how long Sonos, Chromecast and DLNA take to start each
   excerpt, and whether a device minds the stream ending after two minutes.

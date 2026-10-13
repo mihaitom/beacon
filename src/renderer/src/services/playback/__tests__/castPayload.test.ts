@@ -32,7 +32,11 @@ describe('cast payloads with transitions', () => {
     useTransitionsStore().set({ mode: 'gapless' })
     const payload = buildCastMixPayload({ queue, currentIndex: 1, replayGainMode: 'song' })
 
-    expect(payload.transitions).toEqual({ mode: 'gapless', crossfade_seconds: 10 })
+    expect(payload.transitions).toEqual({
+      mode: 'gapless',
+      crossfade_seconds: 4,
+      beatmix_seconds: 12,
+    })
     // From the current song on - the ones already played are no use to it.
     expect(Object.keys(payload.song_hints!)).toEqual(['b', 'c'])
     expect(payload.song_hints!.b!.gain).toBeCloseTo(10 ** (-6 / 20))

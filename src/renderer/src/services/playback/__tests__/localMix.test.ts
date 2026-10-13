@@ -28,6 +28,7 @@ const state = (epoch = 'e1', end: number | null = null, nextCommitted = false) =
   epoch,
   end,
   next_committed: nextCommitted,
+  transitions: [],
   timeline: [
     { t: 0, song_id: 'a', queue_index: 0, position: 0, playing: true, rate: 1, start: true },
   ],
@@ -51,7 +52,7 @@ function startOptions(autoplay = true) {
     songs: upcomingSongs(queue, 0, 'off', 'off'),
     position: 12,
     repeatMode: 'off' as const,
-    transitions: { mode: 'gapless', crossfade_seconds: 10 },
+    transitions: { mode: 'gapless' as const, crossfade_seconds: 10, beatmix_seconds: 10 },
     quality,
     autoplay,
   }

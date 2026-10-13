@@ -937,6 +937,9 @@ def build_status_dict(
         "next_locked": st.mix is not None
         and st.preview is None
         and st.mix.next_locked(clock_position(session)),
+        # With transitions on: when the next song blends in, for clients to
+        # show it coming (see MixEngine.transitions()).
+        "transitions": st.mix.transitions() if st.mix is not None and st.preview is None else [],
         # A preview over the queue (routes/mix_cast.py), which the queue
         # fields above do not show - see stores/playback.ts's preview.
         "preview": st.preview.describe() if st.preview is not None else None,

@@ -289,10 +289,27 @@ async def test_a_queue_change_drops_the_opened_next_song_and_asks_again():
     rig.order = ["a", "c"]
     rig.items["c"] = MixItem("c", 1, duration=100 / SR)
     rig.engine.queue_changed()
+    await asyncio.sleep(0)
     assert opened_b.closed
     await rig.run(steps=20, advance=0.25)
     assert rig.rendered()[: len(a + c)] == a + c
     assert rig.engine.timeline.at(3 * SR).song_id == "c"
+
+
+async def test_a_queue_change_that_leaves_the_next_song_keeps_its_deck():
+    a, b = _pcm(3 * SR), _pcm(100, start=1)
+    rig = Rig({"a": a, "b": b}, ["a", "b"], lead=1.0)
+    rig.engine.start()
+    await rig.run(steps=2)
+    opened_b = rig.decks[1]
+    rig.items["b"] = MixItem("b", 1, gain=0.5, duration=100 / SR)
+    rig.engine.queue_changed()
+    await asyncio.sleep(0)
+    assert not opened_b.closed and len(rig.decks) == 2
+    # The new gain is the one it plays at.
+    assert opened_b.item.gain == 0.5
+    await rig.run(steps=20, advance=0.25)
+    assert rig.engine.timeline.at(3 * SR).song_id == "b"
 
 
 async def test_the_next_song_is_locked_once_its_join_is_rendered():
@@ -322,13 +339,14 @@ async def test_excerpts_play_from_their_start_and_say_where_in_the_song_they_are
     assert rig.engine.timeline.at(SR + SR // 2).position == pytest.approx(80.5)
 
 
-def test_an_excerpt_is_cut_and_faded_by_its_decoder():
+def test_an_excerpt_is_cut_by_its_decoder_and_nothing_else():
     whole = me.decode_cmd("u", 50.0)
-    assert "-t" not in whole and "-af" not in whole
+    assert "-t" not in whole
     excerpt = me.decode_cmd("u", 50.0, 70.0)
     assert excerpt[excerpt.index("-t") + 1] == "20.000"
-    fades = excerpt[excerpt.index("-af") + 1]
-    assert "afade=t=in" in fades and "afade=t=out:st=18.000" in fades
+    # No filters: the bundled ffmpeg has only the ones its contract names,
+    # and a missing one fails the decode outright (test_ffmpeg_contract.py).
+    assert "-af" not in excerpt
 
 
 def test_an_excerpt_is_analysed_within_its_bounds_only():
@@ -433,16 +451,12 @@ async def test_a_song_split_into_two_files_comes_out_whole(tmp_path, monkeypatch
 
 
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="needs a real ffmpeg")
-async def test_an_excerpt_decodes_to_its_length_fading_in_and_out(tmp_path, monkeypatch):
+async def test_an_excerpt_decodes_to_its_length(tmp_path, monkeypatch):
     monkeypatch.setattr(me, "FFMPEG_BIN", "ffmpeg")
     _write_wav(tmp_path / "a.wav", _sine(6 * SR))
     cmd = me.decode_cmd(str(tmp_path / "a.wav"), 1.0, 4.0)
     done = await asyncio.to_thread(subprocess.run, cmd, capture_output=True, check=True)
-    left = np.frombuffer(done.stdout, dtype="<i2")[0::2].astype(np.int32)
-    assert abs(len(left) - 3 * SR) <= 64
-    assert np.abs(left[:100]).max() < 1000  # fading in
-    assert np.abs(left[SR : SR + 2000]).max() > 11000  # full level between
-    assert np.abs(left[-100:]).max() < 1000  # faded out
+    assert abs(len(done.stdout) // 4 - 3 * SR) <= 64
 
 
 def _encode_mp3(wav, mp3) -> None:

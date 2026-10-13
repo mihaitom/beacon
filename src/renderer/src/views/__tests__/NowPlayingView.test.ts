@@ -23,6 +23,8 @@ import { useFanartStore } from '@/stores/fanart'
 import { DEFAULT_APP_ACCENT, appAccent } from '@/services/appAccent'
 import { makeSong } from '@/stores/__tests__/fixtures'
 import type { Song } from '@/types/library'
+import type { NowPlayingPanel } from '@/components/now-playing/source'
+import type { MixTransition } from '@/services/connect/types'
 import { useRadioMetadataStore } from '@/stores/radioMetadata'
 
 // The view asks the engine whether a local analyser exists at all — jsdom
@@ -504,6 +506,7 @@ describe('NowPlayingView', () => {
         repeat_mode: 'off' as const,
         autoplay_enabled: false,
         next_locked: false,
+        transitions: [],
         preview: null,
         elapsed: 0,
         ended: false,
@@ -1125,6 +1128,85 @@ describe('NowPlayingView next up', () => {
     expect(panelKeys(wrapper)).toEqual(['a', 'chevrons', 'b'])
     // The next panel's labels render (the current's are the first).
     expect(wrapper.findAll('.now-playing__title')[1]!.text()).toContain('Second Song')
+  })
+
+  /** The corner's marker between current and next, as the panels get it. */
+  function markerKind(wrapper: VueWrapper): string | undefined {
+    const panels = (wrapper.vm as unknown as { cornerPanels: NowPlayingPanel[] }).cornerPanels
+    return panels.find((panel) => panel.kind === 'chevrons')?.marker?.kind
+  }
+
+  function transition(over: Partial<MixTransition>): MixTransition {
+    return {
+      song_id: 'a',
+      queue_index: 0,
+      kind: 'crossfade',
+      start: 175,
+      change: 183,
+      bpm: null,
+      ...over,
+    }
+  }
+
+  it('announces a crossfade NEXT_UP_SECONDS before the change, not before the end', async () => {
+    const { wrapper, playback } = await mountWithQueue([first(), second()])
+    playback.duration = 200
+    playback.mixTransitions = [transition({})]
+
+    playback.localPosition = 167
+    await flushPromises()
+    expect(panelKeys(wrapper)).toEqual(['a'])
+
+    playback.localPosition = 169
+    await flushPromises()
+    expect(panelKeys(wrapper)).toEqual(['a', 'chevrons', 'b'])
+    expect(markerKind(wrapper)).toBe('crossfade')
+  })
+
+  it('announces a beatmix from its ease into the next tempo, when that comes earlier', async () => {
+    const { wrapper, playback } = await mountWithQueue([first(), second()])
+    playback.duration = 200
+    playback.mixTransitions = [transition({ kind: 'beatmix', start: 150, change: 175, bpm: 124 })]
+
+    playback.localPosition = 151
+    await flushPromises()
+    expect(panelKeys(wrapper)).toEqual(['a', 'chevrons', 'b'])
+    expect(markerKind(wrapper)).toBe('beatmix')
+  })
+
+  it("goes by the end again when the mix's transition is another song's", async () => {
+    const { wrapper, playback } = await mountWithQueue([first(), second()])
+    playback.duration = 100
+    playback.mixTransitions = [transition({ song_id: 'z', start: 10, change: 20 })]
+
+    playback.localPosition = 50
+    await flushPromises()
+    expect(panelKeys(wrapper)).toEqual(['a'])
+
+    playback.localPosition = 92
+    await flushPromises()
+    expect(markerKind(wrapper)).toBe('cut')
+  })
+
+  it('with the artwork shown, announces the next song as a line under it', async () => {
+    vi.mocked(getArtistArt).mockReset().mockResolvedValue(null)
+    const { wrapper } = await mountView()
+    const playback = usePlaybackStore()
+    playback.setQueue([first(), second()], 0)
+    playback.isPlaying = true
+    playback.duration = 200
+    playback.mixTransitions = [transition({})]
+    playback.localPosition = 160
+    await flushPromises()
+    expect(wrapper.find('.now-playing__next-up-line').exists()).toBe(false)
+
+    playback.localPosition = 169
+    await flushPromises()
+    const panels = (wrapper.vm as unknown as { cornerPanels: NowPlayingPanel[] }).cornerPanels
+    // No second panel: the line belongs to the one under the artwork.
+    expect(panels.map((panel) => panel.key)).toEqual(['a'])
+    expect(panels[0]!.nextUp?.marker.kind).toBe('crossfade')
+    expect(wrapper.find('.now-playing__next-up-line').text()).toContain('Second Song')
   })
 
   it('keeps the current track when it is the last one', async () => {

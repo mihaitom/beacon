@@ -19,7 +19,7 @@ import {
   type HostNowPlayingApi,
 } from '@/components/now-playing/hostSource'
 import NowPlayingPresentation from '@/components/now-playing/NowPlayingPresentation.vue'
-import type { NowPlayingPanel } from '@/components/now-playing/source'
+import type { NextUpMarker, NowPlayingPanel } from '@/components/now-playing/source'
 import { radioFaviconRequest, type RadioFaviconRequest } from '@/services/connect/radio'
 import { getLogLevel } from '@/services/connect/logLevel'
 import { getArtistArt, nextBackground, rememberBackground } from '@/services/connect/fanart'
@@ -85,7 +85,7 @@ function readHideArtwork(): boolean {
   }
 }
 
-// How long before a track ends the corner starts announcing the next one
+// How long before the next track takes over the corner starts announcing it
 // (see nextUpActive) - long enough to read, short enough to still feel like
 // "about to change".
 const NEXT_UP_SECONDS = 15
@@ -252,27 +252,40 @@ export default {
       const index = playback.nextIndex(1)
       return index === null ? null : (playback.queue[index] ?? null)
     },
-    /** Whether the corner should announce that next song: a wide screen (a
-     * phone has no room for a second card - only the preload matters there),
-     * the artwork hidden (that is where the small cover + labels live), a
-     * next one, and the current track within NEXT_UP_SECONDS of its end. */
+    /** Whether the next song is to be announced: a wide screen (a phone
+     * has no room for it - only the preload matters there), a next one, and
+     * the current track within NEXT_UP_SECONDS of the change. In a mix the
+     * change comes before the track's end, halfway through the blend, and a
+     * beatmix is heard from its ease into the next tempo on - whichever of
+     * the two is earlier. With the artwork hidden it gets a panel of its
+     * own in the corner, under the artwork a line (see cornerPanels). */
     nextUpActive(): boolean {
-      if (this.compact || !this.artworkHidden || !this.nextSong || !this.playbackStore.isPlaying) {
-        return false
+      if (this.compact || !this.nextSong || !this.playbackStore.isPlaying) return false
+      const position = this.playbackStore.localPosition
+      const transition = this.playbackStore.upcomingTransition
+      if (transition) {
+        return position >= Math.min(transition.start, transition.change - NEXT_UP_SECONDS)
       }
       const duration = this.playbackStore.duration
-      const position = this.playbackStore.localPosition
       return duration > 0 && duration - position <= NEXT_UP_SECONDS
+    },
+    nextUpMarker(): NextUpMarker {
+      const transition = this.playbackStore.upcomingTransition
+      if (transition?.kind === 'crossfade' || transition?.kind === 'beatmix') {
+        return { kind: transition.kind, bpm: transition.bpm }
+      }
+      return { kind: 'cut', bpm: null }
     },
     /** The panels the corner stack renders, left to right: the one playing,
      * then - near the end of a track - animated chevrons and the next track
      * (see nextUpActive). On the change the next panel slides left into the
      * current's place (see the next-up transition in <style>). With the
-     * artwork shown there is a single panel - the labels under the artwork -
-     * and no chevrons. */
+     * artwork shown there is a single panel - the labels under the artwork,
+     * the next song as a line under them - and no chevrons. */
     cornerPanels(): NowPlayingPanel[] {
       const panels: NowPlayingPanel[] = []
       if (this.currentSong) {
+        const next = this.nextSong
         panels.push({
           key: this.currentSong.id,
           kind: 'song',
@@ -280,6 +293,10 @@ export default {
           eyebrow: this.eyebrow,
           title: this.currentSong.title,
           radioTag: null,
+          nextUp:
+            !this.artworkHidden && this.nextUpActive && next
+              ? { title: next.title, artist: next.artist, marker: this.nextUpMarker }
+              : null,
         })
       } else if (this.playbackStore.radioStation) {
         // The ICY tag (what's playing right now) is the prominent title and
@@ -297,7 +314,7 @@ export default {
           radioTag: nowPlaying ? stationName : null,
         })
       }
-      if (this.nextUpActive && this.nextSong) {
+      if (this.artworkHidden && this.nextUpActive && this.nextSong) {
         panels.push({
           key: 'chevrons',
           kind: 'chevrons',
@@ -305,6 +322,7 @@ export default {
           eyebrow: '',
           title: '',
           radioTag: null,
+          marker: this.nextUpMarker,
         })
         panels.push({
           key: this.nextSong.id,

@@ -43,7 +43,7 @@ from pydantic import BaseModel
 
 from core import preview
 from core.local_mixes import SongEntry
-from core.mix_engine import MixEngine, MixItem
+from core.mix_engine import MixEngine, MixItem, song_label
 from core.mix_timeline import SAMPLE_RATE
 from core.session import SessionState, build_status_dict, compute_position
 from core.state import playable_codecs, plays_continuous_flac, stream_url
@@ -66,7 +66,8 @@ _FOLLOW_IDLE_SLEEP = 1.0
 
 class TransitionSettings(BaseModel):
     mode: Literal["off", "gapless", "crossfade"] = "off"
-    crossfade_seconds: float = 10.0
+    crossfade_seconds: float = 4.0
+    beatmix_seconds: float = 12.0
 
 
 class SongHint(BaseModel):
@@ -87,7 +88,7 @@ def transitions_on(settings: TransitionSettings | None) -> bool:
 def planner_settings(settings: TransitionSettings | None) -> Settings:
     if settings is None or settings.mode == "off":
         return Settings("gapless")
-    return Settings(settings.mode, settings.crossfade_seconds)
+    return Settings(settings.mode, settings.crossfade_seconds, settings.beatmix_seconds)
 
 
 def mix_item(session: SessionState, track: Track, queue_index: int, gain: float) -> MixItem:
@@ -102,6 +103,7 @@ def mix_item(session: SessionState, track: Track, queue_index: int, gain: float)
         track=hint.get("track"),
         bpm=hint.get("bpm"),
         payload=track,
+        label=song_label(track.artist, track.title),
     )
 
 
@@ -291,7 +293,7 @@ async def restart(session: SessionState, item: MixItem, position: float) -> dict
             _resync_position_periodically(session, target, st.clock.play_generation)
         )
     asyncio.create_task(follow(session, mix))
-    logger.info(f"[mix] ▶ {item.song_id} from {position:.1f}s")
+    logger.info(f"[mix] ▶ {item.name} from {position:.1f}s")
     await session.event_bus.broadcast(build_status_dict(session))
     return None
 
@@ -413,6 +415,7 @@ async def start_preview(session: SessionState, entries: list[SongEntry], index: 
             track=entry.track,
             bpm=entry.bpm,
             payload=track,
+            label=song_label(track.artist, track.title),
         )
 
     songs = preview.PreviewSongs(entries, url_fn, item_fn=item_fn)

@@ -18,18 +18,11 @@
       class="now-playing__panel"
       :class="{ 'now-playing__panel--chevrons': panel.kind === 'chevrons' }"
     >
-      <template v-if="panel.kind === 'chevrons'">
-        <v-icon
-          icon="mdi-chevron-right"
-          :size="compact ? 30 : 44"
-          class="now-playing__next-up-chevron"
-        />
-        <v-icon
-          icon="mdi-chevron-right"
-          :size="compact ? 30 : 44"
-          class="now-playing__next-up-chevron now-playing__next-up-chevron--second"
-        />
-      </template>
+      <next-up-marker
+        v-if="panel.kind === 'chevrons'"
+        :marker="panel.marker ?? { kind: 'cut', bpm: null }"
+        :size="compact ? 30 : 44"
+      />
       <template v-else>
         <component
           :is="source.cover"
@@ -92,6 +85,21 @@
           >
             {{ panel.song.album }}
           </div>
+          <!-- Under the artwork, where the corner has no room for a second
+           - panel: the next song as one line, announced as the corner
+           - would. Out of the flow, so the artwork does not jump when it
+           - appears. -->
+          <transition name="next-up-line">
+            <div
+              v-if="panel.nextUp"
+              class="text-body-medium text-medium-emphasis now-playing__next-up-line"
+            >
+              <next-up-marker :marker="panel.nextUp.marker" :size="18" />
+              <span class="now-playing__next-up-text">
+                {{ $t('home.nextUp') }}: {{ panel.nextUp.title }} · {{ panel.nextUp.artist }}
+              </span>
+            </div>
+          </transition>
         </div>
       </template>
     </div>
@@ -100,9 +108,11 @@
 
 <script lang="ts">
 import { nowPlayingSourceMixin } from '@/components/now-playing/useSource'
+import NextUpMarker from './NextUpMarker.vue'
 
 export default {
   name: 'NowPlayingTrackPanels',
+  components: { NextUpMarker },
   mixins: [nowPlayingSourceMixin],
   props: {
     compact: {
@@ -227,8 +237,7 @@ export default {
   text-align: left;
 }
 
-/* The "next" marker between the two panels: two chevrons nudging right in a
- * loop, so the second reads as what follows the first. In the accent, which
+/* The "next" marker between the two panels (NextUpMarker). In the accent, which
  * follows the bars' colour - lifted where it would vanish into the photo
  * (see NowPlayingPresentation's accent), which the bars' own is not. */
 .now-playing__panels--corner .now-playing__panel--chevrons {
@@ -242,24 +251,37 @@ export default {
   align-self: center;
 }
 
-.now-playing__next-up-chevron {
-  animation: next-up-chevron 1.4s ease-in-out infinite;
+.now-playing__next-up-line {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  white-space: nowrap;
 }
 
-.now-playing__next-up-chevron--second {
-  animation-delay: 0.2s;
+.now-playing__next-up-line .next-up-marker {
+  flex: none;
+  color: rgb(var(--v-theme-primary));
 }
 
-@keyframes next-up-chevron {
-  0%,
-  100% {
-    opacity: 0.35;
-    transform: translateX(-3px);
-  }
-  50% {
-    opacity: 1;
-    transform: translateX(0);
-  }
+.now-playing__next-up-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.next-up-line-enter-active,
+.next-up-line-leave-active {
+  transition: opacity 0.6s ease;
+}
+
+.next-up-line-enter-from,
+.next-up-line-leave-to {
+  opacity: 0;
 }
 
 /* The next panel appears to the right near the end of a track; on the change
@@ -296,6 +318,8 @@ export default {
 }
 
 .now-playing__info {
+  /* The anchor of the next-up line, which hangs below it. */
+  position: relative;
   /* Capped to the artwork's own width (see the parent's artSize) so a long
    * unbroken title/artist has something concrete to wrap against instead of
    * growing the row past .now-playing__content's max-width. */
@@ -444,6 +468,10 @@ export default {
 .now-playing__panels--start,
 .now-playing__panels--start .now-playing__panel {
   align-items: flex-start;
+}
+
+.now-playing__panels--start .now-playing__next-up-line {
+  justify-content: flex-start;
 }
 
 .now-playing__panels--start .now-playing__info {

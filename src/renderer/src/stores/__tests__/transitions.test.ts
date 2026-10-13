@@ -25,10 +25,14 @@ describe('transitions store', () => {
     store.set({ mode: 'crossfade', crossfadeSeconds: 16 })
 
     expect(store.enabled).toBe(true)
-    expect(store.payload).toEqual({ mode: 'crossfade', crossfade_seconds: 16 })
+    expect(store.payload).toEqual({
+      mode: 'crossfade',
+      crossfade_seconds: 16,
+      beatmix_seconds: 12,
+    })
     await vi.waitFor(() =>
       expect(pushAccountSettings).toHaveBeenCalledWith({
-        transitions: { mode: 'crossfade', crossfadeSeconds: 16 },
+        transitions: { mode: 'crossfade', crossfadeSeconds: 16, beatmixSeconds: 12 },
       }),
     )
 
@@ -47,11 +51,20 @@ describe('transitions store', () => {
   it('a value from another build or a hand edit is brought back into range', () => {
     expect(sanitizeTransitions({ mode: 'dj', crossfadeSeconds: 'x' })).toEqual({
       mode: 'off',
-      crossfadeSeconds: 10,
+      crossfadeSeconds: 4,
+      beatmixSeconds: 12,
     })
     expect(sanitizeTransitions({ mode: 'gapless', crossfadeSeconds: 999 }).crossfadeSeconds).toBe(
       30,
     )
     expect(sanitizeTransitions({ mode: 'gapless', crossfadeSeconds: 0 }).crossfadeSeconds).toBe(2)
+  })
+
+  it('the beatmix length is set apart from the crossfade one', () => {
+    const store = useTransitionsStore()
+    store.set({ mode: 'crossfade', crossfadeSeconds: 6, beatmixSeconds: 20 })
+    expect(store.payload).toMatchObject({ crossfade_seconds: 6, beatmix_seconds: 20 })
+    store.set({ crossfadeSeconds: 8 })
+    expect(store.beatmixSeconds).toBe(20)
   })
 })

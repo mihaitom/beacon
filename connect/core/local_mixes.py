@@ -17,7 +17,7 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
-from .mix_engine import MixEngine, MixItem
+from .mix_engine import MixEngine, MixItem, song_label
 from .mix_hls import MixHls
 from .transition_planner import Settings
 
@@ -43,6 +43,8 @@ class SongEntry:
     disc: int | None = None
     track: int | None = None
     bpm: float | None = None
+    artist: str | None = None
+    title: str | None = None
 
     def item(self) -> MixItem:
         return MixItem(
@@ -54,6 +56,7 @@ class SongEntry:
             disc=self.disc,
             track=self.track,
             bpm=self.bpm,
+            label=song_label(self.artist, self.title),
         )
 
 

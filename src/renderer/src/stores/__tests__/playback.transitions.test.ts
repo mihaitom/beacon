@@ -253,6 +253,26 @@ describe('playback with transitions', () => {
         expect(playback.lockedNextIndex).toBe(-1)
       })
 
+      it("the current song's transition is the one told, from connect's status", async () => {
+        const playback = usePlaybackStore()
+        playback.setQueue(five, 0)
+        const told = (song_id: string) => ({
+          song_id,
+          queue_index: null,
+          kind: 'crossfade' as const,
+          start: 170,
+          change: 178,
+          bpm: null,
+        })
+        const status = { queue: ids(playback), current_song_index: 0 }
+        await playback.adoptCastQueue(makeStatus({ ...status, transitions: [told('z')] }))
+        expect(playback.upcomingTransition).toBeNull()
+        await playback.adoptCastQueue(
+          makeStatus({ ...status, transitions: [told('z'), told('a')] }),
+        )
+        expect(playback.upcomingTransition?.song_id).toBe('a')
+      })
+
       it('lifts once a new run starts', async () => {
         const playback = await locked()
         await playback.seek(10)

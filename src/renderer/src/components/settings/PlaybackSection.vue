@@ -29,16 +29,24 @@
         <!-- A select rather than a slider: Vuetify's slider loses the drag
          - on a real phone (see docs/investigations/mobile-volume-slider-drag.md),
          - and a handful of lengths is all anyone picks between. -->
-        <v-select
-          v-if="transitionsStore.mode === 'crossfade'"
-          class="crossfade-length"
-          :model-value="transitionsStore.crossfadeSeconds"
-          :items="crossfadeLengthOptions"
-          :label="$t('settings.crossfadeLength')"
-          variant="solo-filled"
-          hide-details
-          @update:model-value="transitionsStore.set({ crossfadeSeconds: $event })"
-        />
+        <div v-if="transitionsStore.mode === 'crossfade'" class="crossfade-lengths">
+          <v-select
+            :model-value="transitionsStore.crossfadeSeconds"
+            :items="crossfadeLengthOptions"
+            :label="$t('settings.crossfadeLength')"
+            variant="solo-filled"
+            hide-details
+            @update:model-value="transitionsStore.set({ crossfadeSeconds: $event })"
+          />
+          <v-select
+            :model-value="transitionsStore.beatmixSeconds"
+            :items="crossfadeLengthOptions"
+            :label="$t('settings.beatmixLength')"
+            variant="solo-filled"
+            hide-details
+            @update:model-value="transitionsStore.set({ beatmixSeconds: $event })"
+          />
+        </div>
         <p class="setting__hint">{{ $t('settings.transitionsHint') }}</p>
       </div>
 
@@ -257,9 +265,14 @@ export default {
 </script>
 
 <style scoped>
-.crossfade-length {
+.crossfade-lengths {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
   margin-top: 12px;
-  max-width: 240px;
+}
+.crossfade-lengths > * {
+  flex: 0 1 240px;
 }
 /* Format and bitrate side by side, with the format wider — it carries the
  * actual decision, while the bitrate is a number that needs no room. Wraps

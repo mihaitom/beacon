@@ -350,6 +350,9 @@ export interface ConnectStatus {
   /** With transitions on: the song after the current one is settled in the
    * mix - see stores/playback.ts's lockedNextIndex. */
   next_locked: boolean
+  /** With transitions on: how the songs heard now blend into the next - see
+   * stores/playback.ts's upcomingTransition. */
+  transitions: MixTransition[]
   /** A preview over the queue (connect/routes/mix_cast.py), which the
    * queue fields above do not show: the songs it plays, which of them now,
    * and where the queue's song goes back to. */
@@ -486,4 +489,18 @@ export interface AutoLyricsResult {
   lyrics: string
   name: string
   source: string
+}
+
+/** How one song blends into the next in a mix (connect's
+ * MixEngine.transitions()), in seconds of the song going out: `start` is
+ * where the blend - or a beatmix's ease into the next tempo - begins to be
+ * heard, `change` where the next song takes over. `bpm` is the tempo a
+ * beatmix plays at. */
+export interface MixTransition {
+  song_id: string
+  queue_index: number | null
+  kind: 'gapless' | 'crossfade' | 'beatmix'
+  start: number
+  change: number
+  bpm: number | null
 }

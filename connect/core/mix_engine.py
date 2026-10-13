@@ -40,6 +40,7 @@ import asyncio
 import logging
 import secrets
 import time
+from collections import deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -59,6 +60,7 @@ from .transition_planner import (
     Settings,
     SongFacts,
     TransitionPlan,
+    as_crossfade,
     crossfade_from,
     plan_transition,
     rate_at,
@@ -88,7 +90,8 @@ _PREOPEN_CROSSFADE_SECONDS = 90.0
 _MAX_DSP_FRAMES_PER_STEP = 2 * SAMPLE_RATE
 # How much of each song's end/start is analysed for a transition.
 _ANALYSE_SECONDS = 60.0
-# An excerpt's fades (decode_cmd()).
+# An excerpt's fades (_take_float()), so a preview neither starts nor stops
+# mid-note. Under a crossfade they change nothing audible.
 _EXCERPT_FADE_IN_SECONDS = 0.5
 _EXCERPT_FADE_OUT_SECONDS = 2.0
 # While the outgoing song eases into the incoming tempo, how often its rate
@@ -119,6 +122,12 @@ class MixItem:
     # `start` to `end`, seconds in the song.
     start: float = 0.0
     end: float | None = None
+    # "Artist — Title", for the log; the id stands in without it.
+    label: str | None = None
+
+    @property
+    def name(self) -> str:
+        return self.label or self.song_id
 
     @property
     def until(self) -> float:
@@ -127,25 +136,20 @@ class MixItem:
         return self.end if self.end is not None else self.duration
 
 
+def song_label(artist: str | None, title: str | None) -> str | None:
+    if not title:
+        return None
+    return f"{artist} — {title}" if artist else title
+
+
 def decode_cmd(url: str, start: float, end: float | None = None) -> list[str]:
-    """The decoder for a song from `start`, or for an excerpt up to `end`,
-    which also fades in and out so it neither begins nor stops mid-note -
-    under a crossfade the fades change nothing audible."""
+    """The decoder for a song from `start`, or for an excerpt up to `end`.
+    An excerpt's fades are the mixer's (_take_float()): the bundled ffmpeg
+    is built from a fixed list of components, and a filter missing from it
+    fails the whole decode."""
     seek = ["-ss", f"{start:.3f}"] if start > 0 else []
     http = _HTTP_RECONNECT_ARGS if url.startswith(("http://", "https://")) else []
-    excerpt: list[str] = []
-    if end is not None:
-        length = max(end - start, 0.0)
-        fade_out = min(_EXCERPT_FADE_OUT_SECONDS, length / 2)
-        excerpt = [
-            "-t",
-            f"{length:.3f}",
-            "-af",
-            (
-                f"afade=t=in:d={_EXCERPT_FADE_IN_SECONDS},"
-                f"afade=t=out:st={length - fade_out:.3f}:d={fade_out:.3f}"
-            ),
-        ]
+    excerpt = ["-t", f"{max(end - start, 0.0):.3f}"] if end is not None else []
     return [
         FFMPEG_BIN,
         "-hide_banner",
@@ -169,6 +173,8 @@ def decode_cmd(url: str, start: float, end: float | None = None) -> list[str]:
 
 class DeckLike(Protocol):
     item: MixItem
+    # Where in the song it was opened.
+    start: float
     produced: bool
     decoder_done: bool
 
@@ -302,6 +308,36 @@ DeckFactory = Callable[[MixItem, float], DeckLike]
 AnalyseFn = Callable[[MixItem, float, float], Awaitable[RegionAnalysis | None]]
 
 
+def _take_float(deck: DeckLike, frames: int) -> np.ndarray:
+    """Up to `frames` of `deck`, as float at its gain - and for an excerpt,
+    faded in from where its deck opened and out towards its end. Previews
+    always render in float (core/preview.py's SETTINGS), so the byte path
+    has no need of this."""
+    first = deck.position
+    x = pcm_to_float(deck.take(frames)) * np.float32(deck.item.gain)
+    end = deck.item.end
+    if end is not None and len(x):
+        at = first + np.arange(len(x)) / SAMPLE_RATE
+        fade_in = np.clip((at - deck.start) / _EXCERPT_FADE_IN_SECONDS, 0.0, 1.0)
+        fade_out = np.clip((end - at) / _EXCERPT_FADE_OUT_SECONDS, 0.0, 1.0)
+        x *= (fade_in * fade_out).astype(np.float32)[:, None]
+    return x
+
+
+def _describe_transition(out_item: MixItem, plan: TransitionPlan) -> dict:
+    """A transition as a client reads it, in seconds of the song going
+    out: where it starts to be heard and where the next song takes over."""
+    change = plan.out_start + song_seconds(plan.out_rate, 0.0, plan.swap_at)
+    return {
+        "song_id": out_item.song_id,
+        "queue_index": out_item.queue_index,
+        "kind": plan.kind,
+        "start": round(plan.stretch_start, 3),
+        "change": round(change, 3),
+        "bpm": plan.bpm_in,
+    }
+
+
 def _analysis_windows(
     out_item: MixItem, in_item: MixItem
 ) -> tuple[tuple[float, float], tuple[float, float]]:
@@ -319,6 +355,10 @@ def _analysis_windows(
     else:
         in_window = (in_item.start, min(_ANALYSE_SECONDS, in_item.end - in_item.start))
     return out_window, in_window
+
+
+def _same_audio(a: MixItem, b: MixItem) -> bool:
+    return (a.song_id, a.start, a.end) == (b.song_id, b.start, b.end)
 
 
 def _facts(item: MixItem) -> SongFacts:
@@ -399,7 +439,8 @@ class MixEngine:
         self._next: DeckLike | None = None
         # Whether the song after the current one has been asked for: None
         # not yet, "pending" while next_fn runs, "done" once answered (with
-        # self._next holding its deck, or None for the end of the queue).
+        # self._next holding its deck, or None for the end of the queue),
+        # "checking" while a queue change is asked whether it still is.
         self._next_state: str | None = None
         self._next_generation = 0
         self._holding = False
@@ -426,6 +467,12 @@ class MixEngine:
         # The last frames played, for a stretch to start from (Wsola.prime).
         self._tail = np.zeros((0, 2), dtype=np.float32)
         self._plan: TransitionPlan | None = None
+        # The song self._plan leads out of: self._deck's until the plan is
+        # carried out, but a plan outlives its transition.
+        self._plan_out: MixItem | None = None
+        # Transitions carried out, as transitions() describes them - the
+        # listener is up to a lead behind, so the last ones still lie ahead.
+        self._committed: deque[dict] = deque(maxlen=2)
         self._plan_task: asyncio.Task | None = None
         self._stretch: _Stretch | None = None
         self._tx: _Transition | None = None
@@ -446,7 +493,7 @@ class MixEngine:
     def start(self) -> None:
         self._deck = self._open(self.first, self.start_position)
         self._task = asyncio.create_task(self._run())
-        logger.info(
+        logger.debug(
             f"[mix] {self.epoch} started at {self.first.song_id}@{self.start_position:.1f}s"
         )
 
@@ -474,7 +521,7 @@ class MixEngine:
         self._connections.clear()
         if not self.ring.closed:
             self.ring.close()
-        logger.info(f"[mix] {self.epoch} stopped")
+        logger.debug(f"[mix] {self.epoch} stopped")
 
     @property
     def listeners(self) -> int:
@@ -515,6 +562,16 @@ class MixEngine:
         change = self.timeline.next_change(round(max(stream_time, 0.0) * SAMPLE_RATE))
         return change is not None and change.song_id is not None
 
+    def transitions(self) -> list[dict]:
+        """The transitions a listener may still have ahead: the last ones
+        carried out and the one planned next, each out of `song_id`. For a
+        client to show the change coming before the song's own end, which
+        a crossfade never reaches."""
+        planned = []
+        if self._plan is not None and self._plan_out is not None and not self.next_committed:
+            planned = [_describe_transition(self._plan_out, self._plan)]
+        return [*self._committed, *planned]
+
     # ── Control ──────────────────────────────────────────────────────────
 
     def freeze(self) -> None:
@@ -534,14 +591,50 @@ class MixEngine:
         return self._paused_at is not None
 
     def queue_changed(self) -> None:
-        """The queue after the current song may be different now. A next
-        song already opened is dropped and asked for again; the current one
-        plays on."""
+        """The queue after the current song may be different now. The next
+        song is asked for again, and only if it is another one are its deck
+        and its plan dropped: the analysis takes long enough that redoing it
+        for the same song, late in the current one, costs a beatmix its
+        ease. The current one plays on."""
         if self.next_committed:
             return
+        if self._next_state in ("done", "checking") and self._deck is not None:
+            if self._resolve_task is not None and not self._resolve_task.done():
+                self._resolve_task.cancel()
+            self._next_state = "checking"
+            self._resolve_task = asyncio.create_task(self._recheck_next(self._deck.item))
+            return
+        self._drop_next()
+
+    async def _recheck_next(self, current: MixItem) -> None:
+        try:
+            item = await self._next_fn(current)
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception(f"[mix] {self.epoch} finding the next song failed")
+            item = None
+        if self.stopped or self._next_state != "checking":
+            return
+        nxt = self._next
+        if item is None and nxt is None:
+            self._next_state = "done"
+        elif item is not None and nxt is not None and _same_audio(item, nxt.item):
+            # Its place in the queue or its gain may be new; what was
+            # analysed is not.
+            nxt.item = item
+            self._next_state = "done"
+        else:
+            self._drop_next()
+
+    def _drop_next(self) -> None:
         self._next_generation += 1
+        try:
+            current = asyncio.current_task()
+        except RuntimeError:  # called from outside any event loop
+            current = None
         for task in (self._resolve_task, self._plan_task):
-            if task is not None and not task.done():
+            if task is not None and task is not current and not task.done():
                 task.cancel()
         if self._next is not None:
             self._next.close()
@@ -709,7 +802,7 @@ class MixEngine:
                 if deck.finished:
                     return self._advance_dsp(parts, written)
                 return 0
-            x = pcm_to_float(deck.take(n)) * np.float32(deck.item.gain)
+            x = _take_float(deck, n)
         self._tail = np.concatenate([self._tail, x])[-_STRETCH_HOP:]
         self._audio_flowing(written)
         parts.append(self._shared.process(x, split=False)[0])
@@ -755,9 +848,7 @@ class MixEngine:
             payload=nxt.item,
             starts=True,
         )
-        logger.info(
-            f"[mix] {self.epoch} → {nxt.item.song_id} at {frame / SAMPLE_RATE:.2f}s (gapless)"
-        )
+        logger.info(f"[mix] gapless into {nxt.item.name}")
         self._changed()
         return None
 
@@ -774,17 +865,20 @@ class MixEngine:
         if plan is None:
             # The analysis has not answered by the last moment a crossfade
             # can still start: go ahead on the metadata alone.
-            latest = deck.item.until - self.settings.crossfade_seconds - 1.0
+            longest = max(self.settings.crossfade_seconds, self.settings.beatmix_limit)
+            latest = deck.item.until - longest - 1.0
             if deck.item.until <= 0 or deck.position < latest:
                 return
             if self._plan_task is not None:
                 self._plan_task.cancel()
             plan = self._plan = plan_transition(self.settings, _facts(deck.item), _facts(nxt.item))
-            logger.info(f"[mix] {self.epoch} no analysis in time - {plan.kind} on metadata")
+            self._plan_out = deck.item
+            logger.info(f"[mix] No analysis in time for {deck.item.name} - {plan.kind} on metadata")
         if plan.out_rate and deck.position > plan.stretch_start + 0.25:
             # Too late to ease into the incoming tempo: unmatched, a beat
             # grid means nothing, so it is an ordinary crossfade instead.
-            plan = self._plan = plan.unstretched()
+            plan = self._plan = as_crossfade(self.settings, plan)
+            logger.info(f"[mix] Beatmix planned too late for {deck.item.name} - crossfade instead")
         if plan.kind == "gapless" or deck.position < plan.stretch_start - 0.5 / SAMPLE_RATE:
             return
         if deck.position > plan.stretch_start + 0.25:
@@ -794,11 +888,25 @@ class MixEngine:
                 self._plan = TransitionPlan("gapless", plan.out_end, plan.out_end, plan.in_start)
                 return
             plan = self._plan = late
+        self._commit(plan)
         if plan.out_rate:
             self._begin_stretch(plan)
             if self._stretch is not None and self._stretch.ease_frames > 0:
                 return
         self._begin_transition(plan, written)
+
+    def _commit(self, plan: TransitionPlan) -> None:
+        assert self._deck is not None and self._next is not None
+        self._committed.append(_describe_transition(self._deck.item, plan))
+        bpm = (
+            f", {plan.bpm_out:.0f} → {plan.bpm_in:.0f} BPM"
+            if plan.bpm_out is not None and plan.bpm_in is not None
+            else ""
+        )
+        logger.info(
+            f"[mix] {plan.kind} over {plan.overlap:.1f}s{bpm}: "
+            f"{self._deck.item.name} → {self._next.item.name}"
+        )
 
     def _begin_stretch(self, plan: TransitionPlan) -> None:
         wsola = Wsola()
@@ -807,7 +915,7 @@ class MixEngine:
             tail = np.concatenate([np.zeros((_STRETCH_HOP - len(tail), 2), np.float32), tail])
         wsola.prime(tail)
         self._stretch = _Stretch(plan, wsola)
-        logger.info(
+        logger.debug(
             f"[mix] {self.epoch} easing {self._deck.item.song_id if self._deck else '?'} "
             f"into {plan.bpm_in:.1f} BPM from {plan.stretch_start:.1f}s"
             if plan.bpm_in is not None
@@ -832,7 +940,7 @@ class MixEngine:
                     stretch.wsola.push(np.zeros((missing, 2), dtype=np.float32))
                     continue
                 take = min(deck.available, missing + _STRETCH_HOP * 4)
-                stretch.wsola.push(pcm_to_float(deck.take(take)) * np.float32(deck.item.gain))
+                stretch.wsola.push(_take_float(deck, take))
                 continue
             got = stretch.wsola.pull(frames - len(stretch.ready), rate)
             if len(got) == 0:
@@ -882,15 +990,6 @@ class MixEngine:
             in_splitter=BandSplitter(),
             start_out=self.ring.head + written,
         )
-        bpm = (
-            f", {plan.bpm_out:.1f} → {plan.bpm_in:.1f} BPM"
-            if plan.bpm_out is not None and plan.bpm_in is not None
-            else ""
-        )
-        logger.info(
-            f"[mix] {self.epoch} {plan.kind} into {incoming.item.song_id} over "
-            f"{plan.overlap:.1f}s{bpm}"
-        )
 
     def _render_transition(self, frames: int, parts: list[np.ndarray], written: int) -> int:
         tx = self._tx
@@ -912,7 +1011,7 @@ class MixEngine:
         if self._stretch is not None:
             x_out = self._take_stretched(n, written)
         else:
-            x_out = pcm_to_float(deck.take(n)) * np.float32(deck.item.gain)
+            x_out = _take_float(deck, n)
         if len(x_out) < n:  # the outgoing song ran out before the plan said
             x_out = np.concatenate([x_out, np.zeros((n - len(x_out), 2), dtype=np.float32)])
         # The splitters delay by DELAY_FRAMES; the lanes follow the delayed
@@ -942,7 +1041,7 @@ class MixEngine:
                 payload=item,
                 starts=True,
             )
-            logger.info(f"[mix] {self.epoch} → {item.song_id} at {frame / SAMPLE_RATE:.2f}s")
+            logger.debug(f"[mix] {self.epoch} → {item.song_id} at {frame / SAMPLE_RATE:.2f}s")
             self._changed()
         if tx.frame >= tx.overlap_frames:
             deck.close()
@@ -958,7 +1057,7 @@ class MixEngine:
         n = min(frames, deck.available)
         if n == 0 and deck.finished:
             return np.zeros((frames, 2), dtype=np.float32)
-        return pcm_to_float(deck.take(n)) * np.float32(deck.item.gain)
+        return _take_float(deck, n)
 
     def _audio_flowing(self, written: int) -> None:
         if self._t0 is None:
@@ -1054,9 +1153,7 @@ class MixEngine:
                 payload=nxt.item,
                 starts=True,
             )
-            logger.info(
-                f"[mix] {self.epoch} → {nxt.item.song_id} at {frame / SAMPLE_RATE:.2f}s (gapless)"
-            )
+            logger.info(f"[mix] gapless into {nxt.item.name}")
         self._changed()
         return True
 
@@ -1109,7 +1206,8 @@ class MixEngine:
         if generation != self._next_generation or self.stopped:
             return
         self._plan = plan
-        logger.info(
+        self._plan_out = out_item
+        logger.debug(
             f"[mix] {self.epoch} planned {plan.kind} {out_item.song_id} → {in_item.song_id}"
             + (f" at {plan.out_start:.1f}s over {plan.overlap:.1f}s" if plan.overlap else "")
         )

@@ -178,6 +178,20 @@ def test_a_longer_setting_buys_more_bars():
     assert short.overlap == pytest.approx(4 * 60 / 126)  # never under one bar
 
 
+def test_a_beatmix_and_a_crossfade_have_lengths_of_their_own():
+    settings = Settings("crossfade", crossfade_seconds=4.0, beatmix_seconds=31.0)
+    beatmix = plan_transition(settings, OUT, IN, out_region(), in_region())
+    assert beatmix.kind == "beatmix"
+    assert beatmix.overlap == pytest.approx(16 * 4 * 60 / 126)
+    crossfade = plan_transition(settings, OUT, IN)
+    assert crossfade.kind == "crossfade" and crossfade.overlap == pytest.approx(4.0)
+
+
+def test_without_a_beatmix_length_a_beatmix_takes_the_crossfade_one():
+    plan = plan_transition(Settings("crossfade", 31.0), OUT, IN, out_region(), in_region())
+    assert plan.overlap == pytest.approx(16 * 4 * 60 / 126)
+
+
 # ── A crossfade ────────────────────────────────────────────────────────────
 
 

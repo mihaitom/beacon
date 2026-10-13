@@ -7,7 +7,7 @@
  * Used by the getters of the same name in stores/playback.ts. */
 
 import { AUTOPLAY_BATCH_SIZE, useAutoplayStore } from '@/stores/autoplay'
-import { useTransitionsStore } from '@/stores/transitions'
+import { useTransitionsStore, type TransitionsPayload } from '@/stores/transitions'
 import { calculateReplayGain, type ReplayGainMode } from '@/services/replayGain'
 import type { StreamQuality, TranscodeFormat } from '@/services/streamQuality'
 import type { Song } from '@/types/library'
@@ -103,7 +103,7 @@ export function buildCastMixPayload(state: {
   currentIndex: number
   replayGainMode: ReplayGainMode
 }): {
-  transitions?: { mode: string; crossfade_seconds: number }
+  transitions?: TransitionsPayload
   song_hints?: Record<string, SongHint>
 } {
   const transitions = useTransitionsStore()

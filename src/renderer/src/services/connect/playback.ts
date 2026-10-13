@@ -3,11 +3,12 @@ import type { LocalMixSong } from './localMix'
 import type { ConnectDeviceRef, PlayResponse, QueueResponse } from './types'
 import type { TranscodeFormat } from '@/services/streamQuality'
 import type { SongHint } from '@/services/playback/castPayload'
+import type { TransitionsPayload } from '@/stores/transitions'
 
 /** Transitions and song hints for a mix - see buildCastMixPayload().
  * Absent means one song at a time, as before transitions existed. */
 interface MixOptions {
-  transitions?: { mode: string; crossfade_seconds: number }
+  transitions?: TransitionsPayload
   song_hints?: Record<string, SongHint>
 }
 

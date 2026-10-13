@@ -1,6 +1,8 @@
 import { fetchConnect } from './http'
 import { useAuthStore } from '@/stores/auth'
 import type { MixTimelineEntry } from '@/services/playback/mixTimeline'
+import type { MixTransition } from './types'
+import type { TransitionsPayload } from '@/stores/transitions'
 
 /** One song as connect's mix takes it - see connect/routes/local_mix.py's
  * MixSong. */
@@ -13,6 +15,9 @@ export interface LocalMixSong {
   disc: number | null
   track: number | null
   bpm: number | null
+  /** For connect's log. */
+  artist: string
+  title: string
 }
 
 export interface LocalMixState {
@@ -23,6 +28,7 @@ export interface LocalMixState {
   /** The song after the one being rendered is blending in already - see
    * connect's MixEngine.next_committed. */
   next_committed: boolean
+  transitions: MixTransition[]
 }
 
 type RepeatMode = 'off' | 'all' | 'one'
@@ -37,7 +43,7 @@ export function startLocalMix(
     songs: LocalMixSong[]
     position: number
     repeat_mode: RepeatMode
-    transitions: { mode: string; crossfade_seconds: number }
+    transitions: TransitionsPayload
   },
 ): Promise<LocalMixState> {
   return fetchConnect<LocalMixState>(path(player), { method: 'POST', body })

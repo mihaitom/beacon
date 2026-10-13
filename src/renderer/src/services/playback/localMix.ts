@@ -28,6 +28,7 @@ import {
   type LocalMixSong,
   type LocalMixState,
 } from '@/services/connect/localMix'
+import type { MixTransition } from '@/services/connect/types'
 import { calculateReplayGain, type ReplayGainMode } from '@/services/replayGain'
 import { prefersHls, type LocalStreamQuality } from '@/services/streamQuality'
 import type { Song } from '@/types/library'
@@ -39,6 +40,7 @@ import {
   type MixTimelineEntry,
 } from './mixTimeline'
 import type { RepeatMode } from './types'
+import type { TransitionsPayload } from '@/stores/transitions'
 
 /** How often the timeline is asked for while playing. A song change is
  * rendered ~20s before it is heard, so this only has to be well inside
@@ -87,6 +89,8 @@ export function mixSong(song: Song, index: number, replayGainMode: ReplayGainMod
     disc: song.discNumber,
     track: song.trackNumber,
     bpm: song.bpm ?? null,
+    artist: song.artist,
+    title: song.title,
   }
 }
 
@@ -99,7 +103,7 @@ export interface LocalMixStart {
   songs: LocalMixSong[]
   position: number
   repeatMode: RepeatMode
-  transitions: { mode: string; crossfade_seconds: number }
+  transitions: TransitionsPayload
   quality: LocalStreamQuality
   autoplay: boolean
 }
@@ -112,6 +116,7 @@ export class LocalMixPlayer {
   private timeline: MixTimelineEntry[] = []
   private end: number | null = null
   private nextCommitted = false
+  private upcoming: MixTransition[] = []
   private pollTimer: ReturnType<typeof setInterval> | null = null
   private startSeq = 0
   private pausedAt: number | null = null
@@ -193,6 +198,12 @@ export class LocalMixPlayer {
     return this.active && (this.nextCommitted || songFollows(this.timeline, this.heardTime))
   }
 
+  /** How the songs around the one last heard blend into the next - see
+   * MixTransition. */
+  get transitions(): MixTransition[] {
+    return this.upcoming
+  }
+
   /** How far the song last heard is loaded, given the element holds the
    * stream up to `streamEnd` - see mixTimeline.ts's loadedThrough(). */
   loadedThrough(streamEnd: number): number | null {
@@ -241,6 +252,7 @@ export class LocalMixPlayer {
     this.timeline = []
     this.end = null
     this.nextCommitted = false
+    this.upcoming = []
     this.pausedAt = null
     this.heardTime = 0
     if (wasActive) void stopLocalMix(this.player).catch(() => {})
@@ -252,6 +264,7 @@ export class LocalMixPlayer {
     this.timeline = state.timeline
     this.end = state.end
     this.nextCommitted = state.next_committed
+    this.upcoming = state.transitions ?? []
   }
 
   private applyEnd(): void {

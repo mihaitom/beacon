@@ -74,6 +74,9 @@ class MixSong(BaseModel):
     disc: int | None = None
     track: int | None = None
     bpm: float | None = None
+    # For the log only.
+    artist: str | None = None
+    title: str | None = None
 
 
 class MixStart(BaseModel):
@@ -124,6 +127,7 @@ def _describe(mix: local_mixes.LocalMix) -> dict:
         # The rest of "is the next song settled" is in the timeline, read
         # against where the tab is listening - which only the tab knows.
         "next_committed": engine.next_committed,
+        "transitions": engine.transitions(),
     }
 
 
@@ -150,7 +154,7 @@ async def start_mix(
         LOCAL_LEAD_SECONDS,
         planner_settings(req.transitions),
     )
-    logger.info(f"[mix] Local player {player}: {first.id} from {position:.1f}s")
+    logger.info(f"[mix] ▶ {mix.engine.first.name} from {position:.1f}s (this device)")
     return _describe(mix)
 
 
@@ -177,7 +181,7 @@ async def start_preview(
         LOCAL_LEAD_SECONDS,
         preview.SETTINGS,
     )
-    logger.info(f"[mix] Local player {player}: preview from {first.song_id} at {first.start:.1f}s")
+    logger.info(f"[mix] ▶ Preview from {first.name} at {first.start:.1f}s (this device)")
     return _describe(mix)
 
 

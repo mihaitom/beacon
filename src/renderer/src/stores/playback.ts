@@ -21,7 +21,12 @@ import { useTransitionsStore } from './transitions'
 import { useDrawersStore } from './drawers'
 import { useRadioMetadataStore } from './radioMetadata'
 import * as connectPlayback from '@/services/connect/playback'
-import type { ConnectDeviceRef, ConnectStatus, PlayResponse } from '@/services/connect/types'
+import type {
+  ConnectDeviceRef,
+  ConnectStatus,
+  MixTransition,
+  PlayResponse,
+} from '@/services/connect/types'
 import type { Artist, RadioStation, Song } from '@/types/library'
 import { emitter } from '@/emitter'
 import { i18n } from '@/i18n'
@@ -116,6 +121,9 @@ interface PlaybackState {
    * it is. From the local mix (followLocalMix()) or, while casting, from
    * connect's status. See lockedNextIndex. */
   mixNextLocked: boolean
+  /** With transitions on: how the songs heard now blend into the next,
+   * from the same two places as mixNextLocked. See upcomingTransition. */
+  mixTransitions: MixTransition[]
   /** A preview of an album or playlist playing over the queue, which it
    * leaves alone - see startPreview(). */
   preview: PreviewState | null
@@ -450,6 +458,7 @@ export const usePlaybackStore = defineStore('playback', {
       localPosition: 0,
       bufferedPosition: 0,
       mixNextLocked: false,
+      mixTransitions: [],
       preview: null,
       duration: 0,
       volume: 1,
@@ -532,6 +541,17 @@ export const usePlaybackStore = defineStore('playback', {
       if (!state.mixNextLocked || state.repeatMode === 'one' || state.radioStation) return -1
       const next = state.currentIndex + 1
       return next > 0 && next < state.queue.length ? next : -1
+    },
+    /** How the current song blends into the next, once the mix has
+     * planned it - a crossfade's change comes before the song's own end. */
+    upcomingTransition(state): MixTransition | null {
+      const song = state.currentIndex >= 0 ? state.queue[state.currentIndex] : undefined
+      if (!song || state.radioStation || state.preview) return null
+      let found: MixTransition | null = null
+      for (const transition of state.mixTransitions) {
+        if (transition.song_id === song.id) found = transition
+      }
+      return found
     },
     hasNext(state): boolean {
       if (state.preview) return true // the next excerpt, or the end of it
@@ -1078,6 +1098,7 @@ export const usePlaybackStore = defineStore('playback', {
       if (this.shuffle !== status.shuffle) this.shuffle = status.shuffle
       if (this.repeatMode !== status.repeat_mode) this.repeatMode = status.repeat_mode
       this.mixNextLocked = status.next_locked
+      this.mixTransitions = status.transitions ?? []
       // Same treatment, and for a sharper reason: the backend tops the
       // queue up on its own from this flag (see routes/stream.py's
       // _maybe_autoplay_topup), so a client left showing its own stored
@@ -1884,6 +1905,7 @@ export const usePlaybackStore = defineStore('playback', {
      * away. */
     startLocalSong(song: Song, position: number, autoplay: boolean): void {
       this.mixNextLocked = false
+      this.mixTransitions = []
       if (this.localMixWanted()) {
         void this.startLocalMix(song, position, autoplay)
         return
@@ -1950,6 +1972,7 @@ export const usePlaybackStore = defineStore('playback', {
       this.localPosition = 0
       this.bufferedPosition = 0
       this.mixNextLocked = false
+      this.mixTransitions = []
       this.isPlaying = true
       const songs = preview.picks.map((i, k) => mixSong(preview.songs[i]!, k, this.replayGainMode))
       if (this.isCasting) {
@@ -2080,6 +2103,7 @@ export const usePlaybackStore = defineStore('playback', {
       this.localPosition = heard.position
       this.bufferedPosition = this.mixBufferedPosition()
       this.mixNextLocked = getLocalMix().nextLocked
+      this.mixTransitions = getLocalMix().transitions
     },
 
     /** The mix's buffered end as seconds into the current song - stream

@@ -193,6 +193,104 @@ async def test_a_queue_change_during_the_blend_keeps_the_incoming_song():
     rig.engine.stop()
 
 
+async def test_the_transition_is_told_before_it_begins_and_after_it_was_rendered():
+    rig = Rig({"a": tone(440, 30), "b": tone(660, 20)}, CROSSFADE, analyse=False)
+    rig.engine.start()
+    expected = {
+        "song_id": "a",
+        "queue_index": 0,
+        "kind": "crossfade",
+        "start": 22.0,
+        "change": 26.0,
+    }
+    told_ahead = False
+    for _ in range(600):
+        rig.engine.step()
+        for _ in range(5):
+            await asyncio.sleep(0)
+        rig.clock.now += 0.5
+        transitions = rig.engine.transitions()
+        if transitions and not rig.engine.next_committed:
+            told_ahead = True
+            assert {k: transitions[-1][k] for k in expected} == expected
+        if rig.engine.ended:
+            break
+    assert told_ahead
+    # Rendering is past it; a listener a lead behind is not.
+    assert [t["song_id"] for t in rig.engine.transitions()] == ["a"]
+    rig.engine.stop()
+
+
+async def test_a_beatmix_is_told_with_its_ease_and_the_incoming_tempo():
+    a = clicks(128, 60, offset=0.21)
+    b = clicks(124, 60, offset=0.37)
+    rig = Rig({"a": a, "b": b}, CROSSFADE)
+    await rig.render_all()
+    told = rig.engine.transitions()[-1]
+    assert told["kind"] == "beatmix" and told["bpm"] == pytest.approx(124.0, abs=1.0)
+    # The ease into the incoming tempo is heard before the overlap.
+    assert told["start"] < told["change"] - 8.0
+
+
+async def test_a_queue_change_that_leaves_the_next_song_keeps_its_beatmix():
+    a = clicks(128, 60, offset=0.21)
+    b = clicks(124, 60, offset=0.37)
+    rig = Rig({"a": a, "b": b}, CROSSFADE)
+    rig.engine.start()
+    for _ in range(600):
+        rig.engine.step()
+        for _ in range(5):
+            await asyncio.sleep(0)
+        rig.clock.now += 0.5
+        if rig.engine.transitions():
+            break
+    analysed = len(rig.analysed)
+    # The listener hears a song change, and the queue is told again as is.
+    rig.engine.queue_changed()
+    for _ in range(600):
+        rig.engine.step()
+        for _ in range(5):
+            await asyncio.sleep(0)
+        rig.clock.now += 0.5
+        if rig.engine.ended:
+            break
+    assert len(rig.analysed) == analysed
+    assert rig.engine.transitions()[-1]["kind"] == "beatmix"
+    rig.engine.stop()
+
+
+async def test_a_beatmix_planned_too_late_to_ease_is_a_crossfade_of_its_own_length(caplog):
+    a = clicks(128, 60, offset=0.21)
+    b = clicks(124, 60, offset=0.37)
+    rig = Rig({"a": a, "b": b}, Settings("crossfade", crossfade_seconds=4.0, beatmix_seconds=16.0))
+    late = asyncio.Event()
+    analyse = rig.engine._analyse_fn
+
+    async def slow(item, start, duration):
+        await late.wait()
+        return await analyse(item, start, duration)
+
+    rig.engine._analyse_fn = slow
+    rig.engine.start()
+    for _ in range(600):
+        rig.engine.step()
+        deck = rig.engine._deck
+        # After the 8-bar ease began (~28 s), before the metadata's
+        # deadline (60 - 16 - 1 s).
+        if deck is not None and deck.item.song_id == "a" and deck.position > 35.0:
+            late.set()
+        for _ in range(5):
+            await asyncio.sleep(0)
+        rig.clock.now += 0.5
+        if rig.engine.ended:
+            break
+    assert "planned too late" in caplog.text
+    told = rig.engine.transitions()[-1]
+    assert told["kind"] == "crossfade"
+    assert told["change"] - told["start"] == pytest.approx(2.0)  # half of 4 s
+    rig.engine.stop()
+
+
 async def test_a_preview_blends_excerpts_and_marks_their_song_positions():
     rig = Rig(
         {"a": tone(440, 20), "b": tone(660, 20)},
@@ -208,6 +306,10 @@ async def test_a_preview_blends_excerpts_and_marks_their_song_positions():
     change = rig.engine.timeline.next_change(0)
     assert change.song_id == "b"
     assert change.position == pytest.approx(52.0)  # its start, plus half the overlap
+    # Faded in at the start and out at the end, so neither is mid-note.
+    level = rms(out[5 * SR : 6 * SR])
+    assert rms(out[: SR // 100]) < level / 10
+    assert rms(out[-SR // 100 :]) < level / 10
 
 
 async def test_the_basses_swap_instead_of_doubling():

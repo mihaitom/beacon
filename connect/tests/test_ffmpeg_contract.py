@@ -22,7 +22,16 @@ from pathlib import Path
 
 import pytest
 
-from core import audio_analysis, hls, party_broadcast, radio_relay, waveform
+from core import (
+    audio_analysis,
+    beat_analysis,
+    hls,
+    mix_engine,
+    mix_output,
+    party_broadcast,
+    radio_relay,
+    waveform,
+)
 from core.streamer import (
     _COPY_MUXER_FOR_CODEC,
     _FALLBACK_ARGS,
@@ -104,6 +113,12 @@ def _every_command() -> list[list[str]]:
         list(radio_relay._encode_args(192)),
         list(radio_relay._encode_args(192, aac=True)),
         list(debug._station_cmd("http://station/stream")),
+        # The mix: a song, or a preview's excerpt, decoded to PCM; the
+        # region a transition is planned from; a listener's encoder.
+        list(mix_engine.decode_cmd("http://nav/stream", 12.0)),
+        list(mix_engine.decode_cmd("http://nav/stream", 12.0, 32.0)),
+        list(beat_analysis.decode_cmd("http://nav/stream", 12.0, 30.0)),
+        list(mix_output.encoder_cmd(list(lossy_encode_args("mp3", 192)[0]))),
         # Listening along: a song decoded to PCM, and the encoder reading it.
         list(party_broadcast.decoder_cmd("http://nav/stream", 12.0, 0.7)),
         *[list(party_broadcast.encoder_cmd(kbps)) for kbps in party_broadcast.BITRATES_KBPS],

@@ -27,7 +27,7 @@ Times in a plan: `out_*`/`in_*` are seconds in each song's own timeline,
 everything else is seconds from the start of the overlap.
 """
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from itertools import pairwise
 from typing import Literal
 
@@ -64,10 +64,17 @@ _CURVE_POINTS = 33
 @dataclass(frozen=True)
 class Settings:
     mode: str = "gapless"
+    # The longest overlap of each kind: a crossfade's, and a beatmix's,
+    # which is rounded down to whole bars - the crossfade's without one.
     crossfade_seconds: float = 10.0
+    beatmix_seconds: float | None = None
     # A preview of excerpts (core/preview.py): always blended, album
     # neighbours too, and never stretched - see PREVIEW_MAX_DRIFT.
     preview: bool = False
+
+    @property
+    def beatmix_limit(self) -> float:
+        return self.crossfade_seconds if self.beatmix_seconds is None else self.beatmix_seconds
 
 
 @dataclass(frozen=True)
@@ -119,11 +126,6 @@ class TransitionPlan:
             return self.out_start
         return self.out_start - song_seconds(self.out_rate, self.out_rate[0][0], 0.0)
 
-    def unstretched(self) -> "TransitionPlan":
-        """The same blend as an ordinary crossfade - for a plan that
-        arrived after its ease should have begun."""
-        return replace(self, kind="crossfade", out_rate=())
-
 
 def follows_on_album(out: SongFacts, inn: SongFacts) -> bool:
     """`inn` is the next track after `out` on the same album."""
@@ -169,6 +171,17 @@ def _crossfade(
         overlap = min(overlap, (in_region.end - in_start) * _MAX_SHARE)
     if overlap < 0.5:
         return TransitionPlan("gapless", out_end, out_end, in_start)
+    return _crossfade_over(out_end, in_start, overlap)
+
+
+def as_crossfade(settings: Settings, plan: TransitionPlan) -> TransitionPlan:
+    """A beatmix as an ordinary crossfade, between the same two points - for
+    one that arrived after its ease should have begun. Unmatched, its beat
+    grid means nothing, and neither does its length in bars."""
+    return _crossfade_over(plan.out_end, plan.in_start, settings.crossfade_seconds)
+
+
+def _crossfade_over(out_end: float, in_start: float, overlap: float) -> TransitionPlan:
     swap = overlap / 2
     return TransitionPlan(
         "crossfade",
@@ -231,7 +244,7 @@ def _beatmix(
         (
             n
             for n in _BAR_CHOICES
-            if n * stream_bar <= max(settings.crossfade_seconds, stream_bar)
+            if n * stream_bar <= max(settings.beatmix_limit, stream_bar)
             and n * bar <= out_room
             and n * stream_bar <= in_room
         ),
