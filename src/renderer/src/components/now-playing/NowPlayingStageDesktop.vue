@@ -89,9 +89,12 @@ export default {
      * the app-bar/PlayerBar outside and the visualizer row below it have
      * taken their share, so cqh/cqw measure the space actually left for the
      * artwork. min()'d against both a height and a width fraction: a *short*
-     * container and a *narrow* one are both real ways to run out of room. */
+     * container and a *narrow* one are both real ways to run out of room -
+     * and against the height left once the text under it has its room
+     * (--now-playing-text-room), which is what runs out first on a short,
+     * wide stage. */
     artSize(): string {
-      return 'clamp(180px, min(70cqh, 50cqw), 900px)'
+      return 'clamp(180px, min(70cqh, 50cqw, calc(100cqh - var(--now-playing-text-room))), 900px)'
     },
   },
 }
@@ -114,6 +117,17 @@ export default {
  * drifts to the side on its own as the row grows to fit both — see
  * .now-playing__content--split's much wider cap below. */
 .now-playing__content {
+  /* What the column needs besides the artwork, for artSize's third bound:
+   * this box's padding (2 x 32px), the artwork's margin (40px), the gaps
+   * between the lines (4 x 8px), and the lines themselves at the stage's
+   * type scale and their measured line heights - the title at two lines.
+   * Without it a short, wide stage (a tablet on its side) got artwork at
+   * 70cqh plus the text under it, taller than the stage, which clips it at
+   * both ends. The next-up line hangs in the bottom padding. */
+  --now-playing-text-room: calc(
+    136px + var(--now-playing-eyebrow-size) * 1.5 + var(--now-playing-title-size) * 2.3 +
+      var(--now-playing-artist-size) * 1.3 + var(--now-playing-album-size) * 1.45
+  );
   display: flex;
   align-items: center;
   justify-content: center;

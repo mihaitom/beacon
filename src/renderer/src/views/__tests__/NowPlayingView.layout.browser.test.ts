@@ -194,6 +194,36 @@ describe('NowPlayingView layout', () => {
     expect(document.documentElement.scrollWidth).toBeLessThanOrEqual(1081)
   })
 
+  // A tablet on its side (here an iPad's stage: the app's bars and the
+  // visualizer taken off): wide, but short. Artwork, title, artist and album
+  // stacked used to come out taller than the stage, which centres and clips
+  // - the cover ran under the top bar and the album line under the bars.
+  it.each([
+    ['a short wide stage', 1150, 565],
+    ['a shorter one still', 1000, 420],
+    ['a big monitor', 1920, 1080],
+  ])('fits artwork and track text into %s', async (_name, width, height) => {
+    await page.viewport(width, height)
+    const { wrapper } = await mountView()
+    usePlaybackStore().setQueue(
+      [
+        makeSong('a', {
+          title: 'California Dreamin (Tek House Single)',
+          artist: 'Royal Gigolos',
+          album: 'Musique Deluxe',
+        }),
+      ],
+      0,
+    )
+    await wrapper.vm.$nextTick()
+
+    const stage = rect(wrapper.get('.now-playing__stage').element)
+    const art = rect(wrapper.get('.now-playing__art-wrap').element)
+    const album = rect(wrapper.get('.now-playing__album-link').element)
+    expect(art.top).toBeGreaterThanOrEqual(stage.top)
+    expect(album.bottom).toBeLessThanOrEqual(stage.bottom)
+  })
+
   describe('the side-by-side/flip boundary', () => {
     /** True while the flip-card is a real rotating box (the container query
      * matched) rather than `display: contents` (side-by-side). */

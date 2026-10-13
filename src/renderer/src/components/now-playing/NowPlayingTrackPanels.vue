@@ -346,17 +346,15 @@ export default {
  * responsive sizing (letter-spacing/weight/color stay whatever the global
  * class already sets). */
 .now-playing__info .eyebrow-label {
-  font-size: clamp(0.65rem, min(1.6cqw, 2cqh), 0.85rem);
+  font-size: var(--now-playing-eyebrow-size);
 }
 
-/* cqw/cqh (see the parent's artSize) — a fixed 2.5rem used to look
- * proportionally huge next to a small, correctly-shrunk container and
- * proportionally tiny on a large one, since it never scaled with the same
- * container the artwork already does. min() against both a width and a
- * height fraction so a *short* container shrinks text just as much as a
- * *narrow* one does. */
+/* The stage's type scale (see .now-playing__stage in NowPlayingPresentation):
+ * in container units, so the title scales with the same container the
+ * artwork does - a fixed 2.5rem looked huge in a small stage and tiny in a
+ * large one - and a *short* container shrinks it as much as a narrow one. */
 .now-playing__title {
-  font-size: clamp(1.1rem, min(2.3cqw, 9cqh), 2.75rem);
+  font-size: var(--now-playing-title-size);
   line-height: 1.15;
   overflow-wrap: break-word;
   /* Cut off after three lines rather than growing without limit. This line
@@ -389,7 +387,7 @@ export default {
  * branch) - only the sizing matters, and it has to be the identical
  * number: the parent's artSize measures this block's height. */
 .now-playing__info .now-playing__artist-label {
-  font-size: clamp(0.9rem, min(3.4cqw, 4.5cqh), 1.5rem);
+  font-size: var(--now-playing-artist-size);
   /* Block, not the anchor's default inline — inline elements ignore
    * vertical margin and this also keeps the centered text-align behaving
    * exactly like the plain <div> this replaced. */
@@ -399,7 +397,7 @@ export default {
 }
 
 .now-playing__info .now-playing__album-link {
-  font-size: clamp(0.75rem, min(2.5cqw, 3.4cqh), 1rem);
+  font-size: var(--now-playing-album-size);
   text-decoration: none;
   overflow-wrap: break-word;
 }
@@ -407,7 +405,7 @@ export default {
 /* Radio's own equivalent of the artist link above (a station has no
  * artist/album) — same sizing, just never a link. */
 .now-playing__radio-tag {
-  font-size: clamp(0.9rem, min(3.4cqw, 4.5cqh), 1.5rem);
+  font-size: var(--now-playing-artist-size);
   overflow-wrap: break-word;
 }
 

@@ -459,6 +459,16 @@ export default {
   min-height: 0;
   container-type: size;
   container-name: now-playing-stage;
+  /* The track text's type scale, here so the desktop stage can leave room
+   * for it under the artwork (its artSize) with the same numbers the text
+   * is set in. The container units resolve where the sizes are used, all
+   * inside this container. The title follows the stage; artist and album
+   * follow the title, so a stage that shrinks the title shrinks them with
+   * it rather than leaving the artist nearly as large. */
+  --now-playing-eyebrow-size: clamp(0.65rem, min(1.6cqw, 2cqh), 0.85rem);
+  --now-playing-title-size: clamp(1.1rem, min(2.3cqw, 9cqh), 2.75rem);
+  --now-playing-artist-size: clamp(0.9rem, calc(var(--now-playing-title-size) * 0.55), 1.5rem);
+  --now-playing-album-size: clamp(0.75rem, calc(var(--now-playing-title-size) * 0.36), 1rem);
   display: flex;
   align-items: center;
   justify-content: center;

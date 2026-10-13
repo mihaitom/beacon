@@ -32,6 +32,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The list of other lyrics matches only offers matches that actually have words, instead of many that turned out empty or showed only the songwriter credits. Instrumentals no longer get NetEase's "pure music" note shown as their lyrics
 - The list of other lyrics matches only asks the sources switched on in Settings. Before, it asked all of them
 - A lyrics source that was briefly unreachable no longer counts as having nothing for a song, which used to leave its lyrics missing until Beacon was restarted
+- On a tablet held sideways and other short, wide windows, Now Playing with the cover shown no longer cuts off the cover at the top and the album name at the bottom, and the artist name no longer comes out nearly as large as the title
 
 ## [1.7.1] - 2026-10-10
 
