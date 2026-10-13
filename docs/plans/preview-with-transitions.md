@@ -55,9 +55,10 @@ from there.
   drift apart by the tempo difference: 0.5 % is 10 ms by the swap, 2 s in -
   just under the 12 ms at which the transitions plan found kicks start to
   flam. Many songs share a tagged tempo (120, 128), so this is not rare.
-- **Which songs:** evenly spread over the list in its own order (not
-  random), so a preview of the same playlist is the same preview, and both
-  ends of an album are in it. Songs under 45 s (interludes, skits) are left
+- **Which songs:** one at random from each sixth of the list, in its own
+  order, so a preview covers an album from start to end and the next one
+  plays other songs of it (until 2026-10-13 the same evenly spread six
+  every time, both ends included). Songs under 45 s (interludes, skits) are left
   out unless nothing else is left. The app picks them
   (`services/playback/preview.ts`), not connect: it holds the songs anyway
   and has to show them, and a playlist of a thousand songs need not be sent

@@ -6,8 +6,17 @@ const songs = (...durations: number[]) =>
   durations.map((d, i) => makeSong(`s${i}`, { duration: d }))
 
 describe('pickPreviewSongs', () => {
-  it('spreads six over the list, both ends included', () => {
-    expect(pickPreviewSongs(songs(...Array<number>(11).fill(200)))).toEqual([0, 2, 4, 6, 8, 10])
+  it('takes one from each sixth of the list, in its order', () => {
+    const album = songs(...Array<number>(11).fill(200))
+    // The sixths of eleven: 0 | 1-2 | 3-4 | 5-6 | 7-8 | 9-10.
+    expect(pickPreviewSongs(album, 6, () => 0)).toEqual([0, 1, 3, 5, 7, 9])
+    expect(pickPreviewSongs(album, 6, () => 0.999)).toEqual([0, 2, 4, 6, 8, 10])
+  })
+
+  it('is another pick the next time', () => {
+    const album = songs(...Array<number>(30).fill(200))
+    const picks = new Set(Array.from({ length: 20 }, () => pickPreviewSongs(album).join(',')))
+    expect(picks.size).toBeGreaterThan(1)
   })
 
   it('takes them all when there are no more than six', () => {

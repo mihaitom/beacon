@@ -103,6 +103,9 @@ describe('previewing an album or playlist', () => {
     setActivePinia(createPinia())
     localStorage.clear()
     vi.clearAllMocks()
+    // The first song of each sixth (see pickPreviewSongs()), so the songs a
+    // test expects are the ones it gets.
+    vi.spyOn(Math, 'random').mockReturnValue(0)
     mix = fakeMix()
     engine = fakeEngine()
     vi.mocked(getLocalMix).mockReturnValue(mix as never)
@@ -119,7 +122,7 @@ describe('previewing an album or playlist', () => {
   it('plays excerpts of six songs, spread over the list, over the queue', async () => {
     const playback = await playingQueue()
     await playback.startPreview(album)
-    expect(previewed().map((s) => s.id)).toEqual(['s0', 's1', 's3', 's4', 's6', 's7'])
+    expect(previewed().map((s) => s.id)).toEqual(['s0', 's1', 's2', 's4', 's5', 's6'])
     // Each song's place in the preview, which the timeline answers with.
     expect(previewed().map((s) => s.queue_index)).toEqual([0, 1, 2, 3, 4, 5])
     expect(playback.currentSong?.id).toBe('s0')
@@ -179,12 +182,12 @@ describe('previewing an album or playlist', () => {
   it('plays the album from the previewed song, as an ordinary play', async () => {
     const playback = await playingQueue()
     await playback.startPreview(album)
-    playback.preview!.index = 2 // s3
+    playback.preview!.index = 3 // s4
     await playback.playFromPreview()
     expect(playback.preview).toBeNull()
     expect(playback.queue.map((s) => s.id)).toEqual(album.map((s) => s.id))
-    expect(playback.currentSong?.id).toBe('s3')
-    expect(engine.play.mock.calls.at(-1)![0]).toContain('s3')
+    expect(playback.currentSong?.id).toBe('s4')
+    expect(engine.play.mock.calls.at(-1)![0]).toContain('s4')
   })
 
   it('anything played from the queue replaces it', async () => {
@@ -252,7 +255,7 @@ describe('previewing an album or playlist', () => {
       await playback.startPreview(album)
       expect(mix.startPreview).not.toHaveBeenCalled()
       const [songs, index] = vi.mocked(connectPlayback.startPreview).mock.calls.at(-1)!
-      expect(songs.map((s) => s.id)).toEqual(['s0', 's1', 's3', 's4', 's6', 's7'])
+      expect(songs.map((s) => s.id)).toEqual(['s0', 's1', 's2', 's4', 's5', 's6'])
       expect(index).toBe(0)
       await playback.playNext()
       expect(vi.mocked(connectPlayback.startPreview).mock.calls.at(-1)![1]).toBe(1)
@@ -271,11 +274,11 @@ describe('previewing an album or playlist', () => {
     it('follows the excerpt connect reports, and its end', async () => {
       const playback = await casting()
       await playback.startPreview(album)
-      const ids = ['s0', 's1', 's3', 's4', 's6', 's7']
+      const ids = ['s0', 's1', 's2', 's4', 's5', 's6']
       await playback.adoptCastPreview(
-        makeStatus({ preview: { song_ids: ids, index: 2, resume_at: 48 } }),
+        makeStatus({ preview: { song_ids: ids, index: 3, resume_at: 48 } }),
       )
-      expect(playback.currentSong?.id).toBe('s3')
+      expect(playback.currentSong?.id).toBe('s4')
       expect(playback.preview!.resumeAt).toBe(48)
       expect(playback.preview!.whole).toBe(true)
       await playback.adoptCastPreview(makeStatus({ preview: null }))
