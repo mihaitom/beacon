@@ -8,9 +8,7 @@ import { i18n } from '@/i18n'
 import { useLibraryStore } from '@/stores/library'
 import { useAuthStore } from '@/stores/auth'
 import { useLastfmStore } from '@/stores/lastfm'
-import { usePlaybackStore } from '@/stores/playback'
 import PlaylistsView from '../PlaylistsView.vue'
-import { makeSong } from '@/stores/__tests__/fixtures'
 import type { Playlist } from '@/types/library'
 
 const vuetify = createVuetify({ components, directives })
@@ -59,20 +57,6 @@ async function mountView(playlists: Playlist[]) {
 describe('PlaylistsView', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-  })
-
-  it('plays a playlist shuffled from its shuffle button', async () => {
-    const songs = [makeSong('1'), makeSong('2')]
-    const wrapper = await mountView([makePlaylist('a')])
-    vi.spyOn(useLibraryStore(), 'fetchPlaylist').mockResolvedValue(makePlaylist('a', { songs }))
-    const playback = usePlaybackStore()
-    const play = vi.spyOn(playback, 'playSongList').mockResolvedValue()
-
-    wrapper.findComponent({ name: 'PlaylistRow' }).vm.$emit('shuffle', makePlaylist('a'))
-    await flushPromises()
-
-    expect(playback.shuffle).toBe(true)
-    expect(play).toHaveBeenCalledWith(songs, 0, false, true)
   })
 
   it('offers a new smart playlist only on Navidrome', async () => {

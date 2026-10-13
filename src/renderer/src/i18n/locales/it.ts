@@ -133,7 +133,6 @@ export default {
     size: 'Dimensione',
     lastPlayed: 'Ultimo',
     play: 'Riproduci',
-    playShuffled: 'Casuale',
     preview: 'Anteprima',
     // MusicBrainz's release types, as the server sends them (lower-case;
     // 'dj-mix' looked up as djmix).

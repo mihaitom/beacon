@@ -50,14 +50,7 @@
       >
         {{ $t('library.play') }}
       </v-btn>
-      <v-btn
-        variant="tonal"
-        prepend-icon="mdi-shuffle-variant"
-        :disabled="!playlist.songCount"
-        @click.prevent.stop="$emit('shuffle', playlist)"
-      >
-        {{ $t('library.playShuffled') }}
-      </v-btn>
+      <preview-button :load="loadSongs" :song-count="playlist.songCount" :pill="false" />
     </div>
     <!-- Renaming and deleting are offered for the user's own playlists
      - only; someone else's shared playlist is not theirs to change. -->
@@ -101,7 +94,9 @@
 import PlaylistCover from './PlaylistCover.vue'
 import TileContextMenu from './TileContextMenu.vue'
 import ContextMenuSection from './ContextMenuSection.vue'
+import PreviewButton from './PreviewButton.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useLibraryStore } from '@/stores/library'
 import { usePlaylistSummariesStore } from '@/stores/playlistSummaries'
 import {
   leadingArtists,
@@ -123,7 +118,7 @@ const LAZY_ROOT_MARGIN = '400px 0px'
 
 export default {
   name: 'PlaylistRow',
-  components: { PlaylistCover, TileContextMenu, ContextMenuSection },
+  components: { PlaylistCover, TileContextMenu, ContextMenuSection, PreviewButton },
   props: {
     playlist: {
       type: Object as () => Playlist,
@@ -136,7 +131,7 @@ export default {
       default: false,
     },
   },
-  emits: ['play', 'shuffle', 'play-next', 'add-to-queue', 'rename', 'delete'],
+  emits: ['play', 'play-next', 'add-to-queue', 'rename', 'delete'],
   data() {
     return {
       COVER_SIZE,
@@ -225,6 +220,11 @@ export default {
     this.observer?.disconnect()
   },
   methods: {
+    /** The row carries only the playlist's summary; its songs come with
+     * the preview's click, as Play's do (PlaylistsView's playPlaylist()). */
+    async loadSongs() {
+      return (await useLibraryStore().fetchPlaylist(this.playlist.id)).songs
+    },
     /** Once seen, a row keeps its summary current for as long as it is
      * mounted - an edit while it is scrolled away is still picked up. */
     onVisible(): void {

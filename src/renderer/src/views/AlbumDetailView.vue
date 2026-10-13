@@ -66,16 +66,6 @@
             >
               {{ $t('library.play') }}
             </v-btn>
-            <v-btn
-              variant="tonal"
-              rounded="pill"
-              size="large"
-              prepend-icon="mdi-shuffle-variant"
-              :disabled="!album.songs.length"
-              @click="playShuffled"
-            >
-              {{ $t('library.playShuffled') }}
-            </v-btn>
             <preview-button :songs="album.songs" size="large" />
           </div>
         </template>
@@ -311,11 +301,6 @@ export default {
       if (!this.album?.songs.length) return
       const songs = this.album.songs
       await usePlaybackStore().playSongList(songs, 0, false, songs.length > 1)
-    },
-    async playShuffled() {
-      const playback = usePlaybackStore()
-      if (!playback.shuffle) playback.toggleShuffle()
-      await this.playAll()
     },
     async toggleStar() {
       if (!this.album) return

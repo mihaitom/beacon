@@ -47,7 +47,6 @@ interface AlbumVm {
   bio: { text: string } | null
   loadAlbum(): Promise<void>
   playAll(): Promise<void>
-  playShuffled(): Promise<void>
 }
 
 function makeAlbum(overrides: Partial<Album> = {}): Album {
@@ -273,22 +272,6 @@ describe('AlbumDetailView header', () => {
     await vm.playAll()
 
     expect(play).toHaveBeenCalledWith(songs, 0, false, true)
-  })
-
-  it('turns shuffle on for the shuffle button, and leaves it on', async () => {
-    const { vm } = await mountAlbum(makeAlbum({ songs }))
-    const playback = usePlaybackStore()
-    const play = vi.spyOn(playback, 'playSongList').mockResolvedValue()
-    const toggle = vi.spyOn(playback, 'toggleShuffle').mockImplementation(() => {
-      playback.shuffle = !playback.shuffle
-    })
-
-    await vm.playShuffled()
-    await vm.playShuffled()
-
-    expect(playback.shuffle).toBe(true)
-    expect(toggle).toHaveBeenCalledTimes(1)
-    expect(play).toHaveBeenCalledTimes(2)
   })
 
   it('sums the running time from the tracks', async () => {

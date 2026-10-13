@@ -8,6 +8,7 @@ import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import PlaylistRow from '../PlaylistRow.vue'
 import { useLibraryStore } from '@/stores/library'
+import { usePlaybackStore } from '@/stores/playback'
 import { makeSong } from '@/stores/__tests__/fixtures'
 import type { Playlist } from '@/types/library'
 import type { SubsonicClient } from '@/services/subsonic/client'
@@ -86,19 +87,22 @@ describe('PlaylistRow', () => {
     expect(wrapper.emitted('play')).toEqual([[wrapper.props('playlist')]])
   })
 
-  it('asks for a shuffled play from its shuffle button, without opening the playlist', async () => {
+  it('previews the playlist from its preview button, without opening it', async () => {
+    const songs = [makeSong('1'), makeSong('2')]
+    vi.spyOn(useLibraryStore(), 'fetchPlaylist').mockResolvedValue(makePlaylist({ songs }))
+    const preview = vi.spyOn(usePlaybackStore(), 'startPreview').mockResolvedValue()
     const { wrapper } = await mountRow()
 
-    expect(clickKeptFromLink(wrapper, '.mdi-shuffle-variant')).toBe(true)
-    expect(wrapper.emitted('shuffle')).toEqual([[wrapper.props('playlist')]])
-    expect(wrapper.emitted('play')).toBeUndefined()
+    expect(clickKeptFromLink(wrapper, '.mdi-headphones')).toBe(true)
+    await flushPromises()
+    expect(preview).toHaveBeenCalledWith(songs)
   })
 
   it('offers no playing of an empty playlist', async () => {
     const { wrapper } = await mountRow({ playlist: makePlaylist({ songCount: 0 }) })
 
     expect(wrapper.get('.mdi-play').element.closest('button')!.disabled).toBe(true)
-    expect(wrapper.get('.mdi-shuffle-variant').element.closest('button')!.disabled).toBe(true)
+    expect(wrapper.get('.mdi-headphones').element.closest('button')!.disabled).toBe(true)
   })
 
   it('says how long ago it was edited, where the server says', async () => {

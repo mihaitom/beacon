@@ -84,7 +84,6 @@
           :key="playlist.id"
           :playlist="playlist"
           @play="playPlaylist"
-          @shuffle="shufflePlaylist"
           @play-next="queuePlaylist($event, 'next')"
           @add-to-queue="queuePlaylist($event, 'end')"
           @rename="openRename"
@@ -102,7 +101,6 @@
           :playlist="playlist"
           show-owner
           @play="playPlaylist"
-          @shuffle="shufflePlaylist"
           @play-next="queuePlaylist($event, 'next')"
           @add-to-queue="queuePlaylist($event, 'end')"
         />
@@ -267,11 +265,6 @@ export default {
       // peek: replaces the queue with more than one song — see
       // peekQueueDrawer()'s own comment for the rule.
       await usePlaybackStore().playSongList(full.songs, 0, false, full.songs.length > 1)
-    },
-    async shufflePlaylist(playlist: Playlist) {
-      const playback = usePlaybackStore()
-      if (!playback.shuffle) playback.toggleShuffle()
-      await this.playPlaylist(playlist)
     },
     /** Queueing a playlist needs its songs, which the list this view
      * renders doesn't carry — same fetch playPlaylist() above makes. */
