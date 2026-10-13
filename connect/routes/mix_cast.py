@@ -67,7 +67,7 @@ _FOLLOW_IDLE_SLEEP = 1.0
 class TransitionSettings(BaseModel):
     mode: Literal["off", "gapless", "crossfade"] = "off"
     crossfade_seconds: float = 4.0
-    beatmix_seconds: float = 12.0
+    beatmix_seconds: float = 16.0
 
 
 class SongHint(BaseModel):

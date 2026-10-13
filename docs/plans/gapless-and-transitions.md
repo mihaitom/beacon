@@ -88,7 +88,7 @@ analysed (`core/beat_analysis.py`, ~0.1 s of CPU for 30 s of audio):
 
 A **beatmix** needs both grids at confidence 0.5 or more and a stretch
 within 8 %. Its overlap is the most whole bars (1-16) that fit its own
-length setting (`beatmix_seconds`, 12 s by default, apart from the
+length setting (`beatmix_seconds`, 16 s by default, apart from the
 crossfade's 4 s: lined up on the beat, a blend can run longer before it
 turns to mush), ending on the last downbeat with music; the incoming
 song's first downbeat lands on the overlap's first. First half: incoming

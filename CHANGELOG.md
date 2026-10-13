@@ -4,36 +4,40 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.8.0] - 2026-10-13
+
+### Highlights
+
+- **Crossfade the way a DJ mixes:** where the beat allows it, Beacon matches the next song's tempo, lines up the beats and brings its bass in on the downbeat. Switch it on under Settings, Playback, Transitions and give it a try
 
 ### Added
 
-- Smart playlists can be created and their rules edited in Beacon on Navidrome, on a page of their own with a live preview from your library whose songs play with a click, and ideas to start from (desktop layout only)
-- Smart playlists from Navidrome and Plex are labelled as such. Their rules pick the songs, so Beacon no longer offers to reorder, remove or add songs there
-- lrc.red as a new source for lyrics. Songs whose tags carry an ISRC are found there as exactly that recording rather than by title. If you have picked your lyrics sources yourself in Settings, it needs switching on there
-- Gapless playback: songs follow each other without a pause, in the app and on speakers. Turn it on under Settings, Playback, Transitions. Once the transition into the next song is prepared, that song is locked in place in the queue
-- Crossfade, the way a DJ mixes: where the beat allows it, Beacon matches the next song's tempo, brings its bass in on the beat and then slowly fades out the previous song. Without a clear beat it is an ordinary crossfade, and songs that follow each other on an album still play gaplessly. The DJ mix and the ordinary crossfade each have their own length setting. Now Playing announces the next song as the blend begins, at least 15 seconds ahead, with its own symbol for a crossfade and for a DJ mix, under the cover too. Party guests listening online hear the same transitions
-- Preview on album and playlist pages and in the list of playlists: about two minutes of the loudest part of six songs from across the album or playlist, different ones each time, blended into each other, to get a feel for what is in it. The queue stays as it was, and "Play from here" plays the album or playlist from the song you are hearing. Works on speakers too
+- Gapless playback in the app and on speakers, under Settings, Playback, Transitions. Once the transition is prepared, the next song stays in its place in the queue
+- Crossfade the way a DJ mixes: where the beat allows it, Beacon matches the tempo and brings the next song in on the beat, otherwise it is an ordinary crossfade with a length of its own. Songs that follow each other on an album still play gaplessly, and party guests listening online hear the same transitions
+- Now Playing announces the next song before the transition starts, with its own symbol for a crossfade and a DJ mix
+- Preview on album and playlist pages and in the list of playlists: about two minutes from six songs across it, different ones each time, while the queue stays as it was. "Play from here" plays it from the song you are hearing. Works on speakers too
+- Smart playlists on Navidrome can be created and edited in Beacon, with a live preview of their songs and ideas to start from (desktop layout only)
+- Smart playlists from Navidrome and Plex are labelled as such, and Beacon no longer offers to reorder, remove or add songs in them
+- lrc.red as a new lyrics source, which finds a song by its ISRC where the tags carry one. If you picked your lyrics sources yourself, switch it on in Settings
 
 ### Changed
 
-- The mouse wheel sets the volume anywhere on the player bar, not only over the volume slider, for party guests too
-- The waveform seek bar is drawn as evenly spaced, rounded bars that keep their size however wide the player is, in the app, the Remote Control and for party guests
+- The waveform seek bar is drawn as evenly spaced, rounded bars, in the app, the Remote Control and for party guests
+- The mouse wheel sets the volume anywhere on the player bar, for party guests too
 
 ### Removed
 
-- SimpMusic is no longer used for lyrics: SimpMusic now blocks every app except its own from its lyrics service
-- The "Shuffle" button on album pages and in the list of playlists. Turn on shuffle in the player bar and press Play instead
+- The Shuffle button on album pages and in the list of playlists. Turn on shuffle in the player bar and press Play instead
+- SimpMusic as a lyrics source, since it now blocks every app but its own
 
 ### Fixed
 
-- "Add to playlist" no longer lists playlists the server refuses to change, such as other users' shared ones
-- With Jellyfin and Plex, your own playlists appear under "My playlists" and can be renamed, deleted, reordered and edited there. Before, they were treated as someone else's. Renaming on Jellyfin needs version 10.9 or newer
-- Turning a tablet from upright to sideways with the queue open, or remembered open, lit up the queue button but showed no queue until it was tapped off and on again (reported by @ampcat3, #47)
-- The list of other lyrics matches only offers matches that actually have words, instead of many that turned out empty or showed only the songwriter credits. Instrumentals no longer get NetEase's "pure music" note shown as their lyrics
-- The list of other lyrics matches only asks the sources switched on in Settings. Before, it asked all of them
-- A lyrics source that was briefly unreachable no longer counts as having nothing for a song, which used to leave its lyrics missing until Beacon was restarted
-- On a tablet held sideways and other short, wide windows, Now Playing with the cover shown no longer cuts off the cover at the top and the album name at the bottom, and the artist name no longer comes out nearly as large as the title
+- With Jellyfin and Plex, your own playlists appear under "My playlists" and can be edited there (renaming on Jellyfin needs 10.9 or newer)
+- A lyrics source that was briefly unreachable no longer leaves a song without lyrics until Beacon is restarted
+- On a tablet held sideways, Now Playing no longer cuts off the cover and the album name, and the artist name is no longer nearly as large as the title
+- Turning a tablet sideways with the queue open shows the queue again, instead of only lighting up its button (reported by @ampcat3, #47)
+- "Add to playlist" no longer lists playlists the server will not let you change, such as other users' shared ones
+- The list of other lyrics matches only offers matches with actual lyrics, from the sources switched on in Settings
 
 ## [1.7.1] - 2026-10-10
 

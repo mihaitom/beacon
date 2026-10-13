@@ -28,11 +28,11 @@ describe('transitions store', () => {
     expect(store.payload).toEqual({
       mode: 'crossfade',
       crossfade_seconds: 16,
-      beatmix_seconds: 12,
+      beatmix_seconds: 16,
     })
     await vi.waitFor(() =>
       expect(pushAccountSettings).toHaveBeenCalledWith({
-        transitions: { mode: 'crossfade', crossfadeSeconds: 16, beatmixSeconds: 12 },
+        transitions: { mode: 'crossfade', crossfadeSeconds: 16, beatmixSeconds: 16 },
       }),
     )
 
@@ -52,7 +52,7 @@ describe('transitions store', () => {
     expect(sanitizeTransitions({ mode: 'dj', crossfadeSeconds: 'x' })).toEqual({
       mode: 'off',
       crossfadeSeconds: 4,
-      beatmixSeconds: 12,
+      beatmixSeconds: 16,
     })
     expect(sanitizeTransitions({ mode: 'gapless', crossfadeSeconds: 999 }).crossfadeSeconds).toBe(
       30,

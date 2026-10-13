@@ -12,9 +12,10 @@ export const TRANSITION_MODES: readonly TransitionMode[] = ['off', 'gapless', 'c
 export const CROSSFADE_SECONDS_MIN = 2
 export const CROSSFADE_SECONDS_MAX = 30
 // A beatmix lines the songs up on the beat and can blend for longer before
-// it turns to mush; a plain crossfade cannot.
+// it turns to mush; a plain crossfade cannot. 16 s holds eight bars at a
+// club tempo (~15 s at 128 BPM) - at 12 s a beatmix came down to four.
 const CROSSFADE_SECONDS_DEFAULT = 4
-const BEATMIX_SECONDS_DEFAULT = 12
+const BEATMIX_SECONDS_DEFAULT = 16
 
 export interface TransitionSettings {
   mode: TransitionMode
