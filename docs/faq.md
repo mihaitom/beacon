@@ -17,7 +17,12 @@ With transitions on, Beacon sends a speaker one continuous stream for the whole 
 
 ### Why is everything converted when transitions are on?
 
-Blending songs, and even joining them without a gap, means decoding them and putting the result into one new stream - there is no file left to send as it is. Without a quality limit Beacon sends that stream as AAC at 256 kbps or MP3 at 320 kbps, which is more than any mixed 16-bit stream needs; with one, at the limit you set. Lossless FLAC follows for each kind of speaker once it is confirmed to play a FLAC stream that never ends.
+Blending songs, and even joining them without a gap, means decoding them and putting the result into one new stream - there is no file left to send as it is. With a quality limit set, that stream goes out at your limit. Without one, it depends on the speaker:
+
+- **Sonos and AirPlay** get lossless FLAC.
+- **Chromecast and DLNA** get AAC at 256 kbps (MP3 at 320 kbps where a device has no AAC). Not every Chromecast is promised to play FLAC - Google only lists it for its audio models - and a DLNA renderer can be any device at all, so neither is sent a FLAC stream that might stay silent.
+
+In Beacon's own player, "Original" plays the mix as lossless FLAC as well, wherever the browser plays FLAC.
 
 ## Formats and converting
 

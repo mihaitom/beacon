@@ -220,6 +220,9 @@ class ChromecastDelivery(BaseDelivery):
     # other target falls back to AAC for it (see core/streamer.py's
     # _codec_for_ceiling()).
     PLAYABLE_CODECS: frozenset[str] = frozenset({"mp3", "aac", "flac", "vorbis", "opus"})
+    # CONTINUOUS_FLAC_OK left off on purpose: Google promises FLAC only for
+    # the audio models, and this class covers the TV ones too (see
+    # docs/investigations/continuous-stream-on-devices.md).
     # When this delivery last asked the device for a fresh media status —
     # see get_position(). Class-level default, assigned per instance on
     # first use; a delivery object is per target and per dispatch, and a

@@ -49,9 +49,12 @@ is a fail. Leave each combination at least an hour.
 | Device     | mp3 | aac | flac | none vs long | pause 5 min | 2nd room |
 | ---------- | --- | --- | ---- | ------------ | ----------- | -------- |
 | Sonos      |     |     | ok   |              |             |          |
-| Chromecast |     |     |      |              |             |          |
-| DLNA       |     |     |      |              |             |          |
+| Chromecast |     |     | no†  |              |             |          |
+| DLNA       |     |     | no†  |              |             |          |
 | AirPlay    | ok  | n/a | ok\* |              |             |          |
+
+† Not measured, and left lossy on purpose - see "Chromecast and DLNA"
+below.
 
 \* AirPlay's FLAC is not a device answer, see below. AAC never reaches
 AirPlay: pyatv's decoder has none, so `PLAYABLE_CODECS` leaves it out.
@@ -84,6 +87,31 @@ answer RTSP `SETUP` from the development machine, paired or not - pair-verify
 succeeded, then 10 s of silence. That is before any audio, so not the
 format: `SETUP` comes before any track, so a plain one would meet the same
 silence (not tried). A matter of that machine or that device, not of mixes.
+
+### Chromecast and DLNA (2026-10-14) - left on AAC 256, on purpose
+
+`CONTINUOUS_FLAC_OK` is a promise for a whole delivery class, and for
+these two no measurement on one device could make it:
+
+- **Chromecast.** Google promises FLAC (up to 96 kHz/24 bit) only for
+  Chromecast Audio, Google Home and Home Mini
+  ([Cast supported media](https://developers.google.com/cast/docs/media));
+  for the video Chromecasts and Google TV it lists none, and Emby's docs
+  even say only Chromecast Audio plays FLAC. The class covers both kinds.
+  Nothing in the docs on a stream without a length either.
+- **DLNA.** Not a kind of device but any MediaRenderer at all, each with
+  its own decoder. One that passes says nothing about the next.
+
+What the docs do settle, for everyone: a FLAC STREAMINFO with total
+samples 0 means "length unknown" and is valid
+([flac-dev](https://lists.xiph.org/pipermail/flac-dev/2003-January/001178.html)) -
+so a refusal is a gap in that decoder, not a broken stream.
+
+What would change it: a per-device answer rather than a per-class flag
+(a Chromecast reporting itself as an audio model, a renderer's own
+GetProtocolInfo), and a run on such a device. Discovery already reads a
+Chromecast's model name (`delivery/manager.py`), but nothing decides on it
+yet; AAC 256 is the cost.
 
 ### Sonos, run 2 (2026-10-14) - endless FLAC, 10 minutes
 

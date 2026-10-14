@@ -204,6 +204,9 @@ class DlnaDelivery(BaseDelivery):
     # entirely, and the failure it produces is silence rather than an
     # error anyone would see.
     PLAYABLE_CODECS: frozenset[str] = frozenset({"mp3", "aac", "flac", "vorbis"})
+    # CONTINUOUS_FLAC_OK left off for the same reason: whether a renderer
+    # takes an endless FLAC is that renderer's answer, not one a class can
+    # give (see docs/investigations/continuous-stream-on-devices.md).
 
     async def _get_device(self):
         cached = _device_cache.get(self.target.lower())
