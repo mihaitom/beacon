@@ -78,10 +78,20 @@ and the first 60 s of the incoming one are decoded at 11025 Hz mono and
 analysed (`core/beat_analysis.py`, ~0.1 s of CPU for 30 s of audio):
 
 - sound bounds (-60 dBFS), so silence at either end is skipped;
+- where the beat starts and ends: a bar carries it with at least 35 % of
+  the onset strength on its beats of the stretch's typical bar, and its
+  bass (below 150 Hz) within 12 dB of the typical bar's - an intro can be
+  rhythmic without bass, a breakdown hold its bass without drums. The end
+  is the last such bar, the start the first of four in a row. An ambient
+  tail or a long intro is far above -60 dBFS and the grid runs on through
+  it, so without this a beatmix lined its overlap and bass swap up on beats
+  nobody plays;
 - a beat grid: spectral-flux onset envelope (hop 5.8 ms), tempo by
   autocorrelation weighted towards the server's BPM tag or 120, period and
   phase by folding the envelope (two passes, parabolic peak), confidence
-  from the fold's sharpness and whether both halves agree, downbeat as the
+  from the fold's sharpness and whether both halves agree (halved by onset
+  mass, not by time - a stretch half ambient tail would otherwise check
+  its beat against a half without one), downbeat as the
   beat class with the most kick (4/4 assumed). On synthetic material: tempo
   within 0.1 BPM, phase within 3 ms. Without a BPM tag, 174 BPM drum & bass
   comes out as 87 - still on the beat, just counted in halves.
@@ -92,8 +102,11 @@ within 8 %. Its overlap is the bars of its own setting (`beatmix_bars`:
 from the crossfade's 4 s: lined up on the beat, a blend can run longer
 before it turns to mush) - fewer (down to 1) where the analysed stretch of
 either song leaves no room for them -, ending on the last downbeat with
-music; the incoming
-song's first downbeat lands on the overlap's first. First half: incoming
+a beat (an ambient tail after it is cut, as a DJ would); the incoming
+song's first downbeat lands on the overlap's first - or, where its beat
+sets in only after an intro, it joins late enough for the beat to set in on
+the bass swap, the intro before that skipped (not in a preview, whose
+excerpt starts where it was chosen to). First half: incoming
 mids and highs rise (equal-power), its bass stays out. Downbeat at half:
 the basses swap in 15 ms. Second half: outgoing mids and highs fall.
 

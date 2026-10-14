@@ -6,6 +6,10 @@ of them this answers two questions:
 
 - **Where the sound is.** A song that ends in four seconds of silence, or
   starts after two, would otherwise be faded through nothing.
+- **Where the beat starts and stops.** Many songs end on an ambient tail -
+  a pad, a reverb, no drums - well above silence, and some take a minute
+  of intro before the drums and the bass come in. A grid runs on through
+  either, so a beatmix would line its overlap up on beats nobody plays.
 - **Where the beats are** - tempo, the time of one beat, and which beats
   are downbeats (the "one" of a bar), with how sure it is of each. A
   beatmatched transition lines two grids up; one built on a wrong grid is
@@ -58,6 +62,20 @@ _SILENCE_WINDOW = int(0.05 * ANALYSIS_RATE)
 # on average over synthetic click tracks at 90-174 BPM. Two songs analysed
 # alike share it, so it only matters for absolute times.
 _ONSET_LAG_SECONDS = 0.024
+# Envelope time t is the rise into frame t+1, whose centre is
+# (t + 1) * hop + frame/2 samples in. The log spectrum notices a click a
+# little after that; _ONSET_LAG_SECONDS is that lag, measured.
+_ENVELOPE_OFFSET = (_HOP + _FRAME / 2) / ANALYSIS_RATE + _ONSET_LAG_SECONDS
+# A bar carries the beat with at least this share of the onset strength on
+# its beats that the stretch's typical bar has - a lone hit in an ambient
+# tail is a quarter of a bar's beats, and stays below - and its bass no
+# further below the typical bar's than this. Both: an intro can be
+# rhythmic without bass, a breakdown hold its bass without drums.
+_BEAT_BAR_SHARE = 0.35
+_BEAT_BAR_BASS_DB = 12.0
+_BASS_HZ = 150.0
+# How many bars in a row make the beat's start; fewer are a fill or a hit.
+_BEAT_START_BARS = 4
 # How long an analysis decode may take before the transition goes ahead
 # without it.
 _DECODE_TIMEOUT_SECONDS = 20.0
@@ -98,6 +116,11 @@ class RegionAnalysis:
     sound_start: float
     sound_end: float
     grid: BeatGrid | None
+    # Where the grid has one: the first bar of the first few in a row with
+    # the beat, and the end of the last bar with it. Before and after is
+    # sound (an intro, an ambient tail), but nothing to mix on.
+    beat_start: float | None = None
+    beat_end: float | None = None
 
 
 # ── The envelope ───────────────────────────────────────────────────────────
@@ -191,7 +214,10 @@ def _sharpness(hist: np.ndarray) -> np.ndarray:
 def beat_grid(samples: np.ndarray, bpm_hint: float | None = None) -> BeatGrid | None:
     """The beat grid of `samples` (mono float, ANALYSIS_RATE), in seconds
     from its own start; None where there is nothing beat-like at all."""
-    full, kick = onset_envelopes(samples)
+    return _grid_from(*onset_envelopes(samples), bpm_hint)
+
+
+def _grid_from(full: np.ndarray, kick: np.ndarray, bpm_hint: float | None) -> BeatGrid | None:
     if len(full) < _FPS * 8 or not full.any():
         return None
     coarse = _tempo_period(full, bpm_hint)
@@ -210,8 +236,11 @@ def beat_grid(samples: np.ndarray, bpm_hint: float | None = None) -> BeatGrid | 
     phase_hops = (_peak(hist) + 0.5) / _PHASE_BINS * period
 
     # How sure: the fold's peak against its floor, and whether each half of
-    # the stretch puts the beat in the same place.
-    half = len(full) // 2
+    # the onsets puts the beat in the same place. Halved by onsets, not by
+    # time: a stretch that is half ambient tail would otherwise check the
+    # beat against a half with none in it.
+    half = int(np.searchsorted(np.cumsum(full), full.sum() / 2))
+    half = int(np.clip(half, 4 * period, len(full) - 4 * period))
     first = _fold(full[:half], np.array([period]))[0]
     # The second half's phase is in its own time; shift it back.
     shift = round((half % period) / period * _PHASE_BINS)
@@ -238,12 +267,8 @@ def beat_grid(samples: np.ndarray, bpm_hint: float | None = None) -> BeatGrid | 
         float(1.0 - strength[order[1]] / strength[order[0]]) if strength[order[0]] > 0 else 0.0
     )
 
-    # Envelope time t is the rise into frame t+1, whose centre is
-    # (t + 1) * hop + frame/2 samples in. The log spectrum notices a click
-    # a little after that; _ONSET_LAG_SECONDS is that lag, measured.
-    offset = (_HOP + _FRAME / 2) / ANALYSIS_RATE + _ONSET_LAG_SECONDS
     to_seconds = 1.0 / _FPS
-    phase = phase_hops * to_seconds + offset
+    phase = phase_hops * to_seconds + _ENVELOPE_OFFSET
     beat = period * to_seconds
     return BeatGrid(
         period=beat,
@@ -252,6 +277,45 @@ def beat_grid(samples: np.ndarray, bpm_hint: float | None = None) -> BeatGrid | 
         confidence=confidence,
         downbeat_confidence=db_conf,
     )
+
+
+def beat_bounds(
+    samples: np.ndarray, full: np.ndarray, grid: BeatGrid
+) -> tuple[float | None, float | None]:
+    """(beat_start, beat_end) in the same seconds as `grid`, either None
+    where no whole bar qualifies; see RegionAnalysis."""
+    bar = 4 * grid.period
+    length = len(full) / _FPS
+    starts = grid.downbeats(0.0, length - bar)
+    if len(starts) == 0:
+        return None, None
+    beats = starts[:, None] + np.arange(4) * grid.period
+    hops = np.round((beats - _ENVELOPE_OFFSET) * _FPS).astype(int)
+    window = hops[..., None] + np.arange(-2, 3)
+    strength = full[np.clip(window, 0, len(full) - 1)].max(axis=-1).sum(axis=-1)
+    bass = _bar_bass_db(samples, starts, bar)
+    typical = np.percentile(strength, 75)
+    if typical <= 0:
+        return None, None
+    carried = (strength >= _BEAT_BAR_SHARE * typical) & (
+        bass >= np.percentile(bass, 75) - _BEAT_BAR_BASS_DB
+    )
+    if not carried.any():
+        return None, None
+    end = float(starts[np.flatnonzero(carried)[-1]] + bar)
+    runs = np.convolve(carried, np.ones(_BEAT_START_BARS), mode="valid")
+    first = np.flatnonzero(runs == _BEAT_START_BARS)
+    return (float(starts[first[0]]) if len(first) else None), end
+
+
+def _bar_bass_db(samples: np.ndarray, starts: np.ndarray, bar: float) -> np.ndarray:
+    """The level below _BASS_HZ of each bar from `starts`, in dB."""
+    spectrum = np.fft.rfft(samples)
+    spectrum[np.fft.rfftfreq(len(samples), 1 / ANALYSIS_RATE) > _BASS_HZ] = 0
+    low = np.fft.irfft(spectrum, len(samples))
+    edges = np.round(np.add.outer(starts, [0.0, bar]) * ANALYSIS_RATE).astype(int)
+    power = np.array([np.mean(low[a:b] ** 2) if b > a else 0.0 for a, b in edges])
+    return 10 * np.log10(power + 1e-12)
 
 
 def sound_bounds(samples: np.ndarray) -> tuple[float, float] | None:
@@ -276,8 +340,12 @@ def analyse_samples(
     sound_start, sound_end = (
         (start, end) if bounds is None else (start + bounds[0], start + bounds[1])
     )
-    grid = beat_grid(samples, bpm_hint)
+    full, kick = onset_envelopes(samples)
+    grid = _grid_from(full, kick, bpm_hint)
+    beat_start = beat_end = None
     if grid is not None:
+        bounds = beat_bounds(samples, full, grid)
+        beat_start, beat_end = (None if b is None else start + b for b in bounds)
         grid = BeatGrid(
             period=grid.period,
             phase=grid.phase + start,
@@ -285,7 +353,7 @@ def analyse_samples(
             confidence=grid.confidence,
             downbeat_confidence=grid.downbeat_confidence,
         )
-    return RegionAnalysis(start, end, sound_start, sound_end, grid)
+    return RegionAnalysis(start, end, sound_start, sound_end, grid, beat_start, beat_end)
 
 
 async def analyse_region(

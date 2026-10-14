@@ -11,11 +11,13 @@ kinds of plan:
 - **beatmix**, the DJ's way, when both songs have a beat grid that can be
   trusted and tempos within reach of each other:
   - the overlap is a whole number of bars and ends on a downbeat of the
-    song going out, where its music ends;
+    song going out, where its beat ends - an ambient tail after it is cut;
   - the old song eases into the new one's tempo over a few bars before
     the overlap and holds it to the end (core/timestretch.py); the new
     song is never stretched, so once it has taken over, it plays untouched;
-  - the incoming song's first downbeat lands on the overlap's first one;
+  - the incoming song's first downbeat lands on the overlap's first one -
+    and where its beat only sets in after an intro, it starts late enough
+    for the beat to set in on the bass swap, as a DJ would;
   - for the first half its mids and highs come up while its bass stays
     out; on the downbeat halfway through, the basses swap; for the second
     half the old song's mids and highs go.
@@ -76,6 +78,9 @@ PREVIEW_MAX_DRIFT = 0.005
 _BAR_CHOICES = (16, 8, 4, 2, 1)
 # Never more of either song than this share of what was analysed.
 _MAX_SHARE = 0.5
+# beat_end lies on a downbeat of the same grid; this keeps float rounding
+# from counting it as just short of one.
+_ON_DOWNBEAT = 0.01
 # Points per fade curve; between them the engine interpolates linearly.
 _CURVE_POINTS = 33
 
@@ -278,8 +283,12 @@ def _beatmix(
     # overlap - where the outgoing song plays at the incoming tempo.
     bar = 4 * out.period
     stream_bar = bar / rate
-    # The overlap ends on the last downbeat the outgoing song's music reaches.
-    ends = out.downbeats(out_region.start, out_region.sound_end)
+    # The overlap ends on the last downbeat the outgoing song's beat reaches;
+    # an ambient tail after it is cut, as a DJ would.
+    music_end = out_region.sound_end
+    if out_region.beat_end is not None:
+        music_end = min(music_end, out_region.beat_end + _ON_DOWNBEAT)
+    ends = out.downbeats(out_region.start, music_end)
     if len(ends) == 0:
         return "no_room"
     out_end = float(ends[-1])
@@ -287,9 +296,17 @@ def _beatmix(
     starts = inn.downbeats(in_region.sound_start - 0.05, in_region.end)
     if len(starts) == 0:
         return "no_room"
-    in_start = float(starts[0])
-    in_room = in_region.end - in_start
+    first = float(starts[0])
     out_room = out_end - out_region.start
+
+    def joins_at(n: int) -> float:
+        """Where the incoming song joins an overlap of `n` bars: late enough
+        for its beat to set in on the swap - never before its music."""
+        if in_region.beat_start is None or settings.preview:
+            return first
+        at = in_region.beat_start - (n // 2) * stream_bar
+        on = inn.downbeats(first, at + _ON_DOWNBEAT)
+        return float(on[-1]) if len(on) else first
 
     def as_set(n: int) -> bool:
         if settings.beatmix_bars:
@@ -300,12 +317,13 @@ def _beatmix(
         (
             n
             for n in _BAR_CHOICES
-            if as_set(n) and n * bar <= out_room and n * stream_bar <= in_room
+            if as_set(n) and n * bar <= out_room and n * stream_bar <= in_region.end - joins_at(n)
         ),
         None,
     )
     if bars is None:
         return "no_room"
+    in_start = joins_at(bars)
     out_start = out_end - bars * bar
     overlap = bars * stream_bar
     # Halfway, on a downbeat - or for a one-bar mix, on its third beat.

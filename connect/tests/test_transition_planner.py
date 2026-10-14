@@ -131,6 +131,38 @@ def test_a_beatmix_is_whole_bars_ending_on_the_last_downbeat_with_music():
     assert plan.in_start == pytest.approx(0.5)
 
 
+def test_a_beatmix_ends_where_the_beat_does_not_in_an_ambient_tail():
+    downbeat = float(out_region().grid.downbeats(220, 222)[0])
+    # A hair short, as float rounding leaves it, still ends on that downbeat.
+    region = replace(out_region(), beat_end=downbeat - 1e-9)
+    plan = plan_transition(CROSSFADE, OUT, IN, region, in_region())
+    assert plan.kind == "beatmix"
+    assert plan.out_end == pytest.approx(downbeat)
+
+
+def test_an_incoming_beat_after_an_intro_sets_in_on_the_bass_swap():
+    downbeat = float(in_region().grid.downbeats(30, 32)[0])
+    region = replace(in_region(), beat_start=downbeat - 1e-9)
+    plan = plan_transition(CROSSFADE, OUT, IN, out_region(), region)
+    assert plan.kind == "beatmix"
+    assert plan.in_start + plan.swap_at == pytest.approx(downbeat)
+    # Still on one of its downbeats.
+    assert region.grid.downbeats(plan.in_start - 0.01, plan.in_start + 0.01).size == 1
+
+
+def test_an_incoming_beat_from_the_start_joins_at_the_start():
+    region = replace(in_region(), beat_start=2.4)
+    plan = plan_transition(CROSSFADE, OUT, IN, out_region(), region)
+    assert plan.in_start == pytest.approx(0.5)
+
+
+def test_a_preview_keeps_its_excerpt_start_however_late_the_beat():
+    preview = replace(CROSSFADE, preview=True)
+    region = replace(in_region(bpm=128.0), beat_start=30.0)
+    plan = plan_transition(preview, OUT, IN, out_region(), region)
+    assert plan.in_start == pytest.approx(0.5)
+
+
 def test_the_bass_swaps_on_the_middle_downbeat_and_never_doubles():
     plan = plan_transition(CROSSFADE, OUT, IN, out_region(), in_region())
     assert plan.swap_at == pytest.approx(2 * 4 * 60 / 126)
