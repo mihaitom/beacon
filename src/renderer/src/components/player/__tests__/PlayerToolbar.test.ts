@@ -12,8 +12,16 @@ import { useAutoplayStore } from '@/stores/autoplay'
 import PlayerToolbar from '../PlayerToolbar.vue'
 import { _resetVolumeGuards } from '@/services/connect/volumeGuard'
 import { makeStatus } from '@/stores/__tests__/fixtures'
+import { getAudioEngine } from '@/services/audioEngine'
 
 const vuetify = createVuetify({ components, directives })
+
+/** `true` is a desktop browser, `false` a phone or tablet - where the
+ * element's volume is read-only and no Web Audio graph exists to do it
+ * instead. jsdom has no AudioContext, so the real answer is always no. */
+function withLocalVolume(available: boolean): void {
+  vi.spyOn(getAudioEngine(), 'canSetVolume', 'get').mockReturnValue(available)
+}
 
 function mountToolbar(props: Record<string, unknown> = {}) {
   return mount(PlayerToolbar, {
@@ -41,6 +49,7 @@ function scroll(
 describe('PlayerToolbar', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    withLocalVolume(true)
     // Module-level and keyed by device (see volumeGuard.ts) — a settle
     // window left over from one test would swallow the next one's readings.
     _resetVolumeGuards()
@@ -48,6 +57,7 @@ describe('PlayerToolbar', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+    vi.restoreAllMocks()
   })
 
   describe('remote control button (Electron-only)', () => {
@@ -143,6 +153,51 @@ describe('PlayerToolbar', () => {
 
       expect(setVolumeSpy).not.toHaveBeenCalled()
       expect(event.defaultPrevented).toBe(false)
+    })
+
+    it('offers no volume control where the page cannot change the level', () => {
+      withLocalVolume(false)
+      const expanded = mountToolbar({ volumeCollapsed: false })
+      const collapsed = mountToolbar({ volumeCollapsed: true })
+
+      for (const wrapper of [expanded, collapsed]) {
+        expect(wrapper.find('.volume-value').exists()).toBe(false)
+        expect(wrapper.find('.mdi-volume-high, .mdi-volume-mute').exists()).toBe(false)
+      }
+    })
+
+    it('keeps the speaker slider when the local level cannot be changed', async () => {
+      withLocalVolume(false)
+      const wrapper = mountToolbar()
+      const connect = useConnectStore()
+      vi.spyOn(connect, 'getDeviceVolume').mockResolvedValue(30)
+      connect.status = makeStatus({ targets: [{ name: 'Kitchen', type: 'chromecast' }] })
+      await flushPromises()
+
+      expect(wrapper.get('.volume-value').text()).toBe('30%')
+    })
+
+    it('sets the local level from a native range on a touch screen', async () => {
+      const originalMatchMedia = window.matchMedia
+      window.matchMedia = ((query: string) => ({
+        matches: query === '(pointer: coarse)',
+        addEventListener: () => {},
+        removeEventListener: () => {},
+      })) as unknown as typeof window.matchMedia
+      try {
+        const wrapper = mountToolbar()
+        const playback = usePlaybackStore()
+        const setVolumeSpy = vi.spyOn(playback, 'setVolume')
+
+        expect(wrapper.findComponent({ name: 'VSlider' }).exists()).toBe(false)
+        const range = wrapper.get('input[type="range"]')
+        ;(range.element as HTMLInputElement).value = '40'
+        await range.trigger('input')
+
+        expect(setVolumeSpy).toHaveBeenLastCalledWith(0.4)
+      } finally {
+        window.matchMedia = originalMatchMedia
+      }
     })
 
     it('formats the volume label as a rounded percentage', async () => {

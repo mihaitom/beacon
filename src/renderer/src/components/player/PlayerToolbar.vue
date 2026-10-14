@@ -30,7 +30,9 @@
     <remote-control-button v-if="isElectron" />
     <party-mode-button />
     <connect-button />
-    <template v-if="!volumeCollapsed">
+    <!-- Left out where this device's own level cannot be changed from the
+     - page at all - see volumeControlAvailable. -->
+    <template v-if="volumeControlAvailable && !volumeCollapsed">
       <v-btn
         :icon="volumeIcon"
         :disabled="muteDisabled"
@@ -62,6 +64,15 @@
         @end="onVolumeDragEnd"
         @touchcancel="endCancelledSliderTouch"
       />
+      <touch-volume-slider
+        v-else-if="coarsePointer"
+        class="volume-slider"
+        :model-value="localVolumePercent"
+        :max="100"
+        :disabled="playbackStore.isCasting"
+        :aria-label="$t('player.volume')"
+        @update:model-value="onLocalVolumePercentChange"
+      />
       <v-slider
         v-else
         class="volume-slider volume-slider-touch"
@@ -90,7 +101,7 @@
      - .beacon-player-popover in assets/base.css, which also explains why
      - the location strategy has to be static for that to hold. -->
     <v-menu
-      v-else
+      v-else-if="volumeControlAvailable"
       :close-on-content-click="false"
       location-strategy="static"
       content-class="beacon-player-popover"
@@ -139,6 +150,15 @@
             @wheel="onVolumeWheel"
             @touchcancel="endCancelledSliderTouch"
           />
+          <touch-volume-slider
+            v-else-if="coarsePointer"
+            class="volume-slider"
+            :model-value="localVolumePercent"
+            :max="100"
+            :disabled="playbackStore.isCasting"
+            :aria-label="$t('player.volume')"
+            @update:model-value="onLocalVolumePercentChange"
+          />
           <v-slider
             v-else
             class="volume-slider volume-slider-touch"
@@ -180,6 +200,7 @@ import RemoteControlButton from '@/components/settings/RemoteControlButton.vue'
 import PartyModeButton from '@/components/party/PartyModeButton.vue'
 import TouchVolumeSlider from '@/components/mobile/TouchVolumeSlider.vue'
 import { isCoarsePointer } from '@/services/coarsePointer'
+import { getAudioEngine } from '@/services/audioEngine'
 import { volumeAfterWheel } from '@/services/volumeWheel'
 import {
   knownDeviceVolume,
@@ -215,8 +236,8 @@ export default {
       // Scroll that hasn't added up to a whole volume step yet — see
       // volumeAfterWheel().
       volumeWheelCarry: 0,
-      // A tablet in landscape gets this bar, and a speaker's VSlider loses
-      // a real finger's drag - see TouchVolumeSlider.vue.
+      // A tablet in landscape gets this bar, and VSlider loses a real
+      // finger's drag - see TouchVolumeSlider.vue.
       coarsePointer: isCoarsePointer(),
     }
   },
@@ -278,6 +299,16 @@ export default {
         ? this.deviceVolume === 0
         : this.playbackStore.volume === 0
       return muted ? 'mdi-volume-mute' : 'mdi-volume-high'
+    },
+    /** Same check as MobileTransportControls.vue's: a tablet in
+     * landscape gets this bar, but its local level belongs to the system
+     * volume buttons (see AudioEngine.canSetVolume). A single cast target
+     * is set over the network and always has a slider. */
+    volumeControlAvailable(): boolean {
+      return !!this.singleActiveTarget || getAudioEngine().canSetVolume
+    },
+    localVolumePercent(): number {
+      return Math.round(this.playbackStore.volume * 100)
     },
     muteDisabled() {
       return this.singleActiveTarget ? this.deviceVolume == null : this.playbackStore.isCasting
@@ -376,6 +407,9 @@ export default {
       writeDeviceVolume(target, rounded, (volume) =>
         this.connectStore.setDeviceVolume(target.type, target.name, volume),
       )
+    },
+    onLocalVolumePercentChange(percent: number) {
+      this.playbackStore.setVolume(percent / 100)
     },
     onVolumeDragStart() {
       if (this.singleActiveTarget) startVolumeDrag(this.singleActiveTarget)
