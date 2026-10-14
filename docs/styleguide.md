@@ -283,6 +283,11 @@ Within Playback the order is when it plays: now, next, at the end - and then
 the Radio entry, which is the one that conjures a queue rather than adding to
 the one there is.
 
+A song already in the queue (the queue drawer's menu) is moved rather than
+added, so its Playback section reads Play, Play next, Move to end, Remove from
+queue - the same order, with removing as the last thing before the Radio
+entry.
+
 The split that keeps getting redrawn by hand is Add to queue vs. Add to
 playlist. They sound alike and belong in different sections: the queue is
 undone by playing something else, a playlist is not.

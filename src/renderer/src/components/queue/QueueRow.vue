@@ -8,30 +8,29 @@
       'queue-row--dragging': dragging,
       'queue-row--landed': landed,
     }"
+    :draggable="lockedNext ? 'false' : 'true'"
+    @dragstart="$emit('dragstart', index, $event)"
+    @dragend="$emit('dragend')"
     @dragover.prevent="$emit('dragover', index, $event)"
     @dragleave="$emit('dragleave', index)"
     @drop="$emit('drop', index, $event)"
     @contextmenu.prevent="$emit('menu', index, $event)"
     @click="playbackStore.playAtIndex(index)"
   >
-    <!-- A song the mix has settled on stays put - see the playback store's
-     - lockedNextIndex. -->
-    <v-icon
-      :icon="lockedNext ? 'mdi-lock-outline' : 'mdi-drag-vertical'"
-      :title="lockedNext ? $t('queue.nextLocked') : undefined"
-      size="18"
-      class="queue-row__handle text-medium-emphasis"
-      :draggable="lockedNext ? 'false' : 'true'"
-      @click.stop
-      @dragstart="$emit('dragstart', index, $event)"
-      @dragend="$emit('dragend')"
-    />
     <div class="queue-row__index text-body-small text-medium-emphasis">
       <!-- audible, not isCurrent: the row stays marked as where the queue
        - stands while a radio station plays over the top of it, but a
        - speaker icon there would be claiming this song is what you are
        - hearing. -->
       <v-icon v-if="audible" icon="mdi-volume-high" size="14" color="primary" />
+      <!-- A song the mix has settled on stays put - see the playback
+         - store's lockedNextIndex. -->
+      <v-icon
+        v-else-if="lockedNext"
+        icon="mdi-lock-outline"
+        :title="$t('queue.nextLocked')"
+        size="16"
+      />
       <template v-else>{{ index + 1 }}</template>
     </div>
     <cover-art :cover-art-id="song.coverArtId" :size="36" class="queue-row__cover" />
@@ -40,7 +39,18 @@
         {{ song.title }}
       </div>
       <div class="text-body-small text-medium-emphasis queue-row__subtitle">
-        <span class="queue-row__artist">{{ song.artist }}</span>
+        <!-- Not draggable itself, or grabbing the row by its artist would
+           - drag the link instead of the row. -->
+        <router-link
+          v-if="song.artistId"
+          :to="`/artists/${song.artistId}`"
+          draggable="false"
+          class="queue-row__artist queue-row__artist-link"
+          @click.stop
+        >
+          {{ song.artist }}
+        </router-link>
+        <span v-else class="queue-row__artist">{{ song.artist }}</span>
         <!-- A party guest's wish: who asked for it, so the host can tell
          - their own queue from the guests'. -->
         <span
@@ -159,7 +169,8 @@ export default {
   align-items: center;
   padding: 0 8px;
   height: 56px;
-  cursor: pointer;
+  /* The whole row is the handle; a click still plays it. */
+  cursor: grab;
   border-top: 2px solid transparent;
   background: rgb(var(--v-theme-surface));
   transition:
@@ -192,6 +203,15 @@ export default {
   max-width: 50%;
   overflow: hidden;
   white-space: nowrap;
+}
+
+.queue-row:active {
+  cursor: grabbing;
+}
+
+/* Nothing to grab on the song the mix has settled on. */
+.queue-row[draggable='false'] {
+  cursor: pointer;
 }
 
 .queue-row:hover {
@@ -232,14 +252,24 @@ export default {
   }
 }
 
-.queue-row__handle {
-  cursor: grab;
-  flex-shrink: 0;
+.queue-row__index {
+  flex: 0 0 28px;
+  text-align: center;
 }
 
-.queue-row__index {
-  flex: 0 0 20px;
-  text-align: center;
+.queue-row__artist-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.queue-row__artist-link:hover {
+  text-decoration: underline;
+}
+
+/* The cover is an image, which the browser would otherwise drag on its own
+ * in place of the row. */
+.queue-row :deep(img) {
+  -webkit-user-drag: none;
 }
 
 .queue-row__cover {
@@ -265,10 +295,6 @@ export default {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.queue-row__handle {
-  margin-right: 4px;
 }
 
 .queue-row__cover {

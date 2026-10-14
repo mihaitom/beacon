@@ -1327,12 +1327,35 @@ export const usePlaybackStore = defineStore('playback', {
         .client()
         .getSimilarSongs2(song.id)
       if (plexPassRequired) notifyPlexPassRequired('library.songRadio')
+      // From the song that is playing, the music carries on: only what
+      // comes after it is replaced.
+      if (!this.preview && this.currentSong?.id === song.id) {
+        this.replaceQueueAfterCurrent(similar.filter((t) => t.id !== song.id))
+        return
+      }
       const songs = [song, ...similar.filter((t) => t.id !== song.id)]
       // peek: a server-picked mix, unlike playSongList()'s other, more
       // direct callers (clicking a song/album/playlist you were already
       // looking at) — see peekQueueDrawer()'s own comment for why that
       // distinction is what actually decides whether a call site peeks.
       await this.playSongList(songs, 0, true, true)
+    },
+
+    /** Swaps everything around the current song for `songs`, without
+     * touching what is playing. A locked next song stays next (see
+     * lockedNextIndex), the way clearQueue() keeps it. */
+    replaceQueueAfterCurrent(songs: Song[]): void {
+      const current = this.queue[this.currentIndex]
+      if (!current) return
+      const lockedNext = this.queue[this.lockedNextIndex]
+      const head = lockedNext ? [current, lockedNext] : [current]
+      const rest = songs.filter((t) => t.id !== lockedNext?.id)
+      autoplayExhaustedSeedIds.clear()
+      this.originalQueue = [...head, ...rest]
+      this.queue = [...head, ...(this.shuffle ? shuffledExcept(rest, null) : rest)]
+      this.currentIndex = 0
+      this.syncCastQueue()
+      useDrawersStore().peekQueueDrawer(this.queue)
     },
 
     /** Artist Radio — same getSimilarSongs2 endpoint as Song Radio, but

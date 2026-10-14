@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { mount, RouterLinkStub } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
@@ -14,7 +14,7 @@ const vuetify = createVuetify({ components, directives })
 function mountRow(index: number) {
   return mount(QueueRow, {
     props: { song: makeSong(String(index)), index },
-    global: { plugins: [vuetify, i18n], stubs: { CoverArt: true } },
+    global: { plugins: [vuetify, i18n], stubs: { CoverArt: true, RouterLink: RouterLinkStub } },
   })
 }
 
@@ -57,5 +57,26 @@ describe('QueueRow', () => {
     // Still the queue's current row: removing it would leave currentIndex
     // pointing somewhere else entirely.
     expect(wrapper.get('.mdi-close').element.closest('button')!.hasAttribute('disabled')).toBe(true)
+  })
+
+  it('opens the artist page from the artist, without playing the song', async () => {
+    const playback = usePlaybackStore()
+    const playAt = vi.spyOn(playback, 'playAtIndex').mockResolvedValue()
+    const wrapper = mountRow(0)
+
+    const link = wrapper.getComponent(RouterLinkStub)
+    await link.trigger('click')
+
+    expect(link.props('to')).toBe(`/artists/${playback.queue[0]!.artistId}`)
+    expect(playAt).not.toHaveBeenCalled()
+  })
+
+  it('can be picked up anywhere, except the song the mix has settled on', () => {
+    const playback = usePlaybackStore()
+    playback.setQueue([makeSong('0'), makeSong('1'), makeSong('2')], 0)
+    playback.mixNextLocked = true
+
+    expect(mountRow(2).get('.queue-row').attributes('draggable')).toBe('true')
+    expect(mountRow(1).get('.queue-row').attributes('draggable')).toBe('false')
   })
 })

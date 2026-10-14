@@ -18,10 +18,10 @@ const vuetify = createVuetify({ components, directives })
 // `app` prop) — mounting it directly throws "Could not find injected
 // layout" without a <v-app> ancestor to provide that. `host` is the real
 // mount root; `drawer` is what test code actually asserts against.
-function mountDrawer() {
+function mountDrawer(mocks: Record<string, unknown> = {}) {
   const host = mount(
     { components: { QueueDrawer }, template: '<v-app><queue-drawer model-value /></v-app>' },
-    { global: { plugins: [vuetify, i18n] } },
+    { global: { plugins: [vuetify, i18n], mocks } },
   )
   return host.findComponent(QueueDrawer)
 }
@@ -348,7 +348,7 @@ describe('QueueDrawer', () => {
       // Drag row 3 ('d') and drop it on the top half of row 1 ('b') — should
       // land *before* 'b', i.e. reorderQueue(3, 1) with no index shift since
       // the target is already before the dragged item.
-      await rows[3]!.get('.queue-row__handle').trigger('dragstart')
+      await rows[3]!.trigger('dragstart')
       await rows[1]!.trigger('dragover', TOP_HALF)
       await rows[1]!.trigger('drop', TOP_HALF)
 
@@ -366,7 +366,7 @@ describe('QueueDrawer', () => {
       // insertBeforeIndex would be 4 (after 'd'), but removing 'b' first
       // shifts every later original index left by one, so the actual
       // reorderQueue() target is 3, not 4.
-      await rows[1]!.get('.queue-row__handle').trigger('dragstart')
+      await rows[1]!.trigger('dragstart')
       await rows[3]!.trigger('dragover', BOTTOM_HALF)
       await rows[3]!.trigger('drop', BOTTOM_HALF)
 
@@ -382,7 +382,7 @@ describe('QueueDrawer', () => {
 
       // Dropping row 1 on its own top half: insertBeforeIndex(1) === 1,
       // dropIndex resolves to the same 1 it started at — a no-op drag.
-      await rows[1]!.get('.queue-row__handle').trigger('dragstart')
+      await rows[1]!.trigger('dragstart')
       await rows[1]!.trigger('drop', TOP_HALF)
 
       expect(reorderSpy).not.toHaveBeenCalled()
@@ -394,7 +394,7 @@ describe('QueueDrawer', () => {
       const wrapper = mountDrawer()
       const rows = wrapper.findAll('.queue-row')
 
-      await rows[0]!.get('.queue-row__handle').trigger('dragstart')
+      await rows[0]!.trigger('dragstart')
       await rows[2]!.trigger('dragover', BOTTOM_HALF)
       expect(wrapper.findAll('.queue-row')[2]!.classes()).toContain('queue-row--drag-over-after')
 
@@ -438,7 +438,7 @@ describe('QueueDrawer', () => {
         },
       )
       const rows = host.findComponent(QueueDrawer).findAll('.queue-row')
-      await rows[50]!.get('.queue-row__handle').trigger('dragstart')
+      await rows[50]!.trigger('dragstart')
       rowUpdates = 0
       listUpdates = 0
 
@@ -471,8 +471,65 @@ describe('QueueDrawer', () => {
       await flushPromises()
     }
 
+    beforeEach(() => {
+      // Opening the menu loads the playlists for its submenu.
+      vi.spyOn(useLibraryStore(), 'fetchPlaylists').mockResolvedValue()
+    })
+
     afterEach(() => {
       document.body.innerHTML = ''
+    })
+
+    it('starts Song Radio from the song it was opened on', async () => {
+      const playback = usePlaybackStore()
+      playback.setQueue(
+        ['a', 'b', 'c'].map((id) => makeSong(id)),
+        0,
+      )
+      const radio = vi.spyOn(playback, 'startSongRadio').mockResolvedValue()
+      const wrapper = mountDrawer()
+
+      await openMenuOn(wrapper, 2)
+      menuItem(i18n.global.t('library.songRadio')).click()
+
+      expect(radio).toHaveBeenCalledWith(playback.queue[2])
+    })
+
+    it('opens the info sheet for that song', async () => {
+      const playback = usePlaybackStore()
+      playback.setQueue(
+        ['a', 'b'].map((id) => makeSong(id)),
+        0,
+      )
+      const emit = vi.fn()
+      const wrapper = mountDrawer({ $emitter: { emit, on: vi.fn(), off: vi.fn() } })
+
+      await openMenuOn(wrapper, 1)
+      menuItem(i18n.global.t('library.songInfo')).click()
+
+      expect(emit).toHaveBeenCalledWith('showSongInfo', playback.queue[1])
+    })
+
+    it('adds that song to a playlist picked from the submenu', async () => {
+      const playback = usePlaybackStore()
+      playback.setQueue(
+        ['a', 'b'].map((id) => makeSong(id)),
+        0,
+      )
+      const library = useLibraryStore()
+      library.playlists = [
+        { id: 'pl1', name: 'Mine', songCount: 0, owner: '', public: false },
+      ] as never
+      vi.spyOn(library, 'playlistsAcceptingSongs', 'get').mockReturnValue(library.playlists)
+      const add = vi.spyOn(library, 'addToPlaylist').mockResolvedValue()
+      const wrapper = mountDrawer()
+
+      await openMenuOn(wrapper, 1)
+      menuItem(i18n.global.t('common.addToPlaylistMenu')).click()
+      await flushPromises()
+      menuItem('Mine').click()
+
+      expect(add).toHaveBeenCalledWith('pl1', [playback.queue[1]!.id])
     })
 
     it('moves a song from far down to right after the current one', async () => {

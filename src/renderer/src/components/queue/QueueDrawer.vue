@@ -41,7 +41,7 @@
     @update:model-value="$emit('update:modelValue', $event)"
     @pointerenter="drawersStore.cancelQueueDrawerAutoClose()"
   >
-    <div class="beacon-drawer__body">
+    <div ref="body" class="beacon-drawer__body" @dragover="trackDragPointer">
       <v-toolbar
         density="compact"
         color="#0B0D13"
@@ -213,11 +213,17 @@
 
       <!-- One menu for the whole list rather than one per row. It holds the
        - song, not its index: the queue can move on (or be edited elsewhere)
-       - while the menu is open. -->
+       - while the menu is open. Cut into the sections every context menu
+       - has (see docs/styleguide.md), with SongRow.vue's entries where they
+       - mean the same here. -->
       <tile-context-menu ref="menu">
         <v-list-subheader v-if="menuIndex === playbackStore.lockedNextIndex">
           {{ $t('queue.nextLocked') }}
         </v-list-subheader>
+        <!-- Moving rather than adding: the song is in the queue already.
+           - Now, next, at the end, gone - then Song Radio, the one entry
+           - that conjures a new queue. -->
+        <context-menu-section :label="$t('library.menuPlayback')" />
         <v-list-item :disabled="menuIndex === playbackStore.currentIndex" @click="menuPlay">
           <template #prepend><v-icon icon="mdi-play" size="small" /></template>
           <v-list-item-title>{{ $t('library.play') }}</v-list-item-title>
@@ -243,7 +249,37 @@
           <template #prepend><v-icon icon="mdi-playlist-remove" size="small" /></template>
           <v-list-item-title>{{ $t('queue.remove') }}</v-list-item-title>
         </v-list-item>
+        <v-list-item v-if="authStore.capabilities.songRadio" @click="menuSongRadio">
+          <template #prepend><v-icon icon="mdi-radio-tower" size="small" /></template>
+          <v-list-item-title>{{ $t('library.songRadio') }}</v-list-item-title>
+        </v-list-item>
+
+        <context-menu-section :label="$t('library.menuLibrary')" />
+        <add-to-playlist-submenu @create="menuCreatePlaylist" @select="menuAddToPlaylist" />
+
+        <template v-if="menuSong?.albumId || menuSong?.artistId">
+          <context-menu-section :label="$t('library.menuNavigation')" />
+          <v-list-item v-if="menuSong?.albumId" :to="`/albums/${menuSong.albumId}`">
+            <template #prepend><v-icon icon="mdi-album" size="small" /></template>
+            <v-list-item-title>{{ $t('library.goToAlbum') }}</v-list-item-title>
+          </v-list-item>
+          <v-list-item v-if="menuSong?.artistId" :to="`/artists/${menuSong.artistId}`">
+            <template #prepend><v-icon icon="mdi-account-music" size="small" /></template>
+            <v-list-item-title>{{ $t('library.goToArtist') }}</v-list-item-title>
+          </v-list-item>
+        </template>
+
+        <context-menu-section :label="$t('library.menuDetails')" />
+        <v-list-item v-if="menuSong?.coverArtId" @click="menuShowArtwork">
+          <template #prepend><v-icon icon="mdi-image-outline" size="small" /></template>
+          <v-list-item-title>{{ $t('library.showArtwork') }}</v-list-item-title>
+        </v-list-item>
+        <v-list-item @click="menuShowInfo">
+          <template #prepend><v-icon icon="mdi-information-outline" size="small" /></template>
+          <v-list-item-title>{{ $t('library.songInfo') }}</v-list-item-title>
+        </v-list-item>
       </tile-context-menu>
+      <create-playlist-dialog ref="createPlaylistForSong" />
     </div>
   </v-navigation-drawer>
 </template>
@@ -252,8 +288,13 @@
 import { usePlaybackStore } from '@/stores/playback'
 import { useDrawersStore } from '@/stores/drawers'
 import { useLibraryStore } from '@/stores/library'
+import { markRaw } from 'vue'
 import QueueRow, { type QueueDragState } from './QueueRow.vue'
 import TileContextMenu from '@/components/library/TileContextMenu.vue'
+import ContextMenuSection from '@/components/library/ContextMenuSection.vue'
+import AddToPlaylistSubmenu from '@/components/library/AddToPlaylistSubmenu.vue'
+import CreatePlaylistDialog from '@/components/library/CreatePlaylistDialog.vue'
+import { useAuthStore } from '@/stores/auth'
 import type { QueueMoveTarget } from '@/stores/playback'
 import type { Song } from '@/types/library'
 
@@ -313,6 +354,14 @@ const ROW_ENTER_TRANSITION_MS = 300
 // uses this to work out how long its whole staggered fade-out takes.
 const CLEARING_FADE_MS = 250
 
+// Dragging within this far of the list's top or bottom edge scrolls it,
+// faster the closer to the edge, up to EDGE_SCROLL_MAX_PX_PER_S right at
+// it. The browser's own drag scrolling crawls through a long queue.
+const EDGE_SCROLL_ZONE_PX = 64
+const EDGE_SCROLL_MAX_PX_PER_S = 1400
+// The pointer stopped reporting this long ago: it has left the list.
+const EDGE_SCROLL_STALE_MS = 200
+
 // Wider than the 380 it opened at until now. That number came from a time
 // when this shared the screen with a second drawer; it is the only one
 // left, it is meant to stay open beside the library (see
@@ -345,7 +394,13 @@ function floatingQuery(): MediaQueryList | null {
 
 export default {
   name: 'QueueDrawer',
-  components: { QueueRow, TileContextMenu },
+  components: {
+    QueueRow,
+    TileContextMenu,
+    ContextMenuSection,
+    AddToPlaylistSubmenu,
+    CreatePlaylistDialog,
+  },
   provide() {
     return { queueDrag: this.drag }
   },
@@ -378,6 +433,9 @@ export default {
       // (a "swap with the very next track" drag reliably overshot to the
       // track after that).
       drag: { from: null, over: null, half: null } as QueueDragState,
+      // The edge scroll's own loop (see EDGE_SCROLL_ZONE_PX). Raw, so a frame
+      // of scrolling never re-renders anything.
+      edgeScroll: markRaw({ y: 0, seenAt: 0, frame: 0, lastTick: 0 }),
       // The song the context menu was opened on - see the template.
       menuSong: null as Song | null,
       // Briefly set to the moved row's queueRowKey() right after a drop, so
@@ -419,6 +477,9 @@ export default {
     },
     libraryStore() {
       return useLibraryStore()
+    },
+    authStore() {
+      return useAuthStore()
     },
     virtualizeQueue(): boolean {
       return this.playbackStore.queue.length > QUEUE_VIRTUALIZE_THRESHOLD
@@ -507,6 +568,7 @@ export default {
     if (this.revealCleanupTimer) clearTimeout(this.revealCleanupTimer)
     if (this.clearingTimer) clearTimeout(this.clearingTimer)
     this.clearingRowTimers.forEach(clearTimeout)
+    this.stopEdgeScroll()
   },
   methods: {
     queueRowKey,
@@ -737,6 +799,9 @@ export default {
     openMenu(index: number, event: MouseEvent) {
       this.menuSong = this.playbackStore.queue[index] ?? null
       ;(this.$refs.menu as { open: (event: MouseEvent) => void } | undefined)?.open(event)
+      // Loaded now, so the playlist submenu has them by the time it opens
+      // (see SongRow.vue's openMenu).
+      if (this.libraryStore.playlists.length === 0) void this.libraryStore.fetchPlaylists()
     },
     canMove(where: QueueMoveTarget): boolean {
       return this.playbackStore.queueMoveTarget(this.menuIndex, where) != null
@@ -753,8 +818,84 @@ export default {
     menuRemove() {
       if (this.menuIndex >= 0) this.playbackStore.removeFromQueue(this.menuIndex)
     },
+    async menuSongRadio() {
+      if (!this.menuSong) return
+      try {
+        await this.playbackStore.startSongRadio(this.menuSong)
+      } catch (error) {
+        this.$emitter.emit('toast', {
+          level: 'error',
+          title: this.$t('library.songRadio'),
+          message: this.$t('library.songRadioError'),
+        })
+        console.error('[song-radio]', error)
+      }
+    },
+    menuCreatePlaylist() {
+      if (!this.menuSong) return
+      const dialog = this.$refs.createPlaylistForSong as
+        { open: (songIds: string[]) => void } | undefined
+      dialog?.open([this.menuSong.id])
+    },
+    async menuAddToPlaylist(playlistId: string) {
+      if (this.menuSong) await this.libraryStore.addToPlaylist(playlistId, [this.menuSong.id])
+    },
+    menuShowArtwork() {
+      const song = this.menuSong
+      if (!song) return
+      this.$emitter.emit('showArtwork', {
+        coverArtId: song.coverArtId,
+        title: song.title,
+        subtitle: song.album || song.artist,
+      })
+    },
+    menuShowInfo() {
+      if (this.menuSong) this.$emitter.emit('showSongInfo', this.menuSong)
+    },
+    trackDragPointer(event: DragEvent) {
+      if (this.drag.from === null) return
+      this.edgeScroll.y = event.clientY
+      this.edgeScroll.seenAt = performance.now()
+    },
+    scrollContainer(): HTMLElement | null {
+      return (
+        (this.$refs.body as HTMLElement | undefined)?.querySelector<HTMLElement>(
+          '.queue-scroll, .queue-virtual-scroll',
+        ) ?? null
+      )
+    },
+    edgeScrollTick(now: number) {
+      const state = this.edgeScroll
+      const dt = Math.min(now - state.lastTick, 50) / 1000
+      state.lastTick = now
+      const container = this.scrollContainer()
+      if (container && now - state.seenAt < EDGE_SCROLL_STALE_MS) {
+        const rect = container.getBoundingClientRect()
+        const intoTop = rect.top + EDGE_SCROLL_ZONE_PX - state.y
+        const intoBottom = state.y - (rect.bottom - EDGE_SCROLL_ZONE_PX)
+        const depth = Math.max(intoTop, intoBottom)
+        if (depth > 0) {
+          // Squared, so the edge of the zone creeps and the very edge races.
+          const share = Math.min(depth / EDGE_SCROLL_ZONE_PX, 1) ** 2
+          const step = share * EDGE_SCROLL_MAX_PX_PER_S * dt
+          container.scrollTop += intoTop > 0 ? -step : step
+        }
+      }
+      state.frame = requestAnimationFrame(this.edgeScrollTick)
+    },
+    startEdgeScroll() {
+      this.stopEdgeScroll()
+      this.edgeScroll.seenAt = 0
+      this.edgeScroll.lastTick = performance.now()
+      this.edgeScroll.frame = requestAnimationFrame(this.edgeScrollTick)
+    },
+    stopEdgeScroll() {
+      cancelAnimationFrame(this.edgeScroll.frame)
+      this.edgeScroll.frame = 0
+    },
     onDragStart(index: number, event: DragEvent) {
       this.drag.from = index
+      this.startEdgeScroll()
       if (event.dataTransfer) {
         event.dataTransfer.effectAllowed = 'move'
         // Firefox requires setData for the drag to actually start.
@@ -810,6 +951,7 @@ export default {
       }, 500)
     },
     onDragEnd() {
+      this.stopEdgeScroll()
       this.drag.from = null
       this.drag.over = null
       this.drag.half = null

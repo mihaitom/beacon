@@ -18,7 +18,7 @@
 // centering scroll never ran. Every later close/reopen already had a live
 // instance around to watch a real transition on, which is why this read as
 // "sometimes works" rather than "always broken".
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { mount } from '@vue/test-utils'
 import { h, ref } from 'vue'
@@ -487,5 +487,65 @@ describe('QueueDrawer taking its space out of the page', () => {
     await new Promise((resolve) => setTimeout(resolve, 400))
 
     expect(document.querySelector('.v-navigation-drawer__scrim')).toBeNull()
+  })
+})
+
+describe('QueueDrawer edge scroll while dragging', () => {
+  /** Holds the pointer at `y` for `ms`, reporting it the way a drag does:
+   * a dragover every few frames. */
+  async function holdDragAt(y: number, ms: number) {
+    const body = document.querySelector('.beacon-drawer__body')!
+    const end = performance.now() + ms
+    while (performance.now() < end) {
+      body.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, clientY: y }))
+      await new Promise((resolve) => setTimeout(resolve, 30))
+    }
+  }
+
+  async function startDrag() {
+    await page.viewport(1200, 800)
+    setActivePinia(createPinia())
+    const songs = Array.from({ length: 200 }, (_, i) => makeSong(String(i)))
+    usePlaybackStore().setQueue(songs, 0)
+    mountAlreadyOpen()
+    await new Promise((resolve) => setTimeout(resolve, 300))
+    const row = document.querySelector('[data-queue-index="1"]')!
+    row.dispatchEvent(
+      new DragEvent('dragstart', { bubbles: true, dataTransfer: new DataTransfer() }),
+    )
+    const container = document.querySelector('.queue-scroll') as HTMLElement
+    container.scrollTop = 2000
+    return container
+  }
+
+  it('scrolls quickly near the bottom and the top edge', async () => {
+    const container = await startDrag()
+    const rect = container.getBoundingClientRect()
+
+    await holdDragAt(rect.bottom - 4, 400)
+    expect(container.scrollTop).toBeGreaterThan(2000 + 300)
+
+    const before = container.scrollTop
+    await holdDragAt(rect.top + 4, 400)
+    expect(container.scrollTop).toBeLessThan(before - 300)
+  })
+
+  it('stays put in the middle of the list, and once the drag ends', async () => {
+    const container = await startDrag()
+    const rect = container.getBoundingClientRect()
+
+    await holdDragAt(rect.top + rect.height / 2, 300)
+    expect(container.scrollTop).toBe(2000)
+
+    container
+      .querySelector('[data-queue-index="1"]')!
+      .dispatchEvent(new DragEvent('dragend', { bubbles: true }))
+    await holdDragAt(rect.bottom - 4, 300)
+    expect(container.scrollTop).toBe(2000)
+    // Nor does its loop keep asking for frames with nothing to do.
+    const frames = vi.spyOn(window, 'requestAnimationFrame')
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(frames).not.toHaveBeenCalled()
+    frames.mockRestore()
   })
 })

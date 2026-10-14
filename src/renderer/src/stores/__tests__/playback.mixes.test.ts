@@ -103,6 +103,34 @@ describe('server-picked mixes', () => {
       expect(drawers.queueRevealSeq).toBeGreaterThan(0)
     })
 
+    it('from the song that is playing, replaces only what follows it', async () => {
+      // Starting the radio from the running song restarted it from 0:00.
+      const playback = usePlaybackStore()
+      playback.setQueue([makeSong('p'), makeSong('seed'), makeSong('old')], 1)
+      const current = playback.queue[1]!
+      playback.isPlaying = true
+      stubSimilar({ songs: [makeSong('seed'), makeSong('x'), makeSong('y')] })
+
+      await playback.startSongRadio(makeSong('seed'))
+
+      expect(playback.queue.map((s) => s.id)).toEqual(['seed', 'x', 'y'])
+      expect(playback.queue[playback.currentIndex]).toBe(current)
+      expect(getAudioEngine().play).not.toHaveBeenCalled()
+      expect(playback.isPlaying).toBe(true)
+    })
+
+    it('keeps a next song the mix has already settled on', async () => {
+      const playback = usePlaybackStore()
+      playback.setQueue([makeSong('seed'), makeSong('locked'), makeSong('old')], 0)
+      playback.mixNextLocked = true
+      stubSimilar({ songs: [makeSong('x'), makeSong('locked'), makeSong('y')] })
+
+      await playback.startSongRadio(makeSong('seed'))
+
+      expect(playback.queue.map((s) => s.id)).toEqual(['seed', 'locked', 'x', 'y'])
+      expect(playback.lockedNextIndex).toBe(1)
+    })
+
     it('explains that this server needs a Plex Pass for it', async () => {
       const playback = usePlaybackStore()
       stubSimilar({ songs: [], plexPassRequired: true })
