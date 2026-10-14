@@ -191,7 +191,7 @@ def test_discovery_imports_its_library_off_the_loop(func, expected):
         patch.object(manager_mod, "import_in_thread", new=_recording),
         patch("pyatv.scan", new=_nothing),
         patch("async_upnp_client.search.async_search", new=_nothing),
-        patch("soco.discover", return_value=[]),
+        patch("delivery.sonos_discovery.discover_zones", return_value=[]),
     ):
         asyncio.run(getattr(manager_mod, func)())
 
@@ -663,7 +663,7 @@ def test_discover_sonos_reports_name_and_ip():
     device.player_name = "Küche"
     device.ip_address = "10.0.0.5"
 
-    with patch("soco.discover", return_value=[device]):
+    with patch("delivery.sonos_discovery.discover_zones", return_value=[device]):
         result = asyncio.run(discover_sonos())
 
     assert result == [{"name": "Küche", "ip": "10.0.0.5"}]
@@ -672,7 +672,7 @@ def test_discover_sonos_reports_name_and_ip():
 def test_discover_sonos_handles_no_devices_found():
     from delivery.manager import discover_sonos
 
-    with patch("soco.discover", return_value=None):
+    with patch("delivery.sonos_discovery.discover_zones", return_value=[]):
         result = asyncio.run(discover_sonos())
 
     assert result == []

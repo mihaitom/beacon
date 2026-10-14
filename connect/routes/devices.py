@@ -411,8 +411,8 @@ async def stop_device(
         try:
             if device_type == "sonos":
                 # Resolved through the delivery's own cache
-                # (delivery/sonos.py's _cached_device()) rather than a bare
-                # soco.discover(): a full SSDP sweep here blocks a worker
+                # (delivery/sonos.py's _cached_device()) rather than a
+                # fresh discovery: a full SSDP sweep here blocks a worker
                 # thread for the whole discovery timeout while this handler
                 # holds play_lock, so every /play, /pause and /seek on this
                 # session waits it out — right in the middle of a device

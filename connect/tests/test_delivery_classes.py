@@ -300,7 +300,7 @@ def test_sonos_play_logs_unjoin_failure_and_still_proceeds(caplog):
 def test_sonos_get_device_raises_when_none_found_at_all():
     d = SonosDelivery("Küche")
     with (
-        patch("soco.discover", return_value=None),
+        patch("delivery.sonos_discovery.discover_zones", return_value=[]),
         pytest.raises(DeviceNotFoundError, match="No Sonos devices found"),
     ):
         d._get_device()
@@ -319,7 +319,9 @@ def test_sonos_get_device_skips_a_device_that_errors_reading_its_name():
     good = MagicMock()
     good.player_name = "Küche"
     d = SonosDelivery("Küche")
-    with patch("soco.discover", return_value=[_BrokenSonosDevice(), good]):
+    with patch(
+        "delivery.sonos_discovery.discover_zones", return_value=[_BrokenSonosDevice(), good]
+    ):
         assert d._get_device() is good
 
 
@@ -328,7 +330,7 @@ def test_sonos_get_device_raises_with_available_names_when_target_missing():
     other.player_name = "Wohnzimmer"
     d = SonosDelivery("Küche")
     with (
-        patch("soco.discover", return_value=[other]),
+        patch("delivery.sonos_discovery.discover_zones", return_value=[other]),
         pytest.raises(DeviceNotFoundError, match="Wohnzimmer"),
     ):
         d._get_device()
@@ -352,7 +354,7 @@ def _fake_sonos(name: str):
 def test_get_device_discovers_only_once_for_repeated_calls():
     kitchen = _fake_sonos("Küche")
     d = SonosDelivery("Küche")
-    with patch("soco.discover", return_value=[kitchen]) as discover:
+    with patch("delivery.sonos_discovery.discover_zones", return_value=[kitchen]) as discover:
         assert d._get_device() is kitchen
         assert d._get_device() is kitchen
         assert d._get_device() is kitchen
@@ -367,7 +369,7 @@ def test_get_device_is_shared_between_delivery_instances():
     """A delivery object is built per dispatch, so a per-instance cache would
     almost never hit."""
     kitchen = _fake_sonos("Küche")
-    with patch("soco.discover", return_value=[kitchen]) as discover:
+    with patch("delivery.sonos_discovery.discover_zones", return_value=[kitchen]) as discover:
         SonosDelivery("Küche")._get_device()
         SonosDelivery("Küche")._get_device()
 
@@ -380,11 +382,11 @@ def test_get_device_rediscovers_when_the_cached_speaker_stops_answering():
     gone = _fake_sonos("Küche")
     fresh = _fake_sonos("Küche")
     d = SonosDelivery("Küche")
-    with patch("soco.discover", return_value=[gone]):
+    with patch("delivery.sonos_discovery.discover_zones", return_value=[gone]):
         assert d._get_device() is gone
 
     gone.get_speaker_info.side_effect = OSError("no route to host")
-    with patch("soco.discover", return_value=[fresh]) as discover:
+    with patch("delivery.sonos_discovery.discover_zones", return_value=[fresh]) as discover:
         assert d._get_device() is fresh
 
     discover.assert_called_once()
@@ -393,19 +395,19 @@ def test_get_device_rediscovers_when_the_cached_speaker_stops_answering():
 def test_get_device_rediscovers_when_the_cached_speaker_was_renamed():
     kitchen = _fake_sonos("Küche")
     d = SonosDelivery("Küche")
-    with patch("soco.discover", return_value=[kitchen]):
+    with patch("delivery.sonos_discovery.discover_zones", return_value=[kitchen]):
         assert d._get_device() is kitchen
 
     kitchen.get_speaker_info.return_value = {"zone_name": "Wohnzimmer"}
     replacement = _fake_sonos("Küche")
-    with patch("soco.discover", return_value=[replacement]) as discover:
+    with patch("delivery.sonos_discovery.discover_zones", return_value=[replacement]) as discover:
         assert d._get_device() is replacement
 
     discover.assert_called_once()
 
 
 def test_get_device_still_raises_when_the_target_is_nowhere():
-    with patch("soco.discover", return_value=[_fake_sonos("Bad")]):
+    with patch("delivery.sonos_discovery.discover_zones", return_value=[_fake_sonos("Bad")]):
         with pytest.raises(DeviceNotFoundError, match="not found"):
             SonosDelivery("Küche")._get_device()
 

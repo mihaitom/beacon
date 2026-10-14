@@ -122,7 +122,7 @@ def test_device_stop_sonos_device_not_found_on_network(client, default_session, 
     default_session.state.active_delivery = SonosDelivery("Küche")
 
     with (
-        patch("soco.discover", return_value=[]),
+        patch("delivery.sonos_discovery.discover_zones", return_value=[]),
         caplog.at_level(logging.WARNING, logger="connect.devices"),
     ):
         r = client.post("/device-stop?device_type=sonos&name=Küche")
@@ -137,7 +137,7 @@ def test_device_stop_sonos_standalone_coordinator_just_stops(client, default_ses
     default_session.state.is_streaming = True
     default_session.state.active_delivery = SonosDelivery("Küche")
 
-    with patch("soco.discover", return_value=[raw]):
+    with patch("delivery.sonos_discovery.discover_zones", return_value=[raw]):
         r = client.post("/device-stop?device_type=sonos&name=Küche")
 
     assert r.json()["status"] == "stopped"
@@ -152,7 +152,7 @@ def test_device_stop_sonos_follower_unjoins_itself_before_stopping(client, defau
     default_session.state.is_streaming = True
     default_session.state.active_delivery = SonosDelivery("Wohnzimmer")
 
-    with patch("soco.discover", return_value=[raw]):
+    with patch("delivery.sonos_discovery.discover_zones", return_value=[raw]):
         r = client.post("/device-stop?device_type=sonos&name=Wohnzimmer")
 
     assert r.json()["status"] == "stopped"
@@ -180,7 +180,9 @@ def test_device_stop_sonos_coordinator_ungroups_followers_and_restarts_the_strea
     )
 
     with (
-        patch("soco.discover", return_value=[raw_coordinator, raw_follower]),
+        patch(
+            "delivery.sonos_discovery.discover_zones", return_value=[raw_coordinator, raw_follower]
+        ),
         patch("asyncio.sleep", new=AsyncMock()),
     ):
         r = client.post("/device-stop?device_type=sonos&name=Küche")
@@ -211,7 +213,7 @@ def test_device_stop_leaves_an_unrelated_standalone_sonos_alone(client, default_
     )
 
     with (
-        patch("soco.discover", return_value=[raw_stopped, raw_other]),
+        patch("delivery.sonos_discovery.discover_zones", return_value=[raw_stopped, raw_other]),
         patch("asyncio.sleep", new=AsyncMock()),
     ):
         r = client.post("/device-stop?device_type=sonos&name=Küche")
@@ -224,7 +226,7 @@ def test_device_stop_leaves_an_unrelated_standalone_sonos_alone(client, default_
 
 
 def test_device_stop_resolves_sonos_through_the_delivery_cache(client, default_session):
-    """A bare soco.discover() here is a network-wide SSDP sweep that blocks
+    """A fresh discovery here is a network-wide SSDP sweep that blocks
     a worker thread for the whole discovery timeout while this handler holds
     play_lock — every /play, /pause and /seek on the session waits it out,
     right in the middle of a device switch. delivery/sonos.py's own cache
@@ -238,7 +240,7 @@ def test_device_stop_resolves_sonos_through_the_delivery_cache(client, default_s
     default_session.state.is_streaming = True
     default_session.state.active_delivery = SonosDelivery("Küche")
 
-    with patch("soco.discover") as discover:
+    with patch("delivery.sonos_discovery.discover_zones") as discover:
         r = client.post("/device-stop?device_type=sonos&name=Küche")
 
     assert r.json()["status"] == "stopped"
@@ -299,7 +301,9 @@ def test_device_stop_hands_position_resync_over_to_the_remaining_device(client, 
     )
 
     with (
-        patch("soco.discover", return_value=[raw_coordinator, raw_follower]),
+        patch(
+            "delivery.sonos_discovery.discover_zones", return_value=[raw_coordinator, raw_follower]
+        ),
         patch("asyncio.sleep", new=AsyncMock()),
         patch("routes.devices._resync_position_periodically") as resync,
     ):
@@ -328,7 +332,9 @@ def test_device_stop_does_not_start_a_second_resync_for_an_untouched_device(
     )
 
     with (
-        patch("soco.discover", return_value=[raw_coordinator, raw_follower]),
+        patch(
+            "delivery.sonos_discovery.discover_zones", return_value=[raw_coordinator, raw_follower]
+        ),
         patch("asyncio.sleep", new=AsyncMock()),
         patch("routes.devices._resync_position_periodically") as resync,
     ):
@@ -352,7 +358,9 @@ def test_device_stop_sonos_survives_a_follower_that_wont_ungroup(client, default
     )
 
     with (
-        patch("soco.discover", return_value=[raw_coordinator, raw_follower]),
+        patch(
+            "delivery.sonos_discovery.discover_zones", return_value=[raw_coordinator, raw_follower]
+        ),
         patch("asyncio.sleep", new=AsyncMock()),
         caplog.at_level(logging.WARNING, logger="connect.devices"),
     ):
@@ -385,7 +393,9 @@ def test_device_stop_sonos_restart_uses_the_radio_url_when_a_radio_station_is_ac
     )
 
     with (
-        patch("soco.discover", return_value=[raw_coordinator, raw_follower]),
+        patch(
+            "delivery.sonos_discovery.discover_zones", return_value=[raw_coordinator, raw_follower]
+        ),
         patch("asyncio.sleep", new=AsyncMock()),
     ):
         client.post("/device-stop?device_type=sonos&name=Küche")
@@ -412,7 +422,9 @@ def test_device_stop_sonos_restart_failure_is_logged_not_raised(client, default_
     )
 
     with (
-        patch("soco.discover", return_value=[raw_coordinator, raw_follower]),
+        patch(
+            "delivery.sonos_discovery.discover_zones", return_value=[raw_coordinator, raw_follower]
+        ),
         patch("asyncio.sleep", new=AsyncMock()),
         caplog.at_level(logging.ERROR, logger="connect.devices"),
     ):

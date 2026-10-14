@@ -129,8 +129,9 @@ def _block_real_cast_and_dlna_discovery(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _block_real_sonos_discovery(monkeypatch):
-    """soco.discover() is a real, unmocked network-wide SSDP multicast search
-    (see delivery/sonos.py's _get_device() docstring) — on a LAN that also
+    """soco.discover() and delivery/sonos_discovery.py are a real, unmocked
+    network-wide SSDP multicast search (see delivery/sonos.py's
+    _get_device() docstring) — on a LAN that also
     has real Sonos hardware on it, an uncovered call reaches actual
     speakers, not a fake one.
 
@@ -144,19 +145,20 @@ def _block_real_sonos_discovery(monkeypatch):
     this reached the real device; the user reproduced it directly (fresh
     playback started, test suite run, playback stopped immediately).
 
-    Every test that legitimately needs a device patches soco.discover or
+    Every test that legitimately needs a device patches discover_zones or
     SonosDelivery._get_device itself, which shadows this default for its own
     scope — this fixture only closes the gap for whatever a test forgot to
     cover, so a forgotten mock fails fast (no device found) instead of
     silently reaching real hardware."""
     monkeypatch.setattr("soco.discover", lambda *args, **kwargs: None)
+    monkeypatch.setattr("delivery.sonos_discovery._collect_responders", dict)
 
 
 @pytest.fixture(autouse=True)
 def _clear_sonos_device_cache():
     """delivery/sonos.py caches resolved SoCo devices process-wide (see
     _get_device()), so without this one test's fake speaker would still be
-    cached for the next one — and a test that patched soco.discover would
+    cached for the next one — and a test that patched discover_zones would
     silently never reach it."""
     from delivery.sonos import forget_cached_devices
 

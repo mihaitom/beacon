@@ -12,6 +12,7 @@ from core.upnp_events import (
     subscribe,
 )
 
+from . import sonos_discovery
 from .base import BaseDelivery
 from .errors import DeviceNotFoundError
 
@@ -181,8 +182,8 @@ class SonosDelivery(BaseDelivery):
         Cached across calls, and that matters more than it sounds: this is
         called on *every* device interaction, and the position-resync loop
         alone calls it every POSITION_RESYNC_INTERVAL for as long as a cast
-        runs. Each uncached call is a network-wide SSDP M-SEARCH, which SoCo
-        repeats several times over its timeout - measured on beacon-dev
+        runs. Each uncached call is a network-wide SSDP M-SEARCH, sent
+        several times over its timeout - measured on beacon-dev
         2026-08-23 at roughly 25 multicast searches per minute during
         ordinary playback, rising past 180/min with a device picker open in
         two instances. That is by far the loudest thing this app does to the
@@ -200,9 +201,7 @@ class SonosDelivery(BaseDelivery):
         if cached is not None:
             return cached
 
-        import soco
-
-        devices = list(soco.discover() or [])
+        devices = sonos_discovery.discover_zones()
         if not devices:
             raise DeviceNotFoundError("No Sonos devices found.")
         for d in devices:

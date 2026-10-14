@@ -5,6 +5,7 @@ import logging
 
 from core.log_level import is_at_least
 
+from . import sonos_discovery
 from .base import BaseDelivery
 from .chromecast import _ensure_cast_browser, _wait_for_discovery
 from .dlna import _DISCOVERY_TIMEOUT, UnsupportedDlnaDevice, _create_dmr_device, _location_cache
@@ -175,10 +176,10 @@ class DeliveryManager:
 
 
 async def discover_sonos() -> list[dict]:
-    """Discovers all Sonos devices on the network."""
-    soco = await import_in_thread("soco")
+    """Discovers all Sonos devices on the network, in every household."""
+    await import_in_thread("soco")
 
-    devices = await asyncio.to_thread(lambda: list(soco.discover() or []))
+    devices = await asyncio.to_thread(sonos_discovery.discover_zones)
     return [{"name": d.player_name, "ip": d.ip_address} for d in devices]
 
 

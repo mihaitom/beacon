@@ -20,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Fixed
 
 - Playback on a network that cuts long connections (such as a company proxy) picks up where it was instead of stopping or jumping back to an earlier song, and pressing play after a lost connection starts it again instead of needing a reload
+- With an S1 and an S2 Sonos system on the same network, the device list shows the speakers of both instead of switching between one and the other (reported by @ampcat3, #54)
 - iPad in landscape: the volume slider no longer jumps back after letting go, and where the iPad's own volume buttons are the only way to change the level, the slider is left out as it already was in portrait (reported by @ampcat3, #53)
 - Dragging a song through a long queue stays smooth instead of making the app sluggish
 - With transitions on while casting, the seek bar switches to the next song together with its position, instead of briefly showing the new waveform at the old song's time
