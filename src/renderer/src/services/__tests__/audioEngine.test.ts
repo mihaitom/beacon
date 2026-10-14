@@ -530,6 +530,46 @@ describe('AudioEngine', () => {
       expect(audio.play).not.toHaveBeenCalled()
     })
 
+    // What a cast ending leaves behind (prepareLocalPlayback()): a stream
+    // loaded but not played, whose connection the far end drops after a
+    // while. Reconnecting it used to start the sound with it.
+    it('does not start a loaded stream whose connection drops', async () => {
+      engine.loadFrom((s) => `mix?from=${s}`, 0, 1, Number.POSITIVE_INFINITY)
+      dropConnection()
+
+      await vi.advanceTimersByTimeAsync(60_000)
+
+      expect(audio.play).not.toHaveBeenCalled()
+      expect(engine.failed).toBe(false)
+    })
+
+    it('fetches a stream that dropped while paused again on the next play', async () => {
+      engine.loadFrom((s) => `mix?from=${s}`, 0, 1, Number.POSITIVE_INFINITY)
+      audio.settleAt(12)
+      audio.dispatchEvent(new Event('timeupdate'))
+      dropConnection()
+      await vi.advanceTimersByTimeAsync(60_000)
+
+      engine.resume()
+
+      expect(audio.src).toBe('mix?from=12')
+      expect(audio.play).toHaveBeenCalledOnce()
+    })
+
+    it('fetches the stream again on resume when a pause cut its retry short', async () => {
+      engine.play('song.mp3')
+      audio.settleAt(42)
+      audio.dispatchEvent(new Event('timeupdate'))
+      dropConnection()
+      engine.pause()
+      audio.src = 'dead'
+
+      engine.resume()
+
+      expect(audio.src).toBe('song.mp3')
+      expect(audio.currentTime).toBe(42)
+    })
+
     it('does not resurrect playback once stop() moved on', async () => {
       engine.play('song.mp3')
       dropConnection()

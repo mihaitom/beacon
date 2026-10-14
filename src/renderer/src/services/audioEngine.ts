@@ -215,6 +215,12 @@ export class AudioEngine {
   // event. Cleared by loadSource() (a new source is nobody's reconnect),
   // never by a retry of the reconnect currently running.
   private reconnecting = false
+  // Whether sound is meant to be coming out: set by start(), cleared by
+  // pause(), stop() and every new source. A drop while it is false is not
+  // reconnected right away, since the retry would start playback, but the
+  // next start() picks it up - see reconnectOnDrop().
+  private playWanted = false
+  private droppedWhilePaused: ReconnectReason | null = null
   // When checkForStall() last ran — see STALL_CHECK_LATE_MS.
   private lastStallCheckAt = 0
   // Whether what is loaded is a live stream rather than a file — set by
@@ -594,6 +600,14 @@ export class AudioEngine {
     // rather than cancelled, so both fire and the element opens two
     // connections a fraction of a second apart.
     if (this.reconnectTimer !== null) return
+    // A loaded but paused element - the one prepareLocalPlayback() leaves
+    // after a cast ends, a mix connect is holding paused - loses its
+    // connection as a matter of course. Retrying here meant the retry's
+    // play() started sound nobody had asked for, a minute or so later.
+    if (!this.playWanted) {
+      this.droppedWhilePaused = reason
+      return
+    }
     const delaySeconds = this.nextReconnectDelay()
     if (delaySeconds === null) {
       this.giveUp('after dropped connection')
@@ -605,37 +619,7 @@ export class AudioEngine {
     const retry = (): void => {
       this.reconnectTimer = null
       this.pendingRetry = null
-      const url = this.reconnectUrl
-      if (url === null) return
-      this.cancelStartPositionRetry?.()
-      if (this.offsetStream && this.urlForPosition) {
-        // A different URL, not the one that dropped: this stream has no
-        // length and the element's clock restarts at 0 on a new src, so
-        // there is nothing to seek back to. What is asked for instead is
-        // the same audio from where playback had reached, with the offset
-        // moved to match. Assigned here rather than below because it is a
-        // different address — everything else reconnects to the same one.
-        this.positionOffset = this.lastKnownPosition
-        this.audio.src = this.urlForPosition(this.lastKnownPosition)
-      } else if (this.liveStream) {
-        this.audio.src = this.withReconnectReason(url, reason, attempt)
-        // A live stream has no position to come back to: it is only ever
-        // served from its own edge, and writing a start position onto one
-        // asks the element to seek somewhere that does not exist. What is
-        // carried across instead is the *reported* position, so the elapsed
-        // readout survives the gap — see positionOffset.
-        this.positionOffset = this.lastKnownPosition
-      } else {
-        this.audio.src = url
-        this.applyStartPosition(this.lastKnownPosition)
-      }
-      // The retry gets the full stall budget of its own rather than
-      // inheriting a clock that has already been standing still for
-      // however long this backoff step lasted — otherwise checkForStall()
-      // would condemn the new connection before it has had a chance to
-      // deliver its first byte.
-      this.lastProgressAt = Date.now()
-      this.onBufferedChange?.(0)
+      if (!this.reloadAfterDrop(reason, attempt)) return
       // A rejected play() here needs no handling of its own: a connection
       // that still isn't back fires the element's own 'error' event just
       // as the first attempt did, which re-enters this same method for the
@@ -644,6 +628,44 @@ export class AudioEngine {
     }
     this.pendingRetry = retry
     this.reconnectTimer = setTimeout(retry, delaySeconds * 1000)
+  }
+
+  /** Points the element at the dropped stream again, from where playback
+   * had reached - the part of a reconnect that does not start playback.
+   * False when there is nothing to reconnect. */
+  private reloadAfterDrop(reason: ReconnectReason, attempt: number): boolean {
+    const url = this.reconnectUrl
+    if (url === null) return false
+    this.cancelStartPositionRetry?.()
+    if (this.offsetStream && this.urlForPosition) {
+      // A different URL, not the one that dropped: this stream has no
+      // length and the element's clock restarts at 0 on a new src, so
+      // there is nothing to seek back to. What is asked for instead is
+      // the same audio from where playback had reached, with the offset
+      // moved to match. Assigned here rather than below because it is a
+      // different address — everything else reconnects to the same one.
+      this.positionOffset = this.lastKnownPosition
+      this.audio.src = this.urlForPosition(this.lastKnownPosition)
+    } else if (this.liveStream) {
+      this.audio.src = this.withReconnectReason(url, reason, attempt)
+      // A live stream has no position to come back to: it is only ever
+      // served from its own edge, and writing a start position onto one
+      // asks the element to seek somewhere that does not exist. What is
+      // carried across instead is the *reported* position, so the elapsed
+      // readout survives the gap — see positionOffset.
+      this.positionOffset = this.lastKnownPosition
+    } else {
+      this.audio.src = url
+      this.applyStartPosition(this.lastKnownPosition)
+    }
+    // The retry gets the full stall budget of its own rather than
+    // inheriting a clock that has already been standing still for
+    // however long this backoff step lasted — otherwise checkForStall()
+    // would condemn the new connection before it has had a chance to
+    // deliver its first byte.
+    this.lastProgressAt = Date.now()
+    this.onBufferedChange?.(0)
+    return true
   }
 
   /** How long to wait before the next attempt, or null when there should
@@ -849,6 +871,8 @@ export class AudioEngine {
    * but a drop *after* they press play again is an ordinary drop. */
   private cancelPendingReconnect(): void {
     if (this.reconnectTimer === null) return
+    // The connection is still gone: the next start() fetches it again.
+    if (this.reconnectUrl !== null) this.droppedWhilePaused ??= 'network-error'
     clearTimeout(this.reconnectTimer)
     this.reconnectTimer = null
     this.pendingRetry = null
@@ -871,6 +895,7 @@ export class AudioEngine {
   private cancelReconnect(): void {
     this.cancelPendingReconnect()
     this.reconnectUrl = null
+    this.droppedWhilePaused = null
   }
 
   /** Loads `url` at `startPosition` without starting playback — used to
@@ -978,6 +1003,7 @@ export class AudioEngine {
   ): void {
     this.cancelStartPositionRetry?.()
     this.cancelReconnect()
+    this.playWanted = false
     this.disarmStallWatchdog()
     this.liveStream = live
     this.holdsConnection = false
@@ -1098,6 +1124,12 @@ export class AudioEngine {
     // place guaranteed to run inside the user gesture that asked for it —
     // see resumeContext()'s own comment for why that matters.
     this.resumeContext()
+    this.playWanted = true
+    const dropped = this.droppedWhilePaused
+    if (dropped !== null) {
+      this.droppedWhilePaused = null
+      this.reloadAfterDrop(dropped, this.reconnectAttempts + 1)
+    }
     this.armStallWatchdog()
     // Starting, or resuming, takes as long as it takes and is not a gap.
     this.silenceAnchor = null
@@ -1138,6 +1170,7 @@ export class AudioEngine {
     // stays reconnectable for when playback resumes (see
     // cancelPendingReconnect()).
     this.cancelPendingReconnect()
+    this.playWanted = false
     this.disarmStallWatchdog()
     this.audio.pause()
     this.suspendContext()
@@ -1150,6 +1183,7 @@ export class AudioEngine {
   stop(): void {
     this.cancelStartPositionRetry?.()
     this.cancelReconnect()
+    this.playWanted = false
     this.disarmStallWatchdog()
     this.audio.pause()
     this.audio.removeAttribute('src')
