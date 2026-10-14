@@ -52,7 +52,7 @@ function startOptions(autoplay = true) {
     songs: upcomingSongs(queue, 0, 'off', 'off'),
     position: 12,
     repeatMode: 'off' as const,
-    transitions: { mode: 'gapless' as const, crossfade_seconds: 10, beatmix_seconds: 10 },
+    transitions: { mode: 'gapless' as const, crossfade_seconds: 10, beatmix_bars: 8 as const },
     quality,
     autoplay,
   }

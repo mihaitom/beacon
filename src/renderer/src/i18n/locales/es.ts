@@ -744,9 +744,10 @@ export default {
     transitionsGapless: 'Sin pausas',
     transitionsCrossfade: 'Fundido',
     crossfadeLength: 'Fundido normal',
-    beatmixLength: 'Mezcla a tempo, como máximo',
+    beatmixLength: 'Mezcla a tempo',
+    beatmixBars: '{n} compases',
     transitionsHint:
-      'Sin pausas reproduce las canciones una tras otra sin silencio entre ellas. Fundido mezcla una canción con la siguiente: cuando el ritmo lo permite, Beacon mezcla a tempo: iguala el tempo, introduce el bajo de la siguiente canción a tiempo y luego desvanece poco a poco la anterior. Si no, hace un fundido normal. Cada uno tiene su propia duración; una mezcla a tempo dura siempre compases enteros. Las canciones que se siguen en un álbum siempre suenan sin pausas. En ambos casos la música pasa por Beacon como un único stream continuo, tanto en este dispositivo como en los altavoces.',
+      'Sin pausas reproduce las canciones una tras otra sin silencio entre ellas. Fundido mezcla una canción con la siguiente: cuando el ritmo lo permite, Beacon mezcla a tempo: iguala el tempo, introduce el bajo de la siguiente canción a tiempo y luego desvanece poco a poco la anterior. Si no, hace un fundido normal. El fundido se ajusta en segundos y la mezcla a tempo en compases, menos cuando una canción no deja sitio para ellos. Las canciones que se siguen en un álbum siempre suenan sin pausas. En ambos casos la música pasa por Beacon como un único stream continuo, tanto en este dispositivo como en los altavoces.',
     about: 'Acerca de Beacon',
     whatsNew: '¿Qué hay de nuevo?',
     ffmpegFound: 'ffmpeg encontrado',

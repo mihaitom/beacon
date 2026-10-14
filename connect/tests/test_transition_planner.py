@@ -197,16 +197,27 @@ def test_a_longer_setting_buys_more_bars():
     assert short.overlap == pytest.approx(4 * 60 / 126)  # never under one bar
 
 
-def test_a_beatmix_and_a_crossfade_have_lengths_of_their_own():
-    settings = Settings("crossfade", crossfade_seconds=4.0, beatmix_seconds=31.0)
-    beatmix = plan_transition(settings, OUT, IN, out_region(), in_region())
-    assert beatmix.kind == "beatmix"
-    assert beatmix.overlap == pytest.approx(16 * 4 * 60 / 126)
+def test_a_beatmix_lasts_the_bars_set_and_a_crossfade_its_own_length():
+    for n in (4, 8, 16):
+        settings = Settings("crossfade", crossfade_seconds=4.0, beatmix_bars=n)
+        beatmix = plan_transition(settings, OUT, IN, out_region(), in_region())
+        assert beatmix.kind == "beatmix"
+        assert beatmix.overlap == pytest.approx(n * 4 * 60 / 126)
     crossfade = plan_transition(settings, OUT, IN)
     assert crossfade.kind == "crossfade" and crossfade.overlap == pytest.approx(4.0)
 
 
-def test_without_a_beatmix_length_a_beatmix_takes_the_crossfade_one():
+def test_a_beatmix_with_too_little_song_for_its_bars_takes_fewer():
+    # 16 bars at 70 BPM are 55 s, more than the incoming 60 s leave once a
+    # region of 30 s is all there is.
+    settings = Settings("crossfade", crossfade_seconds=4.0, beatmix_bars=16)
+    short_in = RegionAnalysis(0.0, 30.0, 0.4, 30.0, grid(70.0, 0.5, 0.5))
+    plan = plan_transition(settings, OUT, IN, out_region(bpm=70.5), short_in)
+    assert plan.kind == "beatmix"
+    assert plan.overlap == pytest.approx(8 * 4 * 60 / 70)
+
+
+def test_without_bars_a_beatmix_takes_the_crossfade_length():
     plan = plan_transition(Settings("crossfade", 31.0), OUT, IN, out_region(), in_region())
     assert plan.overlap == pytest.approx(16 * 4 * 60 / 126)
 

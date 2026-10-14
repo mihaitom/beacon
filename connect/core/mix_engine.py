@@ -877,8 +877,7 @@ class MixEngine:
         if plan is None:
             # The analysis has not answered by the last moment a crossfade
             # can still start: go ahead on the metadata alone.
-            longest = max(self.settings.crossfade_seconds, self.settings.beatmix_limit)
-            latest = deck.item.until - longest - 1.0
+            latest = deck.item.until - self.settings.longest_seconds - 1.0
             if deck.item.until <= 0 or deck.position < latest:
                 return
             if self._plan_task is not None:

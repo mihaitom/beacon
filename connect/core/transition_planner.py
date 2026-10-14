@@ -83,17 +83,22 @@ _CURVE_POINTS = 33
 @dataclass(frozen=True)
 class Settings:
     mode: str = "gapless"
-    # The longest overlap of each kind: a crossfade's, and a beatmix's,
-    # which is rounded down to whole bars - the crossfade's without one.
+    # The longest overlap of a crossfade, and how many bars a beatmix
+    # lasts - fewer where the songs leave no room. Without bars (a preview)
+    # a beatmix is as many whole bars as fit the crossfade's length.
     crossfade_seconds: float = 10.0
-    beatmix_seconds: float | None = None
+    beatmix_bars: int | None = None
     # A preview of excerpts (core/preview.py): always blended, album
     # neighbours too, and never stretched - see PREVIEW_MAX_DRIFT.
     preview: bool = False
 
     @property
-    def beatmix_limit(self) -> float:
-        return self.crossfade_seconds if self.beatmix_seconds is None else self.beatmix_seconds
+    def longest_seconds(self) -> float:
+        """The longest overlap either kind may take: a beatmix's counted at
+        120 BPM, two seconds a bar - a slower one is cut down to fewer
+        bars by the songs' own room rather than planned any earlier."""
+        beatmix = self.beatmix_bars * 2.0 if self.beatmix_bars else 0.0
+        return max(self.crossfade_seconds, beatmix)
 
 
 @dataclass(frozen=True)
@@ -285,13 +290,17 @@ def _beatmix(
     in_start = float(starts[0])
     in_room = in_region.end - in_start
     out_room = out_end - out_region.start
+
+    def as_set(n: int) -> bool:
+        if settings.beatmix_bars:
+            return n <= settings.beatmix_bars
+        return n * stream_bar <= max(settings.crossfade_seconds, stream_bar)
+
     bars = next(
         (
             n
             for n in _BAR_CHOICES
-            if n * stream_bar <= max(settings.beatmix_limit, stream_bar)
-            and n * bar <= out_room
-            and n * stream_bar <= in_room
+            if as_set(n) and n * bar <= out_room and n * stream_bar <= in_room
         ),
         None,
     )

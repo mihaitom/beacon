@@ -744,9 +744,10 @@ export default {
     transitionsGapless: 'Lückenlos',
     transitionsCrossfade: 'Überblenden',
     crossfadeLength: 'Normale Überblendung',
-    beatmixLength: 'Beat-Mix, höchstens',
+    beatmixLength: 'Beat-Mix',
+    beatmixBars: '{n} Takte',
     transitionsHint:
-      'Lückenlos spielt die Songs ohne Pause hintereinander. Überblenden lässt einen Song in den nächsten übergehen: Wo der Beat es zulässt, mixt Beacon im Takt - es gleicht das Tempo an, holt den Bass des nächsten Songs auf dem Beat rein und blendet den vorigen dann langsam aus. Sonst blendet es normal über. Beide Längen sind getrennt einstellbar; ein Beat-Mix dauert immer ganze Takte. Songs, die auf einem Album aufeinander folgen, laufen immer lückenlos. In beiden Fällen läuft die Musik als ein durchgehender Stream über Beacon, auf diesem Gerät wie auf Lautsprechern.',
+      'Lückenlos spielt die Songs ohne Pause hintereinander. Überblenden lässt einen Song in den nächsten übergehen: Wo der Beat es zulässt, mixt Beacon im Takt - es gleicht das Tempo an, holt den Bass des nächsten Songs auf dem Beat rein und blendet den vorigen dann langsam aus. Sonst blendet es normal über. Die Überblendung wird in Sekunden eingestellt, der Beat-Mix in Takten - in weniger, wo ein Song keinen Platz dafür lässt. Songs, die auf einem Album aufeinander folgen, laufen immer lückenlos. In beiden Fällen läuft die Musik als ein durchgehender Stream über Beacon, auf diesem Gerät wie auf Lautsprechern.',
     about: 'Über Beacon',
     whatsNew: 'Was ist neu?',
     ffmpegFound: 'ffmpeg gefunden',

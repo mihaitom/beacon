@@ -15,6 +15,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Changed
 
 - With transitions on, Sonos and AirPlay speakers now get lossless audio instead of AAC or MP3
+- The DJ mix length is chosen in bars (4, 8 or 16) instead of seconds, so it lasts the same musical phrase at every tempo. A length set before is carried over
+- Now Playing shows the familiar arrows before the next song again and names the transition in words instead: crossfade, or DJ mix with its tempo. Hovering "Crossfade" tells why it could not be a DJ mix, and with the artwork hidden both songs stay in the corner until the previous one has faded out
 - Song Radio started from the song that is playing keeps it playing and only replaces what comes after it, instead of starting the song over
 - Songs in the queue can be grabbed anywhere to drag them, without a handle, and dragging near the top or bottom of the queue scrolls it quickly. The scrolling also works on the phone and in the Remote Control, where a long queue did not scroll during a drag at all
 
@@ -43,7 +45,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Gapless playback in the app and on speakers, under Settings, Playback, Transitions. Once the transition is prepared, the next song stays in its place in the queue
 - Crossfade the way a DJ mixes: where the beat allows it, Beacon matches the tempo and brings the next song in on the beat, otherwise it is an ordinary crossfade with a length of its own. Songs that follow each other on an album still play gaplessly, and party guests listening online hear the same transitions
-- Now Playing announces the next song before the transition starts and says whether it comes in as a crossfade or a DJ mix (with its tempo). Hovering "Crossfade" tells why it could not be a DJ mix. With the artwork hidden, both songs stay in the corner until the previous one has faded out
+- Now Playing announces the next song before the transition starts, with its own symbol for a crossfade and a DJ mix
 - Preview on album and playlist pages and in the list of playlists: about two minutes from six songs across it, different ones each time, while the queue stays as it was. "Play from here" plays it from the song you are hearing. Works on speakers too
 - Smart playlists on Navidrome can be created and edited in Beacon, with a live preview of their songs and ideas to start from (desktop layout only)
 - Smart playlists from Navidrome and Plex are labelled as such, and Beacon no longer offers to reorder, remove or add songs in them

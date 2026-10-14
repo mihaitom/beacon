@@ -28,11 +28,11 @@ describe('transitions store', () => {
     expect(store.payload).toEqual({
       mode: 'crossfade',
       crossfade_seconds: 16,
-      beatmix_seconds: 16,
+      beatmix_bars: 8,
     })
     await vi.waitFor(() =>
       expect(pushAccountSettings).toHaveBeenCalledWith({
-        transitions: { mode: 'crossfade', crossfadeSeconds: 16, beatmixSeconds: 16 },
+        transitions: { mode: 'crossfade', crossfadeSeconds: 16, beatmixBars: 8 },
       }),
     )
 
@@ -52,7 +52,7 @@ describe('transitions store', () => {
     expect(sanitizeTransitions({ mode: 'dj', crossfadeSeconds: 'x' })).toEqual({
       mode: 'off',
       crossfadeSeconds: 4,
-      beatmixSeconds: 16,
+      beatmixBars: 8,
     })
     expect(sanitizeTransitions({ mode: 'gapless', crossfadeSeconds: 999 }).crossfadeSeconds).toBe(
       30,
@@ -62,9 +62,20 @@ describe('transitions store', () => {
 
   it('the beatmix length is set apart from the crossfade one', () => {
     const store = useTransitionsStore()
-    store.set({ mode: 'crossfade', crossfadeSeconds: 6, beatmixSeconds: 20 })
-    expect(store.payload).toMatchObject({ crossfade_seconds: 6, beatmix_seconds: 20 })
+    store.set({ mode: 'crossfade', crossfadeSeconds: 6, beatmixBars: 16 })
+    expect(store.payload).toMatchObject({ crossfade_seconds: 6, beatmix_bars: 16 })
     store.set({ crossfadeSeconds: 8 })
-    expect(store.beatmixSeconds).toBe(20)
+    expect(store.beatmixBars).toBe(16)
+  })
+
+  it('a beatmix is only ever 4, 8 or 16 bars', () => {
+    expect(sanitizeTransitions({ beatmixBars: 12 }).beatmixBars).toBe(8)
+    expect(sanitizeTransitions({ beatmixBars: 4 }).beatmixBars).toBe(4)
+  })
+
+  it('a beatmix length kept in seconds becomes the bars it played', () => {
+    expect(sanitizeTransitions({ beatmixSeconds: 8 }).beatmixBars).toBe(4)
+    expect(sanitizeTransitions({ beatmixSeconds: 16 }).beatmixBars).toBe(8)
+    expect(sanitizeTransitions({ beatmixSeconds: 30 }).beatmixBars).toBe(16)
   })
 })

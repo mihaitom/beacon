@@ -737,9 +737,10 @@ export default {
     transitionsGapless: 'Gapless',
     transitionsCrossfade: 'Crossfade',
     crossfadeLength: 'Normal crossfade',
-    beatmixLength: 'Beatmix, at most',
+    beatmixLength: 'Beatmix',
+    beatmixBars: '{n} bars',
     transitionsHint:
-      "Gapless plays songs back to back without a pause. Crossfade blends one song into the next: where the beat allows it, Beacon mixes on the beat - it matches the tempo, brings the next song's bass in on the beat and then slowly fades out the previous one. Otherwise it crossfades normally. Each has its own length; a beatmix always lasts whole bars. Songs that follow each other on an album always play gaplessly. With either one the music goes through Beacon as one continuous stream, on this device and on speakers alike.",
+      "Gapless plays songs back to back without a pause. Crossfade blends one song into the next: where the beat allows it, Beacon mixes on the beat - it matches the tempo, brings the next song's bass in on the beat and then slowly fades out the previous one. Otherwise it crossfades normally. The crossfade is set in seconds, the beatmix in bars - fewer where a song leaves no room for them. Songs that follow each other on an album always play gaplessly. With either one the music goes through Beacon as one continuous stream, on this device and on speakers alike.",
     about: 'About Beacon',
     whatsNew: "What's new?",
     ffmpegFound: 'ffmpeg found',

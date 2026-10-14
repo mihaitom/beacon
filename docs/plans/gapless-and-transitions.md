@@ -87,10 +87,12 @@ analysed (`core/beat_analysis.py`, ~0.1 s of CPU for 30 s of audio):
   comes out as 87 - still on the beat, just counted in halves.
 
 A **beatmix** needs both grids at confidence 0.5 or more and a stretch
-within 8 %. Its overlap is the most whole bars (1-16) that fit its own
-length setting (`beatmix_seconds`, 16 s by default, apart from the
-crossfade's 4 s: lined up on the beat, a blend can run longer before it
-turns to mush), ending on the last downbeat with music; the incoming
+within 8 %. Its overlap is the bars of its own setting (`beatmix_bars`:
+4, 8 or 16, a DJ's phrase lengths; 8 by default, ~15 s at 128 BPM, apart
+from the crossfade's 4 s: lined up on the beat, a blend can run longer
+before it turns to mush) - fewer (down to 1) where the analysed stretch of
+either song leaves no room for them -, ending on the last downbeat with
+music; the incoming
 song's first downbeat lands on the overlap's first. First half: incoming
 mids and highs rise (equal-power), its bass stays out. Downbeat at half:
 the basses swap in 15 ms. Second half: outgoing mids and highs fall.

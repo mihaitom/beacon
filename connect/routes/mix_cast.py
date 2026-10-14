@@ -62,7 +62,8 @@ _FOLLOW_IDLE_SLEEP = 1.0
 class TransitionSettings(BaseModel):
     mode: Literal["off", "gapless", "crossfade"] = "off"
     crossfade_seconds: float = 4.0
-    beatmix_seconds: float = 16.0
+    # A phrase's worth: 4, 8 or 16 bars, as a DJ counts them.
+    beatmix_bars: Literal[4, 8, 16] = 8
 
 
 class SongHint(BaseModel):
@@ -83,7 +84,7 @@ def transitions_on(settings: TransitionSettings | None) -> bool:
 def planner_settings(settings: TransitionSettings | None) -> Settings:
     if settings is None or settings.mode == "off":
         return Settings("gapless")
-    return Settings(settings.mode, settings.crossfade_seconds, settings.beatmix_seconds)
+    return Settings(settings.mode, settings.crossfade_seconds, settings.beatmix_bars)
 
 
 def mix_item(session: SessionState, track: Track, queue_index: int, gain: float) -> MixItem:

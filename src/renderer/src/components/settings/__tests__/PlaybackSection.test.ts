@@ -47,31 +47,30 @@ describe('PlaybackSection', () => {
     expect(emit).toHaveBeenCalledWith('openHelp', 'transcoding')
   })
 
-  it('steps each crossfade length by its own amount', async () => {
+  it('sets the crossfade in seconds and the beatmix in bars', async () => {
     localStorage.clear()
     const transitions = useTransitionsStore()
-    transitions.set({ mode: 'crossfade', crossfadeSeconds: 4, beatmixSeconds: 12 })
+    transitions.set({ mode: 'crossfade', crossfadeSeconds: 4, beatmixBars: 8 })
     const wrapper = mount(PlaybackSection, {
       global: { plugins: [vuetify, i18n] },
     })
-    const [crossfade, beatmix] = wrapper.findAllComponents({ name: 'VNumberInput' })
+    const crossfade = wrapper.findComponent({ name: 'VNumberInput' })
     // The stepper acts on press (it repeats while held), not on click, and
     // captures the pointer, which jsdom has no notion of.
     Element.prototype.setPointerCapture ??= vi.fn()
     Element.prototype.releasePointerCapture ??= vi.fn()
-    const increment = async (field: typeof crossfade) => {
-      const button = field!.find('[data-testid="increment"]')
-      await button.trigger('pointerdown')
-      await button.trigger('pointerup')
-    }
-
-    await increment(crossfade)
-    await increment(beatmix)
+    const button = crossfade.find('[data-testid="increment"]')
+    await button.trigger('pointerdown')
+    await button.trigger('pointerup')
     expect(transitions.crossfadeSeconds).toBe(5)
-    expect(transitions.beatmixSeconds).toBe(14)
 
     // A field emptied while typing keeps the length it had.
-    beatmix!.vm.$emit('update:modelValue', null)
-    expect(transitions.beatmixSeconds).toBe(14)
+    crossfade.vm.$emit('update:modelValue', null)
+    expect(transitions.crossfadeSeconds).toBe(5)
+
+    const beatmix = wrapper.findComponent({ name: 'VSelect' })
+    beatmix.vm.$emit('update:modelValue', 16)
+    expect(transitions.beatmixBars).toBe(16)
+    expect(transitions.crossfadeSeconds).toBe(5)
   })
 })

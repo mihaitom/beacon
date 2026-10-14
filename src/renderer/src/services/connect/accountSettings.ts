@@ -31,7 +31,7 @@ export interface AccountSettingsPayload {
   // this only decides whether the images are asked for.
   fanartEnabled?: boolean
   // Gapless and crossfade - see stores/transitions.ts.
-  transitions?: { mode: string; crossfadeSeconds: number; beatmixSeconds: number }
+  transitions?: { mode: string; crossfadeSeconds: number; beatmixBars: number }
 }
 
 function identity(): { server_type: string; server_url: string; username: string } {

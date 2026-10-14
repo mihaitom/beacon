@@ -44,11 +44,11 @@ describe('connect playback dispatch', () => {
 
       const hint = { gain: 0.5, album_id: 'al', disc: 1, track: 2, bpm: null }
       await play('song-1', {
-        transitions: { mode: 'gapless', crossfade_seconds: 10, beatmix_seconds: 10 },
+        transitions: { mode: 'gapless', crossfade_seconds: 10, beatmix_bars: 8 },
         song_hints: { 'song-1': hint },
       })
       expect(body(1)).toMatchObject({
-        transitions: { mode: 'gapless', crossfade_seconds: 10, beatmix_seconds: 10 },
+        transitions: { mode: 'gapless', crossfade_seconds: 10, beatmix_bars: 8 },
         song_hints: { 'song-1': hint },
       })
     })

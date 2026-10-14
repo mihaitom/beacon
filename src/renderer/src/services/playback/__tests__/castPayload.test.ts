@@ -35,7 +35,7 @@ describe('cast payloads with transitions', () => {
     expect(payload.transitions).toEqual({
       mode: 'gapless',
       crossfade_seconds: 4,
-      beatmix_seconds: 16,
+      beatmix_bars: 8,
     })
     // From the current song on - the ones already played are no use to it.
     expect(Object.keys(payload.song_hints!)).toEqual(['b', 'c'])

@@ -506,7 +506,7 @@ def test_an_endless_mp3_carries_no_length_header():
 
 
 def test_the_crossfade_setting_reaches_this_run_and_the_next(client, default_session, media):
-    crossfade = {"mode": "crossfade", "crossfade_seconds": 16, "beatmix_seconds": 24}
+    crossfade = {"mode": "crossfade", "crossfade_seconds": 16, "beatmix_bars": 4}
     with patch.object(ChromecastDelivery, "play", new=AsyncMock()):
         _play(client, transitions=crossfade)
         assert default_session.state.mix.settings.mode == "crossfade"
@@ -514,7 +514,7 @@ def test_the_crossfade_setting_reaches_this_run_and_the_next(client, default_ses
         client.post("/seek", json={"position": 10})
     # A seek starts a new run, with the setting the /play brought.
     assert default_session.state.mix.settings.crossfade_seconds == 16
-    assert default_session.state.mix.settings.beatmix_limit == 24
+    assert default_session.state.mix.settings.beatmix_bars == 4
 
 
 def test_gapless_runs_on_the_bit_exact_path(client, default_session, media):

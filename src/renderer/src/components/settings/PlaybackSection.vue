@@ -26,10 +26,10 @@
           :options="transitionOptions"
           :label="$t('settings.transitions')"
         />
-        <!-- Steppers rather than sliders: Vuetify's slider loses the drag
+        <!-- A stepper rather than a slider: Vuetify's slider loses the drag
          - on a real phone (see docs/investigations/mobile-volume-slider-drag.md).
-         - A beatmix steps by 2 s: it lasts whole bars, ~1.9 s each at a
-         - club tempo, so a finer step mostly changes nothing. -->
+         - A beatmix is a choice of phrase lengths, not a number of seconds -
+         - see BEATMIX_BARS. -->
         <div v-if="transitionsStore.mode === 'crossfade'" class="crossfade-lengths">
           <v-number-input
             :model-value="transitionsStore.crossfadeSeconds"
@@ -42,20 +42,16 @@
             variant="solo-filled"
             prepend-inner-icon="mdi-vector-intersection"
             hide-details
-            @update:model-value="setLength('crossfadeSeconds', $event)"
+            @update:model-value="setCrossfadeSeconds"
           />
-          <v-number-input
-            :model-value="transitionsStore.beatmixSeconds"
+          <v-select
+            :model-value="transitionsStore.beatmixBars"
+            :items="beatmixBarOptions"
             :label="$t('settings.beatmixLength')"
-            :min="lengthMin"
-            :max="lengthMax"
-            :step="2"
-            suffix="s"
-            control-variant="stacked"
             variant="solo-filled"
             prepend-inner-icon="mdi-metronome"
             hide-details
-            @update:model-value="setLength('beatmixSeconds', $event)"
+            @update:model-value="transitionsStore.set({ beatmixBars: $event })"
           />
         </div>
         <p class="setting__hint">{{ $t('settings.transitionsHint') }}</p>
@@ -159,9 +155,11 @@
 import { usePlaybackStore } from '@/stores/playback'
 import { useRadioSettingsStore } from '@/stores/radioSettings'
 import {
+  BEATMIX_BARS,
   CROSSFADE_SECONDS_MAX,
   CROSSFADE_SECONDS_MIN,
   useTransitionsStore,
+  type BeatmixBars,
   type TransitionMode,
 } from '@/stores/transitions'
 import type { ReplayGainMode } from '@/services/replayGain'
@@ -208,6 +206,9 @@ export default {
         { title: this.$t('settings.transitionsGapless'), value: 'gapless' },
         { title: this.$t('settings.transitionsCrossfade'), value: 'crossfade' },
       ]
+    },
+    beatmixBarOptions(): { title: string; value: BeatmixBars }[] {
+      return BEATMIX_BARS.map((n) => ({ title: this.$t('settings.beatmixBars', { n }), value: n }))
     },
     lengthMin(): number {
       return CROSSFADE_SECONDS_MIN
@@ -265,8 +266,8 @@ export default {
   },
   methods: {
     /** A field emptied while typing sends null; the stored length stays. */
-    setLength(key: 'crossfadeSeconds' | 'beatmixSeconds', value: number | null): void {
-      if (value !== null) this.transitionsStore.set({ [key]: value })
+    setCrossfadeSeconds(value: number | null): void {
+      if (value !== null) this.transitionsStore.set({ crossfadeSeconds: value })
     },
     formatLabel(format: StreamFormat): string {
       return format === 'original' ? this.$t('settings.qualityOriginal') : format.toUpperCase()

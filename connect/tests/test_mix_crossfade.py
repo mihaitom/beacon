@@ -271,9 +271,9 @@ async def test_a_queue_change_that_leaves_the_next_song_keeps_its_beatmix():
     rig.engine.stop()
 
 
-# With a 16 s beatmix these two songs ease from 29.5 s, overlap from 44.5 s;
+# With an 8-bar beatmix (~16 s) these two songs ease from 29.5 s, overlap from 44.5 s;
 # without an analysis the crossfade is decided on metadata at 43 s.
-BEATMIX_16 = Settings("crossfade", crossfade_seconds=4.0, beatmix_seconds=16.0)
+BEATMIX_8_BARS = Settings("crossfade", crossfade_seconds=4.0, beatmix_bars=8)
 
 
 async def _render_with_analysis_held(rig: Rig, release, tick: float = 0.5) -> None:
@@ -306,7 +306,9 @@ def _a_at(rig: Rig) -> float:
 
 
 async def test_a_beatmix_planned_into_its_ease_eases_over_what_is_left():
-    rig = Rig({"a": clicks(128, 60, offset=0.21), "b": clicks(124, 60, offset=0.37)}, BEATMIX_16)
+    rig = Rig(
+        {"a": clicks(128, 60, offset=0.21), "b": clicks(124, 60, offset=0.37)}, BEATMIX_8_BARS
+    )
     await _render_with_analysis_held(rig, lambda r: _a_at(r) > 35.0)
     told = rig.engine.transitions()[-1]
     assert told["kind"] == "beatmix"
@@ -314,7 +316,9 @@ async def test_a_beatmix_planned_into_its_ease_eases_over_what_is_left():
 
 
 async def test_a_beatmix_planned_too_late_to_ease_is_a_crossfade_of_its_own_length(caplog):
-    rig = Rig({"a": clicks(128, 60, offset=0.21), "b": clicks(124, 60, offset=0.37)}, BEATMIX_16)
+    rig = Rig(
+        {"a": clicks(128, 60, offset=0.21), "b": clicks(124, 60, offset=0.37)}, BEATMIX_8_BARS
+    )
     # Under two bars (3.75 s) before the overlap, before the metadata's turn.
     await _render_with_analysis_held(rig, lambda r: _a_at(r) > 41.0)
     assert "planned too late" in caplog.text
@@ -324,7 +328,9 @@ async def test_a_beatmix_planned_too_late_to_ease_is_a_crossfade_of_its_own_leng
 
 
 async def test_a_crossfade_decided_without_its_analysis_says_it_came_too_late():
-    rig = Rig({"a": clicks(128, 60, offset=0.21), "b": clicks(124, 60, offset=0.37)}, BEATMIX_16)
+    rig = Rig(
+        {"a": clicks(128, 60, offset=0.21), "b": clicks(124, 60, offset=0.37)}, BEATMIX_8_BARS
+    )
     # Past 43 s the metadata decides.
     await _render_with_analysis_held(rig, lambda r: _a_at(r) > 50.0)
     told = rig.engine.transitions()[-1]
@@ -335,7 +341,7 @@ async def test_after_a_seek_rendering_waits_for_the_plan_rather_than_racing_past
     songs = {"a": clicks(128, 60, offset=0.21), "b": clicks(124, 60, offset=0.37)}
     # Started 9.5 s before the ease, ticking as the render loop does, with a
     # whole 20 s lead to render at once and an analysis that takes a second.
-    rig = Rig(songs, BEATMIX_16, lead=20.0, a=MixItem("a", 0, duration=60.0, start=20.0))
+    rig = Rig(songs, BEATMIX_8_BARS, lead=20.0, a=MixItem("a", 0, duration=60.0, start=20.0))
     begun = rig.clock.now
     await _render_with_analysis_held(rig, lambda r: r.clock.now >= begun + 1.0, tick=0.05)
     told = rig.engine.transitions()[-1]

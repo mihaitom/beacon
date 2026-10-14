@@ -11,19 +11,21 @@ export const TRANSITION_MODES: readonly TransitionMode[] = ['off', 'gapless', 'c
 
 export const CROSSFADE_SECONDS_MIN = 2
 export const CROSSFADE_SECONDS_MAX = 30
-// A beatmix lines the songs up on the beat and can blend for longer before
-// it turns to mush; a plain crossfade cannot. 16 s holds eight bars at a
-// club tempo (~15 s at 128 BPM) - at 12 s a beatmix came down to four.
 const CROSSFADE_SECONDS_DEFAULT = 4
-const BEATMIX_SECONDS_DEFAULT = 16
+// A beatmix is counted the way a DJ counts it: in phrases of 4, 8 or 16
+// bars. Lined up on the beat it can blend for longer than a plain
+// crossfade before it turns to mush; 8 bars are ~15 s at 128 BPM.
+export const BEATMIX_BARS = [4, 8, 16] as const
+export type BeatmixBars = (typeof BEATMIX_BARS)[number]
+const BEATMIX_BARS_DEFAULT: BeatmixBars = 8
 
 export interface TransitionSettings {
   mode: TransitionMode
-  /** The longest overlap of a plain crossfade, and of a beatmix - songs
-   * matched on the beat, whose overlap connect rounds down to whole bars
+  /** The longest overlap of a plain crossfade, and how many bars a beatmix
+   * - songs matched on the beat - lasts where the songs leave room for it
    * (connect/core/transition_planner.py). */
   crossfadeSeconds: number
-  beatmixSeconds: number
+  beatmixBars: BeatmixBars
 }
 
 /** What connect's /play and the local mix take - see TransitionSettings in
@@ -31,19 +33,30 @@ export interface TransitionSettings {
 export interface TransitionsPayload {
   mode: TransitionMode
   crossfade_seconds: number
-  beatmix_seconds: number
+  beatmix_bars: BeatmixBars
 }
 
 const KEY = 'beacon.transitions'
 
 export function sanitizeTransitions(value: unknown): TransitionSettings {
-  const raw = (value ?? {}) as Partial<TransitionSettings>
+  const raw = (value ?? {}) as Partial<TransitionSettings> & { beatmixSeconds?: unknown }
   const mode = TRANSITION_MODES.includes(raw.mode as TransitionMode)
     ? (raw.mode as TransitionMode)
     : 'off'
   const crossfadeSeconds = seconds(raw.crossfadeSeconds) ?? CROSSFADE_SECONDS_DEFAULT
-  const beatmixSeconds = seconds(raw.beatmixSeconds) ?? BEATMIX_SECONDS_DEFAULT
-  return { mode, crossfadeSeconds, beatmixSeconds }
+  const beatmixBars = BEATMIX_BARS.includes(raw.beatmixBars as BeatmixBars)
+    ? (raw.beatmixBars as BeatmixBars)
+    : (barsFromSeconds(raw.beatmixSeconds) ?? BEATMIX_BARS_DEFAULT)
+  return { mode, crossfadeSeconds, beatmixBars }
+}
+
+/** Up to 1.8.0 a beatmix was set in seconds, as an upper bound: the bars
+ * that fitted under it at a club tempo (128 BPM, 1.875 s a bar). */
+function barsFromSeconds(value: unknown): BeatmixBars | null {
+  const n = Number(value)
+  if (value === undefined || value === null || !Number.isFinite(n)) return null
+  if (n < 15) return 4
+  return n < 30 ? 8 : 16
 }
 
 function seconds(value: unknown): number | null {
@@ -69,7 +82,7 @@ export const useTransitionsStore = defineStore('transitions', {
     payload: (state): TransitionsPayload => ({
       mode: state.mode,
       crossfade_seconds: state.crossfadeSeconds,
-      beatmix_seconds: state.beatmixSeconds,
+      beatmix_bars: state.beatmixBars,
     }),
   },
   actions: {
@@ -77,12 +90,12 @@ export const useTransitionsStore = defineStore('transitions', {
       const next = sanitizeTransitions({
         mode: this.mode,
         crossfadeSeconds: this.crossfadeSeconds,
-        beatmixSeconds: this.beatmixSeconds,
+        beatmixBars: this.beatmixBars,
         ...patch,
       })
       this.mode = next.mode
       this.crossfadeSeconds = next.crossfadeSeconds
-      this.beatmixSeconds = next.beatmixSeconds
+      this.beatmixBars = next.beatmixBars
       try {
         localStorage.setItem(accountScopedKey(KEY), JSON.stringify(next))
       } catch {
@@ -100,7 +113,7 @@ export const useTransitionsStore = defineStore('transitions', {
       const next = load()
       this.mode = next.mode
       this.crossfadeSeconds = next.crossfadeSeconds
-      this.beatmixSeconds = next.beatmixSeconds
+      this.beatmixBars = next.beatmixBars
     },
   },
 })
