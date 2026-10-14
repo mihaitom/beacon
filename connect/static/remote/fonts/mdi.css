@@ -62,6 +62,9 @@
 .mdi-album::before { content: "\F0025"; }
 .mdi-cog-sync-outline::before { content: "\F1461"; }
 .mdi-check-circle-outline::before { content: "\F05E1"; }
+.mdi-skip-next-outline::before { content: "\F0F27"; }
+.mdi-arrow-collapse-down::before { content: "\F0792"; }
+.mdi-playlist-remove::before { content: "\F0413"; }
 
 /* mdi-spin — sheet.js's in-flight action indicator. Codepoint/animation
  * copied the same way as the glyphs above (node_modules/@mdi/font). */
