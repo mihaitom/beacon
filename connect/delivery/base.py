@@ -77,8 +77,8 @@ class BaseDelivery(ABC):
 
     # Whether this kind of device plays a FLAC stream that never ends - what
     # a mix with transitions is (core/mix_engine.py). Declared per class
-    # only once measured on a real device, so until then a lossless mix
-    # goes out lossy (core/streamer.py's resolve_mix_format()).
+    # only once measured, so until then a lossless mix goes out lossy
+    # (core/streamer.py's resolve_mix_format()).
     CONTINUOUS_FLAC_OK: bool = False
 
     def __init__(self, target: str):

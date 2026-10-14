@@ -217,6 +217,10 @@ class AirPlayDelivery(BaseDelivery):
     # to init decoder" — which was reachable simply by setting the cast
     # quality to AAC and picking an AirPlay target.
     PLAYABLE_CODECS: frozenset[str] = frozenset({"mp3", "flac", "vorbis"})
+    # For the same reason the device never sees the FLAC: an endless one only
+    # has to get through miniaudio here, which decodes it without a length
+    # (tests/test_delivery_classes.py runs it through pyatv's own URL path).
+    CONTINUOUS_FLAC_OK: bool = True
 
     def __init__(self, target: str):
         super().__init__(target)

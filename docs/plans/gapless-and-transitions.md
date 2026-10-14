@@ -153,9 +153,9 @@ a crossfade are marked 23 ms late, by the splitter's delay.
   resuming after an interruption. The speaker holds 15 s of the old run, so
   a change inside it would be heard that late. A pause freezes the mix.
 - Format: `resolve_mix_format()` - the quality ceiling if one is set, else
-  FLAC where the delivery class declares `CONTINUOUS_FLAC_OK` (none does
-  until measured), else AAC 256 or MP3 320. The stream-info panel names the
-  reason (`transitions`).
+  FLAC where the delivery class declares `CONTINUOUS_FLAC_OK` (so far
+  Sonos, and AirPlay, whose device never sees the FLAC), else AAC 256 or
+  MP3 320. The stream-info panel names the reason (`transitions`).
 - Accepted: the speaker's own app keeps showing the first song of a run.
   Dispatching as a radio station (`x-rincon-mp3radio://` with ICY titles)
   would update it but loses the position reports the clock is calibrated

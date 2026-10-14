@@ -540,6 +540,17 @@ async def test_a_device_joining_a_mix_narrows_the_encode_for_the_whole_set(defau
     assert st.current_output_format.transcode_reason == REASON_TRANSITIONS
 
 
+@pytest.mark.parametrize("delivery", ["AirPlayDelivery", "SonosDelivery"])
+def test_a_mix_goes_out_lossless_where_endless_flac_was_measured(default_session, delivery):
+    """Not the lossy fallback both used to get - see CONTINUOUS_FLAC_OK on
+    each class for what it was measured on."""
+    import delivery as deliveries
+
+    target = getattr(deliveries, delivery)("Kitchen")
+    fmt = mix_cast.mix_output_format(default_session, target, None)
+    assert fmt.content_type == "audio/flac"
+
+
 def test_a_station_ends_the_mix(client, default_session, media):
     """Left running, the mix's follow() went on moving current_track through
     its songs while the station played."""

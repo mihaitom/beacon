@@ -171,6 +171,9 @@ class SonosDelivery(BaseDelivery):
     # core/streamer.py). A listener who picks Opus in Settings therefore
     # gets AAC on a Sonos rather than nothing.
     PLAYABLE_CODECS: frozenset[str] = frozenset({"mp3", "aac", "flac", "vorbis"})
+    # Measured on a real speaker: an endless FLAC with no length played 10
+    # minutes without a stop (docs/investigations/continuous-stream-on-devices.md).
+    CONTINUOUS_FLAC_OK: bool = True
 
     def _get_device(self):
         """The SoCo device for this target.

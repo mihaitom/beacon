@@ -107,9 +107,11 @@ copied: every row is a conversion, told as `transitions`.
 | this device | a format | that format at that bitrate                                                             |
 
 Decided in `resolve_mix_format()` (`core/streamer.py`) for casts and
-`mixQuality()` (`services/streamQuality.ts`) locally. No device declares
-`CONTINUOUS_FLAC_OK` until it has been measured (see
-`docs/investigations/continuous-stream-on-devices.md`).
+`mixQuality()` (`services/streamQuality.ts`) locally. A device class
+declares `CONTINUOUS_FLAC_OK` only once it has been measured (see
+`docs/investigations/continuous-stream-on-devices.md`). So far that is
+Sonos and AirPlay - and for AirPlay it is not the device's answer: pyatv
+decodes the stream inside connect and the speaker only ever gets ALAC.
 
 ## What the listener is shown
 

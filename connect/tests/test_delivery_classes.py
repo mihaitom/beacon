@@ -1,23 +1,32 @@
 """Tests for SonosDelivery, AirPlayDelivery, ChromecastDelivery and DlnaDelivery."""
 
 import asyncio
+import contextlib
 import io
 import logging
+import shutil
+import subprocess
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 import httpx
+import numpy as np
 import pytest
 from async_upnp_client import exceptions as upnp_exceptions
 from pyatv import exceptions as pyatv_exceptions
 from pyatv.const import Protocol
+from pyatv.protocols.raop.audio_source import open_source
 from pychromecast.error import RequestTimeout
 from soco.exceptions import SoCoUPnPException
 
 import delivery.chromecast as _chromecast_mod
 import delivery.dlna as _dlna_mod
 import delivery.sonos as _sonos_mod
+from core.mix_output import encoder_cmd
 from core.state import ctx
+from core.streamer import resolve_mix_format
 from delivery import (
     AirPlayDelivery,
     BaseDelivery,
@@ -463,6 +472,62 @@ def test_sonos_set_volume_writes_device_volume_as_int():
 
 
 # ── AirPlayDelivery ───────────────────────────────────────────────────────────
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="needs a real ffmpeg")
+async def test_airplay_decodes_an_endless_flac_mix():
+    """What CONTINUOUS_FLAC_OK stands on for AirPlay: a mix's FLAC, written
+    to a pipe and so without a length, through pyatv's URL path - the one a
+    mix is dispatched on (duration=None) - comes out as the audio that went in."""
+    args = resolve_mix_format(None, AirPlayDelivery.PLAYABLE_CODECS, None, None, True).ffmpeg_args
+    tone = (0.2 * 32767 * np.sin(2 * np.pi * 440 * np.arange(44100) / 44100)).astype(np.int16)
+    pcm = np.repeat(tone, 2).tobytes()  # one second, stereo
+    # Ends the stream at the end of the test, which is what lets pyatv's
+    # decoder thread finish - left on a stream it cannot parse, it would keep
+    # pytest from exiting.
+    done = threading.Event()
+
+    class _Endless(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            enc = subprocess.Popen(encoder_cmd(args), stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+
+            def feed():
+                with contextlib.suppress(OSError):
+                    while True:
+                        enc.stdin.write(pcm)
+
+            threading.Thread(target=feed, daemon=True).start()
+            try:
+                while not done.is_set() and (chunk := enc.stdout.read(4096)):
+                    self.wfile.write(chunk)
+            except OSError:
+                pass
+            finally:
+                enc.kill()
+
+        def log_message(self, *_):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _Endless)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        # A stream miniaudio cannot make sense of hangs rather than failing.
+        async with asyncio.timeout(15):
+            source = await open_source(f"http://127.0.0.1:{server.server_port}/", 44100, 2, 2)
+            decoded = bytearray()
+            while len(decoded) < 5 * len(pcm):
+                frames = await source.readframes(4096)
+                assert frames, "the stream ended"
+                decoded += frames
+            await source.close()
+    finally:
+        done.set()
+        server.shutdown()
+    # Big-endian: pyatv hands out what RAOP sends.
+    samples = np.frombuffer(bytes(decoded), dtype=">i2").astype(np.float64)
+    assert np.sqrt(np.mean(samples**2)) == pytest.approx(0.2 * 32767 / np.sqrt(2), rel=0.05)
 
 
 def test_airplay_init_state():
