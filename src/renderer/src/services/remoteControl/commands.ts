@@ -186,6 +186,15 @@ export async function handleRemoteCommand(
     case 'queue-reorder':
       playback.reorderQueue(Number(payload.from), Number(payload.to))
       return
+    // The phone doesn't know which song the mix has locked in as next, so
+    // it names the target and the store works out the position.
+    case 'queue-move': {
+      const where = payload.where === 'end' ? 'end' : 'next'
+      if (!playback.moveInQueue(Number(payload.index), where)) {
+        throw new Error('This song cannot be moved there')
+      }
+      return
+    }
     case 'play-song': {
       const song = await resolveSong(String(payload.songId))
       if (song) await playback.playSongList([song])

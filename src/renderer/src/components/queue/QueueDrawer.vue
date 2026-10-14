@@ -289,6 +289,7 @@ import { usePlaybackStore } from '@/stores/playback'
 import { useDrawersStore } from '@/stores/drawers'
 import { useLibraryStore } from '@/stores/library'
 import { markRaw } from 'vue'
+import { EdgeScroller } from '@/services/edgeScroll'
 import QueueRow, { type QueueDragState } from './QueueRow.vue'
 import TileContextMenu from '@/components/library/TileContextMenu.vue'
 import ContextMenuSection from '@/components/library/ContextMenuSection.vue'
@@ -354,12 +355,7 @@ const ROW_ENTER_TRANSITION_MS = 300
 // uses this to work out how long its whole staggered fade-out takes.
 const CLEARING_FADE_MS = 250
 
-// Dragging within this far of the list's top or bottom edge scrolls it,
-// faster the closer to the edge, up to EDGE_SCROLL_MAX_PX_PER_S right at
-// it. The browser's own drag scrolling crawls through a long queue.
-const EDGE_SCROLL_ZONE_PX = 64
-const EDGE_SCROLL_MAX_PX_PER_S = 1400
-// The pointer stopped reporting this long ago: it has left the list.
+// dragover stopped arriving this long ago: the pointer has left the list.
 const EDGE_SCROLL_STALE_MS = 200
 
 // Wider than the 380 it opened at until now. That number came from a time
@@ -433,9 +429,8 @@ export default {
       // (a "swap with the very next track" drag reliably overshot to the
       // track after that).
       drag: { from: null, over: null, half: null } as QueueDragState,
-      // The edge scroll's own loop (see EDGE_SCROLL_ZONE_PX). Raw, so a frame
-      // of scrolling never re-renders anything.
-      edgeScroll: markRaw({ y: 0, seenAt: 0, frame: 0, lastTick: 0 }),
+      // Raw, so a frame of scrolling never re-renders anything.
+      edgeScroller: null as EdgeScroller | null,
       // The song the context menu was opened on - see the template.
       menuSong: null as Song | null,
       // Briefly set to the moved row's queueRowKey() right after a drop, so
@@ -568,7 +563,7 @@ export default {
     if (this.revealCleanupTimer) clearTimeout(this.revealCleanupTimer)
     if (this.clearingTimer) clearTimeout(this.clearingTimer)
     this.clearingRowTimers.forEach(clearTimeout)
-    this.stopEdgeScroll()
+    this.edgeScroller?.stop()
   },
   methods: {
     queueRowKey,
@@ -854,8 +849,7 @@ export default {
     },
     trackDragPointer(event: DragEvent) {
       if (this.drag.from === null) return
-      this.edgeScroll.y = event.clientY
-      this.edgeScroll.seenAt = performance.now()
+      this.edgeScroller?.update(event.clientY)
     },
     scrollContainer(): HTMLElement | null {
       return (
@@ -864,38 +858,15 @@ export default {
         ) ?? null
       )
     },
-    edgeScrollTick(now: number) {
-      const state = this.edgeScroll
-      const dt = Math.min(now - state.lastTick, 50) / 1000
-      state.lastTick = now
-      const container = this.scrollContainer()
-      if (container && now - state.seenAt < EDGE_SCROLL_STALE_MS) {
-        const rect = container.getBoundingClientRect()
-        const intoTop = rect.top + EDGE_SCROLL_ZONE_PX - state.y
-        const intoBottom = state.y - (rect.bottom - EDGE_SCROLL_ZONE_PX)
-        const depth = Math.max(intoTop, intoBottom)
-        if (depth > 0) {
-          // Squared, so the edge of the zone creeps and the very edge races.
-          const share = Math.min(depth / EDGE_SCROLL_ZONE_PX, 1) ** 2
-          const step = share * EDGE_SCROLL_MAX_PX_PER_S * dt
-          container.scrollTop += intoTop > 0 ? -step : step
-        }
-      }
-      state.frame = requestAnimationFrame(this.edgeScrollTick)
-    },
-    startEdgeScroll() {
-      this.stopEdgeScroll()
-      this.edgeScroll.seenAt = 0
-      this.edgeScroll.lastTick = performance.now()
-      this.edgeScroll.frame = requestAnimationFrame(this.edgeScrollTick)
-    },
-    stopEdgeScroll() {
-      cancelAnimationFrame(this.edgeScroll.frame)
-      this.edgeScroll.frame = 0
-    },
     onDragStart(index: number, event: DragEvent) {
       this.drag.from = index
-      this.startEdgeScroll()
+      this.edgeScroller ??= markRaw(
+        new EdgeScroller({
+          container: () => this.scrollContainer(),
+          staleMs: EDGE_SCROLL_STALE_MS,
+        }),
+      )
+      this.edgeScroller.start()
       if (event.dataTransfer) {
         event.dataTransfer.effectAllowed = 'move'
         // Firefox requires setData for the drag to actually start.
@@ -951,7 +922,7 @@ export default {
       }, 500)
     },
     onDragEnd() {
-      this.stopEdgeScroll()
+      this.edgeScroller?.stop()
       this.drag.from = null
       this.drag.over = null
       this.drag.half = null

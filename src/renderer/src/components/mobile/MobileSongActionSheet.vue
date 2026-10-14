@@ -11,7 +11,55 @@
           <div class="text-body-small text-medium-emphasis">{{ song.artist }}</div>
         </div>
       </div>
-      <v-list v-if="!playlistPicker" density="compact">
+      <!-- Opened on a queue row: what the desktop queue's context menu
+         - offers, for the song at that position rather than for the song. -->
+      <v-list v-if="!playlistPicker && inQueue" density="compact">
+        <v-list-subheader v-if="isLockedNext">{{ $t('queue.nextLocked') }}</v-list-subheader>
+        <v-list-item :disabled="isCurrent" @click="queuePlay">
+          <template #prepend><v-icon icon="mdi-play" /></template>
+          <v-list-item-title>{{ $t('library.play') }}</v-list-item-title>
+        </v-list-item>
+        <v-list-item :disabled="!canMove('next')" @click="queueMove('next')">
+          <template #prepend><v-icon icon="mdi-skip-next-outline" /></template>
+          <v-list-item-title>
+            {{
+              playbackStore.lockedNextIndex >= 0 ? $t('queue.moveAfterNext') : $t('queue.moveNext')
+            }}
+          </v-list-item-title>
+        </v-list-item>
+        <v-list-item :disabled="!canMove('end')" @click="queueMove('end')">
+          <template #prepend><v-icon icon="mdi-arrow-collapse-down" /></template>
+          <v-list-item-title>{{ $t('queue.moveToEnd') }}</v-list-item-title>
+        </v-list-item>
+        <v-list-item :disabled="isCurrent || isLockedNext" @click="queueRemove">
+          <template #prepend><v-icon icon="mdi-playlist-remove" /></template>
+          <v-list-item-title>{{ $t('queue.remove') }}</v-list-item-title>
+        </v-list-item>
+        <v-list-item v-if="authStore.capabilities.songRadio" @click="startSongRadio">
+          <template #prepend><v-icon icon="mdi-radio-tower" /></template>
+          <v-list-item-title>{{ $t('library.songRadio') }}</v-list-item-title>
+        </v-list-item>
+        <v-divider />
+        <v-list-item @click="playlistPicker = true">
+          <template #prepend><v-icon icon="mdi-playlist-music" /></template>
+          <v-list-item-title>{{ $t('common.addToPlaylistMenu') }}</v-list-item-title>
+          <template #append><v-icon icon="mdi-menu-right" /></template>
+        </v-list-item>
+        <v-list-item v-if="song.albumId" @click="goToAlbum">
+          <template #prepend><v-icon icon="mdi-album" /></template>
+          <v-list-item-title>{{ $t('library.goToAlbum') }}</v-list-item-title>
+        </v-list-item>
+        <v-divider />
+        <v-list-item v-if="song.coverArtId" @click="showArtwork">
+          <template #prepend><v-icon icon="mdi-image-outline" /></template>
+          <v-list-item-title>{{ $t('library.showArtwork') }}</v-list-item-title>
+        </v-list-item>
+        <v-list-item @click="showInfo">
+          <template #prepend><v-icon icon="mdi-information-outline" /></template>
+          <v-list-item-title>{{ $t('library.songInfo') }}</v-list-item-title>
+        </v-list-item>
+      </v-list>
+      <v-list v-else-if="!playlistPicker" density="compact">
         <v-list-item @click="playNow">
           <template #prepend><v-icon icon="mdi-play" /></template>
           <v-list-item-title>{{ $t('library.play') }}</v-list-item-title>
@@ -64,7 +112,7 @@
 <script lang="ts">
 import CoverArt from '@/components/library/CoverArt.vue'
 import { useLibraryStore } from '@/stores/library'
-import { usePlaybackStore } from '@/stores/playback'
+import { usePlaybackStore, type QueueMoveTarget } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
 import type { Song } from '@/types/library'
 
@@ -86,6 +134,12 @@ export default {
       type: Boolean,
       default: false,
     },
+    /** The song's position, when the sheet is opened on a queue row - it
+     * then offers the queue's own actions. -1 everywhere else. */
+    queueIndex: {
+      type: Number,
+      default: -1,
+    },
   },
   emits: ['update:modelValue', 'remove'],
   data() {
@@ -103,6 +157,15 @@ export default {
     authStore() {
       return useAuthStore()
     },
+    inQueue(): boolean {
+      return this.queueIndex >= 0
+    },
+    isCurrent(): boolean {
+      return this.queueIndex === this.playbackStore.currentIndex
+    },
+    isLockedNext(): boolean {
+      return this.queueIndex === this.playbackStore.lockedNextIndex
+    },
   },
   watch: {
     modelValue(open: boolean) {
@@ -119,6 +182,39 @@ export default {
     act(fn: () => unknown) {
       void fn()
       this.close()
+    },
+    canMove(where: QueueMoveTarget): boolean {
+      return this.playbackStore.queueMoveTarget(this.queueIndex, where) != null
+    },
+    queuePlay() {
+      this.act(() => this.playbackStore.playAtIndex(this.queueIndex))
+    },
+    queueMove(where: QueueMoveTarget) {
+      this.act(() => this.playbackStore.moveInQueue(this.queueIndex, where))
+    },
+    queueRemove() {
+      this.act(() => this.playbackStore.removeFromQueue(this.queueIndex))
+    },
+    goToAlbum() {
+      const albumId = this.song?.albumId
+      if (!albumId) return
+      this.act(() => this.$router.push(`/m/albums/${albumId}`))
+    },
+    showArtwork() {
+      const song = this.song
+      if (!song) return
+      this.act(() =>
+        this.$emitter.emit('showArtwork', {
+          coverArtId: song.coverArtId,
+          title: song.title,
+          subtitle: song.album || song.artist,
+        }),
+      )
+    },
+    showInfo() {
+      const song = this.song
+      if (!song) return
+      this.act(() => this.$emitter.emit('showSongInfo', song))
     },
     playNow() {
       const song = this.song

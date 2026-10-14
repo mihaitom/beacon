@@ -9,13 +9,14 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Added
 
 - Right-click a song in the queue to play it now or next, move it to the end or remove it. The menu also has what song lists offer: Song Radio, add to playlist, go to album or artist, artwork and info. While a transition is already prepared, "next" means right after the song it leads into
+- On the phone and in the Remote Control, a long press on a song in the queue opens the same actions as a sheet (the Remote Control offers the playback ones)
 - Clicking the artist of a song in the queue opens the artist's page
 
 ### Changed
 
 - With transitions on, Sonos and AirPlay speakers now get lossless audio instead of AAC or MP3
 - Song Radio started from the song that is playing keeps it playing and only replaces what comes after it, instead of starting the song over
-- Songs in the queue can be grabbed anywhere to drag them, without a handle, and dragging near the top or bottom of the queue scrolls it quickly
+- Songs in the queue can be grabbed anywhere to drag them, without a handle, and dragging near the top or bottom of the queue scrolls it quickly. The scrolling also works on the phone and in the Remote Control, where a long queue did not scroll during a drag at all
 
 ### Fixed
 

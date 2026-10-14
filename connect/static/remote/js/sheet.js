@@ -10,7 +10,7 @@
 // place — a user unsure whether a tap took effect has every reason to tap
 // again, doubling up a queue-add.
 
-export function openActionSheet(actions) {
+export function openActionSheet(actions, { title } = {}) {
   const backdrop = document.createElement('div');
   backdrop.className = 'sheet-backdrop';
 
@@ -28,8 +28,20 @@ export function openActionSheet(actions) {
   // outcome (close) to show once something succeeds.
   let pending = false;
 
+  if (title) {
+    const heading = document.createElement('div');
+    heading.className = 'sheet-title';
+    heading.textContent = title;
+    sheet.appendChild(heading);
+  }
+
   for (const action of actions) {
     const btn = document.createElement('button');
+    // Shown but not offered, so the list keeps its shape from song to song.
+    if (action.disabled) {
+      btn.disabled = true;
+      btn.dataset.unavailable = 'true';
+    }
     const icon = action.icon ? document.createElement('i') : null;
     if (icon) {
       icon.className = `mdi ${action.icon} sheet-icon`;
@@ -47,7 +59,7 @@ export function openActionSheet(actions) {
         console.error('[remote] Action failed:', error);
         pending = false;
         if (icon) icon.className = `mdi ${action.icon} sheet-icon`;
-        for (const b of sheet.querySelectorAll('button')) b.disabled = false;
+        for (const b of sheet.querySelectorAll('button')) b.disabled = b.dataset.unavailable === 'true';
       });
     });
     sheet.appendChild(btn);

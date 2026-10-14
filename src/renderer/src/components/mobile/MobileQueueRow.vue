@@ -9,6 +9,12 @@
       'mobile-queue-row--dragging': dragging,
     }"
     @click="!dragging && $emit('play')"
+    @pointerdown="longPress.down($event)"
+    @pointermove="longPress.move($event)"
+    @pointerup="longPress.cancel()"
+    @pointercancel="longPress.cancel()"
+    @pointerleave="longPress.cancel()"
+    @contextmenu="longPress.contextMenu($event)"
   >
     <div class="mobile-queue-row__index text-body-small text-medium-emphasis">
       <!-- See QueueRow.vue's identical split: `audible`, not `isCurrent`,
@@ -48,13 +54,18 @@
 <script lang="ts">
 import CoverArt from '@/components/library/CoverArt.vue'
 import { MOBILE_ROW_ART_SIZE } from './rowMetrics'
+import { LongPress } from '@/services/longPress'
+import { markRaw } from 'vue'
 import type { Song } from '@/types/library'
 
 export default {
   name: 'MobileQueueRow',
   components: { CoverArt },
   data() {
-    return { MOBILE_ROW_ART_SIZE }
+    return {
+      MOBILE_ROW_ART_SIZE,
+      longPress: markRaw(new LongPress(() => this.$emit('menu'))),
+    }
   },
   props: {
     song: {
@@ -95,7 +106,10 @@ export default {
       default: false,
     },
   },
-  emits: ['play', 'remove', 'drag-start'],
+  emits: ['play', 'remove', 'drag-start', 'menu'],
+  beforeUnmount() {
+    this.longPress.dispose()
+  },
 }
 </script>
 
@@ -103,6 +117,11 @@ export default {
 .mobile-queue-row {
   border-top: 2px solid transparent;
   touch-action: pan-y;
+  /* A long press opens the song's actions, not iOS's text selection or
+   * its image callout on the cover. */
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .mobile-queue-row--current {

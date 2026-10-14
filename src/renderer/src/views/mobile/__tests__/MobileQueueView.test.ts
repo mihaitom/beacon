@@ -6,6 +6,7 @@ import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { usePlaybackStore } from '@/stores/playback'
+import { useLibraryStore } from '@/stores/library'
 import MobileQueueRow from '@/components/mobile/MobileQueueRow.vue'
 import MobileQueueView from '../MobileQueueView.vue'
 import { makeSong } from '@/stores/__tests__/fixtures'
@@ -164,6 +165,114 @@ describe('MobileQueueView', () => {
       window.dispatchEvent(new Event('pointerup'))
 
       expect(reorderQueue).toHaveBeenCalledWith(0, 1)
+    })
+
+    /** The list rides the shell's pane, and a finger held still near its
+     * bottom keeps it scrolling - with the drop target following the rows
+     * that pass under it, without the finger moving at all. */
+    it('scrolls the pane while the finger holds still near its edge', async () => {
+      const frames: FrameRequestCallback[] = []
+      vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => {
+        frames.push(callback)
+        return frames.length
+      })
+      vi.stubGlobal('cancelAnimationFrame', () => frames.splice(0))
+      const pane = document.createElement('div')
+      pane.style.overflowY = 'auto'
+      pane.getBoundingClientRect = () => DOMRect.fromRect({ x: 0, y: 0, width: 300, height: 300 })
+      document.body.append(pane)
+      const playback = usePlaybackStore()
+      playback.setQueue(
+        Array.from({ length: 10 }, (_, i) => makeSong(`s${i}`)),
+        0,
+      )
+      const wrapper = mount(MobileQueueView, {
+        attachTo: pane,
+        global: { plugins: [vuetify, i18n], stubs: { CoverArt: true } },
+      })
+      await wrapper.vm.$nextTick()
+      const reorderQueue = vi.spyOn(playback, 'reorderQueue')
+      for (const row of wrapper.findAllComponents(MobileQueueRow)) {
+        vi.spyOn(row.element, 'getBoundingClientRect').mockImplementation(() =>
+          DOMRect.fromRect({
+            x: 0,
+            y: row.props('index') * 60 - pane.scrollTop,
+            width: 300,
+            height: 60,
+          }),
+        )
+      }
+
+      wrapper.findAllComponents(MobileQueueRow)[0]!.vm.$emit('drag-start', new Event('pointerdown'))
+      window.dispatchEvent(new MouseEvent('pointermove', { clientY: 295 }))
+      let now = performance.now()
+      for (let i = 0; i < 20; i++) {
+        now += 16
+        frames.splice(0).forEach((callback) => callback(now))
+      }
+      window.dispatchEvent(new Event('pointerup'))
+
+      expect(pane.scrollTop).toBeGreaterThan(0)
+      // Without the scroll, row 4's lower half: in after it, at 4.
+      expect(reorderQueue.mock.calls[0]![1]).toBeGreaterThan(4)
+      wrapper.unmount()
+      pane.remove()
+      vi.unstubAllGlobals()
+    })
+  })
+
+  describe('long press', () => {
+    // The sheet loads the playlists for its picker as it opens.
+    beforeEach(() => {
+      vi.spyOn(useLibraryStore(), 'fetchPlaylists').mockResolvedValue()
+    })
+
+    function touchDown(element: Element) {
+      const event = Object.assign(new Event('pointerdown'), {
+        pointerType: 'touch',
+        clientX: 0,
+        clientY: 0,
+      })
+      element.dispatchEvent(event)
+    }
+
+    it("opens the row's actions, and the release does not play it", async () => {
+      vi.useFakeTimers()
+      // Attached: the release's click is caught on window.
+      const wrapper = mount(MobileQueueView, {
+        attachTo: document.body,
+        global: { plugins: [vuetify, i18n], stubs: { CoverArt: true } },
+      })
+      const playAtIndex = vi.spyOn(usePlaybackStore(), 'playAtIndex').mockResolvedValue()
+      const row = wrapper.findAllComponents(MobileQueueRow)[0]!
+
+      touchDown(row.element)
+      await vi.advanceTimersByTimeAsync(500)
+      window.dispatchEvent(new Event('pointerup'))
+      await row.trigger('click')
+
+      const vm = wrapper.vm as unknown as { actionsOpen: boolean; actionsIndex: number }
+      expect(vm.actionsOpen).toBe(true)
+      expect(vm.actionsIndex).toBe(0)
+      expect(playAtIndex).not.toHaveBeenCalled()
+      wrapper.unmount()
+      vi.useRealTimers()
+    })
+
+    it('still plays on a plain tap', async () => {
+      vi.useFakeTimers()
+      const wrapper = mountView()
+      const playAtIndex = vi.spyOn(usePlaybackStore(), 'playAtIndex').mockResolvedValue()
+      const row = wrapper.findAllComponents(MobileQueueRow)[0]!
+
+      touchDown(row.element)
+      row.element.dispatchEvent(new Event('pointerup'))
+      await vi.advanceTimersByTimeAsync(500)
+      await row.trigger('click')
+
+      expect((wrapper.vm as unknown as { actionsOpen: boolean }).actionsOpen).toBe(false)
+      expect(playAtIndex).toHaveBeenCalledWith(0)
+      vi.useRealTimers()
     })
   })
 

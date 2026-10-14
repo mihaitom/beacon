@@ -658,6 +658,10 @@ input[type="range"]:disabled::-moz-range-thumb {
 }
 
 .row.dragging { opacity: 0.5; }
+/* Where the dragged song would land. Inset shadows rather than borders, so
+ * the line doesn't shift the rows under the finger. */
+.row.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+.row.drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
 
 /* Every view opens with its own name, at one size and one spacing. Queue
  * and Library had no heading at all, Playlists and Radio each had an h2 at

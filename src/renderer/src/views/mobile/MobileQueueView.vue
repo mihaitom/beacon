@@ -32,19 +32,31 @@
             @play="onRowPlay(index)"
             @remove="playbackStore.removeFromQueue(index)"
             @drag-start="onDragStart(index, $event)"
+            @menu="openActions(index)"
           />
         </template>
       </v-virtual-scroll>
     </div>
 
     <v-alert v-else type="info" variant="tonal">{{ $t('queue.empty') }}</v-alert>
+
+    <!-- Closes by itself if the song leaves the queue while it is open. -->
+    <mobile-song-action-sheet
+      :model-value="actionsOpen && actionsIndex >= 0"
+      :song="actionsSong"
+      :queue-index="actionsIndex"
+      @update:model-value="actionsOpen = $event"
+    />
   </v-container>
 </template>
 
 <script lang="ts">
 import { usePlaybackStore } from '@/stores/playback'
 import MobileQueueRow from '@/components/mobile/MobileQueueRow.vue'
+import MobileSongActionSheet from '@/components/mobile/MobileSongActionSheet.vue'
 import { MOBILE_ROW_HEIGHT } from '@/components/mobile/rowMetrics'
+import { EdgeScroller, scrollParent } from '@/services/edgeScroll'
+import { markRaw } from 'vue'
 import type { Song } from '@/types/library'
 
 // Only reached when a drag ends without the browser synthesising any click
@@ -52,6 +64,15 @@ import type { Song } from '@/types/library'
 // click, which trails its pointerup by a frame or two rather than
 // following it in the same task.
 const CLICK_SUPPRESSION_MS = 500
+
+// A drag listens on its handle as well as on window (see onDragStart), and
+// an event that still bubbles reaches both.
+const handledPointerEvents = new WeakSet<Event>()
+function firstSighting(event: Event): boolean {
+  if (handledPointerEvents.has(event)) return false
+  handledPointerEvents.add(event)
+  return true
+}
 
 // Per-row identity keyed off the Song *object*, not its id — the queue can
 // legitimately hold the same song more than once (see playbackStore's own
@@ -70,7 +91,7 @@ function rowKey(song: Song): string {
 
 export default {
   name: 'MobileQueueView',
-  components: { MobileQueueRow },
+  components: { MobileQueueRow, MobileSongActionSheet },
   data() {
     return {
       MOBILE_ROW_HEIGHT,
@@ -94,14 +115,31 @@ export default {
       // Timer id of the armed click suppression below, so a second drag
       // doesn't leave the first one's timeout running.
       clickSuppressionTimer: null as ReturnType<typeof setTimeout> | null,
+      // The list rides the shell's scrolling pane, so that is what a drag
+      // near the top or bottom scrolls. Raw, so a frame of scrolling never
+      // re-renders anything.
+      edgeScroller: null as EdgeScroller | null,
+      // Where the finger last was: a finger held still at the edge keeps
+      // scrolling, and the row under it changes without a pointermove.
+      dragY: 0,
+      // The handle the drag started on - see onDragStart.
+      dragHandle: null as EventTarget | null,
+      actionsOpen: false,
+      // The song object, not its index or id: the queue moves on under an
+      // open sheet, and can hold the same song twice (see rowKey).
+      actionsSong: null as Song | null,
     }
   },
   computed: {
     playbackStore() {
       return usePlaybackStore()
     },
+    actionsIndex(): number {
+      return this.actionsSong ? this.playbackStore.queue.indexOf(this.actionsSong) : -1
+    },
   },
   beforeUnmount() {
+    this.edgeScroller?.stop()
     this.detachPointerListeners()
     this.disarmClickSuppression()
   },
@@ -114,28 +152,50 @@ export default {
       this.dragIndex = index
       this.overIndex = index
       this.overHalf = 'before'
-      window.addEventListener('pointermove', this.onPointerMove)
-      window.addEventListener('pointerup', this.onPointerUp)
-      window.addEventListener('pointercancel', this.onPointerUp)
+      this.dragY = event.clientY
+      this.edgeScroller ??= markRaw(
+        new EdgeScroller({
+          container: () => scrollParent(this.$refs.listEl as HTMLElement),
+          onScroll: () => this.trackRowUnder(this.dragY),
+        }),
+      )
+      this.edgeScroller.start()
+      // The handle as well as window: scrolled far enough, the virtual list
+      // drops the dragged row, and WebKit keeps sending a touch's pointer
+      // events to the node it started on even once it is detached - where
+      // they no longer bubble to window.
+      this.dragHandle = event.currentTarget ? markRaw(event.currentTarget) : null
+      for (const target of [window, this.dragHandle]) {
+        target?.addEventListener('pointermove', this.onPointerMove as EventListener)
+        target?.addEventListener('pointerup', this.onPointerUp)
+        target?.addEventListener('pointercancel', this.onPointerUp)
+      }
       event.preventDefault()
     },
     onPointerMove(event: PointerEvent) {
-      if (this.dragIndex === null) return
+      if (this.dragIndex === null || !firstSighting(event)) return
+      this.dragY = event.clientY
+      this.edgeScroller?.update(event.clientY)
+      this.trackRowUnder(event.clientY)
+    },
+    trackRowUnder(y: number) {
       const list = this.$refs.listEl as HTMLElement | undefined
       if (!list) return
       // Rows only: the virtual scroller's spacers sit between them too.
       for (const row of Array.from(list.querySelectorAll<HTMLElement>(':scope > [data-index]'))) {
         const rect = row.getBoundingClientRect()
-        if (event.clientY < rect.top || event.clientY > rect.bottom) continue
+        if (y < rect.top || y > rect.bottom) continue
         const index = Number(row.dataset.index)
         if (!Number.isNaN(index)) {
           this.overIndex = index
-          this.overHalf = event.clientY > rect.top + rect.height / 2 ? 'after' : 'before'
+          this.overHalf = y > rect.top + rect.height / 2 ? 'after' : 'before'
         }
         break
       }
     },
-    onPointerUp() {
+    onPointerUp(event?: Event) {
+      if (event && !firstSighting(event)) return
+      this.edgeScroller?.stop()
       this.detachPointerListeners()
       if (this.dragIndex !== null && this.overIndex !== null && this.overHalf !== null) {
         // See QueueDrawer.vue's insertBeforeIndex()/dropIndex() for the
@@ -181,13 +241,21 @@ export default {
       if (this.clickSuppressionTimer !== null) clearTimeout(this.clickSuppressionTimer)
       this.clickSuppressionTimer = null
     },
+    openActions(index: number) {
+      if (this.dragIndex !== null) return
+      this.actionsSong = this.playbackStore.queue[index] ?? null
+      this.actionsOpen = true
+    },
     onRowPlay(index: number) {
       void this.playbackStore.playAtIndex(index)
     },
     detachPointerListeners() {
-      window.removeEventListener('pointermove', this.onPointerMove)
-      window.removeEventListener('pointerup', this.onPointerUp)
-      window.removeEventListener('pointercancel', this.onPointerUp)
+      for (const target of [window, this.dragHandle]) {
+        target?.removeEventListener('pointermove', this.onPointerMove as EventListener)
+        target?.removeEventListener('pointerup', this.onPointerUp)
+        target?.removeEventListener('pointercancel', this.onPointerUp)
+      }
+      this.dragHandle = null
     },
   },
 }

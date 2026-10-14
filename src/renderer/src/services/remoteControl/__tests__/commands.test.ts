@@ -121,6 +121,22 @@ describe('handleRemoteCommand', () => {
     expect(reorderSpy).toHaveBeenCalledWith(0, 3)
   })
 
+  it('queue-move moves a song next or to the end, and refuses what the queue refuses', async () => {
+    const playback = usePlaybackStore()
+    playback.setQueue(
+      ['a', 'b', 'c', 'd'].map((id) => makeSong(id)),
+      0,
+    )
+
+    await handleRemoteCommand('queue-move', { index: '3', where: 'next' })
+    expect(playback.queue.map((song) => song.id)).toEqual(['a', 'd', 'b', 'c'])
+    await handleRemoteCommand('queue-move', { index: 1, where: 'end' })
+    expect(playback.queue.map((song) => song.id)).toEqual(['a', 'b', 'c', 'd'])
+
+    // The song that is playing stays where it is.
+    await expect(handleRemoteCommand('queue-move', { index: 0, where: 'end' })).rejects.toThrow()
+  })
+
   describe('volume', () => {
     it('sets the local volume with nothing casting', async () => {
       const connect = useConnectStore()
