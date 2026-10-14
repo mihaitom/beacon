@@ -11,6 +11,7 @@ import subprocess
 import numpy as np
 import pytest
 
+from core import mix_hls
 from core.mix_engine import MixEngine, MixItem
 from core.mix_hls import MixHls
 from core.streamer import lossless_codec_args, lossy_codec_args
@@ -142,4 +143,42 @@ def test_opus_segments_are_counted_at_its_own_rate():
     engine, _ = _engine(1.0)
     stream = MixHls(engine, "opus", lossy_codec_args("opus", 128))
     assert stream.segment_seconds == pytest.approx(6.0)  # 300 frames of 960 at 48 kHz
+    stream.close()
+
+
+class _Listener:
+    """Just the engine's clock, for what MixHls keeps."""
+
+    epoch = "e"
+    end_stream_time = None
+    ended = False
+
+    def __init__(self):
+        self.wall_time: float | None = None
+
+
+def test_only_segments_near_the_listener_are_kept():
+    """A run can last hours; the playlist lists everything, but what lies
+    long behind the listener is not held any more."""
+    listener = _Listener()
+    stream = MixHls(listener, "aac", lossy_codec_args("aac", 128))
+    seconds = stream.segment_seconds
+    stream._take(b"init", [b"s%d" % i for i in range(100)])
+    assert len(stream._held) == 100  # nothing heard yet: nothing let go
+    listener.wall_time = 60 * seconds
+    stream._take(None, [b"s100"])
+    assert stream.segments == 101
+    behind = mix_hls._KEEP_BEHIND_SECONDS / seconds
+    assert min(stream._held) == int(60 - behind)
+    assert stream.playlist("").count("#EXTINF") == 101
+    stream.close()
+
+
+async def test_a_segment_let_go_is_none_and_one_still_held_is_served():
+    listener = _Listener()
+    stream = MixHls(listener, "aac", lossy_codec_args("aac", 128))
+    stream._take(b"init", [b"s%d" % i for i in range(100)])
+    listener.wall_time = 90 * stream.segment_seconds
+    assert await stream.segment(0) is None
+    assert await stream.segment(95) == b"s95"
     stream.close()

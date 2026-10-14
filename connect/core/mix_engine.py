@@ -526,6 +526,13 @@ class MixEngine:
         return None if end is None else end / SAMPLE_RATE
 
     @property
+    def wall_time(self) -> float | None:
+        """Stream seconds the listener is at by the wall clock, or None
+        before any audio went out. Stands still while paused."""
+        frame = self._wall_frame()
+        return None if frame is None else frame / SAMPLE_RATE
+
+    @property
     def rendered_time(self) -> float:
         return self.ring.head / SAMPLE_RATE
 

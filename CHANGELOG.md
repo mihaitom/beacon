@@ -12,7 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - With transitions on, playback after a seek while paused or after reopening the app starts where it stood, not seconds later with lyrics out of step
 - With transitions on, Stop and logging out also end the mix on the server instead of leaving it running unheard
 - Transitions: a seek no longer scrobbles the song a second time, turning shuffle off just before a transition keeps the right song as current, and picking another song no longer briefly blocks editing the queue
-- Transitions in Safari recover by themselves when the server's encoding fails, instead of stalling silently
+- Transitions in Safari recover by themselves when the server's encoding fails, instead of stalling silently, and a long listening session in Safari no longer fills up the server's disk
 - Party guests see a song change in the host's mix on time even when the stream briefly runs ahead, and a mix stream no longer stutters at its very start
 
 ## [1.8.0] - 2026-10-13

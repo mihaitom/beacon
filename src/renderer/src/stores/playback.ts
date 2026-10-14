@@ -2090,6 +2090,7 @@ export const usePlaybackStore = defineStore('playback', {
      * in it that is. A song that begins is taken up the way startCurrent()
      * takes up one it starts, minus the starting. */
     followLocalMix(streamTime: number): void {
+      if (getLocalMix().starting) return
       const heard = getLocalMix().heard(streamTime)
       if (!heard) return
       if (this.preview) {

@@ -13,16 +13,19 @@ time, which is what the tab's timeline maps to songs.
 
 One encoder per run and quality, fed from the mix's ring from stream time 0
 like any listener (core/mix_output.py), its output cut by core/hls.py's
-splitters: fragmented MP4, or for mp3 Apple's packed audio. Segments are
-spooled to a temporary file for as long as the run lasts, since the
-playlist keeps listing all of them.
+splitters: fragmented MP4, or for mp3 Apple's packed audio.
+
+The playlist keeps listing every segment, as EVENT requires, but only the
+ones near the listener are kept: a run can go on for hours, and the tab
+never asks for one it has played - every seek, the lock screen's included,
+starts a new run (services/playback/localMix.ts). Kept in memory, since
+what is held is a few minutes at most.
 """
 
 import asyncio
 import contextlib
 import logging
 import math
-import tempfile
 from typing import TYPE_CHECKING
 
 from . import hls
@@ -34,6 +37,10 @@ if TYPE_CHECKING:
     from .mix_output import MixConnection
 
 logger = logging.getLogger("connect.mix")
+
+# How far behind the listener segments are still held. The player only
+# reads ahead; this is margin for a reconnect that re-reads a little.
+_KEEP_BEHIND_SECONDS = 120.0
 
 
 class MixHls:
@@ -56,10 +63,10 @@ class MixHls:
         layout = hls.SegmentLayout(frames, self.segment_seconds, 0, 0.0)
         self._output_args = [*codec_args, *hls.container_args(layout, self.packed)]
         self._init: bytes | None = None
-        # Lives as long as the run; deleted by the OS even if connect dies.
-        self._spool = tempfile.TemporaryFile()  # noqa: SIM115
-        self._offsets: list[tuple[int, int]] = []
-        self._size = 0
+        self._held: dict[int, bytes] = {}
+        self._count = 0
+        # Segments before this one have been let go (_let_go_behind()).
+        self._first_held = 0
         self.finished = False
         self.failed = False
         self.closed = False
@@ -77,12 +84,12 @@ class MixHls:
             self._task.cancel()
         if self._connection is not None:
             self._connection.close()
-        self._spool.close()
+        self._held.clear()
         self._notify()
 
     @property
     def segments(self) -> int:
-        return len(self._offsets)
+        return self._count
 
     async def wait_for_segments(self, count: int, timeout: float) -> None:
         """Until `count` segments are made, the encode is over, or `timeout`
@@ -123,16 +130,15 @@ class MixHls:
 
     async def segment(self, index: int) -> bytes | None:
         """Segment `index`, waiting for the encoder to reach it. None for one
-        the run never produces."""
+        the run never produces, or one let go long behind the listener."""
         while index >= self.segments:
             if not self._running or index < 0:
                 return None
             await self._wait()
         if index < 0 or self.closed:
             return None
-        offset, length = self._offsets[index]
-        self._spool.seek(offset)
-        return self._spool.read(length)
+        self._let_go_behind()
+        return self._held.get(index)
 
     @property
     def _running(self) -> bool:
@@ -161,12 +167,20 @@ class MixHls:
         if init is not None:
             self._init = init
         for segment in segments:
-            self._spool.seek(self._size)
-            self._spool.write(segment)
-            self._offsets.append((self._size, len(segment)))
-            self._size += len(segment)
+            self._held[self._count] = segment
+            self._count += 1
+        self._let_go_behind()
         if init is not None or segments:
             self._notify()
+
+    def _let_go_behind(self) -> None:
+        heard = self.engine.wall_time
+        if heard is None:
+            return
+        keep_from = int(max(heard - _KEEP_BEHIND_SECONDS, 0.0) // self.segment_seconds)
+        while self._first_held < min(keep_from, self._count):
+            self._held.pop(self._first_held, None)
+            self._first_held += 1
 
     async def _run(self) -> None:
         splitter = (

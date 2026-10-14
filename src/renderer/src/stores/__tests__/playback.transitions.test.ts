@@ -24,6 +24,7 @@ vi.mock('@/services/playback/localMix', async (importOriginal) => {
 function fakeMix() {
   const mix = {
     active: false,
+    starting: false,
     heard: vi.fn(),
     loadedThrough: vi.fn((): number | null => 0),
     nextLocked: false,
@@ -365,6 +366,27 @@ describe('playback with transitions', () => {
       mix.heard.mockReturnValue({ songId: 'b', queueIndex: 1, position: 30, startedAt: 0 })
       onTimeUpdate(0.25)
       expect(scrobble).not.toHaveBeenCalled()
+    })
+
+    it("the old run's song changes are ignored while a new one starts", async () => {
+      const { onTimeUpdate } = initEngineCallbacks(usePlaybackStore())
+      const playback = await playingQueue()
+      mix.heard.mockReturnValue({ songId: 'a', queueIndex: 0, position: 190, startedAt: 0 })
+      onTimeUpdate(190)
+      let answer: (started: boolean) => void = () => {}
+      mix.start.mockImplementationOnce(() => {
+        mix.starting = true
+        return new Promise<boolean>((resolve) => (answer = resolve))
+      })
+      playback.currentIndex = 2
+      const starting = playback.startCurrent()
+      // The old run moves on to b while connect answers.
+      mix.heard.mockReturnValue({ songId: 'b', queueIndex: 1, position: 0, startedAt: 200 })
+      onTimeUpdate(200.25)
+      expect(playback.currentSong?.id).toBe('c')
+      mix.starting = false
+      answer(true)
+      await starting
     })
 
     it('stop and logout end the mix', async () => {

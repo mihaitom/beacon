@@ -153,6 +153,23 @@ describe('LocalMixPlayer', () => {
     mix.stop()
   })
 
+  it('says a start is under way until connect answers or it is stopped', async () => {
+    engine()
+    let answer: (s: ReturnType<typeof state>) => void = () => {}
+    vi.mocked(client.startLocalMix).mockImplementation(
+      () => new Promise((resolve) => (answer = resolve)),
+    )
+    const mix = new LocalMixPlayer()
+    const first = mix.start(startOptions())
+    expect(mix.starting).toBe(true)
+    answer(state())
+    await first
+    expect(mix.starting).toBe(false)
+    void mix.start(startOptions())
+    mix.stop()
+    expect(mix.starting).toBe(false)
+  })
+
   it('a start overtaken by a newer one or a stop changes nothing', async () => {
     const fake = engine()
     let answer!: (value: ReturnType<typeof state>) => void

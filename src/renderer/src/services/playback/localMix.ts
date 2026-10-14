@@ -119,6 +119,8 @@ export class LocalMixPlayer {
   private upcoming: MixTransition[] = []
   private pollTimer: ReturnType<typeof setInterval> | null = null
   private startSeq = 0
+  /** The start connect is answering, or -1 - see `starting`. */
+  private startingSeq = -1
   private pausedAt: number | null = null
   /** The stream time last asked about through heard(): where this tab is. */
   private heardTime = 0
@@ -130,18 +132,27 @@ export class LocalMixPlayer {
     return this.epoch !== null
   }
 
+  /** A new run is on its way. The element still plays the old one until
+   * it arrives, and that one's song changes are no longer the queue's. */
+  get starting(): boolean {
+    return this.startingSeq !== -1
+  }
+
   /** Starts a new run of the mix and hands it to the element. False when a
    * newer start or a stop took over while connect was answering. */
   async start(options: LocalMixStart): Promise<boolean> {
-    const seq = ++this.startSeq
-    const state = await startLocalMix(this.player, {
-      songs: options.songs,
-      position: options.position,
-      repeat_mode: options.repeatMode,
-      transitions: options.transitions,
-      // Loaded without playing: connect's clock waits for resume() too.
-      paused: !options.autoplay,
-    })
+    const seq = this.beginStart()
+    const state = await this.endStart(
+      seq,
+      startLocalMix(this.player, {
+        songs: options.songs,
+        position: options.position,
+        repeat_mode: options.repeatMode,
+        transitions: options.transitions,
+        // Loaded without playing: connect's clock waits for resume() too.
+        paused: !options.autoplay,
+      }),
+    )
     if (seq !== this.startSeq) return false
     this.play(state, options.quality, options.autoplay)
     return true
@@ -155,14 +166,30 @@ export class LocalMixPlayer {
     index: number
     quality: LocalStreamQuality
   }): Promise<boolean> {
-    const seq = ++this.startSeq
-    const state = await startLocalPreview(this.player, {
-      songs: options.songs,
-      index: options.index,
-    })
+    const seq = this.beginStart()
+    const state = await this.endStart(
+      seq,
+      startLocalPreview(this.player, {
+        songs: options.songs,
+        index: options.index,
+      }),
+    )
     if (seq !== this.startSeq) return false
     this.play(state, options.quality, true)
     return true
+  }
+
+  private beginStart(): number {
+    this.startingSeq = ++this.startSeq
+    return this.startingSeq
+  }
+
+  private async endStart(seq: number, request: Promise<LocalMixState>): Promise<LocalMixState> {
+    try {
+      return await request
+    } finally {
+      if (this.startingSeq === seq) this.startingSeq = -1
+    }
   }
 
   private play(state: LocalMixState, quality: LocalStreamQuality, autoplay: boolean): void {
@@ -248,6 +275,7 @@ export class LocalMixPlayer {
   /** Ends the mix. Also cancels a start still waiting for connect. */
   stop(): void {
     this.startSeq++
+    this.startingSeq = -1
     this.stopPolling()
     const wasActive = this.active
     this.epoch = null
