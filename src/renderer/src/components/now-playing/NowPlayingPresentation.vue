@@ -586,6 +586,11 @@ export default {
   padding-bottom: 18px;
 }
 
+/* Along the screen's bottom edge, whichever of the two is taller. */
+.now-playing--photo .now-playing__side-controls {
+  align-self: end;
+}
+
 /* Clear of the screen's bottom edge, where both phone platforms listen for
  * their swipe-up gesture. */
 .now-playing__side-controls {

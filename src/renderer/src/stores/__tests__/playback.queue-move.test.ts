@@ -1,0 +1,107 @@
+import { beforeEach, describe, expect, it } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
+import { usePlaybackStore } from '../playback'
+import { makeSong } from './fixtures'
+
+function queueOf(ids: string[], current: number) {
+  const playback = usePlaybackStore()
+  playback.setQueue(
+    ids.map((id) => makeSong(id)),
+    current,
+  )
+  return playback
+}
+
+const ids = (playback: ReturnType<typeof usePlaybackStore>) => playback.queue.map((s) => s.id)
+
+describe('moveInQueue', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  it('moves a song from far down to right after the current one', () => {
+    const playback = queueOf(['a', 'b', 'c', 'd', 'e', 'f'], 1)
+
+    expect(playback.moveInQueue(5, 'next')).toBe(true)
+
+    expect(ids(playback)).toEqual(['a', 'b', 'f', 'c', 'd', 'e'])
+    expect(playback.currentIndex).toBe(1)
+  })
+
+  it('moves an already played song up to right after the current one', () => {
+    const playback = queueOf(['a', 'b', 'c', 'd'], 2)
+
+    playback.moveInQueue(0, 'next')
+
+    expect(ids(playback)).toEqual(['b', 'c', 'a', 'd'])
+    expect(playback.queue[playback.currentIndex]!.id).toBe('c')
+  })
+
+  it('moves a song to the end', () => {
+    const playback = queueOf(['a', 'b', 'c', 'd'], 0)
+
+    playback.moveInQueue(1, 'end')
+
+    expect(ids(playback)).toEqual(['a', 'c', 'd', 'b'])
+  })
+
+  it('has nothing to do where the song already is, or for the current song', () => {
+    const playback = queueOf(['a', 'b', 'c', 'd'], 1)
+
+    expect(playback.moveInQueue(2, 'next')).toBe(false)
+    expect(playback.moveInQueue(3, 'end')).toBe(false)
+    expect(playback.moveInQueue(1, 'end')).toBe(false)
+    expect(ids(playback)).toEqual(['a', 'b', 'c', 'd'])
+  })
+
+  it('puts the first song first when nothing is current yet', () => {
+    const playback = queueOf(['a', 'b', 'c'], 0)
+    playback.currentIndex = -1
+
+    playback.moveInQueue(2, 'next')
+
+    expect(ids(playback)).toEqual(['c', 'a', 'b'])
+  })
+
+  describe('with the next song locked by the mix', () => {
+    function locked() {
+      const playback = queueOf(['a', 'b', 'c', 'd', 'e'], 0)
+      playback.mixNextLocked = true
+      expect(playback.lockedNextIndex).toBe(1)
+      return playback
+    }
+
+    it('"next" lands behind the locked song, which stays next', () => {
+      const playback = locked()
+
+      playback.moveInQueue(4, 'next')
+
+      expect(ids(playback)).toEqual(['a', 'b', 'e', 'c', 'd'])
+    })
+
+    it('a song already behind the locked one has nothing to do', () => {
+      const playback = locked()
+
+      expect(playback.moveInQueue(2, 'next')).toBe(false)
+    })
+
+    it('the locked song itself does not move', () => {
+      const playback = locked()
+
+      expect(playback.queueMoveTarget(1, 'next')).toBeNull()
+      expect(playback.moveInQueue(1, 'end')).toBe(false)
+      expect(ids(playback)).toEqual(['a', 'b', 'c', 'd', 'e'])
+    })
+
+    it('an already played song moved up lands behind it too', () => {
+      const playback = queueOf(['a', 'b', 'c', 'd'], 1)
+      playback.mixNextLocked = true
+
+      playback.moveInQueue(0, 'next')
+
+      expect(ids(playback)).toEqual(['b', 'c', 'a', 'd'])
+      expect(playback.queue[playback.currentIndex]!.id).toBe('b')
+      expect(playback.queue[playback.lockedNextIndex]!.id).toBe('c')
+    })
+  })
+})

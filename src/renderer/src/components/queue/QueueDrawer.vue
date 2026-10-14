@@ -173,14 +173,13 @@
             :data-queue-index="index"
             :style="revealDelayStyle(song)"
             :class="{ 'queue-row--clearing': clearingRows.has(index) }"
-            :drag-over-position="dragIndex !== index ? dragOverPosition(index) : null"
-            :dragging="dragIndex === index"
             :landed="queueRowKey(song) === landedKey"
-            @dragstart="onDragStart(index, $event)"
-            @dragover="onDragOver(index, $event)"
-            @dragleave="onDragLeave(index)"
-            @drop="onDrop(index, $event)"
+            @dragstart="onDragStart"
+            @dragover="onDragOver"
+            @dragleave="onDragLeave"
+            @drop="onDrop"
             @dragend="onDragEnd"
+            @menu="openMenu"
           />
         </transition-group>
 
@@ -196,14 +195,13 @@
               :key="queueRowKey(song)"
               :song="song"
               :index="index"
-              :drag-over-position="dragIndex !== index ? dragOverPosition(index) : null"
-              :dragging="dragIndex === index"
               :landed="queueRowKey(song) === landedKey"
-              @dragstart="onDragStart(index, $event)"
-              @dragover="onDragOver(index, $event)"
-              @dragleave="onDragLeave(index)"
-              @drop="onDrop(index, $event)"
+              @dragstart="onDragStart"
+              @dragover="onDragOver"
+              @dragleave="onDragLeave"
+              @drop="onDrop"
               @dragend="onDragEnd"
+              @menu="openMenu"
             />
           </template>
         </v-virtual-scroll>
@@ -212,6 +210,40 @@
       <v-list-item v-else>
         <span class="text-medium-emphasis text-body-medium">{{ $t('queue.empty') }}</span>
       </v-list-item>
+
+      <!-- One menu for the whole list rather than one per row. It holds the
+       - song, not its index: the queue can move on (or be edited elsewhere)
+       - while the menu is open. -->
+      <tile-context-menu ref="menu">
+        <v-list-subheader v-if="menuIndex === playbackStore.lockedNextIndex">
+          {{ $t('queue.nextLocked') }}
+        </v-list-subheader>
+        <v-list-item :disabled="menuIndex === playbackStore.currentIndex" @click="menuPlay">
+          <template #prepend><v-icon icon="mdi-play" size="small" /></template>
+          <v-list-item-title>{{ $t('library.play') }}</v-list-item-title>
+        </v-list-item>
+        <v-list-item :disabled="!canMove('next')" @click="menuMove('next')">
+          <template #prepend><v-icon icon="mdi-skip-next-outline" size="small" /></template>
+          <!-- Behind a locked next song the closest a song can get is the
+             - one after it - said so, rather than "next" landing second. -->
+          <v-list-item-title>{{
+            playbackStore.lockedNextIndex >= 0 ? $t('queue.moveAfterNext') : $t('queue.moveNext')
+          }}</v-list-item-title>
+        </v-list-item>
+        <v-list-item :disabled="!canMove('end')" @click="menuMove('end')">
+          <template #prepend><v-icon icon="mdi-arrow-collapse-down" size="small" /></template>
+          <v-list-item-title>{{ $t('queue.moveToEnd') }}</v-list-item-title>
+        </v-list-item>
+        <v-list-item
+          :disabled="
+            menuIndex === playbackStore.currentIndex || menuIndex === playbackStore.lockedNextIndex
+          "
+          @click="menuRemove"
+        >
+          <template #prepend><v-icon icon="mdi-playlist-remove" size="small" /></template>
+          <v-list-item-title>{{ $t('queue.remove') }}</v-list-item-title>
+        </v-list-item>
+      </tile-context-menu>
     </div>
   </v-navigation-drawer>
 </template>
@@ -220,7 +252,9 @@
 import { usePlaybackStore } from '@/stores/playback'
 import { useDrawersStore } from '@/stores/drawers'
 import { useLibraryStore } from '@/stores/library'
-import QueueRow from './QueueRow.vue'
+import QueueRow, { type QueueDragState } from './QueueRow.vue'
+import TileContextMenu from '@/components/library/TileContextMenu.vue'
+import type { QueueMoveTarget } from '@/stores/playback'
 import type { Song } from '@/types/library'
 
 // Per-row identity for :key and the "landed" flash, keyed off the Song
@@ -311,7 +345,10 @@ function floatingQuery(): MediaQueryList | null {
 
 export default {
   name: 'QueueDrawer',
-  components: { QueueRow },
+  components: { QueueRow, TileContextMenu },
+  provide() {
+    return { queueDrag: this.drag }
+  },
   props: {
     modelValue: {
       type: Boolean,
@@ -325,17 +362,24 @@ export default {
       // rendering paths below (plain v-for and v-virtual-scroll), and a
       // library wired to assume every row is mounted wouldn't survive the
       // virtualized path.
-      dragIndex: null as number | null,
-      dragOverIndex: null as number | null,
-      // Which half of dragOverIndex's own row the pointer is currently
-      // over — see insertBeforeIndex()'s own comment for why this matters:
-      // without it, dropping anywhere within a row's bounding box always
-      // meant "insert before this row's original index", which only
+      //
+      // Provided to the rows, never read by this template: whatever the
+      // list's render reads, every dragover re-renders the list - and with
+      // it the transition group, which measures every row each time. At
+      // 400 songs that was 20ms per dragover, ten times that while a
+      // reveal was still settling.
+      //
+      // `half` is which side of the row under the pointer the drop would
+      // land on — see insertBeforeIndex()'s own comment for why this
+      // matters: without it, dropping anywhere within a row's bounding box
+      // always meant "insert before this row's original index", which only
       // produces the expected result for a drag moving *up*. Moving down
       // past even a single adjacent row landed one further than intended
       // (a "swap with the very next track" drag reliably overshot to the
       // track after that).
-      dragOverHalf: null as 'before' | 'after' | null,
+      drag: { from: null, over: null, half: null } as QueueDragState,
+      // The song the context menu was opened on - see the template.
+      menuSong: null as Song | null,
       // Briefly set to the moved row's queueRowKey() right after a drop, so
       // it gets a "landed here" pulse on top of the slide animation (or, in
       // the virtualized path with no slide, as the only landing feedback).
@@ -390,6 +434,9 @@ export default {
     // happens to land. Recomputed from scratch on every queueRevealSeq
     // bump purely by virtue of being a computed over reactive state — no
     // separate "did this change" bookkeeping needed.
+    menuIndex(): number {
+      return this.menuSong ? this.playbackStore.queue.indexOf(this.menuSong) : -1
+    },
     revealDelayMap(): Map<Song, number> {
       const revealSet = new Set(this.drawersStore.queueRevealSongs)
       const baseDelay = this.drawersStore.queueRevealNeedsOpenDelay ? REVEAL_BASE_DELAY_MS : 0
@@ -687,11 +734,27 @@ export default {
         this.clearingRows = new Set()
       }, totalMs)
     },
-    dragOverPosition(index: number): 'before' | 'after' | null {
-      return this.dragOverIndex === index ? this.dragOverHalf : null
+    openMenu(index: number, event: MouseEvent) {
+      this.menuSong = this.playbackStore.queue[index] ?? null
+      ;(this.$refs.menu as { open: (event: MouseEvent) => void } | undefined)?.open(event)
+    },
+    canMove(where: QueueMoveTarget): boolean {
+      return this.playbackStore.queueMoveTarget(this.menuIndex, where) != null
+    },
+    menuPlay() {
+      if (this.menuIndex >= 0) this.playbackStore.playAtIndex(this.menuIndex)
+    },
+    menuMove(where: QueueMoveTarget) {
+      const song = this.menuSong
+      if (song && this.playbackStore.moveInQueue(this.menuIndex, where)) {
+        this.flashLanded(this.queueRowKey(song))
+      }
+    },
+    menuRemove() {
+      if (this.menuIndex >= 0) this.playbackStore.removeFromQueue(this.menuIndex)
     },
     onDragStart(index: number, event: DragEvent) {
-      this.dragIndex = index
+      this.drag.from = index
       if (event.dataTransfer) {
         event.dataTransfer.effectAllowed = 'move'
         // Firefox requires setData for the drag to actually start.
@@ -716,30 +779,29 @@ export default {
     // post-removal index reorderQueue(from, to) actually expects.
     dropIndex(index: number, event: DragEvent): number {
       const insertBefore = this.insertBeforeIndex(index, event)
-      return insertBefore > (this.dragIndex ?? 0) ? insertBefore - 1 : insertBefore
+      return insertBefore > (this.drag.from ?? 0) ? insertBefore - 1 : insertBefore
     },
     onDragOver(index: number, event: DragEvent) {
-      this.dragOverIndex = index
-      this.dragOverHalf = this.insertBeforeIndex(index, event) > index ? 'after' : 'before'
+      this.drag.over = index
+      this.drag.half = this.insertBeforeIndex(index, event) > index ? 'after' : 'before'
     },
     onDragLeave(index: number) {
-      if (this.dragOverIndex === index) {
-        this.dragOverIndex = null
-        this.dragOverHalf = null
+      if (this.drag.over === index) {
+        this.drag.over = null
+        this.drag.half = null
       }
     },
     onDrop(index: number, event: DragEvent) {
-      if (this.dragIndex !== null) {
+      const from = this.drag.from
+      if (from !== null) {
         const to = this.dropIndex(index, event)
-        if (to !== this.dragIndex) {
-          const moved = this.playbackStore.queue[this.dragIndex]
-          this.playbackStore.reorderQueue(this.dragIndex, to)
+        if (to !== from) {
+          const moved = this.playbackStore.queue[from]
+          this.playbackStore.reorderQueue(from, to)
           if (moved) this.flashLanded(this.queueRowKey(moved))
         }
       }
-      this.dragIndex = null
-      this.dragOverIndex = null
-      this.dragOverHalf = null
+      this.onDragEnd()
     },
     flashLanded(key: string) {
       this.landedKey = key
@@ -748,9 +810,9 @@ export default {
       }, 500)
     },
     onDragEnd() {
-      this.dragIndex = null
-      this.dragOverIndex = null
-      this.dragOverHalf = null
+      this.drag.from = null
+      this.drag.over = null
+      this.drag.half = null
     },
   },
 }

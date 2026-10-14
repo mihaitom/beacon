@@ -128,6 +128,8 @@ async function mountSongWithBackground(
   h: number,
   withLyrics = false,
   title = 'Imma Be',
+  artist = 'Black Eyed Peas',
+  album = 'The E.N.D.',
 ) {
   await page.viewport(w, h)
   vi.mocked(getArtistArt).mockResolvedValue({
@@ -141,7 +143,7 @@ async function mountSongWithBackground(
     logo: null,
   })
   const playback = usePlaybackStore()
-  playback.setQueue([makeSong('s1', { title, artist: 'Black Eyed Peas', album: 'The E.N.D.' })], 0)
+  playback.setQueue([makeSong('s1', { title, artist, album })], 0)
   if (withLyrics) {
     const lyrics = useLyricsStore()
     vi.spyOn(lyrics, 'ensureLoaded').mockResolvedValue()
@@ -475,6 +477,36 @@ describe('Now Playing on a phone held sideways', () => {
       expect(controls.left).toBeGreaterThanOrEqual(info.right)
       expect(controls.right).toBeLessThanOrEqual(w + 1)
       expect(controls.bottom).toBeLessThanOrEqual(h)
+    },
+  )
+
+  it.each(LANDSCAPE)(
+    'keeps long labels to one line each beside the small cover at %ix%i',
+    async (w, h) => {
+      // Wrapped labels grew the text block, the cover measured from it grew
+      // with it and squeezed the text into an ever narrower column - five
+      // lines of artist, the controls floating halfway up the screen.
+      await mountSongWithBackground(
+        w,
+        h,
+        false,
+        'On Your Mind (Extended Club Mix)',
+        'Hayden James & Cassian Feat. Elderbrook',
+        'Kontor: Top of the Clubs, Volume 94',
+      )
+      await new Promise((r) => setTimeout(r, 50))
+      const info = box('.now-playing__info')
+      const controls = box('.mobile-transport')
+      const mini = box('.now-playing__mini-art')
+
+      for (const label of ['.now-playing__title', '.now-playing__artist-label']) {
+        const el = document.querySelector(label)!
+        const lineHeight = parseFloat(getComputedStyle(el).lineHeight)
+        expect(el.getBoundingClientRect().height).toBeLessThan(lineHeight * 1.5)
+      }
+      expect(mini.height).toBeLessThan(h * 0.4)
+      expect(info.width).toBeGreaterThan(mini.width)
+      expect(controls.bottom).toBeGreaterThan(h - 40)
     },
   )
 

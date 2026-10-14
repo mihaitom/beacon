@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
@@ -401,6 +401,139 @@ describe('QueueDrawer', () => {
       await rows[2]!.trigger('dragleave')
       expect(wrapper.findAll('.queue-row')[2]!.classes()).not.toContain(
         'queue-row--drag-over-after',
+      )
+    })
+  })
+
+  describe('dragging over a long queue', () => {
+    it('re-renders only the rows whose indicator changes, not the whole list', async () => {
+      // Every row used to re-render on every dragover - 400 rows each time
+      // the pointer moved, which is what made dragging far down a long
+      // queue stall the app.
+      const playback = usePlaybackStore()
+      playback.setQueue(
+        Array.from({ length: 60 }, (_, i) => makeSong(String(i))),
+        0,
+      )
+      let rowUpdates = 0
+      let listUpdates = 0
+      const host = mount(
+        { components: { QueueDrawer }, template: '<v-app><queue-drawer model-value /></v-app>' },
+        {
+          global: {
+            plugins: [vuetify, i18n],
+            // The real one: what its renders cost is the point here.
+            stubs: { 'transition-group': false },
+            mixins: [
+              {
+                updated(this: { $options: { name?: string } }) {
+                  if (this.$options.name === 'QueueRow') rowUpdates++
+                  // The transition group measures every row on each of its
+                  // renders, so the list must not re-render at all.
+                  if (this.$options.name === 'TransitionGroup') listUpdates++
+                },
+              },
+            ],
+          },
+        },
+      )
+      const rows = host.findComponent(QueueDrawer).findAll('.queue-row')
+      await rows[50]!.get('.queue-row__handle').trigger('dragstart')
+      rowUpdates = 0
+      listUpdates = 0
+
+      for (let i = 49; i > 10; i--) {
+        await rows[i]!.trigger('dragover', BOTTOM_HALF)
+        await rows[i]!.trigger('dragover', TOP_HALF)
+      }
+
+      // Two rows per step at most: the one the indicator leaves and the
+      // one it reaches.
+      expect(rowUpdates).toBeLessThanOrEqual(39 * 2 * 2)
+      expect(listUpdates).toBe(0)
+      host.unmount()
+    })
+  })
+
+  describe('row menu', () => {
+    function menuItem(label: string): HTMLElement {
+      const item = [...document.querySelectorAll<HTMLElement>('.v-list-item')].find(
+        (el) => el.textContent?.trim() === label,
+      )
+      if (!item) throw new Error(`no menu item "${label}"`)
+      return item
+    }
+
+    async function openMenuOn(wrapper: ReturnType<typeof mountDrawer>, index: number) {
+      await wrapper
+        .findAll('.queue-row')
+        [index]!.trigger('contextmenu', { clientX: 10, clientY: 10 })
+      await flushPromises()
+    }
+
+    afterEach(() => {
+      document.body.innerHTML = ''
+    })
+
+    it('moves a song from far down to right after the current one', async () => {
+      const playback = usePlaybackStore()
+      playback.setQueue(
+        ['a', 'b', 'c', 'd', 'e'].map((id) => makeSong(id)),
+        1,
+      )
+      const wrapper = mountDrawer()
+
+      await openMenuOn(wrapper, 4)
+      menuItem(i18n.global.t('queue.moveNext')).click()
+
+      expect(playback.queue.map((s) => s.id)).toEqual(['a', 'b', 'e', 'c', 'd'])
+    })
+
+    it('moves a song to the end', async () => {
+      const playback = usePlaybackStore()
+      playback.setQueue(
+        ['a', 'b', 'c'].map((id) => makeSong(id)),
+        0,
+      )
+      const wrapper = mountDrawer()
+
+      await openMenuOn(wrapper, 1)
+      menuItem(i18n.global.t('queue.moveToEnd')).click()
+
+      expect(playback.queue.map((s) => s.id)).toEqual(['a', 'c', 'b'])
+    })
+
+    it('behind a locked next song, says where the song will really land', async () => {
+      const playback = usePlaybackStore()
+      playback.setQueue(
+        ['a', 'b', 'c', 'd'].map((id) => makeSong(id)),
+        0,
+      )
+      playback.mixNextLocked = true
+      const wrapper = mountDrawer()
+
+      await openMenuOn(wrapper, 3)
+      menuItem(i18n.global.t('queue.moveAfterNext')).click()
+
+      expect(playback.queue.map((s) => s.id)).toEqual(['a', 'b', 'd', 'c'])
+    })
+
+    it('offers nothing that would move or remove the locked song', async () => {
+      const playback = usePlaybackStore()
+      playback.setQueue(
+        ['a', 'b', 'c'].map((id) => makeSong(id)),
+        0,
+      )
+      playback.mixNextLocked = true
+      const wrapper = mountDrawer()
+
+      await openMenuOn(wrapper, 1)
+
+      for (const key of ['queue.moveAfterNext', 'queue.moveToEnd', 'queue.remove']) {
+        expect(menuItem(i18n.global.t(key)).classList).toContain('v-list-item--disabled')
+      }
+      expect(menuItem(i18n.global.t('library.play')).classList).not.toContain(
+        'v-list-item--disabled',
       )
     })
   })

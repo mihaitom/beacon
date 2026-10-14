@@ -485,6 +485,8 @@ export default {
 }
 
 .now-playing__panels--mini-cover .now-playing__panel {
+  min-width: 0;
+  max-width: 100%;
   flex-direction: row;
   align-items: flex-end;
   gap: 14px;
@@ -502,8 +504,11 @@ export default {
 }
 
 /* The corner's labels are one ellipsised line each — a wrapped line would
- * grow the block, and with it the mini cover measured from its height. */
-.now-playing__panels--corner .now-playing__info > * {
+ * grow the block, and with it the mini cover measured from its height. The
+ * sideways phone's mini cover is measured the same way: wrapping there
+ * narrowed the text, which grew the cover, which narrowed the text. */
+.now-playing__panels--corner .now-playing__info > *,
+.now-playing__panels--mini-cover .now-playing__info > * {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -512,11 +517,13 @@ export default {
 /* The title drops its three-line clamp for that single line (see its own
  * rule), and the album link has to be a real block for the ellipsis to
  * apply at all — text-overflow does nothing on an inline box. */
-.now-playing__panels--corner .now-playing__title {
+.now-playing__panels--corner .now-playing__title,
+.now-playing__panels--mini-cover .now-playing__title {
   display: block;
 }
 
-.now-playing__panels--corner .now-playing__album-link {
+.now-playing__panels--corner .now-playing__album-link,
+.now-playing__panels--mini-cover .now-playing__album-link {
   display: block;
 }
 

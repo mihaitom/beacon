@@ -380,6 +380,10 @@ export default {
     clear: "Vider la file d'attente",
     saveAsPlaylist: "Enregistrer la file d'attente comme playlist",
     nextLocked: 'Joué ensuite : la transition est déjà prête',
+    moveNext: 'Lire ensuite',
+    moveAfterNext: 'Lire après le titre suivant',
+    moveToEnd: 'Déplacer à la fin',
+    remove: "Retirer de la file d'attente",
   },
   party: {
     copied: 'Copié',

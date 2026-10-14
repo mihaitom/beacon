@@ -85,6 +85,9 @@ function notifyPlexPassRequired(titleKey: string): void {
   })
 }
 
+/** The queue's key positions a song can be sent to - see moveInQueue(). */
+export type QueueMoveTarget = 'next' | 'end'
+
 /** See PlaybackState.preview and startPreview(). */
 interface PreviewState {
   /** The album or playlist, whole - "Play from here" plays it. */
@@ -541,6 +544,24 @@ export const usePlaybackStore = defineStore('playback', {
       if (!state.mixNextLocked || state.repeatMode === 'one' || state.radioStation) return -1
       const next = state.currentIndex + 1
       return next > 0 && next < state.queue.length ? next : -1
+    },
+    /** The reorderQueue() target that moves the song at `from` to `where`,
+     * or null where it is already there or must not move: the current
+     * song, and a locked next one. */
+    queueMoveTarget(): (from: number, where: QueueMoveTarget) => number | null {
+      return (from, where) => {
+        const last = this.queue.length - 1
+        if (from < 0 || from > last) return null
+        if (from === this.currentIndex || from === this.lockedNextIndex) return null
+        let to: number
+        if (where === 'end') {
+          to = last
+        } else {
+          const insertBefore = Math.max(this.currentIndex, this.lockedNextIndex) + 1
+          to = insertBefore > from ? insertBefore - 1 : insertBefore
+        }
+        return to === from ? null : to
+      }
     },
     /** How the current song blends into the next, once the mix has
      * planned it - a crossfade's change comes before the song's own end. */
@@ -2423,6 +2444,17 @@ export const usePlaybackStore = defineStore('playback', {
       this.queue = queue
       this.currentIndex = current
       this.syncCastQueue()
+    },
+
+    /** Moves the song at `from` to one of the queue's key positions: right
+     * after the current song ('next' - after a locked next one, which
+     * stays where it is) or to the very end. False where there is nothing
+     * to do (see queueMoveTarget). */
+    moveInQueue(from: number, where: QueueMoveTarget): boolean {
+      const to = this.queueMoveTarget(from, where)
+      if (to == null) return false
+      this.reorderQueue(from, to)
+      return true
     },
 
     /** Pushes the full queue to the connect backend whenever it's casting —

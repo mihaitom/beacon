@@ -380,6 +380,10 @@ export default {
     clear: 'Svuota coda',
     saveAsPlaylist: 'Salva la coda come playlist',
     nextLocked: 'Il prossimo: la transizione è già pronta',
+    moveNext: 'Riproduci dopo',
+    moveAfterNext: 'Riproduci dopo il prossimo brano',
+    moveToEnd: 'Sposta in fondo',
+    remove: 'Rimuovi dalla coda',
   },
   party: {
     copied: 'Copiato',

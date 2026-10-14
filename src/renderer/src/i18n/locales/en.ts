@@ -377,6 +377,10 @@ export default {
     clear: 'Clear queue',
     saveAsPlaylist: 'Save queue as playlist',
     nextLocked: 'Up next - the transition into it is already prepared',
+    moveNext: 'Play next',
+    moveAfterNext: 'Play after the next song',
+    moveToEnd: 'Move to end',
+    remove: 'Remove from queue',
   },
   party: {
     copied: 'Copied',

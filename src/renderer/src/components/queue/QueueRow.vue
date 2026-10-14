@@ -8,9 +8,10 @@
       'queue-row--dragging': dragging,
       'queue-row--landed': landed,
     }"
-    @dragover.prevent="$emit('dragover', $event)"
-    @dragleave="$emit('dragleave')"
-    @drop="$emit('drop', $event)"
+    @dragover.prevent="$emit('dragover', index, $event)"
+    @dragleave="$emit('dragleave', index)"
+    @drop="$emit('drop', index, $event)"
+    @contextmenu.prevent="$emit('menu', index, $event)"
     @click="playbackStore.playAtIndex(index)"
   >
     <!-- A song the mix has settled on stays put - see the playback store's
@@ -22,7 +23,7 @@
       class="queue-row__handle text-medium-emphasis"
       :draggable="lockedNext ? 'false' : 'true'"
       @click.stop
-      @dragstart="$emit('dragstart', $event)"
+      @dragstart="$emit('dragstart', index, $event)"
       @dragend="$emit('dragend')"
     />
     <div class="queue-row__index text-body-small text-medium-emphasis">
@@ -71,9 +72,24 @@ import { usePlaybackStore } from '@/stores/playback'
 import { usePartyStore } from '@/stores/party'
 import type { Song } from '@/types/library'
 
+/** The drawer's drag in progress, shared with every row rather than handed
+ * down as props: a prop the list passes re-renders the whole list on every
+ * dragover, while each row reading this re-renders only when its own
+ * indicator changes. */
+export interface QueueDragState {
+  /** The row being dragged. */
+  from: number | null
+  /** The row under the pointer, and which side of it the drop would land. */
+  over: number | null
+  half: 'before' | 'after' | null
+}
+
 export default {
   name: 'QueueRow',
   components: { CoverArt },
+  inject: {
+    queueDrag: { default: null },
+  },
   props: {
     song: {
       type: Object as () => Song,
@@ -83,6 +99,13 @@ export default {
       type: Number,
       required: true,
     },
+    landed: {
+      type: Boolean,
+      default: false,
+    },
+  },
+  emits: ['dragstart', 'dragover', 'dragleave', 'drop', 'dragend', 'menu'],
+  computed: {
     // Which side of *this* row the dragged item would land on if dropped
     // right now — 'before' shows a line above the row, 'after' below.
     // Two distinct positions (not just one boolean) because a single
@@ -90,21 +113,17 @@ export default {
     // row they're actually about to land on, and picking the wrong side is
     // exactly what made "swap with the very next track" so easy to
     // overshoot by one — see QueueDrawer.vue's insertBeforeIndex().
-    dragOverPosition: {
-      type: String as () => 'before' | 'after' | null,
-      default: null,
+    drag(this: { queueDrag: QueueDragState | null }): QueueDragState | null {
+      return this.queueDrag
     },
-    dragging: {
-      type: Boolean,
-      default: false,
+    dragOverPosition(): 'before' | 'after' | null {
+      const drag = this.drag
+      if (!drag || drag.over !== this.index || drag.from === this.index) return null
+      return drag.half
     },
-    landed: {
-      type: Boolean,
-      default: false,
+    dragging(): boolean {
+      return this.drag?.from === this.index
     },
-  },
-  emits: ['dragstart', 'dragover', 'dragleave', 'drop', 'dragend'],
-  computed: {
     playbackStore() {
       return usePlaybackStore()
     },
@@ -187,8 +206,11 @@ export default {
   border-top-color: rgb(var(--v-theme-primary));
 }
 
+/* A shadow, not a border: a border here made the row 2px taller, and every
+ * row below it shifted - and animated the shift - each time the pointer
+ * crossed a row's middle. */
 .queue-row--drag-over-after {
-  border-bottom: 2px solid rgb(var(--v-theme-primary));
+  box-shadow: inset 0 -2px 0 rgb(var(--v-theme-primary));
 }
 
 .queue-row--dragging {

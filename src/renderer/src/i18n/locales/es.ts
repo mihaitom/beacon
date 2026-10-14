@@ -380,6 +380,10 @@ export default {
     clear: 'Vaciar cola',
     saveAsPlaylist: 'Guardar cola como lista de reproducción',
     nextLocked: 'Suena a continuación: la transición ya está preparada',
+    moveNext: 'Reproducir a continuación',
+    moveAfterNext: 'Reproducir después de la siguiente canción',
+    moveToEnd: 'Mover al final',
+    remove: 'Quitar de la cola',
   },
   party: {
     copied: 'Copiado',

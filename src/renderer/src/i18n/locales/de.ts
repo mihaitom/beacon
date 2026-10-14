@@ -377,6 +377,10 @@ export default {
     clear: 'Warteschlange leeren',
     saveAsPlaylist: 'Warteschlange als Playlist speichern',
     nextLocked: 'Kommt als Nächstes - der Übergang ist schon vorbereitet',
+    moveNext: 'Als Nächstes abspielen',
+    moveAfterNext: 'Nach dem nächsten Song abspielen',
+    moveToEnd: 'Ans Ende verschieben',
+    remove: 'Aus der Warteschlange entfernen',
   },
   party: {
     copied: 'Kopiert',
