@@ -58,6 +58,7 @@ function fakeEngine() {
     setVolume: vi.fn(),
     setReplayGain: vi.fn(),
     hasEnded: false,
+    failed: false,
   }
 }
 
@@ -335,6 +336,20 @@ describe('playback with transitions', () => {
       await playback.togglePlay()
       expect(mix.start).toHaveBeenCalledWith(expect.objectContaining({ position: 77 }))
       expect(engine.resume).not.toHaveBeenCalled()
+      expect(playback.isPlaying).toBe(true)
+    })
+
+    it('play after the stream was lost starts a new run from where it was heard', async () => {
+      const playback = await playingQueue()
+      playback.isPlaying = false
+      playback.localPosition = 42
+      engine.failed = true
+      mix.start.mockClear()
+      await playback.togglePlay()
+      await flushPromises()
+      expect(mix.start).toHaveBeenCalledWith(expect.objectContaining({ position: 42 }))
+      expect(engine.resume).not.toHaveBeenCalled()
+      expect(mix.resume).not.toHaveBeenCalled()
       expect(playback.isPlaying).toBe(true)
     })
 

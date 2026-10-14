@@ -278,6 +278,8 @@ export class AudioEngine {
   // MAX_EARLY_ENDS.
   private earlyEnds = 0
   private positionAtLastEarlyEnd = 0
+  // The loaded source failed for good - see `failed`.
+  private sourceFailed = false
   // The stall watchdog: the interval itself, and when the reported position
   // last actually moved. See LIVE_STALL_SECONDS.
   private stallTimer: ReturnType<typeof setInterval> | null = null
@@ -453,6 +455,7 @@ export class AudioEngine {
         return
       }
       this.reconnectUrl = null
+      this.sourceFailed = true
       this.onError?.(this.audio.error?.message ?? 'Playback error')
     })
     this.audio.addEventListener('durationchange', () => {
@@ -830,6 +833,7 @@ export class AudioEngine {
   private giveUp(reason: string): void {
     const url = this.reconnectUrl
     this.reconnectUrl = null
+    this.sourceFailed = true
     this.disarmStallWatchdog()
     console.error(`[audio-engine] Giving up on ${url} ${reason}`)
     // Unconditional for the same reason as 'playing' — see the listener.
@@ -989,6 +993,7 @@ export class AudioEngine {
     this.expectedDuration = null
     this.earlyEnds = 0
     this.positionAtLastEarlyEnd = startPosition
+    this.sourceFailed = false
     this.reconnectUrl = url
     this.reconnectAttempts = 0
     this.dropStartedAt = null
@@ -1206,6 +1211,13 @@ export class AudioEngine {
    * true. */
   get hasEnded(): boolean {
     return this.audio.ended
+  }
+
+  /** True once the loaded source has failed for good: an error nothing
+   * reconnects, or a reconnect ladder that ran out. Its connection is gone,
+   * so resume() plays nothing - the source has to be loaded again. */
+  get failed(): boolean {
+    return this.sourceFailed
   }
 
   /** Wakes the analyser graph's context if the browser started it

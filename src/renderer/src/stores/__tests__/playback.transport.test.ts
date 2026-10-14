@@ -71,6 +71,7 @@ function fakeEngine(): {
   setVolume: ReturnType<typeof vi.fn>
   setReplayGain: ReturnType<typeof vi.fn>
   hasEnded: boolean
+  failed: boolean
   isPaused: boolean
 } {
   return {
@@ -86,6 +87,7 @@ function fakeEngine(): {
     setVolume: vi.fn(),
     setReplayGain: vi.fn(),
     hasEnded: false,
+    failed: false,
     isPaused: true,
   }
 }
@@ -243,6 +245,21 @@ describe('playback transport', () => {
 
       expect(engine.resume).not.toHaveBeenCalled()
       expect(engine.play).toHaveBeenCalledWith('https://server.example/stream/a', 0, 1)
+      expect(playback.isPlaying).toBe(true)
+    })
+
+    it('reloads a track whose connection was lost, from where it stood', async () => {
+      const playback = usePlaybackStore()
+      stubLibraryClient()
+      playback.setQueue([makeSong('a')], 0)
+      playback.isPlaying = false
+      playback.localPosition = 30
+      engine.failed = true
+
+      await playback.togglePlay()
+
+      expect(engine.resume).not.toHaveBeenCalled()
+      expect(engine.play).toHaveBeenCalledWith('https://server.example/stream/a', 30, 1)
       expect(playback.isPlaying).toBe(true)
     })
   })

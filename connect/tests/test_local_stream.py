@@ -422,16 +422,28 @@ def test_start_seeks_ffmpeg_without_declaring_a_length(client, default_session):
     assert cmd.index("-ss") < cmd.index("-i")
 
 
-def test_start_wins_over_a_range_header(client, default_session):
-    """Both at once is a caller contradicting itself. `start` is the one
-    that means "I am doing the seeking", so it is the one that counts -
-    and answering with a 206 against a length this response does not have
-    would be the worse of the two ways to be wrong."""
+def test_a_byte_resume_of_a_start_stream_is_refused(client, default_session):
+    """What Chromium sends by itself when such a connection drops: the same
+    URL, from the byte it got to. Serving it would play the track from
+    `start` again; refused, the player reconnects by time instead (see
+    refuse_byte_resume())."""
     response, cmd = _request(
         client,
         default_session,
         f"/stream/local/1?fmt=mp3&br={_BR}&start=30",
         headers={"Range": f"bytes={int(_BYTES_PER_SECOND * 60)}-"},
+    )
+
+    assert response.status_code == 416
+    assert cmd == []
+
+
+def test_a_start_stream_still_opens_with_the_elements_own_range(client, default_session):
+    response, cmd = _request(
+        client,
+        default_session,
+        f"/stream/local/1?fmt=mp3&br={_BR}&start=30",
+        headers={"Range": "bytes=0-"},
     )
 
     assert response.status_code == 200

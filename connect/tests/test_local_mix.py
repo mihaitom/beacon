@@ -164,6 +164,37 @@ def test_the_audio_is_served_from_the_stream_time_asked_for(configured, default_
     assert r.content == b"mixed"
 
 
+def test_a_byte_resume_of_the_audio_is_refused(configured):
+    """Chromium reopens a dropped stream's URL from the byte it got to; the
+    URL says `from`, so serving it would replay the run from there - from
+    its first song, for the opening URL. Refused, the player reconnects by
+    stream time."""
+    epoch = _start(configured, "a").json()["epoch"]
+    with patch.object(routes, "mix_audio") as audio:
+        r = configured.get(
+            f"/stream/local/mix/{PLAYER}/audio",
+            params={"epoch": epoch, "from": 0, "fmt": "flac"},
+            headers={"Range": "bytes=201814-"},
+        )
+    assert r.status_code == 416
+    audio.assert_not_called()
+
+
+def test_the_elements_opening_range_is_served(configured):
+    epoch = _start(configured, "a").json()["epoch"]
+
+    async def fake(mix, start_time, fmt):
+        yield b"mixed"
+
+    with patch.object(routes, "mix_audio", side_effect=fake):
+        r = configured.get(
+            f"/stream/local/mix/{PLAYER}/audio",
+            params={"epoch": epoch, "from": 0, "fmt": "flac"},
+            headers={"Range": "bytes=0-"},
+        )
+    assert r.status_code == 200 and r.content == b"mixed"
+
+
 @pytest.mark.parametrize(("fmt", "br"), [("wav", None), ("mp3", 999), ("flac", 128), ("aac", None)])
 def test_only_the_formats_a_transcode_allows_are_encoded(configured, fmt, br):
     epoch = _start(configured, "a").json()["epoch"]

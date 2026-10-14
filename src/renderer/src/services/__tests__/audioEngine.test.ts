@@ -460,6 +460,21 @@ describe('AudioEngine', () => {
       expect(onError).toHaveBeenCalledWith('Playback error: connection lost')
     })
 
+    it('counts as failed once it gives up, until something new is loaded', async () => {
+      engine.play('song.mp3')
+      for (let i = 0; i < 5; i++) {
+        dropConnection()
+        await vi.advanceTimersByTimeAsync(8000)
+      }
+      expect(engine.failed).toBe(false)
+
+      dropConnection()
+      expect(engine.failed).toBe(true)
+
+      engine.play('song.mp3', 30)
+      expect(engine.failed).toBe(false)
+    })
+
     it('says so each time the element starts producing sound', () => {
       const onPlaying = vi.fn()
       engine.onPlaying = onPlaying
@@ -501,6 +516,7 @@ describe('AudioEngine', () => {
 
       expect(onError).toHaveBeenCalledWith('decode failed')
       expect(audio.play).not.toHaveBeenCalled()
+      expect(engine.failed).toBe(true)
     })
 
     it('does not resurrect playback a pause already stopped', async () => {

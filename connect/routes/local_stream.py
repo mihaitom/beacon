@@ -215,6 +215,32 @@ def _parse_range(header: str | None, total: int) -> tuple[int, int] | None:
     return start, min(end, total - 1)
 
 
+def refuse_byte_resume(range_header: str | None) -> JSONResponse | None:
+    """A 416 for a browser resuming a length-less stream by byte offset,
+    None for anything else.
+
+    A stream asked for by stream time (`start`, a mix's `from`) carries no
+    length, and its bytes cannot be produced again: a new encode starts at
+    the requested second with a fresh header. When such a connection drops,
+    Chromium reopens the same URL on its own with `Range: bytes=<received>-`
+    (measured 2026-10-14, Chromium 151, a cut chunked FLAC response). The
+    URL still says "from the start", so serving it plays the start again -
+    a mix behind a proxy that cut its connections replayed from its first
+    song. Refused, the browser plays out what it holds and ends the stream,
+    and AudioEngine's early-end reconnect asks again from where it was
+    heard. `bytes=0-` is the element's ordinary opening request."""
+    if not range_header:
+        return None
+    match = _RANGE_RE.match(range_header.strip())
+    if not match or int(match.group(1)) == 0:
+        return None
+    return JSONResponse(
+        {"detail": "Resume by stream time, not by byte"},
+        status_code=416,
+        headers={"Content-Range": "bytes */*"},
+    )
+
+
 async def _encode(cmd: list[str], byte_limit: int | None):
     """Run ffmpeg and yield its stdout, stopping after `byte_limit` bytes.
 
@@ -423,6 +449,11 @@ async def local_stream(
     error = _format_error(fmt, br)
     if error is not None:
         return error
+    if start is not None:
+        refused = refuse_byte_resume(request.headers.get("range"))
+        if refused is not None:
+            logger.info(f"[local-stream] {track_id}: byte resume refused, the player asks by time")
+            return refused
     lossless = fmt == LOSSLESS_FORMAT
 
     source_url = await _resolve_source(session, track_id)

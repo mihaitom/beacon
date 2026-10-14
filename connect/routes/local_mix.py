@@ -45,7 +45,7 @@ from core.streamer import (
     lossy_encode_args,
 )
 
-from .local_stream import ALLOWED_BITRATES, LOSSLESS_FORMAT
+from .local_stream import ALLOWED_BITRATES, LOSSLESS_FORMAT, refuse_byte_resume
 from .mix_cast import TransitionSettings, mix_audio, planner_settings, source_url_fn
 
 logger = logging.getLogger("connect.mix")
@@ -247,6 +247,7 @@ def output_args(fmt: str, br: int | None) -> tuple[list[str], str]:
 @router.get("/stream/local/mix/{player}/audio")
 async def mix_stream(
     player: str,
+    request: Request,
     epoch: str = Query(...),
     start: float = Query(0.0, ge=0.0, alias="from"),
     fmt: str = Query(...),
@@ -259,6 +260,10 @@ async def mix_stream(
         # A plain status the element reports as an unplayable source rather
         # than retrying: this run of the mix is over.
         return JSONResponse({"detail": e.detail}, status_code=e.status_code)
+    refused = refuse_byte_resume(request.headers.get("range"))
+    if refused is not None:
+        logger.info(f"[mix] Local player {player}: byte resume refused, the player asks by time")
+        return refused
     args, content_type = output_args(fmt, br)
     mix.touch()
     fmt_label = fmt if br is None else f"{fmt} {br}k"

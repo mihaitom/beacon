@@ -1652,6 +1652,14 @@ export const usePlaybackStore = defineStore('playback', {
           // state, and pressing play on a station has to restart the
           // station, not the track it interrupted.
           await this.startCurrent()
+        } else if (engine.failed && this.preview) {
+          await this.playPreviewAt(this.preview.index)
+        } else if (engine.failed && this.currentSong) {
+          // The stream was lost (the reconnects ran out, or an error nothing
+          // retries): resuming the element plays nothing, so the source
+          // starts over from where it was heard - a new run, for a mix.
+          this.startLocalSong(this.currentSong, this.localPosition, true)
+          this.isPlaying = true
         } else if (this.preview && getLocalMix().pausedFor() > STALE_PAUSE_MS) {
           await this.playPreviewAt(this.preview.index)
         } else if (getLocalMix().pausedFor() > STALE_PAUSE_MS && this.currentSong) {
