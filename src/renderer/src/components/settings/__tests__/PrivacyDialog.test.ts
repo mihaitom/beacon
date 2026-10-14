@@ -94,14 +94,19 @@ describe('PrivacyDialog', () => {
   })
 
   it('accounts for the ones the app itself calls out to', () => {
-    // The renderer reaches exactly one third-party host of its own; the
-    // rest of its traffic goes to the Beacon server. A second one appearing
+    // The renderer reaches exactly these third-party hosts of its own; the
+    // rest of its traffic goes to the Beacon server. Another one appearing
     // is precisely what this is here to notice.
-    const source = readFileSync(resolve(ROOT, 'src/renderer/src/services/updateCheck.ts'), 'utf8')
-    expect(source).toContain('api.github.com')
-
+    const own = [
+      ['updateCheck.ts', 'api.github.com'],
+      ['changelog.ts', 'raw.githubusercontent.com'],
+    ]
     mountDialog()
-    expect(document.body.textContent).toContain('api.github.com')
+    for (const [file, host] of own) {
+      const source = readFileSync(resolve(ROOT, `src/renderer/src/services/${file}`), 'utf8')
+      expect(source).toContain(host)
+      expect(document.body.textContent).toContain(host)
+    }
   })
 
   it('says what each service is sent, not only that it is contacted', () => {

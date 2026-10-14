@@ -13,7 +13,7 @@ const NONE: UpdateCheckResult = { available: false, latestVersion: null, release
  * is newer than `current`. Plain numeric segment comparison (no pre-release/
  * build-metadata handling) is enough here: package.json's own version field
  * never carries either. */
-function isNewer(latest: string, current: string): boolean {
+export function isNewer(latest: string, current: string): boolean {
   const a = latest.split('.').map(Number)
   const b = current.split('.').map(Number)
   for (let i = 0; i < Math.max(a.length, b.length); i++) {

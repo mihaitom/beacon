@@ -35,9 +35,33 @@
           }}</v-chip>
         </div>
 
+        <template v-if="showingUpcoming">
+          <v-alert type="info" variant="tonal" density="compact" class="upcoming-note">
+            {{ $t('releaseNotes.upcomingNote') }}
+          </v-alert>
+          <div v-if="upcomingState === 'loading'" class="empty-state">
+            <v-progress-circular indeterminate size="20" width="2" />
+          </div>
+          <div v-else-if="upcomingState === 'error'" class="empty-state">
+            {{ $t('releaseNotes.upcomingFailed') }}
+            <v-btn variant="text" size="small" @click="loadUpcoming">{{
+              $t('common.retry')
+            }}</v-btn>
+          </div>
+          <!-- eslint-disable-next-line vue/no-v-html -- the repo's own CHANGELOG.md from GitHub, through markdown-it with html: false -->
+          <div
+            v-else-if="upcomingHtml"
+            class="changelog-content beacon-markdown"
+            v-html="upcomingHtml"
+          ></div>
+          <div v-else-if="upcomingState === 'done'" class="empty-state">
+            {{ $t('releaseNotes.upcomingEmpty') }}
+          </div>
+        </template>
+
         <!-- eslint-disable-next-line vue/no-v-html -- selectedHtml is our own CHANGELOG.md, rendered at build time, never user input -->
         <div
-          v-if="selectedHtml"
+          v-else-if="selectedHtml"
           class="changelog-content beacon-markdown"
           v-html="selectedHtml"
         ></div>
@@ -60,6 +84,12 @@ import { useAuthStore } from '@/stores/auth'
 import { accountScopedKey } from '@/services/accountKey'
 import changelogRaw from '../../../../CHANGELOG.md?raw'
 import packageJson from '../../../../package.json'
+import {
+  fetchUpcoming,
+  parseChangelog,
+  type ChangelogEntry,
+  type UpcomingChanges,
+} from '@/services/changelog'
 
 const md = new MarkdownIt({ html: false, linkify: true })
 
@@ -84,43 +114,13 @@ export function renderNotes(markdown: string): string {
 // one-time, low-stakes cost for the consistency.
 const STORAGE_PREFIX = 'beacon.releaseNotesSeen'
 
-type ChangelogEntry = {
-  version: string
-  date: string
-  /** Raw markdown for this version's whole section (everything below its
-   * `## [x] - y` heading down to the next one) — kept as-is rather than
-   * flattened into a custom section/item model, so headings, nested lists,
-   * bold text, links and blockquotes all render through markdown-it
-   * unchanged instead of being lost. */
-  body: string
-}
-
 type VersionOption = {
   title: string
   value: string
 }
 
-function parseChangelog(markdown: string): ChangelogEntry[] {
-  const lines = markdown.split(/\r?\n/)
-  const entries: (ChangelogEntry & { lines: string[] })[] = []
-  let current: (ChangelogEntry & { lines: string[] }) | null = null
-
-  for (const line of lines) {
-    const versionMatch = line.match(/^##\s+\[(.+?)\]\s+-\s+(.+)$/)
-    if (versionMatch) {
-      current = { version: versionMatch[1] ?? '', date: versionMatch[2] ?? '', body: '', lines: [] }
-      entries.push(current)
-      continue
-    }
-    current?.lines.push(line)
-  }
-
-  return entries.map(({ version, date, lines: bodyLines }) => ({
-    version,
-    date,
-    body: bodyLines.join('\n').trim(),
-  }))
-}
+/** The version picker's entry for what is still on its way. */
+const UPCOMING = 'upcoming'
 
 export default defineComponent({
   name: 'ReleaseNotes',
@@ -136,16 +136,40 @@ export default defineComponent({
       appVersion: packageJson.version,
       selectedVersion: defaultVersion,
       changelogEntries: entries,
+      upcoming: null as UpcomingChanges | null,
+      upcomingState: 'idle' as 'idle' | 'loading' | 'error' | 'done',
       iconAnimation: false,
       listener: null as (() => void) | null,
     }
   },
   computed: {
     versionOptions(): VersionOption[] {
-      return this.changelogEntries.map((entry) => ({
-        title: `v${entry.version} - ${entry.date}`,
-        value: entry.version,
-      }))
+      return [
+        { title: this.$t('releaseNotes.upcoming'), value: UPCOMING },
+        ...this.changelogEntries.map((entry) => ({
+          title: `v${entry.version} - ${entry.date}`,
+          value: entry.version,
+        })),
+      ]
+    },
+    showingUpcoming(): boolean {
+      return this.selectedVersion === UPCOMING
+    },
+    /** Newest first: what is in development, then whatever was released
+     * since this version. The in-development part only gets a heading of
+     * its own when there are releases to tell it apart from. */
+    upcomingHtml(): string {
+      if (!this.upcoming) return ''
+      const { unreleased, newer } = this.upcoming
+      const sections = newer.map((entry) => `## v${entry.version} - ${entry.date}\n\n${entry.body}`)
+      if (unreleased) {
+        sections.unshift(
+          newer.length
+            ? `## ${this.$t('releaseNotes.inDevelopment')}\n\n${unreleased}`
+            : unreleased,
+        )
+      }
+      return sections.length ? renderNotes(sections.join('\n\n')) : ''
     },
     selectedEntry(): ChangelogEntry | null {
       return this.changelogEntries.find((entry) => entry.version === this.selectedVersion) ?? null
@@ -161,6 +185,9 @@ export default defineComponent({
     },
   },
   watch: {
+    selectedVersion(version: string) {
+      if (version === UPCOMING && this.upcomingState === 'idle') void this.loadUpcoming()
+    },
     // Auto-open only once logged in — this used to fire unconditionally on
     // mount (App.vue mounts this globally regardless of route), popping up
     // right on top of the login screen before anyone had even signed in.
@@ -196,13 +223,21 @@ export default defineComponent({
         this.openDialog(true)
       }
     },
-    openDialog(autoOpen = false) {
-      if (this.versionOptions.length > 0) {
-        this.selectedVersion =
-          this.changelogEntries.find((entry) => entry.version === this.appVersion)?.version ??
-          this.versionOptions[0]?.value ??
-          this.appVersion
+    async loadUpcoming() {
+      this.upcomingState = 'loading'
+      try {
+        this.upcoming = await fetchUpcoming(this.appVersion)
+        this.upcomingState = 'done'
+      } catch (error) {
+        console.error('[release-notes] Failed to load the upcoming changes:', error)
+        this.upcomingState = 'error'
       }
+    },
+    openDialog(autoOpen = false) {
+      this.selectedVersion =
+        this.changelogEntries.find((entry) => entry.version === this.appVersion)?.version ??
+        this.changelogEntries[0]?.version ??
+        this.appVersion
       this.visible = true
       if (autoOpen) {
         window.localStorage.setItem(this.storageKey, this.appVersion)
@@ -306,7 +341,14 @@ export default defineComponent({
   margin-top: 0;
 }
 
+.upcoming-note {
+  margin-bottom: 1rem;
+}
+
 .empty-state {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
   padding: 1rem 0;
   color: color-mix(in srgb, rgb(var(--v-theme-on-surface)) 60%, transparent);
 }

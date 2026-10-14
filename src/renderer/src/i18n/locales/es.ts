@@ -1045,6 +1045,12 @@ export default {
         sends:
           'Nada sobre ti. Lee la lista de versiones; la comparación ocurre en tu dispositivo. La aplicación de escritorio también descarga la actualización desde ahí.',
       },
+      changelog: {
+        name: 'GitHub',
+        purpose:
+          'Mostrar lo que llega en la próxima versión, cuando eliges "Próximamente" en las notas de la versión.',
+        sends: 'Nada sobre ti. Lee el archivo de cambios del proyecto.',
+      },
       radioStream: {
         name: 'La propia emisora de radio',
         purpose: 'Reproducir el sonido cuando escuchas radio en este dispositivo.',
@@ -1238,6 +1244,12 @@ export default {
     version: 'Versión',
     current: 'Actual: v{version}',
     empty: 'Todavía no hay entradas en el registro de cambios.',
+    upcoming: 'Próximamente',
+    upcomingNote:
+      'Aún no publicado: en lo que se está trabajando para la próxima versión, leído de GitHub. Puede cambiar antes del lanzamiento.',
+    upcomingFailed: 'No se pudieron cargar los próximos cambios desde GitHub.',
+    upcomingEmpty: 'Ahora mismo no hay nada nuevo en marcha.',
+    inDevelopment: 'En desarrollo',
   },
   stats: {
     eyebrow: 'Tu biblioteca',

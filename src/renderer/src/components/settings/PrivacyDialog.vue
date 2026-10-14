@@ -100,6 +100,11 @@ const SERVICES = {
       host: 'api.github.com',
       url: 'https://github.com/mihaitom/beacon/releases',
     },
+    {
+      key: 'changelog',
+      host: 'raw.githubusercontent.com',
+      url: 'https://github.com/mihaitom/beacon/blob/development/CHANGELOG.md',
+    },
     { key: 'radioStream', host: '', url: '' },
   ],
   viaServer: [

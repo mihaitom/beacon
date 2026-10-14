@@ -1038,6 +1038,12 @@ export default {
         sends:
           'Nothing about you. It reads the release list; the comparison happens on your device. The desktop app also downloads an update from there.',
       },
+      changelog: {
+        name: 'GitHub',
+        purpose:
+          'Showing what is coming in the next version, when you pick "Coming up" in the release notes.',
+        sends: "Nothing about you. It reads the project's changelog file.",
+      },
       radioStream: {
         name: 'The radio station itself',
         purpose: 'Playing the sound, when you listen to radio on this device.',
@@ -1229,6 +1235,12 @@ export default {
     version: 'Version',
     current: 'Current: v{version}',
     empty: 'No changelog entries yet.',
+    upcoming: 'Coming up',
+    upcomingNote:
+      'Not released yet: what is being worked on for the next version, read from GitHub. It may still change before the release.',
+    upcomingFailed: "Couldn't load the upcoming changes from GitHub.",
+    upcomingEmpty: 'Nothing new in the works right now.',
+    inDevelopment: 'In development',
   },
   stats: {
     eyebrow: 'Your library',

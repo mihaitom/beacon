@@ -1046,6 +1046,12 @@ export default {
         sends:
           'Nichts über dich. Ein Abruf der Release-Liste; verglichen wird auf deinem Gerät. Die Desktop-App lädt ein Update von dort auch herunter.',
       },
+      changelog: {
+        name: 'GitHub',
+        purpose:
+          'Zeigen, was in der nächsten Version kommt, wenn du in den Release Notes "Demnächst" auswählst.',
+        sends: 'Nichts über dich. Ein Abruf der Changelog-Datei des Projekts.',
+      },
       radioStream: {
         name: 'Der Radiosender selbst',
         purpose: 'Den Ton abspielen, wenn du auf diesem Gerät Radio hörst.',
@@ -1238,6 +1244,12 @@ export default {
     version: 'Version',
     current: 'Aktuell: v{version}',
     empty: 'Keine Changelog-Einträge vorhanden.',
+    upcoming: 'Demnächst',
+    upcomingNote:
+      'Noch nicht veröffentlicht: woran gerade für die nächste Version gearbeitet wird, abgerufen von GitHub. Bis zum Release kann sich noch etwas ändern.',
+    upcomingFailed: 'Die kommenden Änderungen konnten nicht von GitHub geladen werden.',
+    upcomingEmpty: 'Gerade ist nichts Neues in Arbeit.',
+    inDevelopment: 'In Entwicklung',
   },
   stats: {
     eyebrow: 'Deine Bibliothek',
