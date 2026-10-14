@@ -113,18 +113,18 @@ export interface NowPlayingPanel {
   /** The station name, shown as the secondary line only when an ICY tag is
    * what the title shows. Null otherwise. */
   radioTag: string | null
-  /** On the chevrons panel: how the next song comes in. A cut without. */
-  marker?: NextUpMarker
+  /** On the next song's panel: how it comes in, beside the eyebrow. */
+  transition?: NextUpTransition | null
   /** With the artwork shown, on the one panel there is: the next song as
    * the line under it, once it is due. */
-  nextUp?: { title: string; artist: string; marker: NextUpMarker } | null
+  nextUp?: { title: string; artist: string; transition: NextUpTransition | null } | null
 }
 
-/** How the next song comes in: a cut (or gapless), a crossfade, or a
- * beatmix - matched on the beat, at `bpm`. */
-export interface NextUpMarker {
-  kind: 'cut' | 'crossfade' | 'beatmix'
-  bpm: number | null
+/** A crossfade or a beatmix, as announced beside "Next up" - for a
+ * crossfade with why it is not a beatmix, shown on hover. */
+export interface NextUpTransition {
+  label: string
+  hint: string | null
 }
 
 /** Everything the Now Playing presentation reads, so no part of it has to

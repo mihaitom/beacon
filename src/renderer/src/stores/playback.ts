@@ -574,6 +574,18 @@ export const usePlaybackStore = defineStore('playback', {
       }
       return found
     },
+    /** The blend the current song came in with, still under way until the
+     * song reaches its `end` - the previous song is heard under it from the
+     * change until then. A song repeating into itself has none. */
+    incomingTransition(state): MixTransition | null {
+      const song = state.currentIndex >= 0 ? state.queue[state.currentIndex] : undefined
+      if (!song || state.radioStation || state.preview) return null
+      let found: MixTransition | null = null
+      for (const t of state.mixTransitions) {
+        if (t.next_song_id === song.id && t.song_id !== song.id && t.kind !== 'gapless') found = t
+      }
+      return found
+    },
     hasNext(state): boolean {
       if (state.preview) return true // the next excerpt, or the end of it
       if (state.repeatMode !== 'off') return state.queue.length > 0

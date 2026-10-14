@@ -18,11 +18,7 @@
       class="now-playing__panel"
       :class="{ 'now-playing__panel--chevrons': panel.kind === 'chevrons' }"
     >
-      <next-up-marker
-        v-if="panel.kind === 'chevrons'"
-        :marker="panel.marker ?? { kind: 'cut', bpm: null }"
-        :size="compact ? 30 : 44"
-      />
+      <next-up-marker v-if="panel.kind === 'chevrons'" :size="compact ? 30 : 44" />
       <template v-else>
         <component
           :is="source.cover"
@@ -33,7 +29,10 @@
           class="cover-shadow now-playing__mini-art"
         />
         <div ref="info" class="now-playing__info">
-          <div class="eyebrow-label">{{ panel.eyebrow }}</div>
+          <div class="eyebrow-label">
+            {{ panel.eyebrow }}
+            <next-up-transition-label v-if="panel.transition" :transition="panel.transition" />
+          </div>
           <h1 class="detail-title now-playing__title">{{ panel.title }}</h1>
           <!-- A link only where there is an artist page to land on: never
            - on the mobile shell (its library tab plays an album rather than
@@ -94,9 +93,13 @@
               v-if="panel.nextUp"
               class="text-body-medium text-medium-emphasis now-playing__next-up-line"
             >
-              <next-up-marker :marker="panel.nextUp.marker" :size="18" />
+              <next-up-marker :size="18" />
               <span class="now-playing__next-up-text">
-                {{ $t('home.nextUp') }}: {{ panel.nextUp.title }} · {{ panel.nextUp.artist }}
+                {{ $t('home.nextUp')
+                }}<next-up-transition-label
+                  v-if="panel.nextUp.transition"
+                  :transition="panel.nextUp.transition"
+                />: {{ panel.nextUp.title }} · {{ panel.nextUp.artist }}
               </span>
             </div>
           </transition>
@@ -109,10 +112,11 @@
 <script lang="ts">
 import { nowPlayingSourceMixin } from '@/components/now-playing/useSource'
 import NextUpMarker from './NextUpMarker.vue'
+import NextUpTransitionLabel from './NextUpTransitionLabel.vue'
 
 export default {
   name: 'NowPlayingTrackPanels',
-  components: { NextUpMarker },
+  components: { NextUpMarker, NextUpTransitionLabel },
   mixins: [nowPlayingSourceMixin],
   props: {
     compact: {

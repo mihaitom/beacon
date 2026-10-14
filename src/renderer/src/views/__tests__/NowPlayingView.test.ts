@@ -1130,11 +1130,19 @@ describe('NowPlayingView next up', () => {
     expect(wrapper.findAll('.now-playing__title')[1]!.text()).toContain('Second Song')
   })
 
-  /** The corner's marker between current and next, as the panels get it. */
-  function markerKind(wrapper: VueWrapper): string | undefined {
+  /** The next panel's eyebrow, with how the next song comes in. */
+  function nextEyebrow(wrapper: VueWrapper): string | undefined {
     const panels = (wrapper.vm as unknown as { cornerPanels: NowPlayingPanel[] }).cornerPanels
-    return panels.find((panel) => panel.kind === 'chevrons')?.marker?.kind
+    const next = panels.at(-1)
+    return next && [next.eyebrow, next.transition?.label].filter(Boolean).join(' · ')
   }
+
+  /** What hovering the next panel's "Crossfade" tells. */
+  function nextHint(wrapper: VueWrapper): string | null | undefined {
+    const panels = (wrapper.vm as unknown as { cornerPanels: NowPlayingPanel[] }).cornerPanels
+    return panels.at(-1)?.transition?.hint
+  }
+  const t = (key: string): string => i18n.global.t(key)
 
   function transition(over: Partial<MixTransition>): MixTransition {
     return {
@@ -1144,6 +1152,11 @@ describe('NowPlayingView next up', () => {
       start: 175,
       change: 183,
       bpm: null,
+      bpm_out: null,
+      no_beatmix: null,
+      next_song_id: 'b',
+      next_queue_index: 1,
+      end: 8,
       ...over,
     }
   }
@@ -1160,7 +1173,25 @@ describe('NowPlayingView next up', () => {
     playback.localPosition = 169
     await flushPromises()
     expect(panelKeys(wrapper)).toEqual(['a', 'chevrons', 'b'])
-    expect(markerKind(wrapper)).toBe('crossfade')
+    expect(nextEyebrow(wrapper)).toContain(t('home.nextUpCrossfade'))
+  })
+
+  it('tells on hover why a crossfade is not a beatmix', async () => {
+    const { wrapper, playback } = await mountWithQueue([first(), second()])
+    playback.duration = 200
+    playback.mixTransitions = [transition({ no_beatmix: 'tempo_apart', bpm_out: 128, bpm: 98 })]
+    playback.localPosition = 169
+    await flushPromises()
+    expect(nextHint(wrapper)).toContain(t('home.noBeatmix.tempoApart'))
+    expect(nextHint(wrapper)).toContain('128')
+
+    playback.mixTransitions = [transition({ no_beatmix: 'too_late' })]
+    await flushPromises()
+    expect(nextHint(wrapper)).toContain(t('home.noBeatmix.tooLate'))
+    // A crossfade connect gives no reason for has nothing to hover.
+    playback.mixTransitions = [transition({})]
+    await flushPromises()
+    expect(nextHint(wrapper)).toBeNull()
   })
 
   it('announces a beatmix from its ease into the next tempo, when that comes earlier', async () => {
@@ -1171,7 +1202,24 @@ describe('NowPlayingView next up', () => {
     playback.localPosition = 151
     await flushPromises()
     expect(panelKeys(wrapper)).toEqual(['a', 'chevrons', 'b'])
-    expect(markerKind(wrapper)).toBe('beatmix')
+    expect(nextEyebrow(wrapper)).toContain(t('home.nextUpBeatmix'))
+    expect(nextEyebrow(wrapper)).toContain('124')
+  })
+
+  it('holds the previous song in the corner until it has faded away', async () => {
+    const { wrapper, playback } = await mountWithQueue([first(), second()])
+    playback.duration = 200
+    playback.mixTransitions = [transition({})]
+    // The change: the next song is the current one, the first still heard.
+    playback.currentIndex = 1
+    playback.localPosition = 4
+    await flushPromises()
+    expect(panelKeys(wrapper)).toEqual(['a', 'chevrons', 'b'])
+    expect(nextEyebrow(wrapper)).toContain(t('home.nextUpCrossfade'))
+
+    playback.localPosition = 8
+    await flushPromises()
+    expect(panelKeys(wrapper)).toEqual(['b'])
   })
 
   it("goes by the end again when the mix's transition is another song's", async () => {
@@ -1185,7 +1233,7 @@ describe('NowPlayingView next up', () => {
 
     playback.localPosition = 92
     await flushPromises()
-    expect(markerKind(wrapper)).toBe('cut')
+    expect(nextEyebrow(wrapper)).toBe(t('home.nextUp'))
   })
 
   it('with the artwork shown, announces the next song as a line under it', async () => {
@@ -1205,8 +1253,9 @@ describe('NowPlayingView next up', () => {
     const panels = (wrapper.vm as unknown as { cornerPanels: NowPlayingPanel[] }).cornerPanels
     // No second panel: the line belongs to the one under the artwork.
     expect(panels.map((panel) => panel.key)).toEqual(['a'])
-    expect(panels[0]!.nextUp?.marker.kind).toBe('crossfade')
-    expect(wrapper.find('.now-playing__next-up-line').text()).toContain('Second Song')
+    const line = wrapper.find('.now-playing__next-up-line').text()
+    expect(line).toContain('Second Song')
+    expect(line).toContain(t('home.nextUpCrossfade'))
   })
 
   it('keeps the current track when it is the last one', async () => {

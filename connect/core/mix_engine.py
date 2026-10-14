@@ -42,7 +42,7 @@ import secrets
 import time
 from collections import deque
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any, Protocol
 
 import numpy as np
@@ -306,9 +306,11 @@ def _take_float(deck: DeckLike, frames: int) -> np.ndarray:
     return x
 
 
-def _describe_transition(out_item: MixItem, plan: TransitionPlan) -> dict:
-    """A transition as a client reads it, in seconds of the song going
-    out: where it starts to be heard and where the next song takes over."""
+def _describe_transition(out_item: MixItem, in_item: MixItem, plan: TransitionPlan) -> dict:
+    """A transition as a client reads it: where it starts to be heard and
+    where the next song takes over, in seconds of the song going out, and
+    where the song going out has faded away, in seconds of the next one -
+    which plays at its own pace throughout."""
     change = plan.out_start + song_seconds(plan.out_rate, 0.0, plan.swap_at)
     return {
         "song_id": out_item.song_id,
@@ -317,6 +319,11 @@ def _describe_transition(out_item: MixItem, plan: TransitionPlan) -> dict:
         "start": round(plan.stretch_start, 3),
         "change": round(change, 3),
         "bpm": plan.bpm_in,
+        "bpm_out": plan.bpm_out,
+        "no_beatmix": plan.no_beatmix,
+        "next_song_id": in_item.song_id,
+        "next_queue_index": in_item.queue_index,
+        "end": round(plan.in_start + plan.overlap, 3),
     }
 
 
@@ -453,6 +460,7 @@ class MixEngine:
         # The song self._plan leads out of: self._deck's until the plan is
         # carried out, but a plan outlives its transition.
         self._plan_out: MixItem | None = None
+        self._plan_in: MixItem | None = None
         # Transitions carried out, as transitions() describes them - the
         # listener is up to a lead behind, so the last ones still lie ahead.
         self._committed: deque[dict] = deque(maxlen=2)
@@ -558,8 +566,13 @@ class MixEngine:
         client to show the change coming before the song's own end, which
         a crossfade never reaches."""
         planned = []
-        if self._plan is not None and self._plan_out is not None and not self.next_committed:
-            planned = [_describe_transition(self._plan_out, self._plan)]
+        if (
+            self._plan is not None
+            and self._plan_out is not None
+            and self._plan_in is not None
+            and not self.next_committed
+        ):
+            planned = [_describe_transition(self._plan_out, self._plan_in, self._plan)]
         return [*self._committed, *planned]
 
     # ── Control ──────────────────────────────────────────────────────────
@@ -870,8 +883,12 @@ class MixEngine:
                 return
             if self._plan_task is not None:
                 self._plan_task.cancel()
-            plan = self._plan = plan_transition(self.settings, _facts(deck.item), _facts(nxt.item))
+            plan = plan_transition(self.settings, _facts(deck.item), _facts(nxt.item))
+            if plan.kind == "crossfade":
+                plan = replace(plan, no_beatmix="analysis_late")
+            self._plan = plan
             self._plan_out = deck.item
+            self._plan_in = nxt.item
             logger.info(f"[mix] No analysis in time for {deck.item.name} - {plan.kind} on metadata")
         if plan.out_rate and deck.position > plan.stretch_start + 0.25:
             # Too late for the whole ease into the incoming tempo: a shorter
@@ -893,6 +910,12 @@ class MixEngine:
             if late is None:
                 self._plan = TransitionPlan("gapless", plan.out_end, plan.out_end, plan.in_start)
                 return
+            if plan.kind == "crossfade":
+                late = replace(
+                    late, no_beatmix=plan.no_beatmix, bpm_out=plan.bpm_out, bpm_in=plan.bpm_in
+                )
+            else:
+                late = replace(late, no_beatmix="too_late")
             plan = self._plan = late
         self._commit(plan)
         if plan.out_rate:
@@ -903,7 +926,7 @@ class MixEngine:
 
     def _commit(self, plan: TransitionPlan) -> None:
         assert self._deck is not None and self._next is not None
-        self._committed.append(_describe_transition(self._deck.item, plan))
+        self._committed.append(_describe_transition(self._deck.item, self._next.item, plan))
         bpm = (
             f", {plan.bpm_out:.0f} → {plan.bpm_in:.0f} BPM"
             if plan.bpm_out is not None and plan.bpm_in is not None
@@ -1239,6 +1262,7 @@ class MixEngine:
             return
         self._plan = plan
         self._plan_out = out_item
+        self._plan_in = in_item
         logger.debug(
             f"[mix] {self.epoch} planned {plan.kind} {out_item.song_id} → {in_item.song_id}"
             + (f" at {plan.out_start:.1f}s over {plan.overlap:.1f}s" if plan.overlap else "")

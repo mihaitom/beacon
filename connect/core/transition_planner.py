@@ -36,6 +36,22 @@ import numpy as np
 from .beat_analysis import BeatGrid, RegionAnalysis
 
 Kind = Literal["gapless", "crossfade", "beatmix"]
+# Why a crossfade is not a beatmix, for the listener to see:
+# - no_analysis: the songs could not be analysed (or not in time, see
+#   core/mix_engine.py's analysis_late);
+# - no_beat / unsure_beat: one of them has no beat grid, or one too unsure;
+# - tempo_apart: the tempos lie further apart than MAX_STRETCH;
+# - no_room: no downbeat to end or join on, or too little song for a bar;
+# - too_late: the plan came after its ease should have begun.
+NoBeatmix = Literal[
+    "no_analysis",
+    "analysis_late",
+    "no_beat",
+    "unsure_beat",
+    "tempo_apart",
+    "no_room",
+    "too_late",
+]
 Band = Literal["low", "mid", "high"]
 BANDS: tuple[Band, ...] = ("low", "mid", "high")
 
@@ -120,6 +136,8 @@ class TransitionPlan:
     out_rate: tuple[tuple[float, float], ...] = ()
     bpm_out: float | None = None
     bpm_in: float | None = None
+    # On a crossfade: why it is not a beatmix.
+    no_beatmix: NoBeatmix | None = None
 
     @property
     def stretch_start(self) -> float:
@@ -154,9 +172,17 @@ def plan_transition(
     if settings.mode != "crossfade" or (not settings.preview and follows_on_album(out, inn)):
         return gapless(out, inn)
     beatmix = _beatmix(settings, out_region, in_region)
-    if beatmix is not None:
+    if isinstance(beatmix, TransitionPlan):
         return beatmix
-    return _crossfade(settings, out, inn, out_region, in_region)
+    plan = _crossfade(settings, out, inn, out_region, in_region)
+    if plan.kind != "crossfade":
+        return plan
+    plan = replace(plan, no_beatmix=beatmix)
+    if beatmix == "tempo_apart":
+        # Both grids are there to get this far; told to show how far apart.
+        assert out_region and out_region.grid and in_region and in_region.grid
+        plan = replace(plan, bpm_out=out_region.grid.bpm, bpm_in=in_region.grid.bpm)
+    return plan
 
 
 def _crossfade(
@@ -196,7 +222,8 @@ def as_crossfade(settings: Settings, plan: TransitionPlan) -> TransitionPlan:
     """A beatmix as an ordinary crossfade, between the same two points - for
     one that arrived after its ease should have begun. Unmatched, its beat
     grid means nothing, and neither does its length in bars."""
-    return _crossfade_over(plan.out_end, plan.in_start, settings.crossfade_seconds)
+    late = _crossfade_over(plan.out_end, plan.in_start, settings.crossfade_seconds)
+    return replace(late, no_beatmix="too_late")
 
 
 def _crossfade_over(out_end: float, in_start: float, overlap: float) -> TransitionPlan:
@@ -227,20 +254,20 @@ def stretch_for(out: BeatGrid, inn: BeatGrid) -> float | None:
 
 def _beatmix(
     settings: Settings, out_region: RegionAnalysis | None, in_region: RegionAnalysis | None
-) -> TransitionPlan | None:
+) -> TransitionPlan | NoBeatmix:
     if out_region is None or in_region is None:
-        return None
+        return "no_analysis"
     out, inn = out_region.grid, in_region.grid
     if out is None or inn is None:
-        return None
+        return "no_beat"
     if min(out.confidence, inn.confidence) < MIN_CONFIDENCE:
-        return None
+        return "unsure_beat"
     rate = stretch_for(out, inn)
     if rate is None:
-        return None
+        return "tempo_apart"
     if settings.preview:
         if abs(rate - 1) > PREVIEW_MAX_DRIFT:
-            return None
+            return "tempo_apart"
         rate = 1.0
     # A bar in each song's own time, and in the stream's through the
     # overlap - where the outgoing song plays at the incoming tempo.
@@ -249,12 +276,12 @@ def _beatmix(
     # The overlap ends on the last downbeat the outgoing song's music reaches.
     ends = out.downbeats(out_region.start, out_region.sound_end)
     if len(ends) == 0:
-        return None
+        return "no_room"
     out_end = float(ends[-1])
     # The incoming song joins on its first downbeat with music.
     starts = inn.downbeats(in_region.sound_start - 0.05, in_region.end)
     if len(starts) == 0:
-        return None
+        return "no_room"
     in_start = float(starts[0])
     in_room = in_region.end - in_start
     out_room = out_end - out_region.start
@@ -269,7 +296,7 @@ def _beatmix(
         None,
     )
     if bars is None:
-        return None
+        return "no_room"
     out_start = out_end - bars * bar
     overlap = bars * stream_bar
     # Halfway, on a downbeat - or for a one-bar mix, on its third beat.

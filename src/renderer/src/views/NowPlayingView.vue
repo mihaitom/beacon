@@ -19,7 +19,7 @@ import {
   type HostNowPlayingApi,
 } from '@/components/now-playing/hostSource'
 import NowPlayingPresentation from '@/components/now-playing/NowPlayingPresentation.vue'
-import type { NextUpMarker, NowPlayingPanel } from '@/components/now-playing/source'
+import type { NextUpTransition, NowPlayingPanel } from '@/components/now-playing/source'
 import { radioFaviconRequest, type RadioFaviconRequest } from '@/services/connect/radio'
 import { getLogLevel } from '@/services/connect/logLevel'
 import { getArtistArt, nextBackground, rememberBackground } from '@/services/connect/fanart'
@@ -35,6 +35,7 @@ import { extractDominantColor } from '@/services/colorExtractor'
 import { visualizerBarColor } from '@/services/visualizerColor'
 import { accountScopedKey } from '@/services/accountKey'
 import type { Song } from '@/types/library'
+import type { MixTransition, NoBeatmixReason } from '@/services/connect/types'
 
 // How far each bar moves toward its target per rendered frame - lower is
 // smoother but laggier. Lowered from 0.5, which read as visibly jittery:
@@ -89,6 +90,41 @@ function readHideArtwork(): boolean {
 // (see nextUpActive) - long enough to read, short enough to still feel like
 // "about to change".
 const NEXT_UP_SECONDS = 15
+
+const CHEVRONS_PANEL: NowPlayingPanel = {
+  key: 'chevrons',
+  kind: 'chevrons',
+  song: null,
+  eyebrow: '',
+  title: '',
+  radioTag: null,
+}
+
+function songPanel(
+  song: Song,
+  eyebrow: string,
+  transition: NextUpTransition | null = null,
+): NowPlayingPanel {
+  return {
+    key: song.id,
+    kind: 'song',
+    song: toNowPlayingSong(song),
+    eyebrow,
+    transition,
+    title: song.title,
+    radioTag: null,
+  }
+}
+
+const NO_BEATMIX_KEYS: Record<NoBeatmixReason, string> = {
+  no_analysis: 'noAnalysis',
+  analysis_late: 'analysisLate',
+  no_beat: 'noBeat',
+  unsure_beat: 'unsureBeat',
+  tempo_apart: 'tempoApart',
+  no_room: 'noRoom',
+  too_late: 'tooLate',
+}
 
 /** Fake artist/track pairs for the toolbar's debug button. Shaped like a
  * song on purpose, so a press exercises the row the log spends its time
@@ -269,20 +305,42 @@ export default {
       const duration = this.playbackStore.duration
       return duration > 0 && duration - position <= NEXT_UP_SECONDS
     },
-    nextUpMarker(): NextUpMarker {
-      const transition = this.playbackStore.upcomingTransition
-      if (transition?.kind === 'crossfade' || transition?.kind === 'beatmix') {
-        return { kind: transition.kind, bpm: transition.bpm }
-      }
-      return { kind: 'cut', bpm: null }
+    nextUpTransition(): NextUpTransition | null {
+      return this.nextUpTransitionFor(this.playbackStore.upcomingTransition)
+    },
+    /** The previous song while the corner still holds it: from the change
+     * until it has faded away under the current one, so the corner moves on
+     * when the ear does rather than halfway through the blend. */
+    fadingSong(): Song | null {
+      const transition = this.playbackStore.incomingTransition
+      if (!transition || this.compact || !this.playbackStore.isPlaying) return null
+      if (this.playbackStore.localPosition >= transition.end) return null
+      const queue = this.playbackStore.queue
+      const atIndex = transition.queue_index === null ? undefined : queue[transition.queue_index]
+      if (atIndex?.id === transition.song_id) return atIndex
+      return queue.find((song) => song.id === transition.song_id) ?? null
     },
     /** The panels the corner stack renders, left to right: the one playing,
      * then - near the end of a track - animated chevrons and the next track
-     * (see nextUpActive). On the change the next panel slides left into the
+     * (see nextUpActive). On the change - in a mix once the previous song has
+     * faded away (see fadingSong) - the next panel slides left into the
      * current's place (see the next-up transition in <style>). With the
      * artwork shown there is a single panel - the labels under the artwork,
      * the next song as a line under them - and no chevrons. */
     cornerPanels(): NowPlayingPanel[] {
+      const fading = this.artworkHidden ? this.fadingSong : null
+      if (fading && this.currentSong) {
+        // Still the same three panels as before the change.
+        return [
+          songPanel(fading, this.eyebrow),
+          CHEVRONS_PANEL,
+          songPanel(
+            this.currentSong,
+            this.$t('home.nextUp'),
+            this.nextUpTransitionFor(this.playbackStore.incomingTransition),
+          ),
+        ]
+      }
       const panels: NowPlayingPanel[] = []
       if (this.currentSong) {
         const next = this.nextSong
@@ -295,7 +353,7 @@ export default {
           radioTag: null,
           nextUp:
             !this.artworkHidden && this.nextUpActive && next
-              ? { title: next.title, artist: next.artist, marker: this.nextUpMarker }
+              ? { title: next.title, artist: next.artist, transition: this.nextUpTransition }
               : null,
         })
       } else if (this.playbackStore.radioStation) {
@@ -315,23 +373,10 @@ export default {
         })
       }
       if (this.artworkHidden && this.nextUpActive && this.nextSong) {
-        panels.push({
-          key: 'chevrons',
-          kind: 'chevrons',
-          song: null,
-          eyebrow: '',
-          title: '',
-          radioTag: null,
-          marker: this.nextUpMarker,
-        })
-        panels.push({
-          key: this.nextSong.id,
-          kind: 'song',
-          song: toNowPlayingSong(this.nextSong),
-          eyebrow: this.$t('home.nextUp'),
-          title: this.nextSong.title,
-          radioTag: null,
-        })
+        panels.push(
+          CHEVRONS_PANEL,
+          songPanel(this.nextSong, this.$t('home.nextUp'), this.nextUpTransition),
+        )
       }
       return panels
     },
@@ -599,6 +644,25 @@ export default {
       .catch(() => {})
   },
   methods: {
+    /** How the next song comes in, beside "Next up" - nothing for a cut.
+     * A crossfade says on hover why it is not a beatmix. */
+    nextUpTransitionFor(transition: MixTransition | null): NextUpTransition | null {
+      if (transition?.kind === 'beatmix') {
+        const label = this.$t('home.nextUpBeatmix')
+        const bpm = transition.bpm ? ` · ${Math.round(transition.bpm)} BPM` : ''
+        return { label: label + bpm, hint: null }
+      }
+      if (transition?.kind !== 'crossfade') return null
+      return { label: this.$t('home.nextUpCrossfade'), hint: this.noBeatmixHint(transition) }
+    },
+    noBeatmixHint(transition: MixTransition): string | null {
+      if (!transition.no_beatmix) return null
+      let reason = this.$t(`home.noBeatmix.${NO_BEATMIX_KEYS[transition.no_beatmix]}`)
+      if (transition.no_beatmix === 'tempo_apart' && transition.bpm_out && transition.bpm) {
+        reason += ` (${Math.round(transition.bpm_out)} → ${Math.round(transition.bpm)} BPM)`
+      }
+      return this.$t('home.noBeatmixBecause', { reason })
+    },
     /** Hands a keystroke to the store, 200ms after the last one — the same
      * delay every other search box in the app waits (SongsView.vue). This
      * one reaches the backend rather than a local array, so the wait is

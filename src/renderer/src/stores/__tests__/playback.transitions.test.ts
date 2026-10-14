@@ -8,6 +8,7 @@ import { getAudioEngine } from '@/services/audioEngine'
 import { getLocalMix, STALE_PAUSE_MS } from '@/services/playback/localMix'
 import * as streamQuality from '@/services/streamQuality'
 import type { SubsonicClient } from '@/services/subsonic/client'
+import type { MixTransition } from '@/services/connect/types'
 import { makeSong, makeStatus } from './fixtures'
 
 vi.mock('@/services/audioEngine', () => ({ getAudioEngine: vi.fn() }))
@@ -292,6 +293,11 @@ describe('playback with transitions', () => {
           start: 170,
           change: 178,
           bpm: null,
+          bpm_out: null,
+          no_beatmix: null,
+          next_song_id: 'b',
+          next_queue_index: 1,
+          end: 8,
         })
         const status = { queue: ids(playback), current_song_index: 0 }
         await playback.adoptCastQueue(makeStatus({ ...status, transitions: [told('z')] }))
@@ -300,6 +306,39 @@ describe('playback with transitions', () => {
           makeStatus({ ...status, transitions: [told('z'), told('a')] }),
         )
         expect(playback.upcomingTransition?.song_id).toBe('a')
+      })
+
+      it('the transition the current song came in with is told until a new one replaces it', async () => {
+        const playback = usePlaybackStore()
+        playback.setQueue(five, 1)
+        const into = (song_id: string, next_song_id: string, kind: MixTransition['kind']) => ({
+          song_id,
+          queue_index: null,
+          kind,
+          start: 170,
+          change: 178,
+          bpm: null,
+          bpm_out: null,
+          no_beatmix: null,
+          next_song_id,
+          next_queue_index: null,
+          end: 8,
+        })
+        const status = { queue: ids(playback), current_song_index: 1 }
+        await playback.adoptCastQueue(
+          makeStatus({ ...status, transitions: [into('a', 'b', 'crossfade')] }),
+        )
+        expect(playback.incomingTransition?.song_id).toBe('a')
+        // A cut into it is nothing to hold the previous song for.
+        await playback.adoptCastQueue(
+          makeStatus({ ...status, transitions: [into('a', 'b', 'gapless')] }),
+        )
+        expect(playback.incomingTransition).toBeNull()
+        // A song repeating into itself did not come from another one.
+        await playback.adoptCastQueue(
+          makeStatus({ ...status, transitions: [into('b', 'b', 'crossfade')] }),
+        )
+        expect(playback.incomingTransition).toBeNull()
       })
 
       it('lifts once a new run starts', async () => {

@@ -209,6 +209,11 @@ async def test_the_transition_is_told_before_it_begins_and_after_it_was_rendered
         "kind": "crossfade",
         "start": 22.0,
         "change": 26.0,
+        # The incoming song from its start, at its own pace: the outgoing
+        # one is gone after the whole 8 s overlap.
+        "next_song_id": "b",
+        "next_queue_index": 1,
+        "end": 8.0,
     }
     told_ahead = False
     for _ in range(600):
@@ -314,8 +319,16 @@ async def test_a_beatmix_planned_too_late_to_ease_is_a_crossfade_of_its_own_leng
     await _render_with_analysis_held(rig, lambda r: _a_at(r) > 41.0)
     assert "planned too late" in caplog.text
     told = rig.engine.transitions()[-1]
-    assert told["kind"] == "crossfade"
+    assert (told["kind"], told["no_beatmix"]) == ("crossfade", "too_late")
     assert told["change"] - told["start"] == pytest.approx(2.0)  # half of 4 s
+
+
+async def test_a_crossfade_decided_without_its_analysis_says_it_came_too_late():
+    rig = Rig({"a": clicks(128, 60, offset=0.21), "b": clicks(124, 60, offset=0.37)}, BEATMIX_16)
+    # Past 43 s the metadata decides.
+    await _render_with_analysis_held(rig, lambda r: _a_at(r) > 50.0)
+    told = rig.engine.transitions()[-1]
+    assert (told["kind"], told["no_beatmix"]) == ("crossfade", "analysis_late")
 
 
 async def test_after_a_seek_rendering_waits_for_the_plan_rather_than_racing_past_it():

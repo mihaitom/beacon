@@ -1,5 +1,7 @@
 """Tests for core/transition_planner.py — how one song turns into the next."""
 
+from dataclasses import replace
+
 import numpy as np
 import pytest
 
@@ -10,6 +12,7 @@ from core.transition_planner import (
     SWAP_SECONDS,
     Settings,
     SongFacts,
+    as_crossfade,
     ease_from,
     plan_transition,
     rate_at,
@@ -65,12 +68,26 @@ def test_songs_that_follow_on_an_album_join_without_a_fade(out, inn, follows):
 
 
 def test_beatmix_needs_trusted_grids_and_reachable_tempos():
-    assert plan_transition(CROSSFADE, OUT, IN, out_region(), in_region()).kind == "beatmix"
+    mixed = plan_transition(CROSSFADE, OUT, IN, out_region(), in_region())
+    assert mixed.kind == "beatmix" and mixed.no_beatmix is None
     weak = in_region(confidence=0.3)
-    assert plan_transition(CROSSFADE, OUT, IN, out_region(), weak).kind == "crossfade"
+    plan = plan_transition(CROSSFADE, OUT, IN, out_region(), weak)
+    assert (plan.kind, plan.no_beatmix) == ("crossfade", "unsure_beat")
     far = in_region(bpm=100.0)
-    assert plan_transition(CROSSFADE, OUT, IN, out_region(), far).kind == "crossfade"
-    assert plan_transition(CROSSFADE, OUT, IN).kind == "crossfade"
+    plan = plan_transition(CROSSFADE, OUT, IN, out_region(), far)
+    assert (plan.kind, plan.no_beatmix) == ("crossfade", "tempo_apart")
+    # How far apart is told along.
+    assert (plan.bpm_out, plan.bpm_in) == (pytest.approx(128.0), pytest.approx(100.0))
+    plan = plan_transition(CROSSFADE, OUT, IN)
+    assert (plan.kind, plan.no_beatmix) == ("crossfade", "no_analysis")
+    beatless = replace(in_region(), grid=None)
+    assert plan_transition(CROSSFADE, OUT, IN, out_region(), beatless).no_beatmix == "no_beat"
+
+
+def test_a_beatmix_too_late_to_ease_says_so_as_a_crossfade():
+    plan = plan_transition(CROSSFADE, OUT, IN, out_region(), in_region())
+    late = as_crossfade(CROSSFADE, plan)
+    assert (late.kind, late.no_beatmix) == ("crossfade", "too_late")
 
 
 PREVIEW = Settings("crossfade", 4.0, preview=True)

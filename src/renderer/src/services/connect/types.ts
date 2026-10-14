@@ -492,10 +492,22 @@ export interface AutoLyricsResult {
 }
 
 /** How one song blends into the next in a mix (connect's
- * MixEngine.transitions()), in seconds of the song going out: `start` is
+ * MixEngine.transitions()). In seconds of the song going out: `start` is
  * where the blend - or a beatmix's ease into the next tempo - begins to be
- * heard, `change` where the next song takes over. `bpm` is the tempo a
- * beatmix plays at. */
+ * heard, `change` where the next song takes over. In seconds of the next
+ * song: `end`, where the one going out has faded away. `bpm` is the tempo a
+ * beatmix plays at; on a crossfade whose tempos were too far apart for one,
+ * `bpm_out` and `bpm` are the two. `no_beatmix` says why a crossfade is not
+ * a beatmix (connect's core/transition_planner.py). */
+export type NoBeatmixReason =
+  | 'no_analysis'
+  | 'analysis_late'
+  | 'no_beat'
+  | 'unsure_beat'
+  | 'tempo_apart'
+  | 'no_room'
+  | 'too_late'
+
 export interface MixTransition {
   song_id: string
   queue_index: number | null
@@ -503,4 +515,9 @@ export interface MixTransition {
   start: number
   change: number
   bpm: number | null
+  bpm_out: number | null
+  no_beatmix: NoBeatmixReason | null
+  next_song_id: string
+  next_queue_index: number | null
+  end: number
 }
