@@ -99,6 +99,43 @@ def test_seconds_until_clamps_to_zero():
     assert clock.seconds_until(180.0) == 0.0
 
 
+# ── seconds_until_elapsed ─────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("correction", "target"),
+    [
+        (0.8, 10.5),  # device ahead, reached while the offset blends in
+        (0.8, 13.0),  # ... and after the blend is done
+        (-1.5, 10.5),  # device behind
+        (-1.5, 13.0),
+        (0.0, 12.0),  # no blend at all
+    ],
+)
+def test_seconds_until_elapsed_is_the_inverse_of_elapsed(monkeypatch, correction, target):
+    """Waiting the returned time lands elapsed() on the target, including
+    a freshly calibrated offset still blending in - which seconds_until()
+    leaves out, so a song change timed on it went out early."""
+    now = [1000.0]
+    monkeypatch.setattr("core.playback_clock.time.time", lambda: now[0])
+    clock = PlaybackClock()
+    clock.start(0.0)
+    now[0] += 10.0
+    if correction:
+        clock.calibrate(clock.elapsed_since_stream_start() + correction)
+
+    now[0] += clock.seconds_until_elapsed(target)
+
+    assert clock.elapsed() == pytest.approx(target, abs=1e-6)
+
+
+def test_seconds_until_elapsed_is_zero_once_reached(monkeypatch):
+    monkeypatch.setattr("core.playback_clock.time.time", lambda: 1000.0)
+    clock = PlaybackClock()
+    clock.start(20.0)
+    assert clock.seconds_until_elapsed(15.0) == 0.0
+
+
 # ── pause / resume ────────────────────────────────────────────────────────────
 
 

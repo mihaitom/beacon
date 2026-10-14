@@ -376,6 +376,31 @@ async def test_follow_moves_the_session_on_when_the_next_song_is_heard(default_s
     task.cancel()
 
 
+async def test_the_song_change_goes_out_with_the_new_songs_position(default_session):
+    """Moments after a position resync the clock is still blending the new
+    offset in: the switch was timed on the full offset, the position read
+    on the blended one, and the status paired the new song with where the
+    old one stood - until the next status, a second or two later."""
+    st = default_session.state
+    st.queue, st.queue_index, st.is_streaming = ["1", "2"], 0, True
+    st.current_track = TRACKS["1"]
+    second = MixItem("2", 1, payload=TRACKS["2"])
+    mix = MixEngine(MixItem("1", 0, payload=TRACKS["1"]), 100.0, AsyncMock(), AsyncMock())
+    mix.timeline.mark(SR, "2", 1, 5.0, playing=True, payload=second)
+    st.mix = mix
+    st.clock.start(0.0)
+    st.clock.calibrate(0.8)  # the device runs 0.8s ahead, blended in over 2s
+    events = default_session.event_bus.subscribe()
+    task = asyncio.create_task(mix_cast.follow(default_session, mix))
+    async with asyncio.timeout(3):
+        status = await events.get()
+    assert status["current_song_index"] == 1
+    # Neither the old song's place nor late: the change goes out on time.
+    assert status["elapsed"] == pytest.approx(5.0, abs=0.05)
+    st.mix = None
+    task.cancel()
+
+
 async def test_follow_reports_the_end_of_the_mix(default_session):
     st = default_session.state
     st.is_streaming, st.current_track = True, TRACKS["1"]

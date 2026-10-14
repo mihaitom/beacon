@@ -52,10 +52,6 @@ from media.base import Track
 
 logger = logging.getLogger("connect.mix")
 
-# How close to a song change follow() gets before it applies it. Same idea
-# as routes/stream.py's _TRACK_END_TOLERANCE: only as large as it takes not
-# to spin on sub-millisecond sleeps.
-_FOLLOW_TOLERANCE = 0.05
 # The longest follow() sleeps in one go, so a resync correcting the clock
 # meanwhile is picked up within this long (POSITION_RESYNC_INTERVAL's 8s).
 _FOLLOW_MAX_SLEEP = 8.0
@@ -219,8 +215,13 @@ async def follow(session: SessionState, mix: MixEngine) -> None:
         if change is None or st.clock.is_paused or not st.is_streaming:
             await asyncio.sleep(_FOLLOW_IDLE_SLEEP)
             continue
-        remaining = st.clock.seconds_until(change.stream_time)
-        if remaining > _FOLLOW_TOLERANCE:
+        # Timed on elapsed(), the clock the status reads the position from -
+        # not seconds_until(), which skips the blend-in of a fresh resync
+        # (see _OFFSET_SLEW_SECONDS). Not a moment early either: before the
+        # change the timeline still answers with the outgoing song, and the
+        # status would pair the new song with where the old one stood.
+        remaining = st.clock.seconds_until_elapsed(change.stream_time)
+        if remaining > 0:
             await asyncio.sleep(min(remaining, _FOLLOW_MAX_SLEEP))
             continue
         async with session.play_lock:

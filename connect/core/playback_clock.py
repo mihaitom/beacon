@@ -118,8 +118,9 @@ class PlaybackClock:
     def _effective_offset(self) -> float:
         """position_offset, blended in over _OFFSET_SLEW_SECONDS if a
         calibrate() correction landed recently — see that constant's own
-        comment. Only elapsed() reads this; seconds_until() and everything
-        else wants the true, immediately-updated position_offset itself."""
+        comment. Read by elapsed() and its inverse, seconds_until_elapsed();
+        seconds_until() and everything else wants the true, immediately-
+        updated position_offset itself."""
         if self._slew_start_time is None:
             return self.position_offset
         t = (time.time() - self._slew_start_time) / _OFFSET_SLEW_SECONDS
@@ -147,6 +148,27 @@ class PlaybackClock:
         position_offset otherwise. Assumes playback is ongoing (not
         paused); callers already only use this while actively streaming."""
         return max(0.0, self.play_start_time + duration - self.position_offset - time.time())
+
+    def seconds_until_elapsed(self, target: float) -> float:
+        """Wall-clock seconds from now until elapsed() reaches `target` - the
+        inverse of elapsed() including the blend-in of a recent calibrate(),
+        which seconds_until() deliberately leaves out. For whatever has to
+        happen in step with what elapsed() reports. Assumes playback is
+        ongoing, like seconds_until()."""
+        now = time.time()
+        gap = target - self.elapsed()
+        if gap <= 0:
+            return 0.0
+        if self._slew_start_time is None:
+            return gap
+        blend_left = self._slew_start_time + _OFFSET_SLEW_SECONDS - now
+        if blend_left <= 0:
+            return gap
+        # While the offset blends in, elapsed() runs at this rate.
+        rate = 1.0 + (self.position_offset - self._slew_start_offset) / _OFFSET_SLEW_SECONDS
+        if gap <= rate * blend_left:
+            return gap / rate
+        return blend_left + gap - rate * blend_left
 
     def elapsed_since_stream_start(self) -> float:
         """Wall-clock seconds since start()/resume()/seek_to() was called,

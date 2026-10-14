@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Fixed
 
 - Dragging a song through a long queue stays smooth instead of making the app sluggish
+- With transitions on while casting, the seek bar switches to the next song together with its position, instead of briefly showing the new waveform at the old song's time
 - With transitions on, removing, moving or shuffling songs in the queue no longer ends the mix after the current song with a gap
 - With transitions on, playback after a seek while paused or after reopening the app starts where it stood, not seconds later with lyrics out of step
 - With transitions on, Stop and logging out also end the mix on the server instead of leaving it running unheard
