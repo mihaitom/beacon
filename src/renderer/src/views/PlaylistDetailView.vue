@@ -70,7 +70,6 @@
     <song-table
       v-else
       :songs="playlist.songs"
-      :queue-whole-list="false"
       :default-sort-key="null"
       :reorderable="songsEditable"
       :removable="songsEditable"

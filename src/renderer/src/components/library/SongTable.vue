@@ -702,14 +702,14 @@ export default {
       }
       if (!this.queueWholeList) {
         // A list of matches or a ranking rather than a sequence (library
-        // browse, a genre, a playlist being edited, search results, Home's
-        // most-played) — only the clicked song goes into the queue. Use the row menu's "Play next"
+        // browse, a genre, search results, Home's most-played) — only the
+        // clicked song goes into the queue. Use the row menu's "Play next"
         // to queue more, or "Song Radio" to build a queue out of similar
         // songs.
         void this.playbackStore.playSongList([song], 0)
         return
       }
-      // A sequence somebody meant (album/artist/favorites/home shelves) —
+      // A sequence somebody meant (album/artist/playlist/favorites/home shelves) —
       // clicking a song plays it and continues through the rest, same as
       // any other music player. Uses the row's own absolute index (passed
       // through from SongRow) rather than re-deriving it by id — a

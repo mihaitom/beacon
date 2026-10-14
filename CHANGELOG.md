@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The DJ mix length is chosen in bars (4, 8 or 16) instead of seconds, so it lasts the same musical phrase at every tempo. A length set before is carried over
 - DJ mixes follow where the beat actually plays: out of a song that ends on a long ambient tail (no drums, just a pad or a fade-out) the mix starts while the beat is still playing and drops the tail, and into a song with a long intro the bass swaps right where its beat sets in. Before, such songs often got no DJ mix at all and the next song was faded in over the almost silent end
 - Now Playing shows the familiar arrows before the next song again and names the transition in words instead: crossfade, or DJ mix with its tempo. Hovering "Crossfade" tells why it could not be a DJ mix, and with the artwork hidden both songs stay in the corner until the previous one has faded out
+- Clicking a song in a playlist plays the whole playlist from there instead of only that song, as it already did on the phone
 - Song Radio started from the song that is playing keeps it playing and only replaces what comes after it, instead of starting the song over
 - Songs in the queue can be grabbed anywhere to drag them, without a handle, and dragging near the top or bottom of the queue scrolls it quickly. The scrolling also works on the phone and in the Remote Control, where a long queue did not scroll during a drag at all
 

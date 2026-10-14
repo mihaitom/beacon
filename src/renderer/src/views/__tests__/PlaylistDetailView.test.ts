@@ -556,6 +556,11 @@ describe('PlaylistDetailView', () => {
       expect(wrapper.find('.mdi-pencil-outline').exists()).toBe(true)
     })
 
+    it('queues the whole playlist from a clicked song, not just that song', async () => {
+      const wrapper = await mountOwn({ songs: [makeSong('a'), makeSong('b')], songCount: 2 })
+      expect(wrapper.findComponent(SongTable).props('queueWholeList')).toBe(true)
+    })
+
     it('blames the rules, not the user, when nothing matches', async () => {
       const wrapper = await mountOwn({ readonly: true, smart: true })
       expect(wrapper.text()).toContain(i18n.global.t('playlists.smartEmpty'))
