@@ -55,6 +55,36 @@ async def test_a_waiting_reader_wakes_for_new_audio_and_for_the_end():
     await asyncio.wait_for(ender, 1)
 
 
+class _Stdin:
+    def __init__(self):
+        self.written = bytearray()
+
+    def write(self, data):
+        self.written += data
+
+    async def drain(self):
+        pass
+
+    def is_closing(self):
+        return False
+
+    def close(self):
+        pass
+
+
+async def test_a_connection_left_behind_by_a_trim_skips_ahead_without_repeating():
+    ring = PcmRing()
+    ring.append(b"".join(_frames(1, v) for v in range(20)))
+    connection = MixConnection(ring, 0, [])
+    ring.trim(10)
+    stdin = _Stdin()
+    connection._proc = type("Proc", (), {"stdin": stdin})()
+    ring.close()
+    await connection._feed()
+    assert bytes(stdin.written) == b"".join(_frames(1, v) for v in range(10, 20))
+    assert connection.fed_frame == 20
+
+
 def test_the_encoder_reads_pcm_and_writes_what_it_is_told():
     cmd = mo.encoder_cmd(["-acodec", "flac", "-f", "flac"])
     assert cmd[cmd.index("-f") + 1] == "s16le"

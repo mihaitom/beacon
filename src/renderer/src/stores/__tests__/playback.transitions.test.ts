@@ -230,6 +230,33 @@ describe('playback with transitions', () => {
         expect(ids(playback)).toEqual(['a', 'd', 'b', 'c', 'e'])
       })
 
+      it('switching shuffle off with it before the current song keeps the current one current', async () => {
+        const playback = await locked()
+        const [a, b, c, d, e] = playback.queue
+        // Shuffled order c, a, ...; c plays and a is locked in next.
+        playback.originalQueue = [a!, b!, c!, d!, e!]
+        playback.queue = [c!, a!, b!, d!, e!]
+        playback.currentIndex = 0
+        playback.shuffle = true
+        playback.toggleShuffle()
+        expect(ids(playback)).toEqual(['b', 'c', 'a', 'd', 'e'])
+        expect(playback.currentSong?.id).toBe('c')
+        expect(playback.lockedNextIndex).toBe(playback.currentIndex + 1)
+      })
+
+      it('picking another song does not carry the lock over to it', async () => {
+        const playback = await locked()
+        let answer: (started: boolean) => void = () => {}
+        mix.start.mockImplementationOnce(
+          () => new Promise<boolean>((resolve) => (answer = resolve)),
+        )
+        playback.currentIndex = 3
+        const starting = playback.startCurrent()
+        expect(playback.lockedNextIndex).toBe(-1)
+        answer(true)
+        await starting
+      })
+
       it('clearing the queue keeps it', async () => {
         const playback = await locked()
         playback.clearQueue()
@@ -318,6 +345,36 @@ describe('playback with transitions', () => {
       playback.setReplayGainMode('album')
       expect(mix.syncQueue).toHaveBeenCalledTimes(2)
       expect(engine.setReplayGain).not.toHaveBeenCalled()
+    })
+
+    it('a seek does not count the song as begun again', async () => {
+      const { onTimeUpdate } = initEngineCallbacks(usePlaybackStore())
+      const playback = await playingQueue()
+      // Two songs in: b began at stream time 200 of this run.
+      mix.heard.mockReturnValue({ songId: 'b', queueIndex: 1, position: 1, startedAt: 200 })
+      onTimeUpdate(201)
+      scrobble.mockClear()
+      let answer: (started: boolean) => void = () => {}
+      mix.start.mockImplementationOnce(() => new Promise<boolean>((resolve) => (answer = resolve)))
+      const seeking = playback.seek(30)
+      // The old element ticks on while connect answers.
+      onTimeUpdate(202)
+      answer(true)
+      await seeking
+      // The new run starts b over at stream time 0.
+      mix.heard.mockReturnValue({ songId: 'b', queueIndex: 1, position: 30, startedAt: 0 })
+      onTimeUpdate(0.25)
+      expect(scrobble).not.toHaveBeenCalled()
+    })
+
+    it('stop and logout end the mix', async () => {
+      const playback = await playingQueue()
+      await playback.stop()
+      expect(mix.stop).toHaveBeenCalled()
+      await playingQueue()
+      mix.stop.mockClear()
+      playback.resetForLogout()
+      expect(mix.stop).toHaveBeenCalled()
     })
 
     it('a cast taking over ends the mix', async () => {

@@ -15,6 +15,7 @@ import numpy as np
 import pytest
 
 import core.mix_engine as me
+from core import streamer
 from core.mix_engine import MixEngine, MixItem, apply_gain
 from core.mix_timeline import SAMPLE_RATE
 
@@ -192,6 +193,52 @@ async def test_paused_nothing_more_is_rendered_and_the_clock_resumes_where_it_st
     rig.clock.now += 1.0
     await rig.run(steps=2)
     assert rig.engine.ring.head == 3 * SR
+    rig.engine.stop()
+
+
+async def test_a_mix_set_up_paused_counts_from_when_it_is_unfrozen():
+    """A tab loading a mix without playing it: the decoder's first audio may
+    arrive well into the pause, which must not count as listening time."""
+    rig = Rig({"a": _pcm(10 * SR)}, ["a"], lead=2.0)
+    rig.engine.freeze()
+    rig.engine.start()
+    rig.clock.now += 5
+    await rig.run(steps=2)
+    assert rig.engine.ring.head == 2 * SR
+    rig.clock.now += 55
+    rig.engine.unfreeze()
+    rig.clock.now += 1.0
+    await rig.run(steps=2)
+    assert rig.engine.ring.head == 3 * SR
+    rig.engine.stop()
+
+
+async def test_a_connection_counts_while_its_encoder_is_still_starting(monkeypatch):
+    """Rendering may trim the ring during the spawn; what the connection is
+    yet to read has to stay."""
+    rig = Rig({"a": _pcm(10 * SR)}, ["a"], lead=2.0)
+    seen = []
+
+    async def slow_open(connection):
+        seen.append(connection in rig.engine._connections)
+
+    monkeypatch.setattr(me.MixConnection, "open", slow_open)
+    connection = await rig.engine.connect(0.0, [])
+    assert seen == [True]
+    assert connection in rig.engine._connections
+    rig.engine.stop()
+
+
+async def test_a_connection_whose_encoder_fails_to_start_is_not_kept(monkeypatch):
+    rig = Rig({"a": _pcm(10 * SR)}, ["a"], lead=2.0)
+
+    async def broken_open(connection):
+        raise OSError("no ffmpeg")
+
+    monkeypatch.setattr(me.MixConnection, "open", broken_open)
+    with pytest.raises(OSError):
+        await rig.engine.connect(0.0, [])
+    assert rig.engine.listeners == 0
     rig.engine.stop()
 
 
@@ -441,7 +488,7 @@ async def _mix_files(paths: list[str], durations: list[float], monkeypatch) -> n
 
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="needs a real ffmpeg")
 async def test_a_song_split_into_two_files_comes_out_whole(tmp_path, monkeypatch):
-    monkeypatch.setattr(me, "FFMPEG_BIN", "ffmpeg")
+    monkeypatch.setattr(streamer, "FFMPEG_BIN", "ffmpeg")
     whole = _sine(2 * SR)
     _write_wav(tmp_path / "a.wav", whole[: 2 * 50_000])
     _write_wav(tmp_path / "b.wav", whole[2 * 50_000 :])
@@ -452,7 +499,7 @@ async def test_a_song_split_into_two_files_comes_out_whole(tmp_path, monkeypatch
 
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="needs a real ffmpeg")
 async def test_an_excerpt_decodes_to_its_length(tmp_path, monkeypatch):
-    monkeypatch.setattr(me, "FFMPEG_BIN", "ffmpeg")
+    monkeypatch.setattr(streamer, "FFMPEG_BIN", "ffmpeg")
     _write_wav(tmp_path / "a.wav", _sine(6 * SR))
     cmd = me.decode_cmd(str(tmp_path / "a.wav"), 1.0, 4.0)
     done = await asyncio.to_thread(subprocess.run, cmd, capture_output=True, check=True)
@@ -472,7 +519,7 @@ async def test_mp3_padding_does_not_open_a_gap_at_the_join(tmp_path, monkeypatch
     """MP3 pads each file at both ends; ffmpeg's decoder trims that again
     from the LAME header a file carries. With it trimmed the sine runs on
     across the join; untrimmed there would be tens of ms of silence."""
-    monkeypatch.setattr(me, "FFMPEG_BIN", "ffmpeg")
+    monkeypatch.setattr(streamer, "FFMPEG_BIN", "ffmpeg")
     whole = _sine(4 * SR)
     split = 2 * 100_000
     _write_wav(tmp_path / "a.wav", whole[:split])

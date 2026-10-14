@@ -584,3 +584,16 @@ def test_a_paused_mix_is_silence():
     host.set(song_id="a", position=110.0, playing=False, mix=host.hearing.mix, mix_time=10.05)
     assert rig.produce() == bytes(TICK * 4)
     assert rig.b.timeline[-1].playing is False
+
+
+def test_a_song_change_in_a_stretch_the_mix_had_not_rendered_yet_is_still_marked():
+    """Ahead of the host's render for a moment, the stream skips frames it
+    could not read - a song change among them is still one to tell guests."""
+    mix = FakeMix(10)
+    mix.timeline.mark(10 * SR + 5, "b", 1, 0.0, playing=True, starts=True)
+    half_a_tick = TICK / 2 / SR
+    rig = Rig(Host(song_id="a", position=110.0, playing=True, mix=mix, mix_time=10 - half_a_tick))
+    rig.produce()
+    entry = rig.b.timeline[-1]
+    assert (entry.song_id, entry.playing) == ("b", True)
+    assert entry.stream_time == pytest.approx((TICK // 2 + 5) / SR, abs=1 / SR)

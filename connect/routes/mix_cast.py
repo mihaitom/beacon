@@ -35,8 +35,7 @@ session.state.mix is None.
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
-from dataclasses import replace
+from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import Literal
 
 from pydantic import BaseModel
@@ -146,13 +145,20 @@ async def _source_url(session: SessionState, item: MixItem) -> str:
     return await asyncio.to_thread(session.media.get_stream_url, item.song_id)
 
 
-def new_mix(session: SessionState, first: MixItem, position: float) -> MixEngine:
-    """A run from `first` at `position` - of the preview while one plays, so
-    that a resume or a reconnect stays in it, else of the queue."""
+def source_url_fn(session: SessionState) -> Callable[[MixItem], Awaitable[str | None]]:
+    """The mix engine's url_fn for this session's media server."""
 
     async def url_fn(item: MixItem) -> str | None:
         return await _source_url(session, item)
 
+    return url_fn
+
+
+def new_mix(session: SessionState, first: MixItem, position: float) -> MixEngine:
+    """A run from `first` at `position` - of the preview while one plays, so
+    that a resume or a reconnect stays in it, else of the queue."""
+
+    url_fn = source_url_fn(session)
     running = session.state.preview
     if running is not None:
         return MixEngine(
@@ -360,7 +366,7 @@ async def skip_to(session: SessionState, queue_index: int) -> bool:
     track = await _resolve_track(session, st.queue[queue_index], "Party skip")
     if track is None:
         return False
-    item = replace(mix_item(session, track, queue_index, st.current_track_gain))
+    item = mix_item(session, track, queue_index, st.current_track_gain)
     return await restart(session, item, 0.0) is None
 
 

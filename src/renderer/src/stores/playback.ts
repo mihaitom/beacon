@@ -1928,9 +1928,12 @@ export const usePlaybackStore = defineStore('playback', {
       const quality = mixQuality(this.localQuality)
       this.activeLocalStream = { quality, reason: 'transitions' }
       this.duration = song.duration
-      mixSongStartedAt = null
+      // The previous run's lock is not this one's: until its first
+      // timeupdate the new song would otherwise inherit it.
+      this.mixNextLocked = false
+      this.mixTransitions = []
       try {
-        await getLocalMix().start({
+        const started = await getLocalMix().start({
           songs: upcomingSongs(this.queue, this.currentIndex, this.repeatMode, this.replayGainMode),
           position,
           repeatMode: this.repeatMode,
@@ -1938,6 +1941,10 @@ export const usePlaybackStore = defineStore('playback', {
           quality,
           autoplay,
         })
+        // Only once the new run is adopted: the old element's timeupdates
+        // keep arriving while connect answers, and a reset before then
+        // would let one of them seed the old run's song as this one's.
+        if (started) mixSongStartedAt = null
       } catch (error) {
         console.error('[playback] Could not start the mix, playing the song on its own:', error)
         getLocalMix().stop()
@@ -2223,7 +2230,13 @@ export const usePlaybackStore = defineStore('playback', {
       if (current) {
         this.currentIndex = this.queue.findIndex((t) => t.id === current.id)
       }
-      if (lockedNext) this.queue = keptAfter(this.queue, this.currentIndex, lockedNext)
+      if (lockedNext) {
+        // keptAfter() can move the current song too (a locked one that sat
+        // before it), so its index is looked up again.
+        const playing = this.queue[this.currentIndex]
+        this.queue = keptAfter(this.queue, this.currentIndex, lockedNext)
+        if (playing) this.currentIndex = this.queue.indexOf(playing)
+      }
       this.syncCastQueue()
     },
 
@@ -2499,6 +2512,7 @@ export const usePlaybackStore = defineStore('playback', {
         // if one was running — see routes/playback.py's /stop.
         await connectPlayback.stop()
       } else {
+        getLocalMix().stop()
         getAudioEngine().stop()
         if (this.radioStation) stopRadioMetadataWatch()
       }
@@ -2523,6 +2537,9 @@ export const usePlaybackStore = defineStore('playback', {
      * cast target alone, since a physical speaker doesn't care which
      * account is signed into this window. */
     resetForLogout(): void {
+      // Before the session goes: connect would otherwise keep rendering
+      // this tab's mix for nobody, under the old account.
+      getLocalMix().stop()
       getAudioEngine().stop()
       useDrawersStore().resetDrawers()
       autoplayExhaustedSeedIds.clear() // module-level, so $reset() below doesn't reach it

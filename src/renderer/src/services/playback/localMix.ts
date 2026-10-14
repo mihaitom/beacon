@@ -139,6 +139,8 @@ export class LocalMixPlayer {
       position: options.position,
       repeat_mode: options.repeatMode,
       transitions: options.transitions,
+      // Loaded without playing: connect's clock waits for resume() too.
+      paused: !options.autoplay,
     })
     if (seq !== this.startSeq) return false
     this.play(state, options.quality, options.autoplay)

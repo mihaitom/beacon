@@ -140,6 +140,16 @@ describe('LocalMixPlayer', () => {
     await mix.start(startOptions(false))
     expect(fake.loadFrom).toHaveBeenCalled()
     expect(fake.playFrom).not.toHaveBeenCalled()
+    // connect's clock must not run on while the tab stands paused.
+    expect(client.startLocalMix).toHaveBeenLastCalledWith(
+      mix.player,
+      expect.objectContaining({ paused: true }),
+    )
+    await mix.start(startOptions(true))
+    expect(client.startLocalMix).toHaveBeenLastCalledWith(
+      mix.player,
+      expect.objectContaining({ paused: false }),
+    )
     mix.stop()
   })
 

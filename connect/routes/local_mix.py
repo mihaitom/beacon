@@ -25,7 +25,6 @@ or timeline request for an old one is answered 410, so an element still
 reconnecting to a run that was replaced cannot play it.
 """
 
-import asyncio
 import logging
 import re
 from typing import Literal
@@ -37,7 +36,6 @@ from pydantic import BaseModel
 from core import hls, local_mixes, preview
 from core.auth import require_token
 from core.local_mixes import SongEntry
-from core.mix_engine import MixItem
 from core.session import SessionState, require_authenticated_session
 from core.streamer import (
     OutputFormat,
@@ -48,7 +46,7 @@ from core.streamer import (
 )
 
 from .local_stream import ALLOWED_BITRATES, LOSSLESS_FORMAT
-from .mix_cast import TransitionSettings, mix_audio, planner_settings
+from .mix_cast import TransitionSettings, mix_audio, planner_settings, source_url_fn
 
 logger = logging.getLogger("connect.mix")
 router = APIRouter(dependencies=[Depends(require_token)])
@@ -86,6 +84,9 @@ class MixStart(BaseModel):
     position: float = 0.0
     repeat_mode: Literal["off", "all", "one"] = "off"
     transitions: TransitionSettings
+    # Loaded without playing (a seek while paused, a resume after a
+    # reload): the mix stands still until the tab resumes it.
+    paused: bool = False
 
 
 class PreviewStart(BaseModel):
@@ -138,9 +139,6 @@ async def start_mix(
     if not req.songs:
         raise HTTPException(status_code=400, detail="No songs")
 
-    async def url_fn(item: MixItem) -> str | None:
-        return await asyncio.to_thread(session.media.get_stream_url, item.song_id)
-
     first = req.songs[0]
     position = max(0.0, min(req.position, first.duration or req.position))
     mix = local_mixes.start(
@@ -150,9 +148,10 @@ async def start_mix(
         0,
         position,
         req.repeat_mode,
-        url_fn,
+        source_url_fn(session),
         LOCAL_LEAD_SECONDS,
         planner_settings(req.transitions),
+        paused=req.paused,
     )
     logger.info(f"[mix] ▶ {mix.engine.first.name} from {position:.1f}s (this device)")
     return _describe(mix)
@@ -166,9 +165,7 @@ async def start_preview(
     if not 0 <= req.index < len(req.songs):
         raise HTTPException(status_code=400, detail="No such song")
 
-    async def url_fn(item: MixItem) -> str | None:
-        return await asyncio.to_thread(session.media.get_stream_url, item.song_id)
-
+    url_fn = source_url_fn(session)
     songs = preview.PreviewSongs(_entries(req.songs), url_fn)
     first = await songs.item(req.index)
     assert first is not None

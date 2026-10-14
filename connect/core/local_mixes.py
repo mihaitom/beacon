@@ -104,10 +104,24 @@ class LocalMix:
         already be past - so `current` is looked up, not assumed first."""
         if self.repeat_mode == "one":
             return current
-        for i, song in enumerate(self.songs):
-            if song.queue_index == current.queue_index and song.id == current.song_id:
-                return self.songs[i + 1].item() if i + 1 < len(self.songs) else None
-        return None
+        here = self._locate(current)
+        if here is None or here + 1 >= len(self.songs):
+            return None
+        return self.songs[here + 1].item()
+
+    def _locate(self, current: MixItem) -> int | None:
+        """Where `current` is in the list. A queue edit before it (a removal,
+        shuffle, a drag) moves its queue_index while its deck still has the
+        old one, so failing an exact match, the nearest place with the same
+        song is it - as mix_cast.locate() does for a cast."""
+        places = [i for i, song in enumerate(self.songs) if song.id == current.song_id]
+        for i in places:
+            if self.songs[i].queue_index == current.queue_index:
+                return i
+        if not places:
+            return None
+        was = current.queue_index or 0
+        return min(places, key=lambda i: abs(self.songs[i].queue_index - was))
 
 
 _mixes: dict[tuple[str, str], LocalMix] = {}
@@ -115,7 +129,14 @@ _reaper: asyncio.Task | None = None
 
 
 def get(session_id: str, player: str) -> LocalMix | None:
-    return _mixes.get((session_id, player))
+    """This tab's mix - None, and stopped, if its HLS encode failed: the
+    run is unplayable then, and gone is what makes the tab start it over."""
+    mix = _mixes.get((session_id, player))
+    if mix is not None and mix.hls is not None and mix.hls.failed:
+        logger.warning(f"[mix] HLS encode for player {player} failed — stopping its mix")
+        stop(session_id, player)
+        return None
+    return mix
 
 
 def start(
@@ -128,9 +149,11 @@ def start(
     url_fn: Callable[[MixItem], Awaitable[str | None]],
     lead_seconds: float,
     settings: Settings | None = None,
+    paused: bool = False,
 ) -> LocalMix:
     """A new mix for this tab from songs[index] at `position`, replacing
-    whatever it had."""
+    whatever it had - frozen from the start if `paused`, for a tab that
+    loads it without playing."""
     stop(session_id, player)
     holder: list[LocalMix] = []
 
@@ -145,6 +168,8 @@ def start(
         lead_seconds=lead_seconds,
         settings=settings,
     )
+    if paused:
+        engine.freeze()
     mix = LocalMix(session_id, player, engine, songs[index:], repeat_mode)
     holder.append(mix)
     return _install(mix)

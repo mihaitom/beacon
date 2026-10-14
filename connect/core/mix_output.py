@@ -136,11 +136,15 @@ class MixConnection:
         stdin = self._proc.stdin
         try:
             while not self.closed:
-                pcm = self._ring.read(self.fed_frame, _WRITE_FRAMES)
+                # read() clamps to what the ring still holds; counting on from
+                # the clamped frame skips a trimmed stretch rather than
+                # feeding the frames after it twice.
+                frame = self._ring.clamp(self.fed_frame)
+                pcm = self._ring.read(frame, _WRITE_FRAMES)
                 if pcm:
                     stdin.write(pcm)
                     await stdin.drain()
-                    self.fed_frame += len(pcm) // FRAME_BYTES
+                    self.fed_frame = frame + len(pcm) // FRAME_BYTES
                     continue
                 if self._ring.closed:
                     break

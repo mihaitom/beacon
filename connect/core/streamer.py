@@ -122,6 +122,37 @@ _HTTP_RECONNECT_ARGS = [
 ]
 
 
+def pcm_decode_cmd(
+    url: str, start: float, duration: float | None, channels: int, rate: int
+) -> list[str]:
+    """`url` decoded to raw s16le PCM on stdout, from `start` for
+    `duration` seconds (to the end if None). Filter-free: the bundled ffmpeg
+    has only the components its contract names, and a missing one fails
+    the whole decode."""
+    http = _HTTP_RECONNECT_ARGS if url.startswith(("http://", "https://")) else []
+    seek = ["-ss", f"{start:.3f}"] if start > 0 else []
+    length = ["-t", f"{max(duration, 0.0):.3f}"] if duration is not None else []
+    return [
+        FFMPEG_BIN,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        *http,
+        *seek,
+        "-i",
+        url,
+        "-vn",
+        *length,
+        "-ac",
+        str(channels),
+        "-ar",
+        str(rate),
+        "-f",
+        "s16le",
+        "pipe:1",
+    ]
+
+
 class SourceUnavailableError(Exception):
     """ffmpeg gave up on a track before producing any audio - the source
     could not be fetched or opened (an https certificate it would not

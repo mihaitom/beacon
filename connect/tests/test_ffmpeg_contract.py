@@ -39,6 +39,7 @@ from core.streamer import (
     _LOSSY_ENCODERS,
     lossless_encode_args,
     lossy_encode_args,
+    pcm_decode_cmd,
 )
 from routes import debug
 
@@ -117,7 +118,11 @@ def _every_command() -> list[list[str]]:
         # region a transition is planned from; a listener's encoder.
         list(mix_engine.decode_cmd("http://nav/stream", 12.0)),
         list(mix_engine.decode_cmd("http://nav/stream", 12.0, 32.0)),
-        list(beat_analysis.decode_cmd("http://nav/stream", 12.0, 30.0)),
+        list(
+            pcm_decode_cmd(
+                "http://nav/stream", 12.0, 30.0, channels=1, rate=beat_analysis.ANALYSIS_RATE
+            )
+        ),
         list(mix_output.encoder_cmd(list(lossy_encode_args("mp3", 192)[0]))),
         # Listening along: a song decoded to PCM, and the encoder reading it.
         list(party_broadcast.decoder_cmd("http://nav/stream", 12.0, 0.7)),

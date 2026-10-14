@@ -133,6 +133,14 @@ def test_pause_and_resume_freeze_the_mix(configured, default_session):
     assert not engine.paused
 
 
+def test_a_mix_loaded_without_playing_stands_still(configured, default_session):
+    _start(configured, "a", paused=True)
+    engine = local_mixes.get(default_session.session_id, PLAYER).engine
+    assert engine.paused
+    configured.post(f"/stream/local/mix/{PLAYER}/resume")
+    assert not engine.paused
+
+
 def test_stop_ends_the_mix(configured, default_session):
     _start(configured, "a")
     engine = local_mixes.get(default_session.session_id, PLAYER).engine
@@ -205,6 +213,20 @@ def test_repeat_one_plays_the_song_again():
     assert _local(SongEntry("a", 0), repeat_mode="one").next_item(current) is current
 
 
+def test_a_queue_edit_that_moves_the_current_song_keeps_the_mix_going():
+    """A removal before the current song shifts its queue_index while its
+    deck still carries the old one."""
+    mix = _local(SongEntry("b", 1), SongEntry("c", 2))
+    nxt = mix.next_item(MixItem("b", 2))
+    assert (nxt.song_id, nxt.queue_index) == ("c", 2)
+
+
+def test_a_song_queued_twice_follows_from_the_nearer_place():
+    mix = _local(SongEntry("a", 0), SongEntry("x", 1), SongEntry("a", 7), SongEntry("y", 8))
+    assert mix.next_item(MixItem("a", 6)).song_id == "y"
+    assert mix.next_item(MixItem("a", 0)).song_id == "x"
+
+
 def test_nothing_follows_the_end_of_the_list_or_a_song_it_lost():
     mix = _local(SongEntry("a", 0), SongEntry("b", 1))
     assert mix.next_item(MixItem("b", 1)) is None
@@ -266,6 +288,7 @@ class FakeHls:
         self.engine, self.fmt, self.codec_args = engine, fmt, codec_args
         self.packed = fmt == "mp3"
         self.closed = False
+        self.failed = False
         FakeHls.made.append(self)
 
     def start(self):
@@ -313,6 +336,17 @@ def test_another_quality_replaces_the_runs_encode(configured, default_session, f
     assert [h.closed for h in fake_hls] == [True, False]
     configured.delete(f"/stream/local/mix/{PLAYER}")
     assert fake_hls[1].closed
+
+
+def test_a_failed_encode_ends_the_run_so_the_tab_starts_over(configured, default_session, fake_hls):
+    epoch = _start(configured, "a").json()["epoch"]
+    params = {"epoch": epoch, "fmt": "aac", "br": 192}
+    configured.get(f"/stream/local/mix/{PLAYER}/hls/index.m3u8", params=params)
+    engine = local_mixes.get(default_session.session_id, PLAYER).engine
+    fake_hls[0].failed = True
+    r = configured.get(f"/stream/local/mix/{PLAYER}/timeline", params={"epoch": epoch})
+    assert r.status_code == 410 and r.json()["detail"] == "No such mix"
+    assert engine.stopped
 
 
 def test_an_old_run_or_a_bad_format_gets_no_playlist(configured, fake_hls):

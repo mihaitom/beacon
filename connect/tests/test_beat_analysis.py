@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 import core.beat_analysis as ba
+from core import streamer
 from core.beat_analysis import (
     ANALYSIS_RATE,
     analyse_region,
@@ -100,7 +101,7 @@ def test_a_region_is_reported_in_the_songs_own_seconds():
 
 @pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="needs a real ffmpeg")
 async def test_a_real_file_is_decoded_and_analysed(tmp_path, monkeypatch):
-    monkeypatch.setattr(ba, "FFMPEG_BIN", "ffmpeg")
+    monkeypatch.setattr(streamer, "FFMPEG_BIN", "ffmpeg")
     x = track(128, 40, 0.3, noise=0.01)
     path = tmp_path / "t.wav"
     with wave.open(str(path), "wb") as w:
@@ -115,5 +116,5 @@ async def test_a_real_file_is_decoded_and_analysed(tmp_path, monkeypatch):
 
 
 async def test_a_source_that_cannot_be_read_is_no_analysis(monkeypatch):
-    monkeypatch.setattr(ba, "FFMPEG_BIN", "/nonexistent/ffmpeg")
+    monkeypatch.setattr(streamer, "FFMPEG_BIN", "/nonexistent/ffmpeg")
     assert await analyse_region("x", 0, 10) is None

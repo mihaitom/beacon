@@ -39,8 +39,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from .ffmpeg import FFMPEG_BIN
-from .streamer import _HTTP_RECONNECT_ARGS
+from .streamer import pcm_decode_cmd
 
 logger = logging.getLogger("connect.mix")
 
@@ -289,34 +288,6 @@ def analyse_samples(
     return RegionAnalysis(start, end, sound_start, sound_end, grid)
 
 
-# ── Decoding ───────────────────────────────────────────────────────────────
-
-
-def decode_cmd(url: str, start: float, duration: float) -> list[str]:
-    http = _HTTP_RECONNECT_ARGS if url.startswith(("http://", "https://")) else []
-    seek = ["-ss", f"{start:.3f}"] if start > 0 else []
-    return [
-        FFMPEG_BIN,
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        *http,
-        *seek,
-        "-t",
-        f"{duration:.3f}",
-        "-i",
-        url,
-        "-vn",
-        "-ac",
-        "1",
-        "-ar",
-        str(ANALYSIS_RATE),
-        "-f",
-        "s16le",
-        "pipe:1",
-    ]
-
-
 async def analyse_region(
     url: str, start: float, duration: float, bpm_hint: float | None = None
 ) -> RegionAnalysis | None:
@@ -324,7 +295,7 @@ async def analyse_region(
     None if the decode fails or takes too long."""
     try:
         proc = await asyncio.create_subprocess_exec(
-            *decode_cmd(url, max(start, 0.0), duration),
+            *pcm_decode_cmd(url, max(start, 0.0), duration, channels=1, rate=ANALYSIS_RATE),
             stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,

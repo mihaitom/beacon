@@ -44,6 +44,7 @@ export function startLocalMix(
     position: number
     repeat_mode: RepeatMode
     transitions: TransitionsPayload
+    paused: boolean
   },
 ): Promise<LocalMixState> {
   return fetchConnect<LocalMixState>(path(player), { method: 'POST', body })

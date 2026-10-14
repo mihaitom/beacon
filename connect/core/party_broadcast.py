@@ -539,7 +539,12 @@ class Broadcaster:
                 self._song_ended(now)
                 continue
             # The decoder has not caught up: silence now, skipped later.
+            skipped_from = source.frame if isinstance(source, MixSource) else 0
             source.skip(remaining)
+            if isinstance(source, MixSource):
+                # A song change in the skipped stretch is still one guests
+                # have to be told about.
+                self._follow_mix_timeline(source, skipped_from, remaining)
             break
         out += bytes((frames * _FRAME_BYTES) - len(out))
         self._written += frames

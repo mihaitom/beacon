@@ -48,11 +48,10 @@ from typing import Any, Protocol
 import numpy as np
 
 from .beat_analysis import RegionAnalysis, analyse_region
-from .ffmpeg import FFMPEG_BIN
 from .mix_dsp import DELAY_FRAMES, BandSplitter, Dither, pcm_to_float, soft_limit
 from .mix_output import FRAME_BYTES, MixConnection, PcmRing
 from .mix_timeline import SAMPLE_RATE, Timeline
-from .streamer import _HTTP_RECONNECT_ARGS
+from .streamer import pcm_decode_cmd
 from .timestretch import HOP as _STRETCH_HOP
 from .timestretch import Wsola
 from .transition_planner import (
@@ -148,31 +147,10 @@ def song_label(artist: str | None, title: str | None) -> str | None:
 
 def decode_cmd(url: str, start: float, end: float | None = None) -> list[str]:
     """The decoder for a song from `start`, or for an excerpt up to `end`.
-    An excerpt's fades are the mixer's (_take_float()): the bundled ffmpeg
-    is built from a fixed list of components, and a filter missing from it
-    fails the whole decode."""
-    seek = ["-ss", f"{start:.3f}"] if start > 0 else []
-    http = _HTTP_RECONNECT_ARGS if url.startswith(("http://", "https://")) else []
-    excerpt = ["-t", f"{max(end - start, 0.0):.3f}"] if end is not None else []
-    return [
-        FFMPEG_BIN,
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        *http,
-        *seek,
-        "-i",
-        url,
-        "-vn",
-        *excerpt,
-        "-ac",
-        "2",
-        "-ar",
-        str(SAMPLE_RATE),
-        "-f",
-        "s16le",
-        "pipe:1",
-    ]
+    An excerpt's fades are the mixer's (_take_float()), not an ffmpeg
+    filter's - see pcm_decode_cmd()."""
+    duration = None if end is None else end - start
+    return pcm_decode_cmd(url, start, duration, channels=2, rate=SAMPLE_RATE)
 
 
 class DeckLike(Protocol):
@@ -452,7 +430,8 @@ class MixEngine:
         # The wall clock that stream time is paced against. Set when the
         # first audio is rendered, not when the engine starts: a speaker
         # waits for the decoder's first samples either way, and counting
-        # that wait would eat the head start.
+        # that wait would eat the head start. A mix set up paused counts
+        # from the moment it is unfrozen (_now() stands still until then).
         self._t0: float | None = None
         self._paused_at: float | None = None
         self._connections: list[MixConnection] = []
@@ -652,9 +631,16 @@ class MixEngine:
         """A listener's encode from `start_time` (stream seconds) on."""
         connection = MixConnection(self.ring, round(start_time * SAMPLE_RATE), output_args)
         connection.counted = counted
-        await connection.open()
+        # Counted before the encoder spawns: _trim() keeps what an open
+        # connection has yet to read, and a render tick during the spawn
+        # would otherwise drop its start.
         self._connections = [c for c in self._connections if not c.closed]
         self._connections.append(connection)
+        try:
+            await connection.open()
+        except BaseException:
+            connection.close()
+            raise
         return connection
 
     # ── Rendering ────────────────────────────────────────────────────────
@@ -730,7 +716,7 @@ class MixEngine:
                 if self._holding:
                     self._resume_from_hold(len(out) // FRAME_BYTES, position)
                 if self._t0 is None:
-                    self._t0 = self._clock()
+                    self._t0 = self._now()
                 self._failed_in_a_row = 0
                 out += apply_gain(pcm, deck.item.gain)
                 remaining -= len(pcm) // FRAME_BYTES
@@ -1100,7 +1086,7 @@ class MixEngine:
 
     def _audio_flowing(self, written: int) -> None:
         if self._t0 is None:
-            self._t0 = self._clock()
+            self._t0 = self._now()
         self._failed_in_a_row = 0
         self._unhold_at(self.ring.head + written + DELAY_FRAMES)
 
