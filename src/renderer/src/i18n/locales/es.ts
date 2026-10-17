@@ -393,6 +393,7 @@ export default {
     moveNext: 'Reproducir a continuación',
     moveAfterNext: 'Reproducir después de la siguiente canción',
     moveToEnd: 'Mover al final',
+    sortByBpm: 'Ordenar la cola por BPM',
     remove: 'Quitar de la cola',
   },
   party: {

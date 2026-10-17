@@ -390,6 +390,7 @@ export default {
     moveNext: 'Play next',
     moveAfterNext: 'Play after the next song',
     moveToEnd: 'Move to end',
+    sortByBpm: 'Sort queue by BPM',
     remove: 'Remove from queue',
   },
   party: {

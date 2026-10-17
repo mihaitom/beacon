@@ -2500,6 +2500,24 @@ export const usePlaybackStore = defineStore('playback', {
       return true
     },
 
+    /** Debug aid for the transitions work: sorts the whole queue by its
+     * tagged BPM, slowest first, so neighbouring tempos can be listened to
+     * back to back. Songs without a BPM tag keep their order at the end.
+     * The current song keeps playing wherever it lands, and a locked next
+     * song stays glued behind it (see lockedNextIndex). Like
+     * reorderQueue(), it leaves originalQueue alone. */
+    sortQueueByBpm(): void {
+      const playing = this.queue[this.currentIndex]
+      const lockedNext = this.queue[this.lockedNextIndex]
+      const tagged = this.queue.filter((song) => song.bpm)
+      const untagged = this.queue.filter((song) => !song.bpm)
+      let queue = [...tagged.sort((a, b) => a.bpm! - b.bpm!), ...untagged]
+      if (playing && lockedNext) queue = keptAfter(queue, queue.indexOf(playing), lockedNext)
+      this.queue = queue
+      if (playing) this.currentIndex = queue.indexOf(playing)
+      this.syncCastQueue()
+    },
+
     /** Pushes the full queue to the connect backend whenever it's casting —
      * otherwise connect's own auto-advance (_advance_or_end() in
      * routes/stream.py, see AppState.queue's comment) keeps stepping through

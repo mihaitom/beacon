@@ -105,3 +105,37 @@ describe('moveInQueue', () => {
     })
   })
 })
+
+describe('sortQueueByBpm', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  function queueWithBpm(bpms: Record<string, number | null>, current: number) {
+    const playback = usePlaybackStore()
+    playback.setQueue(
+      Object.entries(bpms).map(([id, bpm]) => makeSong(id, { bpm })),
+      current,
+    )
+    return playback
+  }
+
+  it('sorts the whole queue, untagged songs last in their order, and follows the current song', () => {
+    const playback = queueWithBpm({ a: 140, b: 120, c: null, d: 128, e: 90, f: null }, 1)
+
+    playback.sortQueueByBpm()
+
+    expect(ids(playback)).toEqual(['e', 'b', 'd', 'a', 'c', 'f'])
+    expect(playback.queue[playback.currentIndex]!.id).toBe('b')
+  })
+
+  it('keeps a locked next song right behind the current one', () => {
+    const playback = queueWithBpm({ a: 100, b: 150, c: 130, d: 110 }, 0)
+    playback.mixNextLocked = true
+
+    playback.sortQueueByBpm()
+
+    expect(ids(playback)).toEqual(['a', 'b', 'd', 'c'])
+    expect(playback.currentIndex).toBe(0)
+  })
+})

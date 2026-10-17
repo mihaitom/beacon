@@ -393,6 +393,7 @@ export default {
     moveNext: 'Lire ensuite',
     moveAfterNext: 'Lire après le titre suivant',
     moveToEnd: 'Déplacer à la fin',
+    sortByBpm: 'Trier la file par BPM',
     remove: "Retirer de la file d'attente",
   },
   party: {

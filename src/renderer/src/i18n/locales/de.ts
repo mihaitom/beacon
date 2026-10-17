@@ -390,6 +390,7 @@ export default {
     moveNext: 'Als Nächstes abspielen',
     moveAfterNext: 'Nach dem nächsten Song abspielen',
     moveToEnd: 'Ans Ende verschieben',
+    sortByBpm: 'Warteschlange nach BPM sortieren',
     remove: 'Aus der Warteschlange entfernen',
   },
   party: {
