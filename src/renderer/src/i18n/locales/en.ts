@@ -2,6 +2,9 @@ import type de from './de'
 
 export default {
   common: {
+    moreActions: 'More actions',
+    scrollBack: 'Scroll back',
+    scrollForward: 'Scroll forward',
     cancel: 'Cancel',
     close: 'Close',
     loading: 'Loading',
@@ -230,6 +233,15 @@ export default {
     empty: 'Your server holds nothing about this track beyond what the list already shows.',
   },
   player: {
+    play: 'Play',
+    pause: 'Pause',
+    previous: 'Previous',
+    next: 'Next',
+    shuffle: 'Shuffle',
+    repeatOff: 'Repeat off',
+    repeatAll: 'Repeat all',
+    repeatOne: 'Repeat one',
+    withShortcut: '{label} ({keys})',
     nothingPlaying: 'Nothing playing',
     mute: 'Mute',
     volume: 'Volume',

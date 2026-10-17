@@ -59,18 +59,21 @@
     </div>
     <v-btn
       v-if="currentSong && authStore.capabilities.favorites"
-      style="margin-inline: 8px"
+      class="song-info__favorite"
       :icon="currentSong.starred ? 'mdi-heart' : 'mdi-heart-outline'"
       :color="currentSong.starred ? 'primary' : undefined"
       :disabled="starringInFlight"
       variant="text"
       density="comfortable"
+      :title="favoriteTitle"
+      :aria-label="favoriteTitle"
       @click.stop="toggleStar"
     />
   </div>
 </template>
 
 <script lang="ts">
+import { withShortcut } from '@/services/keyboardShortcuts'
 import { usePlaybackStore } from '@/stores/playback'
 import { useRadioMetadataStore } from '@/stores/radioMetadata'
 import { useLibraryStore } from '@/stores/library'
@@ -88,6 +91,10 @@ export default {
     }
   },
   computed: {
+    favoriteTitle(): string {
+      const label = this.$t(this.currentSong?.starred ? 'library.unstar' : 'library.star')
+      return withShortcut(label, 'toggleFavorite')
+    },
     playbackStore() {
       return usePlaybackStore()
     },
@@ -134,6 +141,10 @@ export default {
 </script>
 
 <style scoped>
+.song-info__favorite {
+  margin-inline: 8px;
+}
+
 /* Fills its grid track rather than sitting at a fixed 300px inside it.
  *
  * The two flanks of PlayerBar.vue's row share one width, whichever of the

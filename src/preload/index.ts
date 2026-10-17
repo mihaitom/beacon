@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
+import type { TaskbarCommand, TaskbarState } from './index.d'
 
 interface ConnectPortInfo {
   port: number | null
@@ -32,6 +33,14 @@ const api = {
     },
     beforeQuitDone: (): void => {
       ipcRenderer.send('app:before-quit-done')
+    },
+  },
+  taskbar: {
+    update: (state: TaskbarState): void => {
+      ipcRenderer.send('taskbar:update', state)
+    },
+    onCommand: (handler: (command: TaskbarCommand) => void): void => {
+      ipcRenderer.on('taskbar:command', (_event, command: TaskbarCommand) => handler(command))
     },
   },
 }

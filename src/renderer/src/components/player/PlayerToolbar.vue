@@ -5,6 +5,8 @@
       :color="drawersStore.queueDrawerOpen ? 'primary' : undefined"
       variant="text"
       density="comfortable"
+      :title="queueTitle"
+      :aria-label="queueTitle"
       @click="drawersStore.toggleQueueDrawer()"
     />
     <!-- Disabled while a station plays, the same as CenterControls.vue's
@@ -181,6 +183,7 @@
 </template>
 
 <script lang="ts">
+import { withShortcut } from '@/services/keyboardShortcuts'
 import { usePlaybackStore } from '@/stores/playback'
 import { useDrawersStore } from '@/stores/drawers'
 import { useConnectStore } from '@/stores/connect'
@@ -242,6 +245,9 @@ export default {
     }
   },
   computed: {
+    queueTitle(): string {
+      return withShortcut(this.$t('queue.title'), 'toggleQueue')
+    },
     playbackStore() {
       return usePlaybackStore()
     },

@@ -27,6 +27,27 @@ interface AppLifecycleApi {
   beforeQuitDone(): void
 }
 
+/** What the Windows taskbar shows for the window: the playback buttons in
+ * its preview and the song's progress over its icon. Ignored elsewhere. */
+export interface TaskbarState {
+  playing: boolean
+  canPlay: boolean
+  canPrevious: boolean
+  canNext: boolean
+  /** 0-1 through the song, or null for nothing to show (a station, or
+   * nothing loaded). */
+  progress: number | null
+  /** The buttons' tooltips, in the app's language. */
+  labels: { previous: string; play: string; next: string }
+}
+
+export type TaskbarCommand = 'previous' | 'toggle-play' | 'next'
+
+interface TaskbarApi {
+  update(state: TaskbarState): void
+  onCommand(handler: (command: TaskbarCommand) => void): void
+}
+
 declare global {
   interface Window {
     // Absent in the web build (no Electron preload) — every access needs
@@ -36,6 +57,7 @@ declare global {
       secureStorage: SecureStorageApi
       appConfig: AppConfigApi
       appLifecycle: AppLifecycleApi
+      taskbar: TaskbarApi
     }
     // Injected by the web/Docker build's settings.js (see
     // settings.js.template + ng.conf.template) — nginx's same-origin

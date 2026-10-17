@@ -2,6 +2,9 @@ import type de from './de'
 
 export default {
   common: {
+    moreActions: "Plus d'actions",
+    scrollBack: 'Défiler en arrière',
+    scrollForward: 'Défiler en avant',
     cancel: 'Annuler',
     close: 'Fermer',
     loading: 'Chargement',
@@ -231,6 +234,15 @@ export default {
       'Votre serveur ne fournit rien de plus sur cette piste que ce que la liste affiche déjà.',
   },
   player: {
+    play: 'Lecture',
+    pause: 'Pause',
+    previous: 'Précédent',
+    next: 'Suivant',
+    shuffle: 'Lecture aléatoire',
+    repeatOff: 'Répétition désactivée',
+    repeatAll: 'Tout répéter',
+    repeatOne: 'Répéter le titre',
+    withShortcut: '{label} ({keys})',
     nothingPlaying: 'Rien en cours de lecture',
     mute: 'Muet',
     volume: 'Volume',

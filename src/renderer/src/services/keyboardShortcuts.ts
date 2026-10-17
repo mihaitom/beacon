@@ -1,3 +1,4 @@
+import { i18n } from '@/i18n'
 import { usePlaybackStore } from '@/stores/playback'
 import { useDrawersStore } from '@/stores/drawers'
 import { useLibraryStore } from '@/stores/library'
@@ -262,16 +263,34 @@ export interface ShortcutHelpEntry {
   labelKey: string
 }
 
+/** The keys a button's tooltip names (see withShortcut), shared with the
+ * help dialog below so the two can't name different keys. */
+export const SHORTCUT_KEYS = {
+  togglePlay: 'Space',
+  previousTrack: 'Ctrl + ←',
+  nextTrack: 'Ctrl + →',
+  toggleMute: 'M',
+  toggleShuffle: 'S',
+  cycleRepeat: 'R',
+  toggleFavorite: 'F',
+  toggleQueue: 'Q',
+} as const
+
+/** A button's tooltip with its key after it: "Shuffle (S)". */
+export function withShortcut(label: string, action: keyof typeof SHORTCUT_KEYS): string {
+  return i18n.global.t('player.withShortcut', { label, keys: SHORTCUT_KEYS[action] })
+}
+
 export const SHORTCUT_HELP: ShortcutHelpEntry[] = [
-  { keys: ['Space', 'K'], labelKey: 'shortcuts.togglePlay' },
+  { keys: [SHORTCUT_KEYS.togglePlay, 'K'], labelKey: 'shortcuts.togglePlay' },
   { keys: ['←', '→'], labelKey: 'shortcuts.seek' },
-  { keys: ['Ctrl + ←', 'Ctrl + →'], labelKey: 'shortcuts.skipTrack' },
+  { keys: [SHORTCUT_KEYS.previousTrack, SHORTCUT_KEYS.nextTrack], labelKey: 'shortcuts.skipTrack' },
   { keys: ['↑', '↓'], labelKey: 'shortcuts.volume' },
-  { keys: ['M'], labelKey: 'shortcuts.mute' },
-  { keys: ['S'], labelKey: 'shortcuts.shuffle' },
-  { keys: ['R'], labelKey: 'shortcuts.repeat' },
-  { keys: ['F'], labelKey: 'shortcuts.favorite' },
-  { keys: ['Q'], labelKey: 'shortcuts.queue' },
+  { keys: [SHORTCUT_KEYS.toggleMute], labelKey: 'shortcuts.mute' },
+  { keys: [SHORTCUT_KEYS.toggleShuffle], labelKey: 'shortcuts.shuffle' },
+  { keys: [SHORTCUT_KEYS.cycleRepeat], labelKey: 'shortcuts.repeat' },
+  { keys: [SHORTCUT_KEYS.toggleFavorite], labelKey: 'shortcuts.favorite' },
+  { keys: [SHORTCUT_KEYS.toggleQueue], labelKey: 'shortcuts.queue' },
   { keys: ['Alt + ←', 'Alt + →'], labelKey: 'shortcuts.navigate' },
   { keys: ['0 – 9'], labelKey: 'shortcuts.jump' },
   { keys: ['?'], labelKey: 'shortcuts.help' },

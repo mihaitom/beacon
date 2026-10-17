@@ -79,6 +79,8 @@
           variant="text"
           density="comfortable"
           size="small"
+          :title="$t('player.mute')"
+          :aria-label="$t('player.mute')"
           @click="onToggleMute"
         />
         <touch-volume-slider

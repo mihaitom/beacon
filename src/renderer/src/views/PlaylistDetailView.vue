@@ -46,7 +46,13 @@
           :title="$t('common.edit')"
           @click="openEdit"
         />
-        <v-btn icon="mdi-delete-outline" variant="text" @click="openDelete" />
+        <v-btn
+          icon="mdi-delete-outline"
+          variant="text"
+          :title="$t('common.delete')"
+          :aria-label="$t('common.delete')"
+          @click="openDelete"
+        />
       </template>
     </detail-header>
 

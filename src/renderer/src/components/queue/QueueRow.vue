@@ -71,6 +71,8 @@
       size="small"
       variant="text"
       :disabled="isCurrent || lockedNext"
+      :title="$t('queue.remove')"
+      :aria-label="$t('queue.remove')"
       @click.stop="playbackStore.removeFromQueue(index)"
     />
   </div>

@@ -42,6 +42,8 @@
           size="small"
           density="comfortable"
           :disabled="wrap || edges.atStart"
+          :title="$t('common.scrollBack')"
+          :aria-label="$t('common.scrollBack')"
           @click="scrollRow(-1)"
         />
         <v-btn
@@ -50,6 +52,8 @@
           size="small"
           density="comfortable"
           :disabled="wrap || edges.atEnd"
+          :title="$t('common.scrollForward')"
+          :aria-label="$t('common.scrollForward')"
           @click="scrollRow(1)"
         />
       </div>

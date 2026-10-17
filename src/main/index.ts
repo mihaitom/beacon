@@ -11,7 +11,16 @@ import { type ChildProcess, spawn } from 'child_process'
 import { randomBytes } from 'crypto'
 import { createConnection, createServer } from 'net'
 import { format } from 'util'
-import { BrowserWindow, app, ipcMain, safeStorage, shell } from 'electron'
+import {
+  BrowserWindow,
+  type Rectangle,
+  app,
+  ipcMain,
+  nativeImage,
+  safeStorage,
+  screen,
+  shell,
+} from 'electron'
 import { electronApp, is, optimizer } from '@electron-toolkit/utils'
 import { config as loadDotenv } from 'dotenv'
 // Not `import { autoUpdater } from 'electron-updater'` — electron-updater is
@@ -21,8 +30,25 @@ import { config as loadDotenv } from 'dotenv'
 // inside an AppImage/asar). Default import + destructure is the reliable
 // form across both.
 import electronUpdaterPkg from 'electron-updater'
+import type { TaskbarCommand, TaskbarState } from '../preload/index.d'
+
+import previousIcon from '../../resources/taskbar/previous.png?asset&asarUnpack'
+import previousIcon2x from '../../resources/taskbar/previous@2x.png?asset&asarUnpack'
+import playIcon from '../../resources/taskbar/play.png?asset&asarUnpack'
+import playIcon2x from '../../resources/taskbar/play@2x.png?asset&asarUnpack'
+import pauseIcon from '../../resources/taskbar/pause.png?asset&asarUnpack'
+import pauseIcon2x from '../../resources/taskbar/pause@2x.png?asset&asarUnpack'
+import nextIcon from '../../resources/taskbar/next.png?asset&asarUnpack'
+import nextIcon2x from '../../resources/taskbar/next@2x.png?asset&asarUnpack'
 
 const { autoUpdater } = electronUpdaterPkg
+
+// A second launch hands over to the window already open instead of opening
+// another next to it - which also started a second connect backend. Before
+// anything else, the log file included: setupFileLogging() rotates it, and
+// a second instance would have moved the running one's log aside.
+const isPrimaryInstance = app.requestSingleInstanceLock()
+if (!isPrimaryInstance) app.exit(0)
 
 // Without this, a packaged/installed build has nowhere for console.log/
 // error to go at all — there's no terminal attached, so it's silently
@@ -56,7 +82,7 @@ function setupFileLogging(): void {
   }
   console.log(`[logging] Writing to ${logFile}`)
 }
-setupFileLogging()
+if (isPrimaryInstance) setupFileLogging()
 
 // Without this, Chromium's OSCrypt backend auto-detection on Linux only
 // tries libsecret/kwallet when it recognizes the desktop environment (GNOME/
@@ -72,10 +98,111 @@ if (
   app.commandLine.appendSwitch('password-store', 'gnome-libsecret')
 }
 
+// ── Window state ────────────────────────────────────────────────────────────
+
+const DEFAULT_WINDOW_SIZE = { width: 1200, height: 800 }
+
+interface WindowState extends Rectangle {
+  maximized: boolean
+}
+
+/** Where the window was last time, as long as that is still on a screen -
+ * a monitor unplugged since would otherwise open it out of reach. Its size
+ * is kept either way, shrunk to fit the screen it opens on. */
+function restoredBounds(saved: WindowState | undefined): Partial<Rectangle> {
+  if (!saved) return DEFAULT_WINDOW_SIZE
+  const { workArea } = screen.getDisplayMatching(saved)
+  const size = {
+    width: Math.min(saved.width, workArea.width),
+    height: Math.min(saved.height, workArea.height),
+  }
+  const onScreen =
+    saved.x < workArea.x + workArea.width &&
+    saved.x + saved.width > workArea.x &&
+    saved.y < workArea.y + workArea.height &&
+    saved.y + saved.height > workArea.y
+  return onScreen ? { ...size, x: saved.x, y: saved.y } : size
+}
+
+/** The size it had before it was maximized, so un-maximizing after the
+ * next start lands where the person left it. */
+function saveWindowState(window: BrowserWindow): void {
+  writeAppSettings({
+    ...readAppSettings(),
+    window: { ...window.getNormalBounds(), maximized: window.isMaximized() },
+  })
+}
+
+// ── Windows taskbar ─────────────────────────────────────────────────────────
+//
+// The playback buttons in the window's taskbar preview, and the song's
+// progress over its icon. Windows only: setThumbarButtons exists nowhere
+// else, and a progress bar on the macOS dock or a Linux launcher reads as a
+// download that never finishes.
+
+function taskbarIcon(path1x: string, path2x: string): Electron.NativeImage {
+  const image = nativeImage.createFromPath(path1x)
+  image.addRepresentation({ scaleFactor: 2, buffer: nativeImage.createFromPath(path2x).toPNG() })
+  return image
+}
+
+let taskbarIcons: Record<'previous' | 'play' | 'pause' | 'next', Electron.NativeImage> | null = null
+// The buttons are only set again when one of them changes: setting them
+// redraws the preview, and the progress arrives every few seconds.
+let lastThumbarKey = ''
+
+function updateTaskbar(window: BrowserWindow, state: TaskbarState): void {
+  if (process.platform !== 'win32') return
+  window.setProgressBar(state.progress ?? -1, { mode: state.playing ? 'normal' : 'paused' })
+
+  const key = JSON.stringify([
+    state.playing,
+    state.canPlay,
+    state.canPrevious,
+    state.canNext,
+    state.labels,
+  ])
+  if (key === lastThumbarKey) return
+  lastThumbarKey = key
+  taskbarIcons ??= {
+    previous: taskbarIcon(previousIcon, previousIcon2x),
+    play: taskbarIcon(playIcon, playIcon2x),
+    pause: taskbarIcon(pauseIcon, pauseIcon2x),
+    next: taskbarIcon(nextIcon, nextIcon2x),
+  }
+  const send = (command: TaskbarCommand) => () =>
+    window.webContents.send('taskbar:command', command)
+  window.setThumbarButtons([
+    {
+      tooltip: state.labels.previous,
+      icon: taskbarIcons.previous,
+      flags: state.canPrevious ? [] : ['disabled'],
+      click: send('previous'),
+    },
+    {
+      tooltip: state.labels.play,
+      icon: state.playing ? taskbarIcons.pause : taskbarIcons.play,
+      flags: state.canPlay ? [] : ['disabled'],
+      click: send('toggle-play'),
+    },
+    {
+      tooltip: state.labels.next,
+      icon: taskbarIcons.next,
+      flags: state.canNext ? [] : ['disabled'],
+      click: send('next'),
+    },
+  ])
+}
+
+ipcMain.on('taskbar:update', (event, state: TaskbarState) => {
+  const window = BrowserWindow.fromWebContents(event.sender)
+  if (window) updateTaskbar(window, state)
+})
+
 function createWindow(): void {
+  const saved = readAppSettings().window
   const mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    ...restoredBounds(saved),
     autoHideMenuBar: true,
     show: false,
     webPreferences: {
@@ -92,8 +219,10 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => {
+    if (saved?.maximized) mainWindow.maximize()
     mainWindow.show()
   })
+  mainWindow.on('close', () => saveWindowState(mainWindow))
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
     // Only hand http(s) URLs to the OS's default handler. `details.url`
@@ -217,6 +346,7 @@ const MAX_PORT = 65535
 // it is secret.
 interface AppSettings {
   connectPort?: number
+  window?: WindowState
 }
 
 function appSettingsPath(): string {
@@ -229,6 +359,10 @@ function readAppSettings(): AppSettings {
   } catch {
     return {}
   }
+}
+
+function writeAppSettings(settings: AppSettings): void {
+  writeFileSync(appSettingsPath(), JSON.stringify(settings))
 }
 
 function isValidFixedPort(port: unknown): port is number {
@@ -277,7 +411,7 @@ ipcMain.handle('app-config:set-connect-port', (_event, port: number | null): voi
   const settings = readAppSettings()
   if (port === null) delete settings.connectPort
   else settings.connectPort = port
-  writeFileSync(appSettingsPath(), JSON.stringify(settings))
+  writeAppSettings(settings)
 })
 
 // The ffmpeg shipped alongside the backend (see build/ffmpeg/README.md for
@@ -447,7 +581,16 @@ function checkForUpdates(): void {
   })
 }
 
+app.on('second-instance', () => {
+  const window = BrowserWindow.getAllWindows()[0]
+  if (!window) return
+  if (window.isMinimized()) window.restore()
+  window.show()
+  window.focus()
+})
+
 app.whenReady().then(async () => {
+  if (!isPrimaryInstance) return
   electronApp.setAppUserModelId('com.beacon.app')
 
   app.on('browser-window-created', (_, window) => {

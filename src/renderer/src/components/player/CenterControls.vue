@@ -12,6 +12,8 @@
       variant="text"
       density="comfortable"
       :disabled="isRadio"
+      :title="titles.shuffle"
+      :aria-label="titles.shuffle"
       @click="playbackStore.toggleShuffle()"
     />
     <v-btn
@@ -19,6 +21,8 @@
       variant="text"
       density="comfortable"
       :disabled="isRadio || !hasPlayable"
+      :title="titles.previous"
+      :aria-label="titles.previous"
       @click="playbackStore.playPrevious()"
     />
     <v-btn
@@ -29,6 +33,8 @@
       size="large"
       density="comfortable"
       :disabled="!hasPlayable"
+      :title="titles.play"
+      :aria-label="titles.play"
       @click="playbackStore.togglePlay()"
     />
     <v-btn
@@ -36,6 +42,8 @@
       variant="text"
       density="comfortable"
       :disabled="isRadio || !hasPlayable || !playbackStore.hasNext"
+      :title="titles.next"
+      :aria-label="titles.next"
       @click="playbackStore.playNext()"
     />
     <v-btn
@@ -44,6 +52,8 @@
       variant="text"
       density="comfortable"
       :disabled="isRadio"
+      :title="titles.repeat"
+      :aria-label="titles.repeat"
       @click="playbackStore.cycleRepeatMode()"
     />
   </div>
@@ -51,6 +61,13 @@
 
 <script lang="ts">
 import { usePlaybackStore } from '@/stores/playback'
+import { withShortcut } from '@/services/keyboardShortcuts'
+
+const REPEAT_LABELS = {
+  off: 'player.repeatOff',
+  all: 'player.repeatAll',
+  one: 'player.repeatOne',
+} as const
 
 export default {
   name: 'CenterControls',
@@ -66,6 +83,21 @@ export default {
     },
     repeatIcon() {
       return this.playbackStore.repeatMode === 'one' ? 'mdi-repeat-once' : 'mdi-repeat'
+    },
+    /** Hover text, with the key that does the same. Repeat names its mode:
+     * off and all differ only in colour otherwise. */
+    titles() {
+      const playback = this.playbackStore
+      return {
+        shuffle: withShortcut(this.$t('player.shuffle'), 'toggleShuffle'),
+        previous: withShortcut(this.$t('player.previous'), 'previousTrack'),
+        play: withShortcut(
+          this.$t(playback.isPlaying ? 'player.pause' : 'player.play'),
+          'togglePlay',
+        ),
+        next: withShortcut(this.$t('player.next'), 'nextTrack'),
+        repeat: withShortcut(this.$t(REPEAT_LABELS[playback.repeatMode]), 'cycleRepeat'),
+      }
     },
   },
 }

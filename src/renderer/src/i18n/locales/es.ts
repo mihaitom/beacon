@@ -2,6 +2,9 @@ import type de from './de'
 
 export default {
   common: {
+    moreActions: 'Más acciones',
+    scrollBack: 'Desplazar atrás',
+    scrollForward: 'Desplazar adelante',
     cancel: 'Cancelar',
     close: 'Cerrar',
     loading: 'Cargando',
@@ -231,6 +234,15 @@ export default {
     empty: 'Tu servidor no tiene nada sobre esta pista más allá de lo que ya muestra la lista.',
   },
   player: {
+    play: 'Reproducir',
+    pause: 'Pausa',
+    previous: 'Anterior',
+    next: 'Siguiente',
+    shuffle: 'Aleatorio',
+    repeatOff: 'Repetir desactivado',
+    repeatAll: 'Repetir todo',
+    repeatOne: 'Repetir una',
+    withShortcut: '{label} ({keys})',
     nothingPlaying: 'Nada reproduciéndose',
     mute: 'Silenciar',
     volume: 'Volumen',

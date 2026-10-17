@@ -16,6 +16,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Clicking the artist of a song in the queue opens the artist's page
 - With DJ mixes on, the queue can be sorted by tempo, so more songs follow one with a similar BPM and get mixed instead of crossfaded. Offered when most songs in the queue have a BPM tag
 - The release notes have a "Coming up" entry that shows what is being worked on for the next version, and any releases newer than the one you are running
+- Desktop app: the window opens where and as large as it was last time, starting Beacon a second time brings the open window to the front instead of opening another, and the window title shows what is playing
+- On Windows, the taskbar preview has previous, play/pause and next buttons, and the taskbar icon shows how far into the song playback is
+- The player bar's buttons explain themselves on hover, with their keyboard shortcut
 
 ### Changed
 

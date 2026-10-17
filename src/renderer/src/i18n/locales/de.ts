@@ -1,5 +1,8 @@
 export default {
   common: {
+    moreActions: 'Weitere Aktionen',
+    scrollBack: 'Zurückblättern',
+    scrollForward: 'Weiterblättern',
     cancel: 'Abbrechen',
     close: 'Schließen',
     loading: 'Wird geladen',
@@ -228,6 +231,15 @@ export default {
     empty: 'Dein Server hat zu diesem Track nichts über das hinaus, was die Liste schon zeigt.',
   },
   player: {
+    play: 'Abspielen',
+    pause: 'Pause',
+    previous: 'Zurück',
+    next: 'Weiter',
+    shuffle: 'Zufallswiedergabe',
+    repeatOff: 'Wiederholen aus',
+    repeatAll: 'Alle wiederholen',
+    repeatOne: 'Einen wiederholen',
+    withShortcut: '{label} ({keys})',
     nothingPlaying: 'Nichts spielt',
     mute: 'Stummschalten',
     volume: 'Lautstärke',

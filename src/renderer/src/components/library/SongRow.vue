@@ -134,6 +134,8 @@
           variant="text"
           density="comfortable"
           size="small"
+          :title="$t(song.starred ? 'library.unstar' : 'library.star')"
+          :aria-label="$t(song.starred ? 'library.unstar' : 'library.star')"
           @click.stop="$emit('toggle-star', song)"
         />
         <v-btn
@@ -141,6 +143,8 @@
           variant="text"
           density="comfortable"
           size="small"
+          :title="$t('common.moreActions')"
+          :aria-label="$t('common.moreActions')"
           @click.stop="openMenu($event)"
         />
       </div>

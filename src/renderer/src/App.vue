@@ -31,6 +31,8 @@ import { useDrawersStore } from '@/stores/drawers'
 import { useIsMobileWeb } from '@/composables/useIsMobileWeb'
 import { initKeyboardShortcuts } from '@/services/keyboardShortcuts'
 import { initNavigationHistory } from '@/services/navigationHistory'
+import { initWindowTitle } from '@/services/windowTitle'
+import { initTaskbar } from '@/services/taskbar'
 import { initAccountScopedStores } from '@/services/accountScopedStores'
 import { routeInOtherShell } from '@/services/shellRoutes'
 
@@ -121,6 +123,8 @@ export default {
     // the mouse's own back/forward buttons — see that module for why the
     // router's history is the only bookkeeping this needs.
     initNavigationHistory()
+    initWindowTitle()
+    initTaskbar()
     // Not gated on media-server auth — same reasoning as the Remote Control
     // status refresh below, just checking GitHub instead of connect. Not
     // awaited: the settings dot and AboutSection.vue both read the store

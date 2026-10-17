@@ -4,6 +4,12 @@ artifactName: ${productName}-${version}-${os}-${arch}.${ext}
 files:
     - 'out/**/*'
     - 'package.json'
+    # Files the main process loads by path (`import ... from '...?asset'`,
+    # see src/main/index.ts's taskbar icons). Unpacked, so they are real
+    # files on disk rather than entries inside app.asar.
+    - 'resources/**/*'
+asarUnpack:
+    - 'resources/**/*'
 npmRebuild: false
 
 # Bundled connect backend (see src/main/index.ts's startConnectServer()) —
