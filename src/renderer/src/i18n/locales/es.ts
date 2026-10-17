@@ -1228,6 +1228,8 @@ export default {
     albums: 'Álbumes',
     songs: 'Canciones',
     noneYet: 'Todavía no se ha marcado ningún favorito.',
+    noSongsYet: 'Todavía no hay canciones favoritas.',
+    noAlbumsYet: 'Todavía no hay álbumes favoritos.',
   },
   search: {
     label: 'Buscar',
@@ -1294,7 +1296,6 @@ export default {
     minutes: '{minutes}m',
   },
   mobile: {
-    tabNowPlaying: 'Reproduciendo ahora',
     tabQueue: 'Cola',
     playOn: 'Reproducir en',
     needsPairing: 'Necesita emparejarse primero en la aplicación Beacon',

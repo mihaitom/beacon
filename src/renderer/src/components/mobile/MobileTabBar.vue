@@ -80,14 +80,17 @@ export default {
     },
     items() {
       return [
-        {
-          to: '/m/now-playing',
-          icon: 'mdi-play-circle-outline',
-          label: this.$t('mobile.tabNowPlaying'),
-        },
+        // No Now Playing tab: the player bar above this one already leads
+        // there whenever there is anything to show. The queue takes its
+        // place up front as the other tab about what is playing; then the
+        // library and what is picked out of it, and radio, which is not
+        // part of it, last.
         { to: '/m/queue', icon: 'mdi-playlist-music', label: this.$t('mobile.tabQueue') },
-        { to: '/m/playlists', icon: 'mdi-playlist-play', label: this.$t('nav.playlists') },
         { to: '/m/library', icon: 'mdi-music-note', label: this.$t('nav.library') },
+        this.authStore.capabilities.favorites
+          ? { to: '/m/favorites', icon: 'mdi-heart', label: this.$t('nav.favorites') }
+          : null,
+        { to: '/m/playlists', icon: 'mdi-playlist-play', label: this.$t('nav.playlists') },
         this.authStore.capabilities.internetRadio
           ? { to: '/m/radio', icon: 'mdi-radio', label: this.$t('nav.radio') }
           : null,

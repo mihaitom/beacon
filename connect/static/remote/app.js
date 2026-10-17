@@ -4,6 +4,7 @@ import { startRouter } from './js/router.js';
 import { initMiniPlayer } from './js/mini-player.js';
 
 import './js/views/now-playing.js';
+import './js/views/favorites.js';
 import './js/views/queue.js';
 import './js/views/playlists.js';
 import './js/views/library.js';

@@ -10,7 +10,7 @@ import { useRemoteControlStore } from '@/stores/remoteControl'
 import { useAuthStore } from '@/stores/auth'
 import { useAutoplayStore } from '@/stores/autoplay'
 import { PartyRefusal, usePartyStore } from '@/stores/party'
-import type { Song } from '@/types/library'
+import type { Album, Song } from '@/types/library'
 import type { DeviceType, DiscoveredDevice } from '@/services/connect/types'
 import { faviconSizeStep, RADIO_FAVICON_CACHE_VERSION } from '@/services/connect/radio'
 import { matchesAllTerms } from '@/services/textSearch'
@@ -85,6 +85,18 @@ export function toRemoteSong(song: Song): RemoteSong {
     cover_art_url: remoteCoverArtUrl(song.coverArtId),
     cover_art_id: song.coverArtId ?? null,
     duration: song.duration,
+  }
+}
+
+/** What an album row on the phone needs, and nothing more. */
+function toRemoteAlbum(album: Album) {
+  return {
+    id: album.id,
+    name: album.name,
+    artist: album.artist,
+    year: album.year,
+    cover_art_url: remoteCoverArtUrl(album.coverArtId),
+    cover_art_id: album.coverArtId ?? null,
   }
 }
 
@@ -256,6 +268,20 @@ export async function handleRemoteCommand(
       await playback.playSongList(playlist.songs, startIndex, true, playlist.songs.length > 1)
       return
     }
+    case 'play-favorites': {
+      // Fetched again rather than trusting the list the phone was shown:
+      // a star toggled on the desktop since then shifts every index after
+      // it, so the id the phone tapped is what decides where to start.
+      await library.fetchStarred()
+      const songs = library.starred.songs
+      const songId = String(payload.songId)
+      const startIndex = Number(payload.startIndex)
+      const position =
+        songs[startIndex]?.id === songId ? startIndex : songs.findIndex((s) => s.id === songId)
+      if (position < 0) return
+      await playback.playSongList(songs, position, true, songs.length > 1)
+      return
+    }
     case 'play-radio-station': {
       if (!library.radioStations.length) await library.fetchRadioStations()
       const station = library.radioStations.find((s) => s.id === payload.stationId)
@@ -354,14 +380,7 @@ export async function resolveRemoteQuery(
       const offset = Number(payload.offset ?? 0)
       const limit = Number(payload.limit ?? 50)
       return {
-        items: filtered.slice(offset, offset + limit).map((a) => ({
-          id: a.id,
-          name: a.name,
-          artist: a.artist,
-          year: a.year,
-          cover_art_url: remoteCoverArtUrl(a.coverArtId),
-          cover_art_id: a.coverArtId ?? null,
-        })),
+        items: filtered.slice(offset, offset + limit).map(toRemoteAlbum),
         total: filtered.length,
       }
     }
@@ -369,14 +388,7 @@ export async function resolveRemoteQuery(
       try {
         const album = await library.fetchAlbum(String(payload.albumId))
         return {
-          album: {
-            id: album.id,
-            name: album.name,
-            artist: album.artist,
-            year: album.year,
-            cover_art_url: remoteCoverArtUrl(album.coverArtId),
-            cover_art_id: album.coverArtId ?? null,
-          },
+          album: toRemoteAlbum(album),
           songs: album.songs.map(toRemoteSong),
         }
       } catch {
@@ -405,6 +417,21 @@ export async function resolveRemoteQuery(
           cover_art_id: playlist.coverArtId ?? null,
         },
         songs: playlist.songs.map(toRemoteSong),
+      }
+    }
+    case 'favorites-request': {
+      // Songs and albums, as on the phone shell's own favourites tab (see
+      // MobileFavoritesView.vue). `supported` lets the phone say why the
+      // list is empty on a server without favourites (Plex), instead of
+      // claiming none were marked.
+      if (!useAuthStore().capabilities.favorites) {
+        return { supported: false, songs: [], albums: [] }
+      }
+      await library.fetchStarred()
+      return {
+        supported: true,
+        songs: library.starred.songs.map(toRemoteSong),
+        albums: library.starred.albums.map(toRemoteAlbum),
       }
     }
     case 'radio-request': {

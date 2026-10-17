@@ -403,6 +403,11 @@ async def get_playlist(playlist_id: str):
     return await relay_query("playlist-request", {"playlistId": playlist_id})
 
 
+@router.get("/favorites", dependencies=[Depends(require_remote_password)])
+async def list_favorites():
+    return await relay_query("favorites-request", {})
+
+
 @router.get("/radio-stations", dependencies=[Depends(require_remote_password)])
 async def list_radio_stations():
     return await relay_query("radio-request", {})

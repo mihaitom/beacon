@@ -1233,6 +1233,8 @@ export default {
     albums: 'Albums',
     songs: 'Titres',
     noneYet: 'Aucun favori marqué pour le moment.',
+    noSongsYet: 'Aucun titre favori pour le moment.',
+    noAlbumsYet: 'Aucun album favori pour le moment.',
   },
   search: {
     label: 'Rechercher',
@@ -1299,7 +1301,6 @@ export default {
     minutes: '{minutes}m',
   },
   mobile: {
-    tabNowPlaying: 'En cours de lecture',
     tabQueue: "File d'attente",
     playOn: 'Lire sur',
     needsPairing: "Doit d'abord être associé dans l'application Beacon",

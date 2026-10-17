@@ -321,6 +321,44 @@ describe('handleRemoteCommand', () => {
     expect(playSpy).toHaveBeenLastCalledWith(playlist.songs, 0, true, true)
   })
 
+  describe('play-favorites', () => {
+    function stubFavorites(songs: ReturnType<typeof makeSong>[]) {
+      const library = useLibraryStore()
+      vi.spyOn(library, 'fetchStarred').mockImplementation(async () => {
+        library.starred = { artists: [], albums: [], songs }
+      })
+      return vi.spyOn(usePlaybackStore(), 'playSongList').mockResolvedValue()
+    }
+
+    it('plays the whole list on from the tapped song', async () => {
+      const songs = [makeSong('a'), makeSong('b'), makeSong('c')]
+      const playSongList = stubFavorites(songs)
+
+      await handleRemoteCommand('play-favorites', { songId: 'b', startIndex: 1 })
+
+      expect(playSongList).toHaveBeenCalledWith(songs, 1, true, true)
+    })
+
+    /** A star added on the desktop after the phone fetched its list moves
+     * every song behind it one place down. */
+    it('goes by the song when the list has shifted since the phone saw it', async () => {
+      const songs = [makeSong('new'), makeSong('a'), makeSong('b')]
+      const playSongList = stubFavorites(songs)
+
+      await handleRemoteCommand('play-favorites', { songId: 'b', startIndex: 1 })
+
+      expect(playSongList).toHaveBeenCalledWith(songs, 2, true, true)
+    })
+
+    it('does nothing for a song that is no longer a favourite', async () => {
+      const playSongList = stubFavorites([makeSong('a')])
+
+      await handleRemoteCommand('play-favorites', { songId: 'gone', startIndex: 0 })
+
+      expect(playSongList).not.toHaveBeenCalled()
+    })
+  })
+
   describe('play-album', () => {
     it('plays the album in its own track order', async () => {
       const library = useLibraryStore()
@@ -685,6 +723,42 @@ describe('resolveRemoteQuery', () => {
 
     expect(result).toEqual({
       items: [{ id: 'p1', name: 'Chill', song_count: 3, cover_art_url: null, cover_art_id: null }],
+    })
+  })
+
+  describe('favorites-request', () => {
+    it('sends the favourite songs and albums', async () => {
+      useAuthStore().serverType = 'subsonic'
+      const library = useLibraryStore()
+      vi.spyOn(library, 'fetchStarred').mockImplementation(async () => {
+        library.starred = {
+          artists: [],
+          albums: [{ id: 'al1', name: 'Blue', artist: 'X', year: 1999, coverArtId: null } as never],
+          songs: [makeSong('a')],
+        }
+      })
+
+      const result = (await resolveRemoteQuery('favorites-request', {})) as {
+        supported: boolean
+        songs: { id: string }[]
+        albums: { id: string }[]
+      }
+
+      expect(result.supported).toBe(true)
+      expect(result.songs.map((s) => s.id)).toEqual(['a'])
+      expect(result.albums.map((a) => a.id)).toEqual(['al1'])
+    })
+
+    /** Plex has no favourites; an empty list alone would read as "none
+     * marked yet". */
+    it('says so on a server without favourites, without asking it', async () => {
+      useAuthStore().serverType = 'plex'
+      const fetchStarred = vi.spyOn(useLibraryStore(), 'fetchStarred')
+
+      const result = await resolveRemoteQuery('favorites-request', {})
+
+      expect(result).toEqual({ supported: false, songs: [], albums: [] })
+      expect(fetchStarred).not.toHaveBeenCalled()
     })
   })
 

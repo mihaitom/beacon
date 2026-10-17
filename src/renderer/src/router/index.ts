@@ -180,6 +180,11 @@ const router = createRouter({
     // than 404ing a bookmark or a link someone already has.
     { path: '/m/songs', redirect: { name: 'm-library' } },
     {
+      path: '/m/favorites',
+      name: 'm-favorites',
+      component: () => import('../views/mobile/MobileFavoritesView.vue'),
+    },
+    {
       path: '/m/radio',
       name: 'm-radio',
       component: () => import('../views/mobile/MobileRadioView.vue'),
@@ -209,6 +214,7 @@ const CAPABILITY_ROUTES: Partial<
   'm-radio': 'internetRadio',
   stats: 'playHistoryStats',
   favorites: 'favorites',
+  'm-favorites': 'favorites',
   'smart-playlist-new': 'smartPlaylistEditor',
   'smart-playlist-rules': 'smartPlaylistEditor',
 }

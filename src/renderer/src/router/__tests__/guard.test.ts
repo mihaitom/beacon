@@ -12,6 +12,7 @@ vi.mock('../../views/ServerLoginView.vue', () => stub)
 vi.mock('../../views/HomeView.vue', () => stub)
 vi.mock('../../views/FavoritesView.vue', () => stub)
 vi.mock('../../views/mobile/MobileNowPlayingView.vue', () => stub)
+vi.mock('../../views/mobile/MobileFavoritesView.vue', () => stub)
 vi.mock('../../views/PlaylistsView.vue', () => stub)
 vi.mock('../../views/PlaylistDetailView.vue', () => stub)
 vi.mock('../../views/SmartPlaylistEditorView.vue', () => stub)
@@ -82,6 +83,17 @@ describe('the router auth guard', () => {
 
     expect(auth.capabilities.favorites).toBe(false)
     expect(router.currentRoute.value.name).toBe('home')
+  })
+
+  it('keeps the phone shell off the favourites tab on such a server too', async () => {
+    const router = await freshRouter()
+    const auth = useAuthStore()
+    auth.authenticated = true
+    auth.serverType = 'plex'
+
+    await router.push('/m/favorites')
+
+    expect(router.currentRoute.value.name).not.toBe('m-favorites')
   })
 
   describe('the smart playlist editor', () => {

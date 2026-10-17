@@ -285,6 +285,29 @@ def test_albums_query_relays_search_and_paging_to_the_renderer(client, monkeypat
     assert seen["payload"] == {"search": "blue", "offset": 50, "limit": 25}
 
 
+def test_favorites_query_is_relayed_to_the_renderer(client, monkeypatch):
+    client.post("/remote/enable")
+    remote.renderer_connected = True
+    seen = {}
+
+    async def capture(event, payload):
+        seen["event"] = event
+        return {"supported": True, "songs": [], "albums": []}
+
+    monkeypatch.setattr(remote_routes, "relay_query", capture)
+    resp = client.get("/remote/favorites", headers={"X-Remote-Password": remote.password})
+
+    assert resp.status_code == 200
+    assert seen["event"] == "favorites-request"
+    assert resp.json() == {"supported": True, "songs": [], "albums": []}
+
+
+def test_favorites_query_401_with_a_wrong_password(client):
+    client.post("/remote/enable")
+    resp = client.get("/remote/favorites", headers={"X-Remote-Password": "wrong"})
+    assert resp.status_code == 401
+
+
 def test_albums_query_504_on_timeout(client, monkeypatch):
     monkeypatch.setattr(remote_routes, "QUERY_TIMEOUT", 0.05)
     client.post("/remote/enable")

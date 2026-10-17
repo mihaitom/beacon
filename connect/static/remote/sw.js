@@ -26,6 +26,7 @@ const SHELL_PATHS = [
   './js/album-row.js',
   './js/song-row.js',
   './js/views/now-playing.js',
+  './js/views/favorites.js',
   './js/views/queue.js',
   './js/views/playlists.js',
   './js/views/library.js',

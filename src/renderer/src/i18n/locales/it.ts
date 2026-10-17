@@ -1228,6 +1228,8 @@ export default {
     albums: 'Album',
     songs: 'Brani',
     noneYet: 'Nessun preferito ancora contrassegnato.',
+    noSongsYet: 'Nessun brano preferito ancora.',
+    noAlbumsYet: 'Nessun album preferito ancora.',
   },
   search: {
     label: 'Cerca',
@@ -1294,7 +1296,6 @@ export default {
     minutes: '{minutes}m',
   },
   mobile: {
-    tabNowPlaying: 'In riproduzione',
     tabQueue: 'Coda',
     playOn: 'Riproduci su',
     needsPairing: "Deve prima essere associato nell'app Beacon",

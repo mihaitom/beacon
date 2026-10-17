@@ -37,6 +37,7 @@ describe('routeInOtherShell', () => {
       ['m-now-playing', 'now-playing'],
       ['m-playlists', 'playlists'],
       ['m-radio', 'radio'],
+      ['m-favorites', 'favorites'],
       ['m-library', 'songs'],
     ])('takes %s to %s', (from, to) => {
       expect(landing(route(from), false)?.name).toBe(to)
@@ -78,6 +79,7 @@ describe('routeInOtherShell', () => {
       ['now-playing', 'm-now-playing'],
       ['playlists', 'm-playlists'],
       ['radio', 'm-radio'],
+      ['favorites', 'm-favorites'],
       ['songs', 'm-library'],
     ])('takes %s to %s', (from, to) => {
       expect(landing(route(from), true)?.name).toBe(to)
@@ -103,7 +105,7 @@ describe('routeInOtherShell', () => {
 
     /** No phone design for these; the phone shell shows them as they are,
      * the way it does when Now Playing links to an artist. */
-    it.each(['artists', 'artist-detail', 'genres', 'search', 'stats', 'settings', 'favorites'])(
+    it.each(['artists', 'artist-detail', 'genres', 'search', 'stats', 'settings'])(
       'leaves %s where it is',
       (name) => {
         expect(routeInOtherShell(route(name), true)).toBeNull()
@@ -124,6 +126,7 @@ describe('routeInOtherShell', () => {
     route('m-library', {}, { tab: 'albums' }),
     route('m-album-detail', { id: 'a1' }),
     route('m-radio'),
+    route('m-favorites'),
   ])('round-trips $name', (start) => {
     const there = landing(start, false)!
     const back = landing(route(String(there.name), there.params as never, there.query), true)!

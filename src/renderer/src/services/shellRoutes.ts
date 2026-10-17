@@ -33,6 +33,8 @@ export function routeInOtherShell(
         return { to: { name: 'm-library', query: { tab: 'albums' } } }
       case 'album-detail':
         return { to: { name: 'm-album-detail', params: { id } } }
+      case 'favorites':
+        return { to: { name: 'm-favorites' } }
       case 'radio':
         return { to: { name: 'm-radio' } }
       default:
@@ -52,6 +54,8 @@ export function routeInOtherShell(
       return { to: { name: route.query.tab === 'albums' ? 'albums' : 'songs' } }
     case 'm-album-detail':
       return { to: { name: 'album-detail', params: { id } } }
+    case 'm-favorites':
+      return { to: { name: 'favorites' } }
     case 'm-radio':
       return { to: { name: 'radio' } }
     default:

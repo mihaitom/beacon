@@ -1219,6 +1219,8 @@ export default {
     albums: 'Albums',
     songs: 'Songs',
     noneYet: 'No favorites marked yet.',
+    noSongsYet: 'No favorite songs yet.',
+    noAlbumsYet: 'No favorite albums yet.',
   },
   search: {
     label: 'Search',
@@ -1284,7 +1286,6 @@ export default {
     minutes: '{minutes}m',
   },
   mobile: {
-    tabNowPlaying: 'Now Playing',
     tabQueue: 'Queue',
     playOn: 'Play on',
     needsPairing: 'Needs pairing in the Beacon app first',

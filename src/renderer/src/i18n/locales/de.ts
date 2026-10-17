@@ -1228,6 +1228,8 @@ export default {
     albums: 'Alben',
     songs: 'Songs',
     noneYet: 'Noch keine Favoriten markiert.',
+    noSongsYet: 'Noch keine Lieblingssongs.',
+    noAlbumsYet: 'Noch keine Lieblingsalben.',
   },
   search: {
     label: 'Suche',
@@ -1293,7 +1295,6 @@ export default {
     minutes: '{minutes} Min',
   },
   mobile: {
-    tabNowPlaying: 'Jetzt läuft',
     // Nicht "Warteschlange" wie überall sonst: ein Fünftel der Tab-Leiste
     // ist auf einem 320px-Display 60px breit, das Wort braucht 95px und
     // stünde dort dauerhaft abgeschnitten.

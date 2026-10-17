@@ -109,6 +109,10 @@ export function fetchPlaylist(id) {
   return request(`/remote/playlists/${encodeURIComponent(id)}`);
 }
 
+export function fetchFavorites() {
+  return request('/remote/favorites');
+}
+
 export function fetchRadioStations() {
   return request('/remote/radio-stations');
 }
