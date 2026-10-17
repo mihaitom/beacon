@@ -52,8 +52,8 @@ from .mix_dsp import DELAY_FRAMES, BandSplitter, Dither, pcm_to_float, soft_limi
 from .mix_output import FRAME_BYTES, MixConnection, PcmRing
 from .mix_timeline import SAMPLE_RATE, Timeline
 from .streamer import pcm_decode_cmd
-from .timestretch import HOP as _STRETCH_HOP
-from .timestretch import Wsola
+from .timestretch import HISTORY as _STRETCH_HISTORY
+from .timestretch import Stretcher
 from .transition_planner import (
     BANDS,
     Settings,
@@ -88,6 +88,9 @@ _PREOPEN_SECONDS = 30.0
 _PREOPEN_CROSSFADE_SECONDS = 90.0
 # Rendered per tick at most in crossfade mode - see step().
 _MAX_DSP_FRAMES_PER_STEP = 2 * SAMPLE_RATE
+# Read from the deck beyond what the stretcher asks for, so it is not fed
+# a few hundred frames at a time.
+_STRETCH_READ_AHEAD = 4096
 # How much of each song's end/start is analysed for a transition.
 _ANALYSE_SECONDS = 60.0
 # How long the lyrics lookup for where the singing starts may take; the
@@ -394,9 +397,9 @@ class _Stretch:
     start; the overlap begins at `ease_frames`."""
 
     plan: TransitionPlan
-    wsola: Wsola
+    stretcher: Stretcher
     ready: np.ndarray = field(default_factory=lambda: np.zeros((0, 2), dtype=np.float32))
-    made: int = 0  # frames taken out of the wsola
+    made: int = 0  # frames taken out of the stretcher
     used: int = 0  # frames rendered
     next_mark: int = 0
 
@@ -466,7 +469,7 @@ class MixEngine:
         self._dsp = self.settings.mode == "crossfade"
         self._shared = BandSplitter()
         self._dither = Dither()
-        # The last frames played, for a stretch to start from (Wsola.prime).
+        # The last frames played, for a stretch to start from (Stretcher.prime).
         self._tail = np.zeros((0, 2), dtype=np.float32)
         self._plan: TransitionPlan | None = None
         # The song self._plan leads out of: self._deck's until the plan is
@@ -827,7 +830,7 @@ class MixEngine:
                     return self._advance_dsp(parts, written)
                 return 0
             x = _take_float(deck, n)
-        self._tail = np.concatenate([self._tail, x])[-_STRETCH_HOP:]
+        self._tail = np.concatenate([self._tail, x])[-_STRETCH_HISTORY:]
         self._audio_flowing(written)
         parts.append(self._shared.process(x, split=False)[0])
         return len(x)
@@ -949,12 +952,9 @@ class MixEngine:
         )
 
     def _begin_stretch(self, plan: TransitionPlan) -> None:
-        wsola = Wsola()
-        tail = self._tail
-        if len(tail) < _STRETCH_HOP:
-            tail = np.concatenate([np.zeros((_STRETCH_HOP - len(tail), 2), np.float32), tail])
-        wsola.prime(tail)
-        self._stretch = _Stretch(plan, wsola)
+        stretcher = Stretcher(SAMPLE_RATE)
+        stretcher.prime(self._tail)
+        self._stretch = _Stretch(plan, stretcher)
         logger.debug(
             f"[mix] {self.epoch} easing {self._deck.item.song_id if self._deck else '?'} "
             f"into {plan.bpm_in:.1f} BPM from {plan.stretch_start:.1f}s"
@@ -972,17 +972,17 @@ class MixEngine:
             def rate(k: int, base: int = stretch.made) -> float:
                 return rate_at(stretch.plan.out_rate, stretch.time(base + k))
 
-            missing = stretch.wsola.needed(rate(0))
+            missing = stretch.stretcher.needed(rate(0))
             if missing > 0:
                 if deck.available == 0:
                     if not deck.finished:
                         break
-                    stretch.wsola.push(np.zeros((missing, 2), dtype=np.float32))
+                    stretch.stretcher.push(np.zeros((missing, 2), dtype=np.float32))
                     continue
-                take = min(deck.available, missing + _STRETCH_HOP * 4)
-                stretch.wsola.push(_take_float(deck, take))
+                take = min(deck.available, missing + _STRETCH_READ_AHEAD)
+                stretch.stretcher.push(_take_float(deck, take))
                 continue
-            got = stretch.wsola.pull(frames - len(stretch.ready), rate)
+            got = stretch.stretcher.pull(frames - len(stretch.ready), rate)
             if len(got) == 0:
                 break
             stretch.ready = np.concatenate([stretch.ready, got])

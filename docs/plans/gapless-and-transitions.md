@@ -111,15 +111,16 @@ mids and highs rise (equal-power), its bass stays out. Downbeat at half:
 the basses swap in 15 ms. Second half: outgoing mids and highs fall.
 
 The stream runs at the incoming tempo through the overlap: the **outgoing**
-song eases into it over the 8 bars before (`core/timestretch.py`, WSOLA,
-±9 ms search) and holds it to the end; the incoming song is never
+song eases into it over the 8 bars before (`core/timestretch.py`, Rubber
+Band R3 since listening 4 in `docs/investigations/beatmix-pop-rock.md`;
+WSOLA before) and holds it to the end; the incoming song is never
 stretched. That was the other way round at first - the incoming song
 stretched through the overlap and eased back over 8 bars - and whatever
 trace the stretch leaves then sat on the song that had just taken over,
 for its first ~30 s. Now it sits on the song on its way out, and from the
-swap on the new song is sample for sample what was decoded. WSOLA starts
-mid-song primed with the last frames played (`Wsola.prime()`): at rate 1 it
-reproduces its input exactly, so the ease begins without a seam. A plan
+swap on the new song is sample for sample what was decoded. The stretcher
+starts mid-song primed with the last frames played (`Stretcher.prime()`),
+so the ease begins without a seam. A plan
 that arrives after its ease should have begun eases over what is left, down
 to two bars; with less it becomes an ordinary crossfade of the crossfade's
 own length, ending where the beatmix would have. A queue change during the
@@ -225,9 +226,13 @@ new run, which the broadcaster follows like any other jump of the host's.
 
 Nothing new in the build: PCM in and out (`s16le` muxer and demuxer) and
 all encoders were already there, and splitting, stretching and limiting run
-in numpy. Plan B for the stretch, if WSOLA ever fails a listening test, is
-`atempo` driven by `asendcmd`; rubberband is out (a static librubberband on
-three platforms, still out of process).
+in numpy. The stretch was WSOLA in numpy too, until it failed a listening
+test on voices (`docs/investigations/beatmix-pop-rock.md`). It is now
+Rubber Band in process, through `pylibrb` - prebuilt with a static
+librubberband where wheels exist, built against the system's library on
+Linux arm64 and in the Docker image - not ffmpeg's `rubberband` filter,
+which would have meant a librubberband in the ffmpeg build on every
+platform and a stretch out of process.
 
 ## Still open
 
@@ -244,6 +249,6 @@ three platforms, still out of process).
   element's clock, which is the mix's stream time, and a live playlist may
   be shown as a live broadcast.
 - **Listening.** House 120 into 128, drum & bass into half-time, hip-hop,
-  pop with tempo drift, a live recording - and WSOLA at the edges of its 8 %.
+  pop with tempo drift, a live recording - and the stretch at the edges of its range.
 - **CPU** on the smallest host: two decks decoding, one of them stretched,
   during a beatmix.

@@ -235,10 +235,86 @@ of diminishing returns for this round of changes.
   literally and dropped the song, which is how it showed. The join now
   takes the next downbeat inside the song.
 
+## The stretcher (2026-10-17)
+
+**Why WSOLA cannot get there.** Each frame gets one time offset, and the
+match is dominated by the bass. Voice and chords repeat at other periods,
+so at the splice they half-cancel and pump at the hop rate (43 Hz) - the
+"fan". A smaller rate only makes splices rarer, not cleaner, which is why
+-0.7 % was still heard.
+
+**Ruled out as the fix: the match's normalisation.** `_best_fit()` divides
+by the candidate's plain level while the reference is windowed, so the
+natural continuation does not always win even when it is in range.
+Weighting the level with the window halves the needless jumps at -0.7 %
+(34 → 17 of 430 steps, synthetic voice + bass) and changes nothing at
+-1.8 % or 3 %. Correct, but not what is heard.
+
+**Candidates**, both with wheels for Windows, macOS x64/arm and Linux x64,
+**none for Linux arm64** (which the desktop and Docker builds both need):
+Rubber Band R3 (`pylibrb`, GPL - fine for Beacon's GPL-3.0, realtime
+mode takes a changing ratio) and Signalsmith Stretch (`python-stretch`,
+MIT). Wrapped behind Wsola's push/needed/pull interface for the probe,
+primed with 16384 frames of history instead of one hop.
+
+Checked before listening, with a click track over a tone bed:
+
+- Timing against the rate integral: Signalsmith ±0.3 ms, Rubber Band
+  ±5 ms (it buffers ~4000 input frames, which a rate change then plays at
+  the new ratio), WSOLA ±9 ms (its own search tolerance). Neither library
+  adds a flam.
+- Both already align their output to the input once primed: adding
+  `get_start_delay()` / the input+output latency on top put them 2045 and
+  5286 frames early.
+- Signalsmith via the binding drifts ~700 frames in 25 s unless every
+  block's ratio is set to exactly in/out of that block - it rounds the
+  output length per call.
+- The `python-stretch` binding comes out a constant 4.07 dB down (music,
+  noise, sine; rates 0.97-1.03). Compensated, or it would have given
+  itself away in a blind test.
+- Clicks come out softer from both (peak 0.46 / 0.38 against 0.74):
+  transients are smeared, to be judged by ear.
+
+**Listening 4**: 8 pairs from -4.5 % to +2.6 %, the three stretchers
+blind as A/B/C, same plan, no lyrics (lrclib was answering 503), best and
+worst per pair.
+
+| Pair                                 | Rate   | Best                          | Worst                                 |
+| ------------------------------------ | ------ | ----------------------------- | ------------------------------------- |
+| Bananarama → Nico & Vinz             | -2.9 % | Rubber Band                   | WSOLA                                 |
+| Black Eyed Peas → David Hanselmann   | -1.6 % | Rubber Band                   | Signalsmith                           |
+| Depeche Mode → Felix Jaehn           | -4.5 % | Rubber Band                   | WSOLA (Signalsmith also poor)         |
+| Eric Prydz → Duck Sauce              | +2.4 % | WSOLA (Rubber Band also good) | Signalsmith                           |
+| Lady Gaga - Just Dance → Billie Jean | -1.8 % | Rubber Band                   | Signalsmith                           |
+| Uptown Funk → Save Your Tears        | +2.6 % | Rubber Band                   | WSOLA (Signalsmith also weak)         |
+| Queen → Eye of the Tiger             | -1.5 % | WSOLA (Rubber Band also good) | Signalsmith, "a hum"                  |
+| Gin and Juice → Hypnotize            | -0.7 % | Rubber Band                   | Signalsmith, hum (WSOLA distorts too) |
+
+**Rubber Band best in 6 of 8 and never worst**; the two it did not win,
+the listener called it good as well. Signalsmith never best, worst five
+times, with a hum of its own. Including the one pair past today's
+`MAX_STRETCH` (-4.5 %), where WSOLA was worst.
+
+Cost, 30 s stretched on one core of an i9-9900KF: WSOLA 48x realtime,
+Signalsmith 15x, Rubber Band R3 10x. Only the ease and the overlap are
+stretched, but a small server (a Pi) is not measured yet.
+
 ## Next
 
-1. **The stretcher's quality** - artefacts are heard even under 2 %
-   (listening 3), so this is now the most audible fault left.
+**Built (same day)**: `core/timestretch.py` is Rubber Band R3 via
+`pylibrb`, WSOLA is gone. Two things only the engine-length tests showed:
+setting the ratio anew every block (as that block's in/out length, which
+was what listening 4 heard) drifted ~6 ms over a 40 s hold and kept going,
+while setting exactly 1/rate, only when it changes, holds within ±2.3 ms;
+and Rubber Band's start pad does nothing once 16384 frames of history go
+in first. The sdist does not compile against nanobind 2 (pinned `<2` as a
+build constraint); Linux arm64 builds it against Ubuntu's librubberband
+3.3.0, the Docker image against Alpine's 4.0.0, both R3 - checked in
+stock containers on amd64 only. pylibrb releases the GIL while it works,
+should the stretch ever need to leave the event loop on small hardware.
+
+1. **`MAX_STRETCH` back up?** -4.5 % was Rubber Band's clearest win; a
+   round of pairs at 4-6 % decides how far.
 2. **The outgoing song's last sung line**, the other half of the lyrics:
    not starting the overlap while the old song is still mid-verse.
 

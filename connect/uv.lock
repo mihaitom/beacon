@@ -6,6 +6,9 @@ resolution-markers = [
     "python_full_version < '3.14'",
 ]
 
+[manifest]
+build-constraints = [{ name = "nanobind", specifier = "<2" }]
+
 [[package]]
 name = "aiohappyeyeballs"
 version = "2.7.1"
@@ -193,6 +196,7 @@ dependencies = [
     { name = "pillow" },
     { name = "pyatv" },
     { name = "pychromecast" },
+    { name = "pylibrb" },
     { name = "python-dotenv" },
     { name = "soco" },
     { name = "zeroconf" },
@@ -220,6 +224,7 @@ requires-dist = [
     { name = "pillow", specifier = ">=12.3.0" },
     { name = "pyatv", specifier = ">=0.17.0" },
     { name = "pychromecast", specifier = ">=14.0.0" },
+    { name = "pylibrb", specifier = ">=0.1.2" },
     { name = "python-dotenv", specifier = ">=1.2.2" },
     { name = "soco", specifier = ">=0.31.0" },
     { name = "zeroconf", specifier = ">=0.150.0" },
@@ -1731,6 +1736,21 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/26/60/d881fa1ba8c160c18d8e6f782bb16ec4640c08bc08fc50f704c368ad4f9e/pyinstaller_hooks_contrib-2026.7.tar.gz", hash = "sha256:5fbcaacb22c4f4aac869a127dce283f67a4b4cfcc37d496f2446603e6d68aefa", size = 175992, upload-time = "2026-08-24T21:26:58.713Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0a/67/350377af7b50416344ab8792756d414eef7629c618a73e9a0b13bb1552d9/pyinstaller_hooks_contrib-2026.7-py3-none-any.whl", hash = "sha256:24257a04c7a5a7a034cf28e39dcee20fbeeb9f043076729480f2e1b69904408a", size = 459445, upload-time = "2026-08-24T21:26:57.274Z" },
+]
+
+[[package]]
+name = "pylibrb"
+version = "0.1.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/c9/96/4ed0cedacc7763c11b44a238240ae037f2290120fd619039aadff466a02d/pylibrb-0.1.2.tar.gz", hash = "sha256:206b5857dd4d073d7bc87a4aeb22d7d235e671b8256c999c41ffbe098228a3ba", size = 33254, upload-time = "2023-12-03T22:11:00.74Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ec/32/1afbc08d701bce9b36f50825f3cb9028b0cee1f0caacd0342cbcf4bb3b13/pylibrb-0.1.2-cp312-abi3-macosx_10_14_x86_64.whl", hash = "sha256:24bd04333ca0e8a08f6763de16c3932adb1d45ff8b07103c388322b8e3a4bc98", size = 1600432, upload-time = "2023-12-03T22:10:41.878Z" },
+    { url = "https://files.pythonhosted.org/packages/f6/44/09da209c85c1a669d0947dca139d116c78fe452b9bcbc3c64bc3972f729a/pylibrb-0.1.2-cp312-abi3-macosx_11_0_arm64.whl", hash = "sha256:60380fd59fb286700d3f950e9db6388cee1b27a1ab27a1c6ee8e509fd9cd68cf", size = 1578248, upload-time = "2023-12-03T22:10:43.839Z" },
+    { url = "https://files.pythonhosted.org/packages/fc/dc/6611dd8376ffcb388d53cc9f3c05417091e74e828b2b3e04ec08cfaa2445/pylibrb-0.1.2-cp312-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:7088cb716fe07540f28bd26bf11315eec73fe6578a7d1d7d55d07019190098df", size = 2168347, upload-time = "2023-12-03T22:10:45.164Z" },
+    { url = "https://files.pythonhosted.org/packages/f8/e0/5cbac14c76f8e3cf151c2b6444fe340eeaf9f3097016a5ad205bbc4e753f/pylibrb-0.1.2-cp312-abi3-win_amd64.whl", hash = "sha256:8ab810bd58581da194b4c4bfb8883033dc122a63842ba8d27e2faad084761fe6", size = 1982171, upload-time = "2023-12-03T22:10:47.007Z" },
 ]
 
 [[package]]

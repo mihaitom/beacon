@@ -140,14 +140,17 @@ RUN sh /build/verify-ffmpeg.sh /usr/local/bin/ffmpeg /build/ffmpeg/required-comp
 # PyPI's file listing) — so `uv sync` must compile it from source on arm64,
 # which needs a C++ compiler. Isolating that into its own stage means the
 # compiler toolchain doesn't have to live in the final image either — only
-# the resulting .venv is copied over. On amd64, where a prebuilt wheel
-# exists, this stage still runs (harmlessly) — uv just installs the wheel
-# instead of building anything.
+# the resulting .venv is copied over.
+#
+# `pylibrb` (Rubber Band, the beatmix's time stretcher) has no musllinux
+# wheel at all, so it is compiled here on amd64 too, against Alpine's own
+# Rubber Band and fmt - which is why the final stage installs their runtime
+# libraries.
 FROM ghcr.io/astral-sh/uv:python3.14-alpine AS python-builder
 
 WORKDIR /app
 
-RUN apk add --no-cache build-base
+RUN apk add --no-cache build-base cmake pkgconf rubberband-dev fmt-dev
 
 COPY connect/pyproject.toml connect/uv.lock ./
 # --no-dev: pyinstaller/pytest/ruff (see pyproject.toml's dev group) are
@@ -161,7 +164,8 @@ FROM ghcr.io/astral-sh/uv:python3.14-alpine
 
 WORKDIR /app
 
-RUN apk add --no-cache nginx gettext
+# rubberband-libs and fmt: what the venv's pylibrb links against (see above).
+RUN apk add --no-cache nginx gettext rubberband-libs fmt
 COPY --from=ffmpeg-builder /usr/local/bin/ffmpeg /usr/local/bin/ffmpeg
 COPY --chown=nginx:nginx --from=frontend-builder /app/out/web /usr/share/nginx/html
 COPY --chown=nginx:nginx ./settings.js.template /etc/nginx/templates/settings.js.template

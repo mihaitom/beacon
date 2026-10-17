@@ -2,135 +2,105 @@
 
 What lets a beatmix line up two songs at different tempos: the outgoing one
 eases into the incoming one's tempo and holds it through the overlap
-(core/transition_planner.py's `out_rate`). Changes of a few percent, which
-is where WSOLA - waveform-similarity overlap-add - sounds clean:
+(core/transition_planner.py's `out_rate`).
 
-- The output is built from frames of the input, overlap-added with a Hann
-  window every HOP samples. Playing at `rate`, each next frame is taken
-  HOP * rate further on in the input rather than HOP.
-- Taken exactly there, neighbouring frames would no longer line up in
-  phase and the result would warble. So each frame is moved by up to
-  TOLERANCE samples to where it best continues the previous one (a cross-
-  correlation); the offset never accumulates, because the nominal position
-  keeps advancing by HOP * rate regardless.
-- At rate 1 the frame is placed exactly where the previous one continues,
-  and Hann windows at half overlap add up to exactly one: the output is
-  then the input, sample for sample. That is what lets a stretch start in
-  the middle of a song without a seam (see prime()).
+Rubber Band's R3 engine in realtime mode does the stretching. It replaced a
+WSOLA of our own, which gave every frame a single time offset matched on
+the bass: voices and chords then half-cancelled at each splice and pumped
+at the hop rate, heard as a fan even at -0.7 %. In a blind test against
+WSOLA and Signalsmith Stretch, Rubber Band was best in 6 of 8 pairs and
+never worst (docs/investigations/beatmix-pop-rock.md, listening 4).
 
-Stereo is stretched with one offset for both channels, from their sum, so
-the image does not wander.
+The input is fed in blocks worth BLOCK output frames at the current rate.
+The ratio is set to exactly 1/rate and only when the rate changes: set
+anew every block (as each block's own input/output length), Rubber Band's
+output strayed from the engine's rate integral by ~6 ms over a 40 s hold
+and kept going. What remains is the input it holds buffered (~4000
+frames) being played at the ratio set after it arrived - ~2 ms, bounded,
+far below a flam.
+
+Stereo is stretched with the channels together, so the image does not
+wander.
 """
 
 import numpy as np
+import pylibrb
 
-FRAME = 2048
-HOP = FRAME // 2
-# How far a frame may move to fit (~9 ms), a trade measured on real music.
-# At 5 ms the bass, which dominates the match, could not be lined up: frames
-# half-cancelled in every overlap and the mids and highs pumped at the hop
-# rate (43 Hz), heard as a voice through a fan. At 12 ms that is gone, but
-# kicks land far enough off the outgoing song's to be heard as a flam
-# (tests/test_mix_crossfade.py). Here the pumping is at ffmpeg atempo's level.
-TOLERANCE = 384
-# Periodic Hann: at 50% overlap, consecutive windows add to exactly 1.
-_WINDOW = (0.5 - 0.5 * np.cos(2 * np.pi * np.arange(FRAME) / FRAME)).astype(np.float64)[:, None]
+# Frames played just before the stretch starts, handed to prime(). Rubber
+# Band's window reaches this far back; with less, its first output fades in.
+HISTORY = 16384
+# Output frames per ratio step.
+BLOCK = 512
+# Largest chunk handed to Rubber Band at once (prime() has the most).
+_MAX_PROCESS = 4096
+_OPTIONS = (
+    pylibrb.Option.PROCESS_REALTIME | pylibrb.Option.ENGINE_FINER | pylibrb.Option.CHANNELS_TOGETHER
+)
+
+pylibrb.set_default_logging_level(0)
 
 
-class Wsola:
+class Stretcher:
     """Feed it input with push(), take output with pull()."""
 
-    def __init__(self) -> None:
-        self._input = np.zeros((0, 2), dtype=np.float64)
-        self._base = 0  # input index of _input[0]
-        self._nominal = 0.0  # where the next frame would be taken at rate 1 drift
-        self._chosen: int | None = None  # where the last frame was taken
-        self._acc = np.zeros((FRAME, 2), dtype=np.float64)
+    def __init__(self, sample_rate: int) -> None:
+        self._rb = pylibrb.RubberBandStretcher(sample_rate, 2, _OPTIONS, 1.0)
+        self._rb.set_max_process_size(_MAX_PROCESS)
+        self._input = np.zeros((0, 2), dtype=np.float32)
         self._ready = np.zeros((0, 2), dtype=np.float32)
-        self.input_consumed = 0.0  # nominal input frames advanced so far
-        self._primed = False
+        # Output still owed to the history passed to prime(), dropped as it comes.
+        self._skip = 0
+        # Fraction of an input frame carried between blocks.
+        self._carry = 0.0
+        self.input_consumed = 0  # input frames handed to Rubber Band since prime()
 
     def prime(self, history: np.ndarray) -> None:
-        """Start mid-song: `history` is the HOP frames played just before
-        what is pushed next. A first frame has nothing to overlap with and
-        would fade in; one step at rate 1 over the history fills the
-        overlap instead, and its output - already played - is dropped."""
-        assert self._chosen is None and len(history) == HOP
-        self.push(history)
-        self._primed = True
+        """Start mid-song: `history` is what played just before what is
+        pushed next. Rubber Band takes it at rate 1; what comes out for it
+        is already played and dropped, so the first frame pulled continues
+        the history without a seam."""
+        history = np.asarray(history, dtype=np.float32)
+        self._skip = len(history) - len(self._process(history))
 
     def push(self, x: np.ndarray) -> None:
-        self._input = np.concatenate([self._input, x.astype(np.float64)])
+        self._input = np.concatenate([self._input, np.asarray(x, dtype=np.float32)])
 
     def needed(self, rate: float) -> int:
-        """Input frames still missing before the next step can run."""
-        nominal = round(self._nominal)
-        if self._chosen is None:
-            end = nominal + FRAME
-        elif rate == 1.0:
-            end = self._chosen + HOP + FRAME
-        else:
-            end = max(nominal + FRAME + TOLERANCE, self._chosen + HOP + FRAME)
-        return max(0, end - (self._base + len(self._input)))
+        """Input frames still missing before pull() can return anything."""
+        # While the history's output is still being dropped, a block gives none.
+        blocks = 1 + -(-self._skip // BLOCK)
+        want = self._block_input(rate) + (blocks - 1) * round(BLOCK * rate) + 1
+        return max(0, want - len(self._input))
 
     def pull(self, frames: int, rate_at) -> np.ndarray:
         """Up to `frames` output frames; `rate_at(n)` is the rate for the
         output frame `n` frames from now. Fewer when input runs short."""
         while len(self._ready) < frames:
             rate = float(rate_at(len(self._ready)))
-            if self.needed(rate) > 0:
+            take = self._block_input(rate)
+            if len(self._input) < take:
                 break
-            self._step(rate)
+            self._carry += BLOCK * rate - take
+            block, self._input = self._input[:take], self._input[take:]
+            if self._rb.time_ratio != 1.0 / rate:
+                self._rb.time_ratio = 1.0 / rate
+            out = self._process(block)
+            self.input_consumed += take
+            if self._skip:
+                dropped = min(self._skip, len(out))
+                out, self._skip = out[dropped:], self._skip - dropped
+            self._ready = np.concatenate([self._ready, out])
         out, self._ready = self._ready[:frames], self._ready[frames:]
         return out
 
-    def _step(self, rate: float) -> None:
-        priming = self._primed and self._chosen is None
-        if priming:
-            rate = 1.0
-        if self._chosen is None:
-            start = round(self._nominal)
-        elif rate == 1.0:
-            start = self._chosen + HOP
-        else:
-            start = self._best_fit(round(self._nominal))
-        frame = self._take(start, FRAME)
-        self._acc += frame * _WINDOW
-        if not priming:
-            self._ready = np.concatenate([self._ready, self._acc[:HOP].astype(np.float32)])
-        self._acc = np.concatenate([self._acc[HOP:], np.zeros((HOP, 2))])
-        self._chosen = start
-        self._nominal += HOP * rate
-        self.input_consumed += HOP * rate
-        self._trim()
+    def _block_input(self, rate: float) -> int:
+        return int(self._carry + BLOCK * rate)
 
-    def _best_fit(self, nominal: int) -> int:
-        """Where around `nominal` a frame best continues the last one. Only
-        the half that is overlap-added has to match, weighted the way the
-        last frame fades out there; each candidate's correlation is divided
-        by its level so a loud spot does not win on loudness alone."""
-        assert self._chosen is not None
-        natural = self._take(self._chosen + HOP, HOP).sum(axis=1) * _WINDOW[HOP:, 0]
-        region = self._take(nominal - TOLERANCE, HOP + 2 * TOLERANCE).sum(axis=1)
-        size = 1 << int(np.ceil(np.log2(len(region) + HOP)))
-        corr = np.fft.irfft(np.fft.rfft(region, size) * np.conj(np.fft.rfft(natural, size)), size)[
-            : 2 * TOLERANCE + 1
-        ]
-        level = np.convolve(region**2, np.ones(HOP), "valid")
-        return nominal - TOLERANCE + int(np.argmax(corr / np.sqrt(level + 1e-9)))
-
-    def _take(self, start: int, length: int) -> np.ndarray:
-        i = start - self._base
-        out = self._input[max(i, 0) : i + length]
-        if i < 0:
-            out = np.concatenate([np.zeros((-i, 2)), out])
-        if len(out) < length:
-            out = np.concatenate([out, np.zeros((length - len(out), 2))])
-        return out
-
-    def _trim(self) -> None:
-        keep_from = min(int(self._nominal), (self._chosen or 0)) - TOLERANCE - FRAME
-        drop = keep_from - self._base
-        if drop > 0:
-            self._input = self._input[drop:]
-            self._base += drop
+    def _process(self, x: np.ndarray) -> np.ndarray:
+        outs = []
+        for i in range(0, len(x), _MAX_PROCESS):
+            self._rb.process(np.ascontiguousarray(x[i : i + _MAX_PROCESS].T))
+            available = self._rb.available()
+            if available > 0:
+                outs.append(self._rb.retrieve(available).T)
+        return np.concatenate(outs) if outs else np.zeros((0, 2), dtype=np.float32)

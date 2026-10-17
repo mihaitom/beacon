@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { usePlaybackStore } from '../playback'
+import { useTransitionsStore } from '../transitions'
 import { makeSong } from './fixtures'
 
 function queueOf(ids: string[], current: number) {
@@ -137,5 +138,36 @@ describe('sortQueueByBpm', () => {
 
     expect(ids(playback)).toEqual(['a', 'b', 'd', 'c'])
     expect(playback.currentIndex).toBe(0)
+  })
+})
+
+describe('canSortByBpm', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  function queueTagged(tagged: number, untagged: number) {
+    const playback = usePlaybackStore()
+    const songs = [
+      ...Array.from({ length: tagged }, (_, i) => makeSong(`t${i}`, { bpm: 100 + i })),
+      ...Array.from({ length: untagged }, (_, i) => makeSong(`u${i}`, { bpm: null })),
+    ]
+    playback.setQueue(songs, 0)
+    return playback
+  }
+
+  it('is offered with DJ mixes on and most of the queue tagged', () => {
+    useTransitionsStore().mode = 'crossfade'
+    expect(queueTagged(3, 1).canSortByBpm).toBe(true)
+  })
+
+  it('is not offered where too little of the queue has a BPM', () => {
+    useTransitionsStore().mode = 'crossfade'
+    expect(queueTagged(2, 2).canSortByBpm).toBe(false)
+  })
+
+  it('is not offered without DJ mixes', () => {
+    useTransitionsStore().mode = 'gapless'
+    expect(queueTagged(4, 0).canSortByBpm).toBe(false)
   })
 })

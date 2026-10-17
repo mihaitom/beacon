@@ -11,6 +11,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Right-click a song in the queue to play it now or next, move it to the end or remove it. The menu also has what song lists offer: Song Radio, add to playlist, go to album or artist, artwork and info. While a transition is already prepared, "next" means right after the song it leads into
 - On the phone and in the Remote Control, a long press on a song in the queue opens the same actions as a sheet (the Remote Control offers the playback ones)
 - Clicking the artist of a song in the queue opens the artist's page
+- With DJ mixes on, the queue can be sorted by tempo, so more songs follow one with a similar BPM and get mixed instead of crossfaded. Offered when most songs in the queue have a BPM tag
 - The release notes have a "Coming up" entry that shows what is being worked on for the next version, and any releases newer than the one you are running
 
 ### Changed
@@ -19,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The DJ mix length is chosen in bars (4, 8 or 16) instead of seconds, so it lasts the same musical phrase at every tempo. A length set before is carried over
 - DJ mixes follow where the beat actually plays: out of a song that ends on a long ambient tail (no drums, just a pad or a fade-out) the mix starts while the beat is still playing and drops the tail, and into a song with a long intro the bass swaps right where its beat sets in. Before, such songs often got no DJ mix at all and the next song was faded in over the almost silent end
 - DJ mixes sound cleaner on pop, rock and hip hop: once the next song's bass has come in, the previous song fades out within two bars instead of singing on under the new one, and songs whose tempos lie further apart get a crossfade instead of being audibly slowed down or sped up
+- While a DJ mix brings the previous song to the next one's tempo, voices and chords stay clean instead of sounding distorted or as if heard through a fan
 - Where the next song has synced lyrics, a DJ mix or crossfade ends right as its singing starts, and around the change both songs' voices are turned down a little so they do not pile up
 - Now Playing shows the familiar arrows before the next song again and names the transition in words instead: crossfade, or DJ mix with its tempo. Hovering "Crossfade" tells why it could not be a DJ mix, and with the artwork hidden both songs stay in the corner until the previous one has faded out
 - Clicking a song in a playlist plays the whole playlist from there instead of only that song, as it already did on the phone

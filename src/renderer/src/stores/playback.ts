@@ -193,6 +193,11 @@ const AUTOPLAY_TRIGGER_REMAINING = 1
 // another request on a queue that may simply have run out of pool.
 const AUTOPLAY_SEED_ATTEMPTS = 3
 
+// Share of the queue that has to carry a BPM tag before sorting by it is
+// offered - "most of it", so the untagged rest piled up at the end stays a
+// small part of the queue.
+const BPM_SORT_MIN_TAGGED = 0.75
+
 // Edge-detects status.ended's false→true transition across SSE updates
 // (module-level: the SSE subscription in init() is set up once per app
 // lifetime, not per store-consumer, so this doesn't belong in state).
@@ -544,6 +549,15 @@ export const usePlaybackStore = defineStore('playback', {
       if (!state.mixNextLocked || state.repeatMode === 'one' || state.radioStation) return -1
       const next = state.currentIndex + 1
       return next > 0 && next < state.queue.length ? next : -1
+    },
+    /** Whether sorting the queue by BPM (sortQueueByBpm) is worth offering:
+     * only with DJ mixes on, where neighbouring tempos decide whether two
+     * songs can be beatmixed, and only where most of the queue is tagged -
+     * untagged songs all end up at the end, unsorted. */
+    canSortByBpm(state): boolean {
+      if (useTransitionsStore().mode !== 'crossfade' || state.queue.length < 2) return false
+      const tagged = state.queue.filter((song) => song.bpm).length
+      return tagged >= state.queue.length * BPM_SORT_MIN_TAGGED
     },
     /** The reorderQueue() target that moves the song at `from` to `where`,
      * or null where it is already there or must not move: the current
@@ -2500,9 +2514,8 @@ export const usePlaybackStore = defineStore('playback', {
       return true
     },
 
-    /** Debug aid for the transitions work: sorts the whole queue by its
-     * tagged BPM, slowest first, so neighbouring tempos can be listened to
-     * back to back. Songs without a BPM tag keep their order at the end.
+    /** Sorts the whole queue by its tagged BPM, slowest first, so
+     * neighbouring songs are close enough in tempo to be beatmixed. Songs without a BPM tag keep their order at the end.
      * The current song keeps playing wherever it lands, and a locked next
      * song stays glued behind it (see lockedNextIndex). Like
      * reorderQueue(), it leaves originalQueue alone. */

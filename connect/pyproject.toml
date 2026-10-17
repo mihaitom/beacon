@@ -13,6 +13,7 @@ dependencies = [
     "pillow>=12.3.0",
     "pyatv>=0.17.0",
     "pychromecast>=14.0.0",
+    "pylibrb>=0.1.2",
     "python-dotenv>=1.2.2",
     "soco>=0.31.0",
     "zeroconf>=0.150.0",
@@ -105,3 +106,9 @@ exclude_also = [
     "if TYPE_CHECKING:",
     "raise NotImplementedError",
 ]
+
+[tool.uv]
+# pylibrb has no wheel for Linux arm64 or musl (the Docker image), where it
+# is built from its sdist - whose bindings predate nanobind 2's ndarray
+# shape syntax and fail to compile against it.
+build-constraint-dependencies = ["nanobind<2"]

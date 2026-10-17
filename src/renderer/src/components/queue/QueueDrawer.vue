@@ -49,10 +49,8 @@
         :title="$t('queue.title')"
       >
         <template #append>
-          <!-- Debug-only: for listening to tempo neighbours back to back
-           - while tuning transitions. -->
           <v-btn
-            v-if="debugTools && playbackStore.queue.length > 1"
+            v-if="playbackStore.canSortByBpm"
             icon="mdi-sort-numeric-ascending"
             variant="text"
             size="small"
@@ -306,7 +304,6 @@ import ContextMenuSection from '@/components/library/ContextMenuSection.vue'
 import AddToPlaylistSubmenu from '@/components/library/AddToPlaylistSubmenu.vue'
 import CreatePlaylistDialog from '@/components/library/CreatePlaylistDialog.vue'
 import { useAuthStore } from '@/stores/auth'
-import { getLogLevel } from '@/services/connect/logLevel'
 import type { QueueMoveTarget } from '@/stores/playback'
 import type { Song } from '@/types/library'
 
@@ -471,10 +468,6 @@ export default {
       createPlaylistName: '',
       floating: floatingQuery()?.matches ?? false,
       floatingMedia: null as MediaQueryList | null,
-      // Connect's log level at DEBUG or TRACE - gates the debug-only
-      // toolbar buttons. Checked on every open, so a level changed in the
-      // settings shows up without a reload.
-      debugTools: false,
     }
   },
   computed: {
@@ -565,7 +558,6 @@ export default {
       handler(open: boolean) {
         if (!open) return
         this.$nextTick(() => this.scrollToCurrent())
-        void this.checkDebugTools()
       },
       immediate: true,
     },
@@ -583,15 +575,6 @@ export default {
   },
   methods: {
     queueRowKey,
-    async checkDebugTools() {
-      if (!this.authStore.capabilities.logLevelControl) return
-      try {
-        const { level } = await getLogLevel()
-        this.debugTools = level === 'DEBUG' || level === 'TRACE'
-      } catch {
-        // Unreachable connect just leaves the debug buttons hidden.
-      }
-    },
     onFloatingChange(event: MediaQueryListEvent) {
       this.floating = event.matches
     },

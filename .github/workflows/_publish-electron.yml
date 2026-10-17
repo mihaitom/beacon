@@ -25,8 +25,9 @@ on:
                     lists and why each one is split out the way it is.
                     `script` is the pnpm script to run (publish:win/
                     publish:mac/publish:linux/publish:linux-arm64).
-                    arm64_build_tools (bool) installs a C++ compiler first
-                    (see that step below); node_options is passed through
+                    arm64_build_tools (bool) installs a C++ compiler and
+                    the Rubber Band headers first (see that step below);
+                    node_options is passed through
                     as NODE_OPTIONS (macOS needs a larger heap, see the
                     build step below).
                 required: true
@@ -70,16 +71,19 @@ jobs:
             - name: Install uv
               uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
 
-            # miniaudio (a pyatv/AirPlay dependency) has no prebuilt wheel for
-            # arm64 on any Linux libc — `uv sync` (invoked by package:connect) has
-            # to compile it from source there, which needs a C++ compiler. Not
-            # needed on any x64 leg (it has a prebuilt wheel) — gated per-leg via
+            # miniaudio (a pyatv/AirPlay dependency) and pylibrb (Rubber Band,
+            # the beatmix's time stretcher) have no prebuilt wheel for arm64 on
+            # any Linux libc — `uv sync` (invoked by package:connect) has to
+            # compile them from source there, which needs a C++ compiler, and
+            # pylibrb the Rubber Band and fmt headers (PyInstaller then bundles
+            # the system's shared libraries). Not needed on any x64 leg (both
+            # have a prebuilt wheel) — gated per-leg via
             # the caller's own `arm64_build_tools` matrix entry rather than an
             # OS-name check here, since this workflow doesn't otherwise know
             # which legs are arm64.
             - name: Install build tools (arm64 native compile)
               if: matrix.arm64_build_tools
-              run: sudo apt-get update -qq && sudo apt-get install -y build-essential
+              run: sudo apt-get update -qq && sudo apt-get install -y build-essential librubberband-dev libfmt-dev pkg-config
 
             - name: Install dependencies
               run: pnpm install
