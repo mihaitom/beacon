@@ -54,7 +54,10 @@
             icon="mdi-sort-numeric-ascending"
             variant="text"
             size="small"
-            :title="$t('queue.sortByBpm')"
+            :disabled="playbackStore.shuffle"
+            :title="
+              playbackStore.shuffle ? $t('queue.sortByBpmNotShuffled') : $t('queue.sortByBpm')
+            "
             @click="playbackStore.sortQueueByBpm()"
           />
           <v-btn

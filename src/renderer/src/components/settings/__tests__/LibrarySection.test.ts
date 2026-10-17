@@ -45,7 +45,7 @@ describe('LibrarySection scan progress label', () => {
   }
 
   it('shows the item count where the server keeps one', () => {
-    expect(scanLabelFor({ scanCount: 1234, scanPercent: null })).toContain('1234')
+    expect(scanLabelFor({ scanCount: 1234, scanPercent: null })).toContain('1,234')
   })
 
   it('shows a percentage where that is all the server knows', () => {
@@ -95,7 +95,7 @@ describe('LibrarySection scan button', () => {
     // Vuetify draws over them.
     const button = scanButton(wrapper)
     expect(button).toBeDefined()
-    expect(button!.text()).not.toContain('1234')
+    expect(button!.text()).not.toContain('1,234')
   })
 
   it('puts the progress where it can actually be read', async () => {
@@ -104,7 +104,7 @@ describe('LibrarySection scan button', () => {
     Object.assign(useLibraryStore(), { scanning: true, scanCount: 1234, scanPercent: null })
     await wrapper.vm.$nextTick()
 
-    const progress = wrapper.findAll('.setting__status').find((p) => p.text().includes('1234'))
+    const progress = wrapper.findAll('.setting__status').find((p) => p.text().includes('1,234'))
     expect(progress).toBeDefined()
     // Outside the button, not inside it where nothing is visible.
     expect(progress!.element.closest('button')).toBeNull()

@@ -188,8 +188,8 @@
           <template v-else>
             <div class="summary">
               <div class="summary__count">
-                <span class="summary__found">{{ foundCount }}</span>
-                <span class="summary__total text-medium-emphasis">/ {{ resolved.length }}</span>
+                <span class="summary__found">{{ $n(foundCount) }}</span>
+                <span class="summary__total text-medium-emphasis">/ {{ $n(resolved.length) }}</span>
               </div>
               <div class="summary__text">
                 <p class="summary__label">{{ $t('lastfm.summaryFound') }}</p>
@@ -712,8 +712,8 @@ export default {
           : this.$t('lastfm.fetching')
       }
       return this.$t('lastfm.matching', {
-        done: this.progressDone,
-        total: this.progressTotal,
+        done: this.$n(this.progressDone),
+        total: this.$n(this.progressTotal),
       })
     },
   },

@@ -406,6 +406,7 @@ export default {
     moveAfterNext: 'Lire après le titre suivant',
     moveToEnd: 'Déplacer à la fin',
     sortByBpm: 'Trier la file par BPM',
+    sortByBpmNotShuffled: "Trier par BPM - désactivez d'abord la lecture aléatoire",
     remove: "Retirer de la file d'attente",
   },
   party: {
@@ -1258,6 +1259,7 @@ export default {
     noResults: 'Aucun résultat pour « {query} ».',
   },
   releaseNotes: {
+    englishOnly: 'Les notes de version ne sont disponibles qu’en anglais.',
     title: 'Notes de version',
     heading: 'Ce qui a changé depuis la dernière version',
     subheading: 'Choisissez une version ci-dessous pour lire ses modifications ici.',

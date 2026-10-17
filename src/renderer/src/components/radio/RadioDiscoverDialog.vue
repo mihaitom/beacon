@@ -209,11 +209,11 @@
                   "
                   size="13"
                 />
-                {{ item.votes.toLocaleString() }}
+                {{ $n(item.votes) }}
               </button>
               <span class="discover-card__stat" :title="$t('radio.discoverColumnClicks')">
                 <v-icon icon="mdi-play-circle-outline" size="13" />
-                {{ item.clickcount.toLocaleString() }}
+                {{ $n(item.clickcount) }}
                 <span
                   v-if="item.clicktrend"
                   :class="item.clicktrend > 0 ? 'text-success' : 'text-error'"

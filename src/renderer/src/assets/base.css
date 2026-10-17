@@ -809,3 +809,32 @@ body {
 .volume-slider-touch {
   touch-action: none;
 }
+
+/* ── Page changes ───────────────────────────────────────────────────────────
+ *
+ * A new page fades in; the old one goes at once. Fading out as well would
+ * hold up every navigation by its own duration, which is what makes a
+ * transition tiresome after the first day.
+ *
+ * Opacity only: a transform on the page would take its position: fixed
+ * parts (AlphabetIndexBar.vue) along for the ride while it runs.
+ *
+ * On whatever v-main holds, so it takes no wrapper around <router-view> and
+ * changes nothing about when a page is in the DOM - the router's scroll
+ * restore waits for exactly that. A page reused for other data (one album
+ * to the next) keeps its element and does not fade. */
+.v-main > * {
+  animation: page-enter var(--beacon-page-enter-duration, 150ms) ease-out;
+}
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .v-main > * {
+    animation: none;
+  }
+}

@@ -11,7 +11,7 @@
      - identical case. -->
     <detail-header :title="$t('radio.title')" stored-fanart>
       <template v-if="libraryStore.radioStations.length" #meta>
-        {{ libraryStore.radioStations.length }}
+        {{ $n(libraryStore.radioStations.length) }}
         {{ libraryStore.radioStations.length === 1 ? $t('radio.station1') : $t('radio.stationsN') }}
       </template>
       <!-- Wrapped, not two bare siblings — see AlbumsView.vue's identical

@@ -11,7 +11,7 @@
         {{ $t('playlists.byOwner', { owner: playlist.owner }) }}
       </template>
       <template #meta>
-        {{ $t('playlists.songCount', { count: playlist.songs.length }) }}
+        {{ $t('playlists.songCount', { count: $n(playlist.songs.length) }) }}
         <template v-if="durationLabel"> · {{ durationLabel }}</template>
         <template v-if="playlist.public"> · {{ $t('playlists.public') }}</template>
         <template v-if="playlist.smart"> · {{ $t('playlists.smart') }}</template>

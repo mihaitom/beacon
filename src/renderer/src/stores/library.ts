@@ -639,7 +639,9 @@ export const useLibraryStore = defineStore('library', {
       emitter.emit('toast', {
         level: 'success',
         title: i18n.global.t('settings.rescanLibrary'),
-        message: i18n.global.t('settings.scanComplete', { count: this.scanCount }),
+        message: i18n.global.t('settings.scanComplete', {
+          count: i18n.global.n(this.scanCount ?? 0),
+        }),
       })
     },
 

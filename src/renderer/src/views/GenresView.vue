@@ -1,7 +1,16 @@
 <template>
   <v-container fluid>
+    <!-- The same header as the other overviews (Albums, Artists, Songs),
+     - without their play buttons: this page is where a genre gets picked,
+     - and playing one belongs to that genre's own page. -->
+    <detail-header :title="$t('library.genres')" stored-fanart>
+      <template v-if="libraryStore.genres.length" #meta>
+        {{ $n(libraryStore.genres.length) }}
+        {{ libraryStore.genres.length === 1 ? $t('library.genre') : $t('library.genres') }}
+      </template>
+    </detail-header>
+
     <sticky-filter>
-      <h1 class="page-title">{{ $t('library.genres') }}</h1>
       <div class="library-filter">
         <v-text-field
           v-model="filterQuery"
@@ -30,8 +39,8 @@
         <span class="genre-tile__name">{{ entry.genre.name }}</span>
         <span class="genre-tile__meta">{{
           $t('library.albumsAndSongs', {
-            albums: entry.genre.albumCount,
-            songs: entry.genre.songCount,
+            albums: $n(entry.genre.albumCount),
+            songs: $n(entry.genre.songCount),
           })
         }}</span>
       </router-link>
@@ -50,6 +59,7 @@
 import { useLibraryStore } from '@/stores/library'
 import { matchesAllTerms } from '@/services/textSearch'
 import StickyFilter from '@/components/StickyFilter.vue'
+import DetailHeader from '@/components/library/DetailHeader.vue'
 import ExactMatchSwitch from '@/components/library/ExactMatchSwitch.vue'
 import type { Genre } from '@/types/library'
 
@@ -66,7 +76,7 @@ type Tier = 'spotlight' | 'featured' | 'standard'
 
 export default {
   name: 'GenresView',
-  components: { StickyFilter, ExactMatchSwitch },
+  components: { DetailHeader, StickyFilter, ExactMatchSwitch },
   data() {
     return {
       filterQuery: '',
@@ -239,9 +249,5 @@ export default {
   .genre-tile:hover {
     transform: none;
   }
-}
-
-.page-title {
-  margin-bottom: 16px;
 }
 </style>

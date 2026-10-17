@@ -403,6 +403,7 @@ export default {
     moveAfterNext: 'Play after the next song',
     moveToEnd: 'Move to end',
     sortByBpm: 'Sort queue by BPM',
+    sortByBpmNotShuffled: 'Sort by BPM - turn shuffle off first',
     remove: 'Remove from queue',
   },
   party: {
@@ -1244,6 +1245,7 @@ export default {
     noResults: 'No results for "{query}".',
   },
   releaseNotes: {
+    englishOnly: 'The release notes are only available in English.',
     title: 'Release Notes',
     heading: "What's changed since the last version",
     subheading: 'Pick a version below to read its changes right here.',

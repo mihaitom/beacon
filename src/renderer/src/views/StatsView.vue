@@ -52,7 +52,7 @@
             <div class="stat-tile__label">{{ $t('stats.listeningTime') }}</div>
           </div>
           <div class="stat-tile">
-            <div class="stat-tile__value detail-title">{{ playedShare }}%</div>
+            <div class="stat-tile__value detail-title">{{ formatPercent(playedShare) }}</div>
             <div class="stat-tile__label">{{ $t('stats.playedShare') }}</div>
           </div>
           <div v-if="hasLastPlayed" class="stat-tile">
@@ -467,7 +467,7 @@ export default {
         .map(([key, count]) => ({
           ...describe(key),
           value: count,
-          valueLabel: `${Math.round((count / total) * 100)}%`,
+          valueLabel: this.formatPercent(Math.round((count / total) * 100)),
         }))
     },
     formatBytes(bytes: number): string {
@@ -486,6 +486,10 @@ export default {
     },
     formatRating(value: number): string {
       return `${value.toLocaleString(this.$i18n.locale, { maximumFractionDigits: 1 })} ★`
+    },
+    /** 16 %, 16%, 16 % - where the sign goes is the language's call. */
+    formatPercent(value: number): string {
+      return new Intl.NumberFormat(this.$i18n.locale, { style: 'percent' }).format(value / 100)
     },
     formatNumber(value: number): string {
       return value.toLocaleString(this.$i18n.locale)
@@ -533,8 +537,11 @@ export default {
 }
 
 .stat-tile {
-  flex: 1 1 160px;
-  min-width: 140px;
+  flex: 1 1 120px;
+  /* As wide as its figure on one line at least: "52 Tage 3 Std" broke onto
+   * two, making its tile - and with it the whole row - taller than the
+   * rest. A tile too wide for the row moves to the next one instead. */
+  min-width: min-content;
   padding: 20px;
   border-radius: 12px;
   background: rgba(255, 255, 255, 0.03);
@@ -547,7 +554,11 @@ export default {
 }
 
 .stat-tile__value {
-  font-size: 2.25rem;
+  white-space: nowrap;
+  /* With the page, not the tile, so every row's figures are one size; small
+   * enough at a laptop's width, queue open, for the library's six tiles to
+   * share one row - the sixth used to sit alone below, stretched across. */
+  font-size: clamp(1.4rem, 2.6cqi, 2.25rem);
   color: rgb(var(--v-theme-primary));
   line-height: 1.1;
 }

@@ -130,6 +130,18 @@ describe('sortQueueByBpm', () => {
     expect(playback.queue[playback.currentIndex]!.id).toBe('b')
   })
 
+  /** With shuffle on the queue would look shuffled while being sorted, and
+   * the next toggle of shuffle rebuilds it from the original order anyway. */
+  it('leaves a shuffled queue alone', () => {
+    const playback = queueWithBpm({ a: 140, b: 120, c: 90 }, 0)
+    playback.shuffle = true
+    const before = ids(playback)
+
+    playback.sortQueueByBpm()
+
+    expect(ids(playback)).toEqual(before)
+  })
+
   it('keeps a locked next song right behind the current one', () => {
     const playback = queueWithBpm({ a: 100, b: 150, c: 130, d: 110 }, 0)
     playback.mixNextLocked = true

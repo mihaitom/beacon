@@ -2,7 +2,7 @@
   <v-container fluid>
     <detail-header :eyebrow="$t('library.genre')" :title="genreName" :stored-fanart="genreArtists">
       <template v-if="songs.length" #meta>
-        {{ $t('library.albumsAndSongs', { albums: albumCount, songs: songs.length }) }}
+        {{ $t('library.albumsAndSongs', { albums: $n(albumCount), songs: $n(songs.length) }) }}
       </template>
       <!-- See AlbumsView.vue's identical #actions template comment for why
        - this wrapper exists. -->

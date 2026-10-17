@@ -2518,8 +2518,13 @@ export const usePlaybackStore = defineStore('playback', {
      * neighbouring songs are close enough in tempo to be beatmixed. Songs without a BPM tag keep their order at the end.
      * The current song keeps playing wherever it lands, and a locked next
      * song stays glued behind it (see lockedNextIndex). Like
-     * reorderQueue(), it leaves originalQueue alone. */
+     * reorderQueue(), it leaves originalQueue alone.
+     *
+     * Not while shuffle is on: the order would read as shuffled while being
+     * sorted, and the next toggle of shuffle throws the sort away anyway -
+     * it rebuilds the queue from originalQueue. */
     sortQueueByBpm(): void {
+      if (this.shuffle) return
       const playing = this.queue[this.currentIndex]
       const lockedNext = this.queue[this.lockedNextIndex]
       const tagged = this.queue.filter((song) => song.bpm)

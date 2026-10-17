@@ -8,7 +8,7 @@
 
     <template v-else>
       <div class="smart-preview__count">
-        <span class="smart-preview__number">{{ shownCount }}</span>
+        <span class="smart-preview__number">{{ $n(shownCount) }}</span>
         <span class="smart-preview__unit">{{ songsWord }}</span>
       </div>
       <div class="text-body-small text-medium-emphasis smart-preview__meta">
@@ -16,7 +16,7 @@
         <template v-if="limited"> · {{ $t('smartPlaylists.limit') }} {{ limit }}</template>
       </div>
       <div v-if="preview.uncertain" class="smart-preview__uncertain text-body-small">
-        <span>{{ $t('smartPlaylists.uncertain', { count: preview.uncertain }) }}</span>
+        <span>{{ $t('smartPlaylists.uncertain', { count: $n(preview.uncertain) }) }}</span>
         <v-tooltip :text="$t('smartPlaylists.uncertainHint')" location="top" open-on-click>
           <template #activator="{ props: tooltipProps }">
             <v-btn
@@ -65,7 +65,7 @@
         v-if="preview.songs.length > firstSongs.length"
         class="text-body-small text-medium-emphasis smart-preview__more"
       >
-        {{ $t('smartPlaylists.andMore', { count: preview.songs.length - firstSongs.length }) }}
+        {{ $t('smartPlaylists.andMore', { count: $n(preview.songs.length - firstSongs.length) }) }}
       </div>
 
       <div v-if="!preview.songs.length && !preview.uncertain" class="smart-preview__empty">

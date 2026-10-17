@@ -11,6 +11,10 @@
           <div class="release-kicker">{{ $t('releaseNotes.title') }}</div>
           <h2>{{ $t('releaseNotes.heading') }}</h2>
           <p>{{ $t('releaseNotes.subheading') }}</p>
+          <!-- The changelog is written in English only, like the help pages. -->
+          <p v-if="$i18n.locale !== 'en'" class="text-body-small text-medium-emphasis">
+            {{ $t('releaseNotes.englishOnly') }}
+          </p>
         </div>
       </div>
 

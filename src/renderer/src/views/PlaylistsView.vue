@@ -2,7 +2,7 @@
   <v-container fluid>
     <detail-header :title="$t('playlists.title')" stored-fanart>
       <template v-if="filteredPlaylists.length" #meta>
-        {{ filteredPlaylists.length }}
+        {{ $n(filteredPlaylists.length) }}
         {{
           filteredPlaylists.length === 1 ? $t('playlists.playlist1') : $t('playlists.playlistsN')
         }}

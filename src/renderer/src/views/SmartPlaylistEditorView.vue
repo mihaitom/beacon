@@ -309,7 +309,7 @@ export default {
       if (!this.preview) return ''
       const count = this.preview.songs.length
       const seconds = this.preview.songs.reduce((total, song) => total + song.duration, 0)
-      const parts = [this.$t('playlists.songCount', { count })]
+      const parts = [this.$t('playlists.songCount', { count: this.$n(count) })]
       if (seconds) parts.push(formatTotalDuration(seconds, this.$t))
       return parts.join(' · ')
     },

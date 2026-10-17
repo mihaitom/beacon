@@ -173,7 +173,7 @@ export default {
         ? timeAgo(Date.parse(this.playlist.changed), Date.now(), getLocale())
         : ''
       const parts = [
-        this.$t('playlists.songCount', { count: this.playlist.songCount }),
+        this.$t('playlists.songCount', { count: this.$n(this.playlist.songCount) }),
         formatTotalDuration(this.playlist.duration, this.$t),
         this.playlist.smart ? this.$t('playlists.smart') : '',
         ago ? this.$t('playlists.editedAgo', { ago }) : '',

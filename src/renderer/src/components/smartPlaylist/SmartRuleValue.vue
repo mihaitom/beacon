@@ -22,7 +22,7 @@
           <v-list-item v-bind="itemProps" :title="item.value">
             <template v-if="item.count !== null" #append>
               <span class="text-body-small text-medium-emphasis smart-value__count">
-                {{ item.count }}
+                {{ $n(item.count) }}
               </span>
             </template>
           </v-list-item>

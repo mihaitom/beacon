@@ -172,7 +172,7 @@
          - otherwise-invisible scope switch visible before anything's
          - clicked. -->
       <v-list-subheader v-if="showSelectionSubheader">
-        {{ selectedCount }}
+        {{ $n(selectedCount) }}
         {{ selectedCount === 1 ? $t('library.song1') : $t('library.songsN') }}
         {{ $t('library.selected') }}
       </v-list-subheader>

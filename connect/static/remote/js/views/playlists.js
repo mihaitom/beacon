@@ -2,7 +2,7 @@ import { fireCommand, fetchPlaylists, fetchPlaylist } from '../api.js';
 import { renderSongRow } from '../song-row.js';
 import { navigate, registerRoute } from '../router.js';
 import { createArt } from '../art.js';
-import { t } from '../i18n.js';
+import { n, t } from '../i18n.js';
 
 export function renderPlaylists(root) {
   root.innerHTML = `<h1 class="view-title">${t('playlists.title')}</h1><div class="list" id="playlist-list">${t('common.loading')}</div>`;
@@ -22,7 +22,7 @@ export function renderPlaylists(root) {
         row.insertAdjacentHTML(
           'beforeend',
           `<div class="row-main"><div class="row-title">${escapeHtml(playlist.name)}</div>
-          <div class="row-subtitle">${t('playlists.songCount', { count: playlist.song_count ?? 0 })}</div></div>`,
+          <div class="row-subtitle">${t('playlists.songCount', { count: n(playlist.song_count ?? 0) })}</div></div>`,
         );
         row.addEventListener('click', () => navigate(`/playlists/${encodeURIComponent(playlist.id)}`));
         list.appendChild(row);

@@ -14,11 +14,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The Remote Control speaks your phone's language: German, English, Spanish, French or Italian, as the app does
 - On the phone and in the Remote Control, holding a song in the queue and letting go opens the same actions as a sheet (the Remote Control offers the playback ones)
 - Clicking the artist of a song in the queue opens the artist's page
-- With DJ mixes on, the queue can be sorted by tempo, so more songs follow one with a similar BPM and get mixed instead of crossfaded. Offered when most songs in the queue have a BPM tag
+- With DJ mixes on, the queue can be sorted by tempo, so more songs follow one with a similar BPM and get mixed instead of crossfaded. Offered when most songs in the queue have a BPM tag and shuffle is off
 - The release notes have a "Coming up" entry that shows what is being worked on for the next version, and any releases newer than the one you are running
 - Desktop app: the window opens where and as large as it was last time, starting Beacon a second time brings the open window to the front instead of opening another, and the window title shows what is playing
 - On Windows, the taskbar preview has previous, play/pause and next buttons, and the taskbar icon shows how far into the song playback is
 - The player bar's buttons explain themselves on hover, with their keyboard shortcut
+- The Genres page has a header like the other overviews, with the number of genres
 
 ### Changed
 
@@ -33,6 +34,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Clicking a song in a playlist plays the whole playlist from there instead of only that song, as it already did on the phone
 - Song Radio started from the song that is playing keeps it playing and only replaces what comes after it, instead of starting the song over
 - Songs in the queue can be grabbed anywhere to drag them, without a handle, and dragging near the top or bottom of the queue scrolls it quickly. On the phone and in the Remote Control, hold a song until it lights up and then move it; there a long queue now also scrolls during a drag, which it did not at all before
+- Long album titles get a smaller type instead of being cut off, and the release notes say that they are only available in English
+- A new page fades in briefly instead of appearing at once, unless the system asks for reduced motion
 
 ### Fixed
 
@@ -50,7 +53,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - A DJ mix into a song whose beat starts at its very first moment no longer plays the two songs a fraction of a beat apart for the whole mix
 - Party guests see a song change in the host's mix on time even when the stream briefly runs ahead, and a mix stream no longer stutters at its very start
 - Now Playing on a phone held sideways with the artwork hidden: long titles, artists and albums stay on one line each instead of squeezing into a narrow column, and the controls sit at the bottom of the screen
-- In German, Favorites is called "Favoriten" in the menu and on its page
+- The German interface speaks of "Titel" and "Künstler" throughout, where it mixed them with "Songs" and "Artists", and the last English labels (Plays, Disc, Track, Favorites) are translated
+- Counts on the overview pages are written with thousands separators in the way of the chosen language (12.496 in German, 12,496 in English)
+- Statistics: a long duration no longer breaks onto two lines, and the library's tiles stay in one row
 
 ## [1.8.0] - 2026-10-13
 

@@ -26,7 +26,7 @@
     <div class="artist-card-meta text-body-small text-medium-emphasis">
       <span class="artist-card-count" :title="albumCountLabel">
         <v-icon icon="mdi-album" size="13" />
-        {{ artist.albumCount }}
+        {{ $n(artist.albumCount) }}
       </span>
       <!-- Only once the catalogue it is counted from has arrived. Drawing
        - the icon before that put a bare note on every tile with nothing
@@ -34,7 +34,7 @@
        - rather than merely absent. -->
       <span v-if="songCount !== null" class="artist-card-count" :title="songCountLabel">
         <v-icon icon="mdi-music-note" size="13" />
-        {{ songCount }}
+        {{ $n(songCount) }}
       </span>
     </div>
     <!-- Right-click, not a click: the card's own click opens the artist.

@@ -160,7 +160,7 @@ export default {
     },
     metaLine(): string {
       if (!this.album) return ''
-      const count = this.$t('library.songCount', { count: this.album.songCount })
+      const count = this.$t('library.songCount', { count: this.$n(this.album.songCount) })
       const genres = this.album.genres?.length ? this.album.genres : [this.album.genre]
       return [
         this.album.originalYear ?? this.album.year,

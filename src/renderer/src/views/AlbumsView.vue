@@ -2,7 +2,7 @@
   <v-container fluid>
     <detail-header :title="$t('library.albums')" stored-fanart>
       <template v-if="filteredAlbums.length" #meta>
-        {{ filteredAlbums.length }}
+        {{ $n(filteredAlbums.length) }}
         {{ filteredAlbums.length === 1 ? $t('library.album1') : $t('library.albumsN') }}
       </template>
       <!-- Wrapped, not two bare siblings — DetailHeader.vue's own

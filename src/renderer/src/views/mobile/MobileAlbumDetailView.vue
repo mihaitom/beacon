@@ -85,7 +85,7 @@ export default {
       return useAuthStore()
     },
     meta(): string {
-      const count = this.$t('library.songCount', { count: this.album?.songCount ?? 0 })
+      const count = this.$t('library.songCount', { count: this.$n(this.album?.songCount ?? 0) })
       return this.album?.year ? `${this.album.year} · ${count}` : count
     },
   },

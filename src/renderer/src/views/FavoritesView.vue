@@ -114,7 +114,7 @@ export default {
       ]
       return counts
         .filter(([, n]) => n > 0)
-        .map(([key, n]) => this.$t(key, n))
+        .map(([key, n]) => this.$t(key, { n: this.$n(n) }, n))
         .join(' · ')
     },
   },

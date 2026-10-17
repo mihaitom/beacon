@@ -48,7 +48,7 @@ export default {
   emits: ['play'],
   computed: {
     meta(): string {
-      const count = this.$t('playlists.songCount', { count: this.playlist.songCount })
+      const count = this.$t('playlists.songCount', { count: this.$n(this.playlist.songCount) })
       const duration = this.formatDuration(this.playlist.duration)
       const smart = this.playlist.smart ? (this.$t('playlists.smart') as string) : ''
       const parts = [count, duration, smart].filter(Boolean)

@@ -8,6 +8,7 @@ import { i18n } from '@/i18n'
 import { usePlaybackStore } from '@/stores/playback'
 import { useDrawersStore } from '@/stores/drawers'
 import { useLibraryStore } from '@/stores/library'
+import { useTransitionsStore } from '@/stores/transitions'
 import QueueDrawer from '../QueueDrawer.vue'
 import { makeSong } from '@/stores/__tests__/fixtures'
 
@@ -71,6 +72,21 @@ describe('QueueDrawer', () => {
     expect(wrapper.text()).toContain('Queue is empty')
     expect(wrapper.find('.mdi-notification-clear-all').exists()).toBe(false)
     expect(wrapper.find('.mdi-playlist-plus').exists()).toBe(false)
+  })
+
+  /** Sorting a shuffled queue would look shuffled while being sorted, and
+   * the next toggle of shuffle undoes it anyway. */
+  it('offers the BPM sort only with shuffle off', async () => {
+    useTransitionsStore().mode = 'crossfade'
+    const playback = usePlaybackStore()
+    playback.setQueue([makeSong('a', { bpm: 120 }), makeSong('b', { bpm: 90 })], 0)
+    const wrapper = mountDrawer()
+    const sortButton = () => wrapper.find('.mdi-sort-numeric-ascending').element.closest('button')!
+
+    expect(sortButton().hasAttribute('disabled')).toBe(false)
+    playback.shuffle = true
+    await flushPromises()
+    expect(sortButton().hasAttribute('disabled')).toBe(true)
   })
 
   it('renders one row per queued song, in order, with the current one marked', () => {

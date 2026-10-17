@@ -295,14 +295,16 @@ export const SONG_COLUMNS: SongColumn[] = [
     key: 'playCount',
     labelKey: 'library.plays',
     cell: 'text',
-    flex: '0 0 96px',
-    minWidth: '96px',
+    // The heading sets the width, not the figures: German's "Wiedergaben"
+    // ran into the column beside it at 96px.
+    flex: '0 0 120px',
+    minWidth: '120px',
     align: 'end',
     optional: true,
     skeletonWidth: '20',
     sortValue: (song) => song.playCount ?? 0,
     // A play count of zero is a real answer, unlike an absent field.
-    text: (song) => String(song.playCount ?? 0),
+    text: (song, locale) => (song.playCount ?? 0).toLocaleString(locale),
     servers: null,
   },
 

@@ -27,9 +27,9 @@
           />
         </template>
         <template #meta>
-          {{ artist.albumCount }}
+          {{ $n(artist.albumCount) }}
           {{ artist.albumCount === 1 ? $t('library.album1') : $t('library.albumsN') }} ·
-          {{ totalSongCount }}
+          {{ $n(totalSongCount) }}
           {{ totalSongCount === 1 ? $t('library.song1') : $t('library.songsN') }}
         </template>
         <!-- Always provided, so DetailHero.vue's bio wrapper (and its

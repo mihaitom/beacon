@@ -48,7 +48,11 @@
          - name, drawn, so the plain-text heading steps aside for it (kept
          - for screen readers and the outline via .visually-hidden). -->
         <img v-if="logoUrl" :src="logoUrl" :alt="name" class="detail-hero__logo" />
-        <h1 :class="logoUrl ? 'visually-hidden' : 'detail-title detail-hero__name'">
+        <h1
+          :class="
+            logoUrl ? 'visually-hidden' : ['detail-title', 'detail-hero__name', nameLengthClass]
+          "
+        >
           {{ name }}
         </h1>
         <div v-if="$slots.subtitle" class="detail-hero__subtitle">
@@ -92,6 +96,10 @@ import { emitter } from '@/emitter'
  * with a Wikipedia paragraph and a Fanart.tv clear logo, both of which this
  * renders through its #description/#logoUrl when a page supplies them.
  */
+// Characters. Around what fits on two lines, and on three, at the full size.
+const LONG_NAME = 28
+const VERY_LONG_NAME = 48
+
 export default {
   name: 'DetailHero',
   components: { CoverArt },
@@ -115,6 +123,15 @@ export default {
   },
   emits: ['toggle-star', 'set-rating'],
   computed: {
+    /** A smaller face for a long name: at full size a soundtrack's or a
+     * box set's title ran past the three lines there is room for and was
+     * cut off mid-word. By length rather than by measuring, so the size is
+     * settled before the first paint instead of jumping after it. */
+    nameLengthClass(): string | null {
+      if (this.name.length > VERY_LONG_NAME) return 'detail-hero__name--very-long'
+      if (this.name.length > LONG_NAME) return 'detail-hero__name--long'
+      return null
+    },
     hasArtwork(): boolean {
       return Boolean(this.coverArtId || this.imageUrl)
     },
@@ -266,6 +283,22 @@ export default {
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
+}
+
+.detail-hero--large .detail-hero__name--long {
+  font-size: clamp(1.6rem, 2.4vw, 2.6rem);
+}
+
+.detail-hero--large .detail-hero__name--very-long {
+  font-size: clamp(1.35rem, 1.9vw, 2rem);
+}
+
+.detail-hero__name--long {
+  font-size: 1.85rem;
+}
+
+.detail-hero__name--very-long {
+  font-size: 1.5rem;
 }
 
 .detail-hero--large .detail-hero__meta {

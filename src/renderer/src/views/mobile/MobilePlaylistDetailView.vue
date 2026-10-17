@@ -10,7 +10,7 @@
       <div class="mobile-header__title">
         <h1 class="page-title">{{ playlist.name }}</h1>
         <div class="text-body-small text-medium-emphasis">
-          {{ $t('playlists.songCount', { count: playlist.songs.length }) }}
+          {{ $t('playlists.songCount', { count: $n(playlist.songs.length) }) }}
           <template v-if="playlist.smart"> · {{ $t('playlists.smart') }}</template>
         </div>
       </div>

@@ -20,6 +20,11 @@ export function t(key, params = {}) {
   return message.replace(/\{(\w+)\}/g, (_, name) => String(params[name] ?? ''));
 }
 
+/** A count the way this language writes it: 1.234, 1,234, 1 234. */
+export function n(value) {
+  return new Intl.NumberFormat(locale).format(value);
+}
+
 /** The static markup's words: `data-i18n` sets an element's text,
  * `data-i18n-<attribute>` one of its attributes. */
 export function translateDocument(root = document) {

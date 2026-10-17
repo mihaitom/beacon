@@ -406,6 +406,7 @@ export default {
     moveAfterNext: 'Reproducir después de la siguiente canción',
     moveToEnd: 'Mover al final',
     sortByBpm: 'Ordenar la cola por BPM',
+    sortByBpmNotShuffled: 'Ordenar por BPM: desactiva primero el modo aleatorio',
     remove: 'Quitar de la cola',
   },
   party: {
@@ -1253,6 +1254,7 @@ export default {
     noResults: 'No hay resultados para "{query}".',
   },
   releaseNotes: {
+    englishOnly: 'Las notas de la versión solo están disponibles en inglés.',
     title: 'Notas de la versión',
     heading: 'Qué ha cambiado desde la última versión',
     subheading: 'Elige una versión a continuación para leer sus cambios aquí mismo.',

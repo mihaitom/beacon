@@ -205,7 +205,8 @@ export default {
       return this.libraryStore.scanPercent
     },
     scanLabel(): string {
-      if (this.scanCount != null) return this.$t('settings.scanning', { count: this.scanCount })
+      if (this.scanCount != null)
+        return this.$t('settings.scanning', { count: this.$n(this.scanCount) })
       if (this.scanPercent != null) {
         return this.$t('settings.scanningPercent', { percent: this.scanPercent })
       }
@@ -224,10 +225,10 @@ export default {
       if (!progress) return ''
       return progress.total
         ? this.$t('settings.refreshingLibraryWithTotal', {
-            loaded: progress.loaded,
-            total: progress.total,
+            loaded: this.$n(progress.loaded),
+            total: this.$n(progress.total),
           })
-        : this.$t('settings.refreshingLibrary', { loaded: progress.loaded })
+        : this.$t('settings.refreshingLibrary', { loaded: this.$n(progress.loaded) })
     },
   },
   methods: {
@@ -260,7 +261,7 @@ export default {
           level: 'success',
           title: this.$t('settings.refreshLibrary'),
           message: this.$t('settings.libraryRefreshed', {
-            count: this.libraryStore.allSongs.length,
+            count: this.$n(this.libraryStore.allSongs.length),
           }),
         })
       } catch (error) {
