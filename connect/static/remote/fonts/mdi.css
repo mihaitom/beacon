@@ -35,7 +35,6 @@
 .mdi-magnify::before { content: "\F0349"; }
 .mdi-format-list-bulleted::before { content: "\F0279"; }
 .mdi-dots-vertical::before { content: "\F01D9"; }
-.mdi-drag::before { content: "\F01DB"; }
 .mdi-close::before { content: "\F0156"; }
 .mdi-cast::before { content: "\F0118"; }
 .mdi-cast-connected::before { content: "\F0119"; }

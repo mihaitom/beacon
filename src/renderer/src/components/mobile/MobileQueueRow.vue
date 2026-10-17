@@ -7,11 +7,12 @@
       'mobile-queue-row--drag-over-before': dragOverPosition === 'before',
       'mobile-queue-row--drag-over-after': dragOverPosition === 'after',
       'mobile-queue-row--dragging': dragging,
+      'mobile-queue-row--lifted': lifted,
     }"
     @click="!dragging && $emit('play')"
     @pointerdown="longPress.down($event)"
     @pointermove="longPress.move($event)"
-    @pointerup="longPress.cancel()"
+    @pointerup="longPress.up()"
     @pointercancel="longPress.cancel()"
     @pointerleave="longPress.cancel()"
     @contextmenu="longPress.contextMenu($event)"
@@ -41,12 +42,14 @@
       :disabled="isCurrent || lockedNext"
       @click.stop="$emit('remove')"
     />
+    <!-- No drag handle: the whole row is picked up (see the LongPress
+     - below). Only what cannot be moved says so. -->
     <v-icon
-      :icon="lockedNext ? 'mdi-lock-outline' : 'mdi-drag-vertical'"
-      :title="lockedNext ? $t('queue.nextLocked') : undefined"
+      v-if="lockedNext"
+      icon="mdi-lock-outline"
+      :title="$t('queue.nextLocked')"
       size="22"
-      class="mobile-queue-row__handle text-medium-emphasis"
-      @pointerdown.stop="!lockedNext && $emit('drag-start', $event)"
+      class="mobile-queue-row__lock text-medium-emphasis"
     />
   </div>
 </template>
@@ -64,8 +67,23 @@ export default {
   data() {
     return {
       MOBILE_ROW_ART_SIZE,
-      longPress: markRaw(new LongPress(() => this.$emit('menu'))),
+      lifted: false,
     }
+  },
+  computed: {
+    /** Held still, the row lifts; moved then, it drags, and let go without
+     * moving, it opens the song's actions. A computed rather than data only
+     * so its callbacks can reach the component's own state; it reads
+     * nothing reactive, so it is built once. */
+    longPress(): LongPress {
+      return markRaw(
+        new LongPress(() => this.$emit('menu'), {
+          enabled: () => !this.lockedNext,
+          onLift: (lifted) => (this.lifted = lifted),
+          onDrag: (event) => this.$emit('drag-start', event),
+        }),
+      )
+    },
   },
   props: {
     song: {
@@ -107,6 +125,10 @@ export default {
     },
   },
   emits: ['play', 'remove', 'drag-start', 'menu'],
+
+  mounted() {
+    this.longPress.bindScrollBlock(this.$el)
+  },
   beforeUnmount() {
     this.longPress.dispose()
   },
@@ -149,13 +171,11 @@ export default {
   text-align: center;
 }
 
-.mobile-queue-row__handle {
-  touch-action: none;
-  -webkit-user-select: none;
-  user-select: none;
+.mobile-queue-row--lifted {
+  background: rgba(var(--v-theme-primary), 0.16);
 }
 
-.mobile-queue-row__handle {
+.mobile-queue-row__lock {
   margin-left: 4px;
 }
 </style>

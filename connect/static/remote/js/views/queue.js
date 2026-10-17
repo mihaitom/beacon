@@ -6,9 +6,10 @@ import { openActionSheet } from '../sheet.js';
 import { onLongPress } from '../long-press.js';
 
 // Pointer-based drag-to-reorder (works for touch and mouse alike, unlike
-// HTML5 drag-and-drop which touch browsers don't fire reliably without a
-// dedicated "drag handle" long-press gesture anyway) — a fixed handle icon
-// starts the drag, a line marks where the song would land, and the final
+// HTML5 drag-and-drop which touch browsers don't fire reliably) — a row
+// held still lifts and moving it then drags it (see long-press.js; a finger
+// that moves straight away scrolls), a line marks where the song would
+// land, and the final
 // position is sent as one queue-reorder command on release. The rows
 // themselves stay put until then: the window below is rebuilt while a drag
 // scrolls the list, which a row moved by hand would not survive.
@@ -53,7 +54,7 @@ export function renderQueue(root) {
   let dragY = 0;
   let edgeFrame = 0;
   let edgeLastTick = 0;
-  // The handle the drag started on - see startDrag. An event that still
+  // The row the drag started on - see startDrag. An event that still
   // bubbles reaches it and window both, hence the WeakSet.
   let dragHandle = null;
   const handledEvents = new WeakSet();
@@ -90,7 +91,10 @@ export function renderQueue(root) {
     main.className = 'row-main';
     main.addEventListener('click', () => fireCommand('queue-jump', { index }));
     // On the whole row, the way a right click works anywhere on it.
-    onLongPress(row, () => openQueueActions(song, index));
+    onLongPress(row, () => openQueueActions(song, index), {
+      onLift: (lifted) => row.classList.toggle('lifted', lifted),
+      onDrag: (event) => startDrag(event, index),
+    });
     main.innerHTML = `<div class="row-title">${escapeHtml(song.title)}</div><div class="row-subtitle">${escapeHtml(song.artist || '')}</div>`;
     row.appendChild(main);
 
@@ -102,12 +106,6 @@ export function renderQueue(root) {
       fireCommand('queue-remove', { index });
     });
     row.appendChild(removeBtn);
-
-    const handle = document.createElement('div');
-    handle.className = 'drag-handle';
-    handle.innerHTML = '<i class="mdi mdi-drag"></i>';
-    handle.addEventListener('pointerdown', (event) => startDrag(event, index));
-    row.appendChild(handle);
 
     return row;
   }
@@ -219,11 +217,7 @@ export function renderQueue(root) {
   }
 
   function startDrag(event, index) {
-    // Without this, iOS/Android still treat the gesture as a potential
-    // text-selection/scroll — `touch-action: none` on .drag-handle (see
-    // app.css) covers most cases, but Safari in particular needs the pointer
-    // event itself suppressed too, or a slow-starting drag still shows the
-    // selection-handle/callout UI before the browser catches up.
+    // The page itself is held still by long-press.js's touchmove block.
     event.preventDefault();
     dragFrom = index;
     overIndex = index;
@@ -232,7 +226,7 @@ export function renderQueue(root) {
     paintDragState();
     // On window rather than the row: the row is rebuilt as the list
     // scrolls, and its listeners and pointer capture would go with it. On
-    // the handle as well, since WebKit keeps sending a touch's pointer
+    // the row as well, since WebKit keeps sending a touch's pointer
     // events to the node it started on even once it is detached - where
     // they no longer bubble to window.
     dragHandle = event.currentTarget;

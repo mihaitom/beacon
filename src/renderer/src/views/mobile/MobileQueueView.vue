@@ -65,7 +65,7 @@ import type { Song } from '@/types/library'
 // following it in the same task.
 const CLICK_SUPPRESSION_MS = 500
 
-// A drag listens on its handle as well as on window (see onDragStart), and
+// A drag listens on its row as well as on window (see onDragStart), and
 // an event that still bubbles reaches both.
 const handledPointerEvents = new WeakSet<Event>()
 function firstSighting(event: Event): boolean {
@@ -122,7 +122,7 @@ export default {
       // Where the finger last was: a finger held still at the edge keeps
       // scrolling, and the row under it changes without a pointermove.
       dragY: 0,
-      // The handle the drag started on - see onDragStart.
+      // The row the drag started on - see onDragStart.
       dragHandle: null as EventTarget | null,
       actionsOpen: false,
       // The song object, not its index or id: the queue moves on under an
@@ -160,7 +160,7 @@ export default {
         }),
       )
       this.edgeScroller.start()
-      // The handle as well as window: scrolled far enough, the virtual list
+      // The row as well as window: scrolled far enough, the virtual list
       // drops the dragged row, and WebKit keeps sending a touch's pointer
       // events to the node it started on even once it is detached - where
       // they no longer bubble to window.
@@ -211,7 +211,7 @@ export default {
     },
     /** Swallows the click the browser synthesises out of the pointer
      * sequence that just finished the drag. It lands on whatever the press
-     * started on — the dragged row's own handle — and a queue row's click
+     * started on — the dragged row itself — and a queue row's click
      * plays it, so reordering the queue changed the track; with a station
      * playing it also ended the station, since playAtIndex() leaves radio
      * (see the playback store).

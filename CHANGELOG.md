@@ -10,7 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Right-click a song in the queue to play it now or next, move it to the end or remove it. The menu also has what song lists offer: Song Radio, add to playlist, go to album or artist, artwork and info. While a transition is already prepared, "next" means right after the song it leads into
 - The phone and the Remote Control have a Favorites tab with your favorite songs and albums. It takes the place of the Now Playing tab, which the player bar above the tabs already opens, and the Queue tab moves to the front
-- On the phone and in the Remote Control, a long press on a song in the queue opens the same actions as a sheet (the Remote Control offers the playback ones)
+- On the phone and in the Remote Control, holding a song in the queue and letting go opens the same actions as a sheet (the Remote Control offers the playback ones)
 - Clicking the artist of a song in the queue opens the artist's page
 - With DJ mixes on, the queue can be sorted by tempo, so more songs follow one with a similar BPM and get mixed instead of crossfaded. Offered when most songs in the queue have a BPM tag
 - The release notes have a "Coming up" entry that shows what is being worked on for the next version, and any releases newer than the one you are running
@@ -26,7 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Now Playing shows the familiar arrows before the next song again and names the transition in words instead: crossfade, or DJ mix with its tempo. Hovering "Crossfade" tells why it could not be a DJ mix, and with the artwork hidden both songs stay in the corner until the previous one has faded out
 - Clicking a song in a playlist plays the whole playlist from there instead of only that song, as it already did on the phone
 - Song Radio started from the song that is playing keeps it playing and only replaces what comes after it, instead of starting the song over
-- Songs in the queue can be grabbed anywhere to drag them, without a handle, and dragging near the top or bottom of the queue scrolls it quickly. The scrolling also works on the phone and in the Remote Control, where a long queue did not scroll during a drag at all
+- Songs in the queue can be grabbed anywhere to drag them, without a handle, and dragging near the top or bottom of the queue scrolls it quickly. On the phone and in the Remote Control, hold a song until it lights up and then move it; there a long queue now also scrolls during a drag, which it did not at all before
 
 ### Fixed
 

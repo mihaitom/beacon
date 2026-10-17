@@ -535,9 +535,9 @@ input[type="range"]:disabled::-moz-range-thumb {
 .list {
   display: flex;
   flex-direction: column;
-  /* Long-pressing the drag handle (or anywhere in a row, on some browsers)
+  /* Long-pressing a row (to pick up a queue row, or for its actions)
    * would otherwise trigger native text selection / iOS's copy-paste
-   * callout before a drag gesture gets a chance to start — none of these
+   * callout before the gesture gets a chance to start — none of these
    * rows are text to select, this is a touch-first app shell. */
   -webkit-user-select: none;
   user-select: none;
@@ -642,20 +642,9 @@ input[type="range"]:disabled::-moz-range-thumb {
 
 .row.playing .row-title { color: var(--accent); }
 
-.drag-handle {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-muted);
-  font-size: 1.35rem;
-  width: 40px;
-  height: 40px;
-  margin: -8px -4px -8px 0;
-  flex-shrink: 0;
-  touch-action: none;
-  -webkit-user-select: none;
-  user-select: none;
-}
+/* Held long enough to be picked up (see long-press.js). Stronger than
+ * :active's --hover, which is already showing while the finger is down. */
+.row.lifted { background: rgba(245, 169, 78, 0.16); }
 
 .row.dragging { opacity: 0.5; }
 /* Where the dragged song would land. Inset shadows rather than borders, so

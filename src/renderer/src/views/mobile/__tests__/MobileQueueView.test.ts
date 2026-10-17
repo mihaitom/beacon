@@ -227,16 +227,17 @@ describe('MobileQueueView', () => {
       vi.spyOn(useLibraryStore(), 'fetchPlaylists').mockResolvedValue()
     })
 
-    function touchDown(element: Element) {
-      const event = Object.assign(new Event('pointerdown'), {
+    function touch(element: Element, type: string, clientY = 0) {
+      const event = Object.assign(new Event(type, { bubbles: true }), {
         pointerType: 'touch',
         clientX: 0,
-        clientY: 0,
+        clientY,
       })
       element.dispatchEvent(event)
     }
+    const touchDown = (element: Element) => touch(element, 'pointerdown')
 
-    it("opens the row's actions, and the release does not play it", async () => {
+    it("opens the row's actions once let go without moving, and the release does not play it", async () => {
       vi.useFakeTimers()
       // Attached: the release's click is caught on window.
       const wrapper = mount(MobileQueueView, {
@@ -248,12 +249,40 @@ describe('MobileQueueView', () => {
 
       touchDown(row.element)
       await vi.advanceTimersByTimeAsync(500)
-      window.dispatchEvent(new Event('pointerup'))
+      expect((wrapper.vm as unknown as { actionsOpen: boolean }).actionsOpen).toBe(false)
+      touch(row.element, 'pointerup')
       await row.trigger('click')
 
       const vm = wrapper.vm as unknown as { actionsOpen: boolean; actionsIndex: number }
       expect(vm.actionsOpen).toBe(true)
       expect(vm.actionsIndex).toBe(0)
+      expect(playAtIndex).not.toHaveBeenCalled()
+      wrapper.unmount()
+      vi.useRealTimers()
+    })
+
+    /** No handle: a held row moved is a drag, wherever it was held. */
+    it('drags a held row that is then moved, without opening or playing it', async () => {
+      vi.useFakeTimers()
+      const wrapper = mount(MobileQueueView, {
+        attachTo: document.body,
+        global: { plugins: [vuetify, i18n], stubs: { CoverArt: true } },
+      })
+      const playback = usePlaybackStore()
+      const playAtIndex = vi.spyOn(playback, 'playAtIndex').mockResolvedValue()
+      const row = wrapper.findAllComponents(MobileQueueRow)[0]!
+
+      touchDown(row.element)
+      await vi.advanceTimersByTimeAsync(500)
+      touch(row.element, 'pointermove', 40)
+      await wrapper.vm.$nextTick()
+
+      const vm = wrapper.vm as unknown as { actionsOpen: boolean; dragIndex: number | null }
+      expect(vm.dragIndex).toBe(0)
+      touch(row.element, 'pointerup', 40)
+      await row.trigger('click')
+
+      expect(vm.actionsOpen).toBe(false)
       expect(playAtIndex).not.toHaveBeenCalled()
       wrapper.unmount()
       vi.useRealTimers()
