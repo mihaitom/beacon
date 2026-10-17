@@ -69,11 +69,11 @@ BANDS: tuple[Band, ...] = ("low", "mid", "high")
 # Below this, a grid is not trusted for lining songs up.
 MIN_CONFIDENCE = 0.5
 # How far the tempos may lie apart for the outgoing song to be sped up or
-# slowed down to match: beyond about this, a stretch is heard as one. On a
-# drum loop 8 % passed; with voices or synths it did not - a soul ballad
-# at 6.2 % was heard as too slow and grainy, synth-pop at 4.5 % with
-# artefacts, house at 2.4 % clean (docs/investigations/beatmix-pop-rock.md).
-MAX_STRETCH = 0.03
+# slowed down to match. With Rubber Band, beatmixes of well-known songs
+# 4.6-5.8 % apart beat a crossfade 8 to 0 (one even); past 6 % is not
+# heard yet - a soul ballad at 6.2 % was too slow under the stretcher
+# before (docs/investigations/beatmix-pop-rock.md, listening 5).
+MAX_STRETCH = 0.06
 # The bass swap is a cut, not a fade: this short, so it clicks neither.
 SWAP_SECONDS = 0.015
 # How many bars the outgoing song takes to ease into the incoming tempo -

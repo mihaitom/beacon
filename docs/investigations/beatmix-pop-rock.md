@@ -299,7 +299,7 @@ Cost, 30 s stretched on one core of an i9-9900KF: WSOLA 48x realtime,
 Signalsmith 15x, Rubber Band R3 10x. Only the ease and the overlap are
 stretched, but a small server (a Pi) is not measured yet.
 
-## Next
+## Rubber Band in the engine
 
 **Built (same day)**: `core/timestretch.py` is Rubber Band R3 via
 `pylibrb`, WSOLA is gone. Two things only the engine-length tests showed:
@@ -313,9 +313,30 @@ build constraint); Linux arm64 builds it against Ubuntu's librubberband
 stock containers on amd64 only. pylibrb releases the GIL while it works,
 should the stretch ever need to leave the event loop on small hardware.
 
-1. **`MAX_STRETCH` back up?** -4.5 % was Rubber Band's clearest win; a
-   round of pairs at 4-6 % decides how far.
-2. **The outgoing song's last sung line**, the other half of the lyrics:
+## Listening 5: beatmix or crossfade at 4-6 % (2026-10-17)
+
+With Rubber Band in, is a beatmix of songs 4-6 % apart better than the
+crossfade `MAX_STRETCH` (3 %) gave them? Nine pairs of well-known songs
+(unknown ones made the choice hard - "I don't know what to listen for"),
+4.6-5.8 % apart, eight of them over 5.4 %, blind X/Y, no lyrics. The same
+plan at `MAX_STRETCH` 3 % (crossfade) and 6 % (beatmix).
+
+**Beatmix 8, crossfade 0, one even** (Californication → Rock DJ, 4.6 %).
+In the listener's words: the crossfade "fades into an intro, the mix is
+straight in the next song", "in the crossfade the beats run apart", and
+Eye of the Tiger → Levitating "a wild mix, but the beatmix does it well".
+`MAX_STRETCH` is now 6 %.
+
+## Next
+
+Decided against for now: **both songs meeting halfway** (the listener's
+idea - stretching only the outgoing song was for hiding WSOLA's grain on
+a song fading out; halfway, 8 % apart would cost each song 4 %). After
+listening 5 the listener found 6 % on the outgoing song good enough. It
+would cost an incoming song that is no longer what was decoded until it
+has eased back, and rate marks for it on the timeline.
+
+1. **The outgoing song's last sung line**, the other half of the lyrics:
    not starting the overlap while the old song is still mid-verse.
 
 Ask the listener "A or B, which is better", blind; a diagnosis in

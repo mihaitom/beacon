@@ -126,13 +126,12 @@ def test_double_and_half_tempo_still_beatmix():
     assert stretch_for(grid(128, 0, 0), grid(128 * (1 + MAX_STRETCH + 0.01), 0, 0)) is None
 
 
-def test_voices_and_synths_are_not_stretched_audibly():
-    """Heard: 6.2 % on a soul ballad too slow and grainy, 4.5 % on
-    synth-pop with artefacts, 2.4 % on house clean
-    (docs/investigations/beatmix-pop-rock.md)."""
+def test_tempos_up_to_six_percent_apart_are_stretched():
+    """Heard: beatmixes 4.6-5.8 % apart beat a crossfade 8 to 0; 6.2 % on
+    a soul ballad was too slow (docs/investigations/beatmix-pop-rock.md)."""
     assert stretch_for(grid(106.3, 0, 0), grid(99.8, 0, 0)) is None
-    assert stretch_for(grid(86.9, 0, 0), grid(83.0, 0, 0)) is None
-    assert stretch_for(grid(125.0, 0, 0), grid(128.0, 0, 0)) is not None
+    assert stretch_for(grid(86.9, 0, 0), grid(83.0, 0, 0)) is not None
+    assert stretch_for(grid(121.0, 0, 0), grid(128.0, 0, 0)) is not None
 
 
 # ── A beatmix ──────────────────────────────────────────────────────────────
