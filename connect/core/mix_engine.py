@@ -90,6 +90,9 @@ _PREOPEN_CROSSFADE_SECONDS = 90.0
 _MAX_DSP_FRAMES_PER_STEP = 2 * SAMPLE_RATE
 # How much of each song's end/start is analysed for a transition.
 _ANALYSE_SECONDS = 60.0
+# How long the lyrics lookup for where the singing starts may take; the
+# plan goes ahead without it after that.
+_VOCALS_TIMEOUT_SECONDS = 10.0
 # Lead kept while rendering waits for a transition's plan (_waits_for_plan):
 # above _STARVE_LEAD_SECONDS, so the wait never turns into silence.
 _PLAN_WAIT_LEAD_SECONDS = 3.0
@@ -127,6 +130,10 @@ class MixItem:
     end: float | None = None
     # "Artist — Title", for the log; the id stands in without it.
     label: str | None = None
+    # For looking up where its singing starts (vocals_fn).
+    artist: str | None = None
+    title: str | None = None
+    album: str | None = None
 
     @property
     def name(self) -> str:
@@ -288,6 +295,9 @@ def apply_gain(pcm: bytes, gain: float) -> bytes:
 
 DeckFactory = Callable[[MixItem, float], DeckLike]
 AnalyseFn = Callable[[MixItem, float, float], Awaitable[RegionAnalysis | None]]
+# Where in a song its singing starts (its first synced lyric line), None
+# where unknown.
+VocalsFn = Callable[[MixItem], Awaitable[float | None]]
 
 
 def _take_float(deck: DeckLike, frames: int) -> np.ndarray:
@@ -412,6 +422,7 @@ class MixEngine:
         on_change: Callable[["MixEngine"], None] | None = None,
         settings: Settings | None = None,
         analyse_fn: AnalyseFn | None = None,
+        vocals_fn: VocalsFn | None = None,
     ) -> None:
         self.epoch = secrets.token_urlsafe(6)
         self.first = first
@@ -447,6 +458,7 @@ class MixEngine:
         self.stopped = False
         self.settings = settings or Settings()
         self._analyse_fn = analyse_fn or self._analyse_source
+        self._vocals_fn = vocals_fn
         # Crossfade renders in floating point (see the module docstring);
         # gapless stays on the byte path, where a join is bit-exact. Fixed
         # for the engine's life: a setting changed mid-run applies from the
@@ -1247,16 +1259,19 @@ class MixEngine:
         if plan.kind != "gapless" and out_item.until > 0:
             out_window, in_window = _analysis_windows(out_item, in_item)
             try:
-                out_region, in_region = await asyncio.gather(
+                out_region, in_region, in_vocals = await asyncio.gather(
                     self._analyse_fn(out_item, *out_window),
                     self._analyse_fn(in_item, *in_window),
+                    self._vocals(in_item),
                 )
             except asyncio.CancelledError:
                 raise
             except Exception:
                 logger.exception(f"[mix] {self.epoch} analysing the transition failed")
-                out_region = in_region = None
-            plan = plan_transition(self.settings, out_facts, in_facts, out_region, in_region)
+                out_region = in_region = in_vocals = None
+            plan = plan_transition(
+                self.settings, out_facts, in_facts, out_region, in_region, in_vocals
+            )
         if generation != self._next_generation or self.stopped:
             return
         self._plan = plan
@@ -1266,6 +1281,19 @@ class MixEngine:
             f"[mix] {self.epoch} planned {plan.kind} {out_item.song_id} → {in_item.song_id}"
             + (f" at {plan.out_start:.1f}s over {plan.overlap:.1f}s" if plan.overlap else "")
         )
+
+    async def _vocals(self, item: MixItem) -> float | None:
+        """Where `item`'s singing starts, if vocals_fn knows in time - never
+        for an excerpt, which starts mid-song."""
+        if self._vocals_fn is None or item.start > 0:
+            return None
+        try:
+            return await asyncio.wait_for(self._vocals_fn(item), _VOCALS_TIMEOUT_SECONDS)
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            logger.info(f"[mix] {self.epoch} no singing start for {item.name}: {e!r}")
+            return None
 
     async def _analyse_source(
         self, item: MixItem, start: float, duration: float

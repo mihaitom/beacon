@@ -29,6 +29,7 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from core.auth import require_token
+from core.mix_engine import MixItem
 from lyrics import (
     ACTIVE_SOURCES,
     DISABLED_SOURCES,
@@ -518,6 +519,27 @@ async def auto_for_party(song: dict) -> dict | None:
     if not lines:
         return None
     return {"synced": synced, "lines": lines}
+
+
+async def first_sung_line(item: MixItem) -> float | None:
+    """Where `item`'s singing starts: its first synced lyric line, by the
+    same lookup and cache as /lyrics/auto - None for a song without synced
+    lyrics. What a DJ mix ends on (core/transition_planner.py)."""
+    if not item.title or not item.artist:
+        return None
+    params = {
+        "name": item.title,
+        "artist": item.artist,
+        "album": item.album,
+        "duration": float(item.duration) if item.duration else None,
+    }
+    wanted = list(ACTIVE_SOURCES)
+    result = await _lookup(_key("auto", params, wanted), lambda: _do_auto(params, wanted))
+    if result is _UNAVAILABLE or not result:
+        return None
+    synced, lines = parse_lyrics(result["lyrics"])
+    sung = [line["time"] for line in lines if line["text"]]
+    return float(sung[0]) if synced and sung else None
 
 
 @router.get("/by-remote-id")

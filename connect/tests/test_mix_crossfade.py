@@ -235,18 +235,18 @@ async def test_the_transition_is_told_before_it_begins_and_after_it_was_rendered
 
 async def test_a_beatmix_is_told_with_its_ease_and_the_incoming_tempo():
     a = clicks(128, 60, offset=0.21)
-    b = clicks(124, 60, offset=0.37)
+    b = clicks(125, 60, offset=0.37)
     rig = Rig({"a": a, "b": b}, CROSSFADE)
     await rig.render_all()
     told = rig.engine.transitions()[-1]
-    assert told["kind"] == "beatmix" and told["bpm"] == pytest.approx(124.0, abs=1.0)
+    assert told["kind"] == "beatmix" and told["bpm"] == pytest.approx(125.0, abs=1.0)
     # The ease into the incoming tempo is heard before the overlap.
     assert told["start"] < told["change"] - 8.0
 
 
 async def test_a_queue_change_that_leaves_the_next_song_keeps_its_beatmix():
     a = clicks(128, 60, offset=0.21)
-    b = clicks(124, 60, offset=0.37)
+    b = clicks(125, 60, offset=0.37)
     rig = Rig({"a": a, "b": b}, CROSSFADE)
     rig.engine.start()
     for _ in range(600):
@@ -271,8 +271,9 @@ async def test_a_queue_change_that_leaves_the_next_song_keeps_its_beatmix():
     rig.engine.stop()
 
 
-# With an 8-bar beatmix (~16 s) these two songs ease from 29.5 s, overlap from 44.5 s;
-# without an analysis the crossfade is decided on metadata at 43 s.
+# With an 8-bar beatmix (6 of them overlapping, ~12 s) these two songs ease
+# from 33.2 s, overlap from 48.0 s; without an analysis the crossfade is
+# decided on metadata at 47 s.
 BEATMIX_8_BARS = Settings("crossfade", crossfade_seconds=4.0, beatmix_bars=8)
 
 
@@ -307,7 +308,7 @@ def _a_at(rig: Rig) -> float:
 
 async def test_a_beatmix_planned_into_its_ease_eases_over_what_is_left():
     rig = Rig(
-        {"a": clicks(128, 60, offset=0.21), "b": clicks(124, 60, offset=0.37)}, BEATMIX_8_BARS
+        {"a": clicks(128, 60, offset=0.21), "b": clicks(125, 60, offset=0.37)}, BEATMIX_8_BARS
     )
     await _render_with_analysis_held(rig, lambda r: _a_at(r) > 35.0)
     told = rig.engine.transitions()[-1]
@@ -317,10 +318,10 @@ async def test_a_beatmix_planned_into_its_ease_eases_over_what_is_left():
 
 async def test_a_beatmix_planned_too_late_to_ease_is_a_crossfade_of_its_own_length(caplog):
     rig = Rig(
-        {"a": clicks(128, 60, offset=0.21), "b": clicks(124, 60, offset=0.37)}, BEATMIX_8_BARS
+        {"a": clicks(128, 60, offset=0.21), "b": clicks(125, 60, offset=0.37)}, BEATMIX_8_BARS
     )
     # Under two bars (3.75 s) before the overlap, before the metadata's turn.
-    await _render_with_analysis_held(rig, lambda r: _a_at(r) > 41.0)
+    await _render_with_analysis_held(rig, lambda r: _a_at(r) > 44.6)
     assert "planned too late" in caplog.text
     told = rig.engine.transitions()[-1]
     assert (told["kind"], told["no_beatmix"]) == ("crossfade", "too_late")
@@ -329,16 +330,16 @@ async def test_a_beatmix_planned_too_late_to_ease_is_a_crossfade_of_its_own_leng
 
 async def test_a_crossfade_decided_without_its_analysis_says_it_came_too_late():
     rig = Rig(
-        {"a": clicks(128, 60, offset=0.21), "b": clicks(124, 60, offset=0.37)}, BEATMIX_8_BARS
+        {"a": clicks(128, 60, offset=0.21), "b": clicks(125, 60, offset=0.37)}, BEATMIX_8_BARS
     )
-    # Past 43 s the metadata decides.
+    # Past 47 s the metadata decides.
     await _render_with_analysis_held(rig, lambda r: _a_at(r) > 50.0)
     told = rig.engine.transitions()[-1]
     assert (told["kind"], told["no_beatmix"]) == ("crossfade", "analysis_late")
 
 
 async def test_after_a_seek_rendering_waits_for_the_plan_rather_than_racing_past_it():
-    songs = {"a": clicks(128, 60, offset=0.21), "b": clicks(124, 60, offset=0.37)}
+    songs = {"a": clicks(128, 60, offset=0.21), "b": clicks(125, 60, offset=0.37)}
     # Started 9.5 s before the ease, ticking as the render loop does, with a
     # whole 20 s lead to render at once and an analysis that takes a second.
     rig = Rig(songs, BEATMIX_8_BARS, lead=20.0, a=MixItem("a", 0, duration=60.0, start=20.0))
@@ -346,7 +347,7 @@ async def test_after_a_seek_rendering_waits_for_the_plan_rather_than_racing_past
     await _render_with_analysis_held(rig, lambda r: r.clock.now >= begun + 1.0, tick=0.05)
     told = rig.engine.transitions()[-1]
     assert told["kind"] == "beatmix"
-    assert told["start"] == pytest.approx(29.492, abs=0.01)  # the whole ease
+    assert told["start"] == pytest.approx(33.184, abs=0.01)  # the whole ease
     # Waiting cost no silence: nothing was held.
     assert all(e.playing for e in rig.engine.timeline.entries if e.song_id is not None)
 
@@ -403,12 +404,12 @@ async def test_songs_following_on_an_album_join_without_a_fade():
 
 async def test_kicks_of_beatmatched_songs_land_together():
     a = clicks(128, 60, offset=0.21)
-    b = clicks(124, 60, offset=0.37)
+    b = clicks(125, 60, offset=0.37)
     rig = Rig({"a": a, "b": b}, CROSSFADE)
     out = await rig.render_all()
     entries = rig.engine.timeline.entries
     # The outgoing song is brought to the incoming tempo, never the reverse.
-    assert any(e.song_id == "a" and e.rate == pytest.approx(124 / 128, rel=0.01) for e in entries)
+    assert any(e.song_id == "a" and e.rate == pytest.approx(125 / 128, rel=0.01) for e in entries)
     assert all(e.rate == 1.0 for e in entries if e.song_id == "b")
     # Through the whole overlap both songs' clicks are audible (their mids
     # and highs overlap); beat-matched they land on top of each other, so
@@ -421,20 +422,20 @@ async def test_kicks_of_beatmatched_songs_land_together():
     ]
     gaps = np.diff(click_times(overlap))
     assert len(gaps) >= 12
-    assert np.all(np.abs(gaps - 60 / 124) < FLAM_SECONDS)
+    assert np.all(np.abs(gaps - 60 / 125) < FLAM_SECONDS)
 
 
 async def test_once_it_has_taken_over_the_incoming_song_plays_untouched():
     """Stretching leaves a trace however well it is done; the song a
     listener is now hearing is the one that must not carry it."""
     a = clicks(128, 60, offset=0.21)
-    b = clicks(124, 60, offset=0.37) + tone(523, 60, 0.05)
+    b = clicks(125, 60, offset=0.37) + tone(523, 60, 0.05)
     rig = Rig({"a": a, "b": b}, CROSSFADE)
     out = await rig.render_all()
     swap = rig.engine.timeline.next_change(0)
     assert swap.song_id == "b"
     # From two bars after the swap - past the overlap - to just before the end.
-    start = swap.frame + int(2 * 4 * 60 / 124 * SR)
+    start = swap.frame + int(2 * 4 * 60 / 125 * SR)
     at = round(swap.position * SR) + start - swap.frame
     heard = out[start : start + 20 * SR, 0]
     # Within a sample: the swap's frame is rounded, its position is not.
@@ -462,7 +463,7 @@ async def test_the_ease_starts_without_a_dip():
     """A stretch started mid-song has nothing to overlap its first frame
     with; unprimed, it fades in from silence for 23 ms."""
     a = clicks(128, 60, offset=0.21) + tone(440, 60, 0.2)
-    rig = Rig({"a": a, "b": clicks(124, 60, offset=0.37)}, CROSSFADE)
+    rig = Rig({"a": a, "b": clicks(125, 60, offset=0.37)}, CROSSFADE)
     out = await rig.render_all()
     start = _ease_start(rig)
     around = out[start - SR // 5 : start + SR // 5, 0]
@@ -476,11 +477,13 @@ async def test_while_easing_the_timeline_follows_the_outgoing_song():
     the timeline gives for a moment is where in the song that moment is."""
     beat, offset = 60 / 128, 0.21
     a = clicks(128, 60, offset=offset)
-    rig = Rig({"a": a, "b": clicks(124, 60, offset=0.37)}, CROSSFADE)
+    rig = Rig({"a": a, "b": clicks(125, 60, offset=0.37)}, CROSSFADE)
     out = await rig.render_all()
     start = _ease_start(rig)
     overlap = next(
-        e.frame for e in rig.engine.timeline.entries if e.song_id == "a" and e.rate < 0.97
+        e.frame
+        for e in rig.engine.timeline.entries
+        if e.song_id == "a" and abs(e.rate - 125 / 128) < 1e-3
     )
     times = click_times(out[start:overlap]) + start / SR
     assert len(times) > 20
@@ -488,3 +491,25 @@ async def test_while_easing_the_timeline_follows_the_outgoing_song():
         position = rig.engine.timeline.at_time(heard).position
         nearest = offset + round((position - offset) / beat) * beat
         assert abs(position - nearest) < FLAM_SECONDS
+
+
+async def test_a_beatmix_ends_where_the_next_songs_singing_starts():
+    """vocals_fn's answer reaches the plan: the overlap ends on the
+    incoming downbeat the singing starts at, not two bars after the swap."""
+    bar = 4 * 60 / 125
+    sung = 0.37 + 7 * bar
+    asked = []
+
+    async def vocals(item):
+        asked.append(item.song_id)
+        return sung
+
+    rig = Rig(
+        {"a": clicks(128, 60, offset=0.21), "b": clicks(125, 60, offset=0.37)}, BEATMIX_8_BARS
+    )
+    rig.engine._vocals_fn = vocals
+    await rig.render_all()
+    told = rig.engine.transitions()[-1]
+    assert told["kind"] == "beatmix"
+    assert asked == ["b"]
+    assert told["end"] == pytest.approx(sung, abs=0.05)

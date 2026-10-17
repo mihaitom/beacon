@@ -18,12 +18,21 @@ kinds of plan:
   - the incoming song's first downbeat lands on the overlap's first one -
     and where its beat only sets in after an intro, it starts late enough
     for the beat to set in on the bass swap, as a DJ would;
-  - for the first half its mids and highs come up while its bass stays
-    out; on the downbeat halfway through, the basses swap; for the second
-    half the old song's mids and highs go.
+  - its mids and highs come up over the first half of the bars set while
+    its bass stays out; on the downbeat halfway through, the basses swap;
+    then the old song's mids and highs go within POST_SWAP_BARS - held
+    longer, two songs' voices and chords pile up once the new one has
+    taken over;
+  - where the incoming song's singing starts (its first synced lyric line)
+    is known and within reach, the overlap ends on it instead, so the
+    new voice comes in the moment the old song is gone - and where it
+    starts early, the whole mix shortens to end there;
+  - around the swap, where both songs are fullest, both songs' mids dip
+    by MID_DIP_DB: that is where voices and chords sit.
 - **crossfade**: the same moves on a clock instead of a beat grid, for
   songs that have none or whose tempos are too far apart. Silence at the
-  end of the old song and the start of the new one is skipped either way.
+  end of the old song and the start of the new one is skipped either way,
+  and one that would run into the incoming singing ends where it starts.
 
 Times in a plan: `out_*`/`in_*` are seconds in each song's own timeline,
 everything else is seconds from the start of the overlap.
@@ -60,8 +69,11 @@ BANDS: tuple[Band, ...] = ("low", "mid", "high")
 # Below this, a grid is not trusted for lining songs up.
 MIN_CONFIDENCE = 0.5
 # How far the tempos may lie apart for the outgoing song to be sped up or
-# slowed down to match: beyond about this, a stretch is heard as one.
-MAX_STRETCH = 0.08
+# slowed down to match: beyond about this, a stretch is heard as one. On a
+# drum loop 8 % passed; with voices or synths it did not - a soul ballad
+# at 6.2 % was heard as too slow and grainy, synth-pop at 4.5 % with
+# artefacts, house at 2.4 % clean (docs/investigations/beatmix-pop-rock.md).
+MAX_STRETCH = 0.03
 # The bass swap is a cut, not a fade: this short, so it clicks neither.
 SWAP_SECONDS = 0.015
 # How many bars the outgoing song takes to ease into the incoming tempo -
@@ -74,8 +86,17 @@ MIN_EASE_BARS = 2
 # the tempo difference - 0.5 % is 10 ms two seconds into the overlap, by
 # the bass swap, just under where kicks start to flam (~12 ms).
 PREVIEW_MAX_DRIFT = 0.005
-# Overlap lengths a beatmix chooses between, in bars.
+# Overlap lengths a beatmix chooses between, in bars: the incoming song
+# comes in over the first half...
 _BAR_CHOICES = (16, 8, 4, 2, 1)
+# ...and after the bass swap the outgoing one is gone within this many -
+# up to _VOCAL_REACH_BARS where that ends it on the incoming singing.
+POST_SWAP_BARS = 2
+_VOCAL_REACH_BARS = 4
+# Both songs' mids around the swap: down this far at it, over a bar either
+# side (a quarter of a crossfade). The figure is pyCrossfade's.
+MID_DIP_DB = 6.0
+_DIP_CROSSFADE_SHARE = 0.25
 # Never more of either song than this share of what was analysed.
 _MAX_SHARE = 0.5
 # beat_end lies on a downbeat of the same grid; this keeps float rounding
@@ -88,9 +109,10 @@ _CURVE_POINTS = 33
 @dataclass(frozen=True)
 class Settings:
     mode: str = "gapless"
-    # The longest overlap of a crossfade, and how many bars a beatmix
-    # lasts - fewer where the songs leave no room. Without bars (a preview)
-    # a beatmix is as many whole bars as fit the crossfade's length.
+    # The longest overlap of a crossfade, and the bars a beatmix is set to:
+    # half of them up to its bass swap, then a short fade (overlap_bars()),
+    # fewer where the songs leave no room. Without bars (a preview) a
+    # beatmix is as many whole bars as fit the crossfade's length.
     crossfade_seconds: float = 10.0
     beatmix_bars: int | None = None
     # A preview of excerpts (core/preview.py): always blended, album
@@ -102,8 +124,18 @@ class Settings:
         """The longest overlap either kind may take: a beatmix's counted at
         120 BPM, two seconds a bar - a slower one is cut down to fewer
         bars by the songs' own room rather than planned any earlier."""
-        beatmix = self.beatmix_bars * 2.0 if self.beatmix_bars else 0.0
+        bars = overlap_bars(self.beatmix_bars, self.preview) if self.beatmix_bars else 0
+        beatmix = bars * 2.0
         return max(self.crossfade_seconds, beatmix)
+
+
+def overlap_bars(n: int, preview: bool = False) -> int:
+    """Bars a beatmix of `n` set really overlaps: the first half, then the
+    outgoing song's fade after the swap. A preview keeps the other half
+    too - its excerpts are mid-song throughout, with no end to cut to."""
+    if n == 1 or preview:
+        return n
+    return n // 2 + min(n - n // 2, POST_SWAP_BARS)
 
 
 @dataclass(frozen=True)
@@ -178,13 +210,15 @@ def plan_transition(
     inn: SongFacts,
     out_region: RegionAnalysis | None = None,
     in_region: RegionAnalysis | None = None,
+    in_vocals: float | None = None,
 ) -> TransitionPlan:
+    """`in_vocals`: where in the incoming song its singing starts, if known."""
     if settings.mode != "crossfade" or (not settings.preview and follows_on_album(out, inn)):
         return gapless(out, inn)
-    beatmix = _beatmix(settings, out_region, in_region)
+    beatmix = _beatmix(settings, out_region, in_region, in_vocals)
     if isinstance(beatmix, TransitionPlan):
         return beatmix
-    plan = _crossfade(settings, out, inn, out_region, in_region)
+    plan = _crossfade(settings, out, inn, out_region, in_region, in_vocals)
     if plan.kind != "crossfade":
         return plan
     plan = replace(plan, no_beatmix=beatmix)
@@ -201,6 +235,7 @@ def _crossfade(
     inn: SongFacts,
     out_region: RegionAnalysis | None,
     in_region: RegionAnalysis | None,
+    in_vocals: float | None = None,
 ) -> TransitionPlan:
     out_end = out_region.sound_end if out_region else out.duration
     in_start = in_region.sound_start if in_region else inn.start
@@ -208,6 +243,12 @@ def _crossfade(
     overlap = max(0.0, min(settings.crossfade_seconds, available * _MAX_SHARE))
     if in_region is not None:
         overlap = min(overlap, (in_region.end - in_start) * _MAX_SHARE)
+    if in_vocals is not None and not settings.preview:
+        # Over by the time the singing starts - but no shorter than half
+        # the length, which would be a cut more than a fade.
+        until = in_vocals - in_start
+        if overlap / 2 <= until < overlap:
+            overlap = until
     if overlap < 0.5:
         return TransitionPlan("gapless", out_end, out_end, in_start)
     return _crossfade_over(out_end, in_start, overlap)
@@ -245,8 +286,8 @@ def _crossfade_over(out_end: float, in_start: float, overlap: float) -> Transiti
         in_start=in_start,
         overlap=overlap,
         swap_at=swap,
-        out_lanes=_out_lanes(swap, overlap),
-        in_lanes=_in_lanes(swap),
+        out_lanes=_out_lanes(swap, overlap, dip=overlap * _DIP_CROSSFADE_SHARE),
+        in_lanes=_in_lanes(swap, dip=overlap * _DIP_CROSSFADE_SHARE),
     )
 
 
@@ -263,7 +304,10 @@ def stretch_for(out: BeatGrid, inn: BeatGrid) -> float | None:
 
 
 def _beatmix(
-    settings: Settings, out_region: RegionAnalysis | None, in_region: RegionAnalysis | None
+    settings: Settings,
+    out_region: RegionAnalysis | None,
+    in_region: RegionAnalysis | None,
+    in_vocals: float | None = None,
 ) -> TransitionPlan | NoBeatmix:
     if out_region is None or in_region is None:
         return "no_analysis"
@@ -292,8 +336,11 @@ def _beatmix(
     if len(ends) == 0:
         return "no_room"
     out_end = float(ends[-1])
-    # The incoming song joins on its first downbeat with music.
-    starts = inn.downbeats(in_region.sound_start - 0.05, in_region.end)
+    # The incoming song joins on its first downbeat with music - one a hair
+    # before the sound counts, but never one before the song itself: a deck
+    # cannot start ahead of its start, and would play the whole mix that
+    # far off the beat.
+    starts = inn.downbeats(max(in_region.sound_start - 0.05, in_region.start), in_region.end)
     if len(starts) == 0:
         return "no_room"
     first = float(starts[0])
@@ -317,17 +364,27 @@ def _beatmix(
         (
             n
             for n in _BAR_CHOICES
-            if as_set(n) and n * bar <= out_room and n * stream_bar <= in_region.end - joins_at(n)
+            if as_set(n)
+            and overlap_bars(n, settings.preview) * bar <= out_room
+            and overlap_bars(n, settings.preview) * stream_bar <= in_region.end - joins_at(n)
         ),
         None,
     )
     if bars is None:
         return "no_room"
     in_start = joins_at(bars)
-    out_start = out_end - bars * bar
-    overlap = bars * stream_bar
-    # Halfway, on a downbeat - or for a one-bar mix, on its third beat.
-    swap = (bars // 2) * stream_bar if bars > 1 else stream_bar / 2
+    before, total = bars // 2, overlap_bars(bars, settings.preview)
+    if in_vocals is not None and bars > 1 and not settings.preview:
+        # Moved only where the incoming beat is not set to start on the swap.
+        late_join = in_start > first
+        fit = _vocal_fit(bars, round((in_vocals - in_start) / stream_bar), late_join)
+        if fit and fit[1] * bar <= out_room and fit[1] * stream_bar <= in_region.end - in_start:
+            before, total = fit
+    out_start = out_end - total * bar
+    overlap = total * stream_bar
+    # On a downbeat - halfway into the bars set, or for a one-bar mix on
+    # its third beat.
+    swap = before * stream_bar if bars > 1 else stream_bar / 2
     out_rate: tuple[tuple[float, float], ...] = ()
     if rate != 1.0:
         # The ease runs through song the analysis has covered, so the plan
@@ -342,12 +399,27 @@ def _beatmix(
         in_start=in_start,
         overlap=overlap,
         swap_at=swap,
-        out_lanes=_out_lanes(swap, overlap),
-        in_lanes=_in_lanes(swap),
+        out_lanes=_out_lanes(swap, overlap, dip=stream_bar),
+        in_lanes=_in_lanes(swap, dip=stream_bar),
         out_rate=out_rate,
         bpm_out=out.bpm,
         bpm_in=inn.bpm,
     )
+
+
+def _vocal_fit(bars: int, sung: int, late_join: bool) -> tuple[int, int] | None:
+    """(bars before the swap, bars in all) for a mix of `bars` set whose
+    incoming singing starts `sung` bars into the overlap - ending the
+    overlap on it - or None where it cannot."""
+    before = bars // 2
+    reach = min(_VOCAL_REACH_BARS, bars - before)
+    if before < sung <= before + reach:
+        return before, sung
+    # Singing before the swap: the mix shortens to end on it, its swap a
+    # bar ahead - unless the beat is set to start on the swap.
+    if 2 <= sung <= before and not late_join:
+        return sung - 1, sung
+    return None
 
 
 def _curve(start: float, end: float, rising: bool) -> Lane:
@@ -362,16 +434,28 @@ def _step(at: float, rising: bool) -> Lane:
     return Lane((at, at + SWAP_SECONDS), (before, after))
 
 
-def _in_lanes(swap: float) -> dict[str, Lane]:
+def _dipped(lane: Lane, swap: float, width: float) -> Lane:
+    """`lane` with MID_DIP_DB taken out around `swap`, a raised cosine
+    `width` either side of it."""
+    x = np.linspace(-1.0, 1.0, _CURVE_POINTS)
+    times = np.union1d(lane.times, swap + x * width)
+    depth = 1.0 - 10 ** (-MID_DIP_DB / 20)
+    near = np.clip(np.abs(times - swap) / width, 0.0, 1.0)
+    dip = 1.0 - depth * 0.5 * (1.0 + np.cos(np.pi * near))
+    gains = np.interp(times, lane.times, lane.gains) * dip
+    return Lane(tuple(float(t) for t in times), tuple(float(g) for g in gains))
+
+
+def _in_lanes(swap: float, dip: float) -> dict[str, Lane]:
     """Mids and highs come up until the swap; the bass comes in on it."""
     rise = _curve(0.0, swap, rising=True)
-    return {"low": _step(swap, rising=True), "mid": rise, "high": rise}
+    return {"low": _step(swap, rising=True), "mid": _dipped(rise, swap, dip), "high": rise}
 
 
-def _out_lanes(swap: float, overlap: float) -> dict[str, Lane]:
+def _out_lanes(swap: float, overlap: float, dip: float) -> dict[str, Lane]:
     """The bass goes on the swap; mids and highs fade out after it."""
     fall = _curve(swap, overlap, rising=False)
-    return {"low": _step(swap, rising=False), "mid": fall, "high": fall}
+    return {"low": _step(swap, rising=False), "mid": _dipped(fall, swap, dip), "high": fall}
 
 
 def rate_at(points: tuple[tuple[float, float], ...], t: float) -> float:
@@ -416,6 +500,6 @@ def crossfade_from(
         in_start=in_start,
         overlap=overlap,
         swap_at=swap,
-        out_lanes=_out_lanes(swap, overlap),
-        in_lanes=_in_lanes(swap),
+        out_lanes=_out_lanes(swap, overlap, dip=overlap * _DIP_CROSSFADE_SHARE),
+        in_lanes=_in_lanes(swap, dip=overlap * _DIP_CROSSFADE_SHARE),
     )

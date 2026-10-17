@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 import routes.lyrics as lyrics_routes
+from core.mix_engine import MixItem
 from lyrics import (
     ACTIVE_SOURCES,
     LyricSource,
@@ -1150,3 +1151,41 @@ def test_a_found_answer_outlives_a_miss(client):
     # Lyrics that exist do not stop existing; a song nothing has today may
     # well be added tomorrow.
     assert lyrics_routes._CACHE_TTL > lyrics_routes._NEGATIVE_CACHE_TTL
+
+
+# ── Where a song's singing starts (DJ mixes) ──────────────────────────────
+
+
+def _found(lyrics: str) -> AsyncMock:
+    return AsyncMock(
+        return_value=[
+            {
+                "id": "1",
+                "name": "Song",
+                "artist": "Artist",
+                "source": "lrclib.net",
+                "_lyrics": lyrics,
+            }
+        ]
+    )
+
+
+@pytest.mark.parametrize(
+    ("lyrics", "starts"),
+    [
+        ("[00:00.50]\n[00:12.30] First line\n[00:15.00] Second", 12.3),
+        ("First line\nSecond line", None),  # not synced: no time to end on
+    ],
+)
+async def test_first_sung_line_is_where_the_first_synced_words_are(lyrics, starts):
+    others = {source: AsyncMock(return_value=None) for source in ACTIVE_SOURCES}
+    with patch.dict(SEARCH_FETCHERS, {**others, LyricSource.LRCLIB: _found(lyrics)}):
+        item = MixItem("s", 0, duration=200.0, artist="Artist", title="Song")
+        assert await lyrics_routes.first_sung_line(item) == starts
+
+
+async def test_first_sung_line_asks_nobody_without_artist_and_title():
+    fetch = AsyncMock(return_value=None)
+    with patch.dict(SEARCH_FETCHERS, {source: fetch for source in ACTIVE_SOURCES}):
+        assert await lyrics_routes.first_sung_line(MixItem("s", 0, title="Song")) is None
+    fetch.assert_not_awaited()

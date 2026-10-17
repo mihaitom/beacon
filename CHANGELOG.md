@@ -18,6 +18,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - With transitions on, Sonos and AirPlay speakers now get lossless audio instead of AAC or MP3
 - The DJ mix length is chosen in bars (4, 8 or 16) instead of seconds, so it lasts the same musical phrase at every tempo. A length set before is carried over
 - DJ mixes follow where the beat actually plays: out of a song that ends on a long ambient tail (no drums, just a pad or a fade-out) the mix starts while the beat is still playing and drops the tail, and into a song with a long intro the bass swaps right where its beat sets in. Before, such songs often got no DJ mix at all and the next song was faded in over the almost silent end
+- DJ mixes sound cleaner on pop, rock and hip hop: once the next song's bass has come in, the previous song fades out within two bars instead of singing on under the new one, and songs whose tempos lie further apart get a crossfade instead of being audibly slowed down or sped up
+- Where the next song has synced lyrics, a DJ mix or crossfade ends right as its singing starts, and around the change both songs' voices are turned down a little so they do not pile up
 - Now Playing shows the familiar arrows before the next song again and names the transition in words instead: crossfade, or DJ mix with its tempo. Hovering "Crossfade" tells why it could not be a DJ mix, and with the artwork hidden both songs stay in the corner until the previous one has faded out
 - Clicking a song in a playlist plays the whole playlist from there instead of only that song, as it already did on the phone
 - Song Radio started from the song that is playing keeps it playing and only replaces what comes after it, instead of starting the song over
@@ -36,6 +38,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - With transitions on, Stop and logging out also end the mix on the server instead of leaving it running unheard
 - Transitions: a seek no longer scrobbles the song a second time, turning shuffle off just before a transition keeps the right song as current, and picking another song no longer briefly blocks editing the queue
 - Transitions in Safari recover by themselves when the server's encoding fails, instead of stalling silently, and a long listening session in Safari no longer fills up the server's disk
+- A DJ mix into a song whose beat starts at its very first moment no longer plays the two songs a fraction of a beat apart for the whole mix
 - Party guests see a song change in the host's mix on time even when the stream briefly runs ahead, and a mix stream no longer stutters at its very start
 - Now Playing on a phone held sideways with the artwork hidden: long titles, artists and albums stay on one line each instead of squeezing into a narrow column, and the controls sit at the bottom of the screen
 

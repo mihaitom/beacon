@@ -50,6 +50,8 @@ from core.streamer import LOOKAHEAD_SECONDS, OutputFormat, resolve_mix_format
 from core.transition_planner import Settings
 from media.base import Track
 
+from .lyrics import first_sung_line
+
 logger = logging.getLogger("connect.mix")
 
 # The longest follow() sleeps in one go, so a resync correcting the clock
@@ -100,6 +102,9 @@ def mix_item(session: SessionState, track: Track, queue_index: int, gain: float)
         bpm=hint.get("bpm"),
         payload=track,
         label=song_label(track.artist, track.title),
+        artist=track.artist,
+        title=track.title,
+        album=track.album or None,
     )
 
 
@@ -177,6 +182,7 @@ def new_mix(session: SessionState, first: MixItem, position: float) -> MixEngine
         next_fn,
         lead_seconds=LOOKAHEAD_SECONDS,
         settings=planner_settings(session.state.transitions),
+        vocals_fn=first_sung_line,
     )
 
 

@@ -750,7 +750,7 @@ export default {
     beatmixLength: 'Mix sur le tempo',
     beatmixBars: '{n} mesures',
     transitionsHint:
-      "Sans blanc enchaîne les morceaux sans pause. Le fondu enchaîné fait passer un morceau dans le suivant : quand le rythme le permet, Beacon mixe sur le tempo - il accorde le tempo, fait entrer la basse du morceau suivant sur le temps puis estompe lentement le précédent. Sinon, il fait un fondu normal. Le fondu se règle en secondes, le mix sur le tempo en mesures - moins quand un morceau ne leur laisse pas la place. Les morceaux qui se suivent sur un album s'enchaînent toujours sans blanc. Dans les deux cas, la musique passe par Beacon sous forme d'un flux continu, sur cet appareil comme sur les enceintes.",
+      "Sans blanc enchaîne les morceaux sans pause. Le fondu enchaîné fait passer un morceau dans le suivant : quand le rythme le permet, Beacon mixe sur le tempo - il accorde le tempo, fait entrer la basse du morceau suivant sur le temps puis estompe le précédent. Sinon, il fait un fondu normal. Le fondu se règle en secondes, le mix sur le tempo en mesures - moins quand un morceau ne leur laisse pas la place. Les morceaux qui se suivent sur un album s'enchaînent toujours sans blanc. Dans les deux cas, la musique passe par Beacon sous forme d'un flux continu, sur cet appareil comme sur les enceintes.",
     about: 'À propos de Beacon',
     whatsNew: 'Quoi de neuf ?',
     ffmpegFound: 'ffmpeg trouvé',

@@ -17,7 +17,7 @@ import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
-from .mix_engine import MixEngine, MixItem, song_label
+from .mix_engine import MixEngine, MixItem, VocalsFn, song_label
 from .mix_hls import MixHls
 from .transition_planner import Settings
 
@@ -57,6 +57,8 @@ class SongEntry:
             track=self.track,
             bpm=self.bpm,
             label=song_label(self.artist, self.title),
+            artist=self.artist,
+            title=self.title,
         )
 
 
@@ -150,6 +152,7 @@ def start(
     lead_seconds: float,
     settings: Settings | None = None,
     paused: bool = False,
+    vocals_fn: VocalsFn | None = None,
 ) -> LocalMix:
     """A new mix for this tab from songs[index] at `position`, replacing
     whatever it had - frozen from the start if `paused`, for a tab that
@@ -167,6 +170,7 @@ def start(
         next_fn,
         lead_seconds=lead_seconds,
         settings=settings,
+        vocals_fn=vocals_fn,
     )
     if paused:
         engine.freeze()

@@ -46,6 +46,7 @@ from core.streamer import (
 )
 
 from .local_stream import ALLOWED_BITRATES, LOSSLESS_FORMAT, refuse_byte_resume
+from .lyrics import first_sung_line
 from .mix_cast import TransitionSettings, mix_audio, planner_settings, source_url_fn
 
 logger = logging.getLogger("connect.mix")
@@ -72,7 +73,7 @@ class MixSong(BaseModel):
     disc: int | None = None
     track: int | None = None
     bpm: float | None = None
-    # For the log only.
+    # For the log, and the lyrics that say where the singing starts.
     artist: str | None = None
     title: str | None = None
 
@@ -152,6 +153,7 @@ async def start_mix(
         LOCAL_LEAD_SECONDS,
         planner_settings(req.transitions),
         paused=req.paused,
+        vocals_fn=first_sung_line,
     )
     logger.info(f"[mix] ▶ {mix.engine.first.name} from {position:.1f}s (this device)")
     return _describe(mix)

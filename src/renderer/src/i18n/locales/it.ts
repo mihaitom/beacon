@@ -747,7 +747,7 @@ export default {
     beatmixLength: 'Mix a tempo',
     beatmixBars: '{n} battute',
     transitionsHint:
-      "Senza pause riproduce i brani uno dopo l'altro senza silenzio. La dissolvenza incrociata fa sfumare un brano nel successivo: dove il ritmo lo consente, Beacon mixa a tempo: allinea il tempo, fa entrare il basso del brano successivo a tempo e poi sfuma lentamente il precedente. Altrimenti fa una dissolvenza normale. La dissolvenza si imposta in secondi, il mix a tempo in battute - meno quando un brano non lascia loro spazio. I brani che si susseguono in un album vengono sempre riprodotti senza pause. In entrambi i casi la musica passa da Beacon come un unico flusso continuo, su questo dispositivo come sugli altoparlanti.",
+      "Senza pause riproduce i brani uno dopo l'altro senza silenzio. La dissolvenza incrociata fa sfumare un brano nel successivo: dove il ritmo lo consente, Beacon mixa a tempo: allinea il tempo, fa entrare il basso del brano successivo a tempo e poi sfuma il precedente. Altrimenti fa una dissolvenza normale. La dissolvenza si imposta in secondi, il mix a tempo in battute - meno quando un brano non lascia loro spazio. I brani che si susseguono in un album vengono sempre riprodotti senza pause. In entrambi i casi la musica passa da Beacon come un unico flusso continuo, su questo dispositivo come sugli altoparlanti.",
     about: 'Informazioni su Beacon',
     whatsNew: 'Novità?',
     ffmpegFound: 'ffmpeg trovato',
