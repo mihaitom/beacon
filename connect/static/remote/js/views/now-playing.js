@@ -5,6 +5,8 @@ import { openDevicePicker } from '../devices.js';
 import { setArt } from '../art.js';
 import { paintRange } from '../range.js';
 import { createWaveform } from '../waveform.js';
+import { setFavorite } from '../favorite.js';
+import { t } from '../i18n.js';
 
 // How long the slider keeps its own value after a change, ignoring what
 // the desktop reports back. Matches VOLUME_SETTLE_MS in the app's own
@@ -36,14 +38,19 @@ export function renderNowPlaying(root) {
   root.innerHTML = `
     <div class="now-playing">
       <div class="cover-art" id="np-art"></div>
-      <div>
+      <div class="now-playing__info">
         <div class="now-playing__eyebrow" id="np-eyebrow"></div>
-        <div class="song-title" id="np-title">Nothing playing</div>
+        <div class="song-title" id="np-title">${t('nowPlaying.nothing')}</div>
         <div class="song-artist" id="np-artist"></div>
+        <!-- Out of the flow and mirrored by the padding on the left, so the
+             text stays centred - the app's NowPlayingTrackPanels.vue. -->
+        <button id="np-favorite" class="now-playing__favorite hidden" aria-label="${t('favorite.add')}">
+          <i class="mdi mdi-heart-outline"></i>
+        </button>
       </div>
       <div class="transport-row">
         <div class="transport-side">
-          <button id="np-autoplay" title="Autoplay"><i class="mdi mdi-infinity"></i></button>
+          <button id="np-autoplay" title="${t('nowPlaying.autoplay')}"><i class="mdi mdi-infinity"></i></button>
           <button id="np-shuffle"><i class="mdi mdi-shuffle"></i></button>
           <button id="np-prev"><i class="mdi mdi-skip-previous"></i></button>
         </div>
@@ -51,7 +58,7 @@ export function renderNowPlaying(root) {
         <div class="transport-side">
           <button id="np-next"><i class="mdi mdi-skip-next"></i></button>
           <button id="np-repeat"><i class="mdi mdi-repeat"></i></button>
-          <button id="np-cast" title="Play on…"><i class="mdi mdi-cast"></i></button>
+          <button id="np-cast" title="${t('nowPlaying.playOn')}"><i class="mdi mdi-cast"></i></button>
         </div>
       </div>
       <!-- Below the transport buttons, elapsed and total either side of the
@@ -70,7 +77,7 @@ export function renderNowPlaying(root) {
         <div class="live-buffering hidden" id="np-live-buffering"></div>
         <div class="live-readout hidden" id="np-live-readout">
           <span class="live-dot" id="np-live-dot"></span>
-          <span class="live-label">Live</span>
+          <span class="live-label">${t('nowPlaying.live')}</span>
           <span class="live-sep">·</span>
           <span class="live-time" id="np-live-time">0:00</span>
         </div>
@@ -101,6 +108,16 @@ export function renderNowPlaying(root) {
   const shuffleBtn = root.querySelector('#np-shuffle');
   const repeatBtn = root.querySelector('#np-repeat');
   const autoplayBtn = root.querySelector('#np-autoplay');
+  const favoriteBtn = root.querySelector('#np-favorite');
+  favoriteBtn.addEventListener('click', () => {
+    const song = state.snapshot.current_song;
+    // The next snapshot shows the outcome. A failure raises the banner
+    // fireCommand() raises (api.js) - this needs sendCommand's answer.
+    if (!song) return;
+    setFavorite(song, !song.starred).catch(() => {
+      window.dispatchEvent(new CustomEvent('beacon-remote-command-failed'));
+    });
+  });
   const muteBtn = root.querySelector('#np-mute');
   const volume = root.querySelector('#np-volume');
 
@@ -145,7 +162,8 @@ export function renderNowPlaying(root) {
     // Same "Now playing"/"Pause" distinction as NowPlayingView.vue's own
     // eyebrow computed (home.nowPlaying/home.paused) — empty once there's
     // nothing loaded at all, matching the title's own "Nothing playing".
-    eyebrow.textContent = song || snapshot.radio ? (snapshot.playing ? 'Now playing' : 'Pause') : '';
+    eyebrow.textContent =
+      song || snapshot.radio ? t(snapshot.playing ? 'nowPlaying.playing' : 'nowPlaying.paused') : '';
     // Radio's two labels in the same order the app's own player bar uses
     // (see SongInfo.vue): the ICY tag on top, since that is what is
     // actually playing, and the station below it. With no tag the station
@@ -156,8 +174,12 @@ export function renderNowPlaying(root) {
       ? song.title
       : snapshot.radio
         ? nowPlaying || snapshot.radio.name
-        : 'Nothing playing';
+        : t('nowPlaying.nothing');
     artist.textContent = song ? song.artist || '' : nowPlaying ? snapshot.radio.name : '';
+    favoriteBtn.classList.toggle('hidden', !song || !snapshot.favorites_supported);
+    favoriteBtn.classList.toggle('active', !!song?.starred);
+    favoriteBtn.querySelector('i').className = song?.starred ? 'mdi mdi-heart' : 'mdi mdi-heart-outline';
+    favoriteBtn.setAttribute('aria-label', t(song?.starred ? 'favorite.remove' : 'favorite.add'));
     playBtn.innerHTML = snapshot.playing
       ? '<i class="mdi mdi-pause"></i>'
       : '<i class="mdi mdi-play"></i>';
@@ -192,7 +214,10 @@ export function renderNowPlaying(root) {
     const casting = snapshot.casting ?? [];
     castBtn.classList.toggle('active', casting.length > 0);
     castBtn.querySelector('i').className = casting.length > 0 ? 'mdi mdi-cast-connected' : 'mdi mdi-cast';
-    castBtn.title = casting.length > 0 ? `Playing on ${casting.map((t) => t.name).join(', ')}` : 'Play on…';
+    castBtn.title =
+      casting.length > 0
+        ? t('nowPlaying.playingOn', { names: casting.map((target) => target.name).join(', ') })
+        : t('nowPlaying.playOn');
 
     seekRow.classList.toggle('hidden', isRadio);
     liveRow.classList.toggle('hidden', !isRadio);

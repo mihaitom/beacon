@@ -15,11 +15,8 @@
       </div>
       <div class="text-body-small text-medium-emphasis">{{ song.artist }}</div>
     </div>
-    <!-- No favourite toggle here, deliberately: the phone has no way to
-     - *see* favourites — no tab, and nothing that links to the desktop's
-     - /favorites page — so setting one was an action with no visible
-     - result anywhere in this shell. Still reachable from the desktop,
-     - where the list it feeds actually exists. -->
+    <!-- The favourite toggle is in the song's actions behind this button
+     - rather than a second button on every row. -->
     <v-btn
       icon="mdi-dots-vertical"
       variant="text"

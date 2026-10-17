@@ -5,6 +5,8 @@
 import { fireCommand, sendCommand } from './api.js';
 import { openActionSheet } from './sheet.js';
 import { createArt } from './art.js';
+import { favoriteAction } from './favorite.js';
+import { t } from './i18n.js';
 
 export function renderSongRow(song, { onPlay } = {}) {
   const row = document.createElement('div');
@@ -38,23 +40,24 @@ export function renderSongRow(song, { onPlay } = {}) {
   actionBtn.addEventListener('click', (event) => {
     event.stopPropagation();
     openActionSheet([
-      { label: 'Play', icon: 'mdi-play', onSelect: () => sendCommand('play-song', { songId: song.id }) },
+      { label: t('action.play'), icon: 'mdi-play', onSelect: () => sendCommand('play-song', { songId: song.id }) },
       {
-        label: 'Play Next',
+        label: t('action.playNext'),
         icon: 'mdi-playlist-plus',
         onSelect: () => sendCommand('queue-next', { songId: song.id }),
       },
       {
-        label: 'Add to Queue',
+        label: t('action.addToQueue'),
         icon: 'mdi-plus',
         onSelect: () => sendCommand('queue-add', { songId: song.id }),
       },
       {
-        label: 'Start Song Radio',
+        label: t('action.songRadio'),
         icon: 'mdi-antenna',
         onSelect: () => sendCommand('play-song-radio', { songId: song.id }),
       },
-    ]);
+      favoriteAction(song),
+    ].filter(Boolean));
   });
   row.appendChild(actionBtn);
 

@@ -10,6 +10,7 @@ import { fireCommand } from './api.js';
 import { setArt } from './art.js';
 import { navigate } from './router.js';
 import { state, subscribe } from './state.js';
+import { t } from './i18n.js';
 
 /** The route currently showing, normalised the same way router.js does it
  * — read from the hash rather than asked of the router, so this never
@@ -34,19 +35,18 @@ export function initMiniPlayer() {
 
   function render() {
     const snapshot = state.snapshot;
-    const song = snapshot.current_song;
     const radio = snapshot.radio;
-    // Nothing to show, and never on Now Playing itself — that page is
-    // what this is a shortcut to.
-    const visible = Boolean(song || radio) && currentPath() !== '/now-playing';
-    bar.classList.toggle('hidden', !visible);
-    if (!visible) return;
+    // With nothing loaded, the queue's first song - play starts it. The
+    // strip stays even with that empty too: it is the way to Now Playing,
+    // and with it to the speaker picker. Only Now Playing itself drops it.
+    const song = radio ? null : snapshot.current_song || snapshot.queue?.[0] || null;
+    bar.classList.toggle('hidden', currentPath() === '/now-playing');
 
     const artUrl = song?.cover_art_url || radio?.favicon_url || null;
     const artKey = `${artUrl ?? ''}|${radio ? 1 : 0}`;
     if (artKey !== lastArtKey) {
       lastArtKey = artKey;
-      setArt(art, artUrl, radio ? 'mdi-radio' : null);
+      setArt(art, artUrl, radio ? 'mdi-radio' : 'mdi-music-note');
     }
 
     // The station's ICY tag on top and the station underneath it, the same
@@ -54,16 +54,18 @@ export function initMiniPlayer() {
     // MobilePlayerBar.vue) — station name alone up top until a tag
     // arrives, rather than repeating it on both lines.
     const nowPlaying = radio?.now_playing || null;
-    title.textContent = song ? song.title : nowPlaying || radio.name;
-    subtitle.textContent = song ? song.artist || '' : nowPlaying ? radio.name : '';
+    title.textContent = radio ? nowPlaying || radio.name : song?.title ?? t('nowPlaying.nothing');
+    subtitle.textContent = radio ? (nowPlaying ? radio.name : '') : song?.artist || '';
 
     playBtn.innerHTML = snapshot.playing
       ? '<i class="mdi mdi-pause"></i>'
       : '<i class="mdi mdi-play"></i>';
     // A live stream has no queue to step through — same gating as the
     // transport row's own (see views/now-playing.js). Play/pause stays.
-    prevBtn.disabled = Boolean(radio);
-    nextBtn.disabled = Boolean(radio);
+    const loaded = Boolean(snapshot.current_song);
+    prevBtn.disabled = Boolean(radio) || !loaded;
+    nextBtn.disabled = Boolean(radio) || !loaded;
+    playBtn.disabled = !radio && !song;
   }
 
   bar.addEventListener('click', () => navigate('/now-playing'));
@@ -75,7 +77,9 @@ export function initMiniPlayer() {
   });
   playBtn.addEventListener('click', (event) => {
     event.stopPropagation();
-    fireCommand('toggle-play');
+    const snapshot = state.snapshot;
+    if (snapshot.current_song || snapshot.radio) fireCommand('toggle-play');
+    else if (snapshot.queue?.length) fireCommand('queue-jump', { index: 0 });
   });
   nextBtn.addEventListener('click', (event) => {
     event.stopPropagation();

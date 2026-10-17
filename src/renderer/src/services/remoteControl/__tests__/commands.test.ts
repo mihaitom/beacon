@@ -321,6 +321,41 @@ describe('handleRemoteCommand', () => {
     expect(playSpy).toHaveBeenLastCalledWith(playlist.songs, 0, true, true)
   })
 
+  describe('set-favorite', () => {
+    it("flips the queue's own song when the phone wants the other state", async () => {
+      const playback = usePlaybackStore()
+      const library = useLibraryStore()
+      playback.setQueue([makeSong('a'), makeSong('b')], 0)
+      const toggleFavorite = vi.spyOn(library, 'toggleFavorite').mockResolvedValue()
+
+      await handleRemoteCommand('set-favorite', { songId: 'b', favorite: true })
+
+      expect(toggleFavorite).toHaveBeenCalledWith('song', playback.queue[1])
+    })
+
+    /** Set, not toggled: a repeated tap must not take the favourite back. */
+    it('leaves a song alone that already is what the phone asks for', async () => {
+      const playback = usePlaybackStore()
+      playback.setQueue([makeSong('a', { starred: true })], 0)
+      const toggleFavorite = vi.spyOn(useLibraryStore(), 'toggleFavorite').mockResolvedValue()
+
+      await handleRemoteCommand('set-favorite', { songId: 'a', favorite: true })
+
+      expect(toggleFavorite).not.toHaveBeenCalled()
+    })
+
+    it('finds a song outside the queue too', async () => {
+      const library = useLibraryStore()
+      const song = makeSong('x')
+      library.allSongs = [song]
+      const toggleFavorite = vi.spyOn(library, 'toggleFavorite').mockResolvedValue()
+
+      await handleRemoteCommand('set-favorite', { songId: 'x', favorite: true })
+
+      expect(toggleFavorite).toHaveBeenCalledWith('song', song)
+    })
+  })
+
   describe('play-favorites', () => {
     function stubFavorites(songs: ReturnType<typeof makeSong>[]) {
       const library = useLibraryStore()
@@ -728,7 +763,6 @@ describe('resolveRemoteQuery', () => {
 
   describe('favorites-request', () => {
     it('sends the favourite songs and albums', async () => {
-      useAuthStore().serverType = 'subsonic'
       const library = useLibraryStore()
       vi.spyOn(library, 'fetchStarred').mockImplementation(async () => {
         library.starred = {
@@ -739,26 +773,12 @@ describe('resolveRemoteQuery', () => {
       })
 
       const result = (await resolveRemoteQuery('favorites-request', {})) as {
-        supported: boolean
         songs: { id: string }[]
         albums: { id: string }[]
       }
 
-      expect(result.supported).toBe(true)
       expect(result.songs.map((s) => s.id)).toEqual(['a'])
       expect(result.albums.map((a) => a.id)).toEqual(['al1'])
-    })
-
-    /** Plex has no favourites; an empty list alone would read as "none
-     * marked yet". */
-    it('says so on a server without favourites, without asking it', async () => {
-      useAuthStore().serverType = 'plex'
-      const fetchStarred = vi.spyOn(useLibraryStore(), 'fetchStarred')
-
-      const result = await resolveRemoteQuery('favorites-request', {})
-
-      expect(result).toEqual({ supported: false, songs: [], albums: [] })
-      expect(fetchStarred).not.toHaveBeenCalled()
     })
   })
 

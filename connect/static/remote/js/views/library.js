@@ -10,6 +10,7 @@ import { fetchAlbums, fetchSongs } from '../api.js';
 import { navigate, registerRoute } from '../router.js';
 import { renderAlbumRow } from '../album-row.js';
 import { renderSongRow } from '../song-row.js';
+import { t } from '../i18n.js';
 
 const PAGE_SIZE = 50;
 
@@ -17,38 +18,38 @@ const PAGE_SIZE = 50;
 // one function instead of two nearly identical ones.
 const VIEWS = {
   albums: {
-    empty: 'No albums found',
-    failed: 'Couldn’t load albums',
+    empty: 'library.noAlbums',
+    failed: 'library.failedAlbums',
     fetch: fetchAlbums,
-    placeholder: 'Search albums…',
+    placeholder: 'library.searchAlbums',
     row: renderAlbumRow,
   },
   songs: {
-    empty: 'No songs found',
-    failed: 'Couldn’t load songs',
+    empty: 'library.noSongs',
+    failed: 'library.failedSongs',
     fetch: fetchSongs,
-    placeholder: 'Search songs…',
+    placeholder: 'library.searchSongs',
     row: renderSongRow,
   },
 };
 
 export function renderLibrary(root) {
   root.innerHTML = `
-    <h1 class="view-title">Library</h1>
+    <h1 class="view-title">${t('library.title')}</h1>
     <div class="segmented" id="library-toggle">
-      <button type="button" class="active" data-view="songs">Songs</button>
-      <button type="button" data-view="albums">Albums</button>
+      <button type="button" class="active" data-view="songs">${t('library.songs')}</button>
+      <button type="button" data-view="albums">${t('library.albums')}</button>
     </div>
     <div class="search-field">
-      <input type="search" class="search-input" id="library-search" placeholder="Search songs…" />
+      <input type="search" class="search-input" id="library-search" placeholder="${t('library.searchSongs')}" />
       <!-- Explicit, not the browser's own: type="search" only draws a clear
            affordance on some platforms (WebKit does, Chrome on Android does
            not), and this is a phone-first app. -->
       <button type="button" class="search-clear hidden" id="library-search-clear"
-              aria-label="Clear search"><i class="mdi mdi-close"></i></button>
+              aria-label="${t('common.clearSearch')}"><i class="mdi mdi-close"></i></button>
     </div>
     <div class="list" id="library-list"></div>
-    <button class="load-more hidden" id="load-more">Load more</button>
+    <button class="load-more hidden" id="load-more">${t('common.loadMore')}</button>
   `;
 
   const toggle = root.querySelector('#library-toggle');
@@ -71,7 +72,7 @@ export function renderLibrary(root) {
     const config = VIEWS[view];
     if (reset) {
       offset = 0;
-      list.innerHTML = '<div class="empty-state">Loading…</div>';
+      list.innerHTML = `<div class="empty-state">${t('common.loading')}</div>`;
     }
     const token = ++requestToken;
     try {
@@ -80,14 +81,14 @@ export function renderLibrary(root) {
       total = newTotal;
       if (reset) list.innerHTML = '';
       if (reset && !items.length) {
-        list.innerHTML = `<div class="empty-state">${config.empty}</div>`;
+        list.innerHTML = `<div class="empty-state">${t(config.empty)}</div>`;
       }
       for (const item of items) list.appendChild(config.row(item));
       offset += items.length;
       loadMoreBtn.classList.toggle('hidden', offset >= total || items.length === 0);
     } catch {
       if (token !== requestToken) return;
-      if (reset) list.innerHTML = `<div class="empty-state">${config.failed}</div>`;
+      if (reset) list.innerHTML = `<div class="empty-state">${t(config.failed)}</div>`;
     }
   }
 
@@ -102,7 +103,7 @@ export function renderLibrary(root) {
     // half is usually what makes you switch, and retyping the term you just
     // entered would be the price of one tap. The clear button next to the
     // field covers the rarer "start over" case.
-    searchInput.placeholder = VIEWS[view].placeholder;
+    searchInput.placeholder = t(VIEWS[view].placeholder);
     load(true);
   });
 

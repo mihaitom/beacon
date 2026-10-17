@@ -17,6 +17,15 @@
       </div>
       <preview-button :songs="album.songs" compact />
       <v-btn
+        v-if="authStore.capabilities.favorites"
+        :icon="album.starred ? 'mdi-heart' : 'mdi-heart-outline'"
+        :color="album.starred ? 'primary' : undefined"
+        variant="text"
+        :title="$t(album.starred ? 'library.unstar' : 'library.star')"
+        :aria-label="$t(album.starred ? 'library.unstar' : 'library.star')"
+        @click="toggleFavorite"
+      />
+      <v-btn
         icon="mdi-play-circle"
         color="primary"
         size="large"
@@ -51,6 +60,7 @@
 <script lang="ts">
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
+import { useAuthStore } from '@/stores/auth'
 import CoverArt from '@/components/library/CoverArt.vue'
 import PreviewButton from '@/components/library/PreviewButton.vue'
 import MobileSongRow from '@/components/mobile/MobileSongRow.vue'
@@ -70,6 +80,9 @@ export default {
   computed: {
     libraryStore() {
       return useLibraryStore()
+    },
+    authStore() {
+      return useAuthStore()
     },
     meta(): string {
       const count = this.$t('library.songCount', { count: this.album?.songCount ?? 0 })
@@ -105,6 +118,9 @@ export default {
       // list where a tap queues that song alone: this one is a sequence
       // somebody meant. Same split the desktop SongTable.vue makes.
       await usePlaybackStore().playSongList(this.album.songs, index)
+    },
+    async toggleFavorite() {
+      if (this.album) await this.libraryStore.toggleFavorite('album', this.album)
     },
     openActions(song: Song) {
       this.activeSong = song

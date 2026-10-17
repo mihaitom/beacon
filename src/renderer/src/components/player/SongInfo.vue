@@ -123,13 +123,8 @@ export default {
     async toggleStar() {
       if (!this.currentSong || this.starringInFlight) return
       this.starringInFlight = true
-      const song = this.currentSong
-      const wasStarred = song.starred
       try {
-        await useLibraryStore().toggleStar({ id: song.id, starred: wasStarred })
-        // Flip the captured song, not this.currentSong — the song that
-        // was actually playing might have advanced during the round-trip.
-        song.starred = !wasStarred
+        await useLibraryStore().toggleFavorite('song', this.currentSong)
       } finally {
         this.starringInFlight = false
       }

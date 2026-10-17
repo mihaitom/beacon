@@ -8,16 +8,13 @@ endpoint is left alone), plus ratings and playlist CRUD:
   - Personal ratings (setRating.view) map onto Plex's own `PUT /:/rate`
     (0-10 internally, 2 units per star) — the one personal-marking
     mechanism the core Plex Media Server REST API exposes for music at
-    all. There is no separate boolean favorite in this API surface: the
+    all. There is no separate boolean favorite in this API surface (the
     heart-shaped "Love" seen in Plexamp/mobile is backed by Plex Pass
-    cloud sync (plex.tv Discover), a different API this bridge doesn't
-    talk to. So star.view/unstar.view/getStarred2.view are deliberately
-    NOT bridged here — overloading the same rating value with an invented
-    second meaning would be worse than leaving favorites unsupported, and
-    the frontend has no separate capability flag to hide the heart icon
-    per-backend the way personalRating already does (see
-    services/capabilities.ts) — revisit together if this gap is worth
-    closing.
+    cloud sync, a different API this bridge doesn't talk to), so
+    star.view/unstar.view/getStarred2.view ride on the rating: a favorite
+    is five stars, the value Plexamp's own "like" sets. The frontend knows
+    the two are one value (services/capabilities.ts's
+    favoritesAreTopRating) and moves them together.
   - Playlist CRUD is bridged (create/get/list/update/delete) via Plex's
     URI-addressed playlist API — needs the *server's* machine identifier
     (see _playlist_item_uri()), not yet confirmed against a live server.
@@ -159,6 +156,18 @@ def _map_user_rating(item: dict) -> int | None:
     return round(rating / 2)
 
 
+# Five stars on Plex's 0-10 scale: what a favorite is here (see the module
+# docstring).
+_FAVORITE_RATING = 10
+
+
+def _set_starred(target: dict, item: dict) -> None:
+    """Subsonic marks a favorite with the date it was starred; Plex's
+    lastRatedAt is the nearest thing, and its absence must not unmark it."""
+    if item.get("userRating") == _FAVORITE_RATING:
+        target["starred"] = _epoch_to_iso(item.get("lastRatedAt")) or _epoch_to_iso(0)
+
+
 def _cover_art_id(item: dict, rating_key) -> str:
     """`rating_key` with the version Plex puts in its own artwork path, so
     that replacing the art produces a different cover art id rather than the
@@ -226,6 +235,7 @@ def _map_song(item: dict) -> dict:
     user_rating = _map_user_rating(item)
     if user_rating is not None:
         song["userRating"] = user_rating
+    _set_starred(song, item)
     return song
 
 
@@ -323,6 +333,7 @@ def _map_album(item: dict) -> dict:
     user_rating = _map_user_rating(item)
     if user_rating is not None:
         album["userRating"] = user_rating
+    _set_starred(album, item)
     return album
 
 
@@ -345,6 +356,7 @@ def _map_artist(item: dict) -> dict:
     user_rating = _map_user_rating(item)
     if user_rating is not None:
         artist["userRating"] = user_rating
+    _set_starred(artist, item)
     return artist
 
 
@@ -739,17 +751,7 @@ async def search3(params: dict, media: PlexClient) -> dict:
 # ── Ratings ───────────────────────────────────────────────────────────────────
 
 
-async def set_rating(params: dict, media: PlexClient) -> dict:
-    item_id = params.get("id", "")
-    if not item_id:
-        raise ValueError("setRating.view requires id")
-    rating = int(params.get("rating", "0"))
-    if not 0 <= rating <= 5:
-        raise ValueError("rating must be between 0 and 5")
-    # 0 means "clear the rating" on both sides of this bridge, but Plex's
-    # own clear value is -1, not 0 (0 there means "explicitly rated
-    # zero stars", a distinct state Beacon's UI has no way to set anyway).
-    plex_rating = rating * 2 if rating > 0 else -1
+async def _rate(media: PlexClient, item_id: str, plex_rating: int) -> None:
     await _px_request(
         "PUT",
         media,
@@ -760,7 +762,71 @@ async def set_rating(params: dict, media: PlexClient) -> dict:
             "rating": str(plex_rating),
         },
     )
+
+
+# 0 means "clear the rating" on both sides of this bridge, but Plex's own
+# clear value is -1, not 0 (0 there means "explicitly rated zero stars", a
+# distinct state Beacon's UI has no way to set anyway).
+_CLEARED_RATING = -1
+
+
+async def set_rating(params: dict, media: PlexClient) -> dict:
+    item_id = params.get("id", "")
+    if not item_id:
+        raise ValueError("setRating.view requires id")
+    rating = int(params.get("rating", "0"))
+    if not 0 <= rating <= 5:
+        raise ValueError("rating must be between 0 and 5")
+    await _rate(media, item_id, rating * 2 if rating > 0 else _CLEARED_RATING)
     return {}
+
+
+def _star_targets(params) -> list[str]:
+    """star.view/unstar.view name songs as `id`, albums as `albumId` and
+    artists as `artistId` - all one kind of key on Plex."""
+    ids = [*params.getlist("id"), *params.getlist("albumId"), *params.getlist("artistId")]
+    if not ids:
+        raise ValueError("star.view/unstar.view requires id, albumId or artistId")
+    return ids
+
+
+async def star(params, media: PlexClient) -> dict:
+    for item_id in _star_targets(params):
+        await _rate(media, item_id, _FAVORITE_RATING)
+    return {}
+
+
+async def unstar(params, media: PlexClient) -> dict:
+    """Clears the rating outright: a favorite *was* the five stars, and
+    taking it back to four would be a rating nobody gave."""
+    for item_id in _star_targets(params):
+        await _rate(media, item_id, _CLEARED_RATING)
+    return {}
+
+
+async def get_starred2(_params: dict, media: PlexClient) -> dict:
+    section = await _music_section(media)
+
+    async def favorites(item_type: str) -> list[dict]:
+        data = await _px_get(
+            media,
+            f"/library/sections/{section}/all",
+            type=item_type,
+            userRating=str(_FAVORITE_RATING),
+        )
+        items = data.get("MediaContainer", {}).get("Metadata", [])
+        # Checked again here: the filter has not been tried against a live
+        # server, and one that ignored it would otherwise hand back the
+        # whole library as favorites.
+        return [item for item in items if item.get("userRating") == _FAVORITE_RATING]
+
+    return {
+        "starred2": {
+            "song": _map_all(_map_song, await favorites("10")),
+            "album": _map_all(_map_album, await favorites("9")),
+            "artist": _map_all(_map_artist, await favorites("8")),
+        }
+    }
 
 
 # ── Play tracking ────────────────────────────────────────────────────────────
@@ -1007,6 +1073,9 @@ _HANDLERS: dict[str, Callable[[dict, PlexClient], Awaitable[dict]]] = {
     "getArtist.view": get_artist,
     "search3.view": search3,
     "setRating.view": set_rating,
+    "star.view": star,
+    "unstar.view": unstar,
+    "getStarred2.view": get_starred2,
     "scrobble.view": scrobble,
     "getPlaylists.view": get_playlists,
     "getPlaylist.view": get_playlist,

@@ -19,11 +19,11 @@
   <div id="login-screen" class="screen hidden">
     <div class="login-card">
       <h1>Beacon Remote</h1>
-      <p class="muted">Enter the 6-digit code shown in Beacon's Settings.</p>
+      <p class="muted" data-i18n="login.hint">Enter the 6-digit code shown in Beacon's Settings.</p>
       <form id="login-form">
         <input id="pin-input" class="pin-input" inputmode="numeric" pattern="[0-9]*" maxlength="6"
                autocomplete="one-time-code" placeholder="000000" />
-        <button type="submit" class="btn btn-primary">Connect</button>
+        <button type="submit" class="btn btn-primary" data-i18n="login.connect">Connect</button>
       </form>
       <p id="login-error" class="error hidden"></p>
     </div>
@@ -55,28 +55,28 @@
     <!-- Icons/labels/order match MobileTabBar.vue's own `items` exactly. -->
     <nav class="tabbar">
       <a href="#/queue" data-tab="queue">
-        <i class="mdi mdi-playlist-music icon"></i><span>Queue</span>
+        <i class="mdi mdi-playlist-music icon"></i><span data-i18n="tab.queue">Queue</span>
       </a>
       <a href="#/library" data-tab="library">
-        <i class="mdi mdi-music-note icon"></i><span>Library</span>
+        <i class="mdi mdi-music-note icon"></i><span data-i18n="tab.library">Library</span>
       </a>
       <a href="#/favorites" data-tab="favorites">
-        <i class="mdi mdi-heart icon"></i><span>Favorites</span>
+        <i class="mdi mdi-heart icon"></i><span data-i18n="tab.favorites">Favorites</span>
       </a>
       <a href="#/playlists" data-tab="playlists">
-        <i class="mdi mdi-playlist-play icon"></i><span>Playlists</span>
+        <i class="mdi mdi-playlist-play icon"></i><span data-i18n="tab.playlists">Playlists</span>
       </a>
       <a href="#/radio" data-tab="radio">
-        <i class="mdi mdi-radio icon"></i><span>Radio</span>
+        <i class="mdi mdi-radio icon"></i><span data-i18n="tab.radio">Radio</span>
       </a>
     </nav>
   </div>
 
-  <div id="disconnected-banner" class="banner hidden">Connection lost — retrying…</div>
-  <button id="interrupted-banner" type="button" class="banner banner-action hidden">
-    Playback was interrupted — tap to resume
+  <div id="disconnected-banner" class="banner hidden" data-i18n="banner.disconnected">Connection lost - retrying…</div>
+  <button id="interrupted-banner" type="button" class="banner banner-action hidden" data-i18n="banner.interrupted">
+    Playback was interrupted - tap to resume
   </button>
-  <div id="command-error-banner" class="banner hidden">That didn't reach Beacon — try again</div>
+  <div id="command-error-banner" class="banner hidden" data-i18n="banner.commandFailed">That didn't reach Beacon - try again</div>
 
   <script type="module" src="app.js"></script>
 </body>

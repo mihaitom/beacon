@@ -4,6 +4,8 @@ import { state, subscribe } from '../state.js';
 import { createArt } from '../art.js';
 import { openActionSheet } from '../sheet.js';
 import { onLongPress } from '../long-press.js';
+import { favoriteAction } from '../favorite.js';
+import { t } from '../i18n.js';
 
 // Pointer-based drag-to-reorder (works for touch and mouse alike, unlike
 // HTML5 drag-and-drop which touch browsers don't fire reliably) — a row
@@ -34,7 +36,7 @@ const EDGE_SCROLL_ZONE_PX = 64;
 const EDGE_SCROLL_MAX_PX_PER_S = 1400;
 
 export function renderQueue(root) {
-  root.innerHTML = '<h1 class="view-title">Queue</h1><div class="list" id="queue-list"></div>';
+  root.innerHTML = `<h1 class="view-title">${t('queue.title')}</h1><div class="list" id="queue-list"></div>`;
   const list = root.querySelector('#queue-list');
 
   const topSpacer = document.createElement('div');
@@ -117,7 +119,7 @@ export function renderQueue(root) {
       list.querySelectorAll('.row, .empty-state').forEach((el) => el.remove());
       list.insertBefore(Object.assign(document.createElement('div'), {
         className: 'empty-state',
-        textContent: 'Queue is empty',
+        textContent: t('queue.empty'),
       }), bottomSpacer);
       lastWindowKey = null;
       return;
@@ -168,35 +170,36 @@ export function renderQueue(root) {
     openActionSheet(
       [
         {
-          label: 'Play',
+          label: t('action.play'),
           icon: 'mdi-play',
           disabled: isCurrent,
           onSelect: () => sendCommand('queue-jump', { index }),
         },
         {
-          label: 'Play Next',
+          label: t('action.playNext'),
           icon: 'mdi-skip-next-outline',
           disabled: isCurrent || index === currentIndex + 1,
           onSelect: () => sendCommand('queue-move', { index, where: 'next' }),
         },
         {
-          label: 'Move to End',
+          label: t('action.moveToEnd'),
           icon: 'mdi-arrow-collapse-down',
           disabled: isCurrent || index === localQueue.length - 1,
           onSelect: () => sendCommand('queue-move', { index, where: 'end' }),
         },
         {
-          label: 'Remove from Queue',
+          label: t('action.removeFromQueue'),
           icon: 'mdi-playlist-remove',
           disabled: isCurrent,
           onSelect: () => sendCommand('queue-remove', { index }),
         },
         {
-          label: 'Start Song Radio',
+          label: t('action.songRadio'),
           icon: 'mdi-antenna',
           onSelect: () => sendCommand('play-song-radio', { songId: song.id }),
         },
-      ],
+        favoriteAction(song),
+      ].filter(Boolean),
       { title: song.title },
     );
   }

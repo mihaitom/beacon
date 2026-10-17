@@ -252,6 +252,9 @@ export default {
     autoplayAvailable(): boolean {
       return this.authStore.capabilities.songRadio
     },
+    favoriteAvailable(): boolean {
+      return this.authStore.capabilities.favorites
+    },
     // The radio snapshot fields the source hands the log panel, lifted here
     // so hostSource reads them the same way it reads everything else.
     radioNowPlaying(): string | null {
@@ -709,6 +712,10 @@ export default {
     },
     toggleAutoplay(): void {
       this.playbackStore.setAutoplayEnabled(!this.autoplayStore.enabled)
+    },
+    toggleFavorite(): void {
+      const song = this.currentSong
+      if (song) void useLibraryStore().toggleFavorite('song', song)
     },
     /** One made-up title, handed to the log the way a real one arrives —
      * see the debug button in the toolbar. The counter goes in the title

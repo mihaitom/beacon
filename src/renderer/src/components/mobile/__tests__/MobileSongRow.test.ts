@@ -5,7 +5,6 @@ import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
-import { useAuthStore } from '@/stores/auth'
 import { usePlaybackStore } from '@/stores/playback'
 import MobileSongRow from '../MobileSongRow.vue'
 import { makeSong } from '@/stores/__tests__/fixtures'
@@ -39,22 +38,6 @@ describe('MobileSongRow', () => {
 
     expect(wrapper.emitted('open-actions')).toHaveLength(1)
     expect(wrapper.emitted('play')).toBeUndefined()
-  })
-
-  /** The phone has no way to see favourites — no tab, and nothing linking
-   * to the desktop's /favorites page — so a heart here was an action whose
-   * result was invisible everywhere in this shell. Asserted against a
-   * server that does support favourites, since that is the case where the
-   * button used to render. */
-  it('offers no favourite toggle, even where the server supports them', async () => {
-    const auth = useAuthStore()
-    auth.serverType = 'subsonic'
-    expect(auth.capabilities.favorites).toBe(true)
-
-    const wrapper = mountRow(makeSong('a', { starred: true }))
-
-    expect(wrapper.find('.mdi-heart').exists()).toBe(false)
-    expect(wrapper.find('.mdi-heart-outline').exists()).toBe(false)
   })
 
   it('marks the song that is playing', async () => {

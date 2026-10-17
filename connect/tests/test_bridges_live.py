@@ -313,6 +313,39 @@ async def test_plex_renames_a_playlist(plex, plex_playlist):
     assert (await get_playlist({"id": playlist_id}, plex))["playlist"]["name"] == renamed
 
 
+async def test_plex_favorites_round_trip(plex):
+    """A favorite on Plex is the five-star rating (see plex_bridge.py's
+    module docstring). Checks that getStarred2's rating filter is one the
+    server actually applies, and that the bridge's own re-check is not what
+    makes the answer right.
+
+    Puts the track's original rating back afterwards, including on failure."""
+    from media.plex_bridge import _px_get, _rate, get_starred2, star, unstar
+
+    song_id = (await _plex_song_ids(plex, 1))[0]
+    item = (await _px_get(plex, f"/library/metadata/{song_id}"))["MediaContainer"]["Metadata"][0]
+    original = item.get("userRating")
+
+    try:
+        await star(MultiParams({"id": [song_id]}), plex)
+        starred = (await get_starred2(_params(), plex))["starred2"]
+        assert {"song", "album", "artist"} <= set(starred), "unexpected starred2 shape"
+        assert any(entry["id"] == song_id for entry in starred["song"]), "starring did not stick"
+
+        # The server-side filter itself: everything it hands back is five stars.
+        section = item.get("librarySectionID") or plex.music_section_key
+        raw = await _px_get(plex, f"/library/sections/{section}/all", type="10", userRating="10")
+        ratings = {m.get("userRating") for m in raw["MediaContainer"].get("Metadata", [])}
+        assert ratings == {10}, f"the rating filter was ignored: {ratings}"
+
+        await unstar(MultiParams({"id": [song_id]}), plex)
+        after = (await get_starred2(_params(), plex))["starred2"]["song"]
+        assert not any(entry["id"] == song_id for entry in after), "unstarring did not stick"
+
+    finally:
+        await _rate(plex, song_id, original if original else -1)
+
+
 async def test_plex_browsing_returns_usable_shapes(plex):
     """The field names in this bridge were written from Plex's public docs
     rather than from a real library, and its own module docstring says as

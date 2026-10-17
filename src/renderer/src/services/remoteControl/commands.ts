@@ -25,6 +25,7 @@ export interface RemoteSong {
    * its own key - cover_art_url is relative to the phone app's origin. */
   cover_art_id: string | null
   duration: number
+  starred: boolean
 }
 
 /** Deliberately NOT SubsonicClient.coverArtUrl() rewritten in place (an
@@ -85,6 +86,7 @@ export function toRemoteSong(song: Song): RemoteSong {
     cover_art_url: remoteCoverArtUrl(song.coverArtId),
     cover_art_id: song.coverArtId ?? null,
     duration: song.duration,
+    starred: song.starred,
   }
 }
 
@@ -236,6 +238,18 @@ export async function handleRemoteCommand(
     case 'party-withdraw':
       usePartyStore().withdraw(String(payload.requestId), String(payload.guestId))
       return
+    // Set rather than toggled: the phone says what it saw and wants, so a
+    // second tap arriving late cannot undo the first one.
+    case 'set-favorite': {
+      const songId = String(payload.songId)
+      // The queue's own object where it is there, so the player bar's heart
+      // and the next snapshot change along with it.
+      const song = playback.queue.find((s) => s.id === songId) ?? (await resolveSong(songId))
+      if (song && song.starred !== (payload.favorite === true)) {
+        await library.toggleFavorite('song', song)
+      }
+      return
+    }
     case 'play-song-radio': {
       const song = await resolveSong(String(payload.songId))
       if (song) await playback.startSongRadio(song)
@@ -421,15 +435,9 @@ export async function resolveRemoteQuery(
     }
     case 'favorites-request': {
       // Songs and albums, as on the phone shell's own favourites tab (see
-      // MobileFavoritesView.vue). `supported` lets the phone say why the
-      // list is empty on a server without favourites (Plex), instead of
-      // claiming none were marked.
-      if (!useAuthStore().capabilities.favorites) {
-        return { supported: false, songs: [], albums: [] }
-      }
+      // MobileFavoritesView.vue).
       await library.fetchStarred()
       return {
-        supported: true,
         songs: library.starred.songs.map(toRemoteSong),
         albums: library.starred.albums.map(toRemoteAlbum),
       }

@@ -179,11 +179,7 @@ export default {
       })
     },
     async toggleStar() {
-      await useLibraryStore().toggleStar({ artistId: this.artist.id, starred: this.artist.starred })
-      // Prop mutation is intentional here — see AlbumCard.vue's identical
-      // pattern and comment.
-      // eslint-disable-next-line vue/no-mutating-props
-      this.artist.starred = !this.artist.starred
+      await useLibraryStore().toggleFavorite('artist', this.artist)
     },
   },
 }

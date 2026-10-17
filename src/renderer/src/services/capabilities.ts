@@ -16,12 +16,15 @@ export type ServerType = 'subsonic' | 'jellyfin' | 'plex'
 
 export interface ServerCapabilities {
   /** Boolean favorite toggle (star.view/unstar.view/getStarred2.view) —
-   * the heart icon, the Favorites nav item/page. True for Subsonic and
-   * Jellyfin; false for Plex, whose core Media Server REST API has no
-   * separate favorite concept to back it with (see
-   * media/plex_bridge.py's module docstring) — only personalRating below
-   * exists there. */
+   * the heart icon, the Favorites nav item/page. True everywhere; on Plex
+   * it is backed by the rating, see favoritesAreTopRating. */
   favorites: boolean
+  /** A favorite *is* a five-star rating: Plex's Media Server API has no
+   * separate favorite (see media/plex_bridge.py's module docstring), and
+   * five stars is what Plexamp's own "like" sets. Changing either one then
+   * changes the other, which the library store keeps in step locally (see
+   * its toggleFavorite/applyRating). */
+  favoritesAreTopRating: boolean
   /** Creating a playlist with no songs yet (PlaylistsView's standalone
    * "New Playlist" dialog) — true for Subsonic and Jellyfin; false for
    * Plex, whose playlist-creation endpoint always needs a starting `uri`
@@ -109,6 +112,7 @@ export interface ServerCapabilities {
 
 const SUBSONIC_CAPABILITIES: ServerCapabilities = {
   favorites: true,
+  favoritesAreTopRating: false,
   emptyPlaylistCreation: true,
   personalRating: true,
   internetRadio: true,
@@ -124,6 +128,7 @@ const SUBSONIC_CAPABILITIES: ServerCapabilities = {
 
 const JELLYFIN_CAPABILITIES: ServerCapabilities = {
   favorites: true,
+  favoritesAreTopRating: false,
   emptyPlaylistCreation: true,
   personalRating: false,
   internetRadio: true,
@@ -149,11 +154,9 @@ const JELLYFIN_CAPABILITIES: ServerCapabilities = {
 // media/base.py), playback, personal ratings (setRating.view -> Plex's own
 // PUT /:/rate, its one native personal-marking mechanism for music) and
 // playlist CRUD. Ratings are a real feature-parity win over Jellyfin,
-// which has no rating scale at all. favorites is false: Plex's core Media Server REST
-// API has no separate boolean favorite to back star.view/unstar.view with
-// (see media/plex_bridge.py's module docstring) — the heart icon and the
-// Favorites nav item/page hide accordingly instead of leading to a
-// dead-end control. playHistoryStats is true: scrobble.view maps onto
+// which has no rating scale at all. Favorites ride on the same rating: Plex's
+// core Media Server REST API has no separate boolean favorite, so a favorite
+// is a five-star rating (see favoritesAreTopRating). playHistoryStats is true: scrobble.view maps onto
 // Plex's own PUT /:/scrobble, confirmed live against a real server.
 // songRadio is true — bridged onto Plex's own Sonic Analysis
 // (`/library/metadata/{id}/nearest`, confirmed live 2026-08-20 — see
@@ -172,7 +175,8 @@ const JELLYFIN_CAPABILITIES: ServerCapabilities = {
 // always-hidden one for every Plex listener regardless of their own
 // subscription.
 const PLEX_CAPABILITIES: ServerCapabilities = {
-  favorites: false,
+  favorites: true,
+  favoritesAreTopRating: true,
   emptyPlaylistCreation: false,
   personalRating: true,
   internetRadio: true,

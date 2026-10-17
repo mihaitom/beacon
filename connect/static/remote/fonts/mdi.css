@@ -52,6 +52,7 @@
 .mdi-lock-outline::before { content: "\F0341"; }
 .mdi-lighthouse-on::before { content: "\F0A00"; }
 .mdi-heart::before { content: "\F02D1"; }
+.mdi-heart-outline::before { content: "\F02D5"; }
 .mdi-playlist-play::before { content: "\F0411"; }
 .mdi-volume-mute::before { content: "\F075F"; }
 .mdi-loading::before { content: "\F0772"; }

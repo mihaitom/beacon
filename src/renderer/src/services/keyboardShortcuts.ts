@@ -174,12 +174,7 @@ export function repeatable(action: ShortcutAction): boolean {
 async function toggleFavorite(): Promise<void> {
   const song = usePlaybackStore().currentSong
   if (!song) return
-  const wasStarred = song.starred
-  await useLibraryStore().toggleStar({ id: song.id, starred: wasStarred })
-  // Flips the captured song rather than whatever is current by now — the
-  // track can advance during the round trip, same as SongInfo.vue's own
-  // heart button.
-  song.starred = !wasStarred
+  await useLibraryStore().toggleFavorite('song', song)
 }
 
 async function runShortcut(action: ShortcutAction): Promise<void> {

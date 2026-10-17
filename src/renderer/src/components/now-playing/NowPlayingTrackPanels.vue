@@ -28,7 +28,22 @@
           :size="miniArtSize || 72"
           class="cover-shadow now-playing__mini-art"
         />
-        <div ref="info" class="now-playing__info">
+        <div
+          ref="info"
+          class="now-playing__info"
+          :class="{ 'now-playing__info--favorite': offersFavorite(panel) }"
+        >
+          <!-- The phone's heart, beside the song that is playing. Out of the
+           - flow: the stage sizes the artwork by this block's height. -->
+          <v-btn
+            v-if="offersFavorite(panel)"
+            :icon="panel.song?.starred ? 'mdi-heart' : 'mdi-heart-outline'"
+            :color="panel.song?.starred ? 'primary' : undefined"
+            variant="text"
+            :aria-label="$t(panel.song?.starred ? 'library.unstar' : 'library.star')"
+            class="now-playing__favorite"
+            @click="source.toggleFavorite()"
+          />
           <div class="eyebrow-label">
             {{ panel.eyebrow }}
             <next-up-transition-label v-if="panel.transition" :transition="panel.transition" />
@@ -113,6 +128,7 @@
 import { nowPlayingSourceMixin } from '@/components/now-playing/useSource'
 import NextUpMarker from './NextUpMarker.vue'
 import NextUpTransitionLabel from './NextUpTransitionLabel.vue'
+import type { NowPlayingPanel } from './source'
 
 export default {
   name: 'NowPlayingTrackPanels',
@@ -174,6 +190,17 @@ export default {
     this.infoObserver?.disconnect()
   },
   methods: {
+    /** On the phone only, and only on the song that is playing - not on
+     * the next one announced beside it near the end of a track. */
+    offersFavorite(panel: NowPlayingPanel): boolean {
+      return (
+        this.compact &&
+        this.source.capabilities.favorite &&
+        panel.kind === 'song' &&
+        !!panel.song &&
+        panel.song.id === this.source.song?.id
+      )
+    },
     /** (Re)points the info observer at the track-text block. */
     observeInfo(): void {
       if (!this.infoObserver) {
@@ -432,6 +459,19 @@ export default {
  * that, by comparison, could afford to be a touch bigger itself. */
 .now-playing__panels--compact .now-playing__info {
   max-width: 88cqw;
+}
+
+/* Room for the heart on both sides, so the text stays centred. */
+.now-playing__info--favorite {
+  position: relative;
+  padding-inline: 44px;
+}
+
+.now-playing__favorite {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
 }
 
 .now-playing__panels--compact .now-playing__title {

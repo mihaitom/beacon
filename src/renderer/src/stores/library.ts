@@ -430,6 +430,9 @@ function announce(message: string): void {
   })
 }
 
+/** The highest personal rating, five stars. */
+const TOP_RATING = 5
+
 export const useLibraryStore = defineStore('library', {
   state: (): LibraryState => ({
     artists: [],
@@ -1225,6 +1228,33 @@ export const useLibraryStore = defineStore('library', {
         await client.star(params)
       }
       await this.fetchStarred()
+    },
+
+    /** Flips a song's, album's or artist's favorite on the server, then on
+     * the object itself - the way every heart in the app goes. The object
+     * is flipped, not whatever is showing by the time the answer is back:
+     * the current song can move on during the round trip. */
+    async toggleFavorite(kind: 'song' | 'album' | 'artist', item: Song | Album | Artist) {
+      const wasStarred = item.starred
+      const key = kind === 'song' ? 'id' : kind === 'album' ? 'albumId' : 'artistId'
+      await this.toggleStar({ [key]: item.id, starred: wasStarred })
+      this.markFavorite(item, !wasStarred)
+    },
+
+    /** Local state only. Where a favorite is the top rating (Plex, see
+     * ServerCapabilities.favoritesAreTopRating), the stars move with it -
+     * the server has already changed both. */
+    markFavorite(item: Song | Album | Artist, starred: boolean) {
+      item.starred = starred
+      if (!useAuthStore().capabilities.favoritesAreTopRating) return
+      if (starred) item.rating = TOP_RATING
+      else if (item.rating === TOP_RATING) item.rating = 0
+    },
+
+    /** markFavorite()'s counterpart for a rating. */
+    markRating(item: Song | Album | Artist, rating: number) {
+      item.rating = rating
+      if (useAuthStore().capabilities.favoritesAreTopRating) item.starred = rating === TOP_RATING
     },
 
     /** Sets a song/album/artist's 1–5 star rating (0 clears it) — the

@@ -172,13 +172,8 @@ export default {
     async toggleStar(): Promise<void> {
       if (this.starring) return
       this.starring = true
-      const wasStarred = this.song.starred
       try {
-        await useLibraryStore().toggleStar({ id: this.song.id, starred: wasStarred })
-        // Same optimistic write SongTable.vue's own toggleStar() makes on
-        // the song it was handed.
-        // eslint-disable-next-line vue/no-mutating-props
-        this.song.starred = !wasStarred
+        await useLibraryStore().toggleFavorite('song', this.song)
       } finally {
         this.starring = false
       }

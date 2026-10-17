@@ -9,7 +9,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Added
 
 - Right-click a song in the queue to play it now or next, move it to the end or remove it. The menu also has what song lists offer: Song Radio, add to playlist, go to album or artist, artwork and info. While a transition is already prepared, "next" means right after the song it leads into
-- The phone and the Remote Control have a Favorites tab with your favorite songs and albums. It takes the place of the Now Playing tab, which the player bar above the tabs already opens, and the Queue tab moves to the front
+- The phone and the Remote Control have a Favorites tab with your favorite songs and albums. It takes the place of the Now Playing tab, which the player bar above the tabs already opens, and the Queue tab moves to the front. Songs are marked as favorites with the heart next to the title on Now Playing or from a song's actions, and on the phone albums from their page
+- Favorites work with Plex too: a favorite there is a five-star rating, the same thing Plexamp's like sets, so the heart and the fifth star always agree
+- The Remote Control speaks your phone's language: German, English, Spanish, French or Italian, as the app does
 - On the phone and in the Remote Control, holding a song in the queue and letting go opens the same actions as a sheet (the Remote Control offers the playback ones)
 - Clicking the artist of a song in the queue opens the artist's page
 - With DJ mixes on, the queue can be sorted by tempo, so more songs follow one with a similar BPM and get mixed instead of crossfaded. Offered when most songs in the queue have a BPM tag
@@ -17,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- On the phone and in the Remote Control, the player bar above the tabs is always there. With nothing playing it shows the queue's first song, which play starts, or "Nothing playing" when the queue is empty, and a tap always opens Now Playing with its controls and speaker picker
 - With transitions on, Sonos and AirPlay speakers now get lossless audio instead of AAC or MP3
 - The DJ mix length is chosen in bars (4, 8 or 16) instead of seconds, so it lasts the same musical phrase at every tempo. A length set before is carried over
 - DJ mixes follow where the beat actually plays: out of a song that ends on a long ambient tail (no drums, just a pad or a fade-out) the mix starts while the beat is still playing and drops the tail, and into a song with a long intro the bass swaps right where its beat sets in. Before, such songs often got no DJ mix at all and the next song was faded in over the almost silent end
@@ -44,6 +47,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - A DJ mix into a song whose beat starts at its very first moment no longer plays the two songs a fraction of a beat apart for the whole mix
 - Party guests see a song change in the host's mix on time even when the stream briefly runs ahead, and a mix stream no longer stutters at its very start
 - Now Playing on a phone held sideways with the artwork hidden: long titles, artists and albums stay on one line each instead of squeezing into a narrow column, and the controls sit at the bottom of the screen
+- In German, Favorites is called "Favoriten" in the menu and on its page
 
 ## [1.8.0] - 2026-10-13
 

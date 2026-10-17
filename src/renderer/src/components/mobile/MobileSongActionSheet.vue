@@ -39,6 +39,14 @@
           <template #prepend><v-icon icon="mdi-radio-tower" /></template>
           <v-list-item-title>{{ $t('library.songRadio') }}</v-list-item-title>
         </v-list-item>
+        <v-list-item v-if="authStore.capabilities.favorites" @click="toggleFavorite">
+          <template #prepend>
+            <v-icon :icon="song.starred ? 'mdi-heart' : 'mdi-heart-outline'" />
+          </template>
+          <v-list-item-title>
+            {{ song.starred ? $t('library.unstar') : $t('library.star') }}
+          </v-list-item-title>
+        </v-list-item>
         <v-divider />
         <v-list-item @click="playlistPicker = true">
           <template #prepend><v-icon icon="mdi-playlist-music" /></template>
@@ -71,6 +79,14 @@
         <v-list-item v-if="authStore.capabilities.songRadio" @click="startSongRadio">
           <template #prepend><v-icon icon="mdi-radio-tower" /></template>
           <v-list-item-title>{{ $t('library.songRadio') }}</v-list-item-title>
+        </v-list-item>
+        <v-list-item v-if="authStore.capabilities.favorites" @click="toggleFavorite">
+          <template #prepend>
+            <v-icon :icon="song.starred ? 'mdi-heart' : 'mdi-heart-outline'" />
+          </template>
+          <v-list-item-title>
+            {{ song.starred ? $t('library.unstar') : $t('library.star') }}
+          </v-list-item-title>
         </v-list-item>
         <v-divider />
         <v-list-item @click="addToQueue">
@@ -236,6 +252,11 @@ export default {
       const song = this.song
       if (!song) return
       this.act(() => this.playbackStore.startSongRadio(song))
+    },
+    toggleFavorite() {
+      const song = this.song
+      if (!song) return
+      this.act(() => this.libraryStore.toggleFavorite('song', song))
     },
     addToQueue() {
       const song = this.song

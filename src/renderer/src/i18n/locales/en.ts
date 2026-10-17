@@ -549,7 +549,7 @@ export default {
   },
   remoteControl: {
     title: 'Remote Control',
-    hint: 'Let a phone on your network control playback - Now Playing, Queue, Playlists, Songs, and Radio.',
+    hint: 'Let a phone on your network control playback - Now Playing, Queue, Library, Favorites, Playlists and Radio.',
     enableFailed: "Couldn't enable Remote Control.",
     disableFailed: "Couldn't disable Remote Control.",
     pairTitle: 'Pair a phone',

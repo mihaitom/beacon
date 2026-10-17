@@ -291,6 +291,8 @@ export const useRemoteControlStore = defineStore('remoteControl', {
           // button entirely rather than showing an always-inert one when
           // this is false.
           song_radio_supported: useAuthStore().capabilities.songRadio,
+          // The heart on the phone's Now Playing and in its song actions.
+          favorites_supported: useAuthStore().capabilities.favorites,
           current_song: playback.currentSong ? toRemoteSong(playback.currentSong) : null,
           radio: playback.radioStation
             ? {

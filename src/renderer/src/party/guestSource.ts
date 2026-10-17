@@ -395,6 +395,7 @@ export function useGuestNowPlayingSource(
       autoplay: false,
       debug: false,
       lyricsTools: false,
+      favorite: false,
     }),
     // Store-free, so the shared presentation never pulls the app's library
     // store (CoverArt's own imports) into the guest bundle.
@@ -435,6 +436,7 @@ export function useGuestNowPlayingSource(
     clearLyricsCandidates: () => {},
     toggleAutoplay: () => {},
     autoplayEnabled: () => false,
+    toggleFavorite: () => {},
     addDebugTitle: () => {},
   }) as NowPlayingSource
 

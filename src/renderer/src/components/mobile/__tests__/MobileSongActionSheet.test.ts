@@ -49,6 +49,18 @@ describe('MobileSongActionSheet on a queue row', () => {
     document.body.innerHTML = ''
   })
 
+  it('favourites the song it was opened on, and offers to undo it', async () => {
+    const library = useLibraryStore()
+    const toggleFavorite = vi.spyOn(library, 'toggleFavorite').mockResolvedValue()
+    const song = usePlaybackStore().queue[2]!
+
+    await item(mountSheet(2), 'Add to favorites').trigger('click')
+    expect(toggleFavorite).toHaveBeenCalledWith('song', song)
+
+    song.starred = true
+    expect(() => item(mountSheet(2), 'Remove from favorites')).not.toThrow()
+  })
+
   it('moves the song it was opened on, not another one with its id', async () => {
     const playback = usePlaybackStore()
     const wrapper = mountSheet(3)

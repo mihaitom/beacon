@@ -1,6 +1,7 @@
 <template>
+  <!-- Always there, even with nothing to play: it is the way to Now
+     - Playing, which keeps the transport and the speaker picker. -->
   <v-footer
-    v-if="hasPlayable"
     app
     inset
     height="60"
@@ -13,16 +14,17 @@
      - lists, and the phone remote's own mini player already matches its
      - rows the same way. -->
     <cover-art
-      v-if="currentSong"
-      :cover-art-id="currentSong.coverArtId"
-      :size="MOBILE_ROW_ART_SIZE"
-      class="mobile-player-bar__art"
-    />
-    <cover-art
-      v-else-if="playbackStore.radioStation"
+      v-if="playbackStore.radioStation"
       :radio-favicon="radioFavicon"
       :size="MOBILE_ROW_ART_SIZE"
       fallback-icon="mdi-radio"
+      class="mobile-player-bar__art"
+    />
+    <cover-art
+      v-else
+      :cover-art-id="song?.coverArtId ?? null"
+      :size="MOBILE_ROW_ART_SIZE"
+      fallback-icon="mdi-music-note"
       class="mobile-player-bar__art"
     />
     <!-- Same two labels SongInfo.vue's desktop player bar shows, in the
@@ -34,10 +36,14 @@
      - never appeared anywhere on a phone except Now Playing. -->
     <div class="mobile-player-bar__labels">
       <div class="text-body-medium">
-        {{ currentSong?.title ?? radioMeta.nowPlaying ?? playbackStore.radioStation?.name }}
+        {{
+          isRadio
+            ? (radioMeta.nowPlaying ?? radioStationName)
+            : (song?.title ?? $t('player.nothingPlaying'))
+        }}
       </div>
       <div class="text-body-small text-medium-emphasis">
-        {{ currentSong?.artist ?? (radioMeta.nowPlaying ? radioStationName : '') }}
+        {{ isRadio ? (radioMeta.nowPlaying ? radioStationName : '') : (song?.artist ?? '') }}
       </div>
     </div>
     <!-- Previous/next flank play the same way every transport row does.
@@ -47,14 +53,15 @@
     <v-btn
       icon="mdi-skip-previous"
       variant="text"
-      :disabled="isRadio"
+      :disabled="isRadio || !currentSong"
       @click.stop="playbackStore.playPrevious()"
     />
     <v-btn
       :icon="playbackStore.isPlaying ? 'mdi-pause' : 'mdi-play'"
       variant="text"
       size="large"
-      @click.stop="playbackStore.togglePlay()"
+      :disabled="!hasPlayable"
+      @click.stop="play"
     />
     <!-- Radio has no queue to skip through — see MobileTransportControls.vue's
      - own gating comment. -->
@@ -90,8 +97,13 @@ export default {
     currentSong() {
       return this.playbackStore.currentSong
     },
+    /** What the strip shows: the song playing, or with nothing loaded,
+     * the queue's first - pressing play starts it. */
+    song() {
+      return this.currentSong ?? this.playbackStore.queue[0] ?? null
+    },
     hasPlayable() {
-      return this.currentSong != null || this.playbackStore.radioStation != null
+      return this.song != null || this.isRadio
     },
     isRadio() {
       return this.playbackStore.radioStation != null
@@ -103,6 +115,12 @@ export default {
       const station = this.playbackStore.radioStation
       if (!station?.homePageUrl && !station?.favicon) return null
       return radioFaviconRequest(station.homePageUrl ?? '', 96, station.favicon ?? '')
+    },
+  },
+  methods: {
+    play() {
+      if (this.currentSong || this.isRadio) void this.playbackStore.togglePlay()
+      else if (this.song) void this.playbackStore.playAtIndex(0)
     },
   },
 }

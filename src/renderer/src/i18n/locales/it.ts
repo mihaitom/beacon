@@ -553,7 +553,7 @@ export default {
   },
   remoteControl: {
     title: 'Controllo remoto',
-    hint: 'Consenti a un telefono sulla tua rete di controllare la riproduzione - In riproduzione, Coda, Playlist, Brani e Radio.',
+    hint: 'Consenti a un telefono sulla tua rete di controllare la riproduzione - In riproduzione, Coda, Libreria, Preferiti, Playlist e Radio.',
     enableFailed: 'Impossibile attivare il controllo remoto.',
     disableFailed: 'Impossibile disattivare il controllo remoto.',
     pairTitle: 'Associa un telefono',

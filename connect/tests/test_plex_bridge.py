@@ -677,6 +677,79 @@ def test_set_rating_rejects_out_of_range(client, plex_session):
     assert r.json()["subsonic-response"]["status"] == "failed"
 
 
+# ── Favorites (five stars) ──────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    "query", ["id=1001", "albumId=1001", "artistId=1001"], ids=["song", "album", "artist"]
+)
+def test_star_rates_five_stars(client, plex_session, monkeypatch, query):
+    fake_client, calls = _fake_px_client()
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    r = client.get(f"/rest/star.view?{query}")
+
+    assert r.json()["subsonic-response"]["status"] == "ok"
+    method, url, params = calls[0]
+    assert (method, params["key"], params["rating"]) == ("PUT", "1001", "10")
+    assert url.endswith("/:/rate")
+
+
+def test_unstar_clears_the_rating(client, plex_session, monkeypatch):
+    """Not back to four stars: the favorite was the rating."""
+    fake_client, calls = _fake_px_client()
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    client.get("/rest/unstar.view?id=1001")
+
+    assert calls[0][2]["rating"] == "-1"
+
+
+def test_star_requires_something_to_star(client, plex_session):
+    r = client.get("/rest/star.view")
+    assert r.json()["subsonic-response"]["status"] == "failed"
+
+
+def test_get_starred2_lists_five_star_items_only(client, plex_session, monkeypatch):
+    """The rating filter is also checked on what comes back: a server that
+    ignored it would otherwise make the whole library a favorite."""
+    sections = {"MediaContainer": {"Directory": [{"key": "1", "type": "artist"}]}}
+
+    def items(*metadata):
+        return {"MediaContainer": {"Metadata": list(metadata)}}
+
+    fake_client, calls = _fake_px_client(
+        {
+            "/library/sections": sections,
+            "/library/sections/1/all?type=10": items(
+                {"ratingKey": "1001", "title": "Loved", "duration": 0, "userRating": 10},
+                {"ratingKey": "1002", "title": "Liked", "duration": 0, "userRating": 8},
+            ),
+            "/library/sections/1/all?type=9": items(
+                {"ratingKey": "2001", "title": "Album", "duration": 0, "userRating": 10}
+            ),
+            "/library/sections/1/all?type=8": items(),
+        }
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    starred = client.get("/rest/getStarred2.view").json()["subsonic-response"]["starred2"]
+
+    assert [song["id"] for song in starred["song"]] == ["1001"]
+    assert [album["id"] for album in starred["album"]] == ["2001"]
+    assert starred["artist"] == []
+    assert all(c[2].get("userRating") == "10" for c in calls if c[1].endswith("/all"))
+
+
+def test_map_song_marks_five_stars_as_a_favorite():
+    loved = {"ratingKey": "1", "title": "T", "duration": 0, "userRating": 10}
+    liked = {"ratingKey": "2", "title": "T", "duration": 0, "userRating": 8}
+    assert "starred" in plex_bridge._map_song(loved)
+    assert "starred" not in plex_bridge._map_song(liked)
+    assert "starred" in plex_bridge._map_album({**loved, "duration": 0})
+    assert "starred" in plex_bridge._map_artist(loved)
+
+
 # ── Play tracking ────────────────────────────────────────────────────────────
 
 
@@ -976,7 +1049,7 @@ def test_delete_playlist(client, plex_session, monkeypatch):
 
 
 def test_unhandled_path_returns_not_supported_envelope(client, plex_session):
-    r = client.get("/rest/star.view?id=1")
+    r = client.get("/rest/getNowPlaying.view")
     assert r.status_code == 200
     body = r.json()["subsonic-response"]
     assert body["status"] == "failed"

@@ -11,6 +11,7 @@
 import { fireCommand, fetchDevices, fetchDeviceVolume } from './api.js';
 import { state } from './state.js';
 import { paintRange } from './range.js';
+import { t } from './i18n.js';
 
 const TYPE_ICONS = {
   sonos: 'mdi-speaker-wireless',
@@ -44,7 +45,7 @@ export async function openDevicePicker() {
   // uppercase label the device *groups* use ("Sonos", "AirPlay"), and
   // reusing it here left the sheet with no title at all, just a first
   // group label that happened to say "Play on".
-  sheet.innerHTML = '<div class="sheet-title">Play on</div><div class="sheet-loading">Loading…</div>';
+  sheet.innerHTML = `<div class="sheet-title">${t('devices.playOn')}</div><div class="sheet-loading">${t('common.loading')}</div>`;
 
   function close() {
     backdrop.remove();
@@ -59,7 +60,7 @@ export async function openDevicePicker() {
   try {
     ({ items: devices } = await fetchDevices());
   } catch {
-    sheet.innerHTML = '<div class="sheet-title">Play on</div><div class="sheet-loading">Couldn’t load devices</div>';
+    sheet.innerHTML = `<div class="sheet-title">${t('devices.playOn')}</div><div class="sheet-loading">${t('devices.failed')}</div>`;
     return;
   }
 
@@ -69,10 +70,10 @@ export async function openDevicePicker() {
   // MobileDevicePicker.vue's.
   const titleRow = document.createElement('div');
   titleRow.className = 'sheet-title-row';
-  titleRow.innerHTML = '<div class="sheet-title">Play on</div>';
+  titleRow.innerHTML = `<div class="sheet-title">${t('devices.playOn')}</div>`;
   const rescanBtn = document.createElement('button');
   rescanBtn.className = 'btn-sheet-icon';
-  rescanBtn.setAttribute('aria-label', 'Rescan');
+  rescanBtn.setAttribute('aria-label', t('devices.rescan'));
   rescanBtn.innerHTML = '<i class="mdi mdi-refresh"></i>';
   titleRow.appendChild(rescanBtn);
   sheet.appendChild(titleRow);
@@ -95,7 +96,7 @@ export async function openDevicePicker() {
   // "nothing to apply yet" vs. "ready to switch" at a glance.
   const doneBtn = document.createElement('button');
   doneBtn.className = 'btn-sheet-action';
-  doneBtn.textContent = 'Done';
+  doneBtn.textContent = t('devices.done');
   function updateDoneButton() {
     doneBtn.classList.toggle('btn-sheet-action--active', selectedKeys.size > 0);
   }
@@ -118,7 +119,7 @@ export async function openDevicePicker() {
     // keeps it.
     const localRow = document.createElement('button');
     localRow.className = casting ? 'device-row-local' : 'device-row-local device-row-local--active';
-    localRow.innerHTML = `<i class="mdi ${casting ? 'mdi-speaker' : 'mdi-circle-slice-8'}"></i><span>This device</span>${
+    localRow.innerHTML = `<i class="mdi ${casting ? 'mdi-speaker' : 'mdi-circle-slice-8'}"></i><span>${t('devices.thisDevice')}</span>${
       casting ? '' : '<i class="mdi mdi-check device-row-check"></i>'
     }`;
     localRow.addEventListener('click', () => {
@@ -152,7 +153,7 @@ export async function openDevicePicker() {
         // can't see it at all".
         row.className = 'device-row-disabled';
         row.disabled = true;
-        row.innerHTML = `<i class="mdi ${icon}"></i><span>${escapeHtml(device.name)}<br /><span class="muted device-row-hint">Needs pairing in the Beacon app first</span></span><i class="mdi mdi-lock-outline device-row-check"></i>`;
+        row.innerHTML = `<i class="mdi ${icon}"></i><span>${escapeHtml(device.name)}<br /><span class="muted device-row-hint">${t('devices.needsPairing')}</span></span><i class="mdi mdi-lock-outline device-row-check"></i>`;
         list.appendChild(row);
         continue;
       }
@@ -258,7 +259,7 @@ export async function openDevicePicker() {
   if (casting) {
     const stopBtn = document.createElement('button');
     stopBtn.className = 'btn-sheet-stop';
-    stopBtn.textContent = 'Stop all';
+    stopBtn.textContent = t('devices.stopAll');
     stopBtn.addEventListener('click', () => {
       fireCommand('cast-stop');
       close();
@@ -278,9 +279,9 @@ export async function openDevicePicker() {
  * Absent whenever nothing is being cast, which is also when the desktop
  * panel says nothing.
  *
- * The labels are StreamInfoSection.vue's own wording, copied from the en
- * locale - this surface has no i18n of its own, and a second set of words
- * for the same two rows read as two different readings of the stream. */
+ * The labels are StreamInfoSection.vue's own wording (see js/locales/) - a
+ * second set of words for the same two rows read as two different readings
+ * of the stream. */
 function buildStreamInfo() {
   const info = state.snapshot.stream_info;
   if (!info) return null;
@@ -289,17 +290,17 @@ function buildStreamInfo() {
   // reading at a glance, before the format name itself.
   const rows = [
     {
-      label: 'Transcoding',
-      value: info.transcoding ? info.target : 'No, direct copy',
+      label: t('streamInfo.transcoding'),
+      value: info.transcoding ? info.target : t('streamInfo.directCopy'),
       icon: info.transcoding ? 'mdi-cog-sync-outline' : 'mdi-check-circle-outline',
       tone: info.transcoding ? 'warn' : 'ok',
     },
   ];
-  if (info.source) rows.push({ label: 'Source', value: info.source });
+  if (info.source) rows.push({ label: t('streamInfo.source'), value: info.source });
   const box = document.createElement('div');
   box.className = 'sheet-stream-info';
   box.innerHTML =
-    '<div class="eyebrow-label stream-info-heading">Stream info</div>' +
+    `<div class="eyebrow-label stream-info-heading">${t('streamInfo.title')}</div>` +
     rows
       .map(
         ({ label, value, icon, tone }) =>

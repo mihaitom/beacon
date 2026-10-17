@@ -2,6 +2,10 @@ import { login, getStoredPassword, setStoredPassword, clearStoredPassword, conne
 import { setSnapshot, setConnected, subscribe } from './js/state.js';
 import { startRouter } from './js/router.js';
 import { initMiniPlayer } from './js/mini-player.js';
+import { t, translateDocument } from './js/i18n.js';
+
+// Before anything is shown: the markup carries English as a placeholder.
+translateDocument();
 
 import './js/views/now-playing.js';
 import './js/views/favorites.js';
@@ -112,14 +116,14 @@ document.getElementById('login-form').addEventListener('submit', async (event) =
   event.preventDefault();
   const pin = document.getElementById('pin-input').value.trim();
   if (!/^[0-9]{6}$/.test(pin)) {
-    showLogin('Enter the 6-digit code.');
+    showLogin(t('login.invalidCode'));
     return;
   }
   try {
     await login(pin);
     showApp();
   } catch (error) {
-    showLogin(error.message || 'Could not connect.');
+    showLogin(error.message || t('login.failed'));
   }
 });
 
@@ -137,5 +141,5 @@ if (getStoredPassword()) {
 window.addEventListener('beacon-remote-unauthorized', () => {
   clearStoredPassword();
   started = false;
-  showLogin('Session expired — enter the code again.');
+  showLogin(t('login.expired'));
 });

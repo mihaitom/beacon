@@ -45,6 +45,7 @@ export interface HostNowPlayingApi {
   autoplayEnabled: boolean
   /** Whether the server can top up the queue at all (song radio). */
   autoplayAvailable: boolean
+  favoriteAvailable: boolean
   debugEnabled: boolean
 
   setLyricsOpen(open: boolean): void
@@ -58,6 +59,7 @@ export interface HostNowPlayingApi {
   loadLyricsCandidates(): void
   clearLyricsCandidates(): void
   toggleAutoplay(): void
+  toggleFavorite(): void
   addDebugTitle(): void
 }
 
@@ -75,6 +77,7 @@ export function toNowPlayingSong(song: Song | null): NowPlayingSong | null {
     coverArtId: song.coverArtId,
     coverUrl: null,
     wishedBy: null,
+    starred: song.starred,
   }
 }
 
@@ -165,6 +168,7 @@ export function hostNowPlayingSource(api: HostNowPlayingApi): NowPlayingSource {
       autoplay: computed(() => api.autoplayAvailable),
       debug: computed(() => api.debugEnabled),
       lyricsTools: true,
+      favorite: computed(() => api.favoriteAvailable),
     }),
     // The app's batched cover component. Kept out of the shared
     // presentation's imports on purpose - it pulls in the library store.
@@ -193,6 +197,7 @@ export function hostNowPlayingSource(api: HostNowPlayingApi): NowPlayingSource {
     clearLyricsCandidates: () => api.clearLyricsCandidates(),
     toggleAutoplay: () => api.toggleAutoplay(),
     autoplayEnabled: () => api.autoplayEnabled,
+    toggleFavorite: () => api.toggleFavorite(),
     addDebugTitle: () => api.addDebugTitle(),
   }) as NowPlayingSource
 }

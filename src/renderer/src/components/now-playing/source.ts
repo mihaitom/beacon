@@ -21,6 +21,8 @@ export interface NowPlayingSong {
   coverUrl: string | null
   /** Who wished for it (party only). */
   wishedBy?: string | null
+  /** A favourite of the listener's (the app only). */
+  starred?: boolean
 }
 
 export interface NowPlayingRadio {
@@ -94,6 +96,9 @@ export interface NowPlayingCapabilities {
   /** The lyrics toolbar: calibrate, sync offset, match picker, and
    * clicking a line to seek. */
   lyricsTools: boolean
+  /** A heart beside the phone's title, where the server has favourites.
+   * The desktop has its own in the player bar. */
+  favorite: boolean
 }
 
 export interface NowPlayingUi {
@@ -179,6 +184,8 @@ export interface NowPlayingSource {
   clearLyricsCandidates(): void
   toggleAutoplay(): void
   autoplayEnabled(): boolean
+  /** Host only: the current song's favourite. */
+  toggleFavorite(): void
   /** Host only: hand the title log a made-up title (the debug button). */
   addDebugTitle(): void
 }

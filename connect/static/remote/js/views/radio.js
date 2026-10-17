@@ -1,16 +1,17 @@
 import { fireCommand, fetchRadioStations } from '../api.js';
 import { registerRoute } from '../router.js';
 import { createArt } from '../art.js';
+import { t } from '../i18n.js';
 
 export function renderRadio(root) {
-  root.innerHTML = '<h1 class="view-title">Radio</h1><div class="list" id="radio-list">Loading…</div>';
+  root.innerHTML = `<h1 class="view-title">${t('radio.title')}</h1><div class="list" id="radio-list">${t('common.loading')}</div>`;
   const list = root.querySelector('#radio-list');
 
   fetchRadioStations()
     .then(({ items }) => {
       list.innerHTML = '';
       if (!items.length) {
-        list.innerHTML = '<div class="empty-state">No radio stations. Add some in Beacon’s library.</div>';
+        list.innerHTML = `<div class="empty-state">${t('radio.empty')}</div>`;
         return;
       }
       for (const station of items) {
@@ -29,7 +30,7 @@ export function renderRadio(root) {
       }
     })
     .catch(() => {
-      list.innerHTML = '<div class="empty-state">Couldn’t load radio stations</div>';
+      list.innerHTML = `<div class="empty-state">${t('radio.failed')}</div>`;
     });
 }
 

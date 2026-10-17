@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useLibraryStore } from '../library'
+import { useAuthStore } from '../auth'
 import { emitter } from '@/emitter'
 import type Toast from '@/types/toast'
 import type { SubsonicClient } from '@/services/subsonic/client'
@@ -347,6 +348,97 @@ describe('library mutations', () => {
     expect(client.star).toHaveBeenCalledWith({ id: undefined, albumId: 'al1', artistId: undefined })
     // Re-read afterwards, so every view showing the starred lists agrees.
     expect(client.getStarred2).toHaveBeenCalledTimes(2)
+  })
+
+  describe('favourites on the item itself', () => {
+    it('flips the song it was handed, and names it by the right key', async () => {
+      useAuthStore().serverType = 'subsonic'
+      const library = useLibraryStore()
+      const client = stubClient()
+      const song = makeSong('s1', { starred: false, rating: 3 })
+
+      await library.toggleFavorite('song', song)
+
+      expect(client.star).toHaveBeenCalledWith({
+        id: 's1',
+        albumId: undefined,
+        artistId: undefined,
+      })
+      expect(song.starred).toBe(true)
+      // Two separate things off Plex.
+      expect(song.rating).toBe(3)
+    })
+
+    it('names an album and an artist by their own keys', async () => {
+      const library = useLibraryStore()
+      const client = stubClient()
+
+      await library.toggleFavorite('album', { id: 'al1', starred: true } as never)
+      await library.toggleFavorite('artist', { id: 'ar1', starred: false } as never)
+
+      expect(client.unstar).toHaveBeenCalledWith({
+        id: undefined,
+        albumId: 'al1',
+        artistId: undefined,
+      })
+      expect(client.star).toHaveBeenCalledWith({
+        id: undefined,
+        albumId: undefined,
+        artistId: 'ar1',
+      })
+    })
+
+    it('leaves the song as it was when the server refuses', async () => {
+      const library = useLibraryStore()
+      stubClient({ star: vi.fn().mockRejectedValue(new Error('nope')) })
+      const song = makeSong('s1', { starred: false })
+
+      await expect(library.toggleFavorite('song', song)).rejects.toThrow()
+
+      expect(song.starred).toBe(false)
+    })
+
+    /** On Plex the heart and the fifth star are one value on the server,
+     * so the two may not disagree on screen either. */
+    describe('where a favourite is five stars (Plex)', () => {
+      beforeEach(() => {
+        useAuthStore().serverType = 'plex'
+      })
+
+      it('gives a new favourite five stars, and takes them away with it', async () => {
+        const library = useLibraryStore()
+        stubClient()
+        const song = makeSong('s1', { starred: false, rating: 3 })
+
+        await library.toggleFavorite('song', song)
+        expect(song.rating).toBe(5)
+
+        await library.toggleFavorite('song', song)
+        expect(song.starred).toBe(false)
+        expect(song.rating).toBe(0)
+      })
+
+      it('makes five stars a favourite, and anything less not one', () => {
+        const library = useLibraryStore()
+        const song = makeSong('s1', { starred: false, rating: 3 })
+
+        library.markRating(song, 5)
+        expect(song.starred).toBe(true)
+
+        library.markRating(song, 4)
+        expect(song.starred).toBe(false)
+      })
+    })
+
+    it('leaves the favourite alone when the rating changes elsewhere', () => {
+      useAuthStore().serverType = 'subsonic'
+      const library = useLibraryStore()
+      const song = makeSong('s1', { starred: true, rating: 5 })
+
+      library.markRating(song, 2)
+
+      expect(song.starred).toBe(true)
+    })
   })
 
   it('clears the results for an empty search instead of searching for nothing', async () => {

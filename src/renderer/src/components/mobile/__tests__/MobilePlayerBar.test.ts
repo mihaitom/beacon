@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { createVuetify } from 'vuetify'
@@ -82,6 +82,41 @@ describe('MobilePlayerBar', () => {
     await wrapper.vm.$nextTick()
 
     expect(wrapper.getComponent({ name: 'CoverArt' }).props('size')).toBe(MOBILE_ROW_ART_SIZE)
+  })
+
+  /** The strip is the way to Now Playing, and with it to the transport
+   * and the speaker picker - so it stays, with nothing loaded too. */
+  describe('with nothing playing', () => {
+    it('shows the queue it would play, and starts it from the top', async () => {
+      const wrapper = await mountBar()
+      const playback = usePlaybackStore()
+      playback.queue = [makeSong('a', { title: 'First' }), makeSong('b')]
+      playback.currentIndex = -1
+      await wrapper.vm.$nextTick()
+      const playAtIndex = vi.spyOn(playback, 'playAtIndex').mockResolvedValue()
+      const togglePlay = vi.spyOn(playback, 'togglePlay').mockResolvedValue()
+
+      expect(labels(wrapper)[0]).toBe('First')
+      await wrapper.get('.mdi-play').trigger('click')
+
+      expect(playAtIndex).toHaveBeenCalledWith(0)
+      expect(togglePlay).not.toHaveBeenCalled()
+    })
+
+    it('stays, empty, with an empty queue, and still opens Now Playing', async () => {
+      const wrapper = await mountBar()
+      const router = wrapper.vm.$router
+      await wrapper.vm.$nextTick()
+
+      expect(labels(wrapper)[0]).toBe(i18n.global.t('player.nothingPlaying'))
+      expect(wrapper.get('.mdi-play').element.closest('button')!.hasAttribute('disabled')).toBe(
+        true,
+      )
+      await wrapper.get('.mobile-player-bar').trigger('click')
+      await flushPromises()
+
+      expect(router.currentRoute.value.path).toBe('/m/now-playing')
+    })
   })
 
   it('shows a song title and artist', async () => {

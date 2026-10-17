@@ -71,31 +71,6 @@ describe('the router auth guard', () => {
     expect(restore).not.toHaveBeenCalled()
   })
 
-  it('keeps a signed-in listener away from a page their server cannot answer', async () => {
-    // Favorites has no backing call on Plex, so the route would only ever
-    // lead to a dead end there.
-    const router = await freshRouter()
-    const auth = useAuthStore()
-    auth.authenticated = true
-    auth.serverType = 'plex'
-
-    await router.push('/favorites')
-
-    expect(auth.capabilities.favorites).toBe(false)
-    expect(router.currentRoute.value.name).toBe('home')
-  })
-
-  it('keeps the phone shell off the favourites tab on such a server too', async () => {
-    const router = await freshRouter()
-    const auth = useAuthStore()
-    auth.authenticated = true
-    auth.serverType = 'plex'
-
-    await router.push('/m/favorites')
-
-    expect(router.currentRoute.value.name).not.toBe('m-favorites')
-  })
-
   describe('the smart playlist editor', () => {
     function signIn(serverSoftware: string) {
       const auth = useAuthStore()

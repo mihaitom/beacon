@@ -143,21 +143,6 @@ describe('song table columns', () => {
     expect(store.columns).toContain('bpm')
   })
 
-  it('sizes the trailing cell for what this server actually puts in it', async () => {
-    // Plex's core API has no favorite of its own (see
-    // services/capabilities.ts), so the heart's 28px there was width the
-    // title and album columns were being squeezed out of.
-    const width = (wrapper: ReturnType<typeof mountTable>): string =>
-      wrapper.get('.song-row [data-column="actions"]').attributes('style') ?? ''
-
-    useAuthStore().serverType = 'subsonic'
-    expect(width(mountTable())).toContain('80px')
-
-    setActivePinia(createPinia())
-    useAuthStore().serverType = 'plex'
-    expect(width(mountTable())).toContain('52px')
-  })
-
   it('switches the rating off like any other column', async () => {
     useAuthStore().serverType = 'subsonic'
     const store = useSongColumnsStore()

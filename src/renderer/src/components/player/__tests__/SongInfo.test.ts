@@ -7,7 +7,6 @@ import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { usePlaybackStore } from '@/stores/playback'
-import { useAuthStore } from '@/stores/auth'
 import { useLibraryStore } from '@/stores/library'
 import SongInfo from '../SongInfo.vue'
 import { makeSong } from '@/stores/__tests__/fixtures'
@@ -100,14 +99,6 @@ describe('SongInfo', () => {
 
       expect(toggleStarSpy).toHaveBeenCalledWith({ id: 'a', starred: false })
       expect(wrapper.find('.mdi-heart').exists()).toBe(true)
-    })
-
-    it('hides the star button when the server has no favorites capability', async () => {
-      const { wrapper } = await mountWithSong()
-      useAuthStore().serverType = 'plex'
-      await wrapper.vm.$nextTick()
-
-      expect(wrapper.find('.mdi-heart-outline').exists()).toBe(false)
     })
   })
 

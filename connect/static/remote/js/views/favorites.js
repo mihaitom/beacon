@@ -8,20 +8,21 @@ import { fetchFavorites, fireCommand } from '../api.js';
 import { registerRoute } from '../router.js';
 import { renderAlbumRow } from '../album-row.js';
 import { renderSongRow } from '../song-row.js';
+import { t } from '../i18n.js';
 
 const EMPTY = {
-  songs: 'No favorite songs yet',
-  albums: 'No favorite albums yet',
+  songs: 'favorites.noSongs',
+  albums: 'favorites.noAlbums',
 };
 
 export function renderFavorites(root) {
   root.innerHTML = `
-    <h1 class="view-title">Favorites</h1>
+    <h1 class="view-title">${t('favorites.title')}</h1>
     <div class="segmented" id="favorites-toggle">
-      <button type="button" class="active" data-view="songs">Songs</button>
-      <button type="button" data-view="albums">Albums</button>
+      <button type="button" class="active" data-view="songs">${t('favorites.songs')}</button>
+      <button type="button" data-view="albums">${t('favorites.albums')}</button>
     </div>
-    <div class="list" id="favorites-list"><div class="empty-state">Loading…</div></div>
+    <div class="list" id="favorites-list"><div class="empty-state">${t('common.loading')}</div></div>
   `;
 
   const toggle = root.querySelector('#favorites-toggle');
@@ -33,13 +34,9 @@ export function renderFavorites(root) {
   function render() {
     if (!favorites) return;
     list.innerHTML = '';
-    if (!favorites.supported) {
-      list.innerHTML = '<div class="empty-state">This server has no favorites</div>';
-      return;
-    }
     const items = favorites[view];
     if (!items.length) {
-      list.innerHTML = `<div class="empty-state">${EMPTY[view]}</div>`;
+      list.innerHTML = `<div class="empty-state">${t(EMPTY[view])}</div>`;
       return;
     }
     if (view === 'albums') {
@@ -74,7 +71,7 @@ export function renderFavorites(root) {
       render();
     })
     .catch(() => {
-      list.innerHTML = '<div class="empty-state">Couldn’t load favorites</div>';
+      list.innerHTML = `<div class="empty-state">${t('favorites.failed')}</div>`;
     });
 }
 

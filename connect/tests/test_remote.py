@@ -292,14 +292,14 @@ def test_favorites_query_is_relayed_to_the_renderer(client, monkeypatch):
 
     async def capture(event, payload):
         seen["event"] = event
-        return {"supported": True, "songs": [], "albums": []}
+        return {"songs": [], "albums": []}
 
     monkeypatch.setattr(remote_routes, "relay_query", capture)
     resp = client.get("/remote/favorites", headers={"X-Remote-Password": remote.password})
 
     assert resp.status_code == 200
     assert seen["event"] == "favorites-request"
-    assert resp.json() == {"supported": True, "songs": [], "albums": []}
+    assert resp.json() == {"songs": [], "albums": []}
 
 
 def test_favorites_query_401_with_a_wrong_password(client):

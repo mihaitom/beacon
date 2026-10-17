@@ -2,7 +2,15 @@
 // (see routes/remote.py's serve_remote_app — the shell is always served by
 // connect itself, so every fetch/EventSource here is same-origin, no CORS).
 
+import { t } from './i18n.js';
+
 const STORAGE_KEY = 'beacon_remote_password';
+
+const LOGIN_ERRORS = {
+  401: 'login.wrongCode',
+  404: 'login.notEnabled',
+  429: 'login.tooManyAttempts',
+};
 
 export function getStoredPassword() {
   return localStorage.getItem(STORAGE_KEY);
@@ -56,10 +64,8 @@ export async function login(pin) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ pin }),
   });
-  if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    throw new Error(body.detail || `Login failed (${response.status})`);
-  }
+  // By status rather than the server's own wording, which is English.
+  if (!response.ok) throw new Error(t(LOGIN_ERRORS[response.status] ?? 'login.failed'));
   const { password } = await response.json();
   setStoredPassword(password);
   return password;

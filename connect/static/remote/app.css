@@ -268,6 +268,27 @@ textarea {
 }
 .song-artist { color: var(--text-muted); text-align: center; }
 
+/* Room for the heart on both sides, so the title stays centred. */
+.now-playing__info {
+  position: relative;
+  padding-inline: 44px;
+}
+
+.now-playing__favorite {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.5rem;
+  width: 44px;
+  height: 44px;
+}
+
+.now-playing__favorite.active { color: var(--accent); }
+
 /* Elapsed, bar, total - one row, the same shape
  * MobileTransportControls.vue's own seek row has. */
 .seek-row {

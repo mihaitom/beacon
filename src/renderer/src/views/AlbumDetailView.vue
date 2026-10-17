@@ -304,17 +304,17 @@ export default {
     },
     async toggleStar() {
       if (!this.album) return
-      await this.libraryStore.toggleStar({ albumId: this.album.id, starred: this.album.starred })
-      this.album.starred = !this.album.starred
+      await this.libraryStore.toggleFavorite('album', this.album)
     },
     async setRating(rating: number) {
       if (!this.album) return
-      const previous = this.album.rating
-      this.album.rating = rating
+      const album = this.album
+      const previous = album.rating
+      this.libraryStore.markRating(album, rating)
       try {
-        await this.libraryStore.setRating(this.album.id, rating)
+        await this.libraryStore.setRating(album.id, rating)
       } catch (error) {
-        this.album.rating = previous
+        this.libraryStore.markRating(album, previous)
         console.error('[album-detail] Failed to set rating:', error)
       }
     },

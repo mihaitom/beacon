@@ -745,21 +745,19 @@ export default {
     async toggleStar(song: Song) {
       if (this.starringSongIds.has(song.id)) return
       this.starringSongIds.add(song.id)
-      const wasStarred = song.starred
       try {
-        await this.libraryStore.toggleStar({ id: song.id, starred: wasStarred })
-        song.starred = !wasStarred
+        await this.libraryStore.toggleFavorite('song', song)
       } finally {
         this.starringSongIds.delete(song.id)
       }
     },
     async setRating({ song, rating }: { song: Song; rating: number }) {
       const previous = song.rating
-      song.rating = rating
+      this.libraryStore.markRating(song, rating)
       try {
         await this.libraryStore.setRating(song.id, rating)
       } catch (error) {
-        song.rating = previous
+        this.libraryStore.markRating(song, previous)
         console.error('[song-table] Failed to set rating:', error)
       }
     },

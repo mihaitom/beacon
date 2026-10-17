@@ -14,10 +14,13 @@ describe('capabilitiesFor', () => {
     expect(capabilitiesFor('subsonic').favorites).toBe(true)
   })
 
-  it('hides favorites only on Plex, whose API has no boolean favorite', () => {
-    expect(capabilitiesFor('plex').favorites).toBe(false)
-    expect(capabilitiesFor('jellyfin').favorites).toBe(true)
-    expect(capabilitiesFor('subsonic').favorites).toBe(true)
+  it('offers favorites everywhere, on Plex as its five-star rating', () => {
+    for (const type of ['subsonic', 'jellyfin', 'plex']) {
+      expect(capabilitiesFor(type).favorites).toBe(true)
+    }
+    expect(capabilitiesFor('plex').favoritesAreTopRating).toBe(true)
+    expect(capabilitiesFor('jellyfin').favoritesAreTopRating).toBe(false)
+    expect(capabilitiesFor('subsonic').favoritesAreTopRating).toBe(false)
   })
 
   it('hides star ratings only on Jellyfin, which has no rating scale', () => {

@@ -198,15 +198,7 @@ export default {
       await usePlaybackStore().playSongList(full.songs, 0, false, full.songs.length > 1)
     },
     async toggleStar() {
-      await useLibraryStore().toggleStar({ albumId: this.album.id, starred: this.album.starred })
-      // Prop mutation is intentional here — the store's own toggleStar()
-      // updates a separate favorites-list slice, not this album's own
-      // `starred` field (returned per-item by getAlbumList2.view), so this
-      // is the only place that can give immediate optimistic UI feedback —
-      // same "caller owns optimistic local state" pattern library.ts's
-      // setRating() documents.
-      // eslint-disable-next-line vue/no-mutating-props
-      this.album.starred = !this.album.starred
+      await useLibraryStore().toggleFavorite('album', this.album)
     },
   },
 }

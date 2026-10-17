@@ -31,4 +31,17 @@ describe('host Now Playing source', () => {
 
     expect(source.capabilities.autoplay).toBe(true)
   })
+
+  it('offers the heart only where the server has favourites, and passes the tap on', () => {
+    const toggleFavorite = vi.fn()
+    const api = fakeApi({ favoriteAvailable: false, toggleFavorite })
+    const source = hostNowPlayingSource(api)
+    expect(source.capabilities.favorite).toBe(false)
+
+    api.favoriteAvailable = true
+    source.toggleFavorite()
+
+    expect(source.capabilities.favorite).toBe(true)
+    expect(toggleFavorite).toHaveBeenCalledOnce()
+  })
 })

@@ -482,17 +482,17 @@ export default {
     },
     async toggleStar() {
       if (!this.artist) return
-      await this.libraryStore.toggleStar({ artistId: this.artist.id, starred: this.artist.starred })
-      this.artist.starred = !this.artist.starred
+      await this.libraryStore.toggleFavorite('artist', this.artist)
     },
     async setRating(rating: number) {
       if (!this.artist) return
-      const previous = this.artist.rating
-      this.artist.rating = rating
+      const artist = this.artist
+      const previous = artist.rating
+      this.libraryStore.markRating(artist, rating)
       try {
-        await this.libraryStore.setRating(this.artist.id, rating)
+        await this.libraryStore.setRating(artist.id, rating)
       } catch (error) {
-        this.artist.rating = previous
+        this.libraryStore.markRating(artist, previous)
         console.error('[artist-detail] Failed to set rating:', error)
       }
     },
