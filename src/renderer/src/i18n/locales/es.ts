@@ -584,7 +584,7 @@ export default {
   },
   remoteControl: {
     title: 'Control remoto',
-    hint: 'Permite que un teléfono en tu red controle la reproducción - Reproduciendo ahora, Cola, Biblioteca, Favoritos, Listas de reproducción y Radio.',
+    hint: 'Permite que un teléfono en tu red controle la reproducción - Cola, Biblioteca, Favoritos, Listas de reproducción y Radio.',
     enableFailed: 'No se pudo activar el control remoto.',
     disableFailed: 'No se pudo desactivar el control remoto.',
     pairTitle: 'Emparejar un teléfono',

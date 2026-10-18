@@ -585,7 +585,7 @@ export default {
   },
   remoteControl: {
     title: 'Contrôle à distance',
-    hint: "Laissez un téléphone sur votre réseau contrôler la lecture - Lecture en cours, File d'attente, Bibliothèque, Favoris, Playlists et Radio.",
+    hint: "Laissez un téléphone sur votre réseau contrôler la lecture - File d'attente, Bibliothèque, Favoris, Playlists et Radio.",
     enableFailed: "Impossible d'activer le contrôle à distance.",
     disableFailed: 'Impossible de désactiver le contrôle à distance.',
     pairTitle: 'Associer un téléphone',

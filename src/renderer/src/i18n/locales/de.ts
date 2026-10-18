@@ -580,7 +580,7 @@ export default {
   },
   remoteControl: {
     title: 'Fernsteuerung',
-    hint: 'Erlaubt einem Handy im selben Netzwerk, die Wiedergabe zu steuern - Wiedergabe, Warteschlange, Bibliothek, Favoriten, Playlists und Radio.',
+    hint: 'Erlaubt einem Handy im selben Netzwerk, die Wiedergabe zu steuern - Warteschlange, Bibliothek, Favoriten, Playlists und Radio.',
     enableFailed: 'Fernsteuerung konnte nicht aktiviert werden.',
     disableFailed: 'Fernsteuerung konnte nicht deaktiviert werden.',
     pairTitle: 'Handy koppeln',
