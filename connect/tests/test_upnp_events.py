@@ -251,6 +251,18 @@ def test_handle_event_stays_quiet_for_a_healthy_state(caplog):
     assert not caplog.records
 
 
+def test_handle_event_logs_the_devices_own_duration_and_play_mode(caplog):
+    body = NOTIFY_BODY.format(state="PLAYING", status="OK").replace(
+        "&lt;CurrentVolume",
+        "&lt;CurrentTrackDuration val=&quot;0:00:50&quot;/&gt;"
+        "&lt;CurrentPlayMode val=&quot;REPEAT_ONE&quot;/&gt;&lt;CurrentVolume",
+    )
+    with caplog.at_level(logging.DEBUG, logger="connect.upnp"):
+        upnp_events.handle_event("Arbeitszimmer", body)
+    assert "CurrentTrackDuration=0:00:50" in caplog.text
+    assert "CurrentPlayMode=REPEAT_ONE" in caplog.text
+
+
 def test_handle_event_ignores_a_body_with_nothing_in_it(caplog):
     with caplog.at_level(logging.DEBUG, logger="connect.upnp"):
         assert upnp_events.handle_event("Arbeitszimmer", "<empty/>") == {}

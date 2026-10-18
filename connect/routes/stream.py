@@ -31,6 +31,7 @@ from core.session import (
 )
 from core.state import (
     TEST_TONE_TRACK_ID,
+    StreamConnection,
     audio_capability_limits,
     playable_codecs,
     stream_url,
@@ -430,12 +431,7 @@ class DisconnectSnapshot:
 
 
 def capture_disconnect_snapshot(
-    session: SessionState,
-    track,
-    *,
-    first_byte_at: float | None,
-    last_handoff: float,
-    bytes_delivered: int,
+    session: SessionState, track, conn: StreamConnection
 ) -> DisconnectSnapshot:
     """Freeze the numbers above at the moment of cancellation.
 
@@ -459,9 +455,9 @@ def capture_disconnect_snapshot(
         label=f"{track.artist} — {track.title}",
         duration=track.duration,
         position=session.state.clock.elapsed(),
-        blocked_for=now - last_handoff,
-        bytes_delivered=bytes_delivered,
-        wall=now - first_byte_at if first_byte_at is not None else 0.0,
+        blocked_for=now - conn.last_handoff,
+        bytes_delivered=conn.bytes_delivered,
+        wall=now - conn.first_byte_at if conn.first_byte_at is not None else 0.0,
         loop_lag_30s=peak_lag(30.0),
         loop_lag_120s=peak_lag(120.0),
     )
@@ -634,8 +630,9 @@ async def resume_interrupted(session: SessionState = Depends(get_session)):
 
 @router.head("/stream")
 @router.head("/stream/{session_id}")
-async def audio_stream_head(session_id: str = DEFAULT_SESSION_ID):
+async def audio_stream_head(request: Request, session_id: str = DEFAULT_SESSION_ID):
     """ffmpeg probes the URL with HEAD before streaming — answer without starting ffmpeg."""
+    logger.debug("[stream] HEAD" + _cast_device_note(request))
     session = await registry.get_or_create(strip_stream_extension(session_id))
     return Response(
         media_type=session.state.current_output_format.content_type,
@@ -1334,21 +1331,19 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
     async def stream_with_completion():
         my_generation = session.state.clock.play_generation
         offset_consumed = False
+        # Diagnostic bookkeeping for the cancellation snapshot below and the
+        # resync loop's log lines - see StreamConnection.
+        conn = StreamConnection()
+        session.state.open_streams.append(conn)
+        # Set by every way out of the body that knows why it ended; left
+        # as is, the generator was closed from outside.
+        outcome = "closed"
 
         # One try/finally for this whole generator body — a client
         # disconnect can land anywhere in it, and skipping the finally would
         # permanently leak the connection count incremented in
         # audio_stream() above.
         try:
-            # Diagnostic bookkeeping for the cancellation snapshot below —
-            # see DisconnectSnapshot for what each of these is meant to
-            # distinguish. `last_handoff` is updated *after* each yield
-            # returns, so at cancellation time "now - last_handoff" is how
-            # long this connection has been blocked handing the current
-            # chunk to the device.
-            first_byte_at: float | None = None
-            last_handoff = time.monotonic()
-            bytes_delivered = 0
             try:
                 audio = (
                     mix_cast.mix_audio(mix, offset, output_format)
@@ -1362,8 +1357,8 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
                     )
                 )
                 async for chunk in audio:
-                    if first_byte_at is None:
-                        first_byte_at = time.monotonic()
+                    if conn.first_byte_at is None:
+                        conn.first_byte_at = time.monotonic()
                     if not offset_consumed:
                         offset_consumed = True
                         # Only apply either of these once THIS connection has
@@ -1404,9 +1399,11 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
                                 session.state.is_streaming = True
                                 await session.event_bus.broadcast(build_status_dict(session))
                     yield chunk
-                    bytes_delivered += len(chunk)
-                    last_handoff = time.monotonic()
+                    conn.bytes_delivered += len(chunk)
+                    conn.last_handoff = time.monotonic()
+                outcome = "source finished"
             except asyncio.CancelledError:
+                outcome = "device disconnected"
                 # client disconnected mid-stream — not a natural end, and
                 # often just a brief reconnect blip a fresh connection is
                 # about to pick right back up. See
@@ -1416,17 +1413,12 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
                     _mark_disconnected_if_not_reconnected(
                         session,
                         my_generation,
-                        capture_disconnect_snapshot(
-                            session,
-                            track,
-                            first_byte_at=first_byte_at,
-                            last_handoff=last_handoff,
-                            bytes_delivered=bytes_delivered,
-                        ),
+                        capture_disconnect_snapshot(session, track, conn),
                     )
                 )
                 raise
             except SourceUnavailableError as e:
+                outcome = "source unavailable"
                 # Nothing to play at all, so the device is left with an
                 # empty stream it will only call corrupt, and keeps asking
                 # for again. Said once, while still streaming: every one of
@@ -1442,6 +1434,7 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
                     )
                 return
             except Exception:
+                outcome = "ffmpeg failed"
                 # ffmpeg itself failed (missing binary, crash, decode error —
                 # already logged by stream_tracks()). Not a natural end either:
                 # falling through to the track-end broadcast below would make
@@ -1472,6 +1465,11 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
             # connection is done, one way or another (normal completion,
             # ffmpeg failure, or a client disconnect/cancellation).
             session.state.active_stream_connections -= 1
+            session.state.open_streams.remove(conn)
+            logger.debug(
+                f"[stream] Connection closed ({outcome}) — {track.artist} — "
+                f"{track.title}: {conn.describe()}"
+            )
 
     return StreamingResponse(
         stream_with_completion(),

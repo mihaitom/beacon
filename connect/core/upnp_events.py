@@ -72,6 +72,9 @@ _PROPERTY_RE = re.compile(r"<(\w+)\s+val=\"([^\"]*)\"")
 # unbalanced a stereo pair, not something either surface exposes.
 _RENDERING_CONTROL_PROPERTY_RE = re.compile(r'<(Volume|Mute)\s+channel="Master"\s+val="([^"]*)"')
 
+# Kept for the log only - see handle_event().
+_DIAGNOSTIC_PROPERTIES = ("CurrentTrackDuration", "CurrentPlayMode", "CurrentCrossfadeMode")
+
 # The properties worth keeping out of a LastChange payload that also
 # carries volume, mute, EQ and a dozen Sonos-specific extensions.
 _KEPT_PROPERTIES = (
@@ -81,6 +84,7 @@ _KEPT_PROPERTIES = (
     "CurrentTrackURI",
     "AVTransportURI",
     "NumberOfTracks",
+    *_DIAGNOSTIC_PROPERTIES,
 )
 
 # TransportStatus is "OK" on a healthy renderer; anything else (Sonos emits
@@ -299,9 +303,16 @@ def handle_event(label: str, body: str) -> dict[str, str]:
             f"(state={state}, uri={properties.get('CurrentTrackURI', '?')})"
         )
     else:
+        # Duration, play mode and crossfade only when the event carries
+        # them - what the device thinks it is playing, at the moment it
+        # changes its mind, is what tells a restart it chose itself apart
+        # from one forced on it.
+        extras = "".join(
+            f" {name}={properties[name]}" for name in _DIAGNOSTIC_PROPERTIES if name in properties
+        )
         logger.debug(
             f"[upnp] {label} state={properties.get('TransportState', '?')} "
-            f"uri={properties.get('CurrentTrackURI', '?')}"
+            f"uri={properties.get('CurrentTrackURI', '?')}{extras}"
         )
     return properties
 

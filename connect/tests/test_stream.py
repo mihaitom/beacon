@@ -851,6 +851,7 @@ async def test_client_disconnect_mid_stream_is_reraised_without_touching_state(
     # (scheduled above, not awaited by this test) needs this to already be
     # accurate, not stuck counting a connection that no longer exists.
     assert default_session.state.active_stream_connections == 0
+    assert default_session.state.open_streams == []
 
 
 async def test_is_streaming_revives_once_a_bare_reconnect_produces_audio(

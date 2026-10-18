@@ -1097,6 +1097,16 @@ def test_transcoded_byte_length_rounds_up():
 # ── stream_tracks() command building ─────────────────────────────────────────
 
 
+class _FakeStderr:
+    """ffmpeg's stderr pipe, read line by line the way stream_tracks() does."""
+
+    def __init__(self, data: bytes):
+        self._lines = data.splitlines(keepends=True)
+
+    async def readline(self) -> bytes:
+        return self._lines.pop(0) if self._lines else b""
+
+
 class _FakeProc:
     """Fake ffmpeg subprocess for stream_tracks() — yields no audio bytes,
     just lets the command that would have been run be inspected."""
@@ -1105,8 +1115,7 @@ class _FakeProc:
         self.returncode = 0
         self.stdout = AsyncMock()
         self.stdout.read = AsyncMock(side_effect=[b"", b""])
-        self.stderr = AsyncMock()
-        self.stderr.read = AsyncMock(return_value=b"")
+        self.stderr = _FakeStderr(b"")
 
     async def wait(self):
         return None
@@ -1230,8 +1239,7 @@ class _ConfigurableFakeProc:
         self._exit_code = returncode
         self.stdout = AsyncMock()
         self.stdout.read = AsyncMock(side_effect=list(stdout_chunks))
-        self.stderr = AsyncMock()
-        self.stderr.read = AsyncMock(return_value=stderr)
+        self.stderr = _FakeStderr(stderr)
         self.killed = False
         self._kill_error = kill_error
 

@@ -166,6 +166,21 @@ _FFMPEG_LINE_PREFIX = re.compile(r"^\[[^\]]* @ [^\]]*\]\s*")
 _FAILURE_WORDS = re.compile(r"error|failed|invalid|denied|refused|not found", re.IGNORECASE)
 
 
+async def _drain_stderr(stream: asyncio.StreamReader, track_number: int) -> bytes:
+    """The stderr of ffmpeg, logged line by line as it arrives and returned whole.
+
+    Live because the lines that matter most come mid-stream: a dropped
+    source connection and ffmpeg's own reconnect to it ("Will reconnect
+    at ...") never end the process, so a log written at exit would show
+    them only once the track is long over, if at all.
+    """
+    lines = []
+    while line := await stream.readline():
+        lines.append(line)
+        logger.debug(f"[ffmpeg] Track {track_number}: {line.decode(errors='replace').rstrip()}")
+    return b"".join(lines)
+
+
 def failure_reason(stderr: str, returncode: int) -> str:
     """The first line of ffmpeg's stderr that says what went wrong. The
     first rather than the last: what follows the cause is ffmpeg's own
@@ -1326,7 +1341,7 @@ async def stream_tracks(
             )
 
             # Read stderr concurrently to prevent pipe buffer deadlock
-            stderr_task = asyncio.create_task(proc.stderr.read())
+            stderr_task = asyncio.create_task(_drain_stderr(proc.stderr, i + 1))
 
             # Pacing itself is ffmpeg's job now (see _READRATE_ARGS), so
             # this loop just moves bytes. Reset per track — each is its own
@@ -1362,10 +1377,6 @@ async def stream_tracks(
                 # the natural end it always was.
                 if bytes_produced == 0:
                     failed = failure_reason(stderr.decode(errors="replace"), proc.returncode)
-            elif stderr:
-                logger.debug(
-                    f"[ffmpeg] Track {i + 1} stderr: {stderr.decode(errors='replace')[:200]}"
-                )
 
         except FileNotFoundError:
             logger.error("[ffmpeg] ❌ ffmpeg not found — please install (apk add ffmpeg)")

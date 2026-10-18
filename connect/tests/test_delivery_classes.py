@@ -439,6 +439,26 @@ def test_sonos_get_position_returns_none_on_an_unparseable_value():
         assert asyncio.run(d.get_position()) is None
 
 
+def test_sonos_describe_transport_names_what_could_restart_a_track():
+    dev = MagicMock()
+    dev.get_current_track_info.return_value = {
+        "position": "0:00:03",
+        "duration": "0:00:50",
+        "uri": "http://10.0.0.1:7071/stream/abc.mp3",
+    }
+    dev.get_current_transport_info.return_value = {
+        "current_transport_state": "PLAYING",
+        "current_transport_status": "OK",
+    }
+    dev.play_mode = "REPEAT_ONE"
+    dev.cross_fade = False
+    with patch.object(SonosDelivery, "_get_device", return_value=dev):
+        description = asyncio.run(SonosDelivery("Küche").describe_transport())
+    assert "duration=0:00:50" in description
+    assert "play_mode=REPEAT_ONE" in description
+    assert "state=PLAYING" in description
+
+
 def test_sonos_current_uri_reads_the_devices_own_track_uri():
     dev = MagicMock()
     dev.get_current_track_info.return_value = {"uri": "http://host:8071/stream/abc"}

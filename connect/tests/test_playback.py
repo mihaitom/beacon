@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import logging
 import time
 from unittest.mock import AsyncMock, patch
 
@@ -2240,6 +2241,45 @@ def test_resync_position_once_recalibrates_on_backward_seek(default_session):
     import asyncio
 
     with patch.object(target, "get_position", new=AsyncMock(return_value=10.0)):
+        asyncio.run(_resync_position_once(default_session, target, 0))
+
+    assert default_session.state.clock.position_offset < -POSITION_RESYNC_THRESHOLD
+
+
+def test_resync_position_once_logs_what_the_device_says_about_a_jump(default_session, caplog):
+    default_session.state.is_streaming = True
+    default_session.state.clock.play_start_time = time.time() - 40.0
+    target = SonosDelivery("Küche")
+    default_session.state.active_delivery = target
+    import asyncio
+
+    with (
+        patch.object(target, "get_position", new=AsyncMock(return_value=3.0)),
+        patch.object(target, "current_uri", new=AsyncMock(return_value=None)),
+        patch.object(
+            target, "describe_transport", new=AsyncMock(return_value="play_mode=REPEAT_ONE")
+        ),
+        caplog.at_level(logging.INFO),
+    ):
+        asyncio.run(_resync_position_once(default_session, target, 0))
+
+    assert "device reports play_mode=REPEAT_ONE" in caplog.text
+
+
+def test_resync_position_once_still_recalibrates_when_the_device_cannot_describe_itself(
+    default_session,
+):
+    default_session.state.is_streaming = True
+    default_session.state.clock.play_start_time = time.time() - 40.0
+    target = SonosDelivery("Küche")
+    default_session.state.active_delivery = target
+    import asyncio
+
+    with (
+        patch.object(target, "get_position", new=AsyncMock(return_value=3.0)),
+        patch.object(target, "current_uri", new=AsyncMock(return_value=None)),
+        patch.object(target, "describe_transport", new=AsyncMock(side_effect=OSError("gone"))),
+    ):
         asyncio.run(_resync_position_once(default_session, target, 0))
 
     assert default_session.state.clock.position_offset < -POSITION_RESYNC_THRESHOLD

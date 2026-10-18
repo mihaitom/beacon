@@ -172,6 +172,12 @@ class BaseDelivery(ABC):
         protocol doesn't expose one."""
         return None
 
+    async def describe_transport(self) -> str | None:
+        """A one-line account of the device's own playback state, for the
+        log when its position jumps without anyone asking - or None when
+        the protocol has nothing beyond the position to tell."""
+        return None
+
     async def set_volume(self, volume: float) -> None:
         """Set the device's volume (0-100) (optional, default: no-op)."""
 

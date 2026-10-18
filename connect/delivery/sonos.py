@@ -377,6 +377,25 @@ class SonosDelivery(BaseDelivery):
         info = await asyncio.to_thread(device.get_current_track_info)
         return info.get("uri") or None
 
+    async def describe_transport(self) -> str | None:
+        # Which of these explains a restart: a duration the speaker made up
+        # for a stream that has none, its own repeat or crossfade setting,
+        # or a transport that reports an error or a different URI.
+        def read() -> str:
+            device = self._get_device()
+            track = device.get_current_track_info()
+            transport = device.get_current_transport_info()
+            return (
+                f"state={transport.get('current_transport_state')} "
+                f"status={transport.get('current_transport_status')} "
+                f"position={track.get('position')} duration={track.get('duration')} "
+                f"queue_position={track.get('playlist_position')} "
+                f"play_mode={device.play_mode} crossfade={device.cross_fade} "
+                f"uri={(track.get('uri') or '')[:80]}"
+            )
+
+        return await asyncio.to_thread(read)
+
     async def get_volume(self) -> float | None:
         device = await asyncio.to_thread(self._get_device)
         return await asyncio.to_thread(lambda: device.volume)

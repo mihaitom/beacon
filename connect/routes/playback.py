@@ -8,7 +8,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from typing import Literal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
 from core import cast_permissions
@@ -385,6 +385,12 @@ async def _foreign_uri(session: SessionState, candidate) -> str | None:
     return uri
 
 
+def _describe_open_streams(st) -> str:
+    if not st.open_streams:
+        return "no stream connection open"
+    return "; ".join(f"stream {conn.describe()}" for conn in st.open_streams)
+
+
 async def _resync_position_once(session: SessionState, candidate, generation: int) -> None:
     """One resync check/correction against `candidate` — split out from
     _resync_position_periodically() below purely so it's directly testable
@@ -490,6 +496,7 @@ async def _resync_position_once(session: SessionState, candidate, generation: in
         f"[position-resync] {candidate.target}: device={device_pos:.2f}s wall={wall_elapsed:.2f}s "
         f"delta={delta:+.2f}s change={change:+.2f}s offset_before={offset_before:.2f}s "
         f"play_generation={st.clock.play_generation} is_paused={st.clock.is_paused}"
+        f" | {_describe_open_streams(st)}"
     )
     if abs(change) < POSITION_RESYNC_THRESHOLD:
         return
@@ -521,8 +528,16 @@ async def _resync_position_once(session: SessionState, candidate, generation: in
     logger.info(
         f"[position-resync] {candidate.target}: external position change detected — "
         f"device={device_pos:.2f}s wall={wall_elapsed:.2f}s, offset {offset_before:.2f}s "
-        f"-> {offset:.2f}s"
+        f"-> {offset:.2f}s | {_describe_open_streams(st)}"
     )
+    # Whether the device itself thinks it started over, and why - asked
+    # only here, since it costs more device round trips.
+    try:
+        transport = await candidate.describe_transport()
+    except Exception as e:
+        transport = f"unavailable ({e})"
+    if transport:
+        logger.info(f"[position-resync] {candidate.target}: device reports {transport}")
     await session.event_bus.broadcast(build_status_dict(session))
 
 
@@ -1560,7 +1575,9 @@ async def play_url(
 
 
 @router.post("/pause")
-async def pause_playback(session: SessionState = Depends(require_authenticated_session)):
+async def pause_playback(
+    request: Request, session: SessionState = Depends(require_authenticated_session)
+):
     if not session.media.base_url:
         # Same "session forgot everything" case /play guards against — a
         # reaped-then-recreated session has no active_delivery to actually
@@ -1585,7 +1602,12 @@ async def pause_playback(session: SessionState = Depends(require_authenticated_s
         st.clock.pause(elapsed)
         if st.mix is not None:
             st.mix.freeze()
-        logger.info(f"[pause] ⏸ {elapsed:.1f}s into track")
+        # Who asked: a pause nobody remembers pressing is otherwise
+        # indistinguishable from one the user did press.
+        logger.info(
+            f"[pause] ⏸ {elapsed:.1f}s into track "
+            f"[{request.headers.get('user-agent', 'no user agent')[:80]}]"
+        )
         await session.event_bus.broadcast(build_status_dict(session))
         return {"paused": True}
 

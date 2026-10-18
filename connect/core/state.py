@@ -6,7 +6,9 @@ SessionState.
 import asyncio
 import os
 import socket
+import time
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass, field
 from typing import Any
 
 from delivery import (
@@ -26,6 +28,28 @@ from .playback_clock import PlaybackClock
 from .streamer import FALLBACK_FORMAT, OutputFormat, stream_extension
 
 PORT = int(os.getenv("PORT", "7071"))
+
+
+@dataclass
+class StreamConnection:
+    """What one open GET /stream connection has handed its device so far.
+
+    `last_handoff` moves only once the device has taken a chunk, so a
+    growing "last read" means it has stopped reading - its buffer is full,
+    or it has stalled - while the connection itself is still open.
+    """
+
+    opened_at: float = field(default_factory=time.monotonic)
+    first_byte_at: float | None = None
+    last_handoff: float = field(default_factory=time.monotonic)
+    bytes_delivered: int = 0
+
+    def describe(self) -> str:
+        now = time.monotonic()
+        return (
+            f"delivered={self.bytes_delivered}B over {now - self.opened_at:.1f}s, "
+            f"last read {now - self.last_handoff:.1f}s ago"
+        )
 
 
 class AppState:
@@ -60,6 +84,9 @@ class AppState:
         # bytes, not when it merely opens: a device can open and abandon a
         # connection without ever reading from it.
         self.streamed_generation: int | None = None
+        # The connections behind active_stream_connections, for the logs
+        # only - see StreamConnection.
+        self.open_streams: list[StreamConnection] = []
         self.radio_info: dict | None = None
         self.active_delivery: BaseDelivery | DeliveryManager | None = None
         # Bumped by core/session.py's displace_target() whenever its
