@@ -116,8 +116,11 @@ export default {
   color: rgb(var(--v-theme-background));
 }
 
-/* Set apart from the skip buttons flanking it. */
+/* Set apart from the skip buttons flanking it. 40px rather than the 44px
+ * Vuetify's large size gives: at 44 the amber disc outweighed the bar. */
 .play-btn {
   margin-inline: 4px;
+  width: 40px;
+  height: 40px;
 }
 </style>

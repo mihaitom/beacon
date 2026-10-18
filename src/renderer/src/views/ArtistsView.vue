@@ -49,10 +49,7 @@
         <v-btn-toggle
           :model-value="listView ? 'list' : 'grid'"
           mandatory
-          density="compact"
-          rounded="pill"
-          variant="tonal"
-          class="artist-layout-toggle"
+          class="beacon-view-toggle artist-layout-toggle"
           :aria-label="$t('library.layout')"
           @update:model-value="setListView($event === 'list')"
         >
@@ -483,6 +480,14 @@ export default {
 
 .artist-grid--list .artist-card {
   width: 100%;
+}
+
+/* Clear of AlphabetIndexBar like the grid below (see
+ * .grid-root--with-alphabet-bar): the bar sits over the right edge at the
+ * height this row has before the page scrolls, on top of the controls at
+ * its end. */
+.library-filter {
+  margin-right: 40px;
 }
 
 .artist-layout-toggle {

@@ -1273,6 +1273,7 @@ export default {
     noResults: 'Keine Treffer für „{query}“.',
   },
   releaseNotes: {
+    notInstalled: 'noch nicht installiert',
     englishOnly: 'Die Release Notes gibt es nur auf Englisch.',
     title: 'Release Notes',
     heading: 'Was sich seit der letzten Version geändert hat',
@@ -1283,9 +1284,6 @@ export default {
     upcoming: 'Demnächst',
     upcomingNote:
       'Noch nicht veröffentlicht: woran gerade für die nächste Version gearbeitet wird, abgerufen von GitHub. Bis zum Release kann sich noch etwas ändern.',
-    upcomingFailed: 'Die kommenden Änderungen konnten nicht von GitHub geladen werden.',
-    upcomingEmpty: 'Gerade ist nichts Neues in Arbeit.',
-    inDevelopment: 'In Entwicklung',
   },
   stats: {
     eyebrow: 'Deine Bibliothek',

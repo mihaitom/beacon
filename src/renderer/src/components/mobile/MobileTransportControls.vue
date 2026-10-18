@@ -480,8 +480,12 @@ export default {
   flex-shrink: 0;
 }
 
-/* The one filled button in the row, given room on both sides. */
+/* The one filled button in the row, given room on both sides. 48px rather
+ * than size="large"'s 56: at 56 the amber disc all but touched the buttons
+ * beside it on a narrow phone. Still a full touch target. */
 .mobile-transport__play-btn {
   margin-inline: 8px;
+  width: 48px;
+  height: 48px;
 }
 </style>

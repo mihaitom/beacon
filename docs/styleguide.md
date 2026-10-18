@@ -437,7 +437,8 @@ from its own albums and only cycles while the row is hovered. No backdrop -
 a page of rows each with its own moving picture is too much at once.
 
 Albums and Artists switch between their grid and a list (a `v-btn-toggle`
-in the filter row, remembered per page). A list line is the card itself in
+with `.beacon-view-toggle` in the filter row - the field's 40px pill, the
+shown layout in amber - remembered per page). A list line is the card itself in
 its `row` form (`AlbumCard`/`ArtistCard` with `row`), 56px tall, figures in
 fixed right-aligned columns - one component, so the two layouts share the
 context menu and the heart instead of keeping two copies in step.

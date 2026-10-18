@@ -60,6 +60,12 @@ describe('upcomingFrom', () => {
   it('lists no release for the newest version', () => {
     expect(upcomingFrom(CHANGELOG, '1.10.0').newer).toEqual([])
   })
+
+  it('has nothing in development while Unreleased holds only its headings', () => {
+    const justReleased =
+      '## [Unreleased]\n\n### Added\n\n### Fixed\n\n## [1.9.0] - 2026-10-20\n\n- Shipped\n'
+    expect(upcomingFrom(justReleased, '1.9.0').unreleased).toBe('')
+  })
 })
 
 describe('fetchUpcoming', () => {
@@ -75,7 +81,7 @@ describe('fetchUpcoming', () => {
     expect(upcoming.newer).toHaveLength(2)
   })
 
-  it('throws on a failed request rather than answering "nothing planned"', async () => {
+  it('throws on a failed request', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('', { status: 404 })))
     await expect(fetchUpcoming('1.8.0')).rejects.toThrow()
   })

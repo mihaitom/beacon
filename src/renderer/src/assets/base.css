@@ -258,6 +258,36 @@ body {
   margin-bottom: 0;
 }
 
+/* A grid/list switch in a filter row (Albums, Artists): the same 40px pill
+ * and surface as the search field and the sort select beside it, the shown
+ * layout picked out in amber like a selected segment. Vuetify's own toggle
+ * squeezed its icon buttons to 28px, the icons touching the edge. */
+.beacon-view-toggle.v-btn-toggle {
+  height: 40px;
+  padding: 4px;
+  gap: 2px;
+  border-radius: 9999px;
+  background: color-mix(in srgb, rgb(var(--v-theme-on-surface)) 4%, rgb(var(--v-theme-surface)));
+}
+
+.beacon-view-toggle .v-btn {
+  width: 40px;
+  min-width: 0;
+  height: 32px;
+  padding: 0;
+  border-radius: 9999px !important;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.beacon-view-toggle .v-btn--active {
+  color: rgb(var(--v-theme-primary));
+  background: rgba(245, 169, 78, 0.14);
+}
+
+.beacon-view-toggle .v-btn--active > .v-btn__overlay {
+  opacity: 0;
+}
+
 /* The line a library page shows in place of its grid while something is
  * loading or has gone wrong - the error banner and the spinner both sit
  * here, above the content, with the same gap under them. */

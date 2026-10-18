@@ -18,7 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - On the phone and in the Remote Control, holding a song in the queue and letting go opens the same actions as a sheet (the Remote Control offers the playback ones)
 - Clicking the artist of a song in the queue opens the artist's page
 - With DJ mixes on, the queue can be sorted by tempo, so more songs follow one with a similar BPM and get mixed instead of crossfaded. Offered when most songs in the queue have a BPM tag and shuffle is off
-- The release notes have a "Coming up" entry that shows what is being worked on for the next version, and any releases newer than the one you are running
+- The release notes show what is being worked on for the next version, whenever there is something, and list releases newer than the one you are running as versions of their own
 - Desktop app: the window opens where and as large as it was last time, starting Beacon a second time brings the open window to the front instead of opening another, and the window title shows what is playing
 - On Windows, the taskbar preview has previous, play/pause and next buttons, and the taskbar icon shows how far into the song playback is
 - The player bar's buttons explain themselves on hover, with their keyboard shortcut
@@ -26,7 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
-- A fresher look: Beacon brings its own typeface instead of using whatever the system has, buttons are no longer written in capitals, and the statistics page keeps amber for the listening figures
+- A fresher look: Beacon brings its own typeface instead of using whatever the system has, buttons are no longer written in capitals, the play button is a little smaller, and the statistics page keeps amber for the listening figures
 - The search sits in the middle of the top bar, ready to type into, and Ctrl+K (Cmd+K on a Mac) jumps to it. The Beacon logo moved to the top of the sidebar, and the button that shows its labels to the bottom
 - The header of the overview pages (Albums, Artists, Songs and the others) is lower in an ordinary window and taller in a very wide one, where the artist banner now shows in full, and the list starts closer below it
 - The Home page's header shows the artist's banner or else the blurred cover, no longer the artist's background photo

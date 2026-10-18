@@ -1273,6 +1273,7 @@ export default {
     noResults: 'Nessun risultato per "{query}".',
   },
   releaseNotes: {
+    notInstalled: 'non ancora installata',
     englishOnly: 'Le note di rilascio sono disponibili solo in inglese.',
     title: 'Note di rilascio',
     heading: "Cosa è cambiato dall'ultima versione",
@@ -1283,9 +1284,6 @@ export default {
     upcoming: 'In arrivo',
     upcomingNote:
       'Non ancora pubblicato: ciò su cui si sta lavorando per la prossima versione, letto da GitHub. Può ancora cambiare prima del rilascio.',
-    upcomingFailed: 'Impossibile caricare le modifiche in arrivo da GitHub.',
-    upcomingEmpty: "Al momento non c'è niente di nuovo in lavorazione.",
-    inDevelopment: 'In sviluppo',
   },
   stats: {
     eyebrow: 'La tua libreria',

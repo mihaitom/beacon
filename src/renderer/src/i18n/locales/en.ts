@@ -1264,6 +1264,7 @@ export default {
     noResults: 'No results for "{query}".',
   },
   releaseNotes: {
+    notInstalled: 'not installed yet',
     englishOnly: 'The release notes are only available in English.',
     title: 'Release Notes',
     heading: "What's changed since the last version",
@@ -1274,9 +1275,6 @@ export default {
     upcoming: 'Coming up',
     upcomingNote:
       'Not released yet: what is being worked on for the next version, read from GitHub. It may still change before the release.',
-    upcomingFailed: "Couldn't load the upcoming changes from GitHub.",
-    upcomingEmpty: 'Nothing new in the works right now.',
-    inDevelopment: 'In development',
   },
   stats: {
     eyebrow: 'Your library',

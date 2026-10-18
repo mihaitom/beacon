@@ -59,16 +59,23 @@ export function unreleasedSection(markdown: string): string {
     .trim()
 }
 
+/** Whether a section lists anything at all - an `[Unreleased]` holding only
+ * its `### Added` headings, right after a release, has nothing to show. */
+export function hasEntries(section: string): boolean {
+  return /^\s*[-*]\s+\S/m.test(section)
+}
+
 export function upcomingFrom(markdown: string, currentVersion: string): UpcomingChanges {
+  const unreleased = unreleasedSection(markdown)
   return {
-    unreleased: unreleasedSection(markdown),
+    unreleased: hasEntries(unreleased) ? unreleased : '',
     newer: parseChangelog(markdown).filter((entry) => isNewer(entry.version, currentVersion)),
   }
 }
 
-/** Fetched on demand only, when someone asks for it in the release notes
- * dialog. Throws on any failure: the dialog says so instead of showing an
- * empty section that would read as "nothing planned". */
+/** Fetched when the release notes dialog opens, so its version picker can
+ * offer "Coming up" and any newer release only where there is something to
+ * read. Throws on any failure; the dialog then offers neither. */
 export async function fetchUpcoming(currentVersion: string): Promise<UpcomingChanges> {
   const response = await fetch(UPCOMING_URL, { cache: 'no-cache' })
   if (!response.ok) throw new Error(`Changelog request failed: ${response.status}`)

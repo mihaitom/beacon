@@ -36,41 +36,73 @@ describe('upcoming changes', () => {
     document.body.innerHTML = ''
   })
 
-  it('asks GitHub only once someone picks them', async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(new Response('## [Unreleased]\n\n- A feature still in the works\n'))
+  type NotesVm = {
+    selectedVersion: string
+    readonly versionOptions: { title: string; value: string }[]
+    openDialog(autoOpen?: boolean): void
+  }
+
+  async function openWith(changelog: string) {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(changelog))
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = mountNotes()
+    const vm = wrapper.vm as unknown as NotesVm
+    vm.openDialog()
     await flushPromises()
-    expect(fetchMock).not.toHaveBeenCalled()
+    return { wrapper, vm, fetchMock }
+  }
 
-    wrapper.vm.selectedVersion = 'upcoming'
+  const values = (vm: NotesVm) => vm.versionOptions.map((option) => option.value)
+
+  it('offers what is in development only when there is something in it', async () => {
+    const { wrapper, vm } = await openWith('## [Unreleased]\n\n- A feature still in the works\n')
+
+    expect(values(vm)[0]).toBe('upcoming')
+    vm.selectedVersion = 'upcoming'
     await flushPromises()
-
-    expect(fetchMock).toHaveBeenCalledOnce()
     expect(document.body.textContent).toContain('A feature still in the works')
     wrapper.unmount()
   })
 
-  it('says it failed and can try again', async () => {
+  it('leaves it out while the development changelog lists nothing new', async () => {
+    const { wrapper, vm } = await openWith('## [Unreleased]\n\n### Added\n\n### Fixed\n')
+
+    expect(values(vm)).not.toContain('upcoming')
+    wrapper.unmount()
+  })
+
+  it('offers each release newer than this one as its own version', async () => {
+    const { wrapper, vm } = await openWith(
+      '## [Unreleased]\n\n## [99.1.0] - 2099-02-01\n\n- Later still\n\n## [99.0.0] - 2099-01-01\n\n- The next one\n',
+    )
+
+    expect(values(vm).slice(0, 2)).toEqual(['99.1.0', '99.0.0'])
+    vm.selectedVersion = '99.0.0'
+    await flushPromises()
+    expect(document.body.textContent).toContain('The next one')
+    wrapper.unmount()
+  })
+
+  it('asks GitHub once per run, and again after a failure', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
     const fetchMock = vi.fn().mockRejectedValue(new TypeError('offline'))
     vi.stubGlobal('fetch', fetchMock)
-    vi.spyOn(console, 'error').mockImplementation(() => {})
     const wrapper = mountNotes()
-    wrapper.vm.selectedVersion = 'upcoming'
-    await flushPromises()
+    const vm = wrapper.vm as unknown as NotesVm
 
-    expect(document.body.textContent).toContain(i18n.global.t('releaseNotes.upcomingFailed'))
+    vm.openDialog()
+    await flushPromises()
+    // Nothing to offer, rather than an entry that only says it failed.
+    expect(values(vm)).not.toContain('upcoming')
 
     fetchMock.mockResolvedValue(new Response('## [Unreleased]\n\n- Back online\n'))
-    const retry = [...document.querySelectorAll('button')].find((button) =>
-      button.textContent?.includes(i18n.global.t('common.retry')),
-    )
-    retry?.click()
+    vm.openDialog()
+    await flushPromises()
+    vm.openDialog()
     await flushPromises()
 
-    expect(document.body.textContent).toContain('Back online')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(values(vm)).toContain('upcoming')
     wrapper.unmount()
   })
 })

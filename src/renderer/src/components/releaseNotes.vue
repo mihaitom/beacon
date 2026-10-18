@@ -43,24 +43,8 @@
           <v-alert type="info" variant="tonal" density="compact" class="upcoming-note">
             {{ $t('releaseNotes.upcomingNote') }}
           </v-alert>
-          <div v-if="upcomingState === 'loading'" class="empty-state">
-            <v-progress-circular indeterminate size="20" width="2" />
-          </div>
-          <div v-else-if="upcomingState === 'error'" class="empty-state">
-            {{ $t('releaseNotes.upcomingFailed') }}
-            <v-btn variant="text" size="small" @click="loadUpcoming">{{
-              $t('common.retry')
-            }}</v-btn>
-          </div>
           <!-- eslint-disable-next-line vue/no-v-html -- the repo's own CHANGELOG.md from GitHub, through markdown-it with html: false -->
-          <div
-            v-else-if="upcomingHtml"
-            class="changelog-content beacon-markdown"
-            v-html="upcomingHtml"
-          ></div>
-          <div v-else-if="upcomingState === 'done'" class="empty-state">
-            {{ $t('releaseNotes.upcomingEmpty') }}
-          </div>
+          <div class="changelog-content beacon-markdown" v-html="upcomingHtml"></div>
         </template>
 
         <!-- eslint-disable-next-line vue/no-v-html -- selectedHtml is our own CHANGELOG.md, rendered at build time, never user input -->
@@ -141,15 +125,31 @@ export default defineComponent({
       selectedVersion: defaultVersion,
       changelogEntries: entries,
       upcoming: null as UpcomingChanges | null,
-      upcomingState: 'idle' as 'idle' | 'loading' | 'error' | 'done',
+      // Asked for once per run of the app, on the first open - see
+      // fetchUpcoming(). Nothing is shown for it while it is on its way or
+      // if it failed: the picker simply has no extra entries.
+      upcomingRequested: false,
       iconAnimation: false,
       listener: null as (() => void) | null,
     }
   },
   computed: {
+    /** Releases published since this version, fetched from GitHub - each
+     * its own entry, marked as not yet installed. */
+    newerEntries(): ChangelogEntry[] {
+      return this.upcoming?.newer ?? []
+    },
+    /** Newest first: what is in development (only when there is any), the
+     * releases newer than this one, then the bundled changelog. */
     versionOptions(): VersionOption[] {
       return [
-        { title: this.$t('releaseNotes.upcoming'), value: UPCOMING },
+        ...(this.upcoming?.unreleased
+          ? [{ title: this.$t('releaseNotes.upcoming'), value: UPCOMING }]
+          : []),
+        ...this.newerEntries.map((entry) => ({
+          title: `v${entry.version} - ${entry.date} · ${this.$t('releaseNotes.notInstalled')}`,
+          value: entry.version,
+        })),
         ...this.changelogEntries.map((entry) => ({
           title: `v${entry.version} - ${entry.date}`,
           value: entry.version,
@@ -159,24 +159,15 @@ export default defineComponent({
     showingUpcoming(): boolean {
       return this.selectedVersion === UPCOMING
     },
-    /** Newest first: what is in development, then whatever was released
-     * since this version. The in-development part only gets a heading of
-     * its own when there are releases to tell it apart from. */
     upcomingHtml(): string {
-      if (!this.upcoming) return ''
-      const { unreleased, newer } = this.upcoming
-      const sections = newer.map((entry) => `## v${entry.version} - ${entry.date}\n\n${entry.body}`)
-      if (unreleased) {
-        sections.unshift(
-          newer.length
-            ? `## ${this.$t('releaseNotes.inDevelopment')}\n\n${unreleased}`
-            : unreleased,
-        )
-      }
-      return sections.length ? renderNotes(sections.join('\n\n')) : ''
+      return this.upcoming?.unreleased ? renderNotes(this.upcoming.unreleased) : ''
     },
     selectedEntry(): ChangelogEntry | null {
-      return this.changelogEntries.find((entry) => entry.version === this.selectedVersion) ?? null
+      return (
+        this.newerEntries.find((entry) => entry.version === this.selectedVersion) ??
+        this.changelogEntries.find((entry) => entry.version === this.selectedVersion) ??
+        null
+      )
     },
     selectedHtml(): string {
       return this.selectedEntry ? renderNotes(this.selectedEntry.body) : ''
@@ -189,9 +180,6 @@ export default defineComponent({
     },
   },
   watch: {
-    selectedVersion(version: string) {
-      if (version === UPCOMING && this.upcomingState === 'idle') void this.loadUpcoming()
-    },
     // Auto-open only once logged in — this used to fire unconditionally on
     // mount (App.vue mounts this globally regardless of route), popping up
     // right on top of the login screen before anyone had even signed in.
@@ -228,13 +216,14 @@ export default defineComponent({
       }
     },
     async loadUpcoming() {
-      this.upcomingState = 'loading'
+      if (this.upcomingRequested) return
+      this.upcomingRequested = true
       try {
         this.upcoming = await fetchUpcoming(this.appVersion)
-        this.upcomingState = 'done'
       } catch (error) {
+        // Asked again on the next open rather than never this run.
+        this.upcomingRequested = false
         console.error('[release-notes] Failed to load the upcoming changes:', error)
-        this.upcomingState = 'error'
       }
     },
     openDialog(autoOpen = false) {
@@ -243,6 +232,7 @@ export default defineComponent({
         this.changelogEntries[0]?.version ??
         this.appVersion
       this.visible = true
+      void this.loadUpcoming()
       if (autoOpen) {
         window.localStorage.setItem(this.storageKey, this.appVersion)
       }
