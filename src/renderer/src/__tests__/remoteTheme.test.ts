@@ -30,7 +30,7 @@ describe('remotePalette', () => {
   })
 
   it('keeps text on the accent readable', () => {
-    for (const theme of ['beacon', 'graphite', 'paper', 'mist'] as const) {
+    for (const theme of ['beacon', 'graphite', 'paper', 'glacier'] as const) {
       const palette = remotePalette({ theme, custom: DEFAULT_CUSTOM_COLORS })
       expect(contrast(palette.accent, palette.accent_on), theme).toBeGreaterThanOrEqual(4.5)
     }
@@ -54,7 +54,7 @@ describe("the Remote Control's theme.js", () => {
 
   it("puts the desktop's palette into the page's variables", async () => {
     const { applyTheme } = await loadTheme()
-    applyTheme(remotePalette({ theme: 'mist', custom: DEFAULT_CUSTOM_COLORS }))
+    applyTheme(remotePalette({ theme: 'glacier', custom: DEFAULT_CUSTOM_COLORS }))
 
     expect(rootVar('--bg')).toBe('#EEF1F5')
     expect(rootVar('--accent')).toBe('#2E6BB0')
@@ -70,7 +70,7 @@ describe("the Remote Control's theme.js", () => {
     const { applyTheme } = await loadTheme()
     applyTheme(undefined)
     applyTheme({
-      ...remotePalette({ theme: 'mist', custom: DEFAULT_CUSTOM_COLORS }),
+      ...remotePalette({ theme: 'glacier', custom: DEFAULT_CUSTOM_COLORS }),
       accent: 'blue',
     })
     expect(rootVar('--bg')).toBe('')

@@ -296,7 +296,7 @@ describe('remoteControl store', () => {
       await vi.advanceTimersByTimeAsync(300)
       vi.mocked(remoteHttp.pushRemoteState).mockClear()
 
-      useAppearanceStore().setTheme('mist')
+      useAppearanceStore().setTheme('glacier')
       await vi.advanceTimersByTimeAsync(300)
 
       expect(remoteHttp.pushRemoteState).toHaveBeenCalledTimes(1)

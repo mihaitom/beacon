@@ -622,7 +622,7 @@ export default {
       beacon: { name: 'Beacon', description: 'Ambre sur bleu nuit' },
       graphite: { name: 'Graphite', description: 'Anthracite neutre, accent turquoise' },
       paper: { name: 'Papier', description: 'Blanc chaud, accent cuivre' },
-      mist: { name: 'Brume', description: 'Gris clair froid, accent bleu' },
+      glacier: { name: 'Glacier', description: 'Gris clair froid, accent bleu' },
       custom: { name: 'Personnalisé', description: 'Votre arrière-plan et votre accent' },
     },
     libraryScanHint:

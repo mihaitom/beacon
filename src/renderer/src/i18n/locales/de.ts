@@ -617,7 +617,7 @@ export default {
       beacon: { name: 'Beacon', description: 'Amber auf Nachtblau' },
       graphite: { name: 'Graphit', description: 'Neutrales Anthrazit, Türkis-Akzent' },
       paper: { name: 'Papier', description: 'Warmes Papierweiß, Kupfer-Akzent' },
-      mist: { name: 'Nebel', description: 'Kühles Hellgrau, Blau-Akzent' },
+      glacier: { name: 'Gletscher', description: 'Kühles Hellgrau, Blau-Akzent' },
       custom: { name: 'Eigenes', description: 'Eigener Hintergrund und Akzent' },
     },
     libraryScanHint: '{server} nach neuen, geänderten oder entfernten Dateien durchsuchen lassen.',

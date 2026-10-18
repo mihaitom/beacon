@@ -616,7 +616,7 @@ export default {
       beacon: { name: 'Beacon', description: 'Amber on night blue' },
       graphite: { name: 'Graphite', description: 'Neutral charcoal, teal accent' },
       paper: { name: 'Paper', description: 'Warm off-white, copper accent' },
-      mist: { name: 'Mist', description: 'Cool light grey, blue accent' },
+      glacier: { name: 'Glacier', description: 'Cool light grey, blue accent' },
       custom: { name: 'Custom', description: 'Your own background and accent' },
     },
     libraryScanHint: 'Have {server} scan for new, changed, or removed files.',

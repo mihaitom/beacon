@@ -132,7 +132,7 @@ export default {
         preset('graphite'),
         { type: 'subheader', title: this.$t('settings.themeGroupLight') },
         preset('paper'),
-        preset('mist'),
+        preset('glacier'),
         { type: 'divider' },
         preset('custom'),
       ]

@@ -67,7 +67,7 @@ const paper: ThemeDefinition = {
   },
 }
 
-const mist: ThemeDefinition = {
+const glacier: ThemeDefinition = {
   dark: false,
   colors: {
     background: '#EEF1F5',
@@ -91,7 +91,7 @@ function night(primary: string): ThemeDefinition {
 
 export type ThemeDefinitionColors = NonNullable<ThemeDefinition['colors']>
 
-export type ThemeId = 'beacon' | 'graphite' | 'paper' | 'mist' | 'custom'
+export type ThemeId = 'beacon' | 'graphite' | 'paper' | 'glacier' | 'custom'
 
 /** What a self-made theme is chosen from. Everything else is derived. */
 export interface CustomThemeColors {
@@ -119,7 +119,7 @@ export const PRESET_THEMES: { id: Exclude<ThemeId, 'custom'>; definition: ThemeD
   { id: 'beacon', definition: beacon },
   { id: 'graphite', definition: graphite },
   { id: 'paper', definition: paper },
-  { id: 'mist', definition: mist },
+  { id: 'glacier', definition: glacier },
 ]
 
 /** The accent an accent has to become on the dark parts: the copper and

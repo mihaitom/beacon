@@ -52,7 +52,7 @@ describe('theme definitions', () => {
     expect(nightTheme(prefer('beacon'))).toBe('beacon')
     expect(nightTheme(prefer('graphite'))).toBe('graphite')
     expect(nightTheme(prefer('paper'))).toBe('paper-night')
-    expect(nightTheme(prefer('mist'))).toBe('mist-night')
+    expect(nightTheme(prefer('glacier'))).toBe('glacier-night')
     expect(themeDefinitions(prefer('paper'))['paper-night']!.dark).toBe(true)
   })
 
@@ -93,9 +93,9 @@ describe('appearance store', () => {
   })
 
   it('remembers the theme for this device', () => {
-    useAppearanceStore().setTheme('mist')
-    expect(loadThemePreference().theme).toBe('mist')
-    expect(JSON.parse(localStorage.getItem(KEY)!).theme).toBe('mist')
+    useAppearanceStore().setTheme('glacier')
+    expect(loadThemePreference().theme).toBe('glacier')
+    expect(JSON.parse(localStorage.getItem(KEY)!).theme).toBe('glacier')
   })
 
   it('survives a stored value it cannot read', () => {
@@ -184,10 +184,10 @@ describe('initTheme', () => {
     const store = useAppearanceStore()
     initTheme(vuetify.theme, store)
 
-    store.setTheme('mist')
+    store.setTheme('glacier')
     await Promise.resolve()
 
-    expect(vuetify.theme.global.name.value).toBe('mist')
+    expect(vuetify.theme.global.name.value).toBe('glacier')
     expect(appAccent.value).toBe(hexToTriplet('#2E6BB0'))
   })
 })

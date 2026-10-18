@@ -6,47 +6,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Highlights
+
+- **Themes:** besides Beacon there is the dark Graphite and the light Paper and Glacier, or a theme of your own from a background and an accent colour. Pick one under Settings → Appearance
+- **Favorites on the phone and in the Remote Control:** a tab of its own with your favorite songs, albums and artists, and on Plex too
+- **A fresher look:** Beacon's own typeface, a search in the middle of the top bar, and a new Genres page whose biggest genres stand as crates of records to flip through
+
 ### Added
 
-- Themes: besides Beacon there is the dark Graphite and the light Paper and Mist, or a theme of your own from a background and an accent colour, chosen per device under Settings → Appearance. Artwork headers and Now Playing stay dark on the light themes, and the Remote Control on the phone takes on the theme of the app it controls (requested by @mjj042, #55)
-- Under Settings → Appearance, Now Playing can be kept from tinting the app and its visualizer in the colour of the artist background, so they stay in the theme's accent
-- Right-click a song in the queue to play it now or next, move it to the end or remove it. The menu also has what song lists offer: Song Radio, add to playlist, go to album or artist, artwork and info. While a transition is already prepared, "next" means right after the song it leads into
+- Themes: besides Beacon there is the dark Graphite and the light Paper and Glacier, or a theme of your own from a background and an accent colour, chosen per device under Settings → Appearance. Artwork headers and Now Playing stay dark on the light themes, and the Remote Control on the phone takes on the theme of the app it controls. Now Playing can also be kept from tinting the app and its visualizer in the colour of the artist background, so they stay in the theme's accent (requested by @mjj042, #55)
 - The phone and the Remote Control have a Favorites tab with your favorite songs, albums and artists. It takes the place of the Now Playing tab, which the player bar above the tabs already opens, and the Queue tab moves to the front. Songs are marked as favorites with the heart next to the title on Now Playing or from a song's actions, and on the phone albums from their page
 - Favorites work with Plex too: a favorite there is a five-star rating, the same thing Plexamp's like sets, so the heart and the fifth star always agree
-- The album list can be sorted by artist, year or date added as well as by name. Sorted by year, the bar on the right jumps between decades
-- Albums and Artists can be shown as a list instead of a grid, with year, number of songs and length, or number of albums and songs, on each line
+- The Genres page is new: the biggest genres stand as crates of their records, flipped through one record at a time while pointed at, and below them every genre is listed like a book's index with its number of songs, the big ones set stronger, with the jump bar beside it
 - On the phone and in the Remote Control, the library has an Artists tab, and every artist has a page with their most played songs, their albums and the artist radio. Artist names on Now Playing and in a song's actions lead there, on the phone also on an album
-- The Remote Control speaks your phone's language: German, English, Spanish, French or Italian, as the app does
-- On the phone and in the Remote Control, holding a song in the queue and letting go opens the same actions as a sheet (the Remote Control offers the playback ones)
-- Clicking the artist of a song in the queue opens the artist's page
+- Right-click a song in the queue to play it now or next, move it to the end or remove it. The menu also has what song lists offer: Song Radio, add to playlist, go to album or artist, artwork and info. On the phone and in the Remote Control, holding a song and letting go opens the same actions as a sheet. While a transition is already prepared, "next" means right after the song it leads into, and clicking the artist of a song in the queue opens the artist's page
+- The album list can be sorted by artist, year or date added as well as by name; sorted by year, the bar on the right jumps between decades. Albums and Artists can also be shown as a list instead of a grid, with year, number of songs and length, or number of albums and songs, on each line
 - With DJ mixes on, the queue can be sorted by tempo, so more songs follow one with a similar BPM and get mixed instead of crossfaded. Offered when most songs in the queue have a BPM tag and shuffle is off
-- The release notes show what is being worked on for the next version, whenever there is something, and list releases newer than the one you are running as versions of their own
 - Desktop app: the window opens where and as large as it was last time, starting Beacon a second time brings the open window to the front instead of opening another, and the window title shows what is playing
 - On Windows, the taskbar preview has previous, play/pause and next buttons, and the taskbar icon shows how far into the song playback is
+- The Remote Control speaks your phone's language: German, English, Spanish, French or Italian, as the app does
+- The release notes show what is being worked on for the next version, whenever there is something, and list releases newer than the one you are running as versions of their own
 - The player bar's buttons explain themselves on hover, with their keyboard shortcut
-- The Genres page is new: the biggest genres stand as crates of their records, flipped through one record at a time while pointed at, and below them every genre is listed like a book's index with its number of songs, the big ones set stronger, with the jump bar beside it
 
 ### Changed
 
-- On the Playlists page, a playlist's artwork stands as a small stack of its albums and is flipped through while pointed at, as on the Genres page
 - A fresher look: Beacon brings its own typeface instead of using whatever the system has, buttons are no longer written in capitals, the play button is a little smaller, and the statistics page keeps amber for the listening figures
 - The search sits in the middle of the top bar, ready to type into, and Ctrl+K (Cmd+K on a Mac) jumps to it. The Beacon logo moved to the top of the sidebar, and the button that shows its labels to the bottom
-- The header of the overview pages (Albums, Artists, Songs and the others) is lower in an ordinary window and taller in a very wide one, where the artist banner now shows in full, and the list starts closer below it
-- The Home page's header shows the artist's banner or else the blurred cover, no longer the artist's background photo
-- Empty pages (no favorites yet, an empty queue or playlist, a search without results) say what to do next instead of showing a blue notice
 - On the phone and in the Remote Control, the player bar above the tabs is always there. With nothing playing it shows the queue's first song, which play starts, or "Nothing playing" when the queue is empty, and a tap always opens Now Playing with its controls and speaker picker
 - With transitions on, Sonos and AirPlay speakers now get lossless audio instead of AAC or MP3
 - The DJ mix length is chosen in bars (4, 8 or 16) instead of seconds, so it lasts the same musical phrase at every tempo. A length set before is carried over
 - DJ mixes follow where the beat actually plays: out of a song that ends on a long ambient tail (no drums, just a pad or a fade-out) the mix starts while the beat is still playing and drops the tail, and into a song with a long intro the bass swaps right where its beat sets in. Before, such songs often got no DJ mix at all and the next song was faded in over the almost silent end
-- DJ mixes sound cleaner on pop, rock and hip hop: once the next song's bass has come in, the previous song fades out within two bars instead of singing on under the new one, and songs whose tempos lie further apart get a crossfade instead of being audibly slowed down or sped up
-- While a DJ mix brings the previous song to the next one's tempo, voices and chords stay clean instead of sounding distorted or as if heard through a fan
+- DJ mixes sound cleaner on pop, rock and hip hop: once the next song's bass has come in, the previous song fades out within two bars instead of singing on under the new one, and songs whose tempos lie further apart get a crossfade instead of being audibly slowed down or sped up. While a mix brings the previous song to the next one's tempo, voices and chords stay clean instead of sounding distorted or as if heard through a fan
 - Where the next song has synced lyrics, a DJ mix or crossfade ends right as its singing starts, and around the change both songs' voices are turned down a little so they do not pile up
 - Now Playing shows the familiar arrows before the next song again and names the transition in words instead: crossfade, or DJ mix with its tempo. Hovering "Crossfade" tells why it could not be a DJ mix, and with the artwork hidden both songs stay in the corner until the previous one has faded out
 - Clicking a song in a playlist plays the whole playlist from there instead of only that song, as it already did on the phone
 - Song Radio started from the song that is playing keeps it playing and only replaces what comes after it, instead of starting the song over
 - Songs in the queue can be grabbed anywhere to drag them, without a handle, and dragging near the top or bottom of the queue scrolls it quickly. On the phone and in the Remote Control, hold a song until it lights up and then move it; there a long queue now also scrolls during a drag, which it did not at all before
-- Long album titles get a smaller type instead of being cut off, and the release notes say that they are only available in English
-- A new page fades in briefly instead of appearing at once, unless the system asks for reduced motion
+- On the Playlists page, a playlist's artwork stands as a small stack of its albums and is flipped through while pointed at, as on the Genres page
+- Smaller touches: the header of the overview pages is lower in an ordinary window and taller in a very wide one, where the artist banner shows in full; the Home page's header shows the artist's banner or the blurred cover instead of the background photo; empty pages say what to do next instead of showing a blue notice; long album titles get a smaller type instead of being cut off; a new page fades in briefly unless the system asks for reduced motion; and the release notes say that they are only available in English
 
 ### Fixed
 
@@ -56,20 +53,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - A speaker that drops out and only comes back after Beacon has reported the interruption, or that asks for a song again once it has ended, stays quiet instead of playing on by itself. Playback continues from the interruption notice or with play
 - With an S1 and an S2 Sonos system on the same network, the device list shows the speakers of both instead of switching between one and the other (reported by @ampcat3, #54)
 - iPad in landscape: the volume slider no longer jumps back after letting go, and where the iPad's own volume buttons are the only way to change the level, the slider is left out as it already was in portrait (reported by @ampcat3, #53)
-- Dragging a song through a long queue stays smooth instead of making the app sluggish
-- With transitions on while casting, the seek bar switches to the next song together with its position, instead of briefly showing the new waveform at the old song's time
-- With transitions on, removing, moving or shuffling songs in the queue no longer ends the mix after the current song with a gap
-- With transitions on, playback after a seek while paused or after reopening the app starts where it stood, not seconds later with lyrics out of step
-- With transitions on, Stop and logging out also end the mix on the server instead of leaving it running unheard
-- Transitions: a seek no longer scrobbles the song a second time, turning shuffle off just before a transition keeps the right song as current, and picking another song no longer briefly blocks editing the queue
+- With transitions on, removing, moving or shuffling songs in the queue no longer ends the mix after the current song with a gap, playback after a seek while paused or after reopening the app starts where it stood instead of seconds later, and Stop and logging out also end the mix on the server instead of leaving it running unheard
+- More transition fixes: while casting, the seek bar switches to the next song together with its position; a seek no longer scrobbles the song a second time; turning shuffle off just before a transition keeps the right song as current; and picking another song no longer briefly blocks editing the queue
 - Transitions in Safari recover by themselves when the server's encoding fails, instead of stalling silently, and a long listening session in Safari no longer fills up the server's disk
 - A DJ mix into a song whose beat starts at its very first moment no longer plays the two songs a fraction of a beat apart for the whole mix
 - Party guests see a song change in the host's mix on time even when the stream briefly runs ahead, and a mix stream no longer stutters at its very start
+- Dragging a song through a long queue stays smooth instead of making the app sluggish
 - Now Playing on a phone held sideways with the artwork hidden: long titles, artists and albums stay on one line each instead of squeezing into a narrow column, and the controls sit at the bottom of the screen
 - The German interface speaks of "Titel" and "Künstler" throughout, where it mixed them with "Songs" and "Artists", and the last English labels (Plays, Disc, Track, Favorites) are translated
-- Counts on the overview pages are written with thousands separators in the way of the chosen language (12.496 in German, 12,496 in English)
-- Long artist names on the artist tiles end in "…" instead of being cut off mid-letter
-- Statistics: a long duration no longer breaks onto two lines, the library's tiles stay in one row, and a share below one percent reads "< 1 %" instead of "0 %"
+- Smaller fixes: counts on the overview pages use the chosen language's thousands separator (12.496 in German, 12,496 in English), long artist names on the artist tiles end in "…" instead of being cut off mid-letter, and on the statistics page a long duration stays on one line, the library's tiles stay in one row and a share below one percent reads "< 1 %" instead of "0 %"
 
 ## [1.8.0] - 2026-10-13
 

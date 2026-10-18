@@ -621,7 +621,7 @@ export default {
       beacon: { name: 'Beacon', description: 'Ámbar sobre azul noche' },
       graphite: { name: 'Grafito', description: 'Antracita neutro, acento turquesa' },
       paper: { name: 'Papel', description: 'Blanco cálido, acento cobre' },
-      mist: { name: 'Niebla', description: 'Gris claro frío, acento azul' },
+      glacier: { name: 'Glaciar', description: 'Gris claro frío, acento azul' },
       custom: { name: 'Personalizado', description: 'Tu propio fondo y acento' },
     },
     libraryScanHint: 'Haz que {server} busque archivos nuevos, modificados o eliminados.',

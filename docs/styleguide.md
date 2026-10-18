@@ -64,7 +64,7 @@ name is.
 
 There are four themes and one made from two colours, picked per device in
 Settings → Appearance (`plugins/theme.ts`, kept in `stores/appearance.ts`):
-Beacon (the default) and Graphite are dark, Paper and Mist are light. **So
+Beacon (the default) and Graphite are dark, Paper and Glacier are light. **So
 no colour is written down in a component.** A white is
 `rgba(var(--v-theme-on-surface), x)`, the accent `rgba(var(--v-theme-primary), x)`,
 the page `rgb(var(--v-theme-background))`, the frame `color="chrome"` or
