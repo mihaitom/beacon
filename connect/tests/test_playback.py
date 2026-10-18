@@ -5,8 +5,11 @@ import contextlib
 import time
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 from core.radio_position import RadioPositionTracker
 from core.session import build_status_dict, compute_position
+from core.state import stream_url
 from core.stream_format import ProbedStream, content_type_from_extension
 from core.streamer import FALLBACK_FORMAT, OutputFormat
 from delivery import (
@@ -2574,6 +2577,91 @@ def test_resync_position_once_discards_a_device_dropped_while_in_flight(default_
 
     with patch.object(stopped, "get_position", new=AsyncMock(side_effect=_drop_then_report)):
         asyncio.run(_resync_position_once(default_session, stopped, 0))
+
+    assert st.clock.position_offset == 0.0
+
+
+# Somebody else putting something on the speaker - another app, another
+# Beacon - drops its position to ~0 exactly like a rewind on the speaker
+# itself; only the URI it plays tells the two apart (issue #56).
+
+
+def _rewound_on_the_device(default_session):
+    st = default_session.state
+    st.is_streaming = True
+    st.current_track = Track("1", "Song", "Artist", 171, "")
+    st.clock.play_start_time = time.time() - 56.0
+    st.clock.position_offset = 0.0
+    target = SonosDelivery("Küche")
+    st.active_delivery = target
+    return target
+
+
+def test_resync_leaves_the_clock_alone_when_the_device_plays_something_else(
+    default_session, caplog
+):
+    target = _rewound_on_the_device(default_session)
+
+    with (
+        patch.object(target, "get_position", new=AsyncMock(return_value=7.0)),
+        patch.object(
+            target, "current_uri", new=AsyncMock(return_value="http://10.0.0.9:8000/other.mp3")
+        ),
+        caplog.at_level("INFO", logger="connect.playback"),
+    ):
+        asyncio.run(_resync_position_once(default_session, target, 0))
+
+    assert default_session.state.clock.position_offset == 0.0
+    assert "other.mp3" in caplog.text
+
+
+def test_resync_follows_a_rewind_on_this_sessions_own_stream(default_session):
+    target = _rewound_on_the_device(default_session)
+    own = stream_url(default_session.session_id, "audio/mpeg")
+
+    with (
+        patch.object(target, "get_position", new=AsyncMock(return_value=7.0)),
+        patch.object(target, "current_uri", new=AsyncMock(return_value=own)),
+    ):
+        asyncio.run(_resync_position_once(default_session, target, 0))
+
+    assert default_session.state.clock.position_offset == pytest.approx(-49.0, abs=0.5)
+
+
+def test_resync_counts_the_uri_lookup_as_time_the_device_played_on(default_session):
+    """The URI is a second device round trip after the position was read;
+    calibrating the old reading against the later clock would put the
+    offset off by however long that took."""
+    target = _rewound_on_the_device(default_session)
+    st = default_session.state
+    own = stream_url(default_session.session_id)
+
+    async def _slow_lookup():
+        st.clock.play_start_time -= 3.0  # three seconds pass
+        return own
+
+    with (
+        patch.object(target, "get_position", new=AsyncMock(return_value=7.0)),
+        patch.object(target, "current_uri", new=AsyncMock(side_effect=_slow_lookup)),
+    ):
+        asyncio.run(_resync_position_once(default_session, target, 0))
+
+    assert st.clock.position_offset == pytest.approx(-49.0, abs=0.5)
+
+
+def test_resync_discards_a_reading_superseded_during_the_uri_lookup(default_session):
+    target = _rewound_on_the_device(default_session)
+    st = default_session.state
+
+    async def _seek_meanwhile():
+        st.clock.play_generation += 1
+        return stream_url(default_session.session_id)
+
+    with (
+        patch.object(target, "get_position", new=AsyncMock(return_value=7.0)),
+        patch.object(target, "current_uri", new=AsyncMock(side_effect=_seek_meanwhile)),
+    ):
+        asyncio.run(_resync_position_once(default_session, target, 0))
 
     assert st.clock.position_offset == 0.0
 

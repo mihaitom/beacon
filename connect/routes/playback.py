@@ -25,6 +25,7 @@ from core.session import (
     check_claims,
     clock_position,
     displace_target,
+    is_this_sessions_stream,
     mark_delivery_failed,
     mark_interrupted,
     registry,
@@ -371,6 +372,19 @@ async def _apply_position_offset(session: SessionState, target, generation: int)
 POSITION_RESYNC_INTERVAL = 8.0
 
 
+async def _foreign_uri(session: SessionState, candidate) -> str | None:
+    """What `candidate` plays instead of this session's stream, or None when
+    it plays ours or cannot say."""
+    try:
+        uri = await candidate.current_uri()
+    except Exception as e:
+        logger.debug(f"[position-resync] {candidate.target}: current_uri() failed: {e}")
+        return None
+    if uri is None or is_this_sessions_stream(session, uri):
+        return None
+    return uri
+
+
 async def _resync_position_once(session: SessionState, candidate, generation: int) -> None:
     """One resync check/correction against `candidate` — split out from
     _resync_position_periodically() below purely so it's directly testable
@@ -479,6 +493,29 @@ async def _resync_position_once(session: SessionState, candidate, generation: in
     )
     if abs(change) < POSITION_RESYNC_THRESHOLD:
         return
+
+    # A jump this size can also mean somebody else - another app, another
+    # Beacon - put something on the speaker, whose position says nothing
+    # about ours. Asked only now, since it costs a second device round trip.
+    if st.radio_info is None:
+        foreign = await _foreign_uri(session, candidate)
+        # The same races as after get_position() above.
+        if (
+            st.clock.play_generation != generation
+            or not st.is_streaming
+            or not is_still_targeted(st.active_delivery, candidate)
+        ):
+            return
+        if foreign is not None:
+            logger.info(
+                f"[position-resync] {candidate.target}: device={device_pos:.2f}s "
+                f"wall={wall_elapsed:.2f}s, but it plays {foreign[:80]!r}, not this "
+                "session's stream — leaving the clock alone"
+            )
+            return
+        # The device has played on during that round trip, by as much as the
+        # clock has.
+        device_pos += st.clock.elapsed_since_stream_start() - wall_elapsed
 
     offset = st.clock.calibrate(device_pos)
     logger.info(

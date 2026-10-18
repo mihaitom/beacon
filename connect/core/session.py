@@ -1192,6 +1192,16 @@ SESSION_IDLE_TIMEOUT = int(os.getenv("SESSION_IDLE_TIMEOUT", str(60 * 30)))
 PAUSED_IDLE_TIMEOUT = int(os.getenv("PAUSED_IDLE_TIMEOUT", str(60 * 60 * 2)))
 
 
+def is_this_sessions_stream(session: SessionState, uri: str) -> bool:
+    """Whether a device reporting `uri` plays this session's /stream URL.
+
+    Compared without the format extension the dispatched URL carries
+    (stream_url()'s `content_type`) and the device reports back verbatim,
+    rather than rebuilding it from the session's current format — which can
+    have moved on, or not be set yet, since the dispatch."""
+    return strip_stream_extension(uri) == stream_url(session.session_id)
+
+
 async def _device_is_still_ours(session: SessionState) -> bool:
     """Whether the device this session was casting to is still playing the
     stream *this* session handed it — see reap_once() for why that question
@@ -1220,16 +1230,9 @@ async def _device_is_still_ours(session: SessionState) -> bool:
     if uri is None:
         return True
     if st.radio_info:
-        expected = st.radio_info["url"]
-        matches = uri == expected
+        matches = uri == st.radio_info["url"]
     else:
-        # Compared without the format extension the dispatched URL carries
-        # (stream_url()'s `content_type`) and the device reports back
-        # verbatim, rather than rebuilding it from the session's current
-        # format — which can have moved on, or not be set yet, since the
-        # dispatch.
-        expected = stream_url(session.session_id)
-        matches = strip_stream_extension(uri) == expected
+        matches = is_this_sessions_stream(session, uri)
     if matches:
         return True
     logger.info(
