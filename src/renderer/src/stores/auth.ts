@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { buildSubsonicCredential } from '@/services/subsonic/client'
 import { computeConnectSessionId } from '@/services/connect/session-id'
 import { postConfig, getHealth } from '@/services/connect/config'
+import { loginErrorMessage } from '@/services/connect/errorMessage'
 import {
   postJellyfinLogin,
   postJellyfinQuickConnectInitiate,
@@ -151,8 +152,8 @@ export const useAuthStore = defineStore('auth', {
       // No separate client-side ping.view pre-flight here for Subsonic —
       // /config's own server-side media.ping() (see routes/devices.py)
       // already verifies the credential against exactly the URL just
-      // submitted, and a 401 there now surfaces its real reason via
-      // loginError (see services/connect/http.ts's extractDetail()). A
+      // submitted, and its failure reaches loginError with the real reason
+      // (see services/connect/errorMessage.ts's loginErrorMessage()). A
       // client-side pre-flight through routes/proxy.py's /rest/ping.view
       // used to run before any session existed, which meant it could only
       // ever reach a fixed NAVIDROME_INTERNAL_URL — not necessarily the
@@ -253,7 +254,7 @@ export const useAuthStore = defineStore('auth', {
         await this.persist()
       } catch (error) {
         this.authenticated = false
-        this.loginError = error instanceof Error ? error.message : String(error)
+        this.loginError = loginErrorMessage(error)
         throw error
       }
     },
@@ -298,7 +299,7 @@ export const useAuthStore = defineStore('auth', {
         await this.persist()
       } catch (error) {
         this.authenticated = false
-        this.loginError = error instanceof Error ? error.message : String(error)
+        this.loginError = loginErrorMessage(error)
         throw error
       }
       return true
@@ -355,7 +356,7 @@ export const useAuthStore = defineStore('auth', {
         await this.persist()
       } catch (error) {
         this.authenticated = false
-        this.loginError = error instanceof Error ? error.message : String(error)
+        this.loginError = loginErrorMessage(error)
         throw error
       }
     },
@@ -416,7 +417,7 @@ export const useAuthStore = defineStore('auth', {
       } catch (error) {
         console.error('[auth] Silent restore failed:', error)
         this.authenticated = false
-        this.loginError = error instanceof Error ? error.message : String(error)
+        this.loginError = loginErrorMessage(error)
         return false
       }
     },

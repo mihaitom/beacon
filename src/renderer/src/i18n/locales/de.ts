@@ -63,6 +63,32 @@ export default {
     plexWaitingHint: 'Bestätige die Anmeldung im geöffneten Browser-Tab.',
     plexChooseServer: 'Wähle deinen Plex-Server:',
     plexNoServers: 'Für dieses Plex-Konto wurden keine Server gefunden.',
+    loginFailed: {
+      rejected: 'Benutzername oder Passwort ist falsch.',
+      forbidden: 'Der Server kennt dieses Konto, erlaubt ihm aber keine Anmeldung hier.',
+      timeout:
+        'Der Server hat nicht rechtzeitig geantwortet. Vielleicht ist er gerade ausgelastet, etwa durch einen Bibliotheksscan - versuch es gleich noch einmal.',
+      unreachable: 'Keine Verbindung zum Server. Prüfe Adresse und Port und ob der Server läuft.',
+      dns: 'Diese Serveradresse wurde nicht gefunden. Prüfe sie auf Tippfehler.',
+      tls: 'Das Zertifikat des Servers konnte nicht geprüft werden. Vielleicht ist es selbst signiert oder abgelaufen.',
+      invalid_url:
+        'Das ist keine gültige Serveradresse. Sie sollte mit http:// oder https:// beginnen.',
+      not_found:
+        'Unter dieser Adresse wurde kein Server dieses Typs gefunden. Prüfe die Adresse und den gewählten Servertyp.',
+      unexpected_response:
+        'Unter dieser Adresse antwortet etwas, aber nicht der Musikserver - vielleicht eine vorgeschaltete Anmeldeseite oder ein anderer Servertyp.',
+      server_unavailable: 'Der Server ist gerade nicht verfügbar. Versuch es gleich noch einmal.',
+      server_error: 'Auf dem Server ist ein Fehler aufgetreten. Sein Log verrät mehr.',
+      rate_limited:
+        'Der Server bekommt gerade zu viele Anfragen. Warte einen Moment und versuch es dann noch einmal.',
+      incompatible: 'Diese Serverversion ist nicht mit Beacon kompatibel.',
+      auth_unsupported:
+        'Der Server unterstützt die Anmeldeart von Beacon für dieses Konto nicht (zum Beispiel ein LDAP-Konto bei Navidrome).',
+      quick_connect_disabled: 'Quick Connect ist auf diesem Jellyfin-Server nicht aktiviert.',
+      unknown: 'Die Anmeldung ist aus unbekanntem Grund fehlgeschlagen.',
+      connectUnreachable:
+        'Beacons eigenes Backend antwortet nicht. Starte Beacon neu und versuch es noch einmal.',
+    },
   },
   home: {
     frequentlyPlayed: 'Oft gehört',

@@ -3,6 +3,7 @@
 import pytest
 
 from media import SubsonicClient, http_client
+from media.login_errors import LoginFailed
 
 # Captured at import time, before conftest's autouse _stub_media_ping
 # monkeypatches SubsonicClient.ping for the duration of each test — lets
@@ -253,7 +254,7 @@ def test_ping_records_what_the_server_says_it_is(monkeypatch, reported, expected
     assert c.server_software == expected
 
 
-def test_ping_returns_false_and_logs_on_failure(monkeypatch, caplog):
+def test_ping_reports_a_wrong_password_as_rejected_and_logs_it(monkeypatch, caplog):
     import logging
 
     import httpx
@@ -273,10 +274,13 @@ def test_ping_returns_false_and_logs_on_failure(monkeypatch, caplog):
     monkeypatch.setattr(SubsonicClient, "ping", _REAL_PING)
     monkeypatch.setattr(http_client, "get", fake_get)
 
-    with caplog.at_level(logging.WARNING, logger="connect.subsonic"):
-        result = _client().ping()
+    with (
+        caplog.at_level(logging.WARNING, logger="connect.subsonic"),
+        pytest.raises(LoginFailed) as failed,
+    ):
+        _client().ping()
 
-    assert result is False
+    assert failed.value.reason == "rejected"
     assert "Wrong username or password" in caplog.text
 
 

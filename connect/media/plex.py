@@ -23,6 +23,7 @@ from core.client_id import stable_id
 
 from . import http_client
 from .base import Track, split_artwork_id
+from .login_errors import login_failed
 
 logger = logging.getLogger("connect.plex")
 
@@ -345,7 +346,8 @@ class PlexClient:
     def ping(self) -> bool:
         """Verifies the server-scoped token actually authenticates against
         this specific server — /library/sections requires a valid token,
-        unlike an anonymous-reachable endpoint."""
+        unlike an anonymous-reachable endpoint. True, or raises LoginFailed
+        saying why."""
         try:
             response = http_client.get(
                 f"{self.internal_url}/library/sections",
@@ -356,4 +358,4 @@ class PlexClient:
             return True
         except Exception as e:
             logger.warning(f"[ping] {self.internal_url}/library/sections failed: {e}")
-            return False
+            raise login_failed(e) from e

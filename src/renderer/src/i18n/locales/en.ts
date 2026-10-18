@@ -65,6 +65,30 @@ export default {
     plexWaitingHint: 'Approve the sign-in in the browser tab that just opened.',
     plexChooseServer: 'Choose your Plex server:',
     plexNoServers: 'No servers found for this Plex account.',
+    loginFailed: {
+      rejected: 'Wrong username or password.',
+      forbidden: 'The server knows this account but does not allow it to sign in here.',
+      timeout:
+        'The server did not respond in time. It may be busy, for example scanning the library - try again in a moment.',
+      unreachable:
+        'Could not connect to the server. Check the address and port, and whether the server is running.',
+      dns: 'This server address could not be found. Check it for typos.',
+      tls: "The server's certificate could not be verified. It may be self-signed or expired.",
+      invalid_url: 'This is not a valid server address. It should start with http:// or https://.',
+      not_found:
+        'No server of this type was found at this address. Check the address and the selected server type.',
+      unexpected_response:
+        'Something answered at this address, but not the music server - possibly a login page in front of it, or a different kind of server.',
+      server_unavailable: 'The server is not available right now. Try again in a moment.',
+      server_error: 'The server ran into an error of its own. Its log will say more.',
+      rate_limited: 'The server is receiving too many requests. Wait a moment, then try again.',
+      incompatible: 'This server version is not compatible with Beacon.',
+      auth_unsupported:
+        'The server does not support the way Beacon signs in for this account (for example an LDAP account on Navidrome).',
+      quick_connect_disabled: 'Quick Connect is not enabled on this Jellyfin server.',
+      unknown: 'Sign-in failed for an unknown reason.',
+      connectUnreachable: "Beacon's own backend is not responding. Restart Beacon and try again.",
+    },
   },
   home: {
     frequentlyPlayed: 'Frequently played',

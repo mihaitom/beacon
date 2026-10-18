@@ -291,6 +291,7 @@
 <script lang="ts">
 import { useAuthStore } from '@/stores/auth'
 import { getHealth } from '@/services/connect/config'
+import { loginErrorMessage } from '@/services/connect/errorMessage'
 import NavidromeIcon from '@/components/auth/NavidromeIcon.vue'
 import JellyfinIcon from '@/components/auth/JellyfinIcon.vue'
 import PlexIcon from '@/components/auth/PlexIcon.vue'
@@ -620,7 +621,7 @@ export default {
         this.quickConnectSecret = secret
         this.pollQuickConnect()
       } catch (error) {
-        this.authStore.loginError = error instanceof Error ? error.message : String(error)
+        this.authStore.loginError = loginErrorMessage(error)
       } finally {
         this.submitting = false
       }
@@ -678,7 +679,7 @@ export default {
         window.open(authUrl, '_blank')
         this.pollPlexLogin()
       } catch (error) {
-        this.authStore.loginError = error instanceof Error ? error.message : String(error)
+        this.authStore.loginError = loginErrorMessage(error)
       } finally {
         this.submitting = false
       }
@@ -691,7 +692,7 @@ export default {
         approved = await this.authStore.pollPlexAuth(pinId)
       } catch (error) {
         console.error('[login] Plex PIN check failed:', error)
-        this.authStore.loginError = error instanceof Error ? error.message : String(error)
+        this.authStore.loginError = loginErrorMessage(error)
         this.cancelPlexLogin()
         return
       }
@@ -723,7 +724,7 @@ export default {
         this.plexServers = servers
         this.plexPickingServer = true
       } catch (error) {
-        this.authStore.loginError = error instanceof Error ? error.message : String(error)
+        this.authStore.loginError = loginErrorMessage(error)
         this.plexPinId = null
       }
     },

@@ -107,7 +107,9 @@ class MediaClient(Protocol):
         Plex just to avoid a TypeError."""
         ...
 
-    def ping(self) -> bool: ...
+    def ping(self) -> bool:
+        """True, or raises media.login_errors.LoginFailed."""
+        ...
 
 
 # ── Playlist reordering ──────────────────────────────────────────────────────

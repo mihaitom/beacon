@@ -10,6 +10,7 @@ from media.jellyfin import (
     check_quick_connect_authenticated,
     initiate_quick_connect,
 )
+from media.login_errors import LoginFailed
 
 # Captured at import time, before conftest's autouse _stub_media_ping
 # monkeypatches JellyfinClient.ping for the duration of each test — lets
@@ -243,22 +244,26 @@ def test_ping_hits_authenticated_endpoint_with_token(monkeypatch):
     _assert_authenticated(captured["headers"], "tok")
 
 
-def test_ping_returns_false_on_error(monkeypatch):
+def test_ping_reports_an_unreachable_server(monkeypatch):
     def fake_get(url, **kwargs):
         raise httpx.ConnectError("nope")
 
     monkeypatch.setattr(JellyfinClient, "ping", _REAL_PING)
     monkeypatch.setattr(http_client, "get", fake_get)
-    assert _client().ping() is False
+    with pytest.raises(LoginFailed) as failed:
+        _client().ping()
+    assert failed.value.reason == "unreachable"
 
 
-def test_ping_returns_false_on_invalid_token(monkeypatch):
+def test_ping_reports_an_invalid_token_as_rejected(monkeypatch):
     def fake_get(url, **kwargs):
         return httpx.Response(401, request=httpx.Request("GET", url))
 
     monkeypatch.setattr(JellyfinClient, "ping", _REAL_PING)
     monkeypatch.setattr(http_client, "get", fake_get)
-    assert _client(token="wrong").ping() is False
+    with pytest.raises(LoginFailed) as failed:
+        _client(token="wrong").ping()
+    assert failed.value.reason == "rejected"
 
 
 # ── authenticate_by_name ───────────────────────────────────────────────────

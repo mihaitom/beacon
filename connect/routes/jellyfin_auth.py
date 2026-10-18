@@ -20,7 +20,7 @@ import asyncio
 import logging
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from core.auth import require_token
@@ -30,6 +30,7 @@ from media.jellyfin import (
     check_quick_connect_authenticated,
     initiate_quick_connect,
 )
+from media.login_errors import REASON_QUICK_CONNECT_DISABLED, LoginFailed, login_failed
 
 logger = logging.getLogger("connect.jellyfin_auth")
 router = APIRouter(dependencies=[Depends(require_token)])
@@ -45,14 +46,9 @@ class JellyfinLoginRequest(BaseModel):
 async def jellyfin_login(req: JellyfinLoginRequest):
     try:
         return await asyncio.to_thread(authenticate_by_name, req.url, req.username, req.password)
-    except httpx.HTTPStatusError as e:
-        logger.warning(f"[jellyfin-login] {req.url} rejected credentials: {e}")
-        raise HTTPException(
-            status_code=401, detail="Jellyfin rejected the supplied credentials"
-        ) from e
     except Exception as e:
-        logger.warning(f"[jellyfin-login] {req.url} unreachable: {e}")
-        raise HTTPException(status_code=502, detail=f"Jellyfin not reachable: {e}") from e
+        logger.warning(f"[jellyfin-login] {req.url} failed: {e}")
+        raise login_failed(e) from e
 
 
 class JellyfinQuickConnectInitiateRequest(BaseModel):
@@ -63,15 +59,14 @@ class JellyfinQuickConnectInitiateRequest(BaseModel):
 async def jellyfin_quickconnect_initiate(req: JellyfinQuickConnectInitiateRequest):
     try:
         return await asyncio.to_thread(initiate_quick_connect, req.url)
-    except httpx.HTTPStatusError as e:
-        logger.warning(f"[jellyfin-quickconnect] {req.url} initiate rejected: {e}")
-        raise HTTPException(
-            status_code=400,
-            detail="Jellyfin rejected the Quick Connect request — is it enabled on the server?",
-        ) from e
     except Exception as e:
-        logger.warning(f"[jellyfin-quickconnect] {req.url} unreachable: {e}")
-        raise HTTPException(status_code=502, detail=f"Jellyfin not reachable: {e}") from e
+        logger.warning(f"[jellyfin-quickconnect] {req.url} initiate failed: {e}")
+        # Jellyfin answers a switched-off Quick Connect with 401 (403 on
+        # older versions), which would otherwise read as a wrong password
+        # on a form that never asked for one.
+        if isinstance(e, httpx.HTTPStatusError) and e.response.status_code in (401, 403):
+            raise LoginFailed(REASON_QUICK_CONNECT_DISABLED, str(e)) from e
+        raise login_failed(e) from e
 
 
 class JellyfinQuickConnectConnectRequest(BaseModel):
@@ -93,16 +88,14 @@ async def jellyfin_quickconnect_connect(req: JellyfinQuickConnectConnectRequest)
         )
     except Exception as e:
         logger.warning(f"[jellyfin-quickconnect] {req.url} status check failed: {e}")
-        raise HTTPException(status_code=502, detail=f"Jellyfin not reachable: {e}") from e
+        raise login_failed(e) from e
 
     if not authenticated:
         return {"authenticated": False}
 
     try:
         result = await asyncio.to_thread(authenticate_with_quick_connect, req.url, req.secret)
-    except httpx.HTTPStatusError as e:
-        logger.warning(f"[jellyfin-quickconnect] {req.url} exchange rejected: {e}")
-        raise HTTPException(
-            status_code=401, detail="Jellyfin rejected the Quick Connect exchange"
-        ) from e
+    except Exception as e:
+        logger.warning(f"[jellyfin-quickconnect] {req.url} exchange failed: {e}")
+        raise login_failed(e) from e
     return {"authenticated": True, **result}

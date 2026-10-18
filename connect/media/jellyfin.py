@@ -12,6 +12,7 @@ from lyrics.shared import CONNECT_VERSION
 
 from . import http_client
 from .base import Track, split_artwork_id
+from .login_errors import login_failed
 
 logger = logging.getLogger("connect.jellyfin")
 
@@ -236,7 +237,8 @@ class JellyfinClient:
     def ping(self) -> bool:
         """Verifies the token actually authenticates — hits an endpoint that
         requires it (unlike /System/Info/Public, which any anonymous caller
-        can reach), so this can't be satisfied by an unrelated/garbage token."""
+        can reach), so this can't be satisfied by an unrelated/garbage token.
+        True, or raises LoginFailed saying why."""
         try:
             response = http_client.get(
                 f"{self.internal_url}/Users/Me",
@@ -246,10 +248,5 @@ class JellyfinClient:
             response.raise_for_status()
             return True
         except Exception as e:
-            # /config only surfaces a generic "credential rejected" to the
-            # frontend (see routes/devices.py) — this is the only place the
-            # actual reason (wrong URL, unreachable server, expired token,
-            # ...) is visible at all, so it's worth a real log line rather
-            # than being silently swallowed.
             logger.warning(f"[ping] {self.internal_url}/Users/Me failed: {e}")
-            return False
+            raise login_failed(e) from e

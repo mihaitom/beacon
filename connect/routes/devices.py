@@ -42,6 +42,7 @@ from media import (
     resolve_account,
     server_type_name,
 )
+from media.login_errors import LoginFailed
 from media.plex import account_username_for_server_token
 from routes.playback import _resync_position_periodically
 
@@ -190,11 +191,11 @@ async def configure(req: ConfigRequest, session: SessionState = Depends(get_sess
     # shared CONNECT_TOKEN only proves "this request came through our nginx",
     # not that the caller is a legitimate media-server user (see
     # core/session.py's require_authenticated_session).
-    if not await asyncio.to_thread(media.ping):
-        logger.warning(
-            f"[config] Rejected — {server_type} server at {req.url} did not accept the credential"
-        )
-        raise HTTPException(status_code=401, detail="Media server rejected the supplied credential")
+    try:
+        await asyncio.to_thread(media.ping)
+    except LoginFailed as e:
+        logger.warning(f"[config] Rejected — {server_type} server at {req.url}: {e.reason}")
+        raise
 
     # Ask the server who this credential actually belongs to, rather than
     # trusting the request body's `username` (see

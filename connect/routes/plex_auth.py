@@ -20,11 +20,11 @@ attach any of this to yet.
 
 import logging
 
-import httpx
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
 from core.auth import require_token
+from media.login_errors import login_failed
 from media.plex import (
     check_pin,
     client_identifier,
@@ -43,7 +43,7 @@ async def plex_pin_initiate():
         pin = create_pin()
     except Exception as e:
         logger.warning(f"[plex-pin] initiate failed: {e}")
-        raise HTTPException(status_code=502, detail=f"Plex request failed: {e}") from e
+        raise login_failed(e) from e
 
     auth_url = (
         "https://app.plex.tv/auth#?"
@@ -66,7 +66,7 @@ async def plex_pin_check(req: PlexPinCheckRequest):
         token = check_pin(req.id)
     except Exception as e:
         logger.warning(f"[plex-pin] check failed: {e}")
-        raise HTTPException(status_code=502, detail=f"Plex request failed: {e}") from e
+        raise login_failed(e) from e
 
     if not token:
         return {"authenticated": False}
@@ -90,12 +90,7 @@ class PlexResourcesRequest(BaseModel):
 async def plex_resources(req: PlexResourcesRequest):
     try:
         servers = list_resources(req.account_token)
-    except httpx.HTTPStatusError as e:
-        logger.warning(f"[plex-resources] rejected: {e}")
-        raise HTTPException(
-            status_code=401, detail="Plex rejected the supplied account token"
-        ) from e
     except Exception as e:
         logger.warning(f"[plex-resources] failed: {e}")
-        raise HTTPException(status_code=502, detail=f"Plex request failed: {e}") from e
+        raise login_failed(e) from e
     return {"servers": servers}

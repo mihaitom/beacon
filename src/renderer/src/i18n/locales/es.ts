@@ -66,6 +66,33 @@ export default {
       'Aprueba el inicio de sesión en la pestaña del navegador que se acaba de abrir.',
     plexChooseServer: 'Elige tu servidor Plex:',
     plexNoServers: 'No se encontraron servidores para esta cuenta de Plex.',
+    loginFailed: {
+      rejected: 'Usuario o contraseña incorrectos.',
+      forbidden: 'El servidor conoce esta cuenta, pero no le permite iniciar sesión aquí.',
+      timeout:
+        'El servidor no respondió a tiempo. Puede que esté ocupado, por ejemplo analizando la biblioteca - inténtalo de nuevo en un momento.',
+      unreachable:
+        'No se pudo conectar con el servidor. Comprueba la dirección y el puerto, y que el servidor esté en marcha.',
+      dns: 'No se encontró esta dirección de servidor. Comprueba que esté bien escrita.',
+      tls: 'No se pudo verificar el certificado del servidor. Puede que sea autofirmado o que haya caducado.',
+      invalid_url: 'No es una dirección de servidor válida. Debe empezar por http:// o https://.',
+      not_found:
+        'No se encontró ningún servidor de este tipo en esta dirección. Comprueba la dirección y el tipo de servidor elegido.',
+      unexpected_response:
+        'Algo responde en esta dirección, pero no es el servidor de música - quizá una página de inicio de sesión delante, o un servidor de otro tipo.',
+      server_unavailable:
+        'El servidor no está disponible ahora mismo. Inténtalo de nuevo en un momento.',
+      server_error: 'El servidor tuvo un error propio. Su registro dará más detalles.',
+      rate_limited:
+        'El servidor está recibiendo demasiadas solicitudes. Espera un momento y vuelve a intentarlo.',
+      incompatible: 'Esta versión del servidor no es compatible con Beacon.',
+      auth_unsupported:
+        'El servidor no admite la forma en que Beacon inicia sesión con esta cuenta (por ejemplo, una cuenta LDAP en Navidrome).',
+      quick_connect_disabled: 'Quick Connect no está activado en este servidor Jellyfin.',
+      unknown: 'No se pudo iniciar sesión por un motivo desconocido.',
+      connectUnreachable:
+        'El backend propio de Beacon no responde. Reinicia Beacon e inténtalo de nuevo.',
+    },
   },
   home: {
     frequentlyPlayed: 'Reproducido con frecuencia',

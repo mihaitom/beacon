@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { connectErrorMessage } from '../errorMessage'
-import { ConnectApiError } from '../http'
+import { connectErrorMessage, loginErrorMessage } from '../errorMessage'
+import { ConnectApiError, ConnectUnauthorizedError, ConnectUnreachableError } from '../http'
+import type { LoginFailedError } from '../types'
+import de from '@/i18n/locales/de'
+import en from '@/i18n/locales/en'
+import es from '@/i18n/locales/es'
+import fr from '@/i18n/locales/fr'
+import italian from '@/i18n/locales/it'
 
 function deliveryFailure(reason: string, device = 'Arbeitszimmer', detail = 'UPnP Error 800') {
   return new ConnectApiError('delivery_failed', {
@@ -66,5 +72,75 @@ describe('connectErrorMessage', () => {
 
   it('survives something that isn’t an Error at all', () => {
     expect(connectErrorMessage('plain string').message).toBe('plain string')
+  })
+})
+
+function loginFailure(reason: LoginFailedError['reason'], status = 502) {
+  const body = { error: 'login_failed', reason, detail: 'Media server did not respond in time' }
+  return status === 401
+    ? new ConnectUnauthorizedError(body.detail, body)
+    : new ConnectApiError(`Connect request failed: ${body.detail}`, body)
+}
+
+describe('loginErrorMessage', () => {
+  it('does not call a server that never answered a wrong password', () => {
+    // The reported symptom: Navidrome busy measuring ReplayGain, the login
+    // said "Media server rejected the supplied credential".
+    const timeout = loginErrorMessage(loginFailure('timeout', 504))
+    const rejected = loginErrorMessage(loginFailure('rejected', 401))
+
+    expect(timeout).not.toBe(rejected)
+    expect(timeout).not.toMatch(/password/i)
+    expect(rejected).toMatch(/password/i)
+  })
+
+  // Every reason connect/media/login_errors.py can send. The keys are built
+  // at runtime, so i18n/__tests__/keys.test.ts cannot see them.
+  const reasons: LoginFailedError['reason'][] = [
+    'rejected',
+    'forbidden',
+    'timeout',
+    'unreachable',
+    'dns',
+    'tls',
+    'invalid_url',
+    'not_found',
+    'unexpected_response',
+    'server_unavailable',
+    'server_error',
+    'rate_limited',
+    'incompatible',
+    'auth_unsupported',
+    'quick_connect_disabled',
+    'unknown',
+  ]
+
+  it.each(reasons)('has a real message for reason %s, not the raw error', (reason) => {
+    const message = loginErrorMessage(loginFailure(reason))
+    expect(message).not.toContain('auth.loginFailed')
+    expect(message).not.toContain('Connect request failed')
+  })
+
+  it.each(Object.entries({ de, en, es, fr, it: italian }))(
+    'is translated for every reason in %s',
+    (_, messages) => {
+      const translated = messages.auth.loginFailed as Record<string, string>
+      for (const key of [...reasons, 'connectUnreachable']) {
+        expect(translated[key], key).toBeTruthy()
+      }
+    },
+  )
+
+  it('says when the connect backend itself is not answering', () => {
+    const message = loginErrorMessage(
+      new ConnectUnreachableError('Connect backend unreachable at /api', new TypeError()),
+    )
+    expect(message).not.toContain('auth.loginFailed')
+    expect(message).not.toBe('Connect backend unreachable at /api')
+  })
+
+  it('passes anything unclassified through as it was', () => {
+    expect(loginErrorMessage(new Error('Plex request failed'))).toBe('Plex request failed')
+    expect(loginErrorMessage('plain')).toBe('plain')
   })
 })

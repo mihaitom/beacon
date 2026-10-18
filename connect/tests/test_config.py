@@ -5,6 +5,7 @@ import importlib
 import pytest
 
 from media import JellyfinClient, PlexClient, SubsonicClient
+from media.login_errors import LoginFailed
 
 
 def _reload_devices():
@@ -157,13 +158,27 @@ async def test_config_uses_the_newer_calls_result_even_if_its_ping_resolves_firs
     assert default_session.media._credential == "new-cred"
 
 
-def test_config_rejects_a_credential_the_media_server_wont_accept(
-    client, default_session, monkeypatch
+@pytest.mark.parametrize(
+    ("reason", "status"),
+    [
+        ("rejected", 401),
+        ("forbidden", 403),
+        ("timeout", 504),
+        ("unreachable", 502),
+        ("invalid_url", 400),
+    ],
+)
+def test_config_rejects_a_server_that_does_not_accept_the_login(
+    client, default_session, monkeypatch, reason, status
 ):
     """The shared CONNECT_TOKEN only proves the request came through our own
-    nginx — ping() failing means the credential itself isn't a real,
-    authenticated media-server user, and must 401 rather than accept it."""
-    monkeypatch.setattr(SubsonicClient, "ping", lambda self: False)
+    nginx — ping() failing means the session must not be accepted. Why it
+    failed travels to the login screen: a timeout is not a wrong password."""
+
+    def _ping(self):
+        raise LoginFailed(reason, "boom")
+
+    monkeypatch.setattr(SubsonicClient, "ping", _ping)
     # The `default_session` fixture pre-sets this True (see its own
     # docstring) — reset to False here so the assertion below actually
     # exercises "rejection never flips it True", not just "left at
@@ -172,8 +187,10 @@ def test_config_rejects_a_credential_the_media_server_wont_accept(
 
     r = client.post("/config", json={"url": "http://nav:4533", "credential": "bad"})
 
-    assert r.status_code == 401
-    assert "credential" in r.json()["detail"].lower()
+    assert r.status_code == status
+    assert r.json()["error"] == "login_failed"
+    assert r.json()["reason"] == reason
+    assert r.json()["detail"]
     assert default_session.authenticated is False
 
 

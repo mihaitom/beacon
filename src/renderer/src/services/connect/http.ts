@@ -14,6 +14,9 @@ export class ConnectApiError extends Error {
 
 export class ConnectUnauthorizedError extends ConnectApiError {}
 
+/** The request never got an answer from the connect backend at all. */
+export class ConnectUnreachableError extends ConnectApiError {}
+
 /** FastAPI's HTTPException(detail=...) responses are `{"detail": "..."}` —
  * pulls that out so error messages surfaced to the user (e.g. the login
  * screen's error banner) show the actual backend reason ("Media server
@@ -74,7 +77,7 @@ export async function fetchConnect<T>(
       body: body !== undefined ? JSON.stringify(body) : undefined,
     })
   } catch (cause) {
-    throw new ConnectApiError(`Connect backend unreachable at ${auth.apiUrl}`, cause)
+    throw new ConnectUnreachableError(`Connect backend unreachable at ${auth.apiUrl}`, cause)
   }
 
   if (response.status === 401) {

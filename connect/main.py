@@ -16,6 +16,7 @@ import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 # Must run before any core.*/routes.* import below — several of them read
 # their config (CONNECT_TOKEN, NAVIDROME_INTERNAL_URL, ...) from os.environ at
@@ -41,6 +42,7 @@ from core.session import reap_stale_sessions, registry
 from core.state import PORT, get_local_ip
 from core.upnp_events import renew_due_subscriptions
 from media import jellyfin_bridge, plex_bridge
+from media.login_errors import LoginFailed
 from routes.account_settings import router as account_settings_router
 from routes.api_keys import router as api_keys_router
 from routes.cast_permissions import router as cast_permissions_router
@@ -447,6 +449,11 @@ async def _outermost_error_boundary(request: Request, call_next):
     except Exception:
         logger.exception(f"Unhandled error in {request.method} {request.url.path}")
         return Response(status_code=500, headers=_cors_headers(request))
+
+
+@app.exception_handler(LoginFailed)
+async def _login_failed(request: Request, exc: LoginFailed):
+    return JSONResponse(status_code=exc.status_code, content=exc.body())
 
 
 app.include_router(stream_router)

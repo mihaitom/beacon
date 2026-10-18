@@ -7,6 +7,7 @@ from urllib.parse import parse_qs, urlencode
 
 from . import http_client
 from .base import Track
+from .login_errors import SubsonicError, login_failed
 
 logger = logging.getLogger("connect.subsonic")
 
@@ -71,10 +72,12 @@ class SubsonicClient:
             self.resolved_url = str(response.url).split("/rest/")[0]
         data = response.json()
 
-        subsonic = data.get("subsonic-response", {})
+        subsonic = data.get("subsonic-response") if isinstance(data, dict) else None
+        if not isinstance(subsonic, dict):
+            raise SubsonicError(None, "not a Subsonic response")
         if subsonic.get("status") != "ok":
             error = subsonic.get("error", {})
-            raise RuntimeError(f"Subsonic Error {error.get('code')}: {error.get('message')}")
+            raise SubsonicError(error.get("code"), error.get("message", ""))
 
         return subsonic
 
@@ -135,17 +138,13 @@ class SubsonicClient:
         return f"{base}/rest/getCoverArt.view?{urlencode(params)}"
 
     def ping(self) -> bool:
+        """True, or raises LoginFailed saying why the server refused."""
         try:
             self.server_software = self._get("ping.view").get("type", "")
             return True
         except Exception as e:
-            # /config only surfaces a generic "credential rejected" to the
-            # frontend (see routes/devices.py) — this is the only place the
-            # actual reason (wrong URL, unreachable server, bad credential,
-            # ...) is visible at all, so it's worth a real log line rather
-            # than being silently swallowed.
             logger.warning(f"[ping] {self.internal_url}/rest/ping.view failed: {e}")
-            return False
+            raise login_failed(e) from e
 
     def get_user(self, username: str) -> dict:
         """The server's own record for `username`, authenticated with this

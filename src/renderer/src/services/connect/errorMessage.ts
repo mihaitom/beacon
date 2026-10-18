@@ -1,6 +1,6 @@
 import { i18n } from '@/i18n'
-import { ConnectApiError } from './http'
-import { isCastForbiddenError, isDeliveryFailedError } from './types'
+import { ConnectApiError, ConnectUnreachableError } from './http'
+import { isCastForbiddenError, isDeliveryFailedError, isLoginFailedError } from './types'
 
 /** What a failed cast should actually say to the person who tried it, and
  * the technical line that belongs under it.
@@ -32,4 +32,17 @@ export function connectErrorMessage(error: unknown): { message: string; detail: 
     message: error instanceof Error ? error.message : String(error),
     detail: null,
   }
+}
+
+/** What the login screen says about a failed sign-in. A server too busy to
+ * answer used to read exactly like a wrong password; connect now says which
+ * it was (see connect/media/login_errors.py). */
+export function loginErrorMessage(error: unknown): string {
+  if (error instanceof ConnectUnreachableError) {
+    return i18n.global.t('auth.loginFailed.connectUnreachable')
+  }
+  if (error instanceof ConnectApiError && isLoginFailedError(error.body)) {
+    return i18n.global.t(`auth.loginFailed.${error.body.reason}`)
+  }
+  return error instanceof Error ? error.message : String(error)
 }

@@ -114,6 +114,35 @@ export interface CastForbiddenError {
 export type ConnectError =
   DeviceInUseError | DeliveryFailedError | CastForbiddenError | GenericError
 
+/** Why a sign-in failed, from connect/media/login_errors.py - the reason
+ * strings are matched exactly against the `auth.loginFailed.*` i18n keys.
+ * Arrives as an HTTP error body, not inside a 200 like the ones above. */
+export interface LoginFailedError {
+  error: 'login_failed'
+  reason:
+    | 'rejected'
+    | 'forbidden'
+    | 'timeout'
+    | 'unreachable'
+    | 'dns'
+    | 'tls'
+    | 'invalid_url'
+    | 'not_found'
+    | 'unexpected_response'
+    | 'server_unavailable'
+    | 'server_error'
+    | 'rate_limited'
+    | 'incompatible'
+    | 'auth_unsupported'
+    | 'quick_connect_disabled'
+    | 'unknown'
+  detail: string
+}
+
+export function isLoginFailedError(value: unknown): value is LoginFailedError {
+  return isConnectError(value) && (value as LoginFailedError).error === 'login_failed'
+}
+
 export function isConnectError(value: unknown): value is ConnectError {
   return typeof value === 'object' && value !== null && 'error' in value
 }

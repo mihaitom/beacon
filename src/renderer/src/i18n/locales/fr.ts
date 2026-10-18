@@ -65,6 +65,32 @@ export default {
     plexWaitingHint: "Approuvez la connexion dans l'onglet du navigateur qui vient de s'ouvrir.",
     plexChooseServer: 'Choisissez votre serveur Plex :',
     plexNoServers: 'Aucun serveur trouvé pour ce compte Plex.',
+    loginFailed: {
+      rejected: "Nom d'utilisateur ou mot de passe incorrect.",
+      forbidden: "Le serveur connaît ce compte, mais ne l'autorise pas à se connecter ici.",
+      timeout:
+        "Le serveur n'a pas répondu à temps. Il est peut-être occupé, par exemple à analyser la bibliothèque - réessaie dans un instant.",
+      unreachable:
+        "Impossible de se connecter au serveur. Vérifie l'adresse et le port, et que le serveur est bien démarré.",
+      dns: "Cette adresse de serveur est introuvable. Vérifie qu'elle ne contient pas de faute de frappe.",
+      tls: "Le certificat du serveur n'a pas pu être vérifié. Il est peut-être auto-signé ou expiré.",
+      invalid_url:
+        "Ce n'est pas une adresse de serveur valide. Elle doit commencer par http:// ou https://.",
+      not_found:
+        "Aucun serveur de ce type n'a été trouvé à cette adresse. Vérifie l'adresse et le type de serveur choisi.",
+      unexpected_response:
+        'Quelque chose répond à cette adresse, mais pas le serveur de musique - peut-être une page de connexion placée devant, ou un autre type de serveur.',
+      server_unavailable:
+        "Le serveur n'est pas disponible pour le moment. Réessaie dans un instant.",
+      server_error: 'Le serveur a rencontré une erreur interne. Son journal en dira plus.',
+      rate_limited: 'Le serveur reçoit trop de requêtes. Attends un moment, puis réessaie.',
+      incompatible: "Cette version du serveur n'est pas compatible avec Beacon.",
+      auth_unsupported:
+        'Le serveur ne prend pas en charge la méthode de connexion de Beacon pour ce compte (par exemple un compte LDAP sur Navidrome).',
+      quick_connect_disabled: "Quick Connect n'est pas activé sur ce serveur Jellyfin.",
+      unknown: 'La connexion a échoué pour une raison inconnue.',
+      connectUnreachable: 'Le backend de Beacon ne répond pas. Redémarre Beacon et réessaie.',
+    },
   },
   home: {
     frequentlyPlayed: 'Fréquemment écouté',

@@ -4,6 +4,7 @@ import httpx
 import pytest
 
 from media import PlexClient, http_client
+from media.login_errors import LoginFailed
 from media.plex import (
     _connection_url,
     _pick_connection,
@@ -243,13 +244,15 @@ def test_ping_hits_sections_endpoint_with_token(monkeypatch):
     assert captured["headers"]["X-Plex-Token"] == "tok"
 
 
-def test_ping_returns_false_on_error(monkeypatch):
+def test_ping_reports_an_unreachable_server(monkeypatch):
     def fake_get(url, **kwargs):
         raise httpx.ConnectError("nope")
 
     monkeypatch.setattr(PlexClient, "ping", _REAL_PING)
     monkeypatch.setattr(http_client, "get", fake_get)
-    assert _client().ping() is False
+    with pytest.raises(LoginFailed) as failed:
+        _client().ping()
+    assert failed.value.reason == "unreachable"
 
 
 # ── PIN linking ───────────────────────────────────────────────────────────────

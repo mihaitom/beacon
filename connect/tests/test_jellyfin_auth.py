@@ -87,10 +87,12 @@ def test_quickconnect_initiate_returns_secret_and_code(client, monkeypatch):
     assert r.json() == {"secret": "sec-1", "code": "123456"}
 
 
-def test_quickconnect_initiate_returns_400_when_disabled(client, monkeypatch):
+def test_quickconnect_initiate_reports_quick_connect_switched_off(client, monkeypatch):
+    # Jellyfin's own answer while Quick Connect is disabled - not a wrong
+    # password, which a 401 would otherwise read as.
     def fake_initiate(url):
         raise httpx.HTTPStatusError(
-            "400", request=httpx.Request("POST", url), response=httpx.Response(400)
+            "401", request=httpx.Request("POST", url), response=httpx.Response(401)
         )
 
     import routes.jellyfin_auth as route_mod
@@ -98,7 +100,7 @@ def test_quickconnect_initiate_returns_400_when_disabled(client, monkeypatch):
     monkeypatch.setattr(route_mod, "initiate_quick_connect", fake_initiate)
 
     r = client.post("/jellyfin/quickconnect/initiate", json={"url": "http://jf:8096"})
-    assert r.status_code == 400
+    assert r.json()["reason"] == "quick_connect_disabled"
 
 
 def test_quickconnect_initiate_returns_502_when_unreachable(client, monkeypatch):

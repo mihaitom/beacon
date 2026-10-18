@@ -65,6 +65,30 @@ export default {
     plexWaitingHint: "Approva l'accesso nella scheda del browser appena aperta.",
     plexChooseServer: 'Scegli il tuo server Plex:',
     plexNoServers: 'Nessun server trovato per questo account Plex.',
+    loginFailed: {
+      rejected: 'Nome utente o password errati.',
+      forbidden: 'Il server conosce questo account, ma non gli consente di accedere qui.',
+      timeout:
+        'Il server non ha risposto in tempo. Forse è occupato, per esempio a scansionare la libreria - riprova tra un momento.',
+      unreachable:
+        'Impossibile connettersi al server. Controlla indirizzo e porta, e che il server sia in esecuzione.',
+      dns: 'Questo indirizzo del server non è stato trovato. Controlla che non ci siano errori di battitura.',
+      tls: 'Impossibile verificare il certificato del server. Potrebbe essere autofirmato o scaduto.',
+      invalid_url: 'Non è un indirizzo di server valido. Deve iniziare con http:// o https://.',
+      not_found:
+        "Nessun server di questo tipo trovato a questo indirizzo. Controlla l'indirizzo e il tipo di server scelto.",
+      unexpected_response:
+        'A questo indirizzo risponde qualcosa, ma non il server musicale - forse una pagina di accesso davanti, o un server di altro tipo.',
+      server_unavailable: 'Il server non è disponibile al momento. Riprova tra un momento.',
+      server_error: 'Il server ha riscontrato un errore interno. Il suo log ne dirà di più.',
+      rate_limited: 'Il server sta ricevendo troppe richieste. Attendi un momento e riprova.',
+      incompatible: 'Questa versione del server non è compatibile con Beacon.',
+      auth_unsupported:
+        'Il server non supporta il modo in cui Beacon accede con questo account (per esempio un account LDAP su Navidrome).',
+      quick_connect_disabled: 'Quick Connect non è attivo su questo server Jellyfin.',
+      unknown: "L'accesso non è riuscito per un motivo sconosciuto.",
+      connectUnreachable: 'Il backend di Beacon non risponde. Riavvia Beacon e riprova.',
+    },
   },
   home: {
     frequentlyPlayed: 'Ascoltati di frequente',
