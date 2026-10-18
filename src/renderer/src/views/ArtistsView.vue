@@ -46,6 +46,19 @@
           class="library-search"
         />
         <exact-match-switch />
+        <v-btn-toggle
+          :model-value="listView ? 'list' : 'grid'"
+          mandatory
+          density="compact"
+          rounded="pill"
+          variant="tonal"
+          class="artist-layout-toggle"
+          :aria-label="$t('library.layout')"
+          @update:model-value="setListView($event === 'list')"
+        >
+          <v-btn value="grid" icon="mdi-view-grid-outline" :title="$t('library.layoutGrid')" />
+          <v-btn value="list" icon="mdi-view-list" :title="$t('library.layoutList')" />
+        </v-btn-toggle>
       </div>
     </sticky-filter>
     <v-alert v-if="libraryStore.error" type="error" variant="tonal" class="view-notice">
@@ -59,28 +72,34 @@
         'grid-root--with-alphabet-bar': !libraryStore.loading && filteredArtists.length > 0,
       }"
     >
-      <div v-if="!virtualizeArtists" class="artist-grid">
+      <div v-if="!virtualizeArtists" class="artist-grid" :class="{ 'artist-grid--list': listView }">
         <template v-for="(artist, index) in visibleArtists" :key="artist.id">
           <!-- A full-width divider before each letter's first card - see
            - .letter-divider's own comment for why it forces a line break. -->
           <div v-if="startsLetterSection(index)" class="letter-divider" aria-hidden="true">
             <span class="letter-divider__label">{{ letterAt(index) }}</span>
           </div>
-          <artist-card :data-artist-index="index" :artist="artist" />
+          <artist-card :data-artist-index="index" :artist="artist" :row="listView" />
         </template>
       </div>
       <!-- See AlbumsView.vue's identical v-virtual-scroll comment for why
        - this exists and how the row-chunking/paddingTop works — same
-       - pattern, just artist-sized dimensions. -->
+       - pattern, just artist-sized dimensions, keyed by the layout for
+       - the same reason. -->
       <v-virtual-scroll
         v-else
         ref="virtualScroll"
+        :key="listView ? 'list' : 'grid'"
         renderless
         :items="artistRows"
         :item-height="artistItemHeight"
       >
         <template #default="{ item: row, index }">
-          <div class="artist-grid" :style="{ paddingTop: index === 0 ? '0px' : `${artistGap}px` }">
+          <div
+            class="artist-grid"
+            :class="{ 'artist-grid--list': listView }"
+            :style="{ paddingTop: index === 0 ? '0px' : `${rowGap}px` }"
+          >
             <!-- One row is never allowed to span two letters (see artistRows),
              - so the divider sits at the top of a row and the cards below it
              - fill that row completely. data-artist-index is the card's own
@@ -98,6 +117,7 @@
               :key="artist.id"
               :data-artist-index="row.startIndex + column"
               :artist="artist"
+              :row="listView"
             />
           </div>
         </template>
@@ -144,6 +164,7 @@ import AlphabetIndexBar from '@/components/library/AlphabetIndexBar.vue'
 import InfiniteScrollTrigger from '@/components/InfiniteScrollTrigger.vue'
 import StickyFilter from '@/components/StickyFilter.vue'
 import ExactMatchSwitch from '@/components/library/ExactMatchSwitch.vue'
+import { readBooleanPreference, writeBooleanPreference } from '@/services/booleanPreference'
 import type { Artist } from '@/types/library'
 
 const PAGE_SIZE = 60
@@ -161,6 +182,11 @@ const ARTIST_GAP = 20
 // album-count caption line) — see AlbumsView.vue's identical comment on why
 // this doesn't need to be exact.
 const ARTIST_ROW_HEIGHT_GUESS = 210
+// The list form's row, ArtistCard.vue's .artist-card--row height.
+const ARTIST_LIST_ROW_HEIGHT = 56
+
+/** Grid or list, remembered across visits - see AlbumsView.vue. */
+const LIST_VIEW_KEY = 'beacon.artistsListView'
 
 /** One v-virtual-scroll item: a row of cards that never spans two letters,
  * so its divider can sit at the top and the cards below fill the row.
@@ -217,6 +243,7 @@ export default {
       // are here" highlight — see observeActiveLetter.
       activeLetter: null as string | null,
       activeLetterObserver: null as ActiveLetterHandle | null,
+      listView: readBooleanPreference(LIST_VIEW_KEY),
     }
   },
   mounted() {
@@ -239,11 +266,11 @@ export default {
     libraryStore() {
       return useLibraryStore()
     },
-    artistGap() {
-      return ARTIST_GAP
+    artistItemHeight(): number {
+      return this.listView ? ARTIST_LIST_ROW_HEIGHT : ARTIST_ROW_HEIGHT_GUESS
     },
-    artistItemHeight() {
-      return ARTIST_ROW_HEIGHT_GUESS
+    rowGap(): number {
+      return this.listView ? 0 : ARTIST_GAP
     },
     filteredArtists(): Artist[] {
       const query = this.debouncedQuery
@@ -259,7 +286,8 @@ export default {
       return this.filteredArtists.length > ARTIST_VIRTUALIZE_THRESHOLD
     },
     columns(): number {
-      if (this.gridWidth <= 0) return 1
+      // One artist per row in the list - see AlbumsView.vue's columns().
+      if (this.listView || this.gridWidth <= 0) return 1
       return Math.max(
         1,
         Math.floor((this.gridWidth + ARTIST_GAP) / (ARTIST_ITEM_WIDTH + ARTIST_GAP)),
@@ -320,6 +348,15 @@ export default {
     this.libraryStore.fetchArtists()
   },
   methods: {
+    setListView(listView: boolean) {
+      this.listView = listView
+      writeBooleanPreference(LIST_VIEW_KEY, listView)
+      // The same scroll offset lands somewhere else entirely in the other
+      // layout, so start again at the top, as a new order does.
+      this.activeLetter = null
+      window.scrollTo({ top: 0 })
+      this.$nextTick(() => this.activeLetterObserver?.update())
+    },
     loadMore() {
       this.visibleCount += PAGE_SIZE
     },
@@ -435,5 +472,20 @@ export default {
   display: flex;
   flex-wrap: wrap;
   gap: 20px;
+}
+
+/* The list form: one full-width row under the other. */
+.artist-grid--list {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 0;
+}
+
+.artist-grid--list .artist-card {
+  width: 100%;
+}
+
+.artist-layout-toggle {
+  margin-left: auto;
 }
 </style>

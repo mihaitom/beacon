@@ -100,6 +100,9 @@ export default {
     newArtistsTitle: 'Nuevos artistas por descubrir',
   },
   library: {
+    layoutList: 'En lista',
+    layoutGrid: 'En cuadrícula',
+    layout: 'Vista',
     sortBy: 'Ordenar por',
     albumSort: {
       name: 'Nombre',

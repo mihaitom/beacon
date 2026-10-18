@@ -33,6 +33,8 @@ interface AlbumsVm {
   startsLetterSection(index: number): boolean
   jumpToLetter(letter: string): void
   setSort(sort: 'name' | 'artist' | 'year' | 'added'): void
+  setListView(listView: boolean): void
+  listView: boolean
   sectionLabel(section: string): string
   readonly barSections: string[]
   playRandomAlbum(): Promise<void>
@@ -413,5 +415,28 @@ describe('AlbumsView sort order', () => {
     const { vm } = await mountAlbums([album('a', 'A')])
 
     expect(vm.barSections).toEqual(['2000'])
+  })
+})
+
+describe('AlbumsView list layout', () => {
+  it('lays one album per row and keeps a letter divider above each section', async () => {
+    const { vm } = await mountAlbums(many(505))
+    vm.gridWidth = 1200
+
+    vm.setListView(true)
+    await flushPromises()
+
+    expect(vm.columns).toBe(1)
+    expect(vm.albumRows.every((row) => row.items.length === 1)).toBe(true)
+  })
+
+  it('opens in the layout it was left in', async () => {
+    const first = await mountAlbums([album('a', 'A')])
+    first.vm.setListView(true)
+    first.wrapper.unmount()
+
+    const { vm } = await mountAlbums([album('a', 'A')])
+
+    expect(vm.listView).toBe(true)
   })
 })

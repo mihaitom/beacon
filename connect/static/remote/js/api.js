@@ -107,6 +107,15 @@ export function fetchAlbums(search, offset, limit) {
   return request(`/remote/albums?${params}`);
 }
 
+export function fetchArtists(search, offset, limit) {
+  const params = new URLSearchParams({ search, offset: String(offset), limit: String(limit) });
+  return request(`/remote/artists?${params}`);
+}
+
+export function fetchArtist(id) {
+  return request(`/remote/artists/${encodeURIComponent(id)}`);
+}
+
 export function fetchPlaylists() {
   return request('/remote/playlists');
 }

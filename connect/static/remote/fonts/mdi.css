@@ -60,6 +60,8 @@
 .mdi-refresh::before { content: "\F0450"; }
 .mdi-circle-slice-8::before { content: "\F0AA5"; }
 .mdi-album::before { content: "\F0025"; }
+.mdi-account-music::before { content: "\F0803"; }
+.mdi-radio-tower::before { content: "\F043B"; }
 .mdi-cog-sync-outline::before { content: "\F1461"; }
 .mdi-check-circle-outline::before { content: "\F05E1"; }
 .mdi-skip-next-outline::before { content: "\F0F27"; }

@@ -10,7 +10,7 @@ import { useRemoteControlStore } from '@/stores/remoteControl'
 import { useAuthStore } from '@/stores/auth'
 import { useAutoplayStore } from '@/stores/autoplay'
 import { PartyRefusal, usePartyStore } from '@/stores/party'
-import type { Album, Song } from '@/types/library'
+import type { Album, Artist, Song } from '@/types/library'
 import type { DeviceType, DiscoveredDevice } from '@/services/connect/types'
 import { faviconSizeStep, RADIO_FAVICON_CACHE_VERSION } from '@/services/connect/radio'
 import { matchesAllTerms } from '@/services/textSearch'
@@ -26,6 +26,9 @@ export interface RemoteSong {
   cover_art_id: string | null
   duration: number
   starred: boolean
+  /** Where the artist's name leads (the phone's artist page); null where
+   * the server gave the song no artist id. */
+  artist_id: string | null
 }
 
 /** Deliberately NOT SubsonicClient.coverArtUrl() rewritten in place (an
@@ -87,6 +90,7 @@ export function toRemoteSong(song: Song): RemoteSong {
     cover_art_id: song.coverArtId ?? null,
     duration: song.duration,
     starred: song.starred,
+    artist_id: song.artistId || null,
   }
 }
 
@@ -99,6 +103,19 @@ function toRemoteAlbum(album: Album) {
     year: album.year,
     cover_art_url: remoteCoverArtUrl(album.coverArtId),
     cover_art_id: album.coverArtId ?? null,
+  }
+}
+
+/** What an artist row on the phone needs. The photo goes through the same
+ * /remote/cover-art proxy as a cover: the server's own image URL carries its
+ * credentials (see remoteCoverArtUrl). */
+function toRemoteArtist(artist: Artist) {
+  return {
+    id: artist.id,
+    name: artist.name,
+    album_count: artist.albumCount,
+    cover_art_url: remoteCoverArtUrl(artist.coverArtId),
+    cover_art_id: artist.coverArtId ?? null,
   }
 }
 
@@ -264,6 +281,20 @@ export async function handleRemoteCommand(
       }
       return
     }
+    case 'play-artist-songs': {
+      // The artist page's most played songs, the rest following the tapped
+      // one as on the app's own artist page. Fetched again, and found by
+      // id, for the reason play-favorites below gives.
+      const artist = await library.fetchArtist(String(payload.artistId))
+      const songs = await library.fetchTopSongsForArtist(artist)
+      const songId = String(payload.songId)
+      const startIndex = Number(payload.startIndex)
+      const position =
+        songs[startIndex]?.id === songId ? startIndex : songs.findIndex((s) => s.id === songId)
+      if (position < 0) return
+      await playback.playSongList(songs, position)
+      return
+    }
     case 'play-album': {
       // Natural track order, pinFirst false — an album is a deliberately
       // sequenced work rather than a pile of songs, the same call
@@ -409,6 +440,40 @@ export async function resolveRemoteQuery(
         return { album: null, songs: [] }
       }
     }
+    case 'artists-request': {
+      if (!library.artists.length) await library.fetchArtists()
+      const search = String(payload.search ?? '').trim()
+      const filtered = search
+        ? library.artists.filter((a) => matchesAllTerms(search, [a.name], { exact: true }))
+        : library.artists
+      const offset = Number(payload.offset ?? 0)
+      const limit = Number(payload.limit ?? 50)
+      return {
+        items: filtered.slice(offset, offset + limit).map(toRemoteArtist),
+        total: filtered.length,
+      }
+    }
+    case 'artist-request': {
+      // The phone's artist page, the same two halves as the app's own on a
+      // phone (MobileArtistDetailView.vue): most played songs, then the
+      // albums newest first.
+      try {
+        const artist = await library.fetchArtist(String(payload.artistId))
+        const songs = await library.fetchTopSongsForArtist(artist)
+        const albums = [...artist.albums].sort((a, b) => {
+          if (a.year == null) return b.year == null ? 0 : 1
+          if (b.year == null) return -1
+          return b.year - a.year
+        })
+        return {
+          artist: toRemoteArtist(artist),
+          songs: songs.map(toRemoteSong),
+          albums: albums.map(toRemoteAlbum),
+        }
+      } catch {
+        return { artist: null, songs: [], albums: [] }
+      }
+    }
     case 'playlists-request': {
       await library.fetchPlaylists()
       return {
@@ -434,12 +499,13 @@ export async function resolveRemoteQuery(
       }
     }
     case 'favorites-request': {
-      // Songs and albums, as on the phone shell's own favourites tab (see
-      // MobileFavoritesView.vue).
+      // Songs, albums and artists, as on the phone shell's own favourites
+      // tab (see MobileFavoritesView.vue).
       await library.fetchStarred()
       return {
         songs: library.starred.songs.map(toRemoteSong),
         albums: library.starred.albums.map(toRemoteAlbum),
+        artists: library.starred.artists.map(toRemoteArtist),
       }
     }
     case 'radio-request': {

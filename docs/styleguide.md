@@ -389,7 +389,9 @@ instead, and the title is larger than elsewhere, `clamp(2.75rem, 3.2vw,
 `storedFanart` cycles them through the artist banners connect has already
 downloaded - a genre's through its own artists' only - every 12 seconds;
 until connect has any banners, through the backgrounds. The Home page's
-hero card shows the playing artist's banner, else their background. A
+hero card shows the playing artist's banner and nothing else - without one
+it keeps the blurred cover; the background photo is the artist page's and
+Now Playing's. A
 Fanart.tv picture on either card is never cropped at the top or bottom: it
 is the card's full height at its own shape (a banner's 5.4:1, a
 background's 16:9). Where the card is wider, the free width is shared
@@ -434,6 +436,12 @@ plain buttons, not pills, centred on the right. A playlist's artwork is made
 from its own albums and only cycles while the row is hovered. No backdrop -
 a page of rows each with its own moving picture is too much at once.
 
+Albums and Artists switch between their grid and a list (a `v-btn-toggle`
+in the filter row, remembered per page). A list line is the card itself in
+its `row` form (`AlbumCard`/`ArtistCard` with `row`), 56px tall, figures in
+fixed right-aligned columns - one component, so the two layouts share the
+context menu and the heart instead of keeping two copies in step.
+
 `.mobile-row__text` clips both of its lines itself - a row is a fixed 60px,
 so a long title has nowhere to wrap to. No list component says
 `text-truncate` on its own lines.
@@ -447,7 +455,7 @@ Two more shared classes serve the library pages, for the same reason
 | `.view-notice`    | The error banner or spinner shown in place of that grid        |
 
 An overview page's header band (`DetailHeader.vue` without a cover) grows
-with the window's width - `clamp(180px, 11cqi, 360px)` - rather than with its
+with the window's width - `clamp(180px, 11cqi, 280px)` - rather than with its
 text. The text needs no more than the floor; the banner beside it is sized to
 the band's height, so on an ultrawide a fixed height left it a strip in the
 middle of an empty band. Under the band, the filter row's fields carry

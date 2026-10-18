@@ -97,6 +97,9 @@ export default {
     newArtistsTitle: 'Neue Künstler entdecken',
   },
   library: {
+    layoutList: 'Als Liste',
+    layoutGrid: 'Als Raster',
+    layout: 'Ansicht',
     sortBy: 'Sortieren nach',
     albumSort: {
       name: 'Name',

@@ -48,6 +48,19 @@
           class="library-search"
         />
         <exact-match-switch />
+        <v-btn-toggle
+          :model-value="listView ? 'list' : 'grid'"
+          mandatory
+          density="compact"
+          rounded="pill"
+          variant="tonal"
+          class="album-layout-toggle"
+          :aria-label="$t('library.layout')"
+          @update:model-value="setListView($event === 'list')"
+        >
+          <v-btn value="grid" icon="mdi-view-grid-outline" :title="$t('library.layoutGrid')" />
+          <v-btn value="list" icon="mdi-view-list" :title="$t('library.layoutList')" />
+        </v-btn-toggle>
         <v-select
           :model-value="sort"
           :items="sortOptions"
@@ -85,14 +98,18 @@
           <v-skeleton-loader type="text" width="45%" height="16" />
         </div>
       </div>
-      <div v-else-if="!virtualizeAlbums" class="album-grid">
+      <div
+        v-else-if="!virtualizeAlbums"
+        class="album-grid"
+        :class="{ 'album-grid--list': listView }"
+      >
         <template v-for="(album, index) in visibleAlbums" :key="album.id">
           <!-- A full-width divider before each letter's first card - see
            - .letter-divider's own comment for why it forces a line break. -->
           <div v-if="startsLetterSection(index)" class="letter-divider" aria-hidden="true">
             <span class="letter-divider__label">{{ sectionLabel(letterAt(index)) }}</span>
           </div>
-          <album-card :data-album-index="index" :album="album" />
+          <album-card :data-album-index="index" :album="album" :row="listView" />
         </template>
       </div>
       <!-- Past ALBUM_VIRTUALIZE_THRESHOLD, chunk the (already fully-loaded)
@@ -110,16 +127,23 @@
        - border-box, which is what v-virtual-scroll's per-item
        - ResizeObserver uses to correct row offsets after the first paint —
        - margin sits outside that box and would silently throw the
-       - cumulative offsets off the more rows scroll past. -->
+       - cumulative offsets off the more rows scroll past. Keyed by the
+       - layout: the sizes it measured for 210px grid rows otherwise carried
+       - over to the 56px list rows and left three of them on screen. -->
       <v-virtual-scroll
         v-else
         ref="virtualScroll"
+        :key="listView ? 'list' : 'grid'"
         renderless
         :items="albumRows"
         :item-height="albumItemHeight"
       >
         <template #default="{ item: row, index }">
-          <div class="album-grid" :style="{ paddingTop: index === 0 ? '0px' : `${albumGap}px` }">
+          <div
+            class="album-grid"
+            :class="{ 'album-grid--list': listView }"
+            :style="{ paddingTop: index === 0 ? '0px' : `${rowGap}px` }"
+          >
             <!-- One row is never allowed to span two letters (see albumRows),
              - so the divider sits at the top of a row and the cards below it
              - fill that row completely. data-album-index is the card's own
@@ -139,6 +163,7 @@
               :key="album.id"
               :data-album-index="row.startIndex + column"
               :album="album"
+              :row="listView"
             />
           </div>
         </template>
@@ -187,6 +212,7 @@ import {
   type AlbumSort,
 } from '@/services/albumSort'
 import EmptyState from '@/components/EmptyState.vue'
+import { readBooleanPreference, writeBooleanPreference } from '@/services/booleanPreference'
 import { matchesAllTerms } from '@/services/textSearch'
 import DetailHeader from '@/components/library/DetailHeader.vue'
 import AlbumCard from '@/components/library/AlbumCard.vue'
@@ -225,6 +251,12 @@ const ALBUM_GAP = 20
 // VVirtualScroll's own per-item ResizeObserver, which corrects it after
 // first paint the same way SongTable.vue's static "48" does.
 const ALBUM_ROW_HEIGHT_GUESS = 210
+// The list form's row: AlbumCard.vue's .album-card--row height. Exact, as
+// the rows have no gap between them.
+const ALBUM_LIST_ROW_HEIGHT = 56
+
+/** Grid or list, remembered across visits like a shelf's grid toggle. */
+const LIST_VIEW_KEY = 'beacon.albumsListView'
 
 /** One v-virtual-scroll item: a row of cards that never spans two letters,
  * so its divider can sit at the top and the cards below fill the row.
@@ -281,6 +313,7 @@ export default {
       activeLetter: null as string | null,
       activeLetterObserver: null as ActiveLetterHandle | null,
       sort: loadAlbumSort(),
+      listView: readBooleanPreference(LIST_VIEW_KEY),
     }
   },
   mounted() {
@@ -310,11 +343,13 @@ export default {
     skeletonCount(): number {
       return this.cardsPerRow * SKELETON_ROWS
     },
-    albumGap() {
-      return ALBUM_GAP
+    albumItemHeight(): number {
+      return this.listView ? ALBUM_LIST_ROW_HEIGHT : ALBUM_ROW_HEIGHT_GUESS
     },
-    albumItemHeight() {
-      return ALBUM_ROW_HEIGHT_GUESS
+    // Between two virtual rows: the cards' gap in the grid, none between
+    // list lines.
+    rowGap(): number {
+      return this.listView ? 0 : ALBUM_GAP
     },
     sortedAlbums(): Album[] {
       return sortAlbums(this.libraryStore.albums, this.sort)
@@ -344,7 +379,9 @@ export default {
     // still 0) — matters only for that first frame, corrects itself as soon
     // as the real width is measured.
     columns(): number {
-      if (this.gridWidth <= 0) return 1
+      // A list is one album per row - the row logic (never two letters in
+      // a row) then simply puts each letter's divider above its first line.
+      if (this.listView || this.gridWidth <= 0) return 1
       return Math.max(1, Math.floor((this.gridWidth + ALBUM_GAP) / (ALBUM_ITEM_WIDTH + ALBUM_GAP)))
     },
     albumRows(): AlbumRow[] {
@@ -423,6 +460,15 @@ export default {
       if (this.sort !== 'year') return section
       if (section === UNKNOWN_YEAR_SECTION) return this.$t('library.unknownYear')
       return this.$t('library.decade', { decade: section })
+    },
+    setListView(listView: boolean) {
+      this.listView = listView
+      writeBooleanPreference(LIST_VIEW_KEY, listView)
+      // The same scroll offset lands somewhere else entirely in the other
+      // layout, so start again at the top, as a new order does.
+      this.activeLetter = null
+      window.scrollTo({ top: 0 })
+      this.$nextTick(() => this.activeLetterObserver?.update())
     },
     setSort(sort: AlbumSort) {
       this.sort = sort
@@ -512,11 +558,11 @@ export default {
 </script>
 
 <style scoped>
-/* At the far end of the filter row: the order applies to the whole list,
- * the field and switch beside the search only narrow it. */
+/* The layout toggle and the order sit at the far end of the filter row:
+ * they apply to the whole list, the field and switch beside the search only
+ * narrow it. */
 .album-sort {
   flex: 0 0 240px;
-  margin-left: auto;
 }
 
 /* See this file's own #actions template comment for why this exists. */
@@ -546,6 +592,21 @@ export default {
 
 .album-card {
   width: 160px;
+}
+
+/* The list form: one full-width row under the other. */
+.album-grid--list {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  gap: 0;
+}
+
+.album-grid--list .album-card {
+  width: 100%;
+}
+
+.album-layout-toggle {
+  margin-left: auto;
 }
 
 /* v-skeleton-loader's width/height props only size the outer wrapper, not

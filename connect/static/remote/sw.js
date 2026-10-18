@@ -24,6 +24,7 @@ const SHELL_PATHS = [
   './js/router.js',
   './js/sheet.js',
   './js/album-row.js',
+  './js/artist-row.js',
   './js/song-row.js',
   './js/favorite.js',
   './js/i18n.js',
@@ -38,6 +39,7 @@ const SHELL_PATHS = [
   './js/views/playlists.js',
   './js/views/library.js',
   './js/views/radio.js',
+  './js/views/artist.js',
 ];
 
 self.addEventListener('install', (event) => {

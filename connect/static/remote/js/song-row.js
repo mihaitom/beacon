@@ -1,8 +1,9 @@
 // song-row.js — shared row renderer for song lists (Songs view, Playlist
-// detail), with a "…" action sheet (Play, Play Next, Add to Queue, Start
-// Song Radio).
+// detail, an artist's page), with a "…" action sheet (Play, Play Next, Add
+// to Queue, Start Song Radio, Go to Artist).
 
 import { fireCommand, sendCommand } from './api.js';
+import { navigate } from './router.js';
 import { openActionSheet } from './sheet.js';
 import { createArt } from './art.js';
 import { favoriteAction } from './favorite.js';
@@ -57,6 +58,11 @@ export function renderSongRow(song, { onPlay } = {}) {
         onSelect: () => sendCommand('play-song-radio', { songId: song.id }),
       },
       favoriteAction(song),
+      song.artist_id && {
+        label: t('action.goToArtist'),
+        icon: 'mdi-account-music',
+        onSelect: () => navigate(`/artists/${encodeURIComponent(song.artist_id)}`),
+      },
     ].filter(Boolean));
   });
   row.appendChild(actionBtn);

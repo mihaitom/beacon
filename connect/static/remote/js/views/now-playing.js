@@ -1,5 +1,5 @@
 import { fireCommand } from '../api.js';
-import { registerRoute } from '../router.js';
+import { navigate, registerRoute } from '../router.js';
 import { state, subscribe } from '../state.js';
 import { openDevicePicker } from '../devices.js';
 import { setArt } from '../art.js';
@@ -109,6 +109,13 @@ export function renderNowPlaying(root) {
   const repeatBtn = root.querySelector('#np-repeat');
   const autoplayBtn = root.querySelector('#np-autoplay');
   const favoriteBtn = root.querySelector('#np-favorite');
+  // The artist's name leads to their page, as on the app's Now Playing;
+  // radio and a song without an artist id leave it plain text.
+  artist.addEventListener('click', () => {
+    const artistId = state.snapshot.current_song?.artist_id;
+    if (artistId) navigate(`/artists/${encodeURIComponent(artistId)}`);
+  });
+
   favoriteBtn.addEventListener('click', () => {
     const song = state.snapshot.current_song;
     // The next snapshot shows the outcome. A failure raises the banner
@@ -176,6 +183,7 @@ export function renderNowPlaying(root) {
         ? nowPlaying || snapshot.radio.name
         : t('nowPlaying.nothing');
     artist.textContent = song ? song.artist || '' : nowPlaying ? snapshot.radio.name : '';
+    artist.classList.toggle('song-artist--link', !!song?.artist_id);
     favoriteBtn.classList.toggle('hidden', !song || !snapshot.favorites_supported);
     favoriteBtn.classList.toggle('active', !!song?.starred);
     favoriteBtn.querySelector('i').className = song?.starred ? 'mdi mdi-heart' : 'mdi mdi-heart-outline';

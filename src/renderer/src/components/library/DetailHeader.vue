@@ -627,13 +627,15 @@ export default {
  * card's height at 1000:185, it fills an ultrawide card only when the card
  * is taller there, and a fixed height left it a strip in the middle of
  * empty band. 11cqi puts the banner across roughly 60% of the card; the cap
- * stops a very wide window turning the band into the page. */
+ * stops a very wide window turning the band into the page - 360px was
+ * already too much on a 3440px ultrawide, so it is reached from a card of
+ * about 2550px on. */
 .detail-header--text-only {
   min-height: 0;
 }
 
 .detail-header--text-only .detail-header__content {
-  min-height: clamp(180px, 11cqi, 360px);
+  min-height: clamp(180px, 11cqi, 280px);
   align-items: center;
   padding: clamp(20px, 2.3cqi, 32px) 32px;
 }

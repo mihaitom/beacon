@@ -122,14 +122,10 @@ describe('HeroBand', () => {
     })
   })
 
-  describe('artist photo', () => {
+  describe('Fanart.tv art', () => {
     function active(wrapper: Awaited<ReturnType<typeof mountBand>>) {
       const layer = wrapper.find('.hero-backdrop--active')
-      const kind = layer.classes().includes('hero-backdrop--banner')
-        ? 'banner'
-        : layer.classes().includes('hero-backdrop--photo')
-          ? 'photo'
-          : 'cover'
+      const kind = layer.classes().includes('hero-backdrop--banner') ? 'banner' : 'cover'
       return { image: layer.attributes('style') ?? '', kind }
     }
 
@@ -146,19 +142,18 @@ describe('HeroBand', () => {
       })
     })
 
-    it("shows the artist's background photo when there is no banner", async () => {
+    // Home's band takes banners only; the photo stays with the artist page
+    // and Now Playing.
+    it("keeps the cover rather than the artist's background photo when there is no banner", async () => {
       vi.mocked(getArtistArt).mockResolvedValue(art('https://fanart/tide.jpg'))
       const wrapper = await mountBand({ imageUrl: 'https://art/one.jpg', artistName: 'The Tide' })
       await flushPromises()
 
       expect(getArtistArt).toHaveBeenCalledWith('The Tide')
-      expect(active(wrapper)).toEqual({
-        image: expect.stringContaining('tide.jpg'),
-        kind: 'photo',
-      })
+      expect(active(wrapper)).toEqual({ image: expect.stringContaining('one.jpg'), kind: 'cover' })
     })
 
-    it('keeps the cover back while the photo is looked up, so it fades only once', async () => {
+    it('keeps the cover back while the banner is looked up, so it fades only once', async () => {
       vi.mocked(getArtistArt).mockReturnValue(new Promise(() => {}))
       const wrapper = await mountBand({ imageUrl: 'https://art/one.jpg', artistName: 'The Tide' })
       await flushPromises()

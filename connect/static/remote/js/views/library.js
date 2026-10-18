@@ -1,4 +1,4 @@
-// library.js — the phone's library: songs and albums behind one toggle,
+// library.js — the phone's library: songs, albums and artists behind one toggle,
 // with a single search that applies to whichever half is showing.
 //
 // Replaced the songs-only view. Same shape as the mobile web UI's
@@ -6,9 +6,10 @@
 // modelled on (feishin's own remote library page): one request at a time,
 // switched by the toggle, rather than both halves fetching in parallel.
 
-import { fetchAlbums, fetchSongs } from '../api.js';
+import { fetchAlbums, fetchArtists, fetchSongs } from '../api.js';
 import { navigate, registerRoute } from '../router.js';
 import { renderAlbumRow } from '../album-row.js';
+import { renderArtistRow } from '../artist-row.js';
 import { renderSongRow } from '../song-row.js';
 import { t } from '../i18n.js';
 
@@ -23,6 +24,13 @@ const VIEWS = {
     fetch: fetchAlbums,
     placeholder: 'library.searchAlbums',
     row: renderAlbumRow,
+  },
+  artists: {
+    empty: 'library.noArtists',
+    failed: 'library.failedArtists',
+    fetch: fetchArtists,
+    placeholder: 'library.searchArtists',
+    row: renderArtistRow,
   },
   songs: {
     empty: 'library.noSongs',
@@ -39,6 +47,7 @@ export function renderLibrary(root) {
     <div class="segmented" id="library-toggle">
       <button type="button" class="active" data-view="songs">${t('library.songs')}</button>
       <button type="button" data-view="albums">${t('library.albums')}</button>
+      <button type="button" data-view="artists">${t('library.artists')}</button>
     </div>
     <div class="search-field">
       <input type="search" class="search-input" id="library-search" placeholder="${t('library.searchSongs')}" />

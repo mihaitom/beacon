@@ -99,6 +99,9 @@ export default {
     newArtistsTitle: 'Nouveaux artistes à découvrir',
   },
   library: {
+    layoutList: 'En liste',
+    layoutGrid: 'En grille',
+    layout: 'Affichage',
     sortBy: 'Trier par',
     albumSort: {
       name: 'Nom',

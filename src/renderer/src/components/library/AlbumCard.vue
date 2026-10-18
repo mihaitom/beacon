@@ -1,49 +1,92 @@
 <template>
   <div
     class="album-card"
+    :class="{ 'album-card--row': row }"
     @click="!playOnClick && $router.push(`/albums/${album.id}`)"
     @contextmenu.prevent="openMenu"
   >
-    <div class="album-card-cover" @click="playOnClick && onCoverClick()">
-      <cover-art :cover-art-id="album.coverArtId" :size="160" />
-      <!-- Only the cover plays on click (see playOnClick) — this visual
-       - affordance is what tells you that, instead of it being a silent
-       - behavior change from every other album card in the app. -->
-      <div v-if="playOnClick" class="album-card-play-overlay">
-        <v-icon icon="mdi-play-circle" size="40" />
+    <!-- The album list's row form (AlbumsView.vue's list toggle): the same
+     - component as the card, so the two share the menu, the heart and every
+     - action below rather than keeping two copies in step. -->
+    <template v-if="row">
+      <cover-art :cover-art-id="album.coverArtId" :size="44" class="album-row__cover" />
+      <div class="album-row__text">
+        <div class="album-row__name text-body-medium" :title="album.name">{{ album.name }}</div>
+        <router-link
+          v-if="album.artistId"
+          :to="`/artists/${album.artistId}`"
+          class="album-row__artist text-body-small text-medium-emphasis"
+          @click.stop
+        >
+          {{ album.artist }}
+        </router-link>
+        <div v-else class="album-row__artist text-body-small text-medium-emphasis">
+          {{ album.artist }}
+        </div>
       </div>
+      <span class="album-row__figure text-body-small text-medium-emphasis">{{
+        album.year ?? ''
+      }}</span>
+      <span class="album-row__figure text-body-small text-medium-emphasis">{{
+        $t('library.songCount', { count: $n(album.songCount) })
+      }}</span>
+      <span class="album-row__figure text-body-small text-medium-emphasis">{{
+        durationLabel
+      }}</span>
       <v-btn
         v-if="authStore.capabilities.favorites"
         :icon="album.starred ? 'mdi-heart' : 'mdi-heart-outline'"
         :color="album.starred ? 'primary' : undefined"
         size="small"
-        variant="flat"
-        class="album-card-star"
-        :class="{ 'album-card-star--visible': album.starred }"
+        variant="text"
+        class="album-row__star"
+        :class="{ 'album-row__star--visible': album.starred }"
         :title="$t(album.starred ? 'library.unstar' : 'library.star')"
         @click.stop="toggleStar"
       />
-    </div>
-    <!-- Title stays a real link to the album page in playOnClick mode —
+    </template>
+    <template v-else>
+      <div class="album-card-cover" @click="playOnClick && onCoverClick()">
+        <cover-art :cover-art-id="album.coverArtId" :size="160" />
+        <!-- Only the cover plays on click (see playOnClick) — this visual
+       - affordance is what tells you that, instead of it being a silent
+       - behavior change from every other album card in the app. -->
+        <div v-if="playOnClick" class="album-card-play-overlay">
+          <v-icon icon="mdi-play-circle" size="40" />
+        </div>
+        <v-btn
+          v-if="authStore.capabilities.favorites"
+          :icon="album.starred ? 'mdi-heart' : 'mdi-heart-outline'"
+          :color="album.starred ? 'primary' : undefined"
+          size="small"
+          variant="flat"
+          class="album-card-star"
+          :class="{ 'album-card-star--visible': album.starred }"
+          :title="$t(album.starred ? 'library.unstar' : 'library.star')"
+          @click.stop="toggleStar"
+        />
+      </div>
+      <!-- Title stays a real link to the album page in playOnClick mode —
      - the cover took over "click to play", so this is still how you reach
      - the album itself (browsing), same destination the whole card used to
      - go to. -->
-    <router-link
-      v-if="playOnClick"
-      :to="`/albums/${album.id}`"
-      class="album-card-title text-body-medium"
-      @click.stop
-    >
-      {{ album.name }}
-    </router-link>
-    <div v-else class="album-card-title text-body-medium">{{ album.name }}</div>
-    <router-link
-      :to="`/artists/${album.artistId}`"
-      class="album-card-artist text-body-small text-medium-emphasis"
-      @click.stop
-    >
-      {{ album.artist }}
-    </router-link>
+      <router-link
+        v-if="playOnClick"
+        :to="`/albums/${album.id}`"
+        class="album-card-title text-body-medium"
+        @click.stop
+      >
+        {{ album.name }}
+      </router-link>
+      <div v-else class="album-card-title text-body-medium">{{ album.name }}</div>
+      <router-link
+        :to="`/artists/${album.artistId}`"
+        class="album-card-artist text-body-small text-medium-emphasis"
+        @click.stop
+      >
+        {{ album.artist }}
+      </router-link>
+    </template>
     <!-- Right-click, not a click: the card's own click is already how you
      - open (or play) the album. Every entry here acts on the album's whole
      - track list, which is fetched on demand (see withSongs) — a grid of
@@ -92,6 +135,7 @@ import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
 import { emitter } from '@/emitter'
+import { formatDuration } from '@/services/library/songFormat'
 import type { Album, Song } from '@/types/library'
 
 export default {
@@ -118,10 +162,18 @@ export default {
       type: Boolean,
       default: false,
     },
+    // One line of a list instead of a tile - see the template.
+    row: {
+      type: Boolean,
+      default: false,
+    },
   },
   computed: {
     authStore() {
       return useAuthStore()
+    },
+    durationLabel(): string {
+      return formatDuration(this.album.duration) ?? ''
     },
   },
   methods: {
@@ -208,6 +260,71 @@ export default {
 .album-card {
   width: 160px;
   cursor: pointer;
+}
+
+/* Cover, name over artist, then the figures in fixed columns so they line
+ * up down the list, and the heart. Right-aligned figures are tabular, or
+ * the column wobbles as it scrolls (see docs/styleguide.md). */
+.album-card--row {
+  width: 100%;
+  height: 56px;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 56px 88px 64px 40px;
+  align-items: center;
+  gap: 16px;
+  padding: 0 8px;
+  border-radius: 8px;
+}
+
+.album-card--row:hover {
+  background: var(--beacon-hover);
+}
+
+.album-row__text {
+  min-width: 0;
+}
+
+.album-row__name,
+.album-row__artist {
+  display: block;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.album-card--row:hover .album-row__name {
+  color: rgb(var(--v-theme-primary));
+}
+
+.album-row__artist {
+  color: inherit;
+  text-decoration: none;
+}
+
+.album-row__artist:hover {
+  text-decoration: underline;
+}
+
+.album-row__figure {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Shown on hover and once set, like the card's. */
+.album-row__star {
+  opacity: 0;
+}
+
+.album-card--row:hover .album-row__star,
+.album-row__star--visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .album-row__star {
+    opacity: 1;
+  }
 }
 
 .album-card-cover {

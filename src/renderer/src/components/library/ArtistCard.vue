@@ -1,42 +1,72 @@
 <template>
   <div
     class="artist-card"
+    :class="{ 'artist-card--row': row }"
     @click="$router.push(`/artists/${artist.id}`)"
     @contextmenu.prevent="openMenu"
   >
-    <div class="artist-card-cover">
-      <cover-art :cover-art-id="artist.coverArtId" :image-url="artist.imageUrl" :size="160" />
+    <!-- The artist list's row form - see AlbumCard.vue's identical note. -->
+    <template v-if="row">
+      <cover-art
+        :cover-art-id="artist.coverArtId"
+        :image-url="artist.imageUrl"
+        :size="44"
+        fallback-icon="mdi-account-music"
+      />
+      <div class="artist-row__name text-body-medium" :title="artist.name">{{ artist.name }}</div>
+      <span class="artist-row__figure text-body-small text-medium-emphasis">{{
+        albumCountLabel
+      }}</span>
+      <span class="artist-row__figure text-body-small text-medium-emphasis">{{
+        songCount === null ? '' : songCountLabel
+      }}</span>
       <v-btn
         v-if="authStore.capabilities.favorites"
         :icon="artist.starred ? 'mdi-heart' : 'mdi-heart-outline'"
         :color="artist.starred ? 'primary' : undefined"
         size="small"
-        variant="flat"
-        class="artist-card-star"
-        :class="{ 'artist-card-star--visible': artist.starred }"
+        variant="text"
+        class="artist-row__star"
+        :class="{ 'artist-row__star--visible': artist.starred }"
         :title="$t(artist.starred ? 'library.unstar' : 'library.star')"
         @click.stop="toggleStar"
       />
-    </div>
-    <div class="artist-card-name text-body-medium">{{ artist.name }}</div>
-    <!-- Icons rather than words, because there are two counts now and
+    </template>
+    <template v-else>
+      <div class="artist-card-cover">
+        <cover-art :cover-art-id="artist.coverArtId" :image-url="artist.imageUrl" :size="160" />
+        <v-btn
+          v-if="authStore.capabilities.favorites"
+          :icon="artist.starred ? 'mdi-heart' : 'mdi-heart-outline'"
+          :color="artist.starred ? 'primary' : undefined"
+          size="small"
+          variant="flat"
+          class="artist-card-star"
+          :class="{ 'artist-card-star--visible': artist.starred }"
+          :title="$t(artist.starred ? 'library.unstar' : 'library.star')"
+          @click.stop="toggleStar"
+        />
+      </div>
+      <div class="artist-card-name text-body-medium" :title="artist.name">{{ artist.name }}</div>
+      <!-- Icons rather than words, because there are two counts now and
      - "0 Alben · 3 Songs" spelled out does not survive a tile this narrow.
      - Both icons are the ones the app already uses for the two things (the
      - sidebar's Albums/Songs entries, CoverArt's fallbacks). -->
-    <div class="artist-card-meta text-body-small text-medium-emphasis">
-      <span class="artist-card-count" :title="albumCountLabel">
-        <v-icon icon="mdi-album" size="13" />
-        {{ $n(artist.albumCount) }}
-      </span>
-      <!-- Only once the catalogue it is counted from has arrived. Drawing
+      <div class="artist-card-meta text-body-small text-medium-emphasis">
+        <span class="artist-card-count" :title="albumCountLabel">
+          <v-icon icon="mdi-album" size="13" />
+          {{ $n(artist.albumCount) }}
+        </span>
+        <!-- Only once the catalogue it is counted from has arrived. Drawing
        - the icon before that put a bare note on every tile with nothing
        - beside it; showing 0 instead would be worse, because it is wrong
        - rather than merely absent. -->
-      <span v-if="songCount !== null" class="artist-card-count" :title="songCountLabel">
-        <v-icon icon="mdi-music-note" size="13" />
-        {{ $n(songCount) }}
-      </span>
-    </div>
+        <span v-if="songCount !== null" class="artist-card-count" :title="songCountLabel">
+          <v-icon icon="mdi-music-note" size="13" />
+          {{ $n(songCount) }}
+        </span>
+      </div>
+    </template>
     <!-- Right-click, not a click: the card's own click opens the artist.
      - Playing anything here needs the artist's tracks, which a listing
      - endpoint doesn't carry — fetched on demand, see withSongs(). -->
@@ -89,6 +119,11 @@ export default {
       type: Object as () => Artist,
       required: true,
     },
+    // One line of a list instead of a tile - see the template.
+    row: {
+      type: Boolean,
+      default: false,
+    },
   },
   computed: {
     authStore() {
@@ -101,7 +136,7 @@ export default {
      * and to a screen reader. */
     albumCountLabel(): string {
       const n = this.artist.albumCount
-      return `${n} ${n === 1 ? this.$t('library.album1') : this.$t('library.albumsN')}`
+      return `${this.$n(n)} ${n === 1 ? this.$t('library.album1') : this.$t('library.albumsN')}`
     },
     /** Tracks this artist is on, counted out of the library the app has
      * already loaded (see the store's trackCountByArtistName) - null while
@@ -115,7 +150,7 @@ export default {
     },
     songCountLabel(): string {
       const n = this.songCount ?? 0
-      return `${n} ${n === 1 ? this.$t('library.song1') : this.$t('library.songsN')}`
+      return `${this.$n(n)} ${n === 1 ? this.$t('library.song1') : this.$t('library.songsN')}`
     },
   },
   methods: {
@@ -186,6 +221,55 @@ export default {
 </script>
 
 <style scoped>
+/* Photo, name, the two counts in fixed columns, the heart - the same row
+ * as AlbumCard.vue's list form. */
+.artist-card--row {
+  width: 100%;
+  height: 56px;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 96px 96px 40px;
+  align-items: center;
+  gap: 16px;
+  padding: 0 8px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.artist-card--row:hover {
+  background: var(--beacon-hover);
+}
+
+.artist-card--row:hover .artist-row__name {
+  color: rgb(var(--v-theme-primary));
+}
+
+.artist-row__name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.artist-row__figure {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.artist-row__star {
+  opacity: 0;
+}
+
+.artist-card--row:hover .artist-row__star,
+.artist-row__star--visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .artist-row__star {
+    opacity: 1;
+  }
+}
+
 /* Same width as AlbumCard.vue's own .album-card, deliberately — the two
  * appear side by side (search results, the favorites view) and read as
  * mismatched at different sizes. The cover-art :size above matches it, so
@@ -244,8 +328,15 @@ export default {
   color: rgb(var(--v-theme-primary));
 }
 
-/* Both lines under the portrait stay single. */
-.artist-card-name,
+/* Both lines under the portrait stay single. The name is a plain block: as
+ * a flex container its text was cut off mid-letter, since text-overflow
+ * only ellipsises text that sits directly in a block. */
+.artist-card-name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 .artist-card-meta {
   display: flex;
   gap: 10px;

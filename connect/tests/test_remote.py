@@ -285,6 +285,52 @@ def test_albums_query_relays_search_and_paging_to_the_renderer(client, monkeypat
     assert seen["payload"] == {"search": "blue", "offset": 50, "limit": 25}
 
 
+def test_artists_query_relays_search_and_paging_to_the_renderer(client, monkeypatch):
+    """The artists half of the phone's library view, paged like albums."""
+    client.post("/remote/enable")
+    remote.renderer_connected = True
+    seen = {}
+
+    async def capture(event, payload):
+        seen["event"] = event
+        seen["payload"] = payload
+        return {"items": [], "total": 0}
+
+    monkeypatch.setattr(remote_routes, "relay_query", capture)
+    resp = client.get(
+        "/remote/artists?search=tide&offset=50&limit=25",
+        headers={"X-Remote-Password": remote.password},
+    )
+
+    assert resp.status_code == 200
+    assert seen["event"] == "artists-request"
+    assert seen["payload"] == {"search": "tide", "offset": 50, "limit": 25}
+
+
+def test_artist_query_relays_the_artist_id(client, monkeypatch):
+    client.post("/remote/enable")
+    remote.renderer_connected = True
+    seen = {}
+
+    async def capture(event, payload):
+        seen["event"] = event
+        seen["payload"] = payload
+        return {"artist": None, "songs": [], "albums": []}
+
+    monkeypatch.setattr(remote_routes, "relay_query", capture)
+    resp = client.get("/remote/artists/ar-1", headers={"X-Remote-Password": remote.password})
+
+    assert resp.status_code == 200
+    assert seen == {"event": "artist-request", "payload": {"artistId": "ar-1"}}
+
+
+def test_artist_queries_401_with_a_wrong_password(client):
+    client.post("/remote/enable")
+    for path in ("/remote/artists", "/remote/artists/ar-1"):
+        resp = client.get(path, headers={"X-Remote-Password": "wrong"})
+        assert resp.status_code == 401
+
+
 def test_favorites_query_is_relayed_to_the_renderer(client, monkeypatch):
     client.post("/remote/enable")
     remote.renderer_connected = True

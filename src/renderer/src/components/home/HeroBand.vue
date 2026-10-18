@@ -9,7 +9,6 @@
       class="hero-backdrop"
       :class="{
         'hero-backdrop--active': i === backdrop.active,
-        'hero-backdrop--photo': layerKind[i] === 'photo',
         'hero-backdrop--banner': layerKind[i] === 'banner',
       }"
       :style="layerStyle(url, i)"
@@ -20,7 +19,7 @@
     </div>
     <div
       class="hero-scrim"
-      :class="{ 'hero-scrim--photo': layerKind[backdrop.active] !== 'cover' }"
+      :class="{ 'hero-scrim--art': layerKind[backdrop.active] !== 'cover' }"
     />
     <div ref="text" class="hero-content">
       <div v-if="loading" class="hero-body">
@@ -124,9 +123,10 @@ import { getArtistArt } from '@/services/connect/fanart'
 import { preloadImage } from '@/services/preloadImage'
 import { useFanartStore } from '@/stores/fanart'
 
-/** A Fanart.tv banner across the whole band, a background photo at its
- * right edge, or the blurred cover. */
-type BackdropKind = 'banner' | 'photo' | 'cover'
+/** A Fanart.tv banner across the whole band, or the blurred cover. Never
+ * the artist's background photo - a deliberate choice for Home's band; the
+ * photo stays with the artist page and Now Playing. */
+type BackdropKind = 'banner' | 'cover'
 
 /** What the backdrop should show; null while the artist's art is still
  * being looked up, which keeps whatever is showing now. */
@@ -215,8 +215,7 @@ export default {
       return useFanartStore().enabled && this.hasContent ? this.artistName : null
     },
     // The artist's Fanart.tv banner, which is already the band's shape;
-    // else their background photo (the one the artist page and Now Playing
-    // show this session); else the blurred cover. Held until the lookup
+    // else the blurred cover. Held until the lookup
     // answers, like the album page, so the band fades once to the right
     // picture instead of cover-then-art.
     backdropTarget(): BackdropTarget | null {
@@ -265,7 +264,6 @@ export default {
       try {
         const art = await getArtistArt(name)
         if (art?.banner) found = { url: art.banner, kind: 'banner' }
-        else if (art?.background) found = { url: art.background, kind: 'photo' }
         // Preloaded, so the crossfade has an image to fade to.
         if (found) await preloadImage(found.url)
       } catch (error) {
@@ -366,8 +364,7 @@ export default {
   opacity: 1;
 }
 
-/* Fanart.tv art (a banner, or a background photo until there is one):
- * whole, at the band's full height, so a wide window never crops its top
+/* A Fanart.tv banner: whole, at the band's full height, so a wide window never crops its top
  * and bottom off. The spacers either side share out whatever width the
  * picture leaves equally, centring it (the left one is never narrower
  * than the text, below); where the band is narrower than the picture, both are 0 and its
@@ -379,7 +376,6 @@ export default {
  * clipped to the band's corners separately, and in the anti-aliased edge
  * pixels the scrim only partly covers art reaching them - a light rim
  * round the corners. */
-.hero-backdrop--photo,
 .hero-backdrop--banner {
   inset: 1px;
   border-radius: 15px;
@@ -397,7 +393,6 @@ export default {
   --fill-reach: calc(100cqh * var(--art-ratio) * 0.15);
 }
 
-.hero-backdrop--photo::before,
 .hero-backdrop--banner::before {
   content: '';
   flex: 1 0 0;
@@ -425,7 +420,6 @@ export default {
     var(--fill-left, none);
 }
 
-.hero-backdrop--photo::after,
 .hero-backdrop--banner::after {
   content: '';
   flex: 1 0 0;
@@ -443,13 +437,9 @@ export default {
     var(--fill-right, none);
 }
 
-/* Fanart.tv's fixed sizes: banners 1000x185, backgrounds 1920x1080. */
+/* Fanart.tv's fixed banner size, 1000x185. */
 .hero-backdrop--banner {
   --art-ratio: 1000 / 185;
-}
-
-.hero-backdrop--photo {
-  --art-ratio: 16 / 9;
 }
 
 /* Under the picture's ends, which only soften into its edge colours:
@@ -485,7 +475,7 @@ export default {
 
 /* Plain black over sharp Fanart.tv art, strong behind the text and clear
  * where the art starts - see DetailHeader.vue's identical rule. */
-.hero-scrim--photo {
+.hero-scrim--art {
   background:
     linear-gradient(
       to right,

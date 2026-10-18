@@ -1,5 +1,5 @@
-// favorites.js — the phone's favourites: songs and albums behind one
-// toggle, the same shape as the mobile web UI's MobileFavoritesView.vue.
+// favorites.js — the phone's favourites: songs, albums and artists behind
+// one toggle, the same shape as the mobile web UI's MobileFavoritesView.vue.
 //
 // Unlike library.js, both halves arrive in one answer: a favourites list is
 // small enough not to page, so switching halves needs no second request.
@@ -7,12 +7,14 @@
 import { fetchFavorites, fireCommand } from '../api.js';
 import { registerRoute } from '../router.js';
 import { renderAlbumRow } from '../album-row.js';
+import { renderArtistRow } from '../artist-row.js';
 import { renderSongRow } from '../song-row.js';
 import { t } from '../i18n.js';
 
 const EMPTY = {
   songs: 'favorites.noSongs',
   albums: 'favorites.noAlbums',
+  artists: 'favorites.noArtists',
 };
 
 export function renderFavorites(root) {
@@ -21,6 +23,7 @@ export function renderFavorites(root) {
     <div class="segmented" id="favorites-toggle">
       <button type="button" class="active" data-view="songs">${t('favorites.songs')}</button>
       <button type="button" data-view="albums">${t('favorites.albums')}</button>
+      <button type="button" data-view="artists">${t('favorites.artists')}</button>
     </div>
     <div class="list" id="favorites-list"><div class="empty-state">${t('common.loading')}</div></div>
   `;
@@ -34,13 +37,18 @@ export function renderFavorites(root) {
   function render() {
     if (!favorites) return;
     list.innerHTML = '';
-    const items = favorites[view];
+    // An app from before artists were sent has no such list.
+    const items = favorites[view] ?? [];
     if (!items.length) {
       list.innerHTML = `<div class="empty-state">${t(EMPTY[view])}</div>`;
       return;
     }
     if (view === 'albums') {
       for (const album of items) list.appendChild(renderAlbumRow(album));
+      return;
+    }
+    if (view === 'artists') {
+      for (const artist of items) list.appendChild(renderArtistRow(artist));
       return;
     }
     // The rest of the list plays on after the tapped song, as on the

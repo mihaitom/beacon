@@ -9,10 +9,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Added
 
 - Right-click a song in the queue to play it now or next, move it to the end or remove it. The menu also has what song lists offer: Song Radio, add to playlist, go to album or artist, artwork and info. While a transition is already prepared, "next" means right after the song it leads into
-- The phone and the Remote Control have a Favorites tab with your favorite songs and albums, on the phone also artists. It takes the place of the Now Playing tab, which the player bar above the tabs already opens, and the Queue tab moves to the front. Songs are marked as favorites with the heart next to the title on Now Playing or from a song's actions, and on the phone albums from their page
+- The phone and the Remote Control have a Favorites tab with your favorite songs, albums and artists. It takes the place of the Now Playing tab, which the player bar above the tabs already opens, and the Queue tab moves to the front. Songs are marked as favorites with the heart next to the title on Now Playing or from a song's actions, and on the phone albums from their page
 - Favorites work with Plex too: a favorite there is a five-star rating, the same thing Plexamp's like sets, so the heart and the fifth star always agree
 - The album list can be sorted by artist, year or date added as well as by name. Sorted by year, the bar on the right jumps between decades
-- On the phone, the library has an Artists tab, and every artist has a page with their most played songs, their albums and the artist radio. Artist names on Now Playing, on an album and in a song's actions lead there
+- Albums and Artists can be shown as a list instead of a grid, with year, number of songs and length, or number of albums and songs, on each line
+- On the phone and in the Remote Control, the library has an Artists tab, and every artist has a page with their most played songs, their albums and the artist radio. Artist names on Now Playing and in a song's actions lead there, on the phone also on an album
 - The Remote Control speaks your phone's language: German, English, Spanish, French or Italian, as the app does
 - On the phone and in the Remote Control, holding a song in the queue and letting go opens the same actions as a sheet (the Remote Control offers the playback ones)
 - Clicking the artist of a song in the queue opens the artist's page
@@ -28,6 +29,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - A fresher look: Beacon brings its own typeface instead of using whatever the system has, buttons are no longer written in capitals, and the statistics page keeps amber for the listening figures
 - The search sits in the middle of the top bar, ready to type into, and Ctrl+K (Cmd+K on a Mac) jumps to it. The Beacon logo moved to the top of the sidebar, and the button that shows its labels to the bottom
 - The header of the overview pages (Albums, Artists, Songs and the others) is lower in an ordinary window and taller in a very wide one, where the artist banner now shows in full, and the list starts closer below it
+- The Home page's header shows the artist's banner or else the blurred cover, no longer the artist's background photo
 - Empty pages (no favorites yet, an empty queue or playlist, a search without results) say what to do next instead of showing a blue notice
 - On the phone and in the Remote Control, the player bar above the tabs is always there. With nothing playing it shows the queue's first song, which play starts, or "Nothing playing" when the queue is empty, and a tap always opens Now Playing with its controls and speaker picker
 - With transitions on, Sonos and AirPlay speakers now get lossless audio instead of AAC or MP3
@@ -61,6 +63,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Now Playing on a phone held sideways with the artwork hidden: long titles, artists and albums stay on one line each instead of squeezing into a narrow column, and the controls sit at the bottom of the screen
 - The German interface speaks of "Titel" and "Künstler" throughout, where it mixed them with "Songs" and "Artists", and the last English labels (Plays, Disc, Track, Favorites) are translated
 - Counts on the overview pages are written with thousands separators in the way of the chosen language (12.496 in German, 12,496 in English)
+- Long artist names on the artist tiles end in "…" instead of being cut off mid-letter
 - Statistics: a long duration no longer breaks onto two lines, the library's tiles stay in one row, and a share below one percent reads "< 1 %" instead of "0 %"
 
 ## [1.8.0] - 2026-10-13

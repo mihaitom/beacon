@@ -394,6 +394,41 @@ describe('handleRemoteCommand', () => {
     })
   })
 
+  describe('play-artist-songs', () => {
+    function stubTopSongs(songs: ReturnType<typeof makeSong>[]) {
+      const library = useLibraryStore()
+      vi.spyOn(library, 'fetchArtist').mockResolvedValue({ id: 'ar1', albums: [] } as never)
+      vi.spyOn(library, 'fetchTopSongsForArtist').mockResolvedValue(songs)
+      return vi.spyOn(usePlaybackStore(), 'playSongList').mockResolvedValue()
+    }
+
+    it("plays the artist's top songs on from the tapped one", async () => {
+      const songs = [makeSong('a'), makeSong('b'), makeSong('c')]
+      const playSongList = stubTopSongs(songs)
+
+      await handleRemoteCommand('play-artist-songs', {
+        artistId: 'ar1',
+        songId: 'b',
+        startIndex: 1,
+      })
+
+      expect(playSongList).toHaveBeenCalledWith(songs, 1)
+    })
+
+    it('goes by the song when the ranking has moved since the phone saw it', async () => {
+      const songs = [makeSong('b'), makeSong('a')]
+      const playSongList = stubTopSongs(songs)
+
+      await handleRemoteCommand('play-artist-songs', {
+        artistId: 'ar1',
+        songId: 'b',
+        startIndex: 1,
+      })
+
+      expect(playSongList).toHaveBeenCalledWith(songs, 0)
+    })
+  })
+
   describe('play-album', () => {
     it('plays the album in its own track order', async () => {
       const library = useLibraryStore()
@@ -761,7 +796,87 @@ describe('resolveRemoteQuery', () => {
     })
   })
 
+  describe('artists-request', () => {
+    it('fetches the artists once, filters by name and pages them', async () => {
+      const library = useLibraryStore()
+      const fetchSpy = vi.spyOn(library, 'fetchArtists').mockImplementation(async () => {
+        library.artists = [
+          { id: 'a', name: 'The Tide', albumCount: 2, coverArtId: 'ar-a' },
+          { id: 'b', name: 'Harbor', albumCount: 1, coverArtId: null },
+        ] as Artist[]
+      })
+
+      const result = (await resolveRemoteQuery('artists-request', { search: 'tide' })) as {
+        items: Record<string, unknown>[]
+        total: number
+      }
+
+      expect(fetchSpy).toHaveBeenCalledOnce()
+      expect(result.total).toBe(1)
+      expect(result.items[0]).toEqual({
+        id: 'a',
+        name: 'The Tide',
+        album_count: 2,
+        cover_art_url: expect.stringContaining('/remote/cover-art?id=ar-a'),
+        cover_art_id: 'ar-a',
+      })
+    })
+  })
+
+  describe('artist-request', () => {
+    it('sends the artist, their top songs and their albums newest first', async () => {
+      const library = useLibraryStore()
+      vi.spyOn(library, 'fetchArtist').mockResolvedValue({
+        id: 'ar1',
+        name: 'The Tide',
+        albumCount: 3,
+        coverArtId: null,
+        albums: [
+          { id: 'old', year: 1990 },
+          { id: 'undated', year: null },
+          { id: 'new', year: 2020 },
+        ],
+      } as never)
+      vi.spyOn(library, 'fetchTopSongsForArtist').mockResolvedValue([makeSong('s1')])
+
+      const result = (await resolveRemoteQuery('artist-request', { artistId: 'ar1' })) as {
+        artist: { id: string }
+        songs: { id: string }[]
+        albums: { id: string }[]
+      }
+
+      expect(result.artist.id).toBe('ar1')
+      expect(result.songs.map((s) => s.id)).toEqual(['s1'])
+      expect(result.albums.map((a) => a.id)).toEqual(['new', 'old', 'undated'])
+    })
+
+    it('answers with no artist when it cannot be loaded', async () => {
+      vi.spyOn(useLibraryStore(), 'fetchArtist').mockRejectedValue(new Error('gone'))
+
+      const result = await resolveRemoteQuery('artist-request', { artistId: 'ar1' })
+
+      expect(result).toEqual({ artist: null, songs: [], albums: [] })
+    })
+  })
+
   describe('favorites-request', () => {
+    it('sends the favourite artists too', async () => {
+      const library = useLibraryStore()
+      vi.spyOn(library, 'fetchStarred').mockImplementation(async () => {
+        library.starred = {
+          artists: [{ id: 'ar1', name: 'The Tide', albumCount: 1, coverArtId: null } as Artist],
+          albums: [],
+          songs: [],
+        }
+      })
+
+      const result = (await resolveRemoteQuery('favorites-request', {})) as {
+        artists: { id: string }[]
+      }
+
+      expect(result.artists.map((a) => a.id)).toEqual(['ar1'])
+    })
+
     it('sends the favourite songs and albums', async () => {
       const library = useLibraryStore()
       vi.spyOn(library, 'fetchStarred').mockImplementation(async () => {

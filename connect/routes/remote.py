@@ -393,6 +393,21 @@ async def list_albums(search: str = "", offset: int = 0, limit: int = 50):
     return await relay_query("albums-request", {"search": search, "offset": offset, "limit": limit})
 
 
+@router.get("/artists", dependencies=[Depends(require_remote_password)])
+async def list_artists(search: str = "", offset: int = 0, limit: int = 50):
+    """The artists half of the phone's library view, paged like /albums."""
+    return await relay_query(
+        "artists-request", {"search": search, "offset": offset, "limit": limit}
+    )
+
+
+@router.get("/artists/{artist_id}", dependencies=[Depends(require_remote_password)])
+async def get_artist(artist_id: str):
+    """The phone's artist page: the artist, their most played songs and
+    their albums, answered by the desktop like a playlist is."""
+    return await relay_query("artist-request", {"artistId": artist_id})
+
+
 @router.get("/playlists", dependencies=[Depends(require_remote_password)])
 async def list_playlists():
     return await relay_query("playlists-request", {})
