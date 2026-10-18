@@ -1164,6 +1164,17 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
             status_code=204,
         )
 
+    # The device reopening a stream that has stopped - ended, interrupted,
+    # failed - without anyone pressing play. Served, it would play on by
+    # itself; /play, /resume and /resume-interrupted all start a new
+    # generation, so a stream somebody asked for never matches.
+    st = session.state
+    if not st.is_streaming and st.streamed_generation == st.clock.play_generation:
+        logger.info("[stream] Device reopened a stream that has stopped — not playing it")
+        return StreamingResponse(
+            iter([b""]), media_type=st.current_output_format.content_type, status_code=204
+        )
+
     # Counted from here — as soon as this is known to be a real connection
     # attempt, not only once its own setup below has finished (in
     # particular get_stream_url()'s network round-trip for Plex, just
@@ -1357,21 +1368,16 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
                                 # compares it against has to restart too —
                                 # see PlaybackClock.restream_from().
                                 session.state.clock.restream_from(offset)
-                            # A bare device-initiated reconnect (no /play,
-                            # /seek, or /resume involved — the device just
-                            # re-requested this URL on its own) never goes
-                            # through any of the handlers that otherwise set
-                            # is_streaming back to True. Without this, a
-                            # false-positive (or even a genuine, since-
-                            # recovered) _mark_disconnected_if_not_reconnected
-                            # trip leaves is_streaming stuck False for the
-                            # rest of the track even once audio is audibly
-                            # flowing again — which then also permanently
+                            # /resume after an interruption dispatches without
+                            # setting is_streaming again; this connection is
+                            # where audio is known to flow. Left False, it
                             # disables position resync (routes/playback.py's
                             # own is_streaming guard) and auto-advance
                             # (_advance_or_end's), and makes /join reject
                             # with "No active stream" for a session that's
-                            # very much still playing.
+                            # very much still playing. A device reopening a
+                            # stopped stream by itself never gets here - see
+                            # the check at the top of audio_stream().
                             if not session.state.is_streaming:
                                 logger.info(
                                     "[stream] is_streaming revived on reconnect "

@@ -176,17 +176,57 @@ def test_a_fresh_dispatch_is_still_served_from_its_own_offset(client, default_se
     assert st.streamed_generation == st.clock.play_generation
 
 
-def test_a_reconnect_after_playback_ended_is_not_resumed_mid_track(client, default_session):
+def test_a_reconnect_after_playback_ended_plays_nothing(client, default_session):
     """is_streaming is False here — the session's playback genuinely ended
     and the device is only now getting round to re-requesting the URL.
-    Nothing to resume into."""
+    Served, the speaker would start the track again by itself."""
     _mid_track_session(client, default_session, elapsed=59.0)
     default_session.state.is_streaming = False
 
     with patch("routes.stream.stream_tracks", side_effect=_real_stream) as mocked:
+        r = client.get("/stream")
+
+    assert r.status_code == 204
+    mocked.assert_not_called()
+
+
+async def test_a_reconnect_after_an_interruption_plays_nothing(
+    client, default_session, monkeypatch
+):
+    """A device that comes back only after the grace period: the session has
+    already been declared interrupted, and only its resume toast may start
+    the speaker again."""
+    monkeypatch.setattr("routes.stream.STREAM_DISCONNECT_GRACE_SECONDS", 0.01)
+    _mid_track_session(client, default_session, elapsed=49.0)
+    st = default_session.state
+    st.active_stream_connections = 0
+    await _mark_disconnected_if_not_reconnected(default_session, st.clock.play_generation)
+
+    with patch("routes.stream.stream_tracks", side_effect=_real_stream) as mocked:
+        r = client.get("/stream")
+
+    assert r.status_code == 204
+    mocked.assert_not_called()
+    assert st.is_streaming is False
+    assert st.active_stream_connections == 0
+
+
+async def test_the_stream_resumed_after_an_interruption_plays(client, default_session, monkeypatch):
+    """/resume after an interruption dispatches before is_streaming is set
+    again, so the device connects to a stopped session - but to the new
+    generation /resume started, which must be served."""
+    monkeypatch.setattr("routes.stream.STREAM_DISCONNECT_GRACE_SECONDS", 0.01)
+    _mid_track_session(client, default_session, elapsed=49.0)
+    st = default_session.state
+    st.active_stream_connections = 0
+    await _mark_disconnected_if_not_reconnected(default_session, st.clock.play_generation)
+    st.clock.resume()
+
+    with patch("routes.stream.stream_tracks", side_effect=_real_stream) as mocked:
         client.get("/stream")
 
-    assert mocked.call_args.kwargs["start_offset"] == 0.0
+    assert mocked.call_args.kwargs["start_offset"] == pytest.approx(49.0, abs=1.0)
+    assert st.is_streaming is True
 
 
 # ── active_stream_connections stays balanced even when setup itself fails ───
@@ -793,14 +833,13 @@ async def test_is_streaming_revives_once_a_bare_reconnect_produces_audio(
     client,
     default_session,
 ):
-    """Regression test (2026-08-22): a bare device-initiated reconnect (no
-    /play, /seek, or /resume involved — the device just re-requested this
-    URL on its own) never goes through any of the handlers that otherwise
-    set is_streaming back to True. Left stuck False (e.g. after a
-    _mark_disconnected_if_not_reconnected trip, false-positive or not),
-    position resync and auto-advance both stay permanently disabled for the
-    rest of the track even once audio is audibly flowing again — this is
-    what actually revives it, the moment real audio starts flowing."""
+    """Regression test (2026-08-22): /resume after an interruption dispatches
+    without setting is_streaming back to True. Left stuck False, position
+    resync and auto-advance both stay permanently disabled for the rest of
+    the track even once audio is audibly flowing again — this is what
+    actually revives it, the moment real audio starts flowing. (A generation
+    that has not been streamed yet, so not a device reopening a stopped
+    stream by itself.)"""
     _configure_and_set_track(client, default_session)
     default_session.state.is_streaming = False
     # Isolates this from the *separate*, pre-existing "queue exhausted"
