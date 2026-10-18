@@ -23,16 +23,20 @@ on:
         # release question, and the merge to main is when it gets asked.
         #
         # The paths are only what this actually answers for: what goes into
-        # the package (build/ffmpeg), where it is put (electron-builder.yml),
-        # and the script chain that does it (package.json's package:*
-        # scripts). `src/main/**` is deliberately not here — this checks that
-        # files arrive in the package, not what the main process does with
-        # them, and it changes far more often than the packaging does.
+        # the package (build/ffmpeg, the backend's dependencies and its
+        # PyInstaller spec), where it is put (electron-builder.yml), and the
+        # script chain that does it (package.json's package:* scripts).
+        # `src/main/**` is deliberately not here — this checks that files
+        # arrive in the package, not what the main process does with them,
+        # and it changes far more often than the packaging does.
         branches:
             - main
         paths:
             - 'electron-builder.yml'
             - 'package.json'
+            - 'connect/pyproject.toml'
+            - 'connect/uv.lock'
+            - 'connect/packaging/**'
             - 'build/ffmpeg/**'
             - 'scripts/build-ffmpeg.sh'
             - 'scripts/verify-ffmpeg.sh'
@@ -149,6 +153,40 @@ jobs:
                   fi
                   echo "Packaged backend: $backend ($(du -h "$backend" | cut -f1))"
                   test -x "$backend" || { echo "MISSING: $backend is not executable"; exit 1; }
+
+            # A backend that is there is not one that starts: a native
+            # extension PyInstaller did not collect, or a runtime library it
+            # needs (pylibrb's C++ runtime on Windows), only fails on import -
+            # and the routes import the beatmix's Rubber Band at startup, so
+            # that failure is an app without a backend, not one without DJ mixes.
+            - name: Start the packaged backend
+              shell: bash
+              run: |
+                  set -euo pipefail
+                  backend="$(find dist -type f \( -name connect-server -o -name connect-server.exe \) -path '*esources*' | sed -n 1p)"
+                  data="$RUNNER_TEMP/connect-data"
+                  mkdir -p "$data"
+
+                  PORT=17071 CONNECT_TOKEN=ci-smoke CONNECT_DATA_DIR="$data" "$backend" > "$RUNNER_TEMP/connect.log" 2>&1 &
+                  pid=$!
+
+                  # Locally it answers within 2 s; the margin is for a cold
+                  # runner, and a backend that died stops the wait early.
+                  status=""
+                  for _ in $(seq 1 90); do
+                      status="$(curl -s -o "$RUNNER_TEMP/health.json" -w '%{http_code}' -H 'X-Connect-Token: ci-smoke' http://127.0.0.1:17071/health || true)"
+                      [ "$status" = 200 ] && break
+                      kill -0 "$pid" 2>/dev/null || break
+                      sleep 1
+                  done
+
+                  kill "$pid" 2>/dev/null || true
+                  if [ "$status" != 200 ]; then
+                      echo "The packaged backend did not answer /health (last status: ${status:-none})"
+                      cat "$RUNNER_TEMP/connect.log"
+                      exit 1
+                  fi
+                  echo "Packaged backend started: $(cat "$RUNNER_TEMP/health.json")"
 
             # An app whose signature doesn't hold up is "damaged" to macOS
             # once downloaded (#46), and nothing else here would notice.
