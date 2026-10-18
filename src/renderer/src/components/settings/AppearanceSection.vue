@@ -31,6 +31,18 @@
         <p class="setting__hint">{{ $t('settings.themeHint') }}</p>
       </div>
 
+      <div class="setting">
+        <v-switch
+          :model-value="appearance.adaptiveAccent"
+          color="primary"
+          density="compact"
+          hide-details
+          :label="$t('settings.adaptiveAccent')"
+          @update:model-value="appearance.setAdaptiveAccent(!!$event)"
+        />
+        <p class="setting__hint">{{ $t('settings.adaptiveAccentHint') }}</p>
+      </div>
+
       <!-- Only the two colours a theme is recognisable by: everything else
          - (the surfaces, the frame, whether text is light or dark) follows
          - from the background, the way the presets' own steps do. -->

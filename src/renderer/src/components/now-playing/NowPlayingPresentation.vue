@@ -212,6 +212,12 @@ export default {
       if (!this.bottomColour) return color
       return liftForContrast(color, colourBehindControls(this.bottomColour, this.scrimStrength))
     },
+    /** What the app's accent is lent while this view is open: the bars'
+     * colour, or nothing where that is switched off (Settings ->
+     * Appearance) and the theme keeps its own. */
+    borrowedAccent(): string | null {
+      return useAppearanceStore().adaptiveAccent ? this.accent : null
+    },
   },
   watch: {
     scrimPhoto: {
@@ -228,9 +234,9 @@ export default {
     // screen: the artist background's own colour takes over the theme's
     // primary, so buttons, the player bar and everything else tint along
     // with the picture. Reset on the way out (beforeUnmount).
-    accent: {
+    borrowedAccent: {
       immediate: true,
-      handler(color: string) {
+      handler(color: string | null) {
         this.applyPrimary(color)
       },
     },

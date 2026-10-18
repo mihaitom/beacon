@@ -27,11 +27,12 @@ document.documentElement.setAttribute('lang', i18n.global.locale as unknown as s
 const app = createApp(PartyGuestApp)
 const pinia = createPinia()
 app.use(pinia)
-// Guests always see Beacon. The store would otherwise read the theme a
-// listener picked in the app on this same origin, which this page's
+// Guests always see Beacon, with Now Playing taking the artist
+// background's colour. The store would otherwise read what a listener
+// picked in the app on this same origin, which this page's
 // Vuetify (Beacon only) has no definitions for. Not persisted: set on the
 // state, past the store's actions.
-useAppearanceStore(pinia).theme = 'beacon'
+Object.assign(useAppearanceStore(pinia), { theme: 'beacon', adaptiveAccent: true })
 app.use(vuetify)
 app.use(i18n)
 // VisualizerBars reports reduced motion through the app's event bus.

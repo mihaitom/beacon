@@ -12,6 +12,7 @@ import { useConnectStore } from '@/stores/connect'
 import { useLyricsStore } from '@/stores/lyrics'
 import { useAuthStore } from '@/stores/auth'
 import { useAutoplayStore } from '@/stores/autoplay'
+import { useAppearanceStore } from '@/stores/appearance'
 import NowPlayingView from '../NowPlayingView.vue'
 import NowPlayingPresentation from '@/components/now-playing/NowPlayingPresentation.vue'
 import { getAudioEngine } from '@/services/audioEngine'
@@ -20,7 +21,7 @@ import { getArtistArt } from '@/services/connect/fanart'
 import { preloadImage } from '@/services/preloadImage'
 import { extractDominantColor } from '@/services/colorExtractor'
 import { useFanartStore } from '@/stores/fanart'
-import { DEFAULT_APP_ACCENT, appAccent } from '@/services/appAccent'
+import { DEFAULT_APP_ACCENT, appAccent, themeAccent } from '@/services/appAccent'
 import { makeSong } from '@/stores/__tests__/fixtures'
 import type { Song } from '@/types/library'
 import type { NowPlayingPanel } from '@/components/now-playing/source'
@@ -1034,6 +1035,23 @@ describe('NowPlayingView artist background', () => {
 
     host.unmount()
     expect(appAccent.value).toBe(DEFAULT_APP_ACCENT)
+  })
+
+  it('keeps the bars and the app accent in the theme when following the background is off', async () => {
+    vi.mocked(extractDominantColor).mockResolvedValue([200, 60, 60] as [number, number, number])
+    useAppearanceStore().setAdaptiveAccent(false)
+    const { wrapper } = await mountWithBackground()
+
+    expect((wrapper.vm as unknown as { visualizerColor: string }).visualizerColor).toBe(
+      themeAccent.value,
+    )
+    expect(appAccent.value).toBe(DEFAULT_APP_ACCENT)
+    // Nothing lent at all - not even the theme's accent run through the
+    // contrast lift, which would still shift it over a light photo.
+    const presentation = wrapper.findComponent({ name: 'NowPlayingPresentation' })
+    expect((presentation.vm as unknown as { borrowedAccent: string | null }).borrowedAccent).toBe(
+      null,
+    )
   })
 
   it('does not look anything up when Fanart.tv is switched off', async () => {

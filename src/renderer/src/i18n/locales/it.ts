@@ -606,6 +606,9 @@ export default {
     appearanceTitle: 'Aspetto',
     theme: 'Tema',
     themeHint: 'Vale solo per questo dispositivo.',
+    adaptiveAccent: "Riproduzione prende il colore dell'artista",
+    adaptiveAccentHint:
+      "Finché Riproduzione è aperta, il visualizzatore e l'accento dell'app assumono il colore dello sfondo dell'artista. Disattivato, restano nell'accento del tema.",
     themeGroupDark: 'Scuri',
     themeGroupLight: 'Chiari',
     customTheme: 'I tuoi colori',

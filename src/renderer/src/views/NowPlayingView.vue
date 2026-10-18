@@ -5,6 +5,7 @@
 </template>
 
 <script lang="ts">
+import { useAppearanceStore } from '@/stores/appearance'
 import { themeAccent } from '@/services/appAccent'
 import { usePlaybackStore } from '@/stores/playback'
 import { useRadioMetadataStore } from '@/stores/radioMetadata'
@@ -502,13 +503,15 @@ export default {
     },
     /** The visualizer bars' colour: the artist background's own dominant
      * colour, but only once a Fanart.tv background is actually loaded and
-     * its colour extracted - the fixed amber otherwise. Lifted for
-     * visibility by visualizerBarColor(), which also falls back to amber for
-     * a grey or dark background the bars would vanish into. Deliberately not
-     * colorTriplet, which follows the cover and drives the ambient wash and
-     * glow. */
+     * its colour extracted - the theme's accent otherwise, and always where
+     * following the background is switched off (Settings -> Appearance).
+     * Lifted for visibility by visualizerBarColor(), which also falls back
+     * to the theme's accent for a grey or dark background the bars would
+     * vanish into. Deliberately not colorTriplet, which follows the cover
+     * and drives the ambient wash and glow. */
     visualizerColor(): string {
-      return visualizerBarColor(this.artistBackground ? this.artistColor : null)
+      const follow = useAppearanceStore().adaptiveAccent && this.artistBackground
+      return visualizerBarColor(follow ? this.artistColor : null)
     },
     /** Whether the artwork is actually hidden right now: the wish, and a
      * Fanart.tv artist background that is loaded and ready to show instead.

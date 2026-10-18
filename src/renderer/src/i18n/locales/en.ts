@@ -602,6 +602,9 @@ export default {
     appearanceTitle: 'Appearance',
     theme: 'Theme',
     themeHint: 'Applies to this device only.',
+    adaptiveAccent: "Now playing takes the artist's colour",
+    adaptiveAccentHint:
+      "While Now playing is open, the visualizer and the app's accent take on the colour of the artist background. Off, they stay in the theme's accent.",
     themeGroupDark: 'Dark',
     themeGroupLight: 'Light',
     customTheme: 'Your colours',

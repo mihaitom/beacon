@@ -113,6 +113,18 @@ describe('appearance store', () => {
     })
   })
 
+  it("lets Now Playing follow the artist's colour unless switched off, and remembers that", () => {
+    // A value stored before the switch existed has no say: on.
+    localStorage.setItem(KEY, JSON.stringify(prefer('graphite')))
+    setActivePinia(createPinia())
+    expect(useAppearanceStore().adaptiveAccent).toBe(true)
+
+    useAppearanceStore().setAdaptiveAccent(false)
+    setActivePinia(createPinia())
+    expect(useAppearanceStore().adaptiveAccent).toBe(false)
+    expect(useAppearanceStore().theme).toBe('graphite')
+  })
+
   it('names the night of the chosen theme', () => {
     const store = useAppearanceStore()
     store.setTheme('paper')

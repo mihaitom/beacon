@@ -16,12 +16,32 @@ import {
 // desktop are often wanted differently.
 const STORAGE_KEY = 'beacon.theme'
 
-export function loadThemePreference(): ThemePreference {
+function loadStored(): unknown {
   try {
     const raw = localStorage.getItem(STORAGE_KEY)
-    return sanitizeThemePreference(raw ? JSON.parse(raw) : null)
+    return raw ? JSON.parse(raw) : null
   } catch {
-    return sanitizeThemePreference(null)
+    return null
+  }
+}
+
+export function loadThemePreference(): ThemePreference {
+  return sanitizeThemePreference(loadStored())
+}
+
+/** The theme, plus how Now Playing may change it. */
+export interface AppearanceState extends ThemePreference {
+  /** Whether Now Playing lends the whole app the artist background's
+   * colour (see NowPlayingPresentation.vue's borrowedAccent). On unless
+   * switched off. */
+  adaptiveAccent: boolean
+}
+
+function loadAppearance(): AppearanceState {
+  const stored = loadStored() as { adaptiveAccent?: unknown } | null
+  return {
+    ...sanitizeThemePreference(stored),
+    adaptiveAccent: stored?.adaptiveAccent !== false,
   }
 }
 
@@ -105,7 +125,7 @@ export function borrowAccent(
 }
 
 export const useAppearanceStore = defineStore('appearance', {
-  state: (): ThemePreference => loadThemePreference(),
+  state: (): AppearanceState => loadAppearance(),
   getters: {
     /** The theme of the parts that stay dark on a light theme - see
      * plugins/theme.ts's nightTheme(). */
@@ -116,6 +136,11 @@ export const useAppearanceStore = defineStore('appearance', {
   actions: {
     setTheme(theme: ThemeId): void {
       this.theme = theme
+      this.persist()
+    },
+
+    setAdaptiveAccent(enabled: boolean): void {
+      this.adaptiveAccent = enabled
       this.persist()
     },
 
@@ -132,7 +157,11 @@ export const useAppearanceStore = defineStore('appearance', {
       try {
         localStorage.setItem(
           STORAGE_KEY,
-          JSON.stringify({ theme: this.theme, custom: this.custom }),
+          JSON.stringify({
+            theme: this.theme,
+            custom: this.custom,
+            adaptiveAccent: this.adaptiveAccent,
+          }),
         )
       } catch {
         // Non-critical - the theme just doesn't survive to the next launch.

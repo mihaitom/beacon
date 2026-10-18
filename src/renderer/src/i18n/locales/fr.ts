@@ -608,6 +608,9 @@ export default {
     appearanceTitle: 'Apparence',
     theme: 'Thème',
     themeHint: "S'applique uniquement à cet appareil.",
+    adaptiveAccent: "Lecture prend la couleur de l'artiste",
+    adaptiveAccentHint:
+      "Tant que Lecture est ouverte, le visualiseur et l'accent de l'app prennent la couleur de l'arrière-plan de l'artiste. Désactivé, ils gardent l'accent du thème.",
     themeGroupDark: 'Sombres',
     themeGroupLight: 'Clairs',
     customTheme: 'Vos couleurs',
