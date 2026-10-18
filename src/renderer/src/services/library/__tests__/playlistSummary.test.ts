@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_COVERS, MAX_GENRES, summarizePlaylist, summaryKey } from '../playlistSummary'
+import { MAX_GENRES, summarizePlaylist, summaryKey } from '../playlistSummary'
+import { STACK_COVERS } from '../stackCovers'
 import { makeSong } from '@/stores/__tests__/fixtures'
 import type { Playlist } from '@/types/library'
 
@@ -67,15 +68,15 @@ describe('summarizePlaylist', () => {
   })
 
   it('caps the covers and genres but keeps every artist for the "and N more" count', () => {
-    const songs = Array.from({ length: 30 }, (_, i) =>
+    const songs = Array.from({ length: STACK_COVERS + 10 }, (_, i) =>
       makeSong(String(i), { coverArtId: `c${i}`, genre: `g${i}`, artist: `a${i}` }),
     )
 
     const summary = summarizePlaylist(songs)
 
-    expect(summary.covers).toHaveLength(MAX_COVERS)
+    expect(summary.covers).toHaveLength(STACK_COVERS)
     expect(summary.genres).toHaveLength(MAX_GENRES)
-    expect(summary.artists).toHaveLength(30)
+    expect(summary.artists).toHaveLength(STACK_COVERS + 10)
   })
 })
 

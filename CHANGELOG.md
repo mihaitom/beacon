@@ -42,7 +42,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Clicking a song in a playlist plays the whole playlist from there instead of only that song, as it already did on the phone
 - Song Radio started from the song that is playing keeps it playing and only replaces what comes after it, instead of starting the song over
 - Songs in the queue can be grabbed anywhere to drag them, without a handle, and dragging near the top or bottom of the queue scrolls it quickly. On the phone and in the Remote Control, hold a song until it lights up and then move it; there a long queue now also scrolls during a drag, which it did not at all before
-- On the Playlists page, a playlist's artwork stands as a small stack of its albums and is flipped through while pointed at, as on the Genres page
+- On the Playlists page and at the top of the smart playlist editor, a playlist's artwork stands as a small stack of its albums and is flipped through while pointed at, as on the Genres page
 - Smaller touches: the header of the overview pages is lower in an ordinary window and taller in a very wide one, where the artist banner shows in full; the Home page's header shows the artist's banner or the blurred cover instead of the background photo; empty pages say what to do next instead of showing a blue notice; long album titles get a smaller type instead of being cut off; a new page fades in briefly unless the system asks for reduced motion; and the release notes say that they are only available in English
 
 ### Fixed

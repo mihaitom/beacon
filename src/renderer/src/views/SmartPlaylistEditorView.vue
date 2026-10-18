@@ -12,14 +12,29 @@
       />
       <div class="smart-editor__scrim" />
       <div class="smart-editor__hero-content">
-        <playlist-cover
-          :covers="previewCovers"
-          :loading="!preview"
-          :size="168"
-          cycling
-          fallback-icon="mdi-playlist-star"
-          class="smart-editor__cover cover-shadow"
-        />
+        <!-- The preview's albums as a stack of records, flipped through
+         - while pointed at - as on the Playlists page. -->
+        <div
+          class="smart-editor__cover"
+          @mouseenter="browsingCovers = true"
+          @mouseleave="browsingCovers = false"
+        >
+          <record-stack
+            v-if="preview"
+            :covers="previewCovers"
+            :size="COVER_SIZE"
+            :depth="COVER_DEPTH"
+            :rise="COVER_RISE"
+            :browsing="browsingCovers"
+            fallback-icon="mdi-playlist-star"
+          />
+          <v-skeleton-loader
+            v-else
+            type="image"
+            :width="COVER_SIZE"
+            :height="COVER_SIZE + (COVER_DEPTH - 1) * COVER_RISE"
+          />
+        </div>
         <div class="smart-editor__heading">
           <div class="eyebrow-label">{{ $t('smartPlaylists.eyebrow') }}</div>
           <input
@@ -177,7 +192,8 @@
 </template>
 
 <script lang="ts">
-import PlaylistCover from '@/components/library/PlaylistCover.vue'
+import RecordStack from '@/components/library/RecordStack.vue'
+import { STACK_COVERS } from '@/services/library/stackCovers'
 import NavidromePasswordDialog from '@/components/smartPlaylist/NavidromePasswordDialog.vue'
 import SmartConjunctionToggle from '@/components/smartPlaylist/SmartConjunctionToggle.vue'
 import SmartOpaqueRow from '@/components/smartPlaylist/SmartOpaqueRow.vue'
@@ -215,6 +231,11 @@ import type { Playlist } from '@/types/library'
  * short enough that it still answers "while typing". */
 const PREVIEW_DELAY_MS = 150
 
+/** The header's stack of records (see RecordStack.vue). */
+const COVER_SIZE = 168
+const COVER_DEPTH = 4
+const COVER_RISE = 12
+
 function errorText(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
@@ -233,7 +254,7 @@ export default {
   name: 'SmartPlaylistEditorView',
   components: {
     NavidromePasswordDialog,
-    PlaylistCover,
+    RecordStack,
     SmartConjunctionToggle,
     SmartOpaqueRow,
     SmartOrderSection,
@@ -261,6 +282,10 @@ export default {
       playlistSongs: new Map<string, ReadonlySet<string>>(),
       backdrop: createBackdropLayers(),
       presets: PRESETS,
+      browsingCovers: false,
+      COVER_SIZE,
+      COVER_DEPTH,
+      COVER_RISE,
     }
   },
   computed: {
@@ -301,7 +326,7 @@ export default {
         if (!song.coverArtId || albums.has(song.albumId)) continue
         albums.add(song.albumId)
         covers.push(song.coverArtId)
-        if (covers.length === 12) break
+        if (covers.length === STACK_COVERS) break
       }
       return covers
     },

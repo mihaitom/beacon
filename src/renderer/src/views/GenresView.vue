@@ -111,6 +111,7 @@ import ExactMatchSwitch from '@/components/library/ExactMatchSwitch.vue'
 import GenreCrate from '@/components/library/GenreCrate.vue'
 import AlphabetIndexBar from '@/components/library/AlphabetIndexBar.vue'
 import { coversByGenre } from '@/services/genreCovers'
+import { STACK_COVERS } from '@/services/library/stackCovers'
 import { letterForName } from '@/services/alphabetIndex'
 import { observeActiveLetter, type ActiveLetterHandle } from '@/services/activeLetter'
 import type { Genre } from '@/types/library'
@@ -120,8 +121,6 @@ let debounceTimer: ReturnType<typeof setTimeout> | undefined
 /** The biggest genres shown as crates: as many as fill their rows (see the
  * grid's styles), at most two rows of four or one of eight. */
 const CRATE_COUNT = 8
-// More than the four a crate shows, so flipping through it has more to show.
-const COVERS_PER_CRATE = 12
 
 interface IndexGroup {
   letter: string
@@ -204,7 +203,7 @@ export default {
       return { strong: Math.max(2, at(0.1)), regular: Math.max(2, at(0.5)) }
     },
     coverMap(): Map<string, string[]> {
-      return coversByGenre(this.libraryStore.albums, COVERS_PER_CRATE)
+      return coversByGenre(this.libraryStore.albums, STACK_COVERS)
     },
   },
   watch: {

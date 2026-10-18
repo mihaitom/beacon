@@ -1,4 +1,5 @@
 import type { Playlist, Song } from '@/types/library'
+import { STACK_COVERS } from './stackCovers'
 
 /** What the playlist overview says about a playlist beyond its name: the
  * covers its artwork cycles through and the artists and genres it is made
@@ -12,9 +13,6 @@ export interface PlaylistSummary {
   genres: string[]
 }
 
-// Enough to keep cycling for a while without the artwork turning into a
-// slideshow of every one-off track's album.
-export const MAX_COVERS = 12
 export const MAX_GENRES = 3
 // How many artists a playlist is introduced by before "and N more".
 export const LEADING_ARTISTS = 3
@@ -32,7 +30,7 @@ function rankByCount(values: (string | null | undefined)[]): string[] {
 
 export function summarizePlaylist(songs: Song[]): PlaylistSummary {
   return {
-    covers: rankByCount(songs.map((song) => song.coverArtId)).slice(0, MAX_COVERS),
+    covers: rankByCount(songs.map((song) => song.coverArtId)).slice(0, STACK_COVERS),
     artists: rankByCount(songs.map((song) => song.artist)),
     genres: rankByCount(songs.map((song) => song.genre)).slice(0, MAX_GENRES),
   }
