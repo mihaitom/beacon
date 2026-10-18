@@ -2,107 +2,112 @@
   <section
     ref="card"
     class="detail-header"
-    :class="{ 'detail-header--text-only': !hasArtwork }"
+    :class="[`v-theme--${appearance.nightTheme}`, { 'detail-header--text-only': !hasArtwork }]"
     :style="textEnd ? { '--text-end': `${textEnd}px` } : {}"
   >
-    <!-- Two stacked layers so navigating from one album/artist to the next
-     - crossfades the artwork behind the header instead of cutting to it —
-     - see services/crossfadeBackdrop.ts for why one element can't do this. -->
-    <div
-      v-for="(url, i) in backdrop.urls"
-      :key="i"
-      class="detail-header__backdrop"
-      :class="{
-        'detail-header__backdrop--active': i === backdrop.active,
-        'detail-header__backdrop--photo': layerKind[i] === 'photo',
-        'detail-header__backdrop--banner': layerKind[i] === 'banner',
-      }"
-      :style="layerStyle(url, i)"
-    >
-      <div v-if="layerKind[i] !== 'cover'" class="detail-header__backdrop-slot">
-        <!-- A stored picture opens its artist's page, when the library has
-         - them - a shortcut only, so no keyboard stop of its own. -->
-        <div
-          class="detail-header__backdrop-art"
-          :class="{ 'detail-header__backdrop-art--link': i === backdrop.active && activeArtist }"
-          :title="
-            i === backdrop.active && activeArtist
-              ? `${$t('library.goToArtist')}: ${activeArtist.name}`
-              : undefined
-          "
-          @click="openArtist(i)"
-        />
+    <!-- Drawn in the theme's night whatever the theme: white text over a
+     - darkened picture, which a light page around it does not change (see
+     - plugins/theme.ts's nightTheme()). -->
+    <v-theme-provider :theme="appearance.nightTheme">
+      <!-- Two stacked layers so navigating from one album/artist to the next
+       - crossfades the artwork behind the header instead of cutting to it —
+       - see services/crossfadeBackdrop.ts for why one element can't do this. -->
+      <div
+        v-for="(url, i) in backdrop.urls"
+        :key="i"
+        class="detail-header__backdrop"
+        :class="{
+          'detail-header__backdrop--active': i === backdrop.active,
+          'detail-header__backdrop--photo': layerKind[i] === 'photo',
+          'detail-header__backdrop--banner': layerKind[i] === 'banner',
+        }"
+        :style="layerStyle(url, i)"
+      >
+        <div v-if="layerKind[i] !== 'cover'" class="detail-header__backdrop-slot">
+          <!-- A stored picture opens its artist's page, when the library has
+           - them - a shortcut only, so no keyboard stop of its own. -->
+          <div
+            class="detail-header__backdrop-art"
+            :class="{ 'detail-header__backdrop-art--link': i === backdrop.active && activeArtist }"
+            :title="
+              i === backdrop.active && activeArtist
+                ? `${$t('library.goToArtist')}: ${activeArtist.name}`
+                : undefined
+            "
+            @click="openArtist(i)"
+          />
+        </div>
       </div>
-    </div>
-    <div
-      class="detail-header__scrim"
-      :class="{ 'detail-header__scrim--photo': layerKind[backdrop.active] !== 'cover' }"
-    />
-    <div v-if="starred !== null || $slots['top-right']" class="detail-header__top-right">
-      <!-- Its own row, separate from the #top-right slot below — rating/
-       - heart are icon-sized controls that always belong together on one
-       - line; slot content (an artist page's external-link icons, a
-       - playlist's edit/delete buttons) is a different, often wider group
-       - that reads better stacked under them than crammed onto the same
-       - line. v-if guards it so an empty row (e.g. a playlist, which has
-       - neither) doesn't reserve a gap for nothing. -->
-      <div v-if="rating !== null || starred !== null" class="detail-header__top-right-row">
-        <v-rating
-          v-if="rating !== null"
-          :model-value="rating"
-          length="5"
-          size="large"
-          density="compact"
-          active-color="primary"
-          hover
-          clearable
-          class="detail-header__rating"
-          @update:model-value="$emit('set-rating', $event)"
-        />
-        <v-btn
-          v-if="starred !== null"
-          :icon="starred ? 'mdi-heart' : 'mdi-heart-outline'"
-          :color="starred ? 'primary' : undefined"
-          variant="text"
-          :title="$t(starred ? 'library.unstar' : 'library.star')"
-          @click="$emit('toggle-star')"
-        />
-      </div>
-      <div v-if="$slots['top-right']" class="detail-header__top-right-row">
-        <slot name="top-right" />
-      </div>
-    </div>
-    <div ref="text" class="detail-header__content">
-      <!-- Only when there is a real picture: a list page has none, and a
-       - square holding nothing but a generic icon takes room from the
-       - title without saying anything. The icon remains for a picture that
-       - fails to load. -->
-      <cover-art
-        v-if="hasArtwork"
-        :cover-art-id="coverArtId"
-        :image-url="imageUrl"
-        :size="size"
-        :fallback-icon="fallbackIcon"
-        :rounded="rounded"
-        class="detail-header__cover detail-header__cover--zoomable cover-shadow"
-        :title="$t('library.showArtwork')"
-        @click="showArtwork"
+      <div
+        class="detail-header__scrim"
+        :class="{ 'detail-header__scrim--photo': layerKind[backdrop.active] !== 'cover' }"
       />
-      <div class="detail-header__info min-width-0">
-        <div v-if="eyebrow" class="eyebrow-label detail-header__eyebrow">{{ eyebrow }}</div>
-        <h1 class="detail-title detail-header__title">{{ title }}</h1>
-        <div v-if="$slots.subtitle" class="detail-header__subtitle">
-          <slot name="subtitle" />
+      <div v-if="starred !== null || $slots['top-right']" class="detail-header__top-right">
+        <!-- Its own row, separate from the #top-right slot below — rating/
+         - heart are icon-sized controls that always belong together on one
+         - line; slot content (an artist page's external-link icons, a
+         - playlist's edit/delete buttons) is a different, often wider group
+         - that reads better stacked under them than crammed onto the same
+         - line. v-if guards it so an empty row (e.g. a playlist, which has
+         - neither) doesn't reserve a gap for nothing. -->
+        <div v-if="rating !== null || starred !== null" class="detail-header__top-right-row">
+          <v-rating
+            v-if="rating !== null"
+            :model-value="rating"
+            length="5"
+            size="large"
+            density="compact"
+            active-color="primary"
+            hover
+            clearable
+            class="detail-header__rating"
+            @update:model-value="$emit('set-rating', $event)"
+          />
+          <v-btn
+            v-if="starred !== null"
+            :icon="starred ? 'mdi-heart' : 'mdi-heart-outline'"
+            :color="starred ? 'primary' : undefined"
+            variant="text"
+            :title="$t(starred ? 'library.unstar' : 'library.star')"
+            @click="$emit('toggle-star')"
+          />
         </div>
-        <div v-if="$slots.meta" class="detail-header__meta">
-          <slot name="meta" />
-        </div>
-        <slot name="description" />
-        <div v-if="$slots.actions" class="detail-header__actions">
-          <slot name="actions" />
+        <div v-if="$slots['top-right']" class="detail-header__top-right-row">
+          <slot name="top-right" />
         </div>
       </div>
-    </div>
+      <div ref="text" class="detail-header__content">
+        <!-- Only when there is a real picture: a list page has none, and a
+         - square holding nothing but a generic icon takes room from the
+         - title without saying anything. The icon remains for a picture that
+         - fails to load. -->
+        <cover-art
+          v-if="hasArtwork"
+          :cover-art-id="coverArtId"
+          :image-url="imageUrl"
+          :size="size"
+          :fallback-icon="fallbackIcon"
+          :rounded="rounded"
+          class="detail-header__cover detail-header__cover--zoomable cover-shadow"
+          :title="$t('library.showArtwork')"
+          @click="showArtwork"
+        />
+        <div class="detail-header__info min-width-0">
+          <div v-if="eyebrow" class="eyebrow-label detail-header__eyebrow">{{ eyebrow }}</div>
+          <h1 class="detail-title detail-header__title">{{ title }}</h1>
+          <div v-if="$slots.subtitle" class="detail-header__subtitle">
+            <slot name="subtitle" />
+          </div>
+          <div v-if="$slots.meta" class="detail-header__meta">
+            <slot name="meta" />
+          </div>
+          <slot name="description" />
+          <div v-if="$slots.actions" class="detail-header__actions">
+            <slot name="actions" />
+          </div>
+        </div>
+      </div>
+    </v-theme-provider>
   </section>
 </template>
 
@@ -117,6 +122,7 @@ import { textEnd } from '@/services/textExtent'
 import { getStoredImages, type StoredImage } from '@/services/connect/fanart'
 import { preloadImage } from '@/services/preloadImage'
 import { useFanartStore } from '@/stores/fanart'
+import { useAppearanceStore } from '@/stores/appearance'
 import type { Artist } from '@/types/library'
 
 // How long each stored Fanart.tv background stays before the next one fades
@@ -183,6 +189,9 @@ export default {
     }
   },
   computed: {
+    appearance() {
+      return useAppearanceStore()
+    },
     /** What storedFanart asks for, as one value to watch: null for nothing,
      * [] for every artist, or the artists' names. */
     storedFanartRequest(): string[] | null {
@@ -381,6 +390,10 @@ export default {
 
 <style scoped>
 .detail-header {
+  /* The night's background under the scrims: on a light theme the page
+   * would otherwise show through them. */
+  background: rgb(var(--v-theme-background));
+  color: rgb(var(--v-theme-on-background));
   /* Where the scrim behind the text has cleared - and so, wherever there
    * is room, where Fanart.tv art starts at the earliest. The scrim eases
    * out over --scrim-fade along a smoothstep curve: a straight ramp, over
@@ -539,11 +552,11 @@ export default {
   background:
     linear-gradient(
       120deg,
-      rgba(18, 20, 28, 0.94) 0%,
-      rgba(18, 20, 28, 0.75) 45%,
-      rgba(245, 169, 78, 0.2) 100%
+      rgba(var(--v-theme-background), 0.94) 0%,
+      rgba(var(--v-theme-background), 0.75) 45%,
+      rgba(var(--v-theme-primary), 0.2) 100%
     ),
-    linear-gradient(to top, rgba(18, 20, 28, 0.55), transparent 55%);
+    linear-gradient(to top, rgba(var(--v-theme-background), 0.55), transparent 55%);
 }
 
 /* Over Fanart.tv art the scrim is plain black: the amber wash would read
@@ -652,7 +665,7 @@ export default {
  * clickable when it isn't. Link styling belongs on the link itself — see
  * AlbumDetailView.vue's own .detail-header__subtitle-link. */
 .detail-header__subtitle {
-  color: rgba(255, 255, 255, 0.75);
+  color: rgba(var(--v-theme-on-surface), 0.75);
   margin-bottom: 4px;
 }
 
@@ -661,7 +674,7 @@ export default {
 }
 
 .detail-header__meta {
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(var(--v-theme-on-surface), 0.6);
   font-size: 0.8125rem;
 }
 

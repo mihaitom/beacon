@@ -14,7 +14,7 @@
     <!-- Both bars step aside on Now Playing while the phone is on its
        - side: together they are a third of its height. Hidden rather than
        - removed, so the toolbar's dock target stays in the document. -->
-    <v-app-bar height="56" color="#0B0D13" class="mobile-app-bar" :model-value="!immersive">
+    <v-app-bar height="56" color="chrome" class="mobile-app-bar" :model-value="!immersive">
       <!-- Same size as every other icon in this bar. It was 16 while the
          - bar held nothing but a title; sitting next to 24px buttons it
          - just read as a small version of them. -->
@@ -213,7 +213,7 @@ html.mobile-shell .v-main {
 }
 
 .beacon-glow {
-  filter: drop-shadow(0 0 6px rgba(245, 169, 78, 0.55));
+  filter: drop-shadow(0 0 6px rgba(var(--v-theme-primary), 0.55));
 }
 
 .mobile-app-bar__action {

@@ -8,6 +8,7 @@
 
     <v-tabs v-model="tab" color="primary" show-arrows class="settings-tabs">
       <v-tab value="account">{{ $t('settings.account') }}</v-tab>
+      <v-tab value="appearance">{{ $t('settings.appearanceTitle') }}</v-tab>
       <v-tab value="playback">{{ $t('settings.playbackTitle') }}</v-tab>
       <v-tab value="library">{{ $t('settings.libraryTitle') }}</v-tab>
       <v-tab v-if="castingVisible" value="casting">
@@ -28,6 +29,10 @@
       <v-tabs-window-item value="account" eager>
         <account-section />
         <about-section />
+      </v-tabs-window-item>
+
+      <v-tabs-window-item value="appearance" eager>
+        <appearance-section />
       </v-tabs-window-item>
 
       <v-tabs-window-item value="playback" eager>
@@ -59,6 +64,7 @@ import PlaybackSection from '@/components/settings/PlaybackSection.vue'
 import AboutSection from '@/components/settings/AboutSection.vue'
 import AdvancedSection from '@/components/settings/AdvancedSection.vue'
 import AccountSection from '@/components/settings/AccountSection.vue'
+import AppearanceSection from '@/components/settings/AppearanceSection.vue'
 import LibrarySection from '@/components/settings/LibrarySection.vue'
 import CastPermissionsSection from '@/components/settings/CastPermissionsSection.vue'
 import StorageSection from '@/components/settings/StorageSection.vue'
@@ -73,6 +79,7 @@ export default {
     AboutSection,
     AdvancedSection,
     AccountSection,
+    AppearanceSection,
     LibrarySection,
     CastPermissionsSection,
     StorageSection,

@@ -880,7 +880,7 @@ export default {
   position: absolute;
   inset: -12px;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(245, 169, 78, 0.35), transparent 70%);
+  background: radial-gradient(circle, rgba(var(--v-theme-primary), 0.35), transparent 70%);
   animation: beacon-pulse 3.5s ease-in-out infinite;
 }
 
@@ -956,7 +956,7 @@ export default {
   padding: 16px 8px 12px;
   border-radius: 12px;
   border: 1px solid var(--beacon-hairline);
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(var(--v-theme-on-surface), 0.03);
   font: inherit;
   color: inherit;
   cursor: pointer;
@@ -971,7 +971,7 @@ export default {
 }
 
 .server-type-tile:not(.server-type-tile--locked):hover {
-  border-color: rgba(245, 169, 78, 0.35);
+  border-color: rgba(var(--v-theme-primary), 0.35);
 }
 
 .server-type-tile__icon {
@@ -989,7 +989,7 @@ export default {
 
 .server-type-tile__name {
   font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(var(--v-theme-on-surface), 0.5);
   transition: color 0.2s ease;
 }
 
@@ -997,9 +997,9 @@ export default {
  * the active nav-rail item and the fullscreen player's art glow, applied
  * here to "this is the signal you're tuned to" instead. */
 .server-type-tile--selected {
-  border-color: rgba(245, 169, 78, 0.5);
-  background: rgba(245, 169, 78, 0.08);
-  box-shadow: 0 0 20px rgba(245, 169, 78, 0.18);
+  border-color: rgba(var(--v-theme-primary), 0.5);
+  background: rgba(var(--v-theme-primary), 0.08);
+  box-shadow: 0 0 20px rgba(var(--v-theme-primary), 0.18);
 }
 
 .server-type-tile--selected .server-type-tile__icon {
@@ -1008,7 +1008,7 @@ export default {
 }
 
 .server-type-tile--selected .server-type-tile__name {
-  color: #fdf6ec;
+  color: rgb(var(--v-theme-on-surface));
   font-weight: 600;
 }
 
@@ -1021,7 +1021,7 @@ export default {
   height: 2px;
   border-radius: 2px;
   background: rgb(var(--v-theme-primary));
-  box-shadow: 0 0 8px 1px rgba(245, 169, 78, 0.6);
+  box-shadow: 0 0 8px 1px rgba(var(--v-theme-primary), 0.6);
 }
 
 /* Locked = unlit: quieter, not "broken" — no red, no strikethrough, just
@@ -1034,7 +1034,7 @@ export default {
   position: absolute;
   top: 6px;
   right: 6px;
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(var(--v-theme-on-surface), 0.3);
 }
 
 .quick-connect-panel {
@@ -1062,7 +1062,7 @@ export default {
    * off-center (trailing whitespace after the last digit, none before the
    * first). */
   padding-left: 0.3em;
-  color: #fdf6ec;
+  color: rgb(var(--v-theme-on-surface));
 }
 
 .plex-server-row {
@@ -1071,10 +1071,10 @@ export default {
   padding: 10px 14px;
   border-radius: 12px;
   border: 1px solid var(--beacon-hairline);
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(var(--v-theme-on-surface), 0.03);
   font: inherit;
   font-size: 0.9rem;
-  color: #fdf6ec;
+  color: rgb(var(--v-theme-on-surface));
   text-align: left;
   cursor: pointer;
   transition:
@@ -1084,8 +1084,8 @@ export default {
 
 .plex-server-row:hover,
 .plex-server-row:focus-visible {
-  border-color: rgba(245, 169, 78, 0.4);
-  background: rgba(245, 169, 78, 0.08);
+  border-color: rgba(var(--v-theme-primary), 0.4);
+  background: rgba(var(--v-theme-primary), 0.08);
 }
 
 .plex-server-row:focus-visible {

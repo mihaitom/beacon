@@ -344,7 +344,7 @@ export default {
 .lyrics-panel__calibrate-hint {
   text-align: center;
   font-size: 0.7rem;
-  color: rgba(245, 169, 78, 0.85);
+  color: rgba(var(--v-theme-primary), 0.85);
   padding: 2px 12px 0;
   flex-shrink: 0;
 }
@@ -365,7 +365,7 @@ export default {
   min-width: 3.5em;
   text-align: center;
   font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.45);
+  color: rgba(var(--v-theme-on-surface), 0.45);
   padding-inline: 8px;
 }
 
@@ -374,7 +374,7 @@ export default {
 }
 
 .lyrics-panel__sync-label--resettable:hover {
-  color: rgba(255, 255, 255, 0.75);
+  color: rgba(var(--v-theme-on-surface), 0.75);
 }
 
 .lyrics-panel__toolbar {
@@ -403,7 +403,7 @@ export default {
   min-width: 0;
   overflow: hidden;
   font-size: 0.7rem;
-  color: rgba(255, 255, 255, 0.4);
+  color: rgba(var(--v-theme-on-surface), 0.4);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -413,7 +413,7 @@ export default {
 }
 
 .lyrics-panel__source--link:hover {
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(var(--v-theme-on-surface), 0.7);
   text-decoration: underline;
 }
 
@@ -435,7 +435,7 @@ export default {
 .lyrics-panel__credit {
   overflow: hidden;
   font-size: 0.65rem;
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(var(--v-theme-on-surface), 0.3);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -453,7 +453,7 @@ export default {
   flex-shrink: 0;
   height: auto !important;
   margin-left: auto;
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(var(--v-theme-on-surface), 0.55);
 }
 
 /* .lyrics-panel__source has min-width: 0 (deliberately shrinkable, see its

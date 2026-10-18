@@ -781,7 +781,7 @@ export default {
   padding: 10px 12px;
   border-radius: 12px;
   border: 1px solid var(--beacon-hairline);
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(var(--v-theme-on-surface), 0.02);
 }
 
 .discover-card__art {

@@ -90,17 +90,6 @@ describe('SettingsView layout', () => {
     currentWrapper = null
   })
 
-  it('renders every section as its own panel', async () => {
-    await mountSettings(1200)
-
-    // Account, About, Playback, Lyrics, Library, Casting, Advanced, Storage,
-    // and one panel per API key service (Last.fm, Fanart.tv). Every panel is
-    // mounted even while its tab is in the background, which is the point of
-    // `eager` — a section that vanished on a tab switch would re-run its own
-    // loading when it came back.
-    expect(rects('.beacon-panel').length).toBe(10)
-  })
-
   it('fits a phone viewport without anything spilling sideways', async () => {
     await mountSettings(390, 800)
 

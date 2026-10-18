@@ -986,7 +986,7 @@ describe('NowPlayingView artist background', () => {
     expect(artworkToggle(wrapper)!.props('color')).toBe('primary')
     // Shown over the artist's photo, the wash only darkens: the cover's
     // colour on a sharp photo would read as a colour cast.
-    expect(vm.ambientStyle.background).toBe('rgba(18, 20, 28, 0.55)')
+    expect(vm.ambientStyle.background).toBe('rgba(var(--v-theme-background), 0.55)')
   })
 
   it('does not hide the artwork when there is no background to reveal', async () => {

@@ -252,7 +252,7 @@ export default {
   flex-direction: column;
   justify-content: safe center;
   scrollbar-width: thin;
-  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+  scrollbar-color: rgba(var(--v-theme-on-surface), 0.25) transparent;
 }
 
 .lyrics-panel__scroll--plain::-webkit-scrollbar {
@@ -265,7 +265,7 @@ export default {
 }
 
 .lyrics-panel__scroll--plain::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.25);
+  background: rgba(var(--v-theme-on-surface), 0.25);
   border-radius: 3px;
 }
 
@@ -307,7 +307,7 @@ export default {
   padding: 8px 0;
   font-weight: 600;
   line-height: 1.4;
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(var(--v-theme-on-surface), 0.55);
   text-align: center;
   margin: 0 auto;
   /* scale(), not font-size — font-size changes the line's own layout box,
@@ -332,7 +332,7 @@ export default {
 }
 
 .lyrics-panel__line--clickable:hover:not(.lyrics-panel__line--active) {
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(var(--v-theme-on-surface), 0.85);
 }
 
 .lyrics-panel__line--past {
@@ -340,14 +340,14 @@ export default {
 }
 
 .lyrics-panel__line--active {
-  color: #fdf6ec;
+  color: rgb(var(--v-theme-on-surface));
   opacity: 1;
-  text-shadow: 0 0 24px rgba(245, 169, 78, 0.45);
+  text-shadow: 0 0 24px rgba(var(--v-theme-primary), 0.45);
 }
 
 .lyrics-panel__line--plain {
   white-space: pre-line;
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(var(--v-theme-on-surface), 0.55);
   font-weight: 400;
   line-height: 1.7;
 }
@@ -419,7 +419,7 @@ export default {
 .lyrics-lines--immersive .lyrics-panel__line--active {
   transform: scale(1.25);
   text-shadow:
-    0 0 24px rgba(245, 169, 78, 0.45),
+    0 0 24px rgba(var(--v-theme-primary), 0.45),
     0 1px 6px rgba(0, 0, 0, 0.7);
 }
 
@@ -438,8 +438,8 @@ export default {
 }
 
 .lyrics-panel__scroll--calibrating .lyrics-panel__line--clickable:hover {
-  color: #fdf6ec;
-  text-shadow: 0 0 16px rgba(245, 169, 78, 0.5);
+  color: rgb(var(--v-theme-on-surface));
+  text-shadow: 0 0 16px rgba(var(--v-theme-primary), 0.5);
 }
 
 @media (prefers-reduced-motion: reduce) {

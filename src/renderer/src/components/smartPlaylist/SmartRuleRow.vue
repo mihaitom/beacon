@@ -95,7 +95,7 @@ export default {
 }
 
 .smart-rule:hover {
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(var(--v-theme-on-surface), 0.02);
 }
 
 /* The value takes what is left of the line and wraps under the field and

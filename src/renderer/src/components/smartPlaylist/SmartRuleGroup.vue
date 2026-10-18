@@ -110,7 +110,7 @@ export default {
   padding: 8px 8px 6px 14px;
   border-radius: 12px;
   border-left: 2px solid rgba(var(--v-theme-primary), 0.7);
-  background: rgba(255, 255, 255, 0.025);
+  background: rgba(var(--v-theme-on-surface), 0.025);
 }
 
 .smart-group--invalid {

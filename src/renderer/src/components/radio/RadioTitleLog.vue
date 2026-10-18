@@ -616,7 +616,7 @@ export default {
  * since this is the field's inner control. */
 .title-log__search-field :deep(.v-field) {
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(var(--v-theme-on-surface), 0.06);
 }
 
 /* 16px is a floor, not a taste: a phone browser zooms the page in when a
@@ -630,7 +630,7 @@ export default {
 }
 
 .title-log__search-field :deep(.v-field:hover) {
-  background: rgba(255, 255, 255, 0.09);
+  background: rgba(var(--v-theme-on-surface), 0.09);
 }
 
 /* No min-height: 0 needed on this one, unusually: a flex item whose own
@@ -835,11 +835,19 @@ export default {
  * never theirs. */
 .title-log--immersive :deep(.v-timeline-divider__after),
 .title-log--immersive :deep(.v-timeline-divider__before) {
-  background: color-mix(in srgb, #fff 30%, rgb(var(--v-theme-background)));
+  background: color-mix(
+    in srgb,
+    rgb(var(--v-theme-on-surface)) 30%,
+    rgb(var(--v-theme-background))
+  );
 }
 
 .title-log--immersive :deep(.v-timeline-divider__inner-dot) {
-  background: color-mix(in srgb, #fff 52%, rgb(var(--v-theme-background)));
+  background: color-mix(
+    in srgb,
+    rgb(var(--v-theme-on-surface)) 52%,
+    rgb(var(--v-theme-background))
+  );
 }
 
 /* Restated rather than left to win on specificity: the rule above is one

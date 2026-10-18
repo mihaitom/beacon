@@ -261,7 +261,7 @@ export default {
   padding: 8px 12px;
   border-inline-start: 2px solid rgb(var(--v-theme-primary));
   border-radius: 0 6px 6px 0;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(var(--v-theme-on-surface), 0.03);
   opacity: 0.85;
 }
 

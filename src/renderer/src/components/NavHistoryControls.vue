@@ -57,10 +57,10 @@ export default {
 /* Quieter than a destination in the rail - this is chrome, and the two
  * arrows sit right next to the app's own name. */
 .nav-history__button {
-  color: rgba(255, 255, 255, 0.65);
+  color: rgba(var(--v-theme-on-surface), 0.65);
 }
 
 .nav-history__button:hover:not(.v-btn--disabled) {
-  color: rgba(255, 255, 255, 0.95);
+  color: rgba(var(--v-theme-on-surface), 0.95);
 }
 </style>

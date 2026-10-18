@@ -75,7 +75,7 @@ export default {
   border-radius: 16px;
   border: 1px solid var(--beacon-hairline);
   background:
-    radial-gradient(120% 90% at 100% 100%, rgba(245, 169, 78, 0.07), transparent 60%),
+    radial-gradient(120% 90% at 100% 100%, rgba(var(--v-theme-primary), 0.07), transparent 60%),
     rgb(var(--v-theme-surface));
   color: inherit;
   text-decoration: none;
@@ -83,7 +83,7 @@ export default {
 }
 
 .genre-crate:hover {
-  border-color: rgba(245, 169, 78, 0.4);
+  border-color: rgba(var(--v-theme-primary), 0.4);
 }
 
 .genre-crate:focus-visible {
@@ -120,7 +120,7 @@ export default {
   flex-wrap: wrap;
   column-gap: 12px;
   font-size: 0.8rem;
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(var(--v-theme-on-surface), 0.55);
   font-variant-numeric: tabular-nums;
 }
 

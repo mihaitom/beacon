@@ -110,7 +110,7 @@ export default {
   gap: 1px;
   padding: 6px 3px;
   border-radius: 9999px;
-  background: #1a1d27;
+  background: rgb(var(--v-theme-surface));
   border: 1px solid var(--beacon-hairline);
   z-index: 5;
   /* Prevents the browser's own touch-scroll/zoom gestures from hijacking a

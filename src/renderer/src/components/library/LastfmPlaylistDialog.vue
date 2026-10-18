@@ -1069,7 +1069,7 @@ export default {
   gap: 1rem;
   border-radius: 14px;
   border: 1px solid var(--beacon-hairline);
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(var(--v-theme-on-surface), 0.02);
   padding: 14px 18px;
 }
 
@@ -1139,7 +1139,7 @@ export default {
   border-bottom: 1px solid var(--beacon-hairline);
   padding-top: 10px;
   padding-bottom: 10px;
-  background: rgba(255, 255, 255, 0.02);
+  background: rgba(var(--v-theme-on-surface), 0.02);
 }
 
 /* The eyebrow's shape, in muted white rather than amber: amber is the
@@ -1150,7 +1150,7 @@ export default {
   font-weight: 700;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(var(--v-theme-on-surface), 0.6);
 }
 
 /* The arrow column has no heading of its own, so the library heading has
@@ -1189,7 +1189,7 @@ export default {
   font-size: 0.875rem;
   font-variant-numeric: tabular-nums;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(var(--v-theme-on-surface), 0.55);
   text-align: right;
 }
 

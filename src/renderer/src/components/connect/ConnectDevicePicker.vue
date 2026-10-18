@@ -2,7 +2,7 @@
   <v-card min-width="380" max-width="420" class="connect-picker">
     <v-toolbar
       density="compact"
-      color="#0B0D13"
+      color="chrome"
       class="connect-picker__toolbar"
       :title="$t('connect.playingOn')"
     >
@@ -414,7 +414,7 @@ export default {
 }
 
 .connect-picker__active-glow {
-  filter: drop-shadow(0 0 5px rgba(245, 169, 78, 0.5));
+  filter: drop-shadow(0 0 5px rgba(var(--v-theme-primary), 0.5));
 }
 
 .connect-picker__actions {
@@ -469,11 +469,11 @@ export default {
   width: 3px;
   border-radius: 0 2px 2px 0;
   background: rgb(var(--v-theme-primary));
-  box-shadow: 0 0 10px 1px rgba(245, 169, 78, 0.55);
+  box-shadow: 0 0 10px 1px rgba(var(--v-theme-primary), 0.55);
 }
 
 .this-device--active .v-icon {
-  filter: drop-shadow(0 0 5px rgba(245, 169, 78, 0.4));
+  filter: drop-shadow(0 0 5px rgba(var(--v-theme-primary), 0.4));
 }
 
 .connect-picker__active-glow {

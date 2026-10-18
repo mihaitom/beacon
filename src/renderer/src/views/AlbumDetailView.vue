@@ -358,7 +358,7 @@ export default {
  * generic .detail-hero__subtitle wrapper — that wrapper is shared with the
  * artist page's own subtitle slot. */
 .detail-hero__subtitle-link {
-  color: rgba(255, 255, 255, 0.75);
+  color: rgba(var(--v-theme-on-surface), 0.75);
   text-decoration: none;
 }
 

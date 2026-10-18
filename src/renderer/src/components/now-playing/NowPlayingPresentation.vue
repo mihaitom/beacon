@@ -4,6 +4,7 @@
     class="now-playing"
     :style="{ '--photo-scrim': scrimStrength }"
     :class="{
+      [`v-theme--${nightTheme}`]: true,
       'now-playing--compact': compact,
       'now-playing--landscape': isLandscape,
       'now-playing--wide-stage': isLandscape && source.ui.artworkHidden,
@@ -11,94 +12,98 @@
       'now-playing--artwork-hidden': source.ui.artworkHidden,
     }"
   >
-    <now-playing-backdrop
-      :source="source.backdrop.source"
-      :is-artist="source.backdrop.isArtist"
-      :scrim-style="source.ambientStyle"
-    />
-    <!-- Wherever the text (and on a phone held sideways the controls) sits
-     - low over the picture: darkened from the bottom up, more over a light
-     - photo than a dark one. -->
-    <div v-if="bottomScrim" class="now-playing__bottom-scrim" />
-
-    <now-playing-toolbar
-      v-if="!isLandscape"
-      :compact="compact"
-      :is-fullscreen="isFullscreen"
-      @toggle-fullscreen="toggleFullscreen"
-    >
-      <!-- A party guest's own control (the skip vote) is passed in here. -->
-      <slot name="toolbar-actions" />
-    </now-playing-toolbar>
-
-    <!-- The container-query host — see the stage components' own artSize
-     - comments. .now-playing's own grid (see <style>, grid-template-rows:
-     - minmax(0, 1fr) auto) is what makes this take up exactly whatever's left
-     - after the visualizer row, and container-type: size is what lets
-     - artSize/.now-playing__content--split etc. measure *that* real,
-     - instead of the raw viewport (vh/vw), which had no idea how much of
-     - itself the app-bar/PlayerBar/visualizer row had already taken.
-     - A separate element from .now-playing__content on purpose — an
-     - element can't size *itself* using its own cqh/cqw units (circular,
-     - the browser just ignores it), so this one only ever gets plain flex
-     - sizing, and .now-playing__content (and everything inside it)
-     - measures against this ancestor instead. -->
-    <div ref="stage" class="now-playing__stage">
-      <!-- Each mode's stage is its own component (see
-       - NowPlayingStageMobile.vue / NowPlayingStageDesktop.vue): their
-       - layouts share almost nothing. `compact` is fixed per route (the
-       - mobile shell hardcodes it), so this never swaps on a mounted view —
-       - no live remount. -->
-      <now-playing-stage-mobile v-if="compact" :landscape="isLandscape" />
-      <now-playing-stage-desktop v-else />
-    </div>
-
-    <!-- On a phone held sideways the stage is one column, holding the
-     - artwork or the lyrics behind it; the toolbar, the track text and the
-     - host's controls take the other. See the grid in <style>. -->
-    <template v-if="isLandscape">
-      <div class="now-playing__side-toolbar">
-        <now-playing-toolbar compact inline :is-fullscreen="isFullscreen">
-          <slot name="toolbar-actions" />
-        </now-playing-toolbar>
-      </div>
-      <now-playing-track-panels
-        v-if="hasPlayable"
-        compact
-        landscape
-        :align-start="photoOnly"
-        :mini-cover="photoOnly"
-        class="now-playing__side-info"
+    <!-- Always dark, over the artwork - on a light theme in that theme's
+     - night (plugins/theme.ts's nightTheme()). -->
+    <v-theme-provider :theme="nightTheme">
+      <now-playing-backdrop
+        :source="source.backdrop.source"
+        :is-artist="source.backdrop.isArtist"
+        :scrim-style="source.ambientStyle"
       />
-    </template>
+      <!-- Wherever the text (and on a phone held sideways the controls) sits
+       - low over the picture: darkened from the bottom up, more over a light
+       - photo than a dark one. -->
+      <div v-if="bottomScrim" class="now-playing__bottom-scrim" />
 
-    <!-- Real audio-reactive either way: a local Web Audio analyser during
-     - local playback, or the backend's own real-time analysis (see
-     - connect/core/audio_analysis.py) while casting to a target it can
-     - actually run against. The row itself lives in
-     - NowPlayingVisualizer.vue (its own height transition, mount/hide delay
-     - and compact height). -->
-    <now-playing-visualizer v-if="!isLandscape" :compact="compact" />
+      <now-playing-toolbar
+        v-if="!isLandscape"
+        :compact="compact"
+        :is-fullscreen="isFullscreen"
+        @toggle-fullscreen="toggleFullscreen"
+      >
+        <!-- A party guest's own control (the skip vote) is passed in here. -->
+        <slot name="toolbar-actions" />
+      </now-playing-toolbar>
 
-    <div v-if="isLandscape" class="now-playing__side-controls">
-      <slot name="controls" />
-    </div>
+      <!-- The container-query host — see the stage components' own artSize
+       - comments. .now-playing's own grid (see <style>, grid-template-rows:
+       - minmax(0, 1fr) auto) is what makes this take up exactly whatever's left
+       - after the visualizer row, and container-type: size is what lets
+       - artSize/.now-playing__content--split etc. measure *that* real,
+       - instead of the raw viewport (vh/vw), which had no idea how much of
+       - itself the app-bar/PlayerBar/visualizer row had already taken.
+       - A separate element from .now-playing__content on purpose — an
+       - element can't size *itself* using its own cqh/cqw units (circular,
+       - the browser just ignores it), so this one only ever gets plain flex
+       - sizing, and .now-playing__content (and everything inside it)
+       - measures against this ancestor instead. -->
+      <div ref="stage" class="now-playing__stage">
+        <!-- Each mode's stage is its own component (see
+         - NowPlayingStageMobile.vue / NowPlayingStageDesktop.vue): their
+         - layouts share almost nothing. `compact` is fixed per route (the
+         - mobile shell hardcodes it), so this never swaps on a mounted view —
+         - no live remount. -->
+        <now-playing-stage-mobile v-if="compact" :landscape="isLandscape" />
+        <now-playing-stage-desktop v-else />
+      </div>
 
-    <!-- Positioned in .now-playing's own layout (which is already
-     - `position: relative`, see its own CSS), not inside the bars or
-     - .now-playing__visualizer-row above — see VisualizerDebugOverlay's
-     - own comment for why living inside them either covered the bars or
-     - compressed them, reported live 2026-09-05 both times. This
-     - way it can never do either: it takes no layout space from the
-     - visualizer row at all, floating over whatever's underneath instead
-     - (the artwork/backdrop area, not the bars themselves, for the
-     - top-left corner this actually renders in). -->
-    <component
-      :is="source.debugOverlayComponent"
-      v-if="source.debugOverlayComponent"
-      :debug="source.visualizer.debug"
-      class="now-playing__visualizer-debug"
-    />
+      <!-- On a phone held sideways the stage is one column, holding the
+       - artwork or the lyrics behind it; the toolbar, the track text and the
+       - host's controls take the other. See the grid in <style>. -->
+      <template v-if="isLandscape">
+        <div class="now-playing__side-toolbar">
+          <now-playing-toolbar compact inline :is-fullscreen="isFullscreen">
+            <slot name="toolbar-actions" />
+          </now-playing-toolbar>
+        </div>
+        <now-playing-track-panels
+          v-if="hasPlayable"
+          compact
+          landscape
+          :align-start="photoOnly"
+          :mini-cover="photoOnly"
+          class="now-playing__side-info"
+        />
+      </template>
+
+      <!-- Real audio-reactive either way: a local Web Audio analyser during
+       - local playback, or the backend's own real-time analysis (see
+       - connect/core/audio_analysis.py) while casting to a target it can
+       - actually run against. The row itself lives in
+       - NowPlayingVisualizer.vue (its own height transition, mount/hide delay
+       - and compact height). -->
+      <now-playing-visualizer v-if="!isLandscape" :compact="compact" />
+
+      <div v-if="isLandscape" class="now-playing__side-controls">
+        <slot name="controls" />
+      </div>
+
+      <!-- Positioned in .now-playing's own layout (which is already
+       - `position: relative`, see its own CSS), not inside the bars or
+       - .now-playing__visualizer-row above — see VisualizerDebugOverlay's
+       - own comment for why living inside them either covered the bars or
+       - compressed them, reported live 2026-09-05 both times. This
+       - way it can never do either: it takes no layout space from the
+       - visualizer row at all, floating over whatever's underneath instead
+       - (the artwork/backdrop area, not the bars themselves, for the
+       - top-left corner this actually renders in). -->
+      <component
+        :is="source.debugOverlayComponent"
+        v-if="source.debugOverlayComponent"
+        :debug="source.visualizer.debug"
+        class="now-playing__visualizer-debug"
+      />
+    </v-theme-provider>
   </div>
 </template>
 
@@ -110,7 +115,7 @@ import NowPlayingVisualizer from '@/components/now-playing/NowPlayingVisualizer.
 import NowPlayingToolbar from '@/components/now-playing/NowPlayingToolbar.vue'
 import NowPlayingTrackPanels from '@/components/now-playing/NowPlayingTrackPanels.vue'
 import { nowPlayingSourceMixin } from '@/components/now-playing/useSource'
-import { appAccent } from '@/services/appAccent'
+import { borrowAccent, useAppearanceStore } from '@/stores/appearance'
 import {
   bottomScrimStrength,
   colourBehindControls,
@@ -118,11 +123,6 @@ import {
   type Rgb,
 } from '@/services/imageBrightness'
 import { liftForContrast } from '@/services/visualizerColor'
-
-// Warm amber — the same signal color the app is named after (see main.ts's
-// 'beacon' theme) — used whenever there's nothing to extract a color from
-// yet (radio has no artwork, or extraction is still in flight/failed).
-const FALLBACK_COLOR = '245, 169, 78'
 
 /** The shared Now Playing presentation: the backdrop, the toolbar, whichever
  * stage fits (desktop side-by-side, phone flip card), the visualizer and the
@@ -175,6 +175,9 @@ export default {
     }
   },
   computed: {
+    nightTheme(): string {
+      return useAppearanceStore().nightTheme
+    },
     isLandscape(): boolean {
       return this.compact && this.landscape
     },
@@ -248,23 +251,16 @@ export default {
     this.endSlide?.()
     document.removeEventListener('fullscreenchange', this.onFullscreenChange)
     // The borrowed accent goes back with the view.
-    this.applyPrimary(FALLBACK_COLOR)
+    this.applyPrimary(null)
     // Leaving shouldn't strand the whole window in fullscreen with nothing
     // controlling it anymore.
     if (document.fullscreenElement === this.$refs.root) void document.exitFullscreen()
   },
   methods: {
-    /** Puts `color` - an "r, g, b" triplet - into the theme's primary slot,
-     * and mirrors it for the canvas components that cannot read a CSS
-     * variable (the waveform). Going through the theme object rather than
-     * the --v-theme-primary variable directly is what lets Vuetify
-     * re-derive `on-primary` for it, so text on a primary surface keeps its
-     * contrast. */
-    applyPrimary(color: string): void {
-      appAccent.value = color
-      const theme = this.$vuetify.theme
-      const colors = theme.themes[theme.name]?.colors
-      if (colors) colors.primary = `rgb(${color})`
+    /** Lends `color` - an "r, g, b" triplet - to the theme's primary, or
+     * with null gives the theme its own back (see borrowAccent()). */
+    applyPrimary(color: string | null): void {
+      borrowAccent(this.$vuetify.theme.themes, useAppearanceStore().$state, color)
     },
     /** Requests fullscreen on this view's own root element, not
      * document.documentElement — the point is hiding the rest of the app
@@ -413,7 +409,8 @@ export default {
   overflow: hidden;
   /* Opaque fallback behind the two layers below — matters for radio, where
    * the backdrop has no image to show. */
-  background: #12141c;
+  background: rgb(var(--v-theme-background));
+  color: rgb(var(--v-theme-on-background));
   /* What the lyrics stand on, in every stage: a soft darkening that fades
    * out towards every edge of their box, so it reads as shade behind the
    * text rather than as a panel. As strong as the photo needs (see

@@ -107,11 +107,11 @@ export default {
 }
 
 .top-bar-search__field :deep(.v-field) {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(var(--v-theme-on-surface), 0.06);
 }
 
 .top-bar-search__field :deep(.v-field--focused) {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(var(--v-theme-on-surface), 0.1);
 }
 
 .top-bar-search__hint {
@@ -120,8 +120,8 @@ export default {
   letter-spacing: 0.04em;
   padding: 2px 6px;
   border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  color: rgba(255, 255, 255, 0.5);
+  border: 1px solid rgba(var(--v-theme-on-surface), 0.16);
+  color: rgba(var(--v-theme-on-surface), 0.5);
   white-space: nowrap;
 }
 </style>

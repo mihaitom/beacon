@@ -1,3 +1,5 @@
+import { themeAccent } from '@/services/appAccent'
+
 /**
  * Picking a colour the Now Playing visualizer bars can actually be seen in.
  *
@@ -6,12 +8,12 @@
  * a real colour, but a black-and-white or very dark photo extracts to a grey
  * or near-black, and bars drawn in it vanish into the picture behind them -
  * the exact case this exists for. So a grey or dark extraction falls back to
- * the app's amber, and anything kept is lifted to a brightness and
+ * the theme's accent, and anything kept is lifted to a brightness and
  * saturation that stands off the background rather than matching it.
  */
 
-/** The app's amber - what the bars use with no background at all. */
-export const VISUALIZER_FALLBACK = '245, 169, 78'
+/** The theme's own accent - what the bars use with no background at all. */
+const fallback = () => themeAccent.value
 
 /** Below these the extracted colour has nothing to pop with: `s` is how
  * close to grey it is (hue barely matters then), `l` how dark. */
@@ -24,15 +26,15 @@ const TARGET_LIGHTNESS_MIN = 0.55
 const TARGET_LIGHTNESS_MAX = 0.72
 
 /** An "r, g, b" string (what colorExtractor.ts returns) as bars can use it,
- * or VISUALIZER_FALLBACK when it is grey, dark, or unparseable. */
+ * or the theme's accent when it is grey, dark, or unparseable. */
 export function visualizerBarColor(rgb: string | null): string {
-  if (!rgb) return VISUALIZER_FALLBACK
+  if (!rgb) return fallback()
   const parts = rgb.split(',').map((part) => Number(part.trim()))
   if (parts.length !== 3 || parts.some((value) => !Number.isFinite(value))) {
-    return VISUALIZER_FALLBACK
+    return fallback()
   }
   const [h, s, l] = rgbToHsl(parts[0]!, parts[1]!, parts[2]!)
-  if (s < MIN_SATURATION || l < MIN_LIGHTNESS) return VISUALIZER_FALLBACK
+  if (s < MIN_SATURATION || l < MIN_LIGHTNESS) return fallback()
   return hslToRgbString(
     h,
     Math.max(s, TARGET_SATURATION),

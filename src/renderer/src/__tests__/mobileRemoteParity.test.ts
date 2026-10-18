@@ -2,6 +2,8 @@ import { readFileSync } from 'fs'
 import { resolve } from 'path'
 import { describe, expect, it } from 'vitest'
 import { MOBILE_ROW_ART_SIZE } from '@/components/mobile/rowMetrics'
+import { PRESET_THEMES } from '@/plugins/theme'
+import { hexToTriplet } from '@/services/themeColors'
 
 /**
  * Beacon shows the same lists on the same phone two ways: the mobile web
@@ -78,12 +80,16 @@ describe('the mobile web view and the phone remote', () => {
     expect(declaration(baseCss, '.mobile-row:last-child', 'border-bottom')).toBe('none')
   })
 
+  // The Remote Control has no themes: it is Beacon's own colours, so it is
+  // held against the Beacon theme the app's tokens are filled from.
   it('use the same chrome colour and the same hairline', () => {
-    expect(token(remoteCss, '--chrome').toLowerCase()).toBe(
-      token(baseCss, '--beacon-chrome').toLowerCase(),
-    )
+    const beacon = PRESET_THEMES.find((preset) => preset.id === 'beacon')!.definition.colors!
+    expect(token(remoteCss, '--chrome').toLowerCase()).toBe((beacon.chrome as string).toLowerCase())
+    const hairlineAlpha = /--beacon-hairline:\s*rgba\(var\(--v-theme-primary\),\s*([0-9.]+)\)/.exec(
+      baseCss,
+    )![1]
     expect(token(remoteCss, '--border').replace(/\s/g, '')).toBe(
-      token(baseCss, '--beacon-hairline').replace(/\s/g, ''),
+      `rgba(${hexToTriplet(beacon.primary as string)},${hairlineAlpha})`.replace(/\s/g, ''),
     )
   })
 })

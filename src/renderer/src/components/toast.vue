@@ -170,7 +170,7 @@ export default defineComponent({
   gap: 0.75rem;
   padding: 0.75rem 0.75rem 0.75rem 1rem;
   border-radius: 12px;
-  background: #1a1d27;
+  background: rgb(var(--v-theme-surface));
   box-shadow:
     inset 0 0 0 1px var(--beacon-hairline),
     0 12px 28px rgba(0, 0, 0, 0.4);
@@ -236,7 +236,7 @@ export default defineComponent({
   height: 28px;
   margin-top: 1px;
   border-radius: 8px;
-  background: color-mix(in srgb, var(--toast-accent) 16%, #1a1d27);
+  background: color-mix(in srgb, var(--toast-accent) 16%, rgb(var(--v-theme-surface)));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--toast-accent) 30%, transparent);
   color: var(--toast-accent);
 }

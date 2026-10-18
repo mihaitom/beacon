@@ -3,7 +3,8 @@
     <div
       ref="band"
       class="detail-page__band"
-      :style="textEnd ? { '--text-end': `${textEnd}px` } : {}"
+      :class="{ 'detail-page__band--on-light': onLight }"
+      :style="bandStyle"
     >
       <!-- The artwork layer, across the top and masked out towards the
        - bottom so the content below sits on the plain surface. `url` is
@@ -11,11 +12,16 @@
        - the fallback and then swaps to a photo. Two layers so a change
        - fades rather than cuts (see services/crossfadeBackdrop.ts). -->
       <template v-if="show">
+        <!-- On a light theme the header stays dark (see DetailHero.vue), so
+           - the band gets the night's background under the artwork, down to
+           - where the header ends. -->
+        <div v-if="onLight" class="detail-page__night" :class="nightClass" />
         <div
           v-for="(layerUrl, index) in layers.urls"
           :key="index"
           class="detail-page__backdrop"
           :class="{
+            [nightClass]: true,
             'detail-page__backdrop--photo': layerIsPhoto[index],
             'detail-page__backdrop--filled': layerIsPhoto[index] && Boolean(fills[index]),
             'detail-page__backdrop--shown': index === layers.active && Boolean(layerUrl),
@@ -29,7 +35,7 @@
             </div>
           </template>
         </div>
-        <div class="detail-page__scrim" />
+        <div class="detail-page__scrim" :class="nightClass" />
       </template>
       <div ref="content" class="detail-page__content">
         <slot />
@@ -52,6 +58,11 @@ import {
   extractLeftEdgeFill,
 } from '@/services/edgeFill'
 import { textEnd } from '@/services/textExtent'
+import { useAppearanceStore } from '@/stores/appearance'
+
+// Below where the header ends on a light theme, the dark band fades into
+// the page over this much.
+const NIGHT_FADE = 64
 
 /**
  * A detail page's backdrop: a Fanart.tv photo shown sharp when there is
@@ -96,8 +107,32 @@ export default {
       fills: [null, null] as (EdgeFill | null)[],
       /** Where the header text ends, in px from the band's left. */
       textEnd: 0,
+      /** Where the header itself ends, in px from the band's top. */
+      heroEnd: 0,
       textObserver: null as ResizeObserver | null,
     }
+  },
+  computed: {
+    appearance() {
+      return useAppearanceStore()
+    },
+    /** Whether the page around the header is light - the header itself
+     * never is. */
+    onLight(): boolean {
+      return this.appearance.nightTheme !== this.appearance.theme
+    },
+    /** The band's own layers are drawn in the night theme: its scrims
+     * darken towards the night's background, not the page's. */
+    nightClass(): string {
+      return `v-theme--${this.appearance.nightTheme}`
+    },
+    bandStyle(): Record<string, string> {
+      return {
+        ...(this.textEnd ? { '--text-end': `${this.textEnd}px` } : {}),
+        ...(this.heroEnd ? { '--hero-end': `${this.heroEnd}px` } : {}),
+        '--night-fade': `${NIGHT_FADE}px`,
+      }
+    },
   },
   methods: {
     layerStyle(url: string | null, index: number): Record<string, string> {
@@ -127,6 +162,10 @@ export default {
       const hero = content.querySelectorAll('.detail-hero__main, .detail-hero__bio')
       const roots = hero.length ? [...hero] : [content]
       this.textEnd = Math.round(Math.max(...roots.map((root) => textEnd(root, band))))
+      const header = content.querySelector('.detail-hero')
+      this.heroEnd = header
+        ? Math.round(header.getBoundingClientRect().bottom - band.getBoundingClientRect().top)
+        : 0
     },
   },
   watch: {
@@ -408,10 +447,41 @@ export default {
 .detail-page__scrim {
   background: linear-gradient(
     to bottom,
-    rgba(18, 20, 28, 0.72) 0%,
-    rgba(18, 20, 28, 0.3) 38%,
-    rgba(18, 20, 28, 0) 100%
+    rgba(var(--v-theme-background), 0.72) 0%,
+    rgba(var(--v-theme-background), 0.3) 38%,
+    rgba(var(--v-theme-background), 0) 100%
   );
+}
+
+/* A light theme: the artwork, its scrim and the night under them end with
+ * the header and fade into the page over --night-fade, instead of running
+ * on behind the light content below it. The album page's band is the
+ * header alone, so there they run its full height and only soften the
+ * edge onto the track list. */
+.detail-page__night {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+  background: rgb(var(--v-theme-background));
+}
+
+.detail-page__band--on-light .detail-page__night,
+.detail-page__band--on-light .detail-page__backdrop,
+.detail-page__band--on-light .detail-page__scrim {
+  height: calc(var(--hero-end, 0px) + var(--night-fade));
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--night-fade)), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - var(--night-fade)), transparent);
+}
+
+.detail-page--banded .detail-page__band--on-light .detail-page__night,
+.detail-page--banded .detail-page__band--on-light .detail-page__backdrop,
+.detail-page--banded .detail-page__band--on-light .detail-page__scrim {
+  height: auto;
+  bottom: 0;
+  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent);
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent);
 }
 
 .detail-page__content,

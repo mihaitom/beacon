@@ -518,11 +518,11 @@ export default {
   background:
     linear-gradient(
       120deg,
-      rgba(18, 20, 28, 0.94),
-      rgba(18, 20, 28, 0.74) 48%,
-      rgba(245, 169, 78, 0.18)
+      rgba(var(--v-theme-background), 0.94),
+      rgba(var(--v-theme-background), 0.74) 48%,
+      rgba(var(--v-theme-primary), 0.18)
     ),
-    linear-gradient(to bottom, transparent 55%, rgba(18, 20, 28, 0.55));
+    linear-gradient(to bottom, transparent 55%, rgba(var(--v-theme-background), 0.55));
   z-index: -1;
 }
 
@@ -568,11 +568,11 @@ export default {
 }
 
 .smart-editor__name:not([readonly]):hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: rgba(var(--v-theme-on-surface), 0.04);
 }
 
 .smart-editor__name:not([readonly]):focus {
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(var(--v-theme-on-surface), 0.06);
   border-color: var(--beacon-hairline);
 }
 

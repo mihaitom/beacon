@@ -605,6 +605,23 @@ export default {
     logout: 'Se déconnecter',
     language: 'Langue',
     libraryTitle: 'Bibliothèque',
+    appearanceTitle: 'Apparence',
+    theme: 'Thème',
+    themeHint: "S'applique uniquement à cet appareil.",
+    themeGroupDark: 'Sombres',
+    themeGroupLight: 'Clairs',
+    customTheme: 'Vos couleurs',
+    customThemeBackground: 'Arrière-plan',
+    customThemeAccent: 'Accent',
+    customThemeLowContrast:
+      "L'accent ressort à peine sur cet arrière-plan : boutons et mises en évidence seront difficiles à voir.",
+    themes: {
+      beacon: { name: 'Beacon', description: 'Ambre sur bleu nuit' },
+      graphite: { name: 'Graphite', description: 'Anthracite neutre, accent turquoise' },
+      paper: { name: 'Papier', description: 'Blanc chaud, accent cuivre' },
+      mist: { name: 'Brume', description: 'Gris clair froid, accent bleu' },
+      custom: { name: 'Personnalisé', description: 'Votre arrière-plan et votre accent' },
+    },
     libraryScanHint:
       'Demandez à {server} de rechercher les fichiers nouveaux, modifiés ou supprimés.',
     rescanLibrary: 'Rescanner la bibliothèque',

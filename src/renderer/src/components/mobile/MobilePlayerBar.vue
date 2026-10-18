@@ -5,7 +5,7 @@
     app
     inset
     height="60"
-    color="#0B0D13"
+    color="chrome"
     class="mobile-player-bar"
     @click="$router.push('/m/now-playing')"
   >

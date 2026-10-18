@@ -328,7 +328,7 @@ export default {
   font-size: 1.6rem;
   font-weight: 700;
   line-height: 1;
-  color: rgba(255, 255, 255, 0.9);
+  color: rgba(var(--v-theme-on-surface), 0.9);
 }
 
 .genre-register__entries {
@@ -344,7 +344,7 @@ export default {
   align-items: baseline;
   gap: 6px;
   padding: 3px 0;
-  color: rgba(255, 255, 255, 0.78);
+  color: rgba(var(--v-theme-on-surface), 0.78);
   text-decoration: none;
   font-size: 0.92rem;
   line-height: 1.45;
@@ -359,28 +359,28 @@ export default {
 .genre-register__leader {
   flex: 1 1 auto;
   min-width: 12px;
-  border-bottom: 1px dotted rgba(255, 255, 255, 0.18);
+  border-bottom: 1px dotted rgba(var(--v-theme-on-surface), 0.18);
   transform: translateY(-4px);
 }
 
 .genre-register__count {
   flex-shrink: 0;
   font-size: 0.78rem;
-  color: rgba(255, 255, 255, 0.45);
+  color: rgba(var(--v-theme-on-surface), 0.45);
   font-variant-numeric: tabular-nums;
 }
 
 .genre-register__entry--strong {
-  color: #fff;
+  color: rgb(var(--v-theme-on-surface));
   font-weight: 600;
 }
 
 .genre-register__entry--strong .genre-register__count {
-  color: rgba(255, 255, 255, 0.7);
+  color: rgba(var(--v-theme-on-surface), 0.7);
 }
 
 .genre-register__entry--faint {
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(var(--v-theme-on-surface), 0.5);
 }
 
 .genre-register__entry:hover,
@@ -389,7 +389,7 @@ export default {
 }
 
 .genre-register__entry:hover .genre-register__leader {
-  border-bottom-color: rgba(245, 169, 78, 0.5);
+  border-bottom-color: rgba(var(--v-theme-primary), 0.5);
 }
 
 .genre-register__entry:focus-visible {

@@ -34,8 +34,8 @@ export default {
   transform: translateX(-50%);
   background: radial-gradient(
     circle,
-    rgba(245, 169, 78, 0.16) 0%,
-    rgba(245, 169, 78, 0.06) 35%,
+    rgba(var(--v-theme-primary), 0.16) 0%,
+    rgba(var(--v-theme-primary), 0.06) 35%,
     transparent 70%
   );
   pointer-events: none;

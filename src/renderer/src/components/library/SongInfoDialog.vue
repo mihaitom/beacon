@@ -222,11 +222,11 @@ export default {
   background:
     linear-gradient(
       120deg,
-      rgba(18, 20, 28, 0.94) 0%,
-      rgba(18, 20, 28, 0.74) 48%,
-      rgba(245, 169, 78, 0.18) 100%
+      rgba(var(--v-theme-background), 0.94) 0%,
+      rgba(var(--v-theme-background), 0.74) 48%,
+      rgba(var(--v-theme-primary), 0.18) 100%
     ),
-    linear-gradient(to bottom, transparent 55%, rgba(18, 20, 28, 0.55));
+    linear-gradient(to bottom, transparent 55%, rgba(var(--v-theme-background), 0.55));
 }
 
 .song-info__close {
@@ -277,7 +277,7 @@ export default {
 .song-info__subtitle {
   margin: 6px 0 0;
   font-size: 0.875rem;
-  color: rgba(255, 255, 255, 0.72);
+  color: rgba(var(--v-theme-on-surface), 0.72);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -302,7 +302,7 @@ export default {
   margin: 0 auto;
   font-size: 0.8125rem;
   text-align: center;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(var(--v-theme-on-surface), 0.6);
 }
 
 .song-info__group + .song-info__group {
@@ -337,7 +337,7 @@ export default {
 }
 
 .song-info__label {
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(var(--v-theme-on-surface), 0.55);
 }
 
 .song-info__value {
@@ -362,7 +362,7 @@ export default {
 .song-info__value--code {
   font-family: 'JetBrains Mono', 'SF Mono', ui-monospace, monospace;
   font-size: 0.78rem;
-  color: rgba(255, 255, 255, 0.82);
+  color: rgba(var(--v-theme-on-surface), 0.82);
 }
 
 /* On a phone-width window the dialog is nearly the full screen, and 88px

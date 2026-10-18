@@ -1,113 +1,126 @@
 <template>
-  <section ref="card" class="hero-band" :style="textEnd ? { '--text-end': `${textEnd}px` } : {}">
-    <!-- Two stacked layers, only one visible at a time, so the artwork
-     - crossfades when the hero switches to a different song — see
-     - services/crossfadeBackdrop.ts for why one element can't do this. -->
-    <div
-      v-for="(url, i) in backdrop.urls"
-      :key="i"
-      class="hero-backdrop"
-      :class="{
-        'hero-backdrop--active': i === backdrop.active,
-        'hero-backdrop--banner': layerKind[i] === 'banner',
-      }"
-      :style="layerStyle(url, i)"
-    >
-      <div v-if="layerKind[i] !== 'cover'" class="hero-backdrop-slot">
-        <div class="hero-backdrop-art" />
-      </div>
-    </div>
-    <div
-      class="hero-scrim"
-      :class="{ 'hero-scrim--art': layerKind[backdrop.active] !== 'cover' }"
-    />
-    <div ref="text" class="hero-content">
-      <div v-if="loading" class="hero-body">
-        <v-skeleton-loader type="image" width="132" height="132" class="hero-cover rounded" />
-        <div class="hero-info min-width-0 hero-skel">
-          <v-skeleton-loader type="text" width="140" height="17" class="hero-skel__eyebrow" />
-          <v-skeleton-loader type="text" width="320" height="41" />
-          <v-skeleton-loader type="text" width="220" height="24" class="hero-skel__subtitle" />
-          <v-skeleton-loader type="text" width="180" height="36" class="hero-skel__button" />
+  <section
+    ref="card"
+    class="hero-band"
+    :class="`v-theme--${appearance.nightTheme}`"
+    :style="textEnd ? { '--text-end': `${textEnd}px` } : {}"
+  >
+    <!-- Drawn in the theme's night whatever the theme: white text over a
+     - darkened picture, which a light page around it does not change (see
+     - plugins/theme.ts's nightTheme()). -->
+    <v-theme-provider :theme="appearance.nightTheme">
+      <!-- Two stacked layers, only one visible at a time, so the artwork
+       - crossfades when the hero switches to a different song — see
+       - services/crossfadeBackdrop.ts for why one element can't do this. -->
+      <div
+        v-for="(url, i) in backdrop.urls"
+        :key="i"
+        class="hero-backdrop"
+        :class="{
+          'hero-backdrop--active': i === backdrop.active,
+          'hero-backdrop--banner': layerKind[i] === 'banner',
+        }"
+        :style="layerStyle(url, i)"
+      >
+        <div v-if="layerKind[i] !== 'cover'" class="hero-backdrop-slot">
+          <div class="hero-backdrop-art" />
         </div>
       </div>
-      <div v-else-if="hasContent" class="hero-body">
-        <!-- Whichever of the two the hero is currently showing: the
-         - artwork of something playing opens Now Playing (see coverTo),
-         - and the "nothing playing, here's your most recent album"
-         - fallback keeps AlbumCard.vue's/SongRow.vue's own "click the
-         - artwork to play" affordance. Either way it is a shortcut for
-         - something already reachable next to it — the play button, or the
-         - player bar's own artwork — never the only way there. -->
-        <cover-art
-          :cover-art-id="coverId"
-          :image-url="imageUrl"
-          :radio-favicon="radioFavicon"
-          :size="132"
-          class="hero-cover cover-shadow hero-cover--clickable"
-          @click="onCoverClick"
-          @loaded="loadedSrc = $event"
-        />
-        <div class="hero-info min-width-0">
-          <div class="eyebrow-label hero-eyebrow">{{ eyebrow }}</div>
-          <h1 class="detail-title hero-title">
-            <router-link v-if="titleTo" :to="titleTo" class="hero-title-link">{{
-              title
-            }}</router-link>
-            <template v-else>{{ title }}</template>
-          </h1>
-          <div class="hero-subtitle">
-            <template v-if="artistName">
-              <router-link
-                v-if="artistId"
-                :to="`/artists/${artistId}`"
-                class="hero-subtitle-link"
-                >{{ artistName }}</router-link
-              >
-              <span v-else>{{ artistName }}</span>
-              <template v-if="albumName">
-                ·
-                <router-link v-if="albumId" :to="`/albums/${albumId}`" class="hero-subtitle-link">{{
-                  albumName
-                }}</router-link>
-                <span v-else>{{ albumName }}</span>
+      <div
+        class="hero-scrim"
+        :class="{ 'hero-scrim--art': layerKind[backdrop.active] !== 'cover' }"
+      />
+      <div ref="text" class="hero-content">
+        <div v-if="loading" class="hero-body">
+          <v-skeleton-loader type="image" width="132" height="132" class="hero-cover rounded" />
+          <div class="hero-info min-width-0 hero-skel">
+            <v-skeleton-loader type="text" width="140" height="17" class="hero-skel__eyebrow" />
+            <v-skeleton-loader type="text" width="320" height="41" />
+            <v-skeleton-loader type="text" width="220" height="24" class="hero-skel__subtitle" />
+            <v-skeleton-loader type="text" width="180" height="36" class="hero-skel__button" />
+          </div>
+        </div>
+        <div v-else-if="hasContent" class="hero-body">
+          <!-- Whichever of the two the hero is currently showing: the
+           - artwork of something playing opens Now Playing (see coverTo),
+           - and the "nothing playing, here's your most recent album"
+           - fallback keeps AlbumCard.vue's/SongRow.vue's own "click the
+           - artwork to play" affordance. Either way it is a shortcut for
+           - something already reachable next to it — the play button, or the
+           - player bar's own artwork — never the only way there. -->
+          <cover-art
+            :cover-art-id="coverId"
+            :image-url="imageUrl"
+            :radio-favicon="radioFavicon"
+            :size="132"
+            class="hero-cover cover-shadow hero-cover--clickable"
+            @click="onCoverClick"
+            @loaded="loadedSrc = $event"
+          />
+          <div class="hero-info min-width-0">
+            <div class="eyebrow-label hero-eyebrow">{{ eyebrow }}</div>
+            <h1 class="detail-title hero-title">
+              <router-link v-if="titleTo" :to="titleTo" class="hero-title-link">{{
+                title
+              }}</router-link>
+              <template v-else>{{ title }}</template>
+            </h1>
+            <div class="hero-subtitle">
+              <template v-if="artistName">
+                <router-link
+                  v-if="artistId"
+                  :to="`/artists/${artistId}`"
+                  class="hero-subtitle-link"
+                  >{{ artistName }}</router-link
+                >
+                <span v-else>{{ artistName }}</span>
+                <template v-if="albumName">
+                  ·
+                  <router-link
+                    v-if="albumId"
+                    :to="`/albums/${albumId}`"
+                    class="hero-subtitle-link"
+                    >{{ albumName }}</router-link
+                  >
+                  <span v-else>{{ albumName }}</span>
+                </template>
               </template>
-            </template>
-            <template v-else>{{ subtitle }}</template>
+              <template v-else>{{ subtitle }}</template>
+            </div>
+            <div class="hero-actions">
+              <v-btn
+                color="primary"
+                :prepend-icon="isPlayingThis ? 'mdi-pause' : 'mdi-play'"
+                rounded="pill"
+                @click="$emit('play')"
+              >
+                {{ isPlayingThis ? $t('home.paused') : $t('home.keepListening') }}
+              </v-btn>
+              <!-- Secondary on purpose: the pill above is what this band is
+               - for. Only shown when the hero is a *song* (the seed a mix is
+               - built from) and the server can build one at all — see
+               - HomeView.vue's heroCanStartRadio. -->
+              <v-btn
+                v-if="canStartRadio"
+                prepend-icon="mdi-radio-tower"
+                rounded="pill"
+                color="primary"
+                :loading="radioLoading"
+                @click="$emit('song-radio')"
+              >
+                {{ $t('library.songRadio') }}
+              </v-btn>
+            </div>
           </div>
-          <div class="hero-actions">
-            <v-btn
-              color="primary"
-              :prepend-icon="isPlayingThis ? 'mdi-pause' : 'mdi-play'"
-              rounded="pill"
-              @click="$emit('play')"
-            >
-              {{ isPlayingThis ? $t('home.paused') : $t('home.keepListening') }}
-            </v-btn>
-            <!-- Secondary on purpose: the pill above is what this band is
-             - for. Only shown when the hero is a *song* (the seed a mix is
-             - built from) and the server can build one at all — see
-             - HomeView.vue's heroCanStartRadio. -->
-            <v-btn
-              v-if="canStartRadio"
-              prepend-icon="mdi-radio-tower"
-              rounded="pill"
-              color="primary"
-              :loading="radioLoading"
-              @click="$emit('song-radio')"
-            >
-              {{ $t('library.songRadio') }}
-            </v-btn>
+        </div>
+        <div v-else class="hero-body">
+          <div class="hero-info">
+            <h1 class="detail-title hero-title">{{ $t('home.readyToPlay') }}</h1>
+            <div class="hero-subtitle">{{ $t('home.nothingHeardYet') }}</div>
           </div>
         </div>
       </div>
-      <div v-else class="hero-body">
-        <div class="hero-info">
-          <h1 class="detail-title hero-title">{{ $t('home.readyToPlay') }}</h1>
-          <div class="hero-subtitle">{{ $t('home.nothingHeardYet') }}</div>
-        </div>
-      </div>
-    </div>
+    </v-theme-provider>
   </section>
 </template>
 
@@ -122,6 +135,7 @@ import { textEnd } from '@/services/textExtent'
 import { getArtistArt } from '@/services/connect/fanart'
 import { preloadImage } from '@/services/preloadImage'
 import { useFanartStore } from '@/stores/fanart'
+import { useAppearanceStore } from '@/stores/appearance'
 
 /** A Fanart.tv banner across the whole band, or the blurred cover. Never
  * the artist's background photo - a deliberate choice for Home's band; the
@@ -202,6 +216,9 @@ export default {
     }
   },
   computed: {
+    appearance() {
+      return useAppearanceStore()
+    },
     // Both of the URL-shaped sources can be turned into a backdrop
     // directly, so those are up as soon as the cover is rather than after
     // it. A radio logo is the one that can't: it is resolved in a batch
@@ -329,6 +346,10 @@ export default {
 }
 
 .hero-band {
+  /* The night's background under the scrims: on a light theme the page
+   * would otherwise show through them. */
+  background: rgb(var(--v-theme-background));
+  color: rgb(var(--v-theme-on-background));
   /* Where the scrim behind the text has cleared - and so, wherever there
    * is room, where Fanart.tv art starts at the earliest. The scrim eases
    * out over --scrim-fade along a smoothstep curve: a straight ramp, over
@@ -466,11 +487,11 @@ export default {
   background:
     linear-gradient(
       120deg,
-      rgba(18, 20, 28, 0.82) 0%,
-      rgba(18, 20, 28, 0.55) 45%,
-      rgba(245, 169, 78, 0.18) 100%
+      rgba(var(--v-theme-background), 0.82) 0%,
+      rgba(var(--v-theme-background), 0.55) 45%,
+      rgba(var(--v-theme-primary), 0.18) 100%
     ),
-    linear-gradient(to top, rgba(18, 20, 28, 0.48), transparent 60%);
+    linear-gradient(to top, rgba(var(--v-theme-background), 0.48), transparent 60%);
 }
 
 /* Plain black over sharp Fanart.tv art, strong behind the text and clear
@@ -514,7 +535,7 @@ export default {
 }
 
 .hero-subtitle {
-  color: rgba(255, 255, 255, 0.65);
+  color: rgba(var(--v-theme-on-surface), 0.65);
   margin-top: 4px;
 }
 

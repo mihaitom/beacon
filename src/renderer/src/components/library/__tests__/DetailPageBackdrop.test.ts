@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
 import { mount } from '@vue/test-utils'
 import DetailPageBackdrop from '../DetailPageBackdrop.vue'
 
@@ -13,6 +14,11 @@ function layers(wrapper: ReturnType<typeof mount>, selector = '.detail-page__bac
 }
 
 describe('DetailPageBackdrop', () => {
+  // The theme its header is drawn in comes from the appearance store.
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
   it('keeps the previous image on its layer while the new one fades in', async () => {
     // One layer swapping its background-image would cut, not fade.
     const wrapper = mount(DetailPageBackdrop, { props: { url: 'a.jpg', isPhoto: true } })

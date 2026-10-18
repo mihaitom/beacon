@@ -15,18 +15,23 @@ import { appAccent } from '@/services/appAccent'
 
 // The played bars and the load fill follow the app's accent (see
 // appAccent) - the same colour the visualizer bars use - while the unplayed
-// parts and the playhead marker stay white so position always reads against
-// it. Only the alphas differ between the two accent shapes.
+// parts and the playhead marker are in the theme's text colour so position
+// always reads against it. Only the alphas differ between the two accent
+// shapes.
 const PLAYED_ALPHA = 0.85
 const LOAD_BAR_ALPHA = 0.75
-const UNPLAYED_COLOR = 'rgba(255, 255, 255, 0.22)'
-const MARKER_COLOR = 'rgba(255, 255, 255, 0.9)'
+const UNPLAYED_ALPHA = 0.22
+const MARKER_ALPHA = 0.9
 // How far the stream is loaded gets its own thin bar below the waveform
 // instead of a third bar colour: the bars already carry position, and a
 // third shade of the same two colours on 1px-wide bars was a nuance
 // nobody could pick out on a dark screen. As a solid strip with a hard
 // edge at the buffer front it needs no fine gradation at all.
-const LOAD_TRACK_COLOR = 'rgba(255, 255, 255, 0.1)'
+const LOAD_TRACK_ALPHA = 0.1
+// A canvas can't read a CSS variable, so the text colour is looked up on
+// the element itself - which also gets it right inside Now Playing, dark on
+// every theme. White where there is none to read (a test, before mount).
+const FALLBACK_INK = '255, 255, 255'
 // CSS px, scaled by the device ratio in paint() — a fraction of the
 // height (the way the bars are sized) would turn this into a slab on a
 // taller instance of the component. The gap is what keeps the strip its
@@ -184,9 +189,10 @@ export default {
       height: number,
       bufferedX: number,
       fillColor: string,
+      trackColor: string,
     ) {
       if (this.buffered <= 0) return
-      ctx.fillStyle = LOAD_TRACK_COLOR
+      ctx.fillStyle = trackColor
       ctx.fillRect(bufferedX, y, width - bufferedX, height)
       ctx.fillStyle = fillColor
       ctx.fillRect(0, y, bufferedX, height)
@@ -199,7 +205,11 @@ export default {
       ctx.clearRect(0, 0, width, height)
       if (width <= 0 || height <= 0) return
 
+      const ink =
+        getComputedStyle(canvas).getPropertyValue('--v-theme-on-surface').trim() || FALLBACK_INK
       const playedColor = `rgba(${this.accentRgb}, ${PLAYED_ALPHA})`
+      const unplayedColor = `rgba(${ink}, ${UNPLAYED_ALPHA})`
+      const markerColor = `rgba(${ink}, ${MARKER_ALPHA})`
 
       // Clamped to the canvas width so a position that ever lands past
       // duration (rounding, mostly) reads as fully played instead of
@@ -225,6 +235,7 @@ export default {
         loadBarHeight,
         bufferedX,
         `rgba(${this.accentRgb}, ${LOAD_BAR_ALPHA})`,
+        `rgba(${ink}, ${LOAD_TRACK_ALPHA})`,
       )
 
       if (this.peaks.length === 0) {
@@ -233,13 +244,13 @@ export default {
         // MobileTransportControls.vue, which swap this component out
         // entirely for a live-elapsed label instead of mounting it with
         // nothing honest to draw).
-        ctx.fillStyle = UNPLAYED_COLOR
+        ctx.fillStyle = unplayedColor
         ctx.fillRect(0, baseline - 2, width, 2)
         if (playedX > 0) {
           ctx.fillStyle = playedColor
           ctx.fillRect(0, baseline - 2, playedX, 2)
         }
-        ctx.fillStyle = MARKER_COLOR
+        ctx.fillStyle = markerColor
         ctx.fillRect(Math.min(width - 1.5, playedX), 0, 1.5, height)
         return
       }
@@ -267,10 +278,10 @@ export default {
         })
         ctx.fill()
       }
-      paintBars(UNPLAYED_COLOR, false)
+      paintBars(unplayedColor, false)
       paintBars(playedColor, true)
 
-      ctx.fillStyle = MARKER_COLOR
+      ctx.fillStyle = markerColor
       ctx.fillRect(Math.min(width - 1.5, playedX), 0, 1.5, height)
     },
   },

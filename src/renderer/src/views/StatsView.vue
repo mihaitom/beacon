@@ -558,13 +558,13 @@ export default {
   min-width: min-content;
   padding: 20px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(var(--v-theme-on-surface), 0.03);
   border: 1px solid var(--beacon-hairline);
 }
 
 .stat-tile--highlight {
-  background: rgba(245, 169, 78, 0.08);
-  border-color: rgba(245, 169, 78, 0.3);
+  background: rgba(var(--v-theme-primary), 0.08);
+  border-color: rgba(var(--v-theme-primary), 0.3);
 }
 
 .stat-tile__value {
@@ -585,7 +585,7 @@ export default {
 .stat-tile__label {
   margin-top: 4px;
   font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.65);
+  color: rgba(var(--v-theme-on-surface), 0.65);
 }
 
 /* Four columns, two, or one - never three: four lists across three columns

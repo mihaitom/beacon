@@ -12,19 +12,23 @@ import App from './App.vue'
 import router from './router'
 import { i18n } from './i18n'
 import { emitter } from './emitter'
-import { beaconTheme } from './plugins/theme'
+import { themeOptions } from './plugins/theme'
+import { applyThemePreference, loadThemePreference, useAppearanceStore } from './stores/appearance'
 
 const vuetify = createVuetify({
   components,
   directives,
-  theme: beaconTheme,
+  theme: themeOptions(loadThemePreference()),
 })
 
 document.documentElement.setAttribute('lang', i18n.global.locale as unknown as string)
 
 const app = createApp(App)
 
-app.use(createPinia())
+const pinia = createPinia()
+app.use(pinia)
+const appearance = useAppearanceStore(pinia)
+appearance.$subscribe(() => applyThemePreference(vuetify.theme, appearance.$state))
 app.use(router)
 app.use(vuetify)
 app.use(i18n)

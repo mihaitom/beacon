@@ -146,7 +146,7 @@ export default {
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.42);
+  color: rgba(var(--v-theme-on-surface), 0.42);
   border-bottom: 1px solid var(--beacon-hairline);
   gap: 12px;
   /* Room for the select-all below (20px) plus this row's own bottom
@@ -226,7 +226,7 @@ export default {
 }
 
 .sort-header:hover {
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(var(--v-theme-on-surface), 0.85);
 }
 
 /* The column the list is currently sorted by, lit in the app's amber. The
@@ -259,6 +259,6 @@ export default {
 }
 
 .column-menu-button:hover {
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(var(--v-theme-on-surface), 0.85);
 }
 </style>

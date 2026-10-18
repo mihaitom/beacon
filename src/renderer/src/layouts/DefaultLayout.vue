@@ -17,7 +17,7 @@
       :rail="sidebarCollapsed"
       :width="SIDEBAR_WIDTH"
       permanent
-      color="#0B0D13"
+      color="chrome"
       class="beacon-rail"
     >
       <!-- The app's own mark heads the rail, at the app bar's height so the
@@ -75,7 +75,7 @@
     <!-- Three columns so the search sits in the middle of the window
      - however wide the history arrows on its left are (they only exist in
      - Electron). -->
-    <v-app-bar density="comfortable" color="#0B0D13" class="beacon-app-bar">
+    <v-app-bar density="comfortable" color="chrome" class="beacon-app-bar">
       <div class="app-bar__layout">
         <div class="app-bar__start">
           <!-- Electron only: in the browser this is the browser's own job,
@@ -269,7 +269,7 @@ export default {
 }
 
 .beacon-glow {
-  filter: drop-shadow(0 0 6px rgba(245, 169, 78, 0.55));
+  filter: drop-shadow(0 0 6px rgba(var(--v-theme-primary), 0.55));
 }
 
 .beacon-rail {
@@ -279,7 +279,7 @@ export default {
 /* The toggle is chrome rather than a destination: no active state to ever
  * light up, and a quieter icon than the routes beside it. */
 .beacon-rail__toggle :deep(.v-icon) {
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(var(--v-theme-on-surface), 0.55);
 }
 
 /* The app bar's comfortable height, so the mark lines up with the bar
@@ -336,11 +336,11 @@ export default {
   width: 3px;
   border-radius: 0 2px 2px 0;
   background: rgb(var(--v-theme-primary));
-  box-shadow: 0 0 10px 1px rgba(245, 169, 78, 0.55);
+  box-shadow: 0 0 10px 1px rgba(var(--v-theme-primary), 0.55);
 }
 
 .beacon-rail :deep(.v-list-item--active .v-icon) {
   color: rgb(var(--v-theme-primary));
-  filter: drop-shadow(0 0 5px rgba(245, 169, 78, 0.4));
+  filter: drop-shadow(0 0 5px rgba(var(--v-theme-primary), 0.4));
 }
 </style>

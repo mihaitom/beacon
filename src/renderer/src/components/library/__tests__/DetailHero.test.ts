@@ -1,7 +1,8 @@
 // The shared detail-page header: the clear logo standing in for the name,
 // the subtitle/meta slots, the star/rating controls, and the artwork viewer
 // hookup.
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
 import { mount } from '@vue/test-utils'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
@@ -21,6 +22,11 @@ function mountHero(props: Record<string, unknown> = {}, slots: Record<string, st
 }
 
 describe('DetailHero', () => {
+  // The theme its header is drawn in comes from the appearance store.
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
   it('shows the name as the heading when there is no logo', () => {
     const wrapper = mountHero()
 

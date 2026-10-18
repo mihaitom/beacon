@@ -1,7 +1,19 @@
-import { describe, expect, it } from 'vitest'
-import { VISUALIZER_FALLBACK, liftForContrast, visualizerBarColor } from '../visualizerColor'
+import { afterEach, describe, expect, it } from 'vitest'
+import { liftForContrast, visualizerBarColor } from '../visualizerColor'
+import { DEFAULT_APP_ACCENT, themeAccent } from '../appAccent'
+
+const VISUALIZER_FALLBACK = DEFAULT_APP_ACCENT
 
 describe('visualizerBarColor', () => {
+  afterEach(() => {
+    themeAccent.value = DEFAULT_APP_ACCENT
+  })
+
+  it("falls back to the theme's own accent, not a fixed amber", () => {
+    themeAccent.value = '79, 209, 197'
+    expect(visualizerBarColor(null)).toBe('79, 209, 197')
+  })
+
   it('falls back to amber with no colour at all', () => {
     expect(visualizerBarColor(null)).toBe(VISUALIZER_FALLBACK)
   })

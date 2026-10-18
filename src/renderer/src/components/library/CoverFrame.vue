@@ -123,7 +123,7 @@ export default {
 .cover-art {
   border-radius: 4px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.06);
+  background: rgba(var(--v-theme-on-surface), 0.06);
 }
 
 .cover-art-fallback {
@@ -132,7 +132,7 @@ export default {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: rgba(255, 255, 255, 0.3);
+  color: rgba(var(--v-theme-on-surface), 0.3);
 }
 
 /* Shown for as long as there is no image to show yet — without this, the

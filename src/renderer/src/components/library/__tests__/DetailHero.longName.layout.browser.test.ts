@@ -1,6 +1,7 @@
 // Real-browser test: whether a long name fits its three lines is a question
 // of the actual font metrics and wrapping, which jsdom does not have.
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
 import { page } from 'vitest/browser'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { createVuetify } from 'vuetify'
@@ -10,6 +11,11 @@ import 'vuetify/styles'
 import '@/assets/base.css'
 import { i18n } from '@/i18n'
 import DetailHero from '../DetailHero.vue'
+
+// The theme the header is drawn in comes from the appearance store.
+beforeEach(() => {
+  setActivePinia(createPinia())
+})
 
 const vuetify = createVuetify({ components, directives })
 let wrapper: VueWrapper | null = null

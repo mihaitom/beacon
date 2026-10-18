@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- Themes: besides Beacon there is the dark Graphite and the light Paper and Mist, or a theme of your own from a background and an accent colour, chosen per device under Settings → Appearance. Artwork headers and Now Playing stay dark on the light themes (requested by @mjj042, #55)
 - Right-click a song in the queue to play it now or next, move it to the end or remove it. The menu also has what song lists offer: Song Radio, add to playlist, go to album or artist, artwork and info. While a transition is already prepared, "next" means right after the song it leads into
 - The phone and the Remote Control have a Favorites tab with your favorite songs, albums and artists. It takes the place of the Now Playing tab, which the player bar above the tabs already opens, and the Queue tab moves to the front. Songs are marked as favorites with the heart next to the title on Now Playing or from a song's actions, and on the phone albums from their page
 - Favorites work with Plex too: a favorite there is a five-star rating, the same thing Plexamp's like sets, so the heart and the fifth star always agree

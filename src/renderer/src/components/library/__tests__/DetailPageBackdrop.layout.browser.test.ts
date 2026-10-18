@@ -3,11 +3,17 @@
 // the photo's width (aspect-ratio on an absolutely positioned layer) are
 // all layout; jsdom computes none of them, so it would pass whatever the
 // page actually did.
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { createPinia, setActivePinia } from 'pinia'
 import { page } from 'vitest/browser'
 import { h } from 'vue'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import DetailPageBackdrop from '../DetailPageBackdrop.vue'
+
+// The theme the header is drawn in comes from the appearance store.
+beforeEach(() => {
+  setActivePinia(createPinia())
+})
 
 const wrappers: VueWrapper[] = []
 

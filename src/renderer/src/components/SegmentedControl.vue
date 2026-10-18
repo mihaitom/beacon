@@ -60,7 +60,7 @@ export default {
   gap: 4px;
   padding: 3px;
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(var(--v-theme-on-surface), 0.03);
   border: 1px solid var(--beacon-hairline);
 }
 
@@ -70,7 +70,7 @@ export default {
   border-radius: 8px;
   border: none;
   background: transparent;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(var(--v-theme-on-surface), 0.5);
   font: inherit;
   font-size: 0.8125rem;
   cursor: pointer;
@@ -86,7 +86,7 @@ export default {
 
 .segmented__option--active {
   background: rgba(var(--v-theme-primary), 0.12);
-  color: #fdf6ec;
+  color: rgb(var(--v-theme-on-surface));
   font-weight: 600;
 }
 </style>

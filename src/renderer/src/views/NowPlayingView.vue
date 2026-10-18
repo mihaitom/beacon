@@ -5,6 +5,7 @@
 </template>
 
 <script lang="ts">
+import { themeAccent } from '@/services/appAccent'
 import { usePlaybackStore } from '@/stores/playback'
 import { useRadioMetadataStore } from '@/stores/radioMetadata'
 import { useConnectStore } from '@/stores/connect'
@@ -48,12 +49,6 @@ const SMOOTHING_LOCAL = 0.3
 // an "always a bit behind" feel, although the backend's timing checked out.
 // Higher brought the jitter back, so it stays equal to SMOOTHING_LOCAL.
 const SMOOTHING_CAST = 0.3
-
-// Warm amber — the same signal color the app is named after (see main.ts's
-// 'beacon' theme) — used whenever there's nothing to extract a color from
-// yet (radio has no artwork, or extraction is still in flight/failed). The
-// presentation falls back to the same value when the accent goes away.
-const FALLBACK_COLOR = '245, 169, 78'
 
 // Persisted across restarts — a one-off UI preference, not session state,
 // same "single localStorage key" convention as stores/lyrics.ts's offsets.
@@ -503,7 +498,7 @@ export default {
       return radioFaviconRequest(station.homePageUrl ?? '', 512, station.favicon ?? '')
     },
     colorTriplet(): string {
-      return this.extractedColor ?? FALLBACK_COLOR
+      return this.extractedColor ?? themeAccent.value
     },
     /** The visualizer bars' colour: the artist background's own dominant
      * colour, but only once a Fanart.tv background is actually loaded and
@@ -534,9 +529,9 @@ export default {
       // Over the artist's photo the darkening stays but the colour does
       // not: the cover's colour (or the amber fallback) over a sharp photo
       // reads as a colour cast. The glow behind the artwork keeps the light.
-      if (this.backdropIsArtist) return { background: 'rgba(18, 20, 28, 0.55)' }
+      if (this.backdropIsArtist) return { background: 'rgba(var(--v-theme-background), 0.55)' }
       return {
-        background: `radial-gradient(ellipse 65% 55% at 50% 32%, rgba(${this.colorTriplet}, 0.35), rgba(18, 20, 28, 0) 70%), rgba(18, 20, 28, 0.55)`,
+        background: `radial-gradient(ellipse 65% 55% at 50% 32%, rgba(${this.colorTriplet}, 0.35), rgba(var(--v-theme-background), 0) 70%), rgba(var(--v-theme-background), 0.55)`,
       }
     },
     // A tighter, brighter halo immediately behind the artwork — a light

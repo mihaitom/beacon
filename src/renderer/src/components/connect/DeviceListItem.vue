@@ -366,12 +366,12 @@ export default {
   width: 3px;
   border-radius: 0 2px 2px 0;
   background: rgb(var(--v-theme-primary));
-  box-shadow: 0 0 10px 1px rgba(245, 169, 78, 0.55);
+  box-shadow: 0 0 10px 1px rgba(var(--v-theme-primary), 0.55);
 }
 
 .device-row--active .v-icon,
 .device-row--active .device-row__type-icon {
-  filter: drop-shadow(0 0 5px rgba(245, 169, 78, 0.4));
+  filter: drop-shadow(0 0 5px rgba(var(--v-theme-primary), 0.4));
 }
 
 .device-row__main {

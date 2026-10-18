@@ -109,7 +109,7 @@ export default {
 }
 
 .artist-bio__text {
-  color: rgba(255, 255, 255, 0.75);
+  color: rgba(var(--v-theme-on-surface), 0.75);
   line-height: 1.5;
 }
 
@@ -143,7 +143,7 @@ export default {
 /* Plain text links rather than v-btn: a button's padding would push the
  * label off the paragraph's left edge it is meant to line up with. */
 .artist-bio__link {
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(var(--v-theme-on-surface), 0.55);
   font-size: 0.8125rem;
   text-decoration: none;
   cursor: pointer;
@@ -152,7 +152,7 @@ export default {
 
 .artist-bio__link:hover,
 .artist-bio__link:focus-visible {
-  color: rgba(255, 255, 255, 0.85);
+  color: rgba(var(--v-theme-on-surface), 0.85);
   text-decoration: underline;
 }
 </style>

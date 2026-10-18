@@ -62,28 +62,62 @@ name is.
 
 ## Palette
 
-The Vuetify theme (`main.ts`, theme name `beacon`) is dark only. There is no
-light theme, so a hard-coded `rgba(255, 255, 255, x)` is legitimate.
+There are four themes and one made from two colours, picked per device in
+Settings → Appearance (`plugins/theme.ts`, kept in `stores/appearance.ts`):
+Beacon (the default) and Graphite are dark, Paper and Mist are light. **So
+no colour is written down in a component.** A white is
+`rgba(var(--v-theme-on-surface), x)`, the accent `rgba(var(--v-theme-primary), x)`,
+the page `rgb(var(--v-theme-background))`, the frame `color="chrome"` or
+`var(--beacon-chrome)`. Black stays black where it is a shadow or a scrim
+over a picture, and so does the dark pill behind a button on a cover. A `<canvas>` cannot read a variable: it takes the accent from
+`services/appAccent.ts` and looks its text colour up on its own element (see
+`WaveformBars.vue`).
 
-| Token                                    | Value                                         | What it is                                   |
-| ---------------------------------------- | --------------------------------------------- | -------------------------------------------- |
-| `background`                             | `#12141C`                                     | The page                                     |
-| `surface`                                | `#1A1D27`                                     | Cards, dialogs, menus                        |
-| `surface-bright`                         | `#232733`                                     | A surface on a surface                       |
-| `primary`                                | `#F5A94E`                                     | The beacon's amber. Signal, never decoration |
-| `secondary`                              | `#5B84B1`                                     | The cool counterpart, used sparingly         |
-| `error` / `warning` / `info` / `success` | `#E5484D` / `#F2A93B` / `#5B84B1` / `#5FB489` | States                                       |
+Beacon's values, which the others mirror step for step:
+
+| Token                                    | Value                                         | What it is                                                                                       |
+| ---------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `background`                             | `#12141C`                                     | The page                                                                                         |
+| `surface`                                | `#1A1D27`                                     | Cards, dialogs, menus                                                                            |
+| `surface-bright`                         | `#232733`                                     | A surface on a surface                                                                           |
+| `chrome`                                 | `#0B0D13`                                     | The always-visible frame (nav rail, app bar, player bar, phone tab bar) - one shade off the page |
+| `primary`                                | `#F5A94E`                                     | The beacon's amber. Signal, never decoration                                                     |
+| `secondary`                              | `#5B84B1`                                     | The cool counterpart, used sparingly                                                             |
+| `error` / `warning` / `info` / `success` | `#E5484D` / `#F2A93B` / `#5B84B1` / `#5FB489` | States                                                                                           |
+
+A light theme's accent reaches 4.5:1 against its page; the amber gets about
+2:1 on white, which is why Paper's is a copper of the same hue. The self-made
+theme derives its surfaces and frame from the background (lighter steps on a
+dark one, darker on a light one) and warns, without refusing, when the
+accent falls under 3:1.
+
+### What stays dark on a light theme
+
+The artwork headers (`DetailHero`, `DetailHeader`, `HeroBand`) and Now
+Playing put white text over a darkened picture, which a light page around
+them does not change. They are drawn in the theme's _night_
+(`nightTheme()`: Beacon's surfaces with the theme's accent lifted to read on
+them; a dark theme is its own night): the root element carries the
+`v-theme--<night>` class for the CSS variables and its own text colour, and
+a `<v-theme-provider>` inside it gives the Vuetify components the same
+theme. Inside, as rather than around the root, so the component keeps one
+root element. On a light theme the artist and album pages' band
+(`DetailPageBackdrop`) ends with the header and fades into the page below
+instead of running on behind the albums and songs.
+
+The party guest page and the Remote Control have no themes: they are
+Beacon's colours.
 
 Plus the chrome tokens in `base.css`:
 
-| Token                        | Value                      | What it is                                                                                                  |
-| ---------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `--beacon-chrome`            | `#0b0d13`                  | The always-visible frame (nav rail, app bar, phone tab bar) - one shade _darker_ than the content behind it |
-| `--beacon-hairline`          | `rgba(245, 169, 78, 0.14)` | Every border and divider in the app                                                                         |
-| `--beacon-hover`             | `rgba(245, 169, 78, 0.07)` | The one hover tint for list rows                                                                            |
-| `--beacon-player-bar-height` | `88px`                     | Must match PlayerBar's own `height`                                                                         |
+| Token                        | Value                | What it is                                                    |
+| ---------------------------- | -------------------- | ------------------------------------------------------------- |
+| `--beacon-chrome`            | the theme's `chrome` | The frame, for CSS that can't take Vuetify's `color="chrome"` |
+| `--beacon-hairline`          | the accent at 0.14   | Every border and divider in the app                           |
+| `--beacon-hover`             | the accent at 0.07   | The one hover tint for list rows                              |
+| `--beacon-player-bar-height` | `88px`               | Must match PlayerBar's own `height`                           |
 
-Amber is the app's signal colour: an active nav item, a selected segment, an
+The accent is the app's signal colour: an active nav item, a selected segment, an
 eyebrow, a divider. It is not a fill - nothing large is amber.
 
 ## Type
@@ -196,8 +230,8 @@ than the same heading at a smaller size.
 ### Settings tabs
 
 The Settings page groups its sections into tabs (`views/SettingsView.vue`):
-Account (with About), Playback (with Lyrics providers), Library, Casting and
-Advanced. Casting and Advanced are the conditional tabs - Casting is the
+Account (with About), Appearance, Playback (with Lyrics providers), Library,
+Casting and Advanced. Casting and Advanced are the conditional tabs - Casting is the
 web/Docker admin's alone, and Advanced holds the installation-wide settings
 and housekeeping (log level, API keys, AirPlay pairings, clearing this
 device's cache), so on the shared web/Docker build it is a server

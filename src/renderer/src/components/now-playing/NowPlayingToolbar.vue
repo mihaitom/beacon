@@ -219,7 +219,7 @@ export default {
    * directly on the artist photo, where a plain white icon can vanish. */
   padding: 4px;
   border-radius: 999px;
-  background: rgba(18, 20, 28, 0.55);
+  background: rgba(var(--v-theme-background), 0.55);
   backdrop-filter: blur(8px);
 }
 

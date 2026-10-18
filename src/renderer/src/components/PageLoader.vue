@@ -52,7 +52,7 @@ export default {
   height: 14px;
   border-radius: 50%;
   background: rgb(var(--v-theme-primary));
-  box-shadow: 0 0 16px 4px rgba(245, 169, 78, 0.7);
+  box-shadow: 0 0 16px 4px rgba(var(--v-theme-primary), 0.7);
   animation: page-loader-core 1.8s ease-in-out infinite;
 }
 
@@ -60,7 +60,7 @@ export default {
   position: absolute;
   inset: 0;
   border-radius: 50%;
-  border: 1.5px solid rgba(245, 169, 78, 0.55);
+  border: 1.5px solid rgba(var(--v-theme-primary), 0.55);
   animation: page-loader-ring 1.8s ease-out infinite;
 }
 
@@ -93,7 +93,7 @@ export default {
 
 .page-loader__label {
   margin: 0;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(var(--v-theme-on-surface), 0.5);
   font-size: 0.8125rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;

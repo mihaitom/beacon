@@ -36,7 +36,7 @@
     :permanent="!floating"
     :temporary="floating"
     disable-resize-watcher
-    color="#0B0D13"
+    color="chrome"
     class="beacon-drawer"
     @update:model-value="$emit('update:modelValue', $event)"
     @pointerenter="drawersStore.cancelQueueDrawerAutoClose()"
@@ -44,7 +44,7 @@
     <div ref="body" class="beacon-drawer__body" @dragover="trackDragPointer">
       <v-toolbar
         density="compact"
-        color="#0B0D13"
+        color="chrome"
         class="beacon-drawer__toolbar"
         :title="$t('queue.title')"
       >

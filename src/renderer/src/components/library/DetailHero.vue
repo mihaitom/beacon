@@ -1,86 +1,93 @@
 <template>
-  <section class="detail-hero" :class="{ 'detail-hero--large': large }">
-    <div
-      v-if="rating !== null || starred !== null || $slots.controls"
-      class="detail-hero__controls"
-    >
-      <!-- A page's own controls for its backdrop (the artist page's
-       - background cycle button), ahead of the rating. -->
-      <slot name="controls" />
-      <v-rating
-        v-if="rating !== null"
-        :model-value="rating"
-        length="5"
-        size="large"
-        density="compact"
-        active-color="primary"
-        hover
-        clearable
-        @update:model-value="$emit('set-rating', $event)"
-      />
-      <v-btn
-        v-if="starred !== null"
-        :icon="starred ? 'mdi-heart' : 'mdi-heart-outline'"
-        :color="starred ? 'primary' : undefined"
-        variant="text"
-        :title="$t(starred ? 'library.unstar' : 'library.star')"
-        @click="$emit('toggle-star')"
-      />
-    </div>
+  <section
+    class="detail-hero"
+    :class="[`v-theme--${appearance.nightTheme}`, { 'detail-hero--large': large }]"
+  >
+    <!-- Over the darkened artwork whatever the theme: on a light one the
+     - band behind it stays dark too (see DetailPageBackdrop.vue). -->
+    <v-theme-provider :theme="appearance.nightTheme">
+      <div
+        v-if="rating !== null || starred !== null || $slots.controls"
+        class="detail-hero__controls"
+      >
+        <!-- A page's own controls for its backdrop (the artist page's
+         - background cycle button), ahead of the rating. -->
+        <slot name="controls" />
+        <v-rating
+          v-if="rating !== null"
+          :model-value="rating"
+          length="5"
+          size="large"
+          density="compact"
+          active-color="primary"
+          hover
+          clearable
+          @update:model-value="$emit('set-rating', $event)"
+        />
+        <v-btn
+          v-if="starred !== null"
+          :icon="starred ? 'mdi-heart' : 'mdi-heart-outline'"
+          :color="starred ? 'primary' : undefined"
+          variant="text"
+          :title="$t(starred ? 'library.unstar' : 'library.star')"
+          @click="$emit('toggle-star')"
+        />
+      </div>
 
-    <div class="detail-hero__main">
-      <!-- Clickable only when there is a real picture behind it: opening a
-       - full-screen view of the fallback icon would be a promise the hero
-       - can't keep. -->
-      <cover-art
-        :cover-art-id="coverArtId"
-        :image-url="imageUrl"
-        :size="coverSize"
-        :fallback-icon="fallbackIcon"
-        class="detail-hero__cover cover-shadow"
-        :class="{ 'detail-hero__cover--zoomable': hasArtwork }"
-        :title="hasArtwork ? $t('library.showArtwork') : undefined"
-        @click="showArtwork"
-      />
-      <div class="detail-hero__info">
-        <div v-if="eyebrow" class="eyebrow-label">{{ eyebrow }}</div>
-        <!-- Fanart.tv's clear logo when there is one: it *is* the artist's
-         - name, drawn, so the plain-text heading steps aside for it (kept
-         - for screen readers and the outline via .visually-hidden). -->
-        <img v-if="logoUrl" :src="logoUrl" :alt="name" class="detail-hero__logo" />
-        <h1
-          :class="
-            logoUrl ? 'visually-hidden' : ['detail-title', 'detail-hero__name', nameLengthClass]
-          "
-        >
-          {{ name }}
-        </h1>
-        <div v-if="$slots.subtitle" class="detail-hero__subtitle">
-          <slot name="subtitle" />
-        </div>
-        <div v-if="$slots.meta" class="detail-hero__meta">
-          <slot name="meta" />
-        </div>
-        <!-- Small facts that are not a sentence (the album page's label,
-         - edition, reissue year), under the meta line. -->
-        <div v-if="$slots.tags" class="detail-hero__tags">
-          <slot name="tags" />
-        </div>
-        <!-- The large variant keeps its paragraph in this column, beside
-         - the cover, rather than under the whole hero. -->
-        <slot v-if="large" name="description" />
-        <div v-if="$slots.actions" class="detail-hero__actions">
-          <slot name="actions" />
+      <div class="detail-hero__main">
+        <!-- Clickable only when there is a real picture behind it: opening a
+         - full-screen view of the fallback icon would be a promise the hero
+         - can't keep. -->
+        <cover-art
+          :cover-art-id="coverArtId"
+          :image-url="imageUrl"
+          :size="coverSize"
+          :fallback-icon="fallbackIcon"
+          class="detail-hero__cover cover-shadow"
+          :class="{ 'detail-hero__cover--zoomable': hasArtwork }"
+          :title="hasArtwork ? $t('library.showArtwork') : undefined"
+          @click="showArtwork"
+        />
+        <div class="detail-hero__info">
+          <div v-if="eyebrow" class="eyebrow-label">{{ eyebrow }}</div>
+          <!-- Fanart.tv's clear logo when there is one: it *is* the artist's
+           - name, drawn, so the plain-text heading steps aside for it (kept
+           - for screen readers and the outline via .visually-hidden). -->
+          <img v-if="logoUrl" :src="logoUrl" :alt="name" class="detail-hero__logo" />
+          <h1
+            :class="
+              logoUrl ? 'visually-hidden' : ['detail-title', 'detail-hero__name', nameLengthClass]
+            "
+          >
+            {{ name }}
+          </h1>
+          <div v-if="$slots.subtitle" class="detail-hero__subtitle">
+            <slot name="subtitle" />
+          </div>
+          <div v-if="$slots.meta" class="detail-hero__meta">
+            <slot name="meta" />
+          </div>
+          <!-- Small facts that are not a sentence (the album page's label,
+           - edition, reissue year), under the meta line. -->
+          <div v-if="$slots.tags" class="detail-hero__tags">
+            <slot name="tags" />
+          </div>
+          <!-- The large variant keeps its paragraph in this column, beside
+           - the cover, rather than under the whole hero. -->
+          <slot v-if="large" name="description" />
+          <div v-if="$slots.actions" class="detail-hero__actions">
+            <slot name="actions" />
+          </div>
         </div>
       </div>
-    </div>
 
-    <!-- Only when the page actually passes one (the artist page's Wikipedia
-     - paragraph). Rendering an empty wrapper for a page with no such slot
-     - would reserve a paragraph's height for nothing. -->
-    <div v-if="$slots.description && !large" class="detail-hero__bio">
-      <slot name="description" />
-    </div>
+      <!-- Only when the page actually passes one (the artist page's Wikipedia
+       - paragraph). Rendering an empty wrapper for a page with no such slot
+       - would reserve a paragraph's height for nothing. -->
+      <div v-if="$slots.description && !large" class="detail-hero__bio">
+        <slot name="description" />
+      </div>
+    </v-theme-provider>
   </section>
 </template>
 
@@ -88,6 +95,7 @@
 import type { PropType } from 'vue'
 import CoverArt from './CoverArt.vue'
 import { emitter } from '@/emitter'
+import { useAppearanceStore } from '@/stores/appearance'
 
 /**
  * The shared header for a detail page (artist, album) — the arrangement of
@@ -123,6 +131,9 @@ export default {
   },
   emits: ['toggle-star', 'set-rating'],
   computed: {
+    appearance() {
+      return useAppearanceStore()
+    },
     /** A smaller face for a long name: at full size a soundtrack's or a
      * box set's title ran past the three lines there is room for and was
      * cut off mid-word. By length rather than by measuring, so the size is
@@ -157,6 +168,7 @@ export default {
 <style scoped>
 .detail-hero {
   position: relative;
+  color: rgb(var(--v-theme-on-background));
   margin-bottom: 28px;
   /* The rating/heart controls get a column of their own rather than lying
    * over the top right corner: over it, a narrow page (a tablet, or the
@@ -233,7 +245,7 @@ export default {
 }
 
 .detail-hero__meta {
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(var(--v-theme-on-surface), 0.6);
   font-size: 0.8125rem;
 }
 

@@ -170,7 +170,7 @@ export default {
 .lyrics-candidate-list__duration {
   font-size: 0.7rem;
   font-variant-numeric: tabular-nums;
-  color: rgba(255, 255, 255, 0.45);
+  color: rgba(var(--v-theme-on-surface), 0.45);
   margin-left: 1em;
 }
 

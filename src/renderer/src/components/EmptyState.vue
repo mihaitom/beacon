@@ -40,12 +40,12 @@ export default {
   width: 64px;
   height: 64px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(var(--v-theme-on-surface), 0.05);
   border: 1px solid var(--beacon-hairline);
 }
 
 .beacon-empty__icon :deep(.v-icon) {
-  color: rgba(255, 255, 255, 0.55);
+  color: rgba(var(--v-theme-on-surface), 0.55);
 }
 
 .beacon-empty :deep(.v-empty-state__content) {
@@ -59,6 +59,6 @@ export default {
 
 .beacon-empty :deep(.v-empty-state__text) {
   max-width: 44ch;
-  color: rgba(255, 255, 255, 0.6);
+  color: rgba(var(--v-theme-on-surface), 0.6);
 }
 </style>
