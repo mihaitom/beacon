@@ -34,8 +34,28 @@ export function applyThemePreference(theme: ThemeInstance, preference: ThemePref
     if (name.startsWith('custom')) theme.themes.value[name] = definition as never
   }
   void theme.change(preference.theme)
+  applyThemeAccents(preference)
+}
+
+/** The accents the canvas components and Now Playing's fallbacks use,
+ * which no CSS variable can hand them (see services/appAccent.ts). */
+function applyThemeAccents(preference: ThemePreference): void {
+  const definitions = themeDefinitions(preference)
   appAccent.value = hexToTriplet(definitions[preference.theme]!.colors!.primary as string)
   themeAccent.value = hexToTriplet(definitions[nightTheme(preference)]!.colors!.primary as string)
+}
+
+/** Startup: Vuetify already starts in the stored theme (main.ts hands it
+ * themeOptions()), but the accents outside it have to be set as well -
+ * left to the first change, a reload drew the waveform and Now Playing's
+ * fallback in Beacon's amber whatever the theme. Then follows every
+ * change. */
+export function initTheme(
+  theme: ThemeInstance,
+  store: ReturnType<typeof useAppearanceStore>,
+): void {
+  applyThemeAccents(store.$state)
+  store.$subscribe(() => applyThemePreference(theme, store.$state))
 }
 
 // A borrowed accent on a light page: as far towards black as it takes to

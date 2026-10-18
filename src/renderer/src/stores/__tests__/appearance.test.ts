@@ -4,6 +4,7 @@ import { createVuetify, type ThemeInstance } from 'vuetify'
 import {
   applyThemePreference,
   borrowAccent,
+  initTheme,
   loadThemePreference,
   useAppearanceStore,
 } from '../appearance'
@@ -146,6 +147,36 @@ describe('applyThemePreference', () => {
 
     applyThemePreference(fakeTheme() as unknown as ThemeInstance, prefer('beacon'))
     expect(appAccent.value).toBe(DEFAULT_APP_ACCENT)
+  })
+})
+
+describe('initTheme', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    localStorage.clear()
+    appAccent.value = DEFAULT_APP_ACCENT
+    themeAccent.value = DEFAULT_APP_ACCENT
+  })
+
+  it("starts the canvas accents in the stored theme's, not Beacon's amber", () => {
+    localStorage.setItem(KEY, JSON.stringify(prefer('graphite')))
+    const vuetify = createVuetify({ theme: themeOptions(loadThemePreference()) })
+    initTheme(vuetify.theme, useAppearanceStore())
+
+    expect(appAccent.value).toBe(hexToTriplet('#4FD1C5'))
+    expect(themeAccent.value).toBe(hexToTriplet('#4FD1C5'))
+  })
+
+  it('follows a theme picked later', async () => {
+    const vuetify = createVuetify({ theme: themeOptions(loadThemePreference()) })
+    const store = useAppearanceStore()
+    initTheme(vuetify.theme, store)
+
+    store.setTheme('mist')
+    await Promise.resolve()
+
+    expect(vuetify.theme.global.name.value).toBe('mist')
+    expect(appAccent.value).toBe(hexToTriplet('#2E6BB0'))
   })
 })
 

@@ -13,7 +13,7 @@ import router from './router'
 import { i18n } from './i18n'
 import { emitter } from './emitter'
 import { themeOptions } from './plugins/theme'
-import { applyThemePreference, loadThemePreference, useAppearanceStore } from './stores/appearance'
+import { initTheme, loadThemePreference, useAppearanceStore } from './stores/appearance'
 
 const vuetify = createVuetify({
   components,
@@ -27,8 +27,7 @@ const app = createApp(App)
 
 const pinia = createPinia()
 app.use(pinia)
-const appearance = useAppearanceStore(pinia)
-appearance.$subscribe(() => applyThemePreference(vuetify.theme, appearance.$state))
+initTheme(vuetify.theme, useAppearanceStore(pinia))
 app.use(router)
 app.use(vuetify)
 app.use(i18n)
