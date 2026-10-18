@@ -14,11 +14,16 @@ function mountStack(props: Record<string, unknown>) {
   })
 }
 
-/** The covers on show, front first. */
+/** The covers on show, front first: not the one flipped away, nor the one
+ * waiting hidden behind the last. */
 const shown = (wrapper: ReturnType<typeof mountStack>) =>
   wrapper
     .findAll('.record-stack__record')
-    .filter((record) => !record.classes().some((c) => c.startsWith('record-leave')))
+    .filter(
+      (record) =>
+        !record.classes().some((c) => c.startsWith('record-leave')) &&
+        !record.classes('record-stack__record--waiting'),
+    )
     .map((record) => record.findComponent({ name: 'CoverArt' }).props('coverArtId'))
 
 describe('RecordStack', () => {
@@ -35,6 +40,13 @@ describe('RecordStack', () => {
     await vi.advanceTimersByTimeAsync(5000)
 
     expect(shown(wrapper)).toEqual(['a', 'b', 'c'])
+  })
+
+  it('keeps the next record waiting behind the last', () => {
+    const wrapper = mountStack({ covers: ['a', 'b', 'c', 'd', 'e'], depth: 3 })
+
+    const waiting = wrapper.find('.record-stack__record--waiting')
+    expect(waiting.findComponent({ name: 'CoverArt' }).props('coverArtId')).toBe('d')
   })
 
   it('pulls the front record and brings in the next at the back while browsed', async () => {

@@ -13,6 +13,8 @@
      - the ones behind it only by their top edges. While `browsing`, the
      - front record is flipped forward every beat and the others move up
      - one place, the next one coming in at the back - flipping through.
+     - The next one already waits exactly behind the last, so it is
+     - uncovered rather than faded in.
      -
      - Keyed by their place in an endless run of records, not by cover id:
      - with fewer covers than places the same cover comes round again, and
@@ -23,7 +25,8 @@
         v-for="record in records"
         :key="record.key"
         class="record-stack__record"
-        :style="{ '--depth': record.depth }"
+        :class="{ 'record-stack__record--waiting': record.waiting }"
+        :style="{ '--depth': Math.min(record.depth, depth - 1), '--layer': record.depth }"
       >
         <cover-art :cover-art-id="record.coverArtId" :size="size" :fallback-icon="fallbackIcon" />
       </div>
@@ -73,14 +76,14 @@ export default {
     }
   },
   computed: {
-    records(): { key: number; depth: number; coverArtId: string | null }[] {
-      return Array.from({ length: this.depth }, (_, depth) => {
+    records(): { key: number; depth: number; waiting: boolean; coverArtId: string | null }[] {
+      return Array.from({ length: this.depth + 1 }, (_, depth) => {
         const key = this.offset + depth
         const coverArtId = this.covers.length ? this.covers[key % this.covers.length]! : null
         // Before the first flip a short list shows its own empties; once
         // flipping, it comes round again instead.
         const empty = this.offset === 0 && key >= this.covers.length
-        return { key, depth, coverArtId: empty ? null : coverArtId }
+        return { key, depth, waiting: depth === this.depth, coverArtId: empty ? null : coverArtId }
       })
     },
     front(): string | null {
@@ -135,7 +138,7 @@ export default {
   position: absolute;
   left: 0;
   bottom: 0;
-  z-index: calc(10 - var(--depth));
+  z-index: calc(10 - var(--layer));
   border-radius: 4px;
   overflow: hidden;
   box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.45);
@@ -157,8 +160,7 @@ export default {
 }
 
 /* The front record is flipped forward, towards the reader, about its
- * bottom edge - the way a hand goes through a crate - and the new one at
- * the back fades in where the last edge was. Three classes deep: the
+ * bottom edge - the way a hand goes through a crate. Three classes deep: the
  * browsing rule above sets the same transform with two, and won, which
  * left the record fading out on the spot. */
 .record-stack .record-stack__record.record-leave-active {
@@ -173,20 +175,9 @@ export default {
   opacity: 0;
 }
 
-.record-enter-from {
-  opacity: 0;
-}
-
-.record-enter-active {
-  transition:
-    opacity 0.45s ease 0.15s,
-    transform 0.45s ease;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .record-stack__record,
-  .record-leave-active,
-  .record-enter-active {
+  .record-leave-active {
     transition: none;
   }
 }

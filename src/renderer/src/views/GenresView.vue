@@ -117,7 +117,8 @@ import type { Genre } from '@/types/library'
 
 let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
-/** The biggest genres shown as crates: two full rows on a wide window. */
+/** The biggest genres shown as crates: as many as fill their rows (see the
+ * grid's styles), at most two rows of four or one of eight. */
 const CRATE_COUNT = 8
 // More than the four a crate shows, so flipping through it has more to show.
 const COVERS_PER_CRATE = 12
@@ -270,35 +271,76 @@ export default {
   margin-bottom: 16px;
 }
 
-/* One, two, four or eight across - the divisors of eight, so the last row
- * is never half a row. A crate wider than about 400px is mostly empty
- * between its name and its records, so the next step comes early.
- * Measured on the section, which an open queue narrows. */
+/* A crate needs about 350px for a long one-word name ("Contemporary")
+ * beside its records; narrower, the name broke mid-word. So the columns
+ * step at multiples of CRATE_MIN, and the crates shown always fill their
+ * rows: two rows up to four across, one row from five on - eight crates
+ * three across would leave two alone in a third row. Measured on the
+ * section, which an open queue narrows. */
 .genre-crates-section {
   container-type: inline-size;
 }
 
 .genre-crates {
+  /* CRATE_MIN: 360px, the 350px above with room for another platform's
+   * font rendering. Each step below is n * 360 + (n - 1) * 16. */
+  --crate-columns: 1;
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
+  grid-template-columns: repeat(var(--crate-columns), minmax(0, 1fr));
   gap: 16px;
 }
 
-@container (min-width: 560px) {
+@container (width >= 736px) {
   .genre-crates {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    --crate-columns: 2;
   }
 }
 
-@container (min-width: 1080px) {
+@container (1112px <= width < 1456px) {
   .genre-crates {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    --crate-columns: 3;
+  }
+  .genre-crates > :nth-child(n + 7) {
+    display: none;
   }
 }
 
-@container (min-width: 2400px) {
+@container (width >= 1456px) {
   .genre-crates {
-    grid-template-columns: repeat(8, minmax(0, 1fr));
+    --crate-columns: 4;
+  }
+}
+
+@container (1864px <= width < 2240px) {
+  .genre-crates {
+    --crate-columns: 5;
+  }
+  .genre-crates > :nth-child(n + 6) {
+    display: none;
+  }
+}
+
+@container (2240px <= width < 2616px) {
+  .genre-crates {
+    --crate-columns: 6;
+  }
+  .genre-crates > :nth-child(n + 7) {
+    display: none;
+  }
+}
+
+@container (2616px <= width < 2992px) {
+  .genre-crates {
+    --crate-columns: 7;
+  }
+  .genre-crates > :nth-child(n + 8) {
+    display: none;
+  }
+}
+
+@container (width >= 2992px) {
+  .genre-crates {
+    --crate-columns: 8;
   }
 }
 
