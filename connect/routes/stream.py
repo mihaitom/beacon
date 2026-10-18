@@ -1146,9 +1146,22 @@ async def _muxed_icy_audio(audio: AsyncGenerator[bytes], muxer: IcyMuxer) -> Asy
         yield muxer.feed(chunk)
 
 
+def _cast_device_note(request: Request) -> str:
+    """The " [address, user agent, range …]" part of a cast device's
+    connection lines. The user agent names a speaker's model and firmware,
+    and a Range header shows a device fetching in blocks by itself rather
+    than reconnecting after a drop."""
+    parts = [request.client.host if request.client else "unknown address"]
+    parts.append(request.headers.get("user-agent", "no user agent")[:80])
+    range_header = request.headers.get("range")
+    if range_header:
+        parts.append(f"range {range_header[:40]}")
+    return f" [{', '.join(parts)}]"
+
+
 @router.get("/stream")
 @router.get("/stream/{session_id}")
-async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
+async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
     # Cast devices call this URL back with no way to send custom headers, so
     # the session id lives in the path itself (bare /stream is a compat alias
     # for DEFAULT_SESSION_ID — same reasoning as why this route has never had
@@ -1170,7 +1183,10 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
     # generation, so a stream somebody asked for never matches.
     st = session.state
     if not st.is_streaming and st.streamed_generation == st.clock.play_generation:
-        logger.info("[stream] Device reopened a stream that has stopped — not playing it")
+        logger.info(
+            "[stream] Device reopened a stream that has stopped — not playing it"
+            + _cast_device_note(request)
+        )
         return StreamingResponse(
             iter([b""]), media_type=st.current_output_format.content_type, status_code=204
         )
@@ -1246,7 +1262,7 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
         logger.info(
             f"[stream] Device reopened the stream on its own — resuming at "
             f"{offset:.1f}s instead of 0:00 "
-            f"(play_generation={session.state.clock.play_generation})"
+            f"(play_generation={session.state.clock.play_generation})" + _cast_device_note(request)
         )
 
     # Debug, not info — routes/playback.py's own "[play] ..." line already
@@ -1255,6 +1271,7 @@ async def audio_stream(session_id: str = DEFAULT_SESSION_ID):
     logger.debug(
         f"[stream] Client connected — {track.artist} — {track.title}"
         + (f" (seek {offset:.1f}s)" if offset > 0.5 else "")
+        + _cast_device_note(request)
     )
 
     def on_track_start(_: int) -> None:

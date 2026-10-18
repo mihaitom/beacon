@@ -14,6 +14,7 @@ import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from starlette.requests import Request
 
 import routes.stream as stream_routes
 from core.session import DEFAULT_SESSION_ID, build_status_dict, mark_interrupted
@@ -41,6 +42,12 @@ async def _empty_stream(*args, **kwargs):
 async def _real_stream(*args, **kwargs):
     yield b"chunk-1"
     yield b"chunk-2"
+
+
+def _device_request() -> Request:
+    """What a speaker's GET /stream looks like to audio_stream() when it is
+    called directly rather than through the test client."""
+    return Request({"type": "http", "method": "GET", "headers": [], "client": ("10.0.0.5", 1400)})
 
 
 def _drain(q) -> list:
@@ -159,6 +166,23 @@ def test_a_reconnect_rebases_the_stream_timeline(client, default_session):
     assert clock.elapsed_since_stream_start() == pytest.approx(0.0, abs=1.0)
 
 
+def test_a_reconnect_logs_what_the_device_sent(client, default_session, caplog):
+    """Which speaker, which firmware, and whether it asked for a byte range -
+    what tells a device fetching in blocks from one reconnecting after a drop."""
+    _mid_track_session(client, default_session, elapsed=59.0)
+    headers = {"user-agent": "Linux UPnP/1.0 Sonos/85.0-64200 (ZPS27)", "range": "bytes=1048576-"}
+
+    with (
+        patch("routes.stream.stream_tracks", side_effect=_real_stream),
+        caplog.at_level(logging.INFO, logger="connect.stream"),
+    ):
+        client.get("/stream", headers=headers)
+
+    line = next(r.message for r in caplog.records if "reopened the stream" in r.message)
+    assert "Sonos/85.0-64200 (ZPS27)" in line
+    assert "range bytes=1048576-" in line
+
+
 def test_a_fresh_dispatch_is_still_served_from_its_own_offset(client, default_session):
     """A slow device can take seconds to open its connection after a /play —
     that first connection must still get the dispatch's own offset, not
@@ -253,7 +277,7 @@ async def test_active_stream_connections_rolls_back_when_setup_fails_before_stre
         ),
         pytest.raises(RuntimeError),
     ):
-        await audio_stream(session_id=default_session.session_id)
+        await audio_stream(_device_request(), session_id=default_session.session_id)
 
     assert default_session.state.active_stream_connections == before
 
@@ -738,7 +762,7 @@ async def test_ffmpeg_failure_mid_stream_reports_not_streaming_without_marking_e
     q = default_session.event_bus.subscribe()
 
     with patch("routes.stream.stream_tracks", side_effect=_crashes_after_one_chunk):
-        resp = await audio_stream(session_id=default_session.session_id)
+        resp = await audio_stream(_device_request(), session_id=default_session.session_id)
         chunks = [chunk async for chunk in resp.body_iterator]
 
     assert chunks == [b"partial-chunk"]
@@ -764,7 +788,7 @@ async def test_a_track_beacon_cannot_fetch_is_reported_to_the_listener(client, d
     q = default_session.event_bus.subscribe()
 
     with patch("routes.stream.stream_tracks", side_effect=_source_unavailable):
-        resp = await audio_stream(session_id=default_session.session_id)
+        resp = await audio_stream(_device_request(), session_id=default_session.session_id)
         chunks = [chunk async for chunk in resp.body_iterator]
 
     assert chunks == []
@@ -792,7 +816,7 @@ async def test_the_devices_retries_after_a_source_failure_are_not_reported_again
 
     with patch("routes.stream.stream_tracks", side_effect=_source_unavailable):
         for _ in range(3):
-            resp = await audio_stream(session_id=default_session.session_id)
+            resp = await audio_stream(_device_request(), session_id=default_session.session_id)
             [chunk async for chunk in resp.body_iterator]
 
     assert len([p for p in _drain(q) if p.get("delivery_error")]) == 1
@@ -811,7 +835,7 @@ async def test_client_disconnect_mid_stream_is_reraised_without_touching_state(
     q = default_session.event_bus.subscribe()
 
     with patch("routes.stream.stream_tracks", side_effect=_disconnects_after_one_chunk):
-        resp = await audio_stream(session_id=default_session.session_id)
+        resp = await audio_stream(_device_request(), session_id=default_session.session_id)
         assert default_session.state.active_stream_connections == 1
         gen = resp.body_iterator
         first = await gen.__anext__()
@@ -1420,7 +1444,7 @@ async def test_casting_alone_starts_no_analysis(client, default_session):
     default_session.state.is_streaming = False
 
     with patch("routes.stream.stream_tracks", side_effect=_real_stream):
-        resp = await audio_stream(session_id=default_session.session_id)
+        resp = await audio_stream(_device_request(), session_id=default_session.session_id)
         chunks = [chunk async for chunk in resp.body_iterator]
 
     assert chunks == [b"chunk-1", b"chunk-2"]
@@ -1455,7 +1479,7 @@ async def test_stream_schedules_fire_track_end_with_the_remaining_duration(clien
         patch("routes.stream.stream_tracks", side_effect=_real_stream),
         patch("routes.stream.asyncio.create_task", side_effect=_capture_and_discard),
     ):
-        resp = await audio_stream(session_id=default_session.session_id)
+        resp = await audio_stream(_device_request(), session_id=default_session.session_id)
         [_ async for _ in resp.body_iterator]
 
     # Track duration is 180s (see _configure_and_set_track), started just
@@ -1541,7 +1565,7 @@ async def test_fire_track_end_waits_out_the_last_half_second_instead_of_cutting_
         patch("routes.stream.stream_tracks", side_effect=_real_stream),
         patch("routes.stream.asyncio.create_task", side_effect=_capture_task),
     ):
-        resp = await audio_stream(session_id=default_session.session_id)
+        resp = await audio_stream(_device_request(), session_id=default_session.session_id)
         [_ async for _ in resp.body_iterator]
 
     # Half a second left: the old loop treated this as "done" and advanced.
@@ -1583,7 +1607,7 @@ async def test_fire_track_end_repolls_until_the_track_actually_finishes(client, 
         patch("routes.stream.stream_tracks", side_effect=_real_stream),
         patch("routes.stream.asyncio.create_task", side_effect=_capture_task),
     ):
-        resp = await audio_stream(session_id=default_session.session_id)
+        resp = await audio_stream(_device_request(), session_id=default_session.session_id)
         [_ async for _ in resp.body_iterator]
 
     # Two polls that still find real time left (sleep, re-measure), then a
