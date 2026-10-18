@@ -1,8 +1,9 @@
 import { login, getStoredPassword, setStoredPassword, clearStoredPassword, connectEvents, fetchInitialState, fireCommand } from './js/api.js';
-import { setSnapshot, setConnected, subscribe } from './js/state.js';
+import { state, setSnapshot, setConnected, subscribe } from './js/state.js';
 import { startRouter } from './js/router.js';
 import { initMiniPlayer } from './js/mini-player.js';
 import { t, translateDocument } from './js/i18n.js';
+import { applyTheme, restoreTheme } from './js/theme.js';
 
 // Before anything is shown: the markup carries English as a placeholder.
 translateDocument();
@@ -88,6 +89,10 @@ function showApp() {
   appScreen.classList.remove('hidden');
   startApp();
 }
+
+// Before anything renders, including the login screen.
+restoreTheme();
+subscribe(() => applyTheme(state.snapshot.theme));
 
 let started = false;
 

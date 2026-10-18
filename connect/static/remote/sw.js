@@ -28,6 +28,8 @@ const SHELL_PATHS = [
   './js/song-row.js',
   './js/favorite.js',
   './js/i18n.js',
+  './js/long-press.js',
+  './js/theme.js',
   './js/locales/de.js',
   './js/locales/en.js',
   './js/locales/es.js',

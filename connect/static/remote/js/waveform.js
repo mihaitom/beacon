@@ -10,10 +10,17 @@
 
 import { fetchWaveform } from './api.js';
 
-// Straight from SongWaveform.vue, so a track looks the same on both.
-const PLAYED_COLOR = 'rgba(245, 169, 78, 0.85)';
-const UNPLAYED_COLOR = 'rgba(255, 255, 255, 0.22)';
-const MARKER_COLOR = 'rgba(255, 255, 255, 0.9)';
+// Straight from WaveformBars.vue, so a track looks the same on both: the
+// played part in the accent, the rest and the playhead in the text colour.
+// A canvas can't read a CSS variable, so they are looked up on each paint
+// (js/theme.js sets them); the fallbacks are Beacon's.
+const PLAYED_ALPHA = 0.85;
+const UNPLAYED_ALPHA = 0.22;
+const MARKER_ALPHA = 0.9;
+
+function themeTriplet(canvas, variable, fallback) {
+  return getComputedStyle(canvas).getPropertyValue(variable).trim() || fallback;
+}
 // Fixed bar size in CSS px, the bar count follows the width - also as in
 // WaveformBars.vue.
 const BAR_WIDTH = 2;
@@ -66,6 +73,11 @@ export function createWaveform({ onPreview, onSeek }) {
     const { width, height } = canvas;
     if (!ctx || width <= 0 || height <= 0) return;
     ctx.clearRect(0, 0, width, height);
+    const accent = themeTriplet(canvas, '--accent-rgb', '245, 169, 78');
+    const ink = themeTriplet(canvas, '--text-rgb', '255, 255, 255');
+    const playedColor = `rgba(${accent}, ${PLAYED_ALPHA})`;
+    const unplayedColor = `rgba(${ink}, ${UNPLAYED_ALPHA})`;
+    const markerColor = `rgba(${ink}, ${MARKER_ALPHA})`;
 
     // Clamped, so a position that lands a hair past duration (rounding,
     // mostly) reads as fully played instead of drawing off the edge.
@@ -76,9 +88,9 @@ export function createWaveform({ onPreview, onSeek }) {
       // same two colours, so the bar still reads as a seek bar rather than
       // as empty space. Radio never gets here; it swaps the whole row out.
       const y = height / 2 - 1;
-      ctx.fillStyle = UNPLAYED_COLOR;
+      ctx.fillStyle = unplayedColor;
       ctx.fillRect(0, y, width, 2);
-      ctx.fillStyle = PLAYED_COLOR;
+      ctx.fillStyle = playedColor;
       ctx.fillRect(0, y, playedX, 2);
     } else {
       const ratio = window.devicePixelRatio || 1;
@@ -102,11 +114,11 @@ export function createWaveform({ onPreview, onSeek }) {
         });
         ctx.fill();
       };
-      paintBars(UNPLAYED_COLOR, false);
-      paintBars(PLAYED_COLOR, true);
+      paintBars(unplayedColor, false);
+      paintBars(playedColor, true);
     }
 
-    ctx.fillStyle = MARKER_COLOR;
+    ctx.fillStyle = markerColor;
     ctx.fillRect(Math.min(width - 1.5, playedX), 0, 1.5, height);
   }
 

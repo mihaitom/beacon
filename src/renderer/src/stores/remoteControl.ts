@@ -1,3 +1,5 @@
+import { useAppearanceStore } from '@/stores/appearance'
+import { remotePalette } from '@/plugins/theme'
 import { defineStore } from 'pinia'
 import {
   enableRemoteControl,
@@ -375,6 +377,9 @@ export const useRemoteControlStore = defineStore('remoteControl', {
           // the phone authenticates with its own password header, so this
           // is the one thing it cannot work out for itself.
           session_id: useAuthStore().sessionId,
+          // The colours of the theme picked here, so the phone looks like
+          // this window (see plugins/theme.ts's remotePalette()).
+          theme: remotePalette(useAppearanceStore().$state),
           stream_info:
             connect.isActive && connect.status?.stream_info
               ? {
@@ -405,6 +410,7 @@ export const useRemoteControlStore = defineStore('remoteControl', {
       const unsubFromConnect = connect.$subscribe(schedulePush, { detached: true })
       const unsubFromAutoplay = autoplay.$subscribe(schedulePush, { detached: true })
       const unsubFromParty = usePartyStore().$subscribe(schedulePush, { detached: true })
+      const unsubFromAppearance = useAppearanceStore().$subscribe(schedulePush, { detached: true })
       // A new ICY title changes nothing in playback itself.
       const unsubFromRadioMeta = useRadioMetadataStore().$subscribe(schedulePush, {
         detached: true,
@@ -414,6 +420,7 @@ export const useRemoteControlStore = defineStore('remoteControl', {
         unsubFromConnect()
         unsubFromAutoplay()
         unsubFromParty()
+        unsubFromAppearance()
         unsubFromRadioMeta()
       }
     },

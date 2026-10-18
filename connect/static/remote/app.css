@@ -1,8 +1,8 @@
-/* Mirrors the "Beacon" Vuetify theme (src/renderer/src/main.ts) and
- * src/renderer/src/assets/base.css's --beacon-* tokens — this is a
- * separately-served static app (connect/static/remote), not built through
- * the same Vue/Vuetify pipeline, so the palette is hand-copied here rather
- * than shared at build time. Keep in sync if either changes. */
+/* The "Beacon" theme (src/renderer/src/plugins/theme.ts) and base.css's
+ * --beacon-* tokens, hand-copied: this is a separately-served static app,
+ * not built through the Vue/Vuetify pipeline. These are only the defaults -
+ * once the desktop's first snapshot arrives, js/theme.js overwrites them
+ * with the theme picked there. Keep in sync if Beacon's change. */
 :root {
   color-scheme: dark;
   --bg: #12141c;
@@ -18,8 +18,12 @@
    * the same colour on both surfaces. */
   --warning: #f2a93b;
   --success: #5fb489;
-  --border: rgba(245, 169, 78, 0.14);
-  --hover: rgba(245, 169, 78, 0.07);
+  /* The accent and the text as triplets, for the tints below (set again by
+   * js/theme.js alongside --accent and --text). */
+  --accent-rgb: 245, 169, 78;
+  --text-rgb: 242, 242, 244;
+  --border: rgba(var(--accent-rgb), 0.14);
+  --hover: rgba(var(--accent-rgb), 0.07);
 }
 
 * { box-sizing: border-box; }
@@ -216,7 +220,7 @@ textarea {
   font-size: 16px;
   /* Same beacon-glow language as the mobile app bar's icon and every
    * section-title's lit mark — see base.css's .beacon-glow/.section-title. */
-  filter: drop-shadow(0 0 6px rgba(245, 169, 78, 0.55));
+  filter: drop-shadow(0 0 6px rgba(var(--accent-rgb), 0.55));
 }
 
 .app-bar__title {
@@ -347,7 +351,7 @@ textarea {
   height: 4px;
   border-radius: 2px;
   overflow: hidden;
-  background: rgba(245, 169, 78, 0.25);
+  background: rgba(var(--accent-rgb), 0.25);
 }
 /* The indeterminate sweep Vuetify's v-progress-linear gives the app's own
  * buffering state, done by hand here. */
@@ -376,9 +380,9 @@ textarea {
 }
 .live-dot--on-air { animation: live-ping 2.4s ease-out infinite; }
 @keyframes live-ping {
-  0% { box-shadow: 0 0 0 0 rgba(245, 169, 78, 0.45); }
-  70% { box-shadow: 0 0 0 7px rgba(245, 169, 78, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(245, 169, 78, 0); }
+  0% { box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0.45); }
+  70% { box-shadow: 0 0 0 7px rgba(var(--accent-rgb), 0); }
+  100% { box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0); }
 }
 .live-label {
   color: var(--accent);
@@ -668,7 +672,7 @@ input[type="range"]:disabled::-moz-range-thumb {
 
 /* Held long enough to be picked up (see long-press.js). Stronger than
  * :active's --hover, which is already showing while the finger is down. */
-.row.lifted { background: rgba(245, 169, 78, 0.16); }
+.row.lifted { background: rgba(var(--accent-rgb), 0.16); }
 
 .row.dragging { opacity: 0.5; }
 /* Where the dragged song would land. Inset shadows rather than borders, so

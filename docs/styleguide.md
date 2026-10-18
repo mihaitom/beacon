@@ -105,8 +105,11 @@ root element. On a light theme the artist and album pages' band
 (`DetailPageBackdrop`) ends with the header and fades into the page below
 instead of running on behind the albums and songs.
 
-The party guest page and the Remote Control have no themes: they are
-Beacon's colours.
+The party guest page has no themes: it is Beacon's colours. The Remote
+Control follows the app it controls: every snapshot carries the theme's
+palette as plain hex values (`remotePalette()`), which the phone's
+`js/theme.js` writes into `app.css`'s variables and remembers for the next
+reload. Its Now Playing has no picture behind it, so it needs no night.
 
 Plus the chrome tokens in `base.css`:
 

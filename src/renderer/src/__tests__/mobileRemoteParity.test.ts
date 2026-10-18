@@ -80,16 +80,17 @@ describe('the mobile web view and the phone remote', () => {
     expect(declaration(baseCss, '.mobile-row:last-child', 'border-bottom')).toBe('none')
   })
 
-  // The Remote Control has no themes: it is Beacon's own colours, so it is
-  // held against the Beacon theme the app's tokens are filled from.
+  // The Remote Control takes the desktop's theme with each snapshot (its
+  // js/theme.js); until the first arrives it starts in Beacon's colours,
+  // held here against the Beacon theme the app's tokens are filled from.
   it('use the same chrome colour and the same hairline', () => {
     const beacon = PRESET_THEMES.find((preset) => preset.id === 'beacon')!.definition.colors!
     expect(token(remoteCss, '--chrome').toLowerCase()).toBe((beacon.chrome as string).toLowerCase())
-    const hairlineAlpha = /--beacon-hairline:\s*rgba\(var\(--v-theme-primary\),\s*([0-9.]+)\)/.exec(
-      baseCss,
-    )![1]
-    expect(token(remoteCss, '--border').replace(/\s/g, '')).toBe(
-      `rgba(${hexToTriplet(beacon.primary as string)},${hairlineAlpha})`.replace(/\s/g, ''),
+    expect(token(remoteCss, '--accent-rgb')).toBe(hexToTriplet(beacon.primary as string))
+    const alpha = (css: string, name: string, base: string) =>
+      new RegExp(`${name}:\\s*rgba\\(var\\(${base}\\),\\s*([0-9.]+)\\)`).exec(css)?.[1]
+    expect(alpha(remoteCss, '--border', '--accent-rgb')).toBe(
+      alpha(baseCss, '--beacon-hairline', '--v-theme-primary'),
     )
   })
 })

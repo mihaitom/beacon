@@ -72,23 +72,24 @@ change, with a comment line as heartbeat every 15 seconds.
 
 The fields an integration is likely to need:
 
-| Field                  | Meaning                                                                                 |
-| ---------------------- | --------------------------------------------------------------------------------------- |
-| `playing`              | `true` while playing                                                                    |
-| `position`             | Seconds into the current track                                                          |
-| `duration`             | Length of the current track in seconds                                                  |
-| `volume`               | Local volume, 0 to 1                                                                    |
-| `device_volume`        | Volume of the one speaker being cast to, 0 to 100, else null                            |
-| `shuffle`, `repeat`    | `repeat` is `off`, `all` or `one`                                                       |
-| `current_song`         | `id`, `title`, `artist`, `album`, `duration`, `cover_art_id`                            |
-| `radio`                | `name`, `now_playing`, `home_page_url`, `favicon_hint` while a station plays, else null |
-| `queue`                | Songs, same shape as `current_song`; `queue_index` is current                           |
-| `casting`              | The speakers being cast to, each with `type` and `name`                                 |
-| `interrupted`          | A speaker dropped out; `resume-interrupted` picks it back up                            |
-| `autoplay`             | Whether Autoplay is on                                                                  |
+| Field                  | Meaning                                                                                                                                                  |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `playing`              | `true` while playing                                                                                                                                     |
+| `position`             | Seconds into the current track                                                                                                                           |
+| `duration`             | Length of the current track in seconds                                                                                                                   |
+| `volume`               | Local volume, 0 to 1                                                                                                                                     |
+| `device_volume`        | Volume of the one speaker being cast to, 0 to 100, else null                                                                                             |
+| `shuffle`, `repeat`    | `repeat` is `off`, `all` or `one`                                                                                                                        |
+| `current_song`         | `id`, `title`, `artist`, `album`, `duration`, `cover_art_id`                                                                                             |
+| `radio`                | `name`, `now_playing`, `home_page_url`, `favicon_hint` while a station plays, else null                                                                  |
+| `queue`                | Songs, same shape as `current_song`; `queue_index` is current                                                                                            |
+| `casting`              | The speakers being cast to, each with `type` and `name`                                                                                                  |
+| `interrupted`          | A speaker dropped out; `resume-interrupted` picks it back up                                                                                             |
+| `autoplay`             | Whether Autoplay is on                                                                                                                                   |
 | `party`                | Party mode, read-only: `running`, `guests` (how many joined), `listeners` (how many listen along online), `listen_kbps` (the online bitrate, 0 when off) |
-| `song_radio_supported` | Whether `play-song-radio` works with this music server                                  |
-| `session_id`           | Needed for cover art, see below                                                         |
+| `song_radio_supported` | Whether `play-song-radio` works with this music server                                                                                                   |
+| `session_id`           | Needed for cover art, see below                                                                                                                          |
+| `theme`                | The app's theme as hex colours (`background`, `surface`, `accent`, `text`, ...) and `dark`                                                               |
 
 `party` is read-only: there is no command to start or end one. A party is
 driven from the app, and the same `party` object is what the bundled

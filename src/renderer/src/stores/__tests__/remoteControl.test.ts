@@ -10,6 +10,7 @@ import { RemoteAgentEventSource } from '@/services/remoteControl/agent'
 import { makeSong, makeStatus } from './fixtures'
 import { useRadioMetadataStore } from '../radioMetadata'
 import { usePartyStore } from '../party'
+import { useAppearanceStore } from '../appearance'
 
 vi.mock('@/services/remoteControl/http', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/services/remoteControl/http')>()
@@ -286,6 +287,23 @@ describe('remoteControl store', () => {
       await vi.advanceTimersByTimeAsync(300)
 
       expect(remoteHttp.pushRemoteState).toHaveBeenCalledTimes(1)
+    })
+
+    it('sends the phone the new colours when the theme changes here', async () => {
+      vi.useFakeTimers()
+      const store = useRemoteControlStore()
+      await store.generateIntegrationKey()
+      await vi.advanceTimersByTimeAsync(300)
+      vi.mocked(remoteHttp.pushRemoteState).mockClear()
+
+      useAppearanceStore().setTheme('mist')
+      await vi.advanceTimersByTimeAsync(300)
+
+      expect(remoteHttp.pushRemoteState).toHaveBeenCalledTimes(1)
+      const snapshot = vi.mocked(remoteHttp.pushRemoteState).mock.calls[0]![0] as {
+        theme: { accent: string }
+      }
+      expect(snapshot.theme.accent).toBe('#2E6BB0')
     })
 
     it('keeps the relay for a party this window hosts', () => {

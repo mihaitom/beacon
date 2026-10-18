@@ -1,5 +1,5 @@
 import type { ThemeDefinition } from 'vuetify'
-import { isDarkColor, isHexColor, mix, towardsContrast } from '@/services/themeColors'
+import { contrast, isDarkColor, isHexColor, mix, towardsContrast } from '@/services/themeColors'
 
 /** "Beacon" — a light that guides you back into your music. Warm amber
  * signal-light against deep night-navy, not Vuetify's default blue/dark
@@ -217,6 +217,56 @@ export function sanitizeThemePreference(raw: unknown): ThemePreference {
  * so the first frame is already in the chosen theme. */
 export function themeOptions(preference: ThemePreference) {
   return { defaultTheme: preference.theme, themes: themeDefinitions(preference) }
+}
+
+/** What the Remote Control draws in: the chosen theme's own colours (never
+ * Now Playing's borrowed accent), as concrete values, since the phone's
+ * plain-JS page has no Vuetify to derive them. Sent with every snapshot
+ * (stores/remoteControl.ts) and applied by connect/static/remote/js/theme.js. */
+export interface RemotePalette {
+  dark: boolean
+  background: string
+  chrome: string
+  surface: string
+  surface_bright: string
+  text: string
+  text_muted: string
+  accent: string
+  accent_on: string
+  error: string
+  warning: string
+  success: string
+}
+
+// The Remote's own text white on a dark theme, a hair off pure white.
+const REMOTE_DARK_TEXT = '#F2F2F4'
+// How far the muted text sits towards the background: the Remote's
+// #9A9AA2 on Beacon's navy.
+const MUTED_TEXT_MIX = 0.42
+
+export function remotePalette(preference: ThemePreference): RemotePalette {
+  const definition = themeDefinitions(preference)[preference.theme]!
+  const colors = definition.colors as Record<string, string>
+  const dark = Boolean(definition.dark)
+  const background = colors.background!
+  const text = dark ? REMOTE_DARK_TEXT : colors['on-surface']!
+  const accent = colors.primary!
+  return {
+    dark,
+    background,
+    chrome: colors.chrome!,
+    surface: colors.surface!,
+    surface_bright: colors['surface-bright']!,
+    text,
+    text_muted: mix(text, background, MUTED_TEXT_MIX),
+    accent,
+    // White where it reads on the accent, else the darkest the theme has -
+    // what Vuetify's own on-primary does on the app's buttons.
+    accent_on: contrast(accent, '#FFFFFF') >= 4.5 ? '#FFFFFF' : dark ? background : '#000000',
+    error: colors.error!,
+    warning: colors.warning!,
+    success: colors.success!,
+  }
 }
 
 /** The party guest page: Beacon only. */
