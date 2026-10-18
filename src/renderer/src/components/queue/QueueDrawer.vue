@@ -218,9 +218,12 @@
         </v-virtual-scroll>
       </template>
 
-      <v-list-item v-else>
-        <span class="text-medium-emphasis text-body-medium">{{ $t('queue.empty') }}</span>
-      </v-list-item>
+      <empty-state
+        v-else
+        icon="mdi-playlist-music-outline"
+        :title="$t('queue.empty')"
+        :text="$t('queue.emptyHint')"
+      />
 
       <!-- One menu for the whole list rather than one per row. It holds the
        - song, not its index: the queue can move on (or be edited elsewhere)
@@ -297,6 +300,7 @@
 
 <script lang="ts">
 import { usePlaybackStore } from '@/stores/playback'
+import EmptyState from '@/components/EmptyState.vue'
 import { useDrawersStore } from '@/stores/drawers'
 import { useLibraryStore } from '@/stores/library'
 import { markRaw } from 'vue'
@@ -402,6 +406,7 @@ function floatingQuery(): MediaQueryList | null {
 export default {
   name: 'QueueDrawer',
   components: {
+    EmptyState,
     QueueRow,
     TileContextMenu,
     ContextMenuSection,

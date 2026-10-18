@@ -38,7 +38,12 @@
       </v-virtual-scroll>
     </div>
 
-    <v-alert v-else type="info" variant="tonal">{{ $t('queue.empty') }}</v-alert>
+    <empty-state
+      v-else
+      icon="mdi-playlist-music-outline"
+      :title="$t('queue.empty')"
+      :text="$t('queue.emptyHint')"
+    />
 
     <!-- Closes by itself if the song leaves the queue while it is open. -->
     <mobile-song-action-sheet
@@ -52,6 +57,7 @@
 
 <script lang="ts">
 import { usePlaybackStore } from '@/stores/playback'
+import EmptyState from '@/components/EmptyState.vue'
 import MobileQueueRow from '@/components/mobile/MobileQueueRow.vue'
 import MobileSongActionSheet from '@/components/mobile/MobileSongActionSheet.vue'
 import { MOBILE_ROW_HEIGHT } from '@/components/mobile/rowMetrics'
@@ -91,7 +97,7 @@ function rowKey(song: Song): string {
 
 export default {
   name: 'MobileQueueView',
-  components: { MobileQueueRow, MobileSongActionSheet },
+  components: { EmptyState, MobileQueueRow, MobileSongActionSheet },
   data() {
     return {
       MOBILE_ROW_HEIGHT,

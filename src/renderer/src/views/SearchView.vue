@@ -67,14 +67,18 @@
     </template>
 
     <v-progress-circular v-if="libraryStore.loading" indeterminate />
-    <v-alert v-else-if="query && !hasResults" type="info" variant="tonal">
-      {{ $t('search.noResults', { query }) }}
-    </v-alert>
+    <empty-state
+      v-else-if="query && !hasResults"
+      icon="mdi-magnify-close"
+      :title="$t('search.noResults', { query })"
+      :text="$t('search.noResultsHint')"
+    />
   </v-container>
 </template>
 
 <script lang="ts">
 import { useLibraryStore } from '@/stores/library'
+import EmptyState from '@/components/EmptyState.vue'
 import AlbumCard from '@/components/library/AlbumCard.vue'
 import ArtistCard from '@/components/library/ArtistCard.vue'
 import CardShelf from '@/components/library/CardShelf.vue'
@@ -93,7 +97,7 @@ const GRID_VIEW_KEY: Record<CardSection, string> = {
 
 export default {
   name: 'SearchView',
-  components: { AlbumCard, ArtistCard, CardShelf, ExactMatchSwitch, SongTable },
+  components: { EmptyState, AlbumCard, ArtistCard, CardShelf, ExactMatchSwitch, SongTable },
   data() {
     return {
       query: '',

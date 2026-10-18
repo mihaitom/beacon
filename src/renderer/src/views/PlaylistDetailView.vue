@@ -65,9 +65,12 @@
      - opening one that was created empty in the first place (see
      - capabilities.ts's emptyPlaylistCreation) — without this the page
      - ends on a column-heading row with nothing under it. -->
-    <v-alert v-if="!playlist.songs.length" type="info" variant="tonal" class="view-notice">
-      {{ playlist.smart ? $t('playlists.smartEmpty') : $t('playlists.noSongsYet') }}
-    </v-alert>
+    <empty-state
+      v-if="!playlist.songs.length"
+      :icon="playlist.smart ? 'mdi-playlist-star' : 'mdi-playlist-music-outline'"
+      :title="playlist.smart ? $t('playlists.smartEmpty') : $t('playlists.noSongsYet')"
+      :text="playlist.smart ? undefined : $t('playlists.emptyHint')"
+    />
     <!-- Reordering and removing: only your own playlists. A shared one
      - belongs to whoever made it, and the server rejects the write anyway
      - (Navidrome answers createPlaylist for someone else's playlist with a
@@ -93,6 +96,7 @@
 
 <script lang="ts">
 import { formatTotalDuration } from '@/services/totalDuration'
+import EmptyState from '@/components/EmptyState.vue'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
@@ -113,6 +117,7 @@ import type { Playlist, Song } from '@/types/library'
 export default {
   name: 'PlaylistDetailView',
   components: {
+    EmptyState,
     DetailHeader,
     SongTable,
     PlaylistEditDialog,

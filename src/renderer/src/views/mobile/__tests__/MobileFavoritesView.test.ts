@@ -10,7 +10,7 @@ import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import MobileFavoritesView from '../MobileFavoritesView.vue'
 import { makeSong } from '@/stores/__tests__/fixtures'
-import type { Album, Song } from '@/types/library'
+import type { Album, Artist, Song } from '@/types/library'
 
 const vuetify = createVuetify({ components, directives })
 
@@ -20,10 +20,10 @@ const router = createRouter({
   routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }],
 })
 
-function stubFavorites(songs: Song[], albums: Album[] = []) {
+function stubFavorites(songs: Song[], albums: Album[] = [], artists: Artist[] = []) {
   const library = useLibraryStore()
   vi.spyOn(library, 'fetchStarred').mockImplementation(async () => {
-    library.starred = { artists: [], albums, songs }
+    library.starred = { artists, albums, songs }
   })
   return library
 }
@@ -64,11 +64,23 @@ describe('MobileFavoritesView', () => {
     stubFavorites([makeSong('a')])
     const wrapper = mountView()
     await flushPromises()
-    expect(wrapper.find('.v-alert').exists()).toBe(false)
+    expect(wrapper.find('.v-empty-state').exists()).toBe(false)
 
     await switchTo(wrapper, 'Albums')
 
     expect(wrapper.findAllComponents({ name: 'MobileSongRow' })).toHaveLength(0)
-    expect(wrapper.find('.v-alert').text()).toBe(i18n.global.t('favorites.noAlbumsYet'))
+    expect(wrapper.find('.v-empty-state__title').text()).toBe(
+      i18n.global.t('favorites.noAlbumsYet'),
+    )
+  })
+
+  it('lists the favourite artists, each leading to its page', async () => {
+    stubFavorites([], [], [{ id: 'ar1', name: 'Blue Band', albumCount: 2 } as Artist])
+    const wrapper = mountView()
+    await flushPromises()
+
+    await switchTo(wrapper, 'Artists')
+
+    expect(wrapper.get('.mobile-artist-row').attributes('href')).toBe('/m/artists/ar1')
   })
 })

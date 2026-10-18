@@ -7,7 +7,7 @@
     @pointercancel="onPointerUp"
   >
     <button
-      v-for="letter in letters"
+      v-for="letter in sections"
       :key="letter"
       type="button"
       class="alphabet-index-letter"
@@ -27,15 +27,17 @@
 
 <script lang="ts">
 import type { PropType } from 'vue'
-
-// '#' first (not last) — same convention Subsonic's own getArtists.view
-// index uses for non-letter-leading names, and matches where a thumb
-// naturally lands first reaching for the top of the bar.
-const LETTERS = ['#', ...Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i))]
+import { ALPHABET_SECTIONS } from '@/services/alphabetIndex'
 
 export default {
   name: 'AlphabetIndexBar',
   props: {
+    // What the bar lists, top to bottom. The alphabet unless the list is in
+    // another order - the album list by year passes its decades.
+    sections: {
+      type: Array as PropType<string[]>,
+      default: () => ALPHABET_SECTIONS,
+    },
     // Letters (already uppercased, '#' for anything not starting with A-Z)
     // that have at least one match in the list right now. Letters outside
     // this set still render, just greyed out and inert — keeping the bar's
@@ -56,7 +58,6 @@ export default {
   emits: ['select'],
   data() {
     return {
-      letters: LETTERS,
       dragging: false,
     }
   },

@@ -750,20 +750,21 @@ describe('NowPlayingView', () => {
       expect(wrapper.classes()).toContain('now-playing--compact')
     })
 
-    // The mobile shell has its own album page and no artist page at all
-    // (see the router's m-album-detail comment). Sending either tap to the
-    // desktop route left a table with no phone layout and no way back.
+    // The mobile shell has its own album and artist pages. Sending either
+    // tap to the desktop route left a table with no phone layout and no way
+    // back.
     it('sends the album to the mobile shell own page', async () => {
       const { wrapper } = await mountCompactWithSong()
 
       expect(wrapper.get('.now-playing__album-link').attributes('href')).toBe('/m/albums/album-1')
     })
 
-    it('names the artist without linking anywhere', async () => {
+    it("sends the artist to the mobile shell's own page", async () => {
       const { wrapper } = await mountCompactWithSong()
+      const link = wrapper.get('.now-playing__artist-link')
 
-      expect(wrapper.find('.now-playing__artist-link').exists()).toBe(false)
-      expect(wrapper.get('.now-playing__artist-label').text()).toBe('Artist A')
+      expect(link.attributes('href')).toMatch(/^\/m\/artists\//)
+      expect(link.text()).toBe('Artist A')
     })
   })
 })

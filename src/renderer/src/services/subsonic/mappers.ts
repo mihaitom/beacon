@@ -70,6 +70,7 @@ export function mapAlbum(raw: RawAlbum): Album {
     originalYear,
     reissueYear: originalYear && editionYear && editionYear !== originalYear ? editionYear : null,
     musicBrainzId: raw.musicBrainzId || null,
+    created: raw.created || null,
   }
 }
 

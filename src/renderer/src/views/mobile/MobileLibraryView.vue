@@ -7,7 +7,8 @@
     <!-- One list at a time rather than two stacked sections: a phone has
      - room for one, and the search below applies to whichever is showing
      - (see searchLabel). Same shape as the reference implementation in
-     - feishin's own remote library page. -->
+     - feishin's own remote library page. Artists open their own page
+     - (MobileArtistDetailView.vue) rather than playing. -->
     <!-- Sticky, the same as RadioView.vue's own filter — this list runs to
      - a whole catalogue, and a switch you have to scroll back up to reach
      - is a switch you stop using. The toggle rides along with it: which
@@ -18,7 +19,7 @@
         :options="viewOptions"
         :label="$t('nav.library')"
         class="mobile-library__toggle"
-        @update:model-value="view = $event as 'albums' | 'songs'"
+        @update:model-value="view = $event as LibraryTab"
       />
       <v-text-field
         v-model="filterQuery"
@@ -52,14 +53,28 @@
           />
         </template>
       </v-virtual-scroll>
-      <v-virtual-scroll v-else renderless :items="filteredAlbums" :item-height="MOBILE_ROW_HEIGHT">
+      <v-virtual-scroll
+        v-else-if="view === 'albums'"
+        renderless
+        :items="filteredAlbums"
+        :item-height="MOBILE_ROW_HEIGHT"
+      >
         <template #default="{ item: album }">
           <mobile-album-row :key="album.id" :album="album" @play="playAlbum(album)" />
         </template>
       </v-virtual-scroll>
+      <v-virtual-scroll v-else renderless :items="filteredArtists" :item-height="MOBILE_ROW_HEIGHT">
+        <template #default="{ item: artist }">
+          <mobile-artist-row :key="artist.id" :artist="artist" />
+        </template>
+      </v-virtual-scroll>
     </div>
 
-    <v-alert v-if="showEmptyState" type="info" variant="tonal">{{ emptyMessage }}</v-alert>
+    <empty-state
+      v-if="showEmptyState"
+      :icon="debouncedQuery ? 'mdi-magnify-close' : 'mdi-music-note-off'"
+      :title="emptyMessage"
+    />
 
     <mobile-song-action-sheet v-model="actionsOpen" :song="activeSong" />
   </v-container>
@@ -67,23 +82,29 @@
 
 <script lang="ts">
 import { useLibraryStore } from '@/stores/library'
+import EmptyState from '@/components/EmptyState.vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { matchesAllTerms } from '@/services/textSearch'
 import MobileSongRow from '@/components/mobile/MobileSongRow.vue'
 import MobileAlbumRow from '@/components/mobile/MobileAlbumRow.vue'
+import MobileArtistRow from '@/components/mobile/MobileArtistRow.vue'
 import MobileSongActionSheet from '@/components/mobile/MobileSongActionSheet.vue'
 import SegmentedControl from '@/components/SegmentedControl.vue'
 import StickyFilter from '@/components/StickyFilter.vue'
 import { MOBILE_ROW_HEIGHT } from '@/components/mobile/rowMetrics'
-import type { Album, Song } from '@/types/library'
+import type { Album, Artist, Song } from '@/types/library'
+
+type LibraryTab = 'songs' | 'albums' | 'artists'
 
 let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
 export default {
   name: 'MobileLibraryView',
   components: {
+    EmptyState,
     MobileSongRow,
     MobileAlbumRow,
+    MobileArtistRow,
     MobileSongActionSheet,
     SegmentedControl,
     StickyFilter,
@@ -91,7 +112,7 @@ export default {
   data() {
     return {
       MOBILE_ROW_HEIGHT,
-      view: 'songs' as 'songs' | 'albums',
+      view: 'songs' as LibraryTab,
       filterQuery: '',
       debouncedQuery: '',
       actionsOpen: false,
@@ -109,9 +130,11 @@ export default {
       return [
         { title: this.$t('library.songs'), value: 'songs' },
         { title: this.$t('library.albums'), value: 'albums' },
+        { title: this.$t('library.artists'), value: 'artists' },
       ]
     },
     searchLabel(): string {
+      if (this.view === 'artists') return this.$t('library.searchArtists')
       return this.showingSongs ? this.$t('library.searchSongs') : this.$t('library.searchAlbums')
     },
     filteredSongs(): Song[] {
@@ -128,12 +151,25 @@ export default {
         matchesAllTerms(query, [album.name, album.artist], { exact: true }),
       )
     },
+    filteredArtists(): Artist[] {
+      const query = this.debouncedQuery
+      if (!query.trim()) return this.libraryStore.artists
+      return this.libraryStore.artists.filter((artist: Artist) =>
+        matchesAllTerms(query, [artist.name], { exact: true }),
+      )
+    },
     showEmptyState(): boolean {
       if (this.libraryStore.loading) return false
+      if (this.view === 'artists') return this.filteredArtists.length === 0
       return this.showingSongs ? this.filteredSongs.length === 0 : this.filteredAlbums.length === 0
     },
     emptyMessage(): string {
       const query = this.debouncedQuery
+      if (this.view === 'artists') {
+        return query
+          ? this.$t('library.noArtistsForQuery', { query })
+          : this.$t('library.noArtistsFound')
+      }
       if (this.showingSongs) {
         return query
           ? this.$t('library.noSongsForQuery', { query })
@@ -156,8 +192,9 @@ export default {
      * having to retype the term you just entered is a penalty for one tap.
      * The field is clearable, which is the cheaper way out for the rarer
      * case of actually wanting a fresh search. */
-    view() {
-      if (!this.showingSongs) void this.libraryStore.fetchAlbums()
+    view(view: LibraryTab) {
+      if (view === 'albums') void this.libraryStore.fetchAlbums()
+      if (view === 'artists') void this.libraryStore.fetchArtists()
       this.rememberSearch()
     },
     debouncedQuery: 'rememberSearch',
@@ -186,7 +223,7 @@ export default {
       // usable mounted without a router at all (its own tests do exactly
       // that) — a hand-over that cannot be read is simply not one.
       const tab = this.$route?.query?.tab
-      if (tab === 'albums' || tab === 'songs') this.view = tab
+      if (tab === 'albums' || tab === 'songs' || tab === 'artists') this.view = tab
       const term = this.$route?.query?.q
       if (typeof term !== 'string' || !term) return
       this.filterQuery = term
@@ -209,8 +246,8 @@ export default {
       }
       if (this.debouncedQuery) query.q = this.debouncedQuery
       else delete query.q
-      if (this.view === 'albums') query.tab = 'albums'
-      else delete query.tab
+      if (this.view === 'songs') delete query.tab
+      else query.tab = this.view
       if (query.q === this.$route.query.q && query.tab === this.$route.query.tab) return
       void this.$router.replace({ query })
     },

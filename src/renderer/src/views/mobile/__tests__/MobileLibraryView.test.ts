@@ -10,7 +10,7 @@ import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import MobileLibraryView from '../MobileLibraryView.vue'
 import { makeSong } from '@/stores/__tests__/fixtures'
-import type { Album } from '@/types/library'
+import type { Album, Artist } from '@/types/library'
 
 const vuetify = createVuetify({ components, directives })
 
@@ -55,6 +55,7 @@ function stubStore() {
   const library = useLibraryStore()
   vi.spyOn(library, 'fetchAllSongs').mockResolvedValue()
   vi.spyOn(library, 'fetchAlbums').mockResolvedValue()
+  vi.spyOn(library, 'fetchArtists').mockResolvedValue()
   return library
 }
 
@@ -253,5 +254,30 @@ describe('MobileLibraryView', () => {
     await switchTo(wrapper, 'Albums')
 
     expect(wrapper.get('.mobile-album-row').attributes('href')).toBe('/m/albums/1')
+  })
+
+  it('lists the artists, loading them on the way, each leading to its page', async () => {
+    vi.useFakeTimers()
+    const library = stubStore()
+    library.allSongs = []
+    library.artists = [
+      { id: 'ar1', name: 'Blue Band', albumCount: 2 } as Artist,
+      { id: 'ar2', name: 'Red Band', albumCount: 1 } as Artist,
+    ]
+    const wrapper = mountView()
+    await flushPromises()
+
+    await switchTo(wrapper, 'Artists')
+
+    expect(library.fetchArtists).toHaveBeenCalled()
+    const rows = wrapper.findAll('.mobile-artist-row')
+    expect(rows.map((row) => row.attributes('href'))).toEqual(['/m/artists/ar1', '/m/artists/ar2'])
+
+    await wrapper.get('input[type="text"]').setValue('red')
+    await vi.advanceTimersByTimeAsync(250)
+
+    expect(wrapper.findAll('.mobile-artist-row')).toHaveLength(1)
+    expect(router.currentRoute.value.query.tab).toBe('artists')
+    vi.useRealTimers()
   })
 })

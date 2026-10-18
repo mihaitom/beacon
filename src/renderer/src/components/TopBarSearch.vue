@@ -1,50 +1,54 @@
 <template>
-  <div class="top-bar-search" :class="{ 'top-bar-search--expanded': expanded }">
-    <v-btn v-if="!expanded" icon="mdi-magnify" :title="$t('search.label')" @click="expand" />
-    <form v-else class="top-bar-search__form" @submit.prevent="submit">
-      <v-text-field
-        ref="inputEl"
-        v-model="query"
-        :placeholder="$t('search.label')"
-        prepend-inner-icon="mdi-magnify"
-        variant="solo-filled"
-        density="compact"
-        hide-details
-        clearable
-        autofocus
-        class="top-bar-search__field"
-        @keydown.esc="onEscape"
-        @blur="onBlur"
-      />
-    </form>
-  </div>
+  <form class="top-bar-search" role="search" @submit.prevent="submit">
+    <v-text-field
+      ref="inputEl"
+      v-model="query"
+      :placeholder="$t('search.label')"
+      prepend-inner-icon="mdi-magnify"
+      variant="solo-filled"
+      density="compact"
+      rounded="pill"
+      flat
+      hide-details
+      clearable
+      class="top-bar-search__field"
+      @focus="focused = true"
+      @blur="focused = false"
+      @keydown.esc="onEscape"
+    >
+      <template #append-inner>
+        <!-- The way back here without the mouse; hidden once the field is
+         - in use, where it would only crowd what is being typed. -->
+        <kbd v-if="!focused && !query" class="top-bar-search__hint" aria-hidden="true">
+          {{ shortcutHint }}
+        </kbd>
+      </template>
+    </v-text-field>
+  </form>
 </template>
 
 <script lang="ts">
-import { nextTick } from 'vue'
+import { emitter } from '@/emitter'
 
-// Icon by default — only expands into an actual text field once clicked,
-// and only navigates to /search (the real results page, with its own
-// always-visible field and live-as-you-type results — see SearchView.vue)
-// once submitted. Typing here doesn't search live or navigate anywhere by
-// itself; this is just a compact entry point for the app bar, not a second
-// copy of the results page's own search behavior.
-//
-// Stays expanded for as long as the search results page itself is active
-// (see the onSearchPage watcher) — leaving it open there means a follow-up
-// search doesn't need the icon clicked again first, and losing focus
-// (onBlur) doesn't collapse it either while that page is what's showing.
+// Always a field, not an icon that turns into one: search is the most used
+// way into a library this size, and a bare magnifier in an otherwise empty
+// bar read as decoration. Typing here doesn't search live or navigate by
+// itself - it only goes to /search (the real results page, with its own
+// live-as-you-type results, see SearchView.vue) once submitted.
 export default {
   name: 'TopBarSearch',
   data() {
     return {
-      expanded: false,
       query: '',
+      focused: false,
     }
   },
   computed: {
     onSearchPage(): boolean {
       return this.$route.name === 'search'
+    },
+    shortcutHint(): string {
+      return /Mac|iPhone|iPad/.test(navigator.platform) ? '⌘ K' : 'Ctrl K'
     },
   },
   watch: {
@@ -52,9 +56,8 @@ export default {
       immediate: true,
       handler(onSearch: boolean) {
         if (onSearch) {
-          this.expanded = true
           // Only on the way in (this fires once per non-search -> search
-          // transition, not on every query change afterwards) — picks up
+          // transition, not on every query change afterwards) - picks up
           // a query that arrived some other way than this field itself
           // (a bookmark, browser back/forward, a link elsewhere) instead
           // of showing an empty box while results for something are
@@ -63,45 +66,29 @@ export default {
           const q = this.$route.query.q
           this.query = typeof q === 'string' ? q : ''
         } else {
-          this.expanded = false
           this.query = ''
         }
       },
     },
   },
+  mounted() {
+    emitter.on('focusSearch', this.focus)
+  },
+  beforeUnmount() {
+    emitter.off('focusSearch', this.focus)
+  },
   methods: {
-    async expand() {
-      this.expanded = true
-      // `autofocus` on the field (below) covers this in the common case,
-      // but explicitly focusing once the DOM actually has it is a
-      // guaranteed fallback rather than depending on the browser's
-      // autofocus-on-dynamic-insertion behavior alone.
-      await nextTick()
+    focus() {
       const input = this.$refs.inputEl as { focus?: () => void } | undefined
       input?.focus?.()
     },
-    // Collapses back to just the icon — losing focus without submitting
-    // (or Escape) discards a half-typed, never-searched query rather than
-    // leaving it sitting open in the app bar. Not used at all while
-    // onSearchPage is true (see onBlur/onEscape below): the field stays
-    // open there regardless of focus.
-    collapse() {
-      this.expanded = false
-      this.query = ''
-    },
-    onBlur() {
-      if (!this.onSearchPage) this.collapse()
-    },
+    // Releases focus so the keyboard shortcuts answer again. Off the results
+    // page a half-typed, never-searched query goes with it; on the page it
+    // stays, since it is what the results on screen are for.
     onEscape() {
-      if (this.onSearchPage) {
-        // Still on the results page afterwards — just release focus
-        // instead of hiding the field entirely, so it's still right
-        // there (unfocused) for the next search.
-        const input = this.$refs.inputEl as { blur?: () => void } | undefined
-        input?.blur?.()
-      } else {
-        this.collapse()
-      }
+      if (!this.onSearchPage) this.query = ''
+      const input = this.$refs.inputEl as { blur?: () => void } | undefined
+      input?.blur?.()
     },
     submit() {
       const value = this.query.trim()
@@ -113,36 +100,28 @@ export default {
 </script>
 
 <style scoped>
+/* Takes what the bar can spare up to a comfortable reading width, and gives
+ * way first when the window narrows. */
 .top-bar-search {
-  display: flex;
-  align-items: center;
+  width: min(480px, 100%);
 }
 
-.top-bar-search__form {
-  /* Grows from the collapsed icon button's own width — the width
-   * transition (not a v-if crossfade) is what reads as the field
-   * animating out of the icon instead of just popping in. */
-  width: 40px;
-  animation: top-bar-search-grow 0.25s ease forwards;
+.top-bar-search__field :deep(.v-field) {
+  background: rgba(255, 255, 255, 0.06);
 }
 
-@keyframes top-bar-search-grow {
-  from {
-    width: 40px;
-  }
-  to {
-    width: 280px;
-  }
+.top-bar-search__field :deep(.v-field--focused) {
+  background: rgba(255, 255, 255, 0.1);
 }
 
-.top-bar-search__field {
-  width: 100%;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .top-bar-search__form {
-    animation: none;
-    width: 280px;
-  }
+.top-bar-search__hint {
+  font-family: inherit;
+  font-size: 0.72rem;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.5);
+  white-space: nowrap;
 }
 </style>

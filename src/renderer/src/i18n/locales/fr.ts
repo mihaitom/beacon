@@ -99,6 +99,15 @@ export default {
     newArtistsTitle: 'Nouveaux artistes à découvrir',
   },
   library: {
+    sortBy: 'Trier par',
+    albumSort: {
+      name: 'Nom',
+      artist: 'Artiste',
+      year: 'Année',
+      added: 'Ajoutés récemment',
+    },
+    decade: 'Années {decade}',
+    unknownYear: 'Sans année',
     showAsGrid: 'Afficher en grille',
     album: 'Album',
     artist: 'Artiste',
@@ -117,6 +126,7 @@ export default {
     noSongsFound: 'Aucun titre trouvé.',
     searchSongs: 'Rechercher des titres…',
     searchAlbums: 'Rechercher des albums…',
+    searchArtists: 'Rechercher des artistes…',
     noSongsForQuery: 'Aucun titre pour « {query} ».',
     album1: 'album',
     albumsN: 'albums',
@@ -267,6 +277,7 @@ export default {
     favorite: 'Ajouter la piste en cours aux favoris',
     queue: "Afficher / masquer la file d'attente",
     navigate: 'Page précédente / suivante',
+    search: 'Aller à la recherche',
     jump: 'Aller à 0-90 % de la piste',
     help: 'Afficher cette liste',
     hint: "Les raccourcis sont désactivés pendant la saisie ou lorsqu'une boîte de dialogue est ouverte.",
@@ -397,6 +408,7 @@ export default {
     },
   },
   queue: {
+    emptyHint: 'Lancez un album ou une playlist, ou ajoutez des titres depuis leur menu.',
     title: "File d'attente",
     empty: "La file d'attente est vide.",
     clear: "Vider la file d'attente",
@@ -865,6 +877,7 @@ export default {
     nameRecommended: 'Recommandé pour moi',
   },
   playlists: {
+    emptyHint: 'Ajoutez des titres depuis leur menu avec « Ajouter à la playlist ».',
     reorderFailed: "Impossible d'enregistrer le nouvel ordre",
     removedOne: '« {title} » retiré',
     removedMany: '{count} titres retirés',
@@ -1237,6 +1250,8 @@ export default {
     bitrate: '{bitrate} kbit/s',
   },
   favorites: {
+    noArtistsYet: "Pas encore d'artistes favoris.",
+    emptyHint: "Touchez le cœur d'un titre, d'un album ou d'un artiste pour le retrouver ici.",
     eyebrow: 'Ta collection',
     countArtists: '{n} artiste | {n} artistes',
     countAlbums: '{n} album | {n} albums',
@@ -1250,6 +1265,7 @@ export default {
     noAlbumsYet: 'Aucun album favori pour le moment.',
   },
   search: {
+    noResultsHint: "Vérifiez l'orthographe ou essayez avec moins de mots.",
     label: 'Rechercher',
     resultsFor: 'Résultats pour « {query} »',
     artists: 'Artistes',

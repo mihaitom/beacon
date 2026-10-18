@@ -19,6 +19,7 @@
           variant="solo-filled"
           density="compact"
           clearable
+          hide-details
           class="library-search"
         />
         <exact-match-switch />
@@ -27,15 +28,30 @@
     <v-alert v-if="libraryStore.error" type="error" variant="tonal" class="view-notice">
       {{ libraryStore.error }}
     </v-alert>
-    <v-progress-circular v-if="libraryStore.loading" indeterminate class="view-notice" />
+    <!-- Only until the genres are in: the album covers below load after
+     - them, under the same loading flag, and must not hold the page. -->
+    <v-progress-circular
+      v-if="libraryStore.loading && !libraryStore.genres.length"
+      indeterminate
+      class="view-notice"
+    />
     <div v-else-if="tieredGenres.length" class="genre-grid">
       <router-link
         v-for="entry in tieredGenres"
         :key="entry.genre.name"
         :to="`/genres/${encodeURIComponent(entry.genre.name)}`"
         class="genre-tile"
-        :class="`genre-tile--${entry.tier}`"
+        :class="[`genre-tile--${entry.tier}`, { 'genre-tile--covers': entry.covers.length }]"
       >
+        <div v-if="entry.covers.length" class="genre-tile__covers" aria-hidden="true">
+          <cover-art
+            v-for="coverArtId in entry.covers"
+            :key="coverArtId"
+            :cover-art-id="coverArtId"
+            :size="COVER_SIZE[entry.tier]"
+            class="genre-tile__cover"
+          />
+        </div>
         <span class="genre-tile__name">{{ entry.genre.name }}</span>
         <span class="genre-tile__meta">{{
           $t('library.albumsAndSongs', {
@@ -45,22 +61,27 @@
         }}</span>
       </router-link>
     </div>
-    <v-alert v-else-if="!libraryStore.loading" type="info" variant="tonal">
-      {{
+    <empty-state
+      v-else-if="!libraryStore.loading || libraryStore.genres.length"
+      :icon="filterQuery ? 'mdi-magnify-close' : 'mdi-tag-off-outline'"
+      :title="
         filterQuery
           ? $t('library.noGenresForQuery', { query: filterQuery })
           : $t('library.noGenresFound')
-      }}
-    </v-alert>
+      "
+    />
   </v-container>
 </template>
 
 <script lang="ts">
 import { useLibraryStore } from '@/stores/library'
+import EmptyState from '@/components/EmptyState.vue'
 import { matchesAllTerms } from '@/services/textSearch'
 import StickyFilter from '@/components/StickyFilter.vue'
 import DetailHeader from '@/components/library/DetailHeader.vue'
 import ExactMatchSwitch from '@/components/library/ExactMatchSwitch.vue'
+import CoverArt from '@/components/library/CoverArt.vue'
+import { coversByGenre } from '@/services/genreCovers'
 import type { Genre } from '@/types/library'
 
 let debounceTimer: ReturnType<typeof setTimeout> | undefined
@@ -74,11 +95,18 @@ const TOP_COUNT = 21
 
 type Tier = 'spotlight' | 'featured' | 'standard'
 
+/** How many covers a tile of each size shows, and how big. The edge is the
+ * tile's own height (see .genre-grid's 108px rows, two rows and a gap for
+ * the spotlight's 2x2), so the covers run edge to edge down the tile. */
+const COVER_COUNT: Record<Tier, number> = { spotlight: 4, featured: 3, standard: 2 }
+const COVER_SIZE: Record<Tier, number> = { spotlight: 114, featured: 108, standard: 108 }
+
 export default {
   name: 'GenresView',
-  components: { DetailHeader, StickyFilter, ExactMatchSwitch },
+  components: { EmptyState, DetailHeader, StickyFilter, ExactMatchSwitch, CoverArt },
   data() {
     return {
+      COVER_SIZE,
       filterQuery: '',
       // filteredGenres reads this instead of filterQuery directly, so
       // filtering doesn't run synchronously on every keystroke — see the
@@ -113,17 +141,21 @@ export default {
     // tile, #2–5 are featured-width, the rest are standard. Only meaningful
     // for the ranked top-20 view — search results are inherently unranked
     // (could be a single unpopular match), so they all render as standard.
-    tieredGenres(): { genre: Genre; tier: Tier }[] {
-      return this.filteredGenres.map((genre, index) => ({
-        genre,
-        tier: this.isFiltering
+    coversByGenre(): Map<string, string[]> {
+      return coversByGenre(this.libraryStore.albums, COVER_COUNT.spotlight)
+    },
+    tieredGenres(): { genre: Genre; tier: Tier; covers: string[] }[] {
+      return this.filteredGenres.map((genre, index) => {
+        const tier: Tier = this.isFiltering
           ? 'standard'
           : index === 0
             ? 'spotlight'
             : index < 5
               ? 'featured'
-              : 'standard',
-      }))
+              : 'standard'
+        const covers = this.coversByGenre.get(genre.name.toLowerCase()) ?? []
+        return { genre, tier, covers: covers.slice(0, COVER_COUNT[tier]) }
+      })
     },
   },
   watch: {
@@ -134,8 +166,11 @@ export default {
       }, 200)
     },
   },
-  created() {
-    this.libraryStore.fetchGenres()
+  async created() {
+    await this.libraryStore.fetchGenres()
+    // The tiles' covers come from the album list, which the albums page
+    // keeps cached anyway. After the genres, so the names show first.
+    void this.libraryStore.fetchAlbums()
   },
 }
 </script>
@@ -194,6 +229,41 @@ export default {
   font-size: 0.75rem;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+/* The covers fill the tile's right side, edge to edge, and fade out under
+ * the name: the tile is still a name to click, the covers only say what
+ * kind of music is behind it. */
+.genre-tile__covers {
+  position: absolute;
+  inset: 0 0 0 auto;
+  display: flex;
+  pointer-events: none;
+}
+
+.genre-tile--spotlight .genre-tile__covers {
+  display: grid;
+  grid-template-columns: repeat(2, 114px);
+  align-content: center;
+}
+
+.genre-tile--covers::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to right,
+    rgb(var(--v-theme-surface)) 30%,
+    rgba(var(--v-theme-surface), 0.7) 60%,
+    rgba(var(--v-theme-surface), 0.15)
+  );
+  pointer-events: none;
+}
+
+.genre-tile__name,
+.genre-tile__meta {
+  position: relative;
+  z-index: 1;
 }
 
 /* The #1 genre gets the same "beacon light" language as the nav rail's

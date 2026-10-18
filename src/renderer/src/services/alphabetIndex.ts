@@ -1,5 +1,14 @@
 /** For AlbumsView/ArtistsView/SongTable's AlphabetIndexBar. */
 
+/** The bar's sections for a name order. '#' first (not last) - same
+ * convention Subsonic's own getArtists.view index uses for non-letter-
+ * leading names, and matches where a thumb naturally lands first reaching
+ * for the top of the bar. */
+export const ALPHABET_SECTIONS = [
+  '#',
+  ...Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i)),
+]
+
 /** The bar letter a single name falls under: its first character uppercased,
  * or '#' for anything that isn't A-Z. */
 export function letterForName(name: string): string {

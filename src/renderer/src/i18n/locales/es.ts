@@ -100,6 +100,15 @@ export default {
     newArtistsTitle: 'Nuevos artistas por descubrir',
   },
   library: {
+    sortBy: 'Ordenar por',
+    albumSort: {
+      name: 'Nombre',
+      artist: 'Artista',
+      year: 'Año',
+      added: 'Añadidos recientemente',
+    },
+    decade: 'Años {decade}',
+    unknownYear: 'Sin año',
     showAsGrid: 'Ver en cuadrícula',
     album: 'Álbum',
     artist: 'Artista',
@@ -118,6 +127,7 @@ export default {
     noSongsFound: 'No se encontraron canciones.',
     searchSongs: 'Buscar canciones…',
     searchAlbums: 'Buscar álbumes…',
+    searchArtists: 'Buscar artistas…',
     noSongsForQuery: 'No hay canciones para "{query}".',
     album1: 'álbum',
     albumsN: 'álbumes',
@@ -267,6 +277,7 @@ export default {
     favorite: 'Marcar la pista actual como favorita',
     queue: 'Mostrar / ocultar la cola',
     navigate: 'Página anterior / siguiente',
+    search: 'Ir a la búsqueda',
     jump: 'Saltar al 0-90 % de la pista',
     help: 'Mostrar esta lista',
     hint: 'Los atajos se desactivan mientras escribes o hay un diálogo abierto.',
@@ -397,6 +408,7 @@ export default {
     },
   },
   queue: {
+    emptyHint: 'Reproduce un álbum o una lista, o añade canciones desde su menú.',
     title: 'Cola',
     empty: 'La cola está vacía.',
     clear: 'Vaciar cola',
@@ -861,6 +873,7 @@ export default {
     nameRecommended: 'Recomendado para mí',
   },
   playlists: {
+    emptyHint: 'Añade canciones desde su menú con «Añadir a la lista de reproducción».',
     reorderFailed: 'No se pudo guardar el nuevo orden',
     removedOne: 'Se quitó «{title}»',
     removedMany: 'Se quitaron {count} pistas',
@@ -1232,6 +1245,8 @@ export default {
     bitrate: '{bitrate} kbit/s',
   },
   favorites: {
+    noArtistsYet: 'Aún no hay artistas favoritos.',
+    emptyHint: 'Toca el corazón de una canción, un álbum o un artista y aparecerá aquí.',
     eyebrow: 'Tu colección',
     countArtists: '{n} artista | {n} artistas',
     countAlbums: '{n} álbum | {n} álbumes',
@@ -1245,6 +1260,7 @@ export default {
     noAlbumsYet: 'Todavía no hay álbumes favoritos.',
   },
   search: {
+    noResultsHint: 'Revisa la ortografía o prueba con menos palabras.',
     label: 'Buscar',
     resultsFor: 'Resultados para "{query}"',
     artists: 'Artistas',

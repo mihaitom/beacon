@@ -43,6 +43,9 @@ export type AppEvents = {
   // rather than just its id so the dialog can name what it is loading
   // straight away, before the server has answered.
   showSongInfo: Song
+  // Puts the cursor in the top bar's search field (TopBarSearch.vue) from
+  // the Ctrl+K shortcut, which is handled far away in keyboardShortcuts.ts.
+  focusSearch: void
 }
 
 /** What the artwork viewer needs to show one picture: whichever of the two

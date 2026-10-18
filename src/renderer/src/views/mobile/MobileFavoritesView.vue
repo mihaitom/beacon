@@ -4,15 +4,12 @@
       <h1 class="page-title mobile-header__title">{{ $t('favorites.title') }}</h1>
     </div>
 
-    <!-- Songs and albums only: the desktop page's artist shelf has nowhere
-     - to lead on a phone, which has no artist page (see the router's note
-     - on m-album-detail). -->
     <segmented-control
       :model-value="view"
       :options="viewOptions"
       :label="$t('favorites.title')"
       class="mobile-favorites__toggle"
-      @update:model-value="view = $event as 'albums' | 'songs'"
+      @update:model-value="view = $event as FavoritesTab"
     />
 
     <v-progress-circular v-if="libraryStore.loading" indeterminate class="view-notice" />
@@ -33,14 +30,29 @@
           />
         </template>
       </v-virtual-scroll>
-      <v-virtual-scroll v-else renderless :items="starred.albums" :item-height="MOBILE_ROW_HEIGHT">
+      <v-virtual-scroll
+        v-else-if="view === 'albums'"
+        renderless
+        :items="starred.albums"
+        :item-height="MOBILE_ROW_HEIGHT"
+      >
         <template #default="{ item: album }">
           <mobile-album-row :key="album.id" :album="album" @play="playAlbum(album)" />
         </template>
       </v-virtual-scroll>
+      <v-virtual-scroll v-else renderless :items="starred.artists" :item-height="MOBILE_ROW_HEIGHT">
+        <template #default="{ item: artist }">
+          <mobile-artist-row :key="artist.id" :artist="artist" />
+        </template>
+      </v-virtual-scroll>
     </div>
 
-    <v-alert v-if="showEmptyState" type="info" variant="tonal">{{ emptyMessage }}</v-alert>
+    <empty-state
+      v-if="showEmptyState"
+      icon="mdi-heart-outline"
+      :title="emptyMessage"
+      :text="$t('favorites.emptyHint')"
+    />
 
     <mobile-song-action-sheet v-model="actionsOpen" :song="activeSong" />
   </v-container>
@@ -48,21 +60,32 @@
 
 <script lang="ts">
 import { useLibraryStore } from '@/stores/library'
+import EmptyState from '@/components/EmptyState.vue'
 import { usePlaybackStore } from '@/stores/playback'
 import MobileSongRow from '@/components/mobile/MobileSongRow.vue'
 import MobileAlbumRow from '@/components/mobile/MobileAlbumRow.vue'
+import MobileArtistRow from '@/components/mobile/MobileArtistRow.vue'
 import MobileSongActionSheet from '@/components/mobile/MobileSongActionSheet.vue'
 import SegmentedControl from '@/components/SegmentedControl.vue'
 import { MOBILE_ROW_HEIGHT } from '@/components/mobile/rowMetrics'
 import type { Album, Song } from '@/types/library'
 
+type FavoritesTab = 'songs' | 'albums' | 'artists'
+
 export default {
   name: 'MobileFavoritesView',
-  components: { MobileSongRow, MobileAlbumRow, MobileSongActionSheet, SegmentedControl },
+  components: {
+    EmptyState,
+    MobileSongRow,
+    MobileAlbumRow,
+    MobileArtistRow,
+    MobileSongActionSheet,
+    SegmentedControl,
+  },
   data() {
     return {
       MOBILE_ROW_HEIGHT,
-      view: 'songs' as 'songs' | 'albums',
+      view: 'songs' as FavoritesTab,
       actionsOpen: false,
       activeSong: null as Song | null,
     }
@@ -81,13 +104,15 @@ export default {
       return [
         { title: this.$t('favorites.songs'), value: 'songs' },
         { title: this.$t('favorites.albums'), value: 'albums' },
+        { title: this.$t('favorites.artists'), value: 'artists' },
       ]
     },
     showEmptyState(): boolean {
       if (this.libraryStore.loading) return false
-      return (this.showingSongs ? this.starred.songs : this.starred.albums).length === 0
+      return this.starred[this.view].length === 0
     },
     emptyMessage(): string {
+      if (this.view === 'artists') return this.$t('favorites.noArtistsYet')
       return this.showingSongs ? this.$t('favorites.noSongsYet') : this.$t('favorites.noAlbumsYet')
     },
   },

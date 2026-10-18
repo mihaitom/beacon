@@ -499,7 +499,7 @@ describe('Now Playing on a phone held sideways', () => {
       const controls = box('.mobile-transport')
       const mini = box('.now-playing__mini-art')
 
-      for (const label of ['.now-playing__title', '.now-playing__artist-label']) {
+      for (const label of ['.now-playing__title', '.now-playing__artist-link']) {
         const el = document.querySelector(label)!
         const lineHeight = parseFloat(getComputedStyle(el).lineHeight)
         expect(el.getBoundingClientRect().height).toBeLessThan(lineHeight * 1.5)

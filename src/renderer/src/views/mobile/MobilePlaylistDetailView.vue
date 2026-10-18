@@ -28,9 +28,12 @@
     <playlist-notice v-if="notice" :notice="notice" @undo="runUndo" @dismiss="notice = null" />
 
     <!-- See the desktop page's own note on when a playlist can be empty. -->
-    <v-alert v-if="!playlist.songs.length" type="info" variant="tonal" class="view-notice">
-      {{ playlist.smart ? $t('playlists.smartEmpty') : $t('playlists.noSongsYet') }}
-    </v-alert>
+    <empty-state
+      v-if="!playlist.songs.length"
+      :icon="playlist.smart ? 'mdi-playlist-star' : 'mdi-playlist-music-outline'"
+      :title="playlist.smart ? $t('playlists.smartEmpty') : $t('playlists.noSongsYet')"
+      :text="playlist.smart ? undefined : $t('playlists.emptyHint')"
+    />
     <!-- Virtualized for the reason MobileQueueView's list is. -->
     <div v-else class="mobile-playlist-detail__list">
       <v-virtual-scroll renderless :items="playlist.songs" :item-height="MOBILE_ROW_HEIGHT">
@@ -64,6 +67,7 @@
 
 <script lang="ts">
 import { useLibraryStore } from '@/stores/library'
+import EmptyState from '@/components/EmptyState.vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
 import CoverArt from '@/components/library/CoverArt.vue'
@@ -81,7 +85,14 @@ import type { Song } from '@/types/library'
 
 export default {
   name: 'MobilePlaylistDetailView',
-  components: { CoverArt, MobileSongRow, MobileSongActionSheet, PlaylistNotice, PreviewButton },
+  components: {
+    EmptyState,
+    CoverArt,
+    MobileSongRow,
+    MobileSongActionSheet,
+    PlaylistNotice,
+    PreviewButton,
+  },
   data() {
     return {
       MOBILE_ROW_HEIGHT,

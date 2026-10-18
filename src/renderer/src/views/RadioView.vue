@@ -56,6 +56,7 @@
           variant="solo-filled"
           density="compact"
           clearable
+          hide-details
           class="library-search"
         />
       </div>
@@ -84,13 +85,15 @@
       />
     </div>
 
-    <v-alert v-else-if="!showSkeletons" type="info" variant="tonal">
-      {{
+    <empty-state
+      v-else-if="!showSkeletons"
+      :icon="debouncedQuery ? 'mdi-magnify-close' : 'mdi-radio-off'"
+      :title="
         debouncedQuery
           ? $t('radio.noStationsForQuery', { query: debouncedQuery })
           : $t('radio.noStationsYet')
-      }}
-    </v-alert>
+      "
+    />
 
     <v-dialog v-model="createDialog" max-width="420">
       <v-card>
@@ -171,6 +174,7 @@
 
 <script lang="ts">
 import { useAuthStore } from '@/stores/auth'
+import EmptyState from '@/components/EmptyState.vue'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import DetailHeader from '@/components/library/DetailHeader.vue'
@@ -194,6 +198,7 @@ const SKELETON_ROWS = 5
 export default {
   name: 'RadioView',
   components: {
+    EmptyState,
     DetailHeader,
     RadioDiscoverDialog,
     RadioStationRow,

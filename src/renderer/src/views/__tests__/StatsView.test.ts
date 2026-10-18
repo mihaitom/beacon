@@ -32,11 +32,12 @@ interface StatsVm {
   readonly qualityBreakdown: RankedItem[]
   readonly largestArtists: RankedItem[]
   readonly storageBytes: number
-  readonly playedShare: number
+  readonly playedCount: number
   readonly hasLastPlayed: boolean
   readonly recentlyPlayedCount: number
   readonly ratings: { count: number; average: number }
   formatBigDuration(totalSeconds: number): string
+  formatShare(part: number, whole: number): string
 }
 
 function mountStats(songs: Song[], artists: Artist[] = []): StatsVm {
@@ -425,7 +426,18 @@ describe('StatsView listening facts', () => {
     ])
 
     // Songs, not plays: five plays of one song still count once.
-    expect(vm.playedShare).toBe(50)
+    expect(vm.playedCount).toBe(2)
+    expect(vm.formatShare(vm.playedCount, 4)).toBe('50%')
+  })
+
+  it('never rounds a share to a figure that says something else', () => {
+    const vm = mountStats([])
+
+    // 50 of 19,529 heard is not "0%" - that reads as nothing at all.
+    expect(vm.formatShare(50, 19529)).toBe('< 1%')
+    expect(vm.formatShare(19500, 19529)).toBe('> 99%')
+    expect(vm.formatShare(0, 19529)).toBe('0%')
+    expect(vm.formatShare(19529, 19529)).toBe('100%')
   })
 
   it('averages ratings over rated songs only', () => {
@@ -448,7 +460,7 @@ describe('StatsView listening facts', () => {
   it('survives an empty library', () => {
     const vm = mountStats([])
 
-    expect(vm.playedShare).toBe(0)
+    expect(vm.playedCount).toBe(0)
     expect(vm.ratings.count).toBe(0)
     expect(vm.qualityBreakdown).toEqual([])
   })

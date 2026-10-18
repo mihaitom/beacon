@@ -46,23 +46,23 @@
       <song-table :songs="libraryStore.starred.songs" />
     </template>
 
-    <v-alert
+    <empty-state
       v-if="
         !libraryStore.loading &&
         !libraryStore.starred.artists.length &&
         !libraryStore.starred.albums.length &&
         !libraryStore.starred.songs.length
       "
-      type="info"
-      variant="tonal"
-    >
-      {{ $t('favorites.noneYet') }}
-    </v-alert>
+      icon="mdi-heart-outline"
+      :title="$t('favorites.noneYet')"
+      :text="$t('favorites.emptyHint')"
+    />
   </v-container>
 </template>
 
 <script lang="ts">
 import { useLibraryStore } from '@/stores/library'
+import EmptyState from '@/components/EmptyState.vue'
 import DetailHeader from '@/components/library/DetailHeader.vue'
 import AlbumCard from '@/components/library/AlbumCard.vue'
 import ArtistCard from '@/components/library/ArtistCard.vue'
@@ -82,7 +82,7 @@ const GRID_VIEW_KEY: Record<CardSection, string> = {
 
 export default {
   name: 'FavoritesView',
-  components: { AlbumCard, ArtistCard, CardShelf, DetailHeader, SongTable },
+  components: { EmptyState, AlbumCard, ArtistCard, CardShelf, DetailHeader, SongTable },
   data() {
     return {
       gridView: {

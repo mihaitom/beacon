@@ -49,12 +49,11 @@
             <next-up-transition-label v-if="panel.transition" :transition="panel.transition" />
           </div>
           <h1 class="detail-title now-playing__title">{{ panel.title }}</h1>
-          <!-- A link only where there is an artist page to land on: never
-           - on the mobile shell (its library tab plays an album rather than
-           - opening one) and never for a party guest (no library at all). -->
+          <!-- Each shell to its own artist page, like the album line below;
+           - a party guest gets the plain line, having no library at all. -->
           <router-link
-            v-if="panel.song && !compact && source.capabilities.artistLinks"
-            :to="`/artists/${panel.song.artistId}`"
+            v-if="panel.song && source.capabilities.artistLinks"
+            :to="compact ? `/m/artists/${panel.song.artistId}` : `/artists/${panel.song.artistId}`"
             class="text-title-large text-medium-emphasis now-playing__artist-link"
           >
             {{ panel.song.artist }}

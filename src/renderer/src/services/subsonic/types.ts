@@ -108,6 +108,8 @@ export interface RawAlbum {
   originalReleaseDate?: { year?: number }
   releaseDate?: { year?: number }
   musicBrainzId?: string
+  // When the album entered the library (ISO 8601).
+  created?: string
 }
 
 export interface RawArtist {

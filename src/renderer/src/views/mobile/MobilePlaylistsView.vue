@@ -44,22 +44,21 @@
       </div>
     </template>
 
-    <v-alert
+    <empty-state
       v-if="!libraryStore.loading && !personalPlaylists.length && !globalPlaylists.length"
-      type="info"
-      variant="tonal"
-    >
-      {{
+      :icon="filterQuery ? 'mdi-magnify-close' : 'mdi-playlist-music-outline'"
+      :title="
         filterQuery
           ? $t('playlists.noPlaylistsForQuery', { query: filterQuery })
           : $t('playlists.noPlaylistsYet')
-      }}
-    </v-alert>
+      "
+    />
   </v-container>
 </template>
 
 <script lang="ts">
 import { useLibraryStore } from '@/stores/library'
+import EmptyState from '@/components/EmptyState.vue'
 import { useAuthStore } from '@/stores/auth'
 import { usePlaybackStore } from '@/stores/playback'
 import { matchesAllTerms } from '@/services/textSearch'
@@ -72,7 +71,7 @@ let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
 export default {
   name: 'MobilePlaylistsView',
-  components: { MobilePlaylistRow, StickyFilter },
+  components: { EmptyState, MobilePlaylistRow, StickyFilter },
   data() {
     return {
       filterQuery: '',

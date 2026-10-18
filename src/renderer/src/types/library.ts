@@ -85,6 +85,9 @@ export interface Album {
   reissueYear?: number | null
   /** The MusicBrainz release this album is, where the server knows it. */
   musicBrainzId?: string | null
+  /** When the album entered the library (ISO 8601), for the album list's
+   * "recently added" order; null where the server does not say. */
+  created?: string | null
 }
 
 export interface Artist {

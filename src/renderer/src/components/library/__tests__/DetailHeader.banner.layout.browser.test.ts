@@ -92,7 +92,7 @@ describe('DetailHeader banner placement', () => {
   })
 
   it('holds a banner too wide to fit to the right edge, keeping its right end', async () => {
-    const { banner, rect: card } = await mountHeader(1100)
+    const { banner, rect: card } = await mountHeader(800)
 
     expect(banner.width).toBeGreaterThan(card.width)
     // Within the 2px the edge colours overlap its fully faded end by.

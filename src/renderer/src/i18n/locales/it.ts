@@ -99,6 +99,15 @@ export default {
     newArtistsTitle: 'Nuovi artisti da scoprire',
   },
   library: {
+    sortBy: 'Ordina per',
+    albumSort: {
+      name: 'Nome',
+      artist: 'Artista',
+      year: 'Anno',
+      added: 'Aggiunti di recente',
+    },
+    decade: 'Anni {decade}',
+    unknownYear: 'Senza anno',
     showAsGrid: 'Mostra a griglia',
     album: 'Album',
     artist: 'Artista',
@@ -117,6 +126,7 @@ export default {
     noSongsFound: 'Nessun brano trovato.',
     searchSongs: 'Cerca brani…',
     searchAlbums: 'Cerca album…',
+    searchArtists: 'Cerca artisti…',
     noSongsForQuery: 'Nessun brano per "{query}".',
     album1: 'album',
     albumsN: 'album',
@@ -266,6 +276,7 @@ export default {
     favorite: 'Aggiungi il brano corrente ai preferiti',
     queue: 'Mostra / nascondi la coda',
     navigate: 'Pagina precedente / successiva',
+    search: 'Vai alla ricerca',
     jump: 'Vai allo 0-90% del brano',
     help: 'Mostra questo elenco',
     hint: 'Le scorciatoie restano disattivate mentre scrivi o quando è aperta una finestra di dialogo.',
@@ -397,6 +408,7 @@ export default {
     },
   },
   queue: {
+    emptyHint: 'Riproduci un album o una playlist, oppure aggiungi brani dal loro menu.',
     title: 'Coda',
     empty: 'La coda è vuota.',
     clear: 'Svuota coda',
@@ -862,6 +874,7 @@ export default {
     nameRecommended: 'Consigliati per me',
   },
   playlists: {
+    emptyHint: 'Aggiungi brani dal loro menu con «Aggiungi alla playlist».',
     reorderFailed: 'Impossibile salvare il nuovo ordine',
     removedOne: '“{title}” rimosso',
     removedMany: '{count} brani rimossi',
@@ -1232,6 +1245,8 @@ export default {
     bitrate: '{bitrate} kbit/s',
   },
   favorites: {
+    noArtistsYet: 'Ancora nessun artista preferito.',
+    emptyHint: 'Tocca il cuore di un brano, un album o un artista e lo troverai qui.',
     eyebrow: 'La tua collezione',
     countArtists: '{n} artista | {n} artisti',
     countAlbums: '{n} album | {n} album',
@@ -1245,6 +1260,7 @@ export default {
     noAlbumsYet: 'Nessun album preferito ancora.',
   },
   search: {
+    noResultsHint: "Controlla l'ortografia o prova con meno parole.",
     label: 'Cerca',
     resultsFor: 'Risultati per "{query}"',
     artists: 'Artisti',

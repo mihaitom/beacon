@@ -35,6 +35,7 @@ export type ShortcutAction =
   | { type: 'toggleHelp' }
   | { type: 'historyBack' }
   | { type: 'historyForward' }
+  | { type: 'focusSearch' }
 
 /**
  * Typing must never reach a shortcut — Space in the search field belongs to
@@ -115,6 +116,9 @@ export function resolveShortcut(event: KeyboardEvent): ShortcutAction | null {
   if (skipModifier) {
     if (event.key === 'ArrowLeft') return { type: 'previousTrack' }
     if (event.key === 'ArrowRight') return { type: 'nextTrack' }
+    // The search shortcut of nearly every desktop app since Slack and
+    // VS Code; plain K is already play/pause.
+    if (event.key === 'k' || event.key === 'K') return { type: 'focusSearch' }
     return null
   }
   if (event.shiftKey) return null
@@ -229,6 +233,9 @@ async function runShortcut(action: ShortcutAction): Promise<void> {
     case 'historyForward':
       goForward()
       return
+    case 'focusSearch':
+      emitter.emit('focusSearch')
+      return
   }
 }
 
@@ -274,6 +281,7 @@ export const SHORTCUT_KEYS = {
   cycleRepeat: 'R',
   toggleFavorite: 'F',
   toggleQueue: 'Q',
+  focusSearch: 'Ctrl + K',
 } as const
 
 /** A button's tooltip with its key after it: "Shuffle (S)". */
@@ -292,6 +300,7 @@ export const SHORTCUT_HELP: ShortcutHelpEntry[] = [
   { keys: [SHORTCUT_KEYS.toggleFavorite], labelKey: 'shortcuts.favorite' },
   { keys: [SHORTCUT_KEYS.toggleQueue], labelKey: 'shortcuts.queue' },
   { keys: ['Alt + ←', 'Alt + →'], labelKey: 'shortcuts.navigate' },
+  { keys: [SHORTCUT_KEYS.focusSearch], labelKey: 'shortcuts.search' },
   { keys: ['0 – 9'], labelKey: 'shortcuts.jump' },
   { keys: ['?'], labelKey: 'shortcuts.help' },
 ]

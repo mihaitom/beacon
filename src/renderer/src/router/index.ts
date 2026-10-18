@@ -167,13 +167,19 @@ const router = createRouter({
       name: 'm-library',
       component: () => import('../views/mobile/MobileLibraryView.vue'),
     },
-    // Reached from the album name on Now Playing. There is deliberately no
-    // artist equivalent: that page is shelves of albums on the desktop and
-    // has no phone-sized design, so the artist name there stays text.
+    // Reached from the album name on Now Playing.
     {
       path: '/m/albums/:id',
       name: 'm-album-detail',
       component: () => import('../views/mobile/MobileAlbumDetailView.vue'),
+    },
+    // Reached from the library's artists tab and from an artist's name on
+    // Now Playing and an album page. Its own phone design rather than the
+    // desktop page's shelves - see MobileArtistDetailView.vue.
+    {
+      path: '/m/artists/:id',
+      name: 'm-artist-detail',
+      component: () => import('../views/mobile/MobileArtistDetailView.vue'),
     },
     // The songs list grew an albums half and became the library (see
     // MobileLibraryView.vue), so the old path is kept as a redirect rather

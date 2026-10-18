@@ -57,13 +57,15 @@
       </v-virtual-scroll>
     </div>
 
-    <v-alert v-else-if="!showSkeletons" type="info" variant="tonal">
-      {{
+    <empty-state
+      v-else-if="!showSkeletons"
+      :icon="debouncedQuery ? 'mdi-magnify-close' : 'mdi-radio-off'"
+      :title="
         debouncedQuery
           ? $t('radio.noStationsForQuery', { query: debouncedQuery })
           : $t('radio.noStationsYet')
-      }}
-    </v-alert>
+      "
+    />
 
     <!-- Editing stays: renaming a station, or correcting a stream URL that
        - has moved, is not something to have to reach a desktop for — unlike
@@ -126,6 +128,7 @@
 // (sized for a wide detail page), the tile grid, and adding a station by
 // typing three URLs.
 import { useLibraryStore } from '@/stores/library'
+import EmptyState from '@/components/EmptyState.vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { matchesAllTerms } from '@/services/textSearch'
 import RadioDiscoverDialog from '@/components/radio/RadioDiscoverDialog.vue'
@@ -138,7 +141,7 @@ let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
 export default {
   name: 'MobileRadioView',
-  components: { RadioDiscoverDialog, MobileRadioRow, StickyFilter },
+  components: { EmptyState, RadioDiscoverDialog, MobileRadioRow, StickyFilter },
   data() {
     return {
       MOBILE_ROW_HEIGHT,

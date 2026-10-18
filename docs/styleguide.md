@@ -100,6 +100,16 @@ eyebrow, a divider. It is not a fill - nothing large is amber.
 Body text stays on Vuetify's scale: `text-body-medium`, `text-body-small`,
 `text-medium-emphasis` for the quieter line.
 
+Inter is bundled (`@fontsource-variable/inter`, imported in `main.css`) and
+reaches Vuetify through `--v-font-body`/`--v-font-heading` in `base.css`.
+Without those two variables every Vuetify component and type class stays on
+Roboto, whatever `body` says.
+
+Buttons are written in sentence case ("Shuffle all", not "SHUFFLE ALL"). The
+all-caps button is Material's 2015 voice; small caps belong to the eyebrow
+label and the column headings, where they mark a label rather than an
+action.
+
 The serif face is the app's signature and is rationed deliberately - two or
 three per screen at most, never for a label or a row.
 
@@ -145,9 +155,9 @@ layout test measures.
 Two things decide a column's width, and the heading is usually the wider of
 them: "Plays" is five characters and "Reproducciones" is fourteen, over a
 three-digit number. The widths in the registry were measured in a real
-browser across all five languages, with roughly 10px of headroom each,
-because the app does not ship Inter and every platform resolves the stack to
-a slightly different face. Where the field's own name is simply too long for
+browser across all five languages, with roughly 10px of headroom each. They
+were measured before the app bundled Inter, when every platform resolved the
+stack to a slightly different face; the headroom still covers Inter. Where the field's own name is simply too long for
 a column - "Frequenza di campionamento" - the column gets a shorter label of
 its own under `library.*` and the dialog keeps the full one. A heading that
 still does not fit ends in an ellipsis and carries a `title`, rather than
@@ -436,8 +446,33 @@ Two more shared classes serve the library pages, for the same reason
 | `.library-search` | The search box above a grid: 320px wide, with the gap under it |
 | `.view-notice`    | The error banner or spinner shown in place of that grid        |
 
+An overview page's header band (`DetailHeader.vue` without a cover) grows
+with the window's width - `clamp(180px, 11cqi, 360px)` - rather than with its
+text. The text needs no more than the floor; the banner beside it is sized to
+the band's height, so on an ultrawide a fixed height left it a strip in the
+middle of an empty band. Under the band, the filter row's fields carry
+`hide-details`, so nothing but the sticky row's own padding separates the
+band from the list.
+
 Scrollbars are hidden app-wide (`base.css`) - scrolling still works, only the
 chrome is gone. A scroll region therefore has to look scrollable on its own.
+
+## Empty states
+
+A page with nothing to show uses `EmptyState.vue` (Vuetify's
+`v-empty-state`): a quiet icon in a ring, a title saying what is missing,
+and, where the app can say it, one line on how to fill it ("Tap the heart on
+a song..."). Not a tonal `v-alert`: an info alert reads as a notice _about_
+something, and an empty list is not news. Alerts stay for what is one: an
+error, a warning, a notice inside a dialog.
+
+## The top bar
+
+The desktop app bar holds one thing: the search, an always-open pill in the
+middle of the window, reachable with Ctrl+K (Cmd+K). The history arrows sit
+to its left in Electron only. The Beacon mark heads the nav rail at the bar's
+height, so the two read as one strip, and the rail's collapse toggle sits at
+the bottom with Settings - chrome, not a destination.
 
 ## Overriding a child component's own styles
 

@@ -39,6 +39,7 @@
           variant="solo-filled"
           density="compact"
           clearable
+          hide-details
           class="library-search"
         />
         <exact-match-switch />
@@ -58,19 +59,22 @@
         :style="{ '--sticky-header-offset': `${stickyHeaderHeight}px` }"
         :exclude-columns="['genre']"
       />
-      <v-alert v-if="filteredSongs.length === 0" type="info" variant="tonal">
-        {{
+      <empty-state
+        v-if="filteredSongs.length === 0"
+        :icon="filterQuery ? 'mdi-magnify-close' : 'mdi-music-note-off'"
+        :title="
           filterQuery
             ? $t('library.noSongsForQuery', { query: filterQuery })
             : $t('library.noSongsFound')
-        }}
-      </v-alert>
+        "
+      />
     </template>
   </v-container>
 </template>
 
 <script lang="ts">
 import { useLibraryStore } from '@/stores/library'
+import EmptyState from '@/components/EmptyState.vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { shuffled } from '@/services/shuffle'
 import { rankByMatch } from '@/services/textSearch'
@@ -91,7 +95,7 @@ let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
 export default {
   name: 'GenreDetailView',
-  components: { DetailHeader, SongTable, PageLoader, StickyFilter, ExactMatchSwitch },
+  components: { EmptyState, DetailHeader, SongTable, PageLoader, StickyFilter, ExactMatchSwitch },
   data() {
     return {
       songs: [] as Song[],

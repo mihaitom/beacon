@@ -316,6 +316,9 @@ def _map_album(item: dict) -> dict:
     # The key get_album_list2 sorts by, so the frontend's A-Z jump bar can
     # file the album where it actually sits (see indexLetterFor).
     _set(album, "sortName", item.get("titleSort"))
+    # When it entered the library, for the album list's "recently added"
+    # order - the same field a song's `created` comes from.
+    _set(album, "created", _epoch_to_iso(item.get("addedAt")))
     if item.get("parentRatingKey"):
         album["artistId"] = str(item["parentRatingKey"])
     if item.get("year") is not None:

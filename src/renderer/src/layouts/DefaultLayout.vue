@@ -20,21 +20,13 @@
       color="#0B0D13"
       class="beacon-rail"
     >
-      <!-- Chrome, not a destination — its own list above the divider, so it
-       - doesn't read as one more place to navigate to. -->
-      <v-list density="compact" nav>
-        <!-- Icon only, no label beside it: a hamburger that just opened the
-         - rail is self-evidently the way to close it again, and spelling
-         - that out is the one row of text nobody needs to read twice. The
-         - wording lives on aria-label instead, for a reader that cannot see
-         - which way the icon points. -->
-        <v-list-item
-          :prepend-icon="sidebarCollapsed ? 'mdi-menu' : 'mdi-menu-open'"
-          :aria-label="$t(sidebarCollapsed ? 'nav.expandSidebar' : 'nav.collapseSidebar')"
-          class="beacon-rail__toggle"
-          @click="toggleSidebar"
-        />
-      </v-list>
+      <!-- The app's own mark heads the rail, at the app bar's height so the
+       - two read as one strip. The name only shows with the labels: in the
+       - collapsed rail the lighthouse alone is the brand. -->
+      <div class="beacon-rail__brand">
+        <v-icon icon="mdi-lighthouse-on" color="primary" size="22" class="beacon-glow" />
+        <span v-if="!sidebarCollapsed" class="beacon-rail__name">Beacon</span>
+      </div>
       <v-divider class="beacon-rail__divider" />
 
       <v-list density="compact" nav>
@@ -49,6 +41,18 @@
 
       <template #append>
         <v-list density="compact" nav>
+          <!-- Chrome, not a destination - down here with Settings rather
+           - than at the top, which belongs to the app's mark. Icon only, no
+           - label beside it: a toggle that just opened the rail is
+           - self-evidently the way to close it again. The wording lives on
+           - aria-label instead, for a reader that cannot see which way the
+           - icon points. -->
+          <v-list-item
+            :prepend-icon="sidebarCollapsed ? 'mdi-menu' : 'mdi-menu-open'"
+            :aria-label="$t(sidebarCollapsed ? 'nav.expandSidebar' : 'nav.collapseSidebar')"
+            class="beacon-rail__toggle"
+            @click="toggleSidebar"
+          />
           <v-list-item to="/settings" :title="$t('nav.settings')">
             <!-- A newer Beacon is out and Settings, which says so, hasn't
              - been opened since. Deliberately this quiet: releases come
@@ -68,24 +72,20 @@
       </template>
     </v-navigation-drawer>
 
+    <!-- Three columns so the search sits in the middle of the window
+     - however wide the history arrows on its left are (they only exist in
+     - Electron). -->
     <v-app-bar density="comfortable" color="#0B0D13" class="beacon-app-bar">
-      <v-icon
-        icon="mdi-lighthouse-on"
-        color="primary"
-        size="20"
-        class="beacon-glow app-bar__mark"
-      />
-      <v-app-bar-title class="app-title">Beacon</v-app-bar-title>
-      <!-- Beside the app's own name rather than out with the search: this
-       - is where every browser and every player that has one puts it, and
-       - it is the first place someone looks when a detail page has
-       - swallowed them. -->
-      <!-- Electron only: in the browser this is the browser's own job, and
-         - its buttons are right there above ours. Same `window.api` gate the
-         - Remote Control button uses (see PlayerToolbar.vue). -->
-      <nav-history-controls v-if="isElectron" />
-      <v-spacer />
-      <top-bar-search />
+      <div class="app-bar__layout">
+        <div class="app-bar__start">
+          <!-- Electron only: in the browser this is the browser's own job,
+           - and its buttons are right there above ours. Same `window.api`
+           - gate the Remote Control button uses (see PlayerToolbar.vue). -->
+          <nav-history-controls v-if="isElectron" />
+        </div>
+        <top-bar-search />
+        <div class="app-bar__end" />
+      </div>
     </v-app-bar>
 
     <v-main>
@@ -243,16 +243,20 @@ export default {
 </script>
 
 <style scoped>
-/* Sized to the word, not stretched: the title's default `flex: 1 1 auto`
- * would push the history arrows all the way over to the search field,
- * away from the name they belong beside. */
-.app-title {
-  flex: 0 1 auto;
+/* Equal outer columns keep the search centred on the window's content
+ * area; the search column itself shrinks first when space runs out. */
+.app-bar__layout {
+  display: grid;
+  grid-template-columns: 1fr minmax(0, 480px) 1fr;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  padding-inline: 16px;
 }
 
-.app-title :deep(.v-toolbar-title__placeholder) {
-  font-weight: 600;
-  letter-spacing: 0.04em;
+.app-bar__start {
+  display: flex;
+  align-items: center;
 }
 
 .beacon-app-bar {
@@ -268,9 +272,28 @@ export default {
 }
 
 /* The toggle is chrome rather than a destination: no active state to ever
- * light up, and a quieter icon than the routes below it. */
+ * light up, and a quieter icon than the routes beside it. */
 .beacon-rail__toggle :deep(.v-icon) {
   color: rgba(255, 255, 255, 0.55);
+}
+
+/* The app bar's comfortable height, so the mark lines up with the bar
+ * beside it. Left padding centres the icon in the collapsed rail the same
+ * way Vuetify centres the nav icons below it. */
+.beacon-rail__brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 56px;
+  padding-left: 17px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.beacon-rail__name {
+  font-size: 1.05rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
 }
 
 .beacon-rail__divider {
@@ -314,11 +337,5 @@ export default {
 .beacon-rail :deep(.v-list-item--active .v-icon) {
   color: rgb(var(--v-theme-primary));
   filter: drop-shadow(0 0 5px rgba(245, 169, 78, 0.4));
-}
-
-/* The lighthouse beside the app's name in the top bar. */
-.app-bar__mark {
-  margin-left: 16px;
-  margin-right: 8px;
 }
 </style>

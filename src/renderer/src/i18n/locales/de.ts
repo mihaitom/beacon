@@ -97,6 +97,15 @@ export default {
     newArtistsTitle: 'Neue Künstler entdecken',
   },
   library: {
+    sortBy: 'Sortieren nach',
+    albumSort: {
+      name: 'Name',
+      artist: 'Künstler',
+      year: 'Jahr',
+      added: 'Zuletzt hinzugefügt',
+    },
+    decade: '{decade}er',
+    unknownYear: 'Ohne Jahr',
     showAsGrid: 'Als Raster anzeigen',
     album: 'Album',
     artist: 'Künstler',
@@ -115,6 +124,7 @@ export default {
     noSongsFound: 'Keine Titel gefunden.',
     searchSongs: 'Titel durchsuchen…',
     searchAlbums: 'Alben durchsuchen…',
+    searchArtists: 'Künstler durchsuchen…',
     noSongsForQuery: 'Keine Titel für „{query}“.',
     album1: 'Album',
     albumsN: 'Alben',
@@ -264,6 +274,7 @@ export default {
     favorite: 'Aktuellen Titel favorisieren',
     queue: 'Warteschlange ein- / ausblenden',
     navigate: 'Seiten zurück / vorwärts',
+    search: 'Suche öffnen',
     jump: 'Zu 0-90 % des Titels springen',
     help: 'Diese Übersicht anzeigen',
     hint: 'Beim Tippen und in geöffneten Dialogen sind die Tastenbelegungen deaktiviert.',
@@ -394,6 +405,7 @@ export default {
     },
   },
   queue: {
+    emptyHint: 'Spiel ein Album oder eine Playlist ab, oder füge Titel über ihr Menü hinzu.',
     title: 'Warteschlange',
     empty: 'Warteschlange ist leer.',
     clear: 'Warteschlange leeren',
@@ -862,6 +874,7 @@ export default {
     nameRecommended: 'Für mich empfohlen',
   },
   playlists: {
+    emptyHint: 'Titel kommen über ihr Menü und „Zu Playlist hinzufügen“ hierher.',
     reorderFailed: 'Neue Reihenfolge konnte nicht gespeichert werden',
     removedOne: '„{title}“ entfernt',
     removedMany: '{count} Titel entfernt',
@@ -1232,6 +1245,8 @@ export default {
     bitrate: '{bitrate} kbit/s',
   },
   favorites: {
+    noArtistsYet: 'Noch keine Lieblingskünstler.',
+    emptyHint: 'Tippe bei einem Titel, Album oder Künstler auf das Herz, dann landet er hier.',
     eyebrow: 'Deine Sammlung',
     countArtists: '{n} Künstler | {n} Künstler',
     countAlbums: '{n} Album | {n} Alben',
@@ -1245,6 +1260,7 @@ export default {
     noAlbumsYet: 'Noch keine Lieblingsalben.',
   },
   search: {
+    noResultsHint: 'Prüf die Schreibweise oder versuch es mit weniger Wörtern.',
     label: 'Suche',
     resultsFor: 'Ergebnisse für „{query}“',
     artists: 'Künstler',

@@ -5,17 +5,15 @@ import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
+import { emitter } from '@/emitter'
 import TopBarSearch from '../TopBarSearch.vue'
 
 const vuetify = createVuetify({ components, directives })
 
 interface SearchVm {
-  expanded: boolean
   query: string
   readonly onSearchPage: boolean
-  expand(): Promise<void>
-  collapse(): void
-  onBlur(): void
+  focus(): void
   onEscape(): void
   submit(): void
 }
@@ -44,33 +42,45 @@ beforeEach(() => {
   vi.clearAllMocks()
 })
 
+/** Swapped in for the real field's blur: the real one ends up in jsdom's
+ * native blur, which rejects being called with Vuetify's proxy as `this`.
+ * Spied on the field itself rather than swapping $refs out - Vue owns that
+ * object and repopulates it on every render. */
+function stubFieldBlur(wrapper: ReturnType<typeof mount>) {
+  const field = wrapper.findComponent({ name: 'VTextField' })
+  return vi.spyOn(field.vm as unknown as { blur: () => void }, 'blur').mockImplementation(() => {})
+}
+
 describe('TopBarSearch on an ordinary page', () => {
-  it('starts collapsed', async () => {
-    const { vm } = await mountSearch('/')
+  it('is a field from the start, not an icon to click first', async () => {
+    const { wrapper } = await mountSearch('/')
 
-    expect(vm.expanded).toBe(false)
+    expect(wrapper.find('input').exists()).toBe(true)
   })
 
-  it('collapses and forgets a half-typed query on blur', async () => {
-    const { vm } = await mountSearch('/')
-    await vm.expand()
+  it('forgets a half-typed query on escape and lets go of the cursor', async () => {
+    const { wrapper, vm } = await mountSearch('/')
+    const blur = stubFieldBlur(wrapper)
     vm.query = 'half typed'
-
-    vm.onBlur()
-
-    // Never submitted, so it is discarded rather than left sitting open
-    // in the app bar.
-    expect(vm.expanded).toBe(false)
-    expect(vm.query).toBe('')
-  })
-
-  it('collapses on escape', async () => {
-    const { vm } = await mountSearch('/')
-    await vm.expand()
 
     vm.onEscape()
 
-    expect(vm.expanded).toBe(false)
+    // Never submitted, so it is discarded; and the keyboard shortcuts only
+    // answer again once the field no longer has focus.
+    expect(vm.query).toBe('')
+    expect(blur).toHaveBeenCalled()
+  })
+
+  it('takes the cursor when Ctrl+K asks for the search', async () => {
+    const { wrapper } = await mountSearch('/')
+    const field = wrapper.findComponent({ name: 'VTextField' })
+    const focus = vi
+      .spyOn(field.vm as unknown as { focus: () => void }, 'focus')
+      .mockImplementation(() => {})
+
+    emitter.emit('focusSearch')
+
+    expect(focus).toHaveBeenCalled()
   })
 })
 
@@ -107,42 +117,22 @@ describe('TopBarSearch submitting', () => {
 })
 
 describe('TopBarSearch while the results page is open', () => {
-  it('opens itself and adopts the query from the URL', async () => {
+  it('adopts the query from the URL', async () => {
     const { vm } = await mountSearch('/search?q=bookmarked')
 
     // The query can arrive without this field being involved at all (a
     // bookmark, browser back/forward, a link) — showing an empty box while
     // results are on screen would be wrong.
-    expect(vm.expanded).toBe(true)
     expect(vm.query).toBe('bookmarked')
   })
 
-  it('stays open when it loses focus', async () => {
-    const { vm } = await mountSearch('/search?q=moon')
-
-    vm.onBlur()
-
-    // A follow-up search here should not need the icon clicked again.
-    expect(vm.expanded).toBe(true)
-    expect(vm.query).toBe('moon')
-  })
-
-  it('keeps the field on escape instead of hiding it', async () => {
+  it('keeps the query on escape, since the results on screen are for it', async () => {
     const { wrapper, vm } = await mountSearch('/search?q=moon')
-    // Spied on the real field rather than swapping $refs out: Vue owns
-    // that object and repopulates it on every render.
-    const field = wrapper.findComponent({ name: 'VTextField' })
-    // Replaced, not just observed: the real one ends up in jsdom's native
-    // blur, which rejects being called with Vuetify's proxy as `this`.
-    const blur = vi
-      .spyOn(field.vm as unknown as { blur: () => void }, 'blur')
-      .mockImplementation(() => {})
+    const blur = stubFieldBlur(wrapper)
 
     vm.onEscape()
 
-    // Focus is released, but the field stays there for the next search
-    // instead of collapsing back to an icon.
-    expect(vm.expanded).toBe(true)
+    expect(vm.query).toBe('moon')
     expect(blur).toHaveBeenCalled()
   })
 
@@ -165,7 +155,6 @@ describe('TopBarSearch while the results page is open', () => {
     await router.push('/')
     await flushPromises()
 
-    expect(vm.expanded).toBe(false)
     expect(vm.query).toBe('')
   })
 
@@ -177,7 +166,6 @@ describe('TopBarSearch while the results page is open', () => {
     await router.push('/search?q=later')
     await flushPromises()
 
-    expect(vm.expanded).toBe(true)
     expect(vm.query).toBe('later')
   })
 })

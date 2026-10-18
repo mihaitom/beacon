@@ -50,13 +50,7 @@ html {
 
 body {
   min-height: 100vh;
-  font-family:
-    Inter,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    Roboto,
-    sans-serif;
+  font-family: var(--beacon-font-sans);
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -249,25 +243,19 @@ body {
 
 /* The row a library page's filter field and its exact-match switch share: the
  * field keeps its 320px, the switch sits just after it, and the gap that was
- * the field's own margin moves out here so the two line up. */
+ * the field's own margin moves out here so the two line up. The fields carry
+ * `hide-details` - Vuetify's empty 22px message row under each one was the
+ * largest single gap between a page's band and its list. No margin below:
+ * the row always sits in a StickyFilter, whose own padding is the gap. */
 .library-filter {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 16px;
-  margin-bottom: 16px;
 }
 
 .library-filter .library-search {
   margin-bottom: 0;
-}
-
-/* Top-aligned, not centred: a Vuetify text field carries an empty 22px
- * details row under its box even when nothing is shown, so the field element
- * is taller than its box, and centring the switch would drop it below the
- * box's middle. The box is at the top, so the switch is too. */
-.library-filter .exact-match-switch {
-  align-self: flex-start;
 }
 
 /* The line a library page shows in place of its grid while something is
@@ -520,6 +508,14 @@ body {
  * details: without them the chrome and every list read as stock Material
  * regardless of the amber/navy palette used elsewhere. */
 :root {
+  /* Inter is bundled (main.css), not assumed installed: without it every
+   * platform fell back to its own system face, Roboto on Linux. Vuetify reads
+   * its face from these two variables on every component and type class, so
+   * setting `body` alone left all of those on Vuetify's Roboto default. */
+  --beacon-font-sans:
+    'Inter Variable', Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --v-font-body: var(--beacon-font-sans);
+  --v-font-heading: var(--beacon-font-sans);
   --beacon-chrome: #0b0d13;
   --beacon-hover: rgba(245, 169, 78, 0.07);
   --beacon-hairline: rgba(245, 169, 78, 0.14);

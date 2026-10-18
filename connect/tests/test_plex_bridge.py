@@ -246,6 +246,16 @@ def test_map_album_omits_sort_name_when_absent():
     assert "sortName" not in plex_bridge._map_album(item)
 
 
+def test_map_album_carries_when_it_was_added():
+    # The album list's "recently added" order sorts by this.
+    item = {"ratingKey": "2004", "title": "Wall", "addedAt": 1700000000}
+    assert plex_bridge._map_album(item)["created"] == "2023-11-14T22:13:20+00:00"
+
+
+def test_map_album_omits_created_when_plex_has_no_date():
+    assert "created" not in plex_bridge._map_album({"ratingKey": "2005", "title": "Wall"})
+
+
 def test_map_artist_basic_fields():
     item = {"ratingKey": "3001", "title": "Artist A", "childCount": 4}
     artist = plex_bridge._map_artist(item)

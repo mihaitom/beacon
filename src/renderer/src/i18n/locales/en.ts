@@ -99,6 +99,15 @@ export default {
     newArtistsTitle: 'New artists to explore',
   },
   library: {
+    sortBy: 'Sort by',
+    albumSort: {
+      name: 'Name',
+      artist: 'Artist',
+      year: 'Year',
+      added: 'Recently added',
+    },
+    decade: '{decade}s',
+    unknownYear: 'No year',
     showAsGrid: 'Show as grid',
     album: 'Album',
     artist: 'Artist',
@@ -117,6 +126,7 @@ export default {
     noSongsFound: 'No songs found.',
     searchSongs: 'Search songs…',
     searchAlbums: 'Search albums…',
+    searchArtists: 'Search artists…',
     noSongsForQuery: 'No songs for "{query}".',
     album1: 'album',
     albumsN: 'albums',
@@ -266,6 +276,7 @@ export default {
     favorite: 'Favorite the current track',
     queue: 'Show / hide the queue',
     navigate: 'Back / forward through pages',
+    search: 'Focus search',
     jump: 'Jump to 0-90% of the track',
     help: 'Show this list',
     hint: 'Shortcuts stay out of the way while you are typing or a dialog is open.',
@@ -394,6 +405,7 @@ export default {
     },
   },
   queue: {
+    emptyHint: 'Play an album or a playlist, or add songs from their menu.',
     title: 'Queue',
     empty: 'Queue is empty.',
     clear: 'Clear queue',
@@ -854,6 +866,7 @@ export default {
     nameRecommended: 'Recommended for me',
   },
   playlists: {
+    emptyHint: 'Add songs from their menu with “Add to playlist”.',
     reorderFailed: 'Could not save the new order',
     removedOne: 'Removed “{title}”',
     removedMany: 'Removed {count} tracks',
@@ -1223,6 +1236,8 @@ export default {
     bitrate: '{bitrate} kbit/s',
   },
   favorites: {
+    noArtistsYet: 'No favorite artists yet.',
+    emptyHint: 'Tap the heart on a song, album or artist and it shows up here.',
     eyebrow: 'Your collection',
     countArtists: '{n} artist | {n} artists',
     countAlbums: '{n} album | {n} albums',
@@ -1236,6 +1251,7 @@ export default {
     noAlbumsYet: 'No favorite albums yet.',
   },
   search: {
+    noResultsHint: 'Check the spelling or try fewer words.',
     label: 'Search',
     resultsFor: 'Results for "{query}"',
     artists: 'Artists',

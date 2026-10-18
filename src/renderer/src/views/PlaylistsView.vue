@@ -58,6 +58,7 @@
           variant="solo-filled"
           density="compact"
           clearable
+          hide-details
           class="library-search"
         />
       </div>
@@ -107,17 +108,15 @@
       </div>
     </template>
 
-    <v-alert
+    <empty-state
       v-if="!libraryStore.loading && !personalPlaylists.length && !globalPlaylists.length"
-      type="info"
-      variant="tonal"
-    >
-      {{
+      :icon="filterQuery ? 'mdi-magnify-close' : 'mdi-playlist-music-outline'"
+      :title="
         filterQuery
           ? $t('playlists.noPlaylistsForQuery', { query: filterQuery })
           : $t('playlists.noPlaylistsYet')
-      }}
-    </v-alert>
+      "
+    />
 
     <lastfm-playlist-dialog ref="lastfmDialog" />
     <playlist-edit-dialog ref="editDialog" />
@@ -147,6 +146,7 @@
 
 <script lang="ts">
 import { useLibraryStore } from '@/stores/library'
+import EmptyState from '@/components/EmptyState.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useLastfmStore } from '@/stores/lastfm'
 import { usePlaybackStore } from '@/stores/playback'
@@ -179,6 +179,7 @@ let debounceTimer: ReturnType<typeof setTimeout> | undefined
 export default {
   name: 'PlaylistsView',
   components: {
+    EmptyState,
     DetailHeader,
     PlaylistRow,
     RowSkeleton,

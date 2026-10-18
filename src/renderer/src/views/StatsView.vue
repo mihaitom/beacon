@@ -52,7 +52,9 @@
             <div class="stat-tile__label">{{ $t('stats.listeningTime') }}</div>
           </div>
           <div class="stat-tile">
-            <div class="stat-tile__value detail-title">{{ formatPercent(playedShare) }}</div>
+            <div class="stat-tile__value detail-title">
+              {{ formatShare(playedCount, songs.length) }}
+            </div>
             <div class="stat-tile__label">{{ $t('stats.playedShare') }}</div>
           </div>
           <div v-if="hasLastPlayed" class="stat-tile">
@@ -96,9 +98,12 @@
         </div>
       </section>
 
-      <v-alert v-if="totalPlays === 0" type="info" variant="tonal" class="stats-empty">
-        {{ $t('stats.noPlaysYet') }}
-      </v-alert>
+      <empty-state
+        v-if="totalPlays === 0"
+        icon="mdi-chart-box-outline"
+        :title="$t('stats.noPlaysYet')"
+        class="stats-empty"
+      />
 
       <div v-else class="pair-grid">
         <section>
@@ -153,6 +158,7 @@
 
 <script lang="ts">
 import { useLibraryStore } from '@/stores/library'
+import EmptyState from '@/components/EmptyState.vue'
 import PageLoader from '@/components/PageLoader.vue'
 import RankedList, { type RankedItem } from '@/components/library/RankedList.vue'
 import type { Artist, Song } from '@/types/library'
@@ -215,7 +221,7 @@ function aggregateByPlays(
 
 export default {
   name: 'StatsView',
-  components: { PageLoader, RankedList },
+  components: { EmptyState, PageLoader, RankedList },
   data() {
     return {
       // Fixed per visit, so "the last 30 days" doesn't drift while the page
@@ -268,10 +274,8 @@ export default {
     storageBytes(): number {
       return this.songs.reduce((sum, t) => sum + (t.size || 0), 0)
     },
-    playedShare(): number {
-      if (this.songs.length === 0) return 0
-      const played = this.songs.filter((t) => (t.playCount || 0) > 0).length
-      return Math.round((played / this.songs.length) * 100)
+    playedCount(): number {
+      return this.songs.filter((t) => (t.playCount || 0) > 0).length
     },
     hasLastPlayed(): boolean {
       return this.songs.some((t) => t.lastPlayed)
@@ -467,7 +471,7 @@ export default {
         .map(([key, count]) => ({
           ...describe(key),
           value: count,
-          valueLabel: this.formatPercent(Math.round((count / total) * 100)),
+          valueLabel: this.formatShare(count, total),
         }))
     },
     formatBytes(bytes: number): string {
@@ -490,6 +494,16 @@ export default {
     /** 16 %, 16%, 16 % - where the sign goes is the language's call. */
     formatPercent(value: number): string {
       return new Intl.NumberFormat(this.$i18n.locale, { style: 'percent' }).format(value / 100)
+    },
+    /** A share as a whole percent, never rounded to a figure that says
+     * something else: 50 songs heard out of 19,529 is "< 1 %", not "0 %",
+     * which read as nothing at all. Same at the other end. */
+    formatShare(part: number, whole: number): string {
+      if (whole <= 0) return this.formatPercent(0)
+      const percent = Math.round((part / whole) * 100)
+      if (part > 0 && percent === 0) return `< ${this.formatPercent(1)}`
+      if (part < whole && percent === 100) return `> ${this.formatPercent(99)}`
+      return this.formatPercent(percent)
     },
     formatNumber(value: number): string {
       return value.toLocaleString(this.$i18n.locale)
@@ -559,8 +573,13 @@ export default {
    * enough at a laptop's width, queue open, for the library's six tiles to
    * share one row - the sixth used to sit alone below, stretched across. */
   font-size: clamp(1.4rem, 2.6cqi, 2.25rem);
-  color: rgb(var(--v-theme-primary));
   line-height: 1.1;
+}
+
+/* Amber marks the listening figures only - every figure in amber was a
+ * page of signal with nothing singled out. */
+.stat-tile--highlight .stat-tile__value {
+  color: rgb(var(--v-theme-primary));
 }
 
 .stat-tile__label {

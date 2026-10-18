@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { RouterLinkStub, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
@@ -35,7 +35,7 @@ function mountView(id = 'al-1') {
   return mount(MobileAlbumDetailView, {
     global: {
       plugins: [vuetify, i18n],
-      stubs: { CoverArt: true, MobileSongActionSheet: true },
+      stubs: { CoverArt: true, MobileSongActionSheet: true, RouterLink: RouterLinkStub },
       mocks: { $route: { params: { id } } },
     },
   })
@@ -57,15 +57,23 @@ describe('MobileAlbumDetailView', () => {
     expect(wrapper.findAllComponents({ name: 'MobileSongRow' })).toHaveLength(3)
   })
 
-  // The artist page does not exist in this shell (see the router's
-  // m-album-detail comment), so nothing here may offer a way to it.
-  it('names the artist without linking anywhere', async () => {
+  it("leads from the artist's name to the shell's own artist page", async () => {
     const library = useLibraryStore()
     vi.spyOn(library, 'fetchAlbum').mockResolvedValue(makeAlbum())
     const wrapper = mountView()
     await flushPromises()
 
-    expect(wrapper.findAll('a')).toHaveLength(0)
+    expect(wrapper.getComponent(RouterLinkStub).props('to')).toBe('/m/artists/ar-1')
+  })
+
+  it('names an artist the server gave no id for without a link', async () => {
+    const library = useLibraryStore()
+    vi.spyOn(library, 'fetchAlbum').mockResolvedValue(makeAlbum({ artistId: '' }))
+    const wrapper = mountView()
+    await flushPromises()
+
+    expect(wrapper.findAllComponents(RouterLinkStub)).toHaveLength(0)
+    expect(wrapper.text()).toContain('Some Artist')
   })
 
   it('plays the album in its own order, and a tapped track with the rest behind it', async () => {

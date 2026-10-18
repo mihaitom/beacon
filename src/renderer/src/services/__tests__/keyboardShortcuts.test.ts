@@ -44,6 +44,12 @@ describe('resolveShortcut', () => {
     })
   })
 
+  it('jumps to the search with Ctrl/Cmd+K, while a bare K stays play/pause', () => {
+    expect(resolveShortcut(press('k', { ctrlKey: true }))).toEqual({ type: 'focusSearch' })
+    expect(resolveShortcut(press('k', { metaKey: true }))).toEqual({ type: 'focusSearch' })
+    expect(resolveShortcut(press('k'))).toEqual({ type: 'togglePlay' })
+  })
+
   it('leaves every other modifier combination to the browser and the OS', () => {
     // Ctrl+R reloads — that must not turn into a repeat-mode change.
     expect(resolveShortcut(press('r', { ctrlKey: true }))).toBeNull()

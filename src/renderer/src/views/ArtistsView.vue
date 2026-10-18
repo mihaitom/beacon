@@ -42,6 +42,7 @@
           variant="solo-filled"
           density="compact"
           clearable
+          hide-details
           class="library-search"
         />
         <exact-match-switch />
@@ -103,17 +104,15 @@
       </v-virtual-scroll>
     </div>
 
-    <v-alert
+    <empty-state
       v-if="!libraryStore.loading && filteredArtists.length === 0 && !libraryStore.error"
-      type="info"
-      variant="tonal"
-    >
-      {{
+      :icon="filterQuery ? 'mdi-magnify-close' : 'mdi-account-music'"
+      :title="
         filterQuery
           ? $t('library.noArtistsForQuery', { query: filterQuery })
           : $t('library.noArtistsFound')
-      }}
-    </v-alert>
+      "
+    />
 
     <infinite-scroll-trigger
       v-if="!virtualizeArtists && visibleCount < filteredArtists.length"
@@ -131,6 +130,7 @@
 
 <script lang="ts">
 import { ref } from 'vue'
+import EmptyState from '@/components/EmptyState.vue'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { useElementWidth } from '@/composables/useElementWidth'
@@ -176,6 +176,7 @@ let debounceTimer: ReturnType<typeof setTimeout> | undefined
 export default {
   name: 'ArtistsView',
   components: {
+    EmptyState,
     DetailHeader,
     ArtistCard,
     AlphabetIndexBar,

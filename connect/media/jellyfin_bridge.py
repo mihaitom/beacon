@@ -273,6 +273,9 @@ def _map_album(item: dict) -> dict:
     # The key get_album_list2 sorts by, so the frontend's A-Z jump bar can
     # file the album where it actually sits (see indexLetterFor).
     _set(album, "sortName", item.get("SortName"))
+    # When it entered the library, for the album list's "recently added"
+    # order. get_album_list2 already asks for the field to sort "newest".
+    _set(album, "created", item.get("DateCreated"))
     if artist_items:
         album["artistId"] = artist_items[0]["Id"]
     if item.get("ProductionYear") is not None:

@@ -44,9 +44,23 @@
           variant="solo-filled"
           density="compact"
           clearable
+          hide-details
           class="library-search"
         />
         <exact-match-switch />
+        <v-select
+          :model-value="sort"
+          :items="sortOptions"
+          :aria-label="$t('library.sortBy')"
+          prepend-inner-icon="mdi-sort"
+          variant="solo-filled"
+          density="compact"
+          rounded="pill"
+          flat
+          hide-details
+          class="album-sort"
+          @update:model-value="setSort"
+        />
       </div>
     </sticky-filter>
     <v-alert v-if="libraryStore.error" type="error" variant="tonal" class="view-notice">
@@ -76,7 +90,7 @@
           <!-- A full-width divider before each letter's first card - see
            - .letter-divider's own comment for why it forces a line break. -->
           <div v-if="startsLetterSection(index)" class="letter-divider" aria-hidden="true">
-            <span class="letter-divider__label">{{ letterAt(index) }}</span>
+            <span class="letter-divider__label">{{ sectionLabel(letterAt(index)) }}</span>
           </div>
           <album-card :data-album-index="index" :album="album" />
         </template>
@@ -116,7 +130,9 @@
               class="letter-divider"
               aria-hidden="true"
             >
-              <span class="letter-divider__label">{{ letterAt(row.startIndex) }}</span>
+              <span class="letter-divider__label">{{
+                sectionLabel(letterAt(row.startIndex))
+              }}</span>
             </div>
             <album-card
               v-for="(album, column) in row.items"
@@ -129,17 +145,15 @@
       </v-virtual-scroll>
     </div>
 
-    <v-alert
+    <empty-state
       v-if="!libraryStore.loading && filteredAlbums.length === 0 && !libraryStore.error"
-      type="info"
-      variant="tonal"
-    >
-      {{
+      :icon="filterQuery ? 'mdi-magnify-close' : 'mdi-album'"
+      :title="
         filterQuery
           ? $t('library.noAlbumsForQuery', { query: filterQuery })
           : $t('library.noAlbumsFound')
-      }}
-    </v-alert>
+      "
+    />
 
     <infinite-scroll-trigger
       v-if="!virtualizeAlbums && visibleCount < filteredAlbums.length"
@@ -147,7 +161,8 @@
     />
 
     <alphabet-index-bar
-      v-if="!libraryStore.loading && filteredAlbums.length > 0"
+      v-if="!libraryStore.loading && filteredAlbums.length > 0 && barSections.length"
+      :sections="barSections"
       :available="availableLetters"
       :active="activeLetter"
       @select="jumpToLetter"
@@ -160,7 +175,18 @@ import { ref } from 'vue'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { useElementWidth } from '@/composables/useElementWidth'
-import { firstIndexByLetter, indexLetterFor } from '@/services/alphabetIndex'
+import { firstIndexByLetter } from '@/services/alphabetIndex'
+import {
+  ALBUM_SORTS,
+  UNKNOWN_YEAR_SECTION,
+  loadAlbumSort,
+  saveAlbumSort,
+  sectionFor,
+  sectionsFor,
+  sortAlbums,
+  type AlbumSort,
+} from '@/services/albumSort'
+import EmptyState from '@/components/EmptyState.vue'
 import { matchesAllTerms } from '@/services/textSearch'
 import DetailHeader from '@/components/library/DetailHeader.vue'
 import AlbumCard from '@/components/library/AlbumCard.vue'
@@ -217,6 +243,7 @@ export default {
     DetailHeader,
     AlbumCard,
     AlphabetIndexBar,
+    EmptyState,
     InfiniteScrollTrigger,
     StickyFilter,
     ExactMatchSwitch,
@@ -253,6 +280,7 @@ export default {
       // are here" highlight — see observeActiveLetter.
       activeLetter: null as string | null,
       activeLetterObserver: null as ActiveLetterHandle | null,
+      sort: loadAlbumSort(),
     }
   },
   mounted() {
@@ -288,12 +316,23 @@ export default {
     albumItemHeight() {
       return ALBUM_ROW_HEIGHT_GUESS
     },
+    sortedAlbums(): Album[] {
+      return sortAlbums(this.libraryStore.albums, this.sort)
+    },
     filteredAlbums(): Album[] {
       const query = this.debouncedQuery
-      if (!query.trim()) return this.libraryStore.albums
-      return this.libraryStore.albums.filter((album: Album) =>
+      if (!query.trim()) return this.sortedAlbums
+      return this.sortedAlbums.filter((album: Album) =>
         matchesAllTerms(query, [album.name], { exact: this.libraryStore.searchExact }),
       )
+    },
+    sortOptions(): { title: string; value: AlbumSort }[] {
+      return ALBUM_SORTS.map((value) => ({ title: this.$t(`library.albumSort.${value}`), value }))
+    },
+    // From the whole sorted list, not the filtered one: a filter greys
+    // sections out (availableLetters) rather than taking them off the bar.
+    barSections(): string[] {
+      return sectionsFor(this.sortedAlbums, this.sort)
     },
     visibleAlbums(): Album[] {
       return this.filteredAlbums.slice(0, this.visibleCount)
@@ -329,9 +368,7 @@ export default {
       return rows
     },
     letterFirstIndex(): Map<string, number> {
-      // indexLetterFor prefers the server's sort name — see its own comment
-      // on why the display name's first letter can be the wrong section.
-      return firstIndexByLetter(this.filteredAlbums, indexLetterFor)
+      return firstIndexByLetter(this.filteredAlbums, (album) => sectionFor(album, this.sort))
     },
     availableLetters(): Set<string> {
       return new Set(this.letterFirstIndex.keys())
@@ -341,7 +378,7 @@ export default {
     // The reverse of letterFirstIndex, which only knows where each run
     // starts, not which run a given card is in.
     indexLetters(): string[] {
-      return this.filteredAlbums.map(indexLetterFor)
+      return this.filteredAlbums.map((album) => sectionFor(album, this.sort))
     },
   },
   watch: {
@@ -358,6 +395,11 @@ export default {
     filteredAlbums() {
       this.$nextTick(() => this.activeLetterObserver?.update())
     },
+    // What the sections are changes with the order; the scroll-driven
+    // highlight starts again from the top of the new one.
+    sort() {
+      this.$nextTick(() => this.activeLetterObserver?.update())
+    },
   },
   created() {
     this.libraryStore.fetchAlbums()
@@ -369,8 +411,25 @@ export default {
     letterAt(index: number): string {
       return this.indexLetters[index] ?? ''
     },
+    // "Recently added" has no sections (every album's is ''), so no
+    // dividers either.
     startsLetterSection(index: number): boolean {
+      if (!this.indexLetters[index]) return false
       return index === 0 || this.indexLetters[index] !== this.indexLetters[index - 1]
+    },
+    // A divider's text: the letter itself, or "1980s"/"No year" for the
+    // decade sections the bar only has room to name by number.
+    sectionLabel(section: string): string {
+      if (this.sort !== 'year') return section
+      if (section === UNKNOWN_YEAR_SECTION) return this.$t('library.unknownYear')
+      return this.$t('library.decade', { decade: section })
+    },
+    setSort(sort: AlbumSort) {
+      this.sort = sort
+      saveAlbumSort(sort)
+      this.visibleCount = PAGE_SIZE
+      this.activeLetter = null
+      window.scrollTo({ top: 0 })
     },
     jumpToLetter(letter: string) {
       const index = this.letterFirstIndex.get(letter)
@@ -453,6 +512,13 @@ export default {
 </script>
 
 <style scoped>
+/* At the far end of the filter row: the order applies to the whole list,
+ * the field and switch beside the search only narrow it. */
+.album-sort {
+  flex: 0 0 240px;
+  margin-left: auto;
+}
+
 /* See this file's own #actions template comment for why this exists. */
 .detail-header__actions-row {
   display: flex;

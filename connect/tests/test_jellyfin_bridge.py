@@ -186,6 +186,15 @@ def test_map_album_omits_artist_id_year_and_genre_when_absent():
     assert "artistId" not in album
     assert "year" not in album
     assert "genre" not in album
+    assert "created" not in album
+
+
+def test_map_album_carries_when_it_was_added():
+    # The album list's "recently added" order sorts by this.
+    album = jellyfin_bridge._map_album(
+        {"Id": "a3", "Name": "Album 3", "DateCreated": "2026-04-25T18:51:26.4738000Z"}
+    )
+    assert album["created"] == "2026-04-25T18:51:26.4738000Z"
 
 
 def test_map_album_carries_the_album_page_extras():

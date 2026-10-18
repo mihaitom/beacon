@@ -57,6 +57,10 @@
           <template #prepend><v-icon icon="mdi-album" /></template>
           <v-list-item-title>{{ $t('library.goToAlbum') }}</v-list-item-title>
         </v-list-item>
+        <v-list-item v-if="song.artistId" @click="goToArtist">
+          <template #prepend><v-icon icon="mdi-account-music" /></template>
+          <v-list-item-title>{{ $t('library.goToArtist') }}</v-list-item-title>
+        </v-list-item>
         <v-divider />
         <v-list-item v-if="song.coverArtId" @click="showArtwork">
           <template #prepend><v-icon icon="mdi-image-outline" /></template>
@@ -215,6 +219,11 @@ export default {
       const albumId = this.song?.albumId
       if (!albumId) return
       this.act(() => this.$router.push(`/m/albums/${albumId}`))
+    },
+    goToArtist() {
+      const artistId = this.song?.artistId
+      if (!artistId) return
+      this.act(() => this.$router.push(`/m/artists/${artistId}`))
     },
     showArtwork() {
       const song = this.song

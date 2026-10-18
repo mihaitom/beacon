@@ -103,11 +103,12 @@ const FIELD_TTL_MS: Partial<Record<LibraryCacheField, number>> = {
  * written by an older Beacon is refetched instead of being read by code
  * expecting a field it does not carry. Only the listed fields are
  * invalidated, and only once — a record with no schema was written before
- * this existed. Bump artists/albums together: both gained the sort name the
- * A-Z jump bar files by. */
+ * this existed. Artists and albums went to 2 together, both gaining the sort
+ * name the A-Z jump bar files by; albums to 3 for `created`, which the album
+ * list's "recently added" order sorts by. */
 const CACHE_SCHEMA: Partial<Record<LibraryCacheField, number>> = {
   artists: 2,
-  albums: 2,
+  albums: 3,
 }
 const BASE_CACHE_SCHEMA = 1
 

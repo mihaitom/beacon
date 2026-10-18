@@ -9,10 +9,14 @@
       />
       <div class="mobile-header__title">
         <h1 class="page-title">{{ album.name }}</h1>
-        <!-- The artist as text, not a link: there is no artist page in this
-         - shell to send the tap to (see NowPlayingView.vue's own compact
-         - branch for the same decision). -->
-        <div class="text-body-small text-medium-emphasis">{{ album.artist }}</div>
+        <router-link
+          v-if="album.artistId"
+          :to="`/m/artists/${album.artistId}`"
+          class="text-body-small text-medium-emphasis mobile-album-detail__artist"
+        >
+          {{ album.artist }}
+        </router-link>
+        <div v-else class="text-body-small text-medium-emphasis">{{ album.artist }}</div>
         <div class="text-body-small text-medium-emphasis">{{ meta }}</div>
       </div>
       <preview-button :songs="album.songs" compact />
@@ -148,6 +152,13 @@ export default {
 .mobile-album-detail__list {
   display: flex;
   flex-direction: column;
+}
+
+/* The artist link reads as the line it replaced, not as a blue link. */
+.mobile-album-detail__artist {
+  display: block;
+  color: inherit;
+  text-decoration: none;
 }
 
 /* An album name can be long; the header stays one line. */

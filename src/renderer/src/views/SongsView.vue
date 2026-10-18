@@ -40,6 +40,7 @@
           variant="solo-filled"
           density="compact"
           clearable
+          hide-details
           class="library-search"
         />
         <exact-match-switch />
@@ -57,18 +58,21 @@
       :queue-whole-list="false"
     />
 
-    <v-alert v-if="!libraryStore.loading && filteredSongs.length === 0" type="info" variant="tonal">
-      {{
+    <empty-state
+      v-if="!libraryStore.loading && filteredSongs.length === 0"
+      :icon="filterQuery ? 'mdi-magnify-close' : 'mdi-music-note-off'"
+      :title="
         filterQuery
           ? $t('library.noSongsForQuery', { query: filterQuery })
           : $t('library.noSongsFound')
-      }}
-    </v-alert>
+      "
+    />
   </v-container>
 </template>
 
 <script lang="ts">
 import { useLibraryStore } from '@/stores/library'
+import EmptyState from '@/components/EmptyState.vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { shuffled } from '@/services/shuffle'
 import { rankByMatch } from '@/services/textSearch'
@@ -90,7 +94,7 @@ let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
 export default {
   name: 'SongsView',
-  components: { DetailHeader, ExactMatchSwitch, SongTable, StickyFilter },
+  components: { EmptyState, DetailHeader, ExactMatchSwitch, SongTable, StickyFilter },
   data() {
     return {
       filterQuery: '',

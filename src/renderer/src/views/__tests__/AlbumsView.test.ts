@@ -32,6 +32,9 @@ interface AlbumsVm {
   letterAt(index: number): string
   startsLetterSection(index: number): boolean
   jumpToLetter(letter: string): void
+  setSort(sort: 'name' | 'artist' | 'year' | 'added'): void
+  sectionLabel(section: string): string
+  readonly barSections: string[]
   playRandomAlbum(): Promise<void>
   playTopAlbum(): Promise<void>
 }
@@ -118,6 +121,7 @@ const many = (n: number): Album[] =>
 beforeEach(() => {
   setActivePinia(createPinia())
   vi.clearAllMocks()
+  localStorage.clear()
 })
 
 afterEach(() => {
@@ -367,5 +371,47 @@ describe('AlbumsView random playback', () => {
 
     expect(store.fetchAlbum).toHaveBeenCalledWith('top')
     expect(playback.playSongList).toHaveBeenCalled()
+  })
+})
+
+describe('AlbumsView sort order', () => {
+  it('reorders by year into decade sections, named in words beside the cards', async () => {
+    const { vm } = await mountAlbums([
+      { ...album('old', 'Old'), year: 1984 },
+      { ...album('new', 'New'), year: 2012 },
+      { ...album('mid', 'Mid'), year: 1986 },
+    ])
+
+    vm.setSort('year')
+    await flushPromises()
+
+    expect(vm.filteredAlbums.map((a) => a.id)).toEqual(['new', 'mid', 'old'])
+    expect(vm.barSections).toEqual(['2010', '2000', '1990', '1980'])
+    expect([0, 1, 2].map((index) => vm.startsLetterSection(index))).toEqual([true, true, false])
+    expect(vm.sectionLabel(vm.letterAt(1))).toBe('1980s')
+  })
+
+  it('shows neither dividers nor a bar for recently added', async () => {
+    const { vm } = await mountAlbums([
+      { ...album('a', 'A'), created: '2026-01-01T00:00:00Z' },
+      { ...album('b', 'B'), created: '2026-02-01T00:00:00Z' },
+    ])
+
+    vm.setSort('added')
+    await flushPromises()
+
+    expect(vm.filteredAlbums.map((a) => a.id)).toEqual(['b', 'a'])
+    expect([0, 1].map((index) => vm.startsLetterSection(index))).toEqual([false, false])
+    expect(vm.barSections).toEqual([])
+  })
+
+  it('opens in the order it was left in', async () => {
+    const first = await mountAlbums([album('a', 'A')])
+    first.vm.setSort('year')
+    first.wrapper.unmount()
+
+    const { vm } = await mountAlbums([album('a', 'A')])
+
+    expect(vm.barSections).toEqual(['2000'])
   })
 })
