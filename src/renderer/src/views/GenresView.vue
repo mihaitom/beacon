@@ -35,32 +35,60 @@
       indeterminate
       class="view-notice"
     />
-    <div v-else-if="tieredGenres.length" class="genre-grid">
-      <router-link
-        v-for="entry in tieredGenres"
-        :key="entry.genre.name"
-        :to="`/genres/${encodeURIComponent(entry.genre.name)}`"
-        class="genre-tile"
-        :class="[`genre-tile--${entry.tier}`, { 'genre-tile--covers': entry.covers.length }]"
-      >
-        <div v-if="entry.covers.length" class="genre-tile__covers" aria-hidden="true">
-          <cover-art
-            v-for="coverArtId in entry.covers"
-            :key="coverArtId"
-            :cover-art-id="coverArtId"
-            :size="COVER_SIZE[entry.tier]"
-            class="genre-tile__cover"
+    <template v-else-if="indexGroups.length">
+      <!-- The biggest genres as crates of records; while searching only the
+       - register below, which lists every match. -->
+      <section v-if="!isFiltering && crates.length" class="genre-crates-section">
+        <h2 class="section-title">{{ $t('library.genresBiggest') }}</h2>
+        <div class="genre-crates">
+          <genre-crate
+            v-for="genre in crates"
+            :key="genre.name"
+            :genre="genre"
+            :covers="coversFor(genre)"
           />
         </div>
-        <span class="genre-tile__name">{{ entry.genre.name }}</span>
-        <span class="genre-tile__meta">{{
-          $t('library.albumsAndSongs', {
-            albums: $n(entry.genre.albumCount),
-            songs: $n(entry.genre.songCount),
-          })
-        }}</span>
-      </router-link>
-    </div>
+      </section>
+
+      <section class="genre-register" :class="{ 'genre-register--with-bar': !isFiltering }">
+        <h2 v-if="!isFiltering" class="section-title">{{ $t('library.genresAll') }}</h2>
+        <!-- A book's index: columns read top to bottom, each genre led by
+         - dots to its number of songs. How strongly a name is set follows
+         - how much of the library it holds, so the few that matter stand
+         - out of the long tail of one-song genres. -->
+        <div class="genre-register__columns">
+          <section
+            v-for="group in indexGroups"
+            :id="`genre-letter-${group.letter}`"
+            :key="group.letter"
+            class="genre-register__group"
+            :data-genre-index="group.firstIndex"
+          >
+            <h3 class="genre-register__letter">{{ group.letter }}</h3>
+            <ul class="genre-register__entries">
+              <li v-for="genre in group.genres" :key="genre.name">
+                <router-link
+                  :to="`/genres/${encodeURIComponent(genre.name)}`"
+                  class="genre-register__entry"
+                  :class="`genre-register__entry--${weightOf(genre)}`"
+                >
+                  <span class="genre-register__name">{{ genre.name }}</span>
+                  <span class="genre-register__leader" aria-hidden="true" />
+                  <span class="genre-register__count">{{ $n(genre.songCount) }}</span>
+                </router-link>
+              </li>
+            </ul>
+          </section>
+        </div>
+      </section>
+
+      <alphabet-index-bar
+        v-if="!isFiltering"
+        :available="availableLetters"
+        :active="activeLetter"
+        @select="jumpToLetter"
+      />
+    </template>
     <empty-state
       v-else-if="!libraryStore.loading || libraryStore.genres.length"
       :icon="filterQuery ? 'mdi-magnify-close' : 'mdi-tag-off-outline'"
@@ -80,38 +108,49 @@ import { matchesAllTerms } from '@/services/textSearch'
 import StickyFilter from '@/components/StickyFilter.vue'
 import DetailHeader from '@/components/library/DetailHeader.vue'
 import ExactMatchSwitch from '@/components/library/ExactMatchSwitch.vue'
-import CoverArt from '@/components/library/CoverArt.vue'
+import GenreCrate from '@/components/library/GenreCrate.vue'
+import AlphabetIndexBar from '@/components/library/AlphabetIndexBar.vue'
 import { coversByGenre } from '@/services/genreCovers'
+import { letterForName } from '@/services/alphabetIndex'
+import { observeActiveLetter, type ActiveLetterHandle } from '@/services/activeLetter'
 import type { Genre } from '@/types/library'
 
 let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
-// How many of the top (by songCount) genres the default browse view shows —
-// this is a "most-played chart," not a full A-Z index (the library's whole
-// genre list can run into the hundreds). 21 = 1 spotlight (2x2) + 4 featured
-// (2x1) + 16 standard (1x1) = 28 grid cells exactly, filling all 7 rows of
-// the 4-column grid with no trailing gap — see .genre-grid below.
-const TOP_COUNT = 21
+/** The biggest genres shown as crates: two full rows on a wide window. */
+const CRATE_COUNT = 8
+// More than the four a crate shows, so flipping through it has more to show.
+const COVERS_PER_CRATE = 12
 
-type Tier = 'spotlight' | 'featured' | 'standard'
+interface IndexGroup {
+  letter: string
+  genres: Genre[]
+  /** The group's first genre's position in the register, which the
+   * alphabet bar's "you are here" reads (see observeActiveLetter). */
+  firstIndex: number
+}
 
-/** How many covers a tile of each size shows, and how big. The edge is the
- * tile's own height (see .genre-grid's 108px rows, two rows and a gap for
- * the spotlight's 2x2), so the covers run edge to edge down the tile. */
-const COVER_COUNT: Record<Tier, number> = { spotlight: 4, featured: 3, standard: 2 }
-const COVER_SIZE: Record<Tier, number> = { spotlight: 114, featured: 108, standard: 108 }
+const collator = new Intl.Collator(undefined, { sensitivity: 'base', numeric: true })
 
 export default {
   name: 'GenresView',
-  components: { EmptyState, DetailHeader, StickyFilter, ExactMatchSwitch, CoverArt },
+  components: {
+    EmptyState,
+    DetailHeader,
+    StickyFilter,
+    ExactMatchSwitch,
+    GenreCrate,
+    AlphabetIndexBar,
+  },
   data() {
     return {
-      COVER_SIZE,
       filterQuery: '',
       // filteredGenres reads this instead of filterQuery directly, so
       // filtering doesn't run synchronously on every keystroke — see the
       // identical pattern (and its rationale) in SongsView.vue.
       debouncedQuery: '',
+      activeLetter: null as string | null,
+      activeLetterObserver: null as ActiveLetterHandle | null,
     }
   },
   computed: {
@@ -121,41 +160,50 @@ export default {
     isFiltering(): boolean {
       return this.debouncedQuery.trim().length > 0
     },
-    // Most-played first — songCount is the only popularity signal
-    // getGenres.view gives us.
-    sortedGenres(): Genre[] {
-      return [...this.libraryStore.genres].sort((a, b) => b.songCount - a.songCount)
+    // Biggest first — songCount is the only popularity signal getGenres.view
+    // gives us.
+    crates(): Genre[] {
+      return [...this.libraryStore.genres]
+        .sort((a, b) => b.songCount - a.songCount)
+        .slice(0, CRATE_COUNT)
     },
-    // Top 20 while browsing; searching looks across the *whole* library
-    // instead — capping search results to the top 20 would silently hide
-    // a real match that just isn't one of the biggest genres.
-    filteredGenres(): Genre[] {
-      if (!this.isFiltering) return this.sortedGenres.slice(0, TOP_COUNT)
-      return this.libraryStore.genres.filter((genre) =>
-        matchesAllTerms(this.debouncedQuery, [genre.name], {
-          exact: this.libraryStore.searchExact,
-        }),
-      )
+    // Every genre, or every match while searching - the crates above are a
+    // way in, not a cap on what can be found.
+    registerGenres(): Genre[] {
+      const genres = this.isFiltering
+        ? this.libraryStore.genres.filter((genre) =>
+            matchesAllTerms(this.debouncedQuery, [genre.name], {
+              exact: this.libraryStore.searchExact,
+            }),
+          )
+        : this.libraryStore.genres
+      return [...genres].sort((a, b) => collator.compare(a.name, b.name))
     },
-    // Tile size reflects rank, not just decoration: #1 gets the spotlight
-    // tile, #2–5 are featured-width, the rest are standard. Only meaningful
-    // for the ranked top-20 view — search results are inherently unranked
-    // (could be a single unpopular match), so they all render as standard.
-    coversByGenre(): Map<string, string[]> {
-      return coversByGenre(this.libraryStore.albums, COVER_COUNT.spotlight)
-    },
-    tieredGenres(): { genre: Genre; tier: Tier; covers: string[] }[] {
-      return this.filteredGenres.map((genre, index) => {
-        const tier: Tier = this.isFiltering
-          ? 'standard'
-          : index === 0
-            ? 'spotlight'
-            : index < 5
-              ? 'featured'
-              : 'standard'
-        const covers = this.coversByGenre.get(genre.name.toLowerCase()) ?? []
-        return { genre, tier, covers: covers.slice(0, COVER_COUNT[tier]) }
+    indexGroups(): IndexGroup[] {
+      const groups: IndexGroup[] = []
+      this.registerGenres.forEach((genre, index) => {
+        const letter = letterForName(genre.name)
+        const last = groups[groups.length - 1]
+        if (last?.letter === letter) last.genres.push(genre)
+        else groups.push({ letter, genres: [genre], firstIndex: index })
       })
+      return groups
+    },
+    letterFirstIndex(): Map<string, number> {
+      return new Map(this.indexGroups.map((group) => [group.letter, group.firstIndex]))
+    },
+    availableLetters(): Set<string> {
+      return new Set(this.letterFirstIndex.keys())
+    },
+    /** Song counts at which a register entry is set stronger: the top
+     * tenth of the genres, and everything from the median up. */
+    weightThresholds(): { strong: number; regular: number } {
+      const counts = this.libraryStore.genres.map((g) => g.songCount).sort((a, b) => b - a)
+      const at = (share: number) => counts[Math.floor((counts.length - 1) * share)] ?? 0
+      return { strong: Math.max(2, at(0.1)), regular: Math.max(2, at(0.5)) }
+    },
+    coverMap(): Map<string, string[]> {
+      return coversByGenre(this.libraryStore.albums, COVERS_PER_CRATE)
     },
   },
   watch: {
@@ -165,159 +213,188 @@ export default {
         this.debouncedQuery = value ?? ''
       }, 200)
     },
+    indexGroups() {
+      this.$nextTick(() => this.activeLetterObserver?.update())
+    },
   },
   async created() {
     await this.libraryStore.fetchGenres()
-    // The tiles' covers come from the album list, which the albums page
+    // The crates' covers come from the album list, which the albums page
     // keeps cached anyway. After the genres, so the names show first.
     void this.libraryStore.fetchAlbums()
+  },
+  mounted() {
+    this.activeLetterObserver = observeActiveLetter({
+      itemSelector: '[data-genre-index]',
+      readIndex: (item) => {
+        const value = item.getAttribute('data-genre-index')
+        return value === null ? null : Number(value)
+      },
+      letterFirstIndex: () => this.letterFirstIndex,
+      onChange: (letter) => {
+        this.activeLetter = letter
+      },
+    })
+  },
+  beforeUnmount() {
+    this.activeLetterObserver?.stop()
+  },
+  methods: {
+    weightOf(genre: Genre): 'strong' | 'regular' | 'faint' {
+      if (genre.songCount >= this.weightThresholds.strong) return 'strong'
+      if (genre.songCount >= this.weightThresholds.regular) return 'regular'
+      return 'faint'
+    },
+    coversFor(genre: Genre): string[] {
+      return this.coverMap.get(genre.name.toLowerCase()) ?? []
+    },
+    jumpToLetter(letter: string) {
+      this.activeLetter = letter
+      document
+        .getElementById(`genre-letter-${letter}`)
+        ?.scrollIntoView({ block: 'start', behavior: 'smooth' })
+    },
   },
 }
 </script>
 
 <style scoped>
-/* A ranked mosaic, not an A-Z index — dense auto-flow lets the spotlight
- * (2x2) and featured (2x1) tiles sit alongside standard ones with no gaps,
- * regardless of exactly how many of each tier there are. */
-.genre-grid {
+.genre-crates-section {
+  margin-bottom: 40px;
+  /* Clear of AlphabetIndexBar, like the register below. */
+  margin-right: 40px;
+}
+
+.genre-crates-section .section-title,
+.genre-register .section-title {
+  margin-bottom: 16px;
+}
+
+/* One, two, four or eight across - the divisors of eight, so the last row
+ * is never half a row. A crate wider than about 400px is mostly empty
+ * between its name and its records, so the next step comes early.
+ * Measured on the section, which an open queue narrows. */
+.genre-crates-section {
+  container-type: inline-size;
+}
+
+.genre-crates {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  grid-auto-rows: 108px;
-  grid-auto-flow: dense;
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
 }
 
-.genre-tile {
-  position: relative;
+@container (min-width: 560px) {
+  .genre-crates {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 1080px) {
+  .genre-crates {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 2400px) {
+  .genre-crates {
+    grid-template-columns: repeat(8, minmax(0, 1fr));
+  }
+}
+
+/* Clear of AlphabetIndexBar, as the grids on Albums and Artists are. */
+.genre-register--with-bar {
+  margin-right: 40px;
+}
+
+/* Book-index columns: as many ~260px columns as fit, a letter's
+ * group never split across two. */
+.genre-register__columns {
+  columns: 260px;
+  column-gap: 48px;
+}
+
+.genre-register__group {
+  break-inside: avoid;
+  margin-bottom: 28px;
+  /* Lands a jumped-to letter below the app bar and the sticky filter. */
+  scroll-margin-top: 140px;
+}
+
+.genre-register__letter {
+  margin: 0 0 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--beacon-hairline);
+  font-size: 1.6rem;
+  font-weight: 700;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.genre-register__entries {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/* Name, dots, number: the dots take whatever width is left, so every
+ * number lines up at the column's right edge. */
+.genre-register__entry {
   display: flex;
-  flex-direction: column;
-  justify-content: flex-end;
-  padding: 16px;
-  overflow: hidden;
-  border-radius: 12px;
-  background: rgb(var(--v-theme-surface));
-  color: inherit;
+  align-items: baseline;
+  gap: 6px;
+  padding: 3px 0;
+  color: rgba(255, 255, 255, 0.78);
   text-decoration: none;
-  transition:
-    transform 0.15s ease,
-    background 0.15s ease;
+  font-size: 0.92rem;
+  line-height: 1.45;
 }
 
-.genre-tile:hover {
-  transform: translateY(-2px);
-  background: var(--beacon-hover);
+.genre-register__name {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-.genre-tile:focus-visible {
+.genre-register__leader {
+  flex: 1 1 auto;
+  min-width: 12px;
+  border-bottom: 1px dotted rgba(255, 255, 255, 0.18);
+  transform: translateY(-4px);
+}
+
+.genre-register__count {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.45);
+  font-variant-numeric: tabular-nums;
+}
+
+.genre-register__entry--strong {
+  color: #fff;
+  font-weight: 600;
+}
+
+.genre-register__entry--strong .genre-register__count {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.genre-register__entry--faint {
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.genre-register__entry:hover,
+.genre-register__entry:hover .genre-register__count {
+  color: rgb(var(--v-theme-primary));
+}
+
+.genre-register__entry:hover .genre-register__leader {
+  border-bottom-color: rgba(245, 169, 78, 0.5);
+}
+
+.genre-register__entry:focus-visible {
   outline: 2px solid rgb(var(--v-theme-primary));
   outline-offset: 2px;
-}
-
-.genre-tile__name {
-  overflow: hidden;
-  font-size: 1rem;
-  font-weight: 600;
-  line-height: 1.25;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.genre-tile__meta {
-  margin-top: 4px;
-  overflow: hidden;
-  color: rgba(255, 255, 255, 0.55);
-  font-size: 0.75rem;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-/* The covers fill the tile's right side, edge to edge, and fade out under
- * the name: the tile is still a name to click, the covers only say what
- * kind of music is behind it. */
-.genre-tile__covers {
-  position: absolute;
-  inset: 0 0 0 auto;
-  display: flex;
-  pointer-events: none;
-}
-
-.genre-tile--spotlight .genre-tile__covers {
-  display: grid;
-  grid-template-columns: repeat(2, 114px);
-  align-content: center;
-}
-
-.genre-tile--covers::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    to right,
-    rgb(var(--v-theme-surface)) 30%,
-    rgba(var(--v-theme-surface), 0.7) 60%,
-    rgba(var(--v-theme-surface), 0.15)
-  );
-  pointer-events: none;
-}
-
-.genre-tile__name,
-.genre-tile__meta {
-  position: relative;
-  z-index: 1;
-}
-
-/* The #1 genre gets the same "beacon light" language as the nav rail's
- * active indicator — a warm glow picking one thing out, not a random
- * per-genre color. */
-.genre-tile--spotlight {
-  grid-row: span 2;
-  grid-column: span 2;
-  padding: 24px;
-  background: radial-gradient(
-    circle at 28% 24%,
-    rgba(245, 169, 78, 0.3),
-    rgba(26, 29, 39, 0.92) 68%
-  );
-  box-shadow:
-    0 0 0 1px var(--beacon-hairline),
-    0 20px 40px rgba(0, 0, 0, 0.35);
-}
-
-.genre-tile--spotlight:hover {
-  background: radial-gradient(
-    circle at 28% 24%,
-    rgba(245, 169, 78, 0.4),
-    rgba(26, 29, 39, 0.92) 68%
-  );
-}
-
-.genre-tile--spotlight .genre-tile__name {
-  white-space: normal;
-  font-size: 2rem;
-  font-weight: 700;
-  line-height: 1.1;
-}
-
-.genre-tile--spotlight .genre-tile__meta {
-  color: rgba(255, 255, 255, 0.7);
-  font-size: 0.8125rem;
-}
-
-.genre-tile--featured {
-  grid-column: span 2;
-}
-
-.genre-tile--featured .genre-tile__name {
-  font-size: 1.25rem;
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .genre-tile {
-    transition: none;
-  }
-
-  .genre-tile:hover {
-    transform: none;
-  }
+  border-radius: 4px;
 }
 </style>

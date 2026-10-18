@@ -443,6 +443,11 @@ its `row` form (`AlbumCard`/`ArtistCard` with `row`), 56px tall, figures in
 fixed right-aligned columns - one component, so the two layouts share the
 context menu and the heart instead of keeping two copies in step.
 
+A tile that is a link does not lift or move on hover; only what is inside
+it may answer the pointer (the Genres page's crates flip through their
+records). Tiles that rose on hover flickered under a pointer swept across a
+grid of them, each one jumping as it was entered and left.
+
 `.mobile-row__text` clips both of its lines itself - a row is a fixed 60px,
 so a long title has nowhere to wrap to. No list component says
 `text-truncate` on its own lines.

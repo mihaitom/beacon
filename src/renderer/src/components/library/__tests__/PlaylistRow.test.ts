@@ -185,13 +185,15 @@ describe('PlaylistRow', () => {
 
   it('cycles its artwork only while hovered', async () => {
     const { wrapper } = await mountRow()
-    const cover = wrapper.findComponent({ name: 'PlaylistCover' })
-    expect(cover.props('cycling')).toBe(false)
+    // The stack takes the skeleton's place once the albums are read.
+    await flushPromises()
+    const cover = wrapper.findComponent({ name: 'RecordStack' })
+    expect(cover.props('browsing')).toBe(false)
 
     await wrapper.trigger('mouseenter')
-    expect(cover.props('cycling')).toBe(true)
+    expect(cover.props('browsing')).toBe(true)
 
     await wrapper.trigger('mouseleave')
-    expect(cover.props('cycling')).toBe(false)
+    expect(cover.props('browsing')).toBe(false)
   })
 })

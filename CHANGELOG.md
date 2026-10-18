@@ -22,10 +22,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Desktop app: the window opens where and as large as it was last time, starting Beacon a second time brings the open window to the front instead of opening another, and the window title shows what is playing
 - On Windows, the taskbar preview has previous, play/pause and next buttons, and the taskbar icon shows how far into the song playback is
 - The player bar's buttons explain themselves on hover, with their keyboard shortcut
-- The Genres page has a header like the other overviews, with the number of genres, and its tiles show covers from that genre's albums
+- The Genres page is new: the biggest genres stand as crates of their records, flipped through one record at a time while pointed at, and below them every genre is listed like a book's index with its number of songs, the big ones set stronger, with the jump bar beside it
 
 ### Changed
 
+- On the Playlists page, a playlist's artwork stands as a small stack of its albums and is flipped through while pointed at, as on the Genres page
 - A fresher look: Beacon brings its own typeface instead of using whatever the system has, buttons are no longer written in capitals, the play button is a little smaller, and the statistics page keeps amber for the listening figures
 - The search sits in the middle of the top bar, ready to type into, and Ctrl+K (Cmd+K on a Mac) jumps to it. The Beacon logo moved to the top of the sidebar, and the button that shows its labels to the bottom
 - The header of the overview pages (Albums, Artists, Songs and the others) is lower in an ordinary window and taller in a very wide one, where the artist banner now shows in full, and the list starts closer below it

@@ -97,6 +97,8 @@ export default {
     newArtistsTitle: 'Neue Künstler entdecken',
   },
   library: {
+    genresAll: 'Alle Genres',
+    genresBiggest: 'Die größten',
     layoutList: 'Als Liste',
     layoutGrid: 'Als Raster',
     layout: 'Ansicht',

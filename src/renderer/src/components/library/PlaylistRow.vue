@@ -8,16 +8,27 @@
     @contextmenu.prevent="openMenu"
   >
     <!-- The artwork is the playlist's own albums rather than the image the
-     - server makes for it (on Navidrome a mosaic of four covers), and it
-     - cycles through them while the row is hovered. Only then: a whole list
-     - fading at once would be restless, and would keep every row on the
-     - page fetching covers. -->
-    <playlist-cover
+     - server makes for it (on Navidrome a mosaic of four covers), standing
+     - like records in a crate that is flipped through while the row is
+     - hovered - the same stack as the Genres page's crates. Only then: a
+     - whole list flipping at once would be restless, and would keep every
+     - row on the page fetching covers. -->
+    <record-stack
+      v-if="settled"
       :covers="covers"
-      :loading="!settled"
-      :size="COVER_SIZE"
-      :cycling="hovered"
+      :size="RECORD_SIZE"
+      :depth="3"
+      :rise="8"
+      :browsing="hovered"
+      fallback-icon="mdi-playlist-music"
       @change="shownCover = $event"
+    />
+    <v-skeleton-loader
+      v-else
+      type="image"
+      :width="RECORD_SIZE"
+      :height="COVER_SIZE"
+      class="playlist-row__skeleton"
     />
     <div class="playlist-row__info">
       <div class="playlist-row__name">{{ playlist.name }}</div>
@@ -91,7 +102,7 @@
 </template>
 
 <script lang="ts">
-import PlaylistCover from './PlaylistCover.vue'
+import RecordStack from './RecordStack.vue'
 import TileContextMenu from './TileContextMenu.vue'
 import ContextMenuSection from './ContextMenuSection.vue'
 import PreviewButton from './PreviewButton.vue'
@@ -111,6 +122,9 @@ import { isOwnedBy } from '@/services/library/playlistOwnership'
 import type { Playlist } from '@/types/library'
 
 const COVER_SIZE = 112
+// The front record: three of them, each 8px higher than the one before,
+// fill the same 112px the artwork has always taken.
+const RECORD_SIZE = COVER_SIZE - 2 * 8
 
 // Same lead as CoverArt.vue's own: the summary starts loading a little
 // before the row scrolls into view.
@@ -118,7 +132,7 @@ const LAZY_ROOT_MARGIN = '400px 0px'
 
 export default {
   name: 'PlaylistRow',
-  components: { PlaylistCover, TileContextMenu, ContextMenuSection, PreviewButton },
+  components: { RecordStack, TileContextMenu, ContextMenuSection, PreviewButton },
   props: {
     playlist: {
       type: Object as () => Playlist,
@@ -135,6 +149,7 @@ export default {
   data() {
     return {
       COVER_SIZE,
+      RECORD_SIZE,
       hovered: false,
       inView: false,
       shownCover: null as string | null,
@@ -257,6 +272,11 @@ export default {
   color: inherit;
   text-decoration: none;
   transition: background 0.15s ease;
+}
+
+.playlist-row__skeleton {
+  flex-shrink: 0;
+  background: transparent;
 }
 
 .playlist-row + .playlist-row {

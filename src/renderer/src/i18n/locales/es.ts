@@ -100,6 +100,8 @@ export default {
     newArtistsTitle: 'Nuevos artistas por descubrir',
   },
   library: {
+    genresAll: 'Todos los géneros',
+    genresBiggest: 'Los más grandes',
     layoutList: 'En lista',
     layoutGrid: 'En cuadrícula',
     layout: 'Vista',
