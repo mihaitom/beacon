@@ -37,7 +37,7 @@ import RecordStack from './RecordStack.vue'
 import type { Genre } from '@/types/library'
 
 /** One record's edge. */
-const COVER_SIZE = 140
+const COVER_SIZE = 132
 
 export default {
   name: 'GenreCrate',
@@ -69,7 +69,7 @@ export default {
   gap: 16px;
   /* The front record whole, the three behind it at their browsing rise
    * (see RecordStack.vue), with room above and below. */
-  height: 240px;
+  height: 200px;
   padding: 20px 24px 18px 24px;
   overflow: hidden;
   border-radius: 16px;
