@@ -32,6 +32,8 @@ describe("the Genres page's header", () => {
     setActivePinia(createPinia())
     const library = useLibraryStore()
     vi.spyOn(library, 'fetchGenres').mockResolvedValue()
+    // The tiles' covers come from the album list, loaded after the genres.
+    vi.spyOn(library, 'fetchAlbums').mockResolvedValue()
     // Genres come from the songs.
     library.allSongs = [
       makeSong('p1', { genre: 'Pop' }),
