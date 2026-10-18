@@ -493,10 +493,10 @@ describe('QueueDrawer taking its space out of the page', () => {
 describe('QueueDrawer edge scroll while dragging', () => {
   /** Holds the pointer at `y` for `ms`, reporting it the way a drag does:
    * a dragover every few frames. */
-  async function holdDragAt(y: number, ms: number) {
+  async function holdDragAt(y: number, ms: number, until: () => boolean = () => false) {
     const body = document.querySelector('.beacon-drawer__body')!
     const end = performance.now() + ms
-    while (performance.now() < end) {
+    while (performance.now() < end && !until()) {
       body.dispatchEvent(new DragEvent('dragover', { bubbles: true, cancelable: true, clientY: y }))
       await new Promise((resolve) => setTimeout(resolve, 30))
     }
@@ -518,15 +518,20 @@ describe('QueueDrawer edge scroll while dragging', () => {
     return container
   }
 
-  it('scrolls quickly near the bottom and the top edge', async () => {
+  // How fast is edgeScroll.test.ts's question. The scroller caps each
+  // frame's step at 50 ms worth, so where frames come slowly it scrolls
+  // slower than its rate: on the CI runner 400 ms moved 0-170 px of the
+  // ~490 due. A fixed time here measured the runner, not the drawer; what
+  // only a real browser answers is that a drag at either edge moves it.
+  it('scrolls near the bottom and the top edge', async () => {
     const container = await startDrag()
     const rect = container.getBoundingClientRect()
 
-    await holdDragAt(rect.bottom - 4, 400)
+    await holdDragAt(rect.bottom - 4, 4000, () => container.scrollTop > 2000 + 300)
     expect(container.scrollTop).toBeGreaterThan(2000 + 300)
 
     const before = container.scrollTop
-    await holdDragAt(rect.top + 4, 400)
+    await holdDragAt(rect.top + 4, 4000, () => container.scrollTop < before - 300)
     expect(container.scrollTop).toBeLessThan(before - 300)
   })
 
