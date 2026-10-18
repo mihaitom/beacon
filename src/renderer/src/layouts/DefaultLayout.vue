@@ -243,8 +243,13 @@ export default {
 </script>
 
 <style scoped>
-/* Equal outer columns keep the search centred on the window's content
- * area; the search column itself shrinks first when space runs out. */
+/* Equal outer columns keep the search centred on the bar, which spans the
+ * same width as the player bar - so it stands over the transport controls.
+ * Centring it on the whole window (rail included) or on the page left of an
+ * open queue were both tried and dropped: the first put it half a rail off
+ * everything below, the second moved it away from the controls whenever
+ * the queue opened. The search column itself shrinks first when space runs
+ * out. */
 .app-bar__layout {
   display: grid;
   grid-template-columns: 1fr minmax(0, 480px) 1fr;
