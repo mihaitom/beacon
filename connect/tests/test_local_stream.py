@@ -18,7 +18,7 @@ import pytest
 
 from core.streamer import _DSD_CODECS, _DSD_PCM_SAMPLE_RATE, SourceInfo
 from routes import local_stream
-from routes.local_stream import _probe_cached, parse_byte_range, reset_probe_cache
+from routes.local_stream import _parse_range, _probe_cached, reset_probe_cache
 
 # 192 kbps = 24000 bytes per second. A 180s track is 4,320,000 bytes, and
 # every expectation below is derived from those two numbers rather than
@@ -617,7 +617,7 @@ def test_a_track_the_media_server_cannot_resolve_is_a_502(client, default_sessio
     assert "no such track" in response.json()["error"]
 
 
-# ── parse_byte_range() on its own ────────────────────────────────────────────────
+# ── _parse_range() on its own ────────────────────────────────────────────────
 
 
 @pytest.mark.parametrize(
@@ -636,7 +636,7 @@ def test_a_track_the_media_server_cannot_resolve_is_a_502(client, default_sessio
     ],
 )
 def test_parse_range(header, expected):
-    assert parse_byte_range(header, 1000) == expected
+    assert _parse_range(header, 1000) == expected
 
 
 def test_a_start_past_the_end_falls_back_to_the_whole_body():
@@ -644,7 +644,7 @@ def test_a_start_past_the_end_falls_back_to_the_whole_body():
     start past it can mean the estimate was a few hundred bytes short
     rather than that the client asked for something unreasonable. Refusing
     would stop playback over rounding."""
-    assert parse_byte_range("bytes=1000-", 1000) is None
+    assert _parse_range("bytes=1000-", 1000) is None
 
 
 # ── The probe cache ──────────────────────────────────────────────────────────

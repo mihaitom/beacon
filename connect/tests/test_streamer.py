@@ -1871,26 +1871,20 @@ def test_strip_stream_extension_removes_only_our_own():
     assert strip_stream_extension("abc123.wav") == "abc123.wav"
 
 
-# ── Diagnostic switches (#56) ────────────────────────────────────────────────
+def test_stream_tracks_sends_an_unpaced_stream_when_asked():
+    """For the devices that give up on a stream arriving at real time - see
+    delivery/sonos.py's needs_unpaced_stream()."""
+    captured: list[str] = []
 
+    async def _fake_exec(*cmd, **kwargs):
+        captured.extend(cmd)
+        return _FakeProc()
 
-def test_stream_tracks_sends_unpaced_with_pacing_switched_off(monkeypatch):
-    monkeypatch.setattr("core.streamer.PACING_ENABLED", False)
-    cmd = asyncio.run(_drain("http://nav/stream", FALLBACK_FORMAT))
-    assert "-readrate" not in cmd
-    assert "-reconnect" in cmd
+    async def _run():
+        with patch("asyncio.create_subprocess_exec", _fake_exec):
+            async for _ in stream_tracks(["http://nav/stream"], paced=False):
+                pass
 
-
-def test_byte_range_switch_turns_every_source_into_constant_bitrate_mp3(monkeypatch):
-    flac_copy = OutputFormat(
-        ffmpeg_args=["-acodec", "copy", "-f", "flac"],
-        content_type="audio/flac",
-        source_codec="flac",
-        source_duration=181.25,
-    )
-    monkeypatch.setattr("core.streamer.BYTE_RANGES_ENABLED", True)
-    with patch("core.streamer._resolve_output_format", AsyncMock(return_value=flac_copy)):
-        fmt = asyncio.run(resolve_output_format("http://nav/stream"))
-    assert fmt.content_type == "audio/mpeg"
-    assert "libmp3lame" in fmt.ffmpeg_args
-    assert fmt.source_duration == 181.25
+    asyncio.run(_run())
+    assert "-readrate" not in captured
+    assert "-reconnect" in captured

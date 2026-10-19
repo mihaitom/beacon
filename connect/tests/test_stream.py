@@ -1666,97 +1666,20 @@ def test_stream_head_answers_the_same_url_a_device_probes(client, default_sessio
     assert r.headers["content-type"].startswith("audio/flac")
 
 
-# ── CAST_STREAM_BYTE_RANGES (#56) ────────────────────────────────────────────
-
-# 180s track from 42s at 320 kb/s: (180 - 42) * 40000 bytes.
-_REST_OF_TRACK_BYTES = 5_520_000
-
-
-def test_byte_ranges_declare_the_length_of_the_rest_of_the_track(
-    client, default_session, monkeypatch
-):
-    monkeypatch.setattr("routes.stream.BYTE_RANGES_ENABLED", True)
+@pytest.mark.parametrize(
+    ("user_agent", "paced"),
+    [
+        ("Linux UPnP/1.0 Sonos/86.10-81100 (ZPS3)", False),
+        ("Linux UPnP/1.0 Sonos/97.2-81220 (ZPS57)", True),
+        (None, True),
+    ],
+)
+def test_a_play3_gets_its_stream_unpaced(client, default_session, user_agent, paced):
+    """A Play:3 gives up on a stream arriving at real time (#56)."""
     _configure_and_set_track(client, default_session)
+    headers = {"User-Agent": user_agent} if user_agent else {}
 
     with patch("routes.stream.stream_tracks", side_effect=_real_stream) as mocked:
-        r = client.get("/stream")
+        client.get("/stream", headers=headers)
 
-    assert r.status_code == 200
-    assert r.headers["accept-ranges"] == "bytes"
-    assert r.headers["content-length"] == str(_REST_OF_TRACK_BYTES)
-    assert mocked.call_args.kwargs["start_offset"] == 42.0
-
-
-def test_a_byte_range_fetches_on_from_where_the_device_stopped_reading(
-    client, default_session, monkeypatch
-):
-    """The device carries on with the same track in its own timeline, so
-    this is not a reopened stream: no restart from the clock's position,
-    and no re-framing of the device's position."""
-    monkeypatch.setattr("routes.stream.BYTE_RANGES_ENABLED", True)
-    _mid_track_session(client, default_session, elapsed=60.0)
-    st = default_session.state
-    st.byte_range_base = (st.clock.play_generation, 42.0)
-
-    with (
-        patch("routes.stream.stream_tracks", side_effect=_real_stream) as mocked,
-        patch.object(st.clock, "restream_from") as restream_from,
-    ):
-        r = client.get("/stream", headers={"Range": "bytes=2000000-"})
-
-    assert r.status_code == 206
-    assert (
-        r.headers["content-range"]
-        == f"bytes 2000000-{_REST_OF_TRACK_BYTES - 1}/{_REST_OF_TRACK_BYTES}"
-    )
-    # 2,000,000 bytes at 40,000 per second is 50s past the start at 42s.
-    assert mocked.call_args.kwargs["start_offset"] == pytest.approx(92.0)
-    restream_from.assert_not_called()
-
-
-def test_a_head_announces_the_length_and_byte_ranges(client, default_session, monkeypatch):
-    monkeypatch.setattr("routes.stream.BYTE_RANGES_ENABLED", True)
-    _configure_and_set_track(client, default_session)
-
-    r = client.head("/stream")
-
-    assert r.headers["accept-ranges"] == "bytes"
-    assert r.headers["content-length"] == str(_REST_OF_TRACK_BYTES)
-
-
-@pytest.mark.parametrize(("range_header", "ends_track"), [("bytes=0-999", False), (None, True)])
-async def test_only_a_byte_range_reaching_the_end_ends_the_track(
-    client, default_session, monkeypatch, range_header, ends_track
-):
-    monkeypatch.setattr("routes.stream.BYTE_RANGES_ENABLED", True)
-    _configure_and_set_track(client, default_session)
-    st = default_session.state
-    st.clock.start(0.0)
-    st.clock.play_start_time -= 180.0  # at the end, so a track end fires at once
-    headers = [(b"range", range_header.encode())] if range_header else []
-    request = Request(
-        {"type": "http", "method": "GET", "headers": headers, "client": ("10.0.0.5", 1400)}
-    )
-
-    with (
-        patch("routes.stream.stream_tracks", side_effect=_real_stream),
-        patch("routes.stream._advance_or_end", AsyncMock()) as advance,
-    ):
-        resp = await audio_stream(request, session_id=default_session.session_id)
-        async for _ in resp.body_iterator:
-            pass
-        for _ in range(5):
-            await asyncio.sleep(0)
-
-    assert advance.called is ends_track
-
-
-async def test_capped_stops_at_exactly_the_declared_length():
-    async def _audio():
-        yield b"abcd"
-        yield b"efgh"
-        yield b"ijkl"
-
-    body = b"".join([chunk async for chunk in stream_routes._capped(_audio(), 6)])
-
-    assert body == b"abcdef"
+    assert mocked.call_args.kwargs["paced"] is paced

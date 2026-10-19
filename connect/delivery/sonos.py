@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 from xml.sax.saxutils import escape
 
 from soco.exceptions import SoCoUPnPException
@@ -97,6 +98,25 @@ def is_beacon_hosted_radio_uri(url: str) -> bool:
     cases this covers, and _dispatch_uri() below for the one thing it's
     used to decide."""
     return _BEACON_RADIO_PATH in url
+
+
+# Models that give up on a stream arriving at real time. A Play:3 reads
+# about 45s of it, reports ERROR_LOST_CONNECTION although the connection is
+# open and still delivering, and plays out its buffer as if the track had
+# ended; sent unpaced it plays every track through (#56, see
+# docs/investigations/fixed-sonos-play3-gives-up-on-a-paced-stream.md).
+_UNPACED_MODELS = frozenset({"ZPS3"})
+
+# A Sonos fetching a stream names its model at the end of its user agent:
+# "Linux UPnP/1.0 Sonos/86.10-81100 (ZPS3)".
+_MODEL_IN_USER_AGENT = re.compile(r"\bSonos/\S+ \((\w+)\)")
+
+
+def needs_unpaced_stream(user_agent: str | None) -> bool:
+    """Whether the device behind this user agent must get its stream
+    unpaced (see _UNPACED_MODELS)."""
+    match = _MODEL_IN_USER_AGENT.search(user_agent or "")
+    return match is not None and match.group(1) in _UNPACED_MODELS
 
 
 def _dispatch_uri(stream_url: str) -> str:

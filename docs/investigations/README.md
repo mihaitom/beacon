@@ -46,6 +46,7 @@ Keep entries anonymous: no IPs, no real speaker or room names ("room A",
 
 ## Fixed
 
+- [A Sonos Play:3 restarts every track about every 50 seconds](fixed-sonos-play3-gives-up-on-a-paced-stream.md) (2026-10-19) - the Play:3 gives up on a stream paced to real time, plays out its buffer and replays it with Repeat on. Has the runs that ruled out the proxy, ffmpeg reconnects, a full buffer and missing byte ranges, the last one with a working byte-range server
 - [A dropped stream resumed from the wrong place, and play could not restart it](fixed-byte-resume-replayed-the-stream.md) (2026-10-14) - Chromium reopens a dropped length-less stream's URL by itself with a byte `Range`, which connect served as the stream from its start again. Has the measurement of what Chromium sends and how it takes a 416
 - [A transcode on an iPhone jumps back to its start every ~45 seconds](safari-transcode-jumps.md) (2026-09-15) - WebKit appends each re-fetched block of a stream with no length. Has the three response shapes tested on the phone (only a known length plays), why Range handling and Navidrome's transcoding cannot help, and which HLS segment formats iOS and Chromium each accept. Safari on a Mac is unchecked
 - [A track's end was never reported, and playback never finished](fixed-track-end-never-reported.md) (2026-09-05) - two `/play` for one gesture bumped the clock's generation past the stream still feeding the device, so nothing ever set `ended`
