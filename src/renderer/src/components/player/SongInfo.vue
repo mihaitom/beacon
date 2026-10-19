@@ -96,7 +96,7 @@
         <v-list-item-title>{{ $t('library.songRadio') }}</v-list-item-title>
       </v-list-item>
       <context-menu-section :label="$t('library.menuLibrary')" />
-      <song-rating-item :song="currentSong" />
+      <rating-item :item="currentSong" />
       <add-to-playlist-submenu @create="createPlaylist" @select="addToPlaylist" />
       <context-menu-section :label="$t('library.menuNavigation')" />
       <v-list-item v-if="currentSong.albumId" :to="`/albums/${currentSong.albumId}`">
@@ -133,7 +133,7 @@ import CoverArt from '@/components/library/CoverArt.vue'
 import TileContextMenu from '@/components/library/TileContextMenu.vue'
 import ContextMenuSection from '@/components/library/ContextMenuSection.vue'
 import AddToPlaylistSubmenu from '@/components/library/AddToPlaylistSubmenu.vue'
-import SongRatingItem from '@/components/library/SongRatingItem.vue'
+import RatingItem from '@/components/library/RatingItem.vue'
 import CreatePlaylistDialog from '@/components/library/CreatePlaylistDialog.vue'
 import PreviewStatus from './PreviewStatus.vue'
 
@@ -145,7 +145,7 @@ export default {
     TileContextMenu,
     ContextMenuSection,
     AddToPlaylistSubmenu,
-    SongRatingItem,
+    RatingItem,
     CreatePlaylistDialog,
   },
   data() {

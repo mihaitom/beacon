@@ -149,6 +149,7 @@
          - up a long list — see docs/styleguide.md's context-menu section
          - for the four the app uses and what belongs in each. -->
       <context-menu-section :label="$t('library.menuLibrary')" />
+      <rating-item :item="album" />
       <add-to-playlist-submenu @create="createPlaylist" @select="addToPlaylist" />
       <context-menu-section :label="$t('library.menuNavigation')" />
       <v-list-item v-if="album.artistId" :to="`/artists/${album.artistId}`">
@@ -174,6 +175,7 @@ import CoverArt from './CoverArt.vue'
 import TileContextMenu from './TileContextMenu.vue'
 import ContextMenuSection from './ContextMenuSection.vue'
 import AddToPlaylistSubmenu from './AddToPlaylistSubmenu.vue'
+import RatingItem from './RatingItem.vue'
 import CreatePlaylistDialog from './CreatePlaylistDialog.vue'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
@@ -189,6 +191,7 @@ export default {
     TileContextMenu,
     ContextMenuSection,
     AddToPlaylistSubmenu,
+    RatingItem,
     CreatePlaylistDialog,
   },
   props: {
