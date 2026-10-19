@@ -1,9 +1,12 @@
 <template>
-  <!-- A row of stars in a song's menu, in its Library section: a rating is
-   - one more thing that is still true tomorrow. Picking a star closes the
-   - menu like any other entry. Where the server has no 1-5 scale
-   - (Jellyfin) the row is left out entirely. -->
-  <div v-if="authStore.capabilities.personalRating" class="song-rating-item">
+  <!-- A song's stars in its menu's Library section: a rating is one more
+   - thing that is still true tomorrow. Shaped like every other entry, an
+   - icon and then the entry itself, with the stars standing where a label
+   - would; the icon is not a star, or the row would start with a sixth one.
+   - Picking a star closes the menu like any other entry. Where the server
+   - has no 1-5 scale (Jellyfin) the row is left out entirely. -->
+  <v-list-item v-if="authStore.capabilities.personalRating" class="song-rating-item">
+    <template #prepend><v-icon icon="mdi-thumbs-up-down-outline" size="small" /></template>
     <v-rating
       :model-value="song.rating"
       length="5"
@@ -15,7 +18,7 @@
       :aria-label="$t('library.rating')"
       @update:model-value="rate"
     />
-  </div>
+  </v-list-item>
 </template>
 
 <script lang="ts">
@@ -41,10 +44,3 @@ export default {
   },
 }
 </script>
-
-<style scoped>
-/* Lined up with the menu items' own icons, see ContextMenuSection.vue. */
-.song-rating-item {
-  padding: 2px 12px 6px;
-}
-</style>
