@@ -314,6 +314,7 @@ export default {
     nothingPlaying: "Al momento non c'è nulla in riproduzione.",
     toggleVisualizer: 'Mostra/nascondi visualizzatore',
     toggleArtwork: 'Mostra/nascondi la copertina',
+    showArtworkLarge: 'Mostra la copertina in grande',
     nextBackground: 'Mostra un altro sfondo',
     toggleFullscreen: 'Attiva/disattiva schermo intero',
     reducedMotionToastTitle: 'Visualizzatore',

@@ -314,6 +314,7 @@ export default {
     nothingPlaying: 'Nichts spielt gerade.',
     toggleVisualizer: 'Visualisierung ein-/ausblenden',
     toggleArtwork: 'Album-Cover ein-/ausblenden',
+    showArtworkLarge: 'Album-Cover groß anzeigen',
     nextBackground: 'Anderes Hintergrundbild anzeigen',
     toggleFullscreen: 'Vollbild umschalten',
     reducedMotionToastTitle: 'Visualizer',

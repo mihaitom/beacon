@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Coming back to Home shows what was there straight away while it refreshes, and Discover keeps its picks until you shuffle them. The most played songs are counted across your whole library, so a favourite on an otherwise rarely played album makes it in too
 - The search row above the library pages is calmer: the search field matches the controls beside it, and exact spelling is an "Aa" button inside the field instead of a switch next to it. The search in the top bar has the same button, so the switch on the results page is gone
 - Without an artist background, Now Playing takes its colour from the cover, so the visualizer and the app's accent follow the album instead of staying in the theme's colour
+- With the artwork hidden in Now Playing, clicking the small cover in the corner shows it large again
 - While a search runs, the results page shows Beacon's loading animation with a "Searching" label in the middle of the page, instead of a small spinner under the previous results
 
 ### Fixed

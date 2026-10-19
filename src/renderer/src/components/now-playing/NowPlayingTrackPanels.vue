@@ -20,9 +20,29 @@
     >
       <next-up-marker v-if="panel.kind === 'chevrons'" :size="compact ? 30 : 44" />
       <template v-else>
+        <!-- The small cover stands in for the hidden artwork, so clicking
+         - it brings the artwork back - the toolbar's toggle, where the eye
+         - already is. Only the playing song's: the next one announced
+         - beside it is not what would appear. -->
+        <button
+          v-if="(corner || miniCover) && panel.song && isPlaying(panel)"
+          type="button"
+          class="now-playing__mini-art-button"
+          :aria-label="$t('nowPlaying.showArtworkLarge')"
+          :title="$t('nowPlaying.showArtworkLarge')"
+          @click="source.toggleArtwork()"
+        >
+          <component
+            :is="source.cover"
+            :cover-art-id="panel.song.coverArtId"
+            :src="panel.song.coverUrl"
+            :size="miniArtSize || 72"
+            class="cover-shadow now-playing__mini-art"
+          />
+        </button>
         <component
           :is="source.cover"
-          v-if="(corner || miniCover) && panel.song"
+          v-else-if="(corner || miniCover) && panel.song"
           :cover-art-id="panel.song.coverArtId"
           :src="panel.song.coverUrl"
           :size="miniArtSize || 72"
@@ -189,16 +209,14 @@ export default {
     this.infoObserver?.disconnect()
   },
   methods: {
-    /** On the phone only, and only on the song that is playing - not on
-     * the next one announced beside it near the end of a track. */
+    /** On the phone only, and only on the song that is playing. */
     offersFavorite(panel: NowPlayingPanel): boolean {
-      return (
-        this.compact &&
-        this.source.capabilities.favorite &&
-        panel.kind === 'song' &&
-        !!panel.song &&
-        panel.song.id === this.source.song?.id
-      )
+      return this.compact && this.source.capabilities.favorite && this.isPlaying(panel)
+    },
+    /** The song that is playing - not the next one announced beside it
+     * near the end of a track. */
+    isPlaying(panel: NowPlayingPanel): boolean {
+      return panel.kind === 'song' && !!panel.song && panel.song.id === this.source.song?.id
     },
     /** (Re)points the info observer at the track-text block. */
     observeInfo(): void {
@@ -352,6 +370,22 @@ export default {
 .now-playing__mini-art {
   flex-shrink: 0;
   border-radius: 8px;
+}
+
+.now-playing__mini-art-button {
+  flex-shrink: 0;
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  line-height: 0;
+  cursor: zoom-in;
+}
+
+.now-playing__mini-art-button:focus-visible {
+  outline: 2px solid rgb(var(--v-theme-primary));
+  outline-offset: 2px;
 }
 
 .now-playing__info {

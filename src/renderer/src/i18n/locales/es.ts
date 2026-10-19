@@ -318,6 +318,7 @@ export default {
     nothingPlaying: 'No se está reproduciendo nada ahora mismo.',
     toggleVisualizer: 'Mostrar/ocultar visualizador',
     toggleArtwork: 'Mostrar/ocultar la portada',
+    showArtworkLarge: 'Mostrar la portada en grande',
     nextBackground: 'Mostrar otro fondo',
     toggleFullscreen: 'Alternar pantalla completa',
     reducedMotionToastTitle: 'Visualizador',

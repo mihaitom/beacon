@@ -314,6 +314,7 @@ export default {
     nothingPlaying: 'Nothing is playing right now.',
     toggleVisualizer: 'Show/hide visualizer',
     toggleArtwork: 'Show/hide album artwork',
+    showArtworkLarge: 'Show the album artwork large',
     nextBackground: 'Show another background',
     toggleFullscreen: 'Toggle fullscreen',
     reducedMotionToastTitle: 'Visualizer',

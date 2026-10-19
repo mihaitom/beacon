@@ -317,6 +317,7 @@ export default {
     nothingPlaying: "Rien n'est en cours de lecture actuellement.",
     toggleVisualizer: 'Afficher/masquer le visualiseur',
     toggleArtwork: 'Afficher/masquer la pochette',
+    showArtworkLarge: 'Afficher la pochette en grand',
     nextBackground: 'Afficher un autre arrière-plan',
     toggleFullscreen: 'Basculer le plein écran',
     reducedMotionToastTitle: 'Visualiseur',
