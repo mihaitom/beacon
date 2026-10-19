@@ -271,22 +271,14 @@ export async function checkServerQueue({ force = false } = {}): Promise<void> {
   // Not on a reload of a window that was playing: it is about to carry on
   // by itself (resumeLocalPlayback()), and would carry on with this queue.
   if (server.changedBy === APP_NAME && !hasUnsavedEdits() && !readSessionWasPlaying()) {
+    // Silently: it is the same queue carried on, and coming back to the
+    // window after every listen elsewhere would otherwise be a toast.
     take(server, isByIndex)
-    announceTaken(server)
     return
   }
   if (server.changed === current.offeredChanged) return
   saveMeta({ ...current, offeredChanged: server.changed })
   offer(server, isByIndex)
-}
-
-function announceTaken(server: ServerPlayQueue): void {
-  const t = i18n.global.t
-  emitter.emit('toast', [
-    'information',
-    t('queue.serverSyncedTitle'),
-    t('queue.serverSyncedMessage', { title: server.songs[server.currentIndex]?.title ?? '' }),
-  ])
 }
 
 function offer(server: ServerPlayQueue, isByIndex: boolean): void {

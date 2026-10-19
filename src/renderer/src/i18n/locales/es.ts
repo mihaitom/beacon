@@ -471,8 +471,6 @@ export default {
     serverSaved:
       'Guardada: otras aplicaciones reciben ahora esta cola, y Beacon la mantiene actualizada allí.',
     serverSaveFailed: 'No se pudo guardar la cola en el servidor.',
-    serverSyncedTitle: 'Cola actualizada',
-    serverSyncedMessage: 'Continuada desde Beacon en otro dispositivo, en «{title}».',
   },
   party: {
     copied: 'Copiado',

@@ -443,8 +443,8 @@ describe('another Beacon of the same account', () => {
     expect(playback.currentIndex).toBe(1)
     expect(playback.localPosition).toBe(30)
     expect(playback.isPlaying).toBe(false)
-    // Said, not asked.
-    expect(toasts).toEqual([['information', expect.any(String), expect.any(String)]])
+    // Neither asked nor announced.
+    expect(toasts).toHaveLength(0)
     // Its own from here on.
     playback.addToQueue([makeSong('z')])
     await sync.saveServerQueue()
