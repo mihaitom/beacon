@@ -467,6 +467,10 @@ export default {
     serverLoadFailed: 'No se pudo conectar con el servidor.',
     serverLoadCurrent: 'Esta cola ya es la guardada en el servidor',
     serverLoadEmpty: 'No hay ninguna cola guardada en el servidor',
+    serverSave: 'Guardar la cola en el servidor',
+    serverSaved:
+      'Guardada: otras aplicaciones reciben ahora esta cola, y Beacon la mantiene actualizada allí.',
+    serverSaveFailed: 'No se pudo guardar la cola en el servidor.',
   },
   party: {
     copied: 'Copiado',

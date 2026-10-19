@@ -468,6 +468,10 @@ export default {
     serverLoadFailed: 'Le serveur est injoignable.',
     serverLoadCurrent: 'Cette file d’attente est déjà celle enregistrée sur le serveur',
     serverLoadEmpty: 'Aucune file d’attente n’est enregistrée sur le serveur',
+    serverSave: 'Enregistrer la file d’attente sur le serveur',
+    serverSaved:
+      'Enregistrée : les autres applications reçoivent maintenant cette file d’attente, et Beacon la tient à jour.',
+    serverSaveFailed: 'La file d’attente n’a pas pu être enregistrée sur le serveur.',
   },
   party: {
     copied: 'Copié',

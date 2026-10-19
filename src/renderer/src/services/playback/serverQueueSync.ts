@@ -2,12 +2,13 @@
  * apps - and Beacon on another device - can pick it up, and offers a
  * queue saved there elsewhere when this device comes back to it.
  *
- * Never over somebody else's: every save asks the server first, and where
- * it holds a queue another app or device saved since this one last did,
- * this device stops saving and offers that queue instead. It saves again
- * once the user has taken that queue over, or started something new here
- * (see markQueueReplaced()) - the same "whoever did something last" as
- * everywhere else, but only for something actually done.
+ * Saves only while the server copy is this device's own: its own last
+ * save, or nothing at all. Every save asks the server first, and once
+ * another app or device has saved there since, this device stops saving
+ * and offers that queue instead. Only the user moves it on from there -
+ * by loading that queue, or by saving over it by hand
+ * (saveServerQueueByHand()). Either way the server copy is this device's
+ * own again, and saving carries on as before, on the way out too.
  *
  * Nothing here plays: a queue taken over is loaded paused, and only after
  * the user asked for it. */
@@ -44,14 +45,10 @@ const CHECK_MIN_INTERVAL_MS = 60_000
 // A question, not a report - see Toast.timeoutMs.
 const OFFER_TIMEOUT_MS = 45_000
 
-// The queue as restoreFromStorage() last put it in place. A device that
-// was merely reopened must not push that snapshot - possibly days old -
-// over a queue another device has saved since; only a change made here, or
-// playing it, counts as this device having a say.
-let restoredKey: string | null = null
-// The user started a new queue here (markQueueReplaced()): theirs to save
-// even over a foreign one.
-let replaced = false
+// Whether the server held this device's own queue (or none) when this
+// device last looked or saved. What lets the save on the way out go
+// without asking first - it is the one save that can't.
+let ours = false
 let lastSaved: QueueSnapshot | null = null
 // Mirrors ServerQueueMeta.savedFingerprint for when localStorage refuses
 // the write - without it this device would take its own save for
@@ -74,22 +71,13 @@ function queueKey(songIds: string[], currentIndex: number): string {
 }
 
 /** Called by the playback store each time it restores its local snapshot
- * (app start, account change). */
-export function markQueueRestored(songIds: string[], currentIndex: number): void {
-  restoredKey = queueKey(songIds, currentIndex)
-  replaced = false
+ * (app start, account change): what was known about the server belonged to
+ * the session before. */
+export function markQueueRestored(): void {
+  ours = false
   lastSaved = null
   savedFingerprint = null
   knownServer.value = undefined
-}
-
-/** Called by the playback store when the user puts a whole new queue in
- * place (an album, a playlist, a radio) - a deliberate "now this", which
- * may replace a foreign queue on the server the way it replaces the old
- * one here. Edits to the queue already there don't count: that queue may
- * be the stale one the user hasn't got round to replacing yet. */
-export function markQueueReplaced(): void {
-  replaced = true
 }
 
 function meta(): ServerQueueMeta {
@@ -100,8 +88,16 @@ function meta(): ServerQueueMeta {
 function rememberInStep(snapshot: QueueSnapshot, isByIndex: boolean): void {
   lastSaved = snapshot
   knownServer.value = snapshot
+  ours = true
   savedFingerprint = fingerprint(snapshot, isByIndex)
   saveMeta({ ...loadMeta(), savedFingerprint })
+}
+
+/** Takes note of what the server just said it holds. */
+function observe(server: ServerPlayQueue | null, isByIndex: boolean): void {
+  const snapshot = server && serverSnapshot(server)
+  knownServer.value = snapshot
+  ours = !snapshot || fingerprint(snapshot, isByIndex) === meta().savedFingerprint
 }
 
 function enabled(): boolean {
@@ -137,42 +133,67 @@ function byIndex(): Promise<boolean> {
   return byIndexFor.byIndex
 }
 
-export async function saveServerQueue(): Promise<void> {
+/** Whether it saved - false for nothing to save, a foreign queue in the
+ * way, or a failure.
+ *
+ * `overwrite` saves without asking: the user's own decision by hand, or
+ * `keepalive` on the way out, which only goes while the server copy was
+ * this device's own a moment ago. */
+export async function saveServerQueue({
+  keepalive = false,
+  overwrite = false,
+} = {}): Promise<boolean> {
   if (saveTimer) clearTimeout(saveTimer)
   saveTimer = null
-  if (!enabled()) return
+  if (!enabled()) return false
   const snapshot = localSnapshot()
-  if (!snapshot) return
-  const playback = usePlaybackStore()
-  if (!playback.isPlaying && queueKey(snapshot.songIds, snapshot.currentIndex) === restoredKey) {
-    return
-  }
-  if (lastSaved && sameQueue(snapshot, lastSaved, 1)) return
+  if (!snapshot) return false
+  if (!overwrite && lastSaved && sameQueue(snapshot, lastSaved, 1)) return true
   const client = useLibraryStore().client()
   try {
     const isByIndex = await byIndex()
-    if (!replaced) {
+    if (!overwrite && !keepalive) {
       const server = await client.getPlayQueue(isByIndex)
-      knownServer.value = server && serverSnapshot(server)
+      observe(server, isByIndex)
       const current = meta()
       if (isForeign(server, snapshot, current, isByIndex)) {
         if (server.changed !== current.offeredChanged) {
           saveMeta({ ...current, offeredChanged: server.changed })
           offer(server)
         }
-        return
+        return false
       }
     }
     await client.savePlayQueue(snapshot.songIds, snapshot.currentIndex, snapshot.position, {
       byIndex: isByIndex,
+      keepalive,
     })
     rememberInStep(snapshot, isByIndex)
-    // Once this device has saved, its queue is its own again.
-    restoredKey = null
-    replaced = false
+    return true
   } catch (error) {
     console.warn('[serverQueue] Saving the queue failed:', error)
+    return false
   }
+}
+
+/** The queue toolbar's save button: this device's queue onto the server
+ * now, over a foreign one too - after which it is this device's own again
+ * and the saving carries on by itself. */
+export async function saveServerQueueByHand(): Promise<void> {
+  if (!canSaveServerQueue()) return
+  const t = i18n.global.t
+  const saved = await saveServerQueue({ overwrite: true })
+  emitter.emit(
+    'toast',
+    saved
+      ? ['success', t('queue.serverSave'), t('queue.serverSaved')]
+      : ['error', t('queue.serverSave'), t('queue.serverSaveFailed')],
+  )
+}
+
+/** Whether the save button has anything to save. */
+export function canSaveServerQueue(): boolean {
+  return enabled() && localSnapshot() !== null
 }
 
 function scheduleSave(): void {
@@ -200,10 +221,11 @@ export async function checkServerQueue({ force = false } = {}): Promise<void> {
     console.warn('[serverQueue] Reading the queue failed:', error)
     return
   }
-  knownServer.value = server && serverSnapshot(server)
+  const isByIndex = await byIndex()
+  observe(server, isByIndex)
   const local = localSnapshot() ?? { songIds: [], currentIndex: -1, position: 0 }
   const current = meta()
-  if (!shouldOffer(server, local, current, await byIndex())) return
+  if (!shouldOffer(server, local, current, isByIndex)) return
   saveMeta({ ...current, offeredChanged: server.changed })
   offer(server)
 }
@@ -236,8 +258,6 @@ function adopt(server: ServerPlayQueue): void {
 
 async function take(server: ServerPlayQueue): Promise<void> {
   usePlaybackStore().adoptServerQueue(server.songs, server.currentIndex, server.position)
-  restoredKey = null
-  replaced = false
   // Before the await, so a save landing meanwhile already sees this
   // device in step and has nothing to send.
   const snapshot = serverSnapshot(server)
@@ -256,16 +276,15 @@ export async function loadServerQueue(): Promise<void> {
   if (!enabled() || usePlaybackStore().isCasting) return
   const t = i18n.global.t
   let server: ServerPlayQueue | null
+  const isByIndex = await byIndex()
   try {
-    server = await useLibraryStore()
-      .client()
-      .getPlayQueue(await byIndex())
+    server = await useLibraryStore().client().getPlayQueue(isByIndex)
   } catch (error) {
     console.warn('[serverQueue] Reading the queue failed:', error)
     emitter.emit('toast', ['error', t('queue.serverLoad'), t('queue.serverLoadFailed')])
     return
   }
-  knownServer.value = server && serverSnapshot(server)
+  observe(server, isByIndex)
   if (!server) {
     emitter.emit('toast', ['information', t('queue.serverLoad'), t('queue.serverEmpty')])
     return
@@ -281,10 +300,8 @@ export async function refreshServerQueueState(): Promise<void> {
   if (now - lastRefreshAt < REFRESH_MIN_INTERVAL_MS) return
   lastRefreshAt = now
   try {
-    const server = await useLibraryStore()
-      .client()
-      .getPlayQueue(await byIndex())
-    knownServer.value = server && serverSnapshot(server)
+    const isByIndex = await byIndex()
+    observe(await useLibraryStore().client().getPlayQueue(isByIndex), isByIndex)
   } catch (error) {
     console.warn('[serverQueue] Reading the queue failed:', error)
   }
@@ -339,7 +356,10 @@ export function initServerQueueSync(): void {
   setInterval(() => {
     if (playback.isPlaying) void saveServerQueue()
   }, SAVE_INTERVAL_MS)
-  // Nothing on the way out: a save that cannot ask the server first could
-  // overwrite a queue saved elsewhere since. A pause has already saved the
-  // exact position; closing while playing loses at most one interval.
+  // The last position before the window goes away. This one save cannot
+  // ask the server first, so it only goes while the copy there was this
+  // device's own when last seen - at most one interval ago while playing.
+  window.addEventListener('pagehide', () => {
+    if (ours && (saveTimer || playback.isPlaying)) void saveServerQueue({ keepalive: true })
+  })
 }

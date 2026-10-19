@@ -535,23 +535,29 @@ export class SubsonicClient {
   /** Stores the queue on the server for other clients to pick up.
    *
    * A form POST rather than a GET: a long queue as repeated `id=`
-   * parameters outgrows what a URL may carry. */
+   * parameters outgrows what a URL may carry. The connect token travels in
+   * the query string instead of a header, so the request needs no CORS
+   * preflight - a `keepalive` fetch (the one that still goes out while the
+   * page closes) is refused outright when it would need one. */
   async savePlayQueue(
     songIds: string[],
     currentIndex: number,
     position: number,
-    { byIndex }: { byIndex: boolean },
+    { byIndex, keepalive = false }: { byIndex: boolean; keepalive?: boolean },
   ): Promise<void> {
     const body = this.authParams()
     for (const id of songIds) body.append('id', id)
     if (byIndex) body.set('currentIndex', String(currentIndex))
     else body.set('current', songIds[currentIndex] ?? '')
     body.set('position', String(Math.round(position * 1000)))
+    const query = new URLSearchParams()
+    if (this.connectToken) query.set('token', this.connectToken)
+    if (this.sessionId) query.set('session', this.sessionId)
     const endpoint = byIndex ? 'savePlayQueueByIndex.view' : 'savePlayQueue.view'
-    const response = await fetch(`${this.proxyBaseUrl}/rest/${endpoint}`, {
+    const response = await fetch(`${this.proxyBaseUrl}/rest/${endpoint}?${query.toString()}`, {
       method: 'POST',
-      headers: this.requestHeaders(),
       body,
+      keepalive,
     })
     if (!response.ok) {
       throw new Error(`Subsonic request failed: ${response.status}`)

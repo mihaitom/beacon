@@ -62,6 +62,15 @@
           />
           <v-btn
             v-if="authStore.capabilities.serverQueue"
+            icon="mdi-cloud-upload-outline"
+            variant="text"
+            size="small"
+            :disabled="!canSaveServerQueue"
+            :title="$t('queue.serverSave')"
+            @click="saveServerQueueByHand"
+          />
+          <v-btn
+            v-if="authStore.capabilities.serverQueue"
             icon="mdi-cloud-download-outline"
             variant="text"
             size="small"
@@ -321,8 +330,10 @@ import AddToPlaylistSubmenu from '@/components/library/AddToPlaylistSubmenu.vue'
 import CreatePlaylistDialog from '@/components/library/CreatePlaylistDialog.vue'
 import { useAuthStore } from '@/stores/auth'
 import {
+  canSaveServerQueue,
   loadServerQueue,
   refreshServerQueueState,
+  saveServerQueueByHand,
   serverQueueLoadState,
   SERVER_QUEUE_LOAD_TITLES,
   type ServerQueueLoadState,
@@ -500,6 +511,9 @@ export default {
     serverQueueLoad(): ServerQueueLoadState {
       return serverQueueLoadState()
     },
+    canSaveServerQueue(): boolean {
+      return canSaveServerQueue()
+    },
     playbackStore() {
       return usePlaybackStore()
     },
@@ -604,6 +618,7 @@ export default {
   },
   methods: {
     loadServerQueue,
+    saveServerQueueByHand,
     queueRowKey,
     onFloatingChange(event: MediaQueryListEvent) {
       this.floating = event.matches

@@ -461,6 +461,9 @@ export default {
     serverLoadFailed: 'The server could not be reached.',
     serverLoadCurrent: 'This queue is already the one saved on the server',
     serverLoadEmpty: 'There is no queue saved on the server',
+    serverSave: 'Save the queue on the server',
+    serverSaved: 'Saved - other apps get this queue now, and Beacon keeps it up to date there.',
+    serverSaveFailed: 'The queue could not be saved on the server.',
   },
   party: {
     copied: 'Copied',

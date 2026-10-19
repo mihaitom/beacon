@@ -464,6 +464,9 @@ export default {
     serverLoadFailed: 'Impossibile raggiungere il server.',
     serverLoadCurrent: 'Questa coda è già quella salvata sul server',
     serverLoadEmpty: 'Sul server non è salvata nessuna coda',
+    serverSave: 'Salva la coda sul server',
+    serverSaved: 'Salvata: le altre app ricevono ora questa coda, e Beacon la tiene aggiornata.',
+    serverSaveFailed: 'Impossibile salvare la coda sul server.',
   },
   party: {
     copied: 'Copiato',

@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
-- With Navidrome, Beacon saves the queue on the server, so another app (or Beacon on another device) can carry on with it. It never saves over a queue another app has saved since: that one is offered instead, and the button in the queue's toolbar loads the saved queue at any time, paused at the same song and position
+- With Navidrome, Beacon saves the queue on the server, so another app (or Beacon on another device) can carry on with it. It never saves over a queue another app has saved since: that one is offered instead, and the queue's toolbar has buttons to load it, paused at the same song and position, or to save your own over it
 - The song in the player bar has a menu behind a right-click or the ⋮ next to the heart: rate it with stars, add it to a playlist, start a Song Radio, go to its album or artist (requested by @mjj042, #55)
 - Casting to a Sonos that has repeat on in the Sonos app says so and can switch it off: it made every song start over for a moment at its end, and repeat in Beacon works without it
 

@@ -4,6 +4,15 @@
       <h1 class="page-title mobile-header__title">{{ $t('queue.title') }}</h1>
       <v-btn
         v-if="authStore.capabilities.serverQueue"
+        icon="mdi-cloud-upload-outline"
+        variant="text"
+        size="small"
+        :disabled="!canSaveServerQueue"
+        :title="$t('queue.serverSave')"
+        @click="saveServerQueueByHand"
+      />
+      <v-btn
+        v-if="authStore.capabilities.serverQueue"
         icon="mdi-cloud-download-outline"
         variant="text"
         size="small"
@@ -68,8 +77,10 @@
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
 import {
+  canSaveServerQueue,
   loadServerQueue,
   refreshServerQueueState,
+  saveServerQueueByHand,
   serverQueueLoadState,
   SERVER_QUEUE_LOAD_TITLES,
   type ServerQueueLoadState,
@@ -164,6 +175,9 @@ export default {
     serverQueueLoad(): ServerQueueLoadState {
       return serverQueueLoadState()
     },
+    canSaveServerQueue(): boolean {
+      return canSaveServerQueue()
+    },
     actionsIndex(): number {
       return this.actionsSong ? this.playbackStore.queue.indexOf(this.actionsSong) : -1
     },
@@ -179,6 +193,7 @@ export default {
   methods: {
     rowKey,
     loadServerQueue,
+    saveServerQueueByHand,
     dragOverPosition(index: number): 'before' | 'after' | null {
       return this.overIndex === index ? this.overHalf : null
     },

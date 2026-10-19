@@ -465,6 +465,10 @@ export default {
     serverLoadFailed: 'Der Server war nicht erreichbar.',
     serverLoadCurrent: 'Diese Warteschlange ist schon die auf dem Server gespeicherte',
     serverLoadEmpty: 'Auf dem Server ist keine Warteschlange gespeichert',
+    serverSave: 'Warteschlange auf dem Server speichern',
+    serverSaved:
+      'Gespeichert - andere Apps bekommen jetzt diese Warteschlange, und Beacon hält sie dort aktuell.',
+    serverSaveFailed: 'Die Warteschlange konnte nicht auf dem Server gespeichert werden.',
   },
   party: {
     copied: 'Kopiert',
