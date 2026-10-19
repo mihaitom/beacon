@@ -480,6 +480,15 @@ its `row` form (`AlbumCard`/`ArtistCard` with `row`), 56px tall, figures in
 fixed right-aligned columns - one component, so the two layouts share the
 context menu and the heart instead of keeping two copies in step.
 
+Home uses a third form of the same cards. Its recently played albums are
+`AlbumCard` with `tile`: 72px tall, a 56px cover beside the name and artist,
+on a panel's 2% fill at the tile radius, two rows of as many as fit across.
+The whole tile plays; the name still opens the album. Its most played songs
+are `SongCard` with `row` - the album row's geometry with a rank in front and
+the play count behind - in two columns once the section is 760px wide,
+ranked down the first column and on into the second. A song table there
+brought column headings and sorting to a list that is only ever read.
+
 A tile that is a link does not lift or move on hover; only what is inside
 it may answer the pointer (the Genres page's crates flip through their
 records). Tiles that rose on hover flickered under a pointer swept across a

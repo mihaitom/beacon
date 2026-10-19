@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
+import { createRouter, createMemoryHistory } from 'vue-router'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
@@ -58,5 +59,47 @@ describe('SongCard', () => {
     await wrapper.find('.song-card-star').trigger('click')
 
     expect(play).not.toHaveBeenCalled()
+  })
+
+  describe('as a line of a chart', () => {
+    function mountRow(song = makeSong('s1')) {
+      const router = createRouter({
+        history: createMemoryHistory(),
+        routes: [{ path: '/:any(.*)', component: { template: '<div />' } }],
+      })
+      return mount(SongCard, {
+        props: { song, row: true },
+        global: { plugins: [vuetify, i18n, router], stubs: { CoverArt: true } },
+      })
+    }
+
+    it('plays just this song wherever the line is clicked', async () => {
+      const play = vi.spyOn(usePlaybackStore(), 'playSongList').mockResolvedValue()
+      const song = makeSong('s1')
+      const wrapper = mountRow(song)
+
+      await wrapper.find('.song-card-row__title').trigger('click')
+
+      expect(play).toHaveBeenCalledWith([song], 0)
+    })
+
+    it('does not start the song when only the heart was clicked', async () => {
+      vi.spyOn(useLibraryStore(), 'toggleStar').mockResolvedValue()
+      const play = vi.spyOn(usePlaybackStore(), 'playSongList').mockResolvedValue()
+      const wrapper = mountRow()
+
+      await wrapper.find('.song-card-row__star').trigger('click')
+
+      expect(play).not.toHaveBeenCalled()
+    })
+
+    it('does not start the song when the artist is followed', async () => {
+      const play = vi.spyOn(usePlaybackStore(), 'playSongList').mockResolvedValue()
+      const wrapper = mountRow()
+
+      await wrapper.find('a.song-card-artist').trigger('click')
+
+      expect(play).not.toHaveBeenCalled()
+    })
   })
 })

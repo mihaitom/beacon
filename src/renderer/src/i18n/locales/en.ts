@@ -91,7 +91,7 @@ export default {
     },
   },
   home: {
-    frequentlyPlayed: 'Frequently played',
+    playCount: '{n} play | {n} plays',
     topSongs: 'Most played songs',
     recentlyAdded: 'Recently added',
     recentlyPlayed: 'Recently played',

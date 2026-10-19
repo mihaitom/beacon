@@ -8,6 +8,8 @@ import { useRecommendationsStore } from '@/stores/recommendations'
 import { useRadioSettingsStore } from '@/stores/radioSettings'
 import { useLyricsProvidersStore, LYRIC_PROVIDERS } from '@/stores/lyricsProviders'
 import { useAutoplayStore } from '@/stores/autoplay'
+import { useHomeStore } from '@/stores/home'
+import type { Album } from '@/types/library'
 import { browserLocale, getLocale } from '@/i18n'
 import { setLocale } from '@/services/localeSetting'
 
@@ -181,6 +183,19 @@ describe('accountScopedStores — local reload on account change', () => {
     expect(useLyricsProvidersStore().enabled).toEqual([...LYRIC_PROVIDERS])
     expect(useAutoplayStore().enabled).toBe(false)
     expect(useRadioSettingsStore().castDirectly).toBe(false)
+  })
+
+  it("does not show the second account the first one's Home", async () => {
+    signIn('alice')
+    useHomeStore().albums.recent = [{ id: 'alice-album' } as Album]
+    useHomeStore().discoverSource = 'similar'
+
+    initAccountScopedStores()
+    useAuthStore().username = 'bob'
+    await nextTick()
+
+    expect(useHomeStore().albums.recent).toBeNull()
+    expect(useHomeStore().discoverSource).toBeNull()
   })
 
   it('does not let a second account inherit the first one language', async () => {

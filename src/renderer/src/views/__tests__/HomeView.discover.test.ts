@@ -12,6 +12,8 @@ import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { emitter } from '@/emitter'
+import { useHomeStore } from '@/stores/home'
+import { useRecommendationsStore } from '@/stores/recommendations'
 import { useLibraryStore } from '@/stores/library'
 import HomeView from '../HomeView.vue'
 import SimilarArtistsShelf from '@/components/library/SimilarArtistsShelf.vue'
@@ -31,7 +33,7 @@ function stubLibrary() {
   vi.spyOn(library, 'fetchFrequentAlbums').mockResolvedValue([])
   vi.spyOn(library, 'fetchRecentlyPlayedAlbums').mockResolvedValue([])
   vi.spyOn(library, 'fetchRandomAlbums').mockResolvedValue([])
-  vi.spyOn(library, 'fetchTopSongs').mockResolvedValue([])
+  vi.spyOn(library, 'fetchAllSongs').mockResolvedValue()
   vi.spyOn(library, 'fetchArtists').mockResolvedValue()
   vi.spyOn(library, 'client').mockReturnValue({
     getAlbumList2: vi.fn().mockResolvedValue([]),
@@ -114,6 +116,7 @@ describe('HomeView "New artists to explore"', () => {
   it('shows nothing to press while there are no discoveries yet', async () => {
     // The shelf renders nothing at all when empty, button included.
     const wrapper = await mountHome()
+    await flushPromises()
 
     expect(communityShelf(wrapper)?.find('button').exists()).toBe(false)
   })
@@ -193,24 +196,12 @@ describe('HomeView "New artists to explore"', () => {
     const wrapper = await mountHome()
     const vm = wrapper.vm as unknown as {
       heldOverArtists: unknown[] | null
-      frequentAlbums: unknown[]
       rerollDiscover(a?: unknown, f?: boolean, only?: 'albums' | 'artists'): Promise<void>
     }
     vm.heldOverArtists = null
     // Seeds come from the most-played albums, and there is a minimum
     // below which the shelves fall back to plain random albums instead.
-    vm.frequentAlbums = ['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon'].map((artist, i) => ({
-      id: `album-${i}`,
-      name: `Album ${i}`,
-      artist,
-      artistId: `artist-${i}`,
-      coverArtId: null,
-      year: 2020,
-      songCount: 10,
-      duration: 2000,
-      genre: null,
-      starred: false,
-    }))
+    useHomeStore().albums.frequent = seedAlbums()
     vi.mocked(getSimilarArtists).mockClear()
     vi.mocked(getSimilarArtists).mockResolvedValue([{ name: 'Fetched', mbid: 'f', score: 1 }])
 
@@ -338,5 +329,57 @@ describe('HomeView Discover loading', () => {
 
     const albums = (wrapper.vm as unknown as { randomAlbums: Album[] }).randomAlbums
     expect(albums.length).toBeGreaterThan(0)
+  })
+})
+
+describe('HomeView Discover on a return visit', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+    vi.mocked(getSimilarArtists).mockResolvedValue([{ name: 'Someone New', mbid: 'n', score: 1 }])
+    vi.mocked(getArtistImages).mockResolvedValue({})
+  })
+
+  async function visit() {
+    const wrapper = await mountHome((library) => {
+      vi.spyOn(library, 'fetchFrequentAlbums').mockResolvedValue(seedAlbums())
+    })
+    await flushPromises()
+    return wrapper
+  }
+
+  function discoveredNames(wrapper: Awaited<ReturnType<typeof mountHome>>): string[] {
+    return (communityShelf(wrapper)!.props('artists') as { name: string }[]).map((a) => a.name)
+  }
+
+  it('shows what the last visit found, without looking it up again', async () => {
+    ;(await visit()).unmount()
+    vi.mocked(getSimilarArtists).mockClear()
+
+    const wrapper = await visit()
+
+    expect(getSimilarArtists).not.toHaveBeenCalled()
+    expect(discoveredNames(wrapper)).toEqual(['Someone New'])
+  })
+
+  it('looks again once recommendations have been switched off since', async () => {
+    ;(await visit()).unmount()
+    useRecommendationsStore().enabled = false
+
+    const wrapper = await visit()
+
+    expect(discoveredNames(wrapper)).toEqual([])
+    expect(useLibraryStore().fetchRandomAlbums).toHaveBeenCalled()
+  })
+
+  it('tries the lookup again after one that failed', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    vi.mocked(getSimilarArtists).mockRejectedValueOnce(new Error('503'))
+    ;(await visit()).unmount()
+    vi.mocked(getSimilarArtists).mockClear()
+
+    await visit()
+
+    expect(getSimilarArtists).toHaveBeenCalled()
   })
 })

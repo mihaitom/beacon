@@ -2,7 +2,7 @@
 // doesn't make: it renders a Song Radio button when told to, while *when*
 // to tell it, and what happens on the click, live here.
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { createVuetify } from 'vuetify'
@@ -11,14 +11,16 @@ import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { emitter } from '@/emitter'
 import { useAuthStore } from '@/stores/auth'
+import { useHomeStore } from '@/stores/home'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import HomeView from '../HomeView.vue'
 import HeroBand from '@/components/home/HeroBand.vue'
-import SongTable from '@/components/library/SongTable.vue'
+import RecentAlbumTiles from '@/components/home/RecentAlbumTiles.vue'
+import TopSongsList from '@/components/home/TopSongsList.vue'
 import SongShelf from '@/components/library/SongShelf.vue'
 import { makeSong } from '@/stores/__tests__/fixtures'
-import type { Song } from '@/types/library'
+import type { Album, Song } from '@/types/library'
 
 const vuetify = createVuetify({ components, directives })
 
@@ -30,7 +32,7 @@ function stubLibrary() {
   vi.spyOn(library, 'fetchFrequentAlbums').mockResolvedValue([])
   vi.spyOn(library, 'fetchRecentlyPlayedAlbums').mockResolvedValue([])
   vi.spyOn(library, 'fetchRandomAlbums').mockResolvedValue([])
-  vi.spyOn(library, 'fetchTopSongs').mockResolvedValue([])
+  vi.spyOn(library, 'fetchAllSongs').mockResolvedValue()
   vi.spyOn(library, 'fetchRediscoverSongs').mockResolvedValue([])
   vi.spyOn(library, 'fetchArtists').mockResolvedValue()
   vi.spyOn(library, 'client').mockReturnValue({
@@ -40,24 +42,130 @@ function stubLibrary() {
   return library
 }
 
-async function mountHome() {
+/** `prepare` runs after stubLibrary() and before mounting, so a test can
+ * replace a stub - created() has already asked by the time mount returns. */
+async function mountHome(prepare?: (library: ReturnType<typeof useLibraryStore>) => void) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [{ path: '/', component: { template: '<div />' } }],
   })
   await router.push('/')
   await router.isReady()
-  stubLibrary()
+  const library = stubLibrary()
+  prepare?.(library)
   const wrapper = mount(HomeView, {
     global: {
       plugins: [vuetify, i18n, router],
-      stubs: { AlbumShelf: true, SimilarArtistsShelf: true, SongTable: true, CoverArt: true },
+      stubs: {
+        AlbumShelf: true,
+        SimilarArtistsShelf: true,
+        RecentAlbumTiles: true,
+        TopSongsList: true,
+        CoverArt: true,
+      },
       mocks: { $emitter: emitter },
     },
   })
   await wrapper.vm.$nextTick()
   return wrapper
 }
+
+function album(id: string): Album {
+  return { id, name: `Album ${id}`, artist: 'Someone' } as Album
+}
+
+/** A promise the test settles itself, for a request still on its way. */
+function pending<T>() {
+  let resolve!: (value: T) => void
+  let reject!: (error: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
+describe('HomeView return visits', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('shows the last list at once while the new one loads', async () => {
+    const first = await mountHome((library) =>
+      vi.mocked(library.fetchRecentlyPlayedAlbums).mockResolvedValue([album('a'), album('b')]),
+    )
+    await flushPromises()
+    first.unmount()
+
+    const refresh = pending<Album[]>()
+    const second = await mountHome((library) =>
+      vi.mocked(library.fetchRecentlyPlayedAlbums).mockReturnValue(refresh.promise),
+    )
+    const tiles = second.getComponent(RecentAlbumTiles)
+    expect(tiles.props('loading')).toBe(false)
+    expect(tiles.props('albums')).toEqual([album('b')])
+
+    refresh.resolve([album('c'), album('d')])
+    await flushPromises()
+    expect(tiles.props('albums')).toEqual([album('d')])
+  })
+
+  it('keeps the last list when its refresh fails', async () => {
+    const first = await mountHome((library) =>
+      vi.mocked(library.fetchRecentlyPlayedAlbums).mockResolvedValue([album('a'), album('b')]),
+    )
+    await flushPromises()
+    first.unmount()
+
+    const second = await mountHome((library) =>
+      vi.mocked(library.fetchRecentlyPlayedAlbums).mockRejectedValue(new Error('offline')),
+    )
+    await flushPromises()
+
+    expect(second.getComponent(RecentAlbumTiles).props('albums')).toEqual([album('b')])
+  })
+
+  it('ends the placeholders when the first request fails, rather than keeping them up', async () => {
+    const wrapper = await mountHome((library) =>
+      vi.mocked(library.fetchRecentlyPlayedAlbums).mockRejectedValue(new Error('offline')),
+    )
+    await flushPromises()
+
+    expect(wrapper.getComponent(RecentAlbumTiles).props('loading')).toBe(false)
+  })
+})
+
+describe('HomeView recently played tiles', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('leave out the album the hero is already offering', async () => {
+    const wrapper = await mountHome()
+    useHomeStore().albums.recent = [album('a'), album('b')]
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.getComponent(RecentAlbumTiles).props('albums')).toEqual([album('b')])
+  })
+
+  it('include it while the hero shows something else', async () => {
+    const wrapper = await mountHome()
+    useHomeStore().albums.recent = [album('a'), album('b')]
+    usePlaybackStore().setQueue([makeSong('playing')], 0)
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.getComponent(RecentAlbumTiles).props('albums')).toEqual([album('a'), album('b')])
+  })
+})
 
 describe('HomeView top songs', () => {
   beforeEach(() => {
@@ -68,19 +176,41 @@ describe('HomeView top songs', () => {
     vi.restoreAllMocks()
   })
 
-  /** The most-played list is a chart, not a running order: clicking one of
-   * its rows plays that song rather than queueing the other nine behind
-   * it. Starting the whole list is what the play button next to the
-   * heading is for. The behaviour itself is SongTable's and has its own
-   * test (SongTable.play.test.ts); this pins that Home asks for it. */
-  it('hands the top-songs table the one-song rule rather than the default', async () => {
+  it('waits for the catalogue, then lists its most played songs', async () => {
+    const catalogue = pending<void>()
+    const wrapper = await mountHome((library) =>
+      vi.mocked(library.fetchAllSongs).mockReturnValue(catalogue.promise),
+    )
+    const list = wrapper.getComponent(TopSongsList)
+    expect(list.props('loading')).toBe(true)
+
+    useLibraryStore().allSongs = [makeSong('once', { playCount: 1 })]
+    catalogue.resolve()
+    await flushPromises()
+
+    expect(list.props('loading')).toBe(false)
+    expect((list.props('songs') as Song[]).map((song) => song.id)).toEqual(['once'])
+  })
+
+  it('stops waiting when the catalogue fails to load', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    const wrapper = await mountHome((library) =>
+      vi.mocked(library.fetchAllSongs).mockRejectedValue(new Error('offline')),
+    )
+    await flushPromises()
+
+    expect(wrapper.getComponent(TopSongsList).props('loading')).toBe(false)
+  })
+
+  it('plays the whole chart from its play-all button', async () => {
     const wrapper = await mountHome()
-    ;(wrapper.vm as unknown as { topSongs: Song[] }).topSongs = [makeSong('a'), makeSong('b')]
+    useLibraryStore().allSongs = [makeSong('b', { playCount: 2 }), makeSong('a', { playCount: 5 })]
+    const play = vi.spyOn(usePlaybackStore(), 'playSongList').mockResolvedValue()
     await wrapper.vm.$nextTick()
 
-    const table = wrapper.findComponent(SongTable)
-    expect(table.exists()).toBe(true)
-    expect(table.props('queueWholeList')).toBe(false)
+    wrapper.getComponent(TopSongsList).vm.$emit('play-all')
+
+    expect((play.mock.calls[0]![0] as Song[]).map((song) => song.id)).toEqual(['a', 'b'])
   })
 })
 
@@ -285,11 +415,9 @@ describe('HomeView hero', () => {
       } as unknown as Awaited<ReturnType<typeof library.fetchAlbum>>)
       const playSongListSpy = vi.spyOn(playback, 'playSongList').mockResolvedValue()
       // fetchRecentlyPlayedAlbums is stubbed to [] by mountHome()'s
-      // stubLibrary(), so seed recentAlbums directly the way the real
-      // fetch result would have.
-      ;(wrapper.vm as unknown as { recentAlbums: unknown[] }).recentAlbums = [
-        { id: 'album-1', name: 'Some Album' },
-      ]
+      // stubLibrary(), so seed the list directly the way the real fetch
+      // result would have.
+      useHomeStore().albums.recent = [{ id: 'album-1', name: 'Some Album' } as Album]
       await wrapper.vm.$nextTick()
 
       await wrapper.getComponent(HeroBand).vm.$emit('play')

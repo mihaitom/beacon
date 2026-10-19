@@ -1,14 +1,54 @@
 <template>
   <div
     class="album-card"
-    :class="{ 'album-card--row': row }"
-    @click="!playOnClick && $router.push(`/albums/${album.id}`)"
+    :class="{ 'album-card--row': row, 'album-card--tile': tile }"
+    @click="onCardClick"
     @contextmenu.prevent="openMenu"
   >
     <!-- The album list's row form (AlbumsView.vue's list toggle): the same
      - component as the card, so the two share the menu, the heart and every
      - action below rather than keeping two copies in step. -->
-    <template v-if="row">
+    <template v-if="tile">
+      <div class="album-tile__cover">
+        <cover-art :cover-art-id="album.coverArtId" :size="56" />
+        <div class="album-tile__play">
+          <v-icon icon="mdi-play" size="28" />
+        </div>
+      </div>
+      <div class="album-tile__text">
+        <router-link
+          :to="`/albums/${album.id}`"
+          class="album-tile__name text-body-medium"
+          :title="album.name"
+          @click.stop
+        >
+          {{ album.name }}
+        </router-link>
+        <router-link
+          v-if="album.artistId"
+          :to="`/artists/${album.artistId}`"
+          class="album-tile__artist text-body-small text-medium-emphasis"
+          @click.stop
+        >
+          {{ album.artist }}
+        </router-link>
+        <div v-else class="album-tile__artist text-body-small text-medium-emphasis">
+          {{ album.artist }}
+        </div>
+      </div>
+      <v-btn
+        v-if="authStore.capabilities.favorites"
+        :icon="album.starred ? 'mdi-heart' : 'mdi-heart-outline'"
+        :color="album.starred ? 'primary' : undefined"
+        size="small"
+        variant="text"
+        class="album-row__star"
+        :class="{ 'album-row__star--visible': album.starred }"
+        :title="$t(album.starred ? 'library.unstar' : 'library.star')"
+        @click.stop="toggleStar"
+      />
+    </template>
+    <template v-else-if="row">
       <cover-art :cover-art-id="album.coverArtId" :size="44" class="album-row__cover" />
       <div class="album-row__text">
         <div class="album-row__name text-body-medium" :title="album.name">{{ album.name }}</div>
@@ -171,6 +211,13 @@ export default {
       type: Boolean,
       default: false,
     },
+    // A small wide tile - cover beside the name - for Home's recently
+    // played grid. The whole tile plays, since that grid is there to get
+    // back into something; the name still leads to the album.
+    tile: {
+      type: Boolean,
+      default: false,
+    },
   },
   computed: {
     authStore() {
@@ -181,6 +228,10 @@ export default {
     },
   },
   methods: {
+    onCardClick(): void {
+      if (this.tile) void this.onCoverClick()
+      else if (!this.playOnClick) void this.$router.push(`/albums/${this.album.id}`)
+    },
     /** $refs is deliberately read here rather than in a computed: it is
      * not reactive, so a computed would cache the `undefined` it saw before
      * the menu was ever mounted and never look again. */
@@ -321,8 +372,79 @@ export default {
 }
 
 .album-card--row:hover .album-row__star,
+.album-card--tile:hover .album-row__star,
 .album-row__star--visible {
   opacity: 1;
+}
+
+/* A raised area of the page, like a panel, at the tile step of the radius
+ * ladder. It does not lift on hover (see docs/styleguide.md, Lists). */
+.album-card--tile {
+  width: auto;
+  min-width: 0;
+  height: 72px;
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) 40px;
+  align-items: center;
+  gap: 14px;
+  padding: 0 4px 0 8px;
+  border-radius: 12px;
+  background: rgba(var(--v-theme-on-surface), 0.04);
+  transition: background-color 0.15s ease;
+}
+
+.album-card--tile:hover {
+  background: var(--beacon-hover);
+}
+
+.album-tile__cover {
+  position: relative;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.album-tile__play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  background: rgba(11, 13, 19, 0.45);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.album-card--tile:hover .album-tile__play {
+  opacity: 1;
+}
+
+.album-tile__text {
+  min-width: 0;
+}
+
+.album-tile__name,
+.album-tile__artist {
+  display: block;
+  width: fit-content;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: inherit;
+  text-decoration: none;
+}
+
+.album-tile__name {
+  font-weight: 600;
+}
+
+.album-card--tile:hover .album-tile__name {
+  color: rgb(var(--v-theme-primary));
+}
+
+a.album-tile__artist:hover {
+  text-decoration: underline;
 }
 
 @media (hover: none) {

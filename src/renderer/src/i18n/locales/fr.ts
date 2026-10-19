@@ -93,7 +93,7 @@ export default {
     },
   },
   home: {
-    frequentlyPlayed: 'Fréquemment écouté',
+    playCount: '{n} écoute | {n} écoutes',
     topSongs: 'Titres les plus écoutés',
     recentlyAdded: 'Ajouté récemment',
     recentlyPlayed: 'Écouté récemment',

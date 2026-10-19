@@ -21,41 +21,23 @@
       @song-radio="onHeroSongRadio"
     />
 
-    <album-shelf
-      :title="$t('home.frequentlyPlayed')"
-      :albums="frequentAlbums"
-      :loading="loadingFrequent"
-      :play-all-loading="playingAllShelf === 'frequent'"
-      play-on-click
-      @play-all="playAllAlbums(frequentAlbums, 'frequent')"
+    <!-- Frequently played used to have a shelf of its own here, and on any
+     - settled listening habit it showed much the same albums as this one.
+     - It still seeds Discover (see rerollDiscover()). -->
+    <recent-album-tiles
+      :title="$t('home.recentlyPlayed')"
+      :albums="recentTiles"
+      :loading="loadingRecent"
+      :play-all-loading="playingAllShelf === 'recent'"
+      @play-all="(albums: Album[]) => playAllAlbums(albums, 'recent')"
     />
 
-    <section v-if="topSongs.length || loadingTopSongs" class="home-view__section">
-      <div class="home-view__section-head">
-        <h2 class="section-title">{{ $t('home.topSongs') }}</h2>
-        <v-btn
-          v-if="topSongs.length"
-          icon="mdi-play-circle-outline"
-          variant="text"
-          size="small"
-          density="comfortable"
-          :title="$t('home.playAll')"
-          @click="playSongList(topSongs)"
-        />
-      </div>
-      <!-- A chart, not a running order: these are the tracks played most,
-         - so clicking one plays that one. The button beside the heading
-         - above is what starts the whole list, which is the difference
-         - between "I want to hear this song" and "play my top songs". -->
-      <song-table
-        :songs="topSongs"
-        :queue-whole-list="false"
-        :loading="loadingTopSongs"
-        default-sort-key="playCount"
-        default-sort-direction="desc"
-        :columns="['cover', 'album', 'playCount']"
-      />
-    </section>
+    <top-songs-list
+      :title="$t('home.topSongs')"
+      :songs="topSongs"
+      :loading="loadingTopSongs"
+      @play-all="playSongList(topSongs)"
+    />
 
     <album-shelf
       :title="$t('home.recentlyAdded')"
@@ -64,14 +46,6 @@
       :play-all-loading="playingAllShelf === 'newest'"
       play-on-click
       @play-all="playAllAlbums(newestAlbums, 'newest')"
-    />
-    <album-shelf
-      :title="$t('home.recentlyPlayed')"
-      :albums="recentAlbums"
-      :loading="loadingRecent"
-      :play-all-loading="playingAllShelf === 'recent'"
-      play-on-click
-      @play-all="playAllAlbums(recentAlbums, 'recent')"
     />
     <song-shelf
       v-if="authStore.capabilities.playHistoryStats"
@@ -151,10 +125,12 @@ import { getListenbrainzArtists } from '@/services/connect/listenbrainz'
 import { type ExternalLinkKey } from '@/components/library/externalArtistLinks'
 import type { SimilarArtistDisplay } from '@/components/library/SimilarArtistsShelf.vue'
 import HeroBand from '@/components/home/HeroBand.vue'
+import RecentAlbumTiles from '@/components/home/RecentAlbumTiles.vue'
+import TopSongsList from '@/components/home/TopSongsList.vue'
 import AlbumShelf from '@/components/library/AlbumShelf.vue'
 import SimilarArtistsShelf from '@/components/library/SimilarArtistsShelf.vue'
 import SongShelf from '@/components/library/SongShelf.vue'
-import SongTable from '@/components/library/SongTable.vue'
+import { useHomeStore, type HomeAlbumList } from '@/stores/home'
 import { accountScopedKey } from '@/services/accountKey'
 import { radioFaviconRequest, type RadioFaviconRequest } from '@/services/connect/radio'
 import type { Album, Artist, Song } from '@/types/library'
@@ -221,35 +197,24 @@ function sameArtistPool(a: string[], b: string[]): boolean {
 
 export default {
   name: 'HomeView',
-  components: { HeroBand, AlbumShelf, SimilarArtistsShelf, SongShelf, SongTable },
+  components: {
+    HeroBand,
+    RecentAlbumTiles,
+    TopSongsList,
+    AlbumShelf,
+    SimilarArtistsShelf,
+    SongShelf,
+  },
   data() {
     return {
-      frequentAlbums: [] as Album[],
-      newestAlbums: [] as Album[],
-      recentAlbums: [] as Album[],
-      randomAlbums: [] as Album[],
-      // Suggested artists that aren't in the library: the community
-      // similar-artist lookup by default (see rerollDiscover()), or the
-      // listener's own ListenBrainz recommendations when a name is set
-      // (see loadPersonalShelves()). Empty whenever the toggle's off, the
-      // lookup failed, or nothing new came back; the SimilarArtistsShelf
-      // component hides itself in all of those cases.
-      newArtistDiscoveries: [] as SimilarArtistDisplay[],
-      // True only once the personal recommendations actually filled the
-      // shelves — false both without a ListenBrainz name and when the feed
-      // came back empty (see loadPersonalShelves()'s fallback). Drives the
-      // Reroll buttons, which are pointless over a fixed personal set but
-      // still useful over the community one.
-      usingPersonalRecommendations: false,
-      topSongs: [] as Song[],
       rediscoverSongs: [] as Song[],
       loadingRediscover: false,
       // Spinner on the hero's own Song Radio button while the mix is being
       // fetched — see onHeroSongRadio().
       heroRadioLoading: false,
-      loadingFrequent: false,
-      loadingNewest: false,
-      loadingRecent: false,
+      // Whether this visit's catalogue request has answered, so that an
+      // empty or failed catalogue ends the top songs' placeholders.
+      catalogSettled: false,
       // Which of the two Discover shelves is currently waiting on a
       // lookup, or null. One field rather than two booleans: the lookup
       // fills both shelves in one go, so at most one of them can be the
@@ -270,7 +235,6 @@ export default {
       // real lookup again.
       heldOverAlbums: null as Album[] | null,
       heldOverArtists: null as SimilarArtistDisplay[] | null,
-      loadingTopSongs: false,
       // Which shelf's "play all" is currently fetching album song lists —
       // a single field (not one boolean per shelf) since only one of these
       // can realistically be in flight at a time (each is a user click).
@@ -292,6 +256,85 @@ export default {
     },
     listenbrainzStore() {
       return useListenbrainzStore()
+    },
+    // What Home shows lives in stores/home.ts rather than here, so that a
+    // return visit starts from the last answer - see that store's comment.
+    homeStore() {
+      return useHomeStore()
+    },
+    frequentAlbums(): Album[] {
+      return this.homeStore.albums.frequent ?? []
+    },
+    newestAlbums(): Album[] {
+      return this.homeStore.albums.newest ?? []
+    },
+    recentAlbums(): Album[] {
+      return this.homeStore.albums.recent ?? []
+    },
+    // Placeholders only on a first visit; after that the last list stays
+    // up while the new one loads.
+    loadingNewest(): boolean {
+      return this.homeStore.albums.newest === null
+    },
+    loadingRecent(): boolean {
+      return this.homeStore.albums.recent === null
+    },
+    // The hero already offers the most recent album while nothing plays,
+    // so the tiles start with the one after it then.
+    recentTiles(): Album[] {
+      const heroShowsFirst = !this.playbackStore.currentSong && !this.playbackStore.radioStation
+      return heroShowsFirst ? this.recentAlbums.slice(1) : this.recentAlbums
+    },
+    topSongs(): Song[] {
+      return this.libraryStore.mostPlayedSongs
+    },
+    loadingTopSongs(): boolean {
+      return !this.catalogSettled && this.libraryStore.allSongs.length === 0
+    },
+    randomAlbums: {
+      get(): Album[] {
+        return this.homeStore.discoverAlbums
+      },
+      set(albums: Album[]) {
+        this.homeStore.discoverAlbums = albums
+      },
+    },
+    // Suggested artists that aren't in the library: the community
+    // similar-artist lookup by default (see rerollDiscover()), or the
+    // listener's own ListenBrainz recommendations when a name is set
+    // (see loadPersonalShelves()). Empty whenever the toggle's off, the
+    // lookup failed, or nothing new came back; the SimilarArtistsShelf
+    // component hides itself in all of those cases.
+    newArtistDiscoveries: {
+      get(): SimilarArtistDisplay[] {
+        return this.homeStore.discoverArtists
+      },
+      set(artists: SimilarArtistDisplay[]) {
+        this.homeStore.discoverArtists = artists
+      },
+    },
+    // True only once the personal recommendations actually filled the
+    // shelves — false both without a ListenBrainz name and when the feed
+    // came back empty (see loadPersonalShelves()'s fallback). Drives the
+    // Reroll buttons, which are pointless over a fixed personal set but
+    // still useful over the community one.
+    usingPersonalRecommendations: {
+      get(): boolean {
+        return this.homeStore.discoverPersonal
+      },
+      set(personal: boolean) {
+        this.homeStore.discoverPersonal = personal
+      },
+    },
+    // Which kind of lookup the Discover shelves would come from right now.
+    // Shelves kept from an earlier visit are only shown again while this
+    // still matches: switching recommendations off, or setting another
+    // ListenBrainz name, has to show its effect on the next visit.
+    discoverSource(): string {
+      if (this.personalized) {
+        return `listenbrainz:${this.listenbrainzStore.username.trim().toLowerCase()}`
+      }
+      return this.recommendationsStore.enabled ? 'similar' : 'random'
     },
     heroCoverId() {
       if (this.playbackStore.currentSong) return this.playbackStore.currentSong.coverArtId
@@ -418,44 +461,41 @@ export default {
     },
   },
   created() {
-    this.loadingFrequent = true
-    const frequentPromise = this.libraryStore.fetchFrequentAlbums(30)
-    frequentPromise
-      .then((albums) => (this.frequentAlbums = albums))
-      .finally(() => (this.loadingFrequent = false))
-
-    this.loadingNewest = true
-    this.libraryStore
-      .client()
-      .getAlbumList2('newest', 30)
-      .then((albums: Album[]) => (this.newestAlbums = albums))
-      .finally(() => (this.loadingNewest = false))
-
-    this.loadingRecent = true
-    this.libraryStore
-      .fetchRecentlyPlayedAlbums(30)
-      .then((albums) => (this.recentAlbums = albums))
-      .finally(() => (this.loadingRecent = false))
+    // No shelf of its own any more, only Discover's seeds.
+    const frequentPromise = this.refreshAlbums('frequent', () =>
+      this.libraryStore.fetchFrequentAlbums(30),
+    )
+    void this.refreshAlbums('newest', () => this.libraryStore.client().getAlbumList2('newest', 30))
+    void this.refreshAlbums('recent', () => this.libraryStore.fetchRecentlyPlayedAlbums(30))
 
     // fetchArtists() only to check which suggestions are already owned
     // (see rerollDiscover()/loadPersonalShelves()) — own cached request, a
     // no-op if some earlier view already populated it (matches
     // StatsView.vue's identical reasoning for its own topArtists artwork).
     this.libraryStore.fetchArtists()
-    // A ListenBrainz name with recommendations on switches both Discover
-    // shelves over to the listener's own recommendations, which are fixed
-    // per listener — nothing to seed from the library's play history, and
-    // nothing for the Reroll buttons to reroll (see `personalized`).
-    if (this.personalized) {
-      // Passed through so an empty personal set (a brand-new ListenBrainz
-      // account has no recommendations yet) can fall back to the same seed
-      // albums the community path would have used.
-      void this.loadPersonalShelves(frequentPromise)
-    } else {
-      // Reuses frequentPromise's own result to seed rerollDiscover()
-      // instead of each firing its own fetchFrequentAlbums() call — see
-      // that method's own `seedAlbums` param.
-      frequentPromise.then((albums) => this.rerollDiscover(albums))
+    // What an earlier visit found is shown again as it was - see
+    // stores/home.ts for why Discover is the one thing not redone.
+    if (this.homeStore.discoverSource !== this.discoverSource) {
+      // Nothing from another source carries over, the personal flag least
+      // of all: it would hide the Reroll buttons over community results.
+      this.randomAlbums = []
+      this.newArtistDiscoveries = []
+      this.usingPersonalRecommendations = false
+      // A ListenBrainz name with recommendations on switches both Discover
+      // shelves over to the listener's own recommendations, which are fixed
+      // per listener — nothing to seed from the library's play history, and
+      // nothing for the Reroll buttons to reroll (see `personalized`).
+      if (this.personalized) {
+        // Passed through so an empty personal set (a brand-new ListenBrainz
+        // account has no recommendations yet) can fall back to the same seed
+        // albums the community path would have used.
+        void this.loadPersonalShelves(frequentPromise)
+      } else {
+        // Reuses frequentPromise's own result to seed rerollDiscover()
+        // instead of each firing its own fetchFrequentAlbums() call — see
+        // that method's own `seedAlbums` param.
+        void frequentPromise.then((albums) => this.rerollDiscover(albums))
+      }
     }
 
     if (this.authStore.capabilities.playHistoryStats) {
@@ -463,13 +503,31 @@ export default {
       this.loadRediscover()
     }
 
-    this.loadingTopSongs = true
+    // Top songs are read off the catalogue (see mostPlayedSongs), usually
+    // already in memory or in the library cache.
     this.libraryStore
-      .fetchTopSongs(10)
-      .then((songs) => (this.topSongs = songs))
-      .finally(() => (this.loadingTopSongs = false))
+      .fetchAllSongs()
+      .catch((error) => console.error('[home] Song catalogue failed:', error))
+      .finally(() => (this.catalogSettled = true))
   },
   methods: {
+    /** Asks for one of Home's album lists and keeps the answer in
+     * stores/home.ts. A failure leaves whatever was showing; on a first
+     * visit it ends the placeholders on an empty shelf instead of leaving
+     * them up for good. */
+    async refreshAlbums(list: HomeAlbumList, fetch: () => Promise<Album[]>): Promise<Album[]> {
+      try {
+        this.homeStore.albums[list] = await fetch()
+      } catch (error) {
+        console.error(`[home] Loading the ${list} albums failed:`, error)
+        this.homeStore.albums[list] ??= []
+      }
+      return this.homeStore.albums[list] ?? []
+    },
+    /** The Discover shelves are now worth showing again on the next visit. */
+    rememberDiscover(): void {
+      this.homeStore.discoverSource = this.discoverSource
+    },
     // A random MAX_SEED_ARTISTS-sized sample of the distinct artist names
     // in `albums` — the frontend-side half of "seed from what's actually
     // been played", the backend half being core/recommendations.py's
@@ -551,11 +609,14 @@ export default {
       try {
         const albums = seedAlbums ?? this.frequentAlbums
         const seedNames = this.pickSeedArtistNames(albums, force)
+        let lookupFailed = false
         if (this.recommendationsStore.enabled && seedNames.length >= MIN_SEED_ARTISTS) {
           try {
             await this.discoverFromSimilarArtists(seedNames, only)
+            this.rememberDiscover()
             return
           } catch (error) {
+            lookupFailed = true
             console.error('[home] Similar-artist discover failed, falling back to random:', error)
           }
         }
@@ -567,6 +628,9 @@ export default {
           this.newArtistDiscoveries = only === null ? [] : this.newArtistDiscoveries
           this.randomAlbums = await this.libraryStore.fetchRandomAlbums(DISCOVER_SHELF_SIZE)
         }
+        // Stand-in albums for a failed lookup are not kept: the next visit
+        // tries the lookup again.
+        if (!lookupFailed) this.rememberDiscover()
       } finally {
         this.loadingDiscover = null
       }
@@ -751,6 +815,7 @@ export default {
         this.randomAlbums = albums
         this.newArtistDiscoveries = discoveries
         this.usingPersonalRecommendations = true
+        this.rememberDiscover()
       } catch (error) {
         console.error('[home] Personalized recommendations failed:', error)
       } finally {
@@ -838,16 +903,5 @@ export default {
 <style scoped>
 .home-view {
   padding-bottom: 24px;
-}
-
-/* A section's heading with its own play-all button beside it. */
-.home-view__section-head {
-  display: flex;
-  align-items: center;
-  margin-bottom: 16px;
-}
-
-.home-view__section {
-  margin-bottom: 40px;
 }
 </style>

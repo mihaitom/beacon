@@ -44,7 +44,7 @@ function stubLibrary() {
   vi.spyOn(library, 'fetchFrequentAlbums').mockResolvedValue([])
   vi.spyOn(library, 'fetchRecentlyPlayedAlbums').mockResolvedValue([])
   vi.spyOn(library, 'fetchRandomAlbums').mockResolvedValue([])
-  vi.spyOn(library, 'fetchTopSongs').mockResolvedValue([])
+  vi.spyOn(library, 'fetchAllSongs').mockResolvedValue()
   vi.spyOn(library, 'fetchArtists').mockResolvedValue()
   vi.spyOn(library, 'client').mockReturnValue({
     getAlbumList2: vi.fn().mockResolvedValue([]),
@@ -223,5 +223,22 @@ describe('HomeView personalized Discover', () => {
     expect(
       (wrapper.vm as unknown as { newArtistDiscoveries: unknown[] }).newArtistDiscoveries,
     ).toEqual([])
+  })
+
+  it('offers Reroll again on the next visit once the name has been removed', async () => {
+    useListenbrainzStore().setUsername('listener')
+    vi.mocked(getListenbrainzArtists).mockResolvedValue([{ name: 'New Act', mbid: 'n', score: 3 }])
+    ;(await mountHome()).unmount()
+    await flushPromises()
+
+    useListenbrainzStore().setUsername('')
+    vi.mocked(getSimilarArtists).mockResolvedValue([{ name: 'Community Act', mbid: 'c', score: 1 }])
+    const wrapper = await mountHome((library) => {
+      vi.spyOn(library, 'fetchFrequentAlbums').mockResolvedValue(seedAlbums())
+    })
+    await flushPromises()
+
+    expect(artistsShelf(wrapper)?.text()).toContain('Community Act')
+    expect(rerollButton(wrapper)?.exists()).toBe(true)
   })
 })

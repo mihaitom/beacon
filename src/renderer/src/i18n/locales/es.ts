@@ -95,7 +95,7 @@ export default {
     },
   },
   home: {
-    frequentlyPlayed: 'Reproducido con frecuencia',
+    playCount: '{n} reproducción | {n} reproducciones',
     topSongs: 'Canciones más reproducidas',
     recentlyAdded: 'Añadido recientemente',
     recentlyPlayed: 'Reproducido recientemente',

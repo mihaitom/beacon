@@ -28,6 +28,9 @@ import {
 // actually has more songs than that cap without duplicating the number.
 export const TOP_SONGS_LIMIT = 10
 
+// Two columns of five on Home.
+export const HOME_TOP_SONGS = 10
+
 // Dedupes concurrent fetchAllSongs() calls — fetchAlbum()'s derived path
 // (and things that fan out into many fetchAlbum() calls at once, like
 // fetchTopSongsForArtist()'s Promise.all) can all end up awaiting this at
@@ -480,6 +483,18 @@ export const useLibraryStore = defineStore('library', {
       }
       return counts
     },
+    /** Home's most played songs, from the catalogue rather than the
+     * server. There is no "most played songs" endpoint, and the stand-in
+     * this replaced - the songs on the twenty most played *albums* - cost
+     * 21 requests and missed a favourite on an album that is otherwise
+     * rarely played. notePlayed() counts a play here as it happens, so the
+     * list moves while the music does. */
+    mostPlayedSongs(state): Song[] {
+      return state.allSongs
+        .filter((song) => song.playCount > 0)
+        .sort((a, b) => b.playCount - a.playCount)
+        .slice(0, HOME_TOP_SONGS)
+    },
     loading: (state): boolean => state.loadingCount > 0,
     /** What "Add to playlist" offers. Not filtered by owner: Jellyfin and
      * Plex playlists carry none, and those are still the user's own. */
@@ -832,8 +847,9 @@ export const useLibraryStore = defineStore('library', {
     },
 
     /** For HomeView's shelves — each a thin wrapper over getAlbumList2's
-     * different sort types, not cached (Home is meant to feel current each
-     * visit, and "random"/"recent" would go stale if cached anyway). */
+     * different sort types. Asked afresh on every visit, since Home is meant
+     * to feel current; stores/home.ts only keeps the last answer on screen
+     * until the new one is in. */
     async fetchFrequentAlbums(size = 15): Promise<Album[]> {
       return this.withLoading(() => this.client().getAlbumList2('frequent', size))
     },
@@ -842,23 +858,6 @@ export const useLibraryStore = defineStore('library', {
     },
     async fetchRandomAlbums(size = 15): Promise<Album[]> {
       return this.withLoading(() => this.client().getAlbumList2('random', size))
-    },
-
-    /** Top songs across the whole library by local playCount. There's no
-     * "most played songs" Subsonic endpoint, so this samples from the
-     * frequently-played albums (already a playCount-sorted list) and
-     * aggregates their songs — cheap (a handful of albums, using the same
-     * fetchAlbum cache) compared to sorting the entire catalog for a
-     * homepage widget. */
-    async fetchTopSongs(limit = 10): Promise<Song[]> {
-      return this.withLoading(async () => {
-        const frequentAlbums = await this.client().getAlbumList2('frequent', 20)
-        const albums = await Promise.all(frequentAlbums.map((album) => this.fetchAlbum(album.id)))
-        return albums
-          .flatMap((album) => album.songs)
-          .sort((a, b) => b.playCount - a.playCount)
-          .slice(0, limit)
-      })
     },
 
     /** Home's Rediscover shelf. From the full catalogue rather than a

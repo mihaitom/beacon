@@ -91,7 +91,7 @@ export default {
     },
   },
   home: {
-    frequentlyPlayed: 'Oft gehört',
+    playCount: '{n} Wiedergabe | {n} Wiedergaben',
     topSongs: 'Meistgespielte Titel',
     recentlyAdded: 'Zuletzt hinzugefügt',
     recentlyPlayed: 'Zuletzt gehört',

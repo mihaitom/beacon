@@ -2,42 +2,86 @@
   <!-- AlbumCard.vue's shape for a single song: the cover plays it, the two
    - lines below lead to its album and artist. The song's own title links to
    - the album because a song has no page of its own. -->
-  <div class="song-card" @contextmenu.prevent="openMenu">
-    <div class="song-card-cover" @click="play">
-      <cover-art :cover-art-id="song.coverArtId" :size="160" />
-      <div class="song-card-play-overlay">
-        <v-icon icon="mdi-play-circle" size="40" />
+  <div
+    class="song-card"
+    :class="{ 'song-card--row': row }"
+    @click="row && play()"
+    @contextmenu.prevent="openMenu"
+  >
+    <!-- One line of a chart (Home's most played): the whole line plays, and
+     - the host puts a rank before it and a figure after it. The album is in
+     - the menu, as the title is taken by the click. -->
+    <template v-if="row">
+      <span class="song-card-row__lead"><slot name="lead" /></span>
+      <cover-art :cover-art-id="song.coverArtId" :size="40" class="song-card-row__cover" />
+      <div class="song-card-row__text">
+        <div class="song-card-row__title text-body-medium" :title="song.title">
+          {{ song.title }}
+        </div>
+        <router-link
+          v-if="song.artistId"
+          :to="`/artists/${song.artistId}`"
+          class="song-card-artist text-body-small text-medium-emphasis"
+          @click.stop
+        >
+          {{ song.artist }}
+        </router-link>
+        <div v-else class="song-card-artist text-body-small text-medium-emphasis">
+          {{ song.artist }}
+        </div>
       </div>
+      <span class="song-card-row__figure text-body-small text-medium-emphasis">
+        <slot name="figure" />
+      </span>
       <v-btn
         v-if="authStore.capabilities.favorites"
         :icon="song.starred ? 'mdi-heart' : 'mdi-heart-outline'"
         :color="song.starred ? 'primary' : undefined"
         size="small"
-        variant="flat"
-        class="song-card-star"
-        :class="{ 'song-card-star--visible': song.starred }"
+        variant="text"
+        class="song-card-row__star"
+        :class="{ 'song-card-row__star--visible': song.starred }"
         :title="$t(song.starred ? 'library.unstar' : 'library.star')"
         @click.stop="toggleStar"
       />
-    </div>
-    <router-link
-      v-if="song.albumId"
-      :to="`/albums/${song.albumId}`"
-      class="song-card-title text-body-medium"
-    >
-      {{ song.title }}
-    </router-link>
-    <div v-else class="song-card-title text-body-medium">{{ song.title }}</div>
-    <router-link
-      v-if="song.artistId"
-      :to="`/artists/${song.artistId}`"
-      class="song-card-artist text-body-small text-medium-emphasis"
-    >
-      {{ song.artist }}
-    </router-link>
-    <div v-else class="song-card-artist text-body-small text-medium-emphasis">
-      {{ song.artist }}
-    </div>
+    </template>
+    <template v-else>
+      <div class="song-card-cover" @click="play">
+        <cover-art :cover-art-id="song.coverArtId" :size="160" />
+        <div class="song-card-play-overlay">
+          <v-icon icon="mdi-play-circle" size="40" />
+        </div>
+        <v-btn
+          v-if="authStore.capabilities.favorites"
+          :icon="song.starred ? 'mdi-heart' : 'mdi-heart-outline'"
+          :color="song.starred ? 'primary' : undefined"
+          size="small"
+          variant="flat"
+          class="song-card-star"
+          :class="{ 'song-card-star--visible': song.starred }"
+          :title="$t(song.starred ? 'library.unstar' : 'library.star')"
+          @click.stop="toggleStar"
+        />
+      </div>
+      <router-link
+        v-if="song.albumId"
+        :to="`/albums/${song.albumId}`"
+        class="song-card-title text-body-medium"
+      >
+        {{ song.title }}
+      </router-link>
+      <div v-else class="song-card-title text-body-medium">{{ song.title }}</div>
+      <router-link
+        v-if="song.artistId"
+        :to="`/artists/${song.artistId}`"
+        class="song-card-artist text-body-small text-medium-emphasis"
+      >
+        {{ song.artist }}
+      </router-link>
+      <div v-else class="song-card-artist text-body-small text-medium-emphasis">
+        {{ song.artist }}
+      </div>
+    </template>
     <!-- SongRow.vue's menu for one song, minus what only a table has
      - (selection, removing from a playlist). -->
     <tile-context-menu ref="menu">
@@ -111,6 +155,11 @@ export default {
     song: {
       type: Object as () => Song,
       required: true,
+    },
+    // One line of a list instead of a card - see the template.
+    row: {
+      type: Boolean,
+      default: false,
     },
   },
   data() {
@@ -278,5 +327,64 @@ a.song-card-artist:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* AlbumCard.vue's row geometry, with a rank in front. */
+.song-card--row {
+  width: 100%;
+  height: 56px;
+  display: grid;
+  grid-template-columns: 24px 40px minmax(0, 1fr) auto 40px;
+  align-items: center;
+  gap: 14px;
+  padding: 0 4px 0 8px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.song-card--row:hover {
+  background: var(--beacon-hover);
+}
+
+.song-card-row__lead {
+  display: flex;
+  justify-content: flex-end;
+  font-variant-numeric: tabular-nums;
+}
+
+.song-card-row__text {
+  min-width: 0;
+}
+
+.song-card-row__title {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.song-card--row:hover .song-card-row__title {
+  color: rgb(var(--v-theme-primary));
+}
+
+.song-card-row__figure {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Shown on hover and once set, like AlbumCard.vue's row. */
+.song-card-row__star {
+  opacity: 0;
+}
+
+.song-card--row:hover .song-card-row__star,
+.song-card-row__star--visible {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .song-card-row__star {
+    opacity: 1;
+  }
 }
 </style>

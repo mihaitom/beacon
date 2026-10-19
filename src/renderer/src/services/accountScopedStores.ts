@@ -44,6 +44,7 @@ import {
 import { useAutoplayStore } from '@/stores/autoplay'
 import { useSongColumnsStore } from '@/stores/songColumns'
 import { usePlaylistSummariesStore } from '@/stores/playlistSummaries'
+import { useHomeStore } from '@/stores/home'
 import { useRadioStationInfoStore } from '@/stores/radioStationInfo'
 import { OPTIONAL_SONG_COLUMNS, type SongColumnKey } from '@/services/library/songColumns'
 import { parseLocale } from '@/i18n'
@@ -137,6 +138,7 @@ export function initAccountScopedStores(): void {
     // previous one's cache.
     clearCoverArtCache()
     usePlaylistSummariesStore().reset()
+    useHomeStore().reset()
     useRadioStationInfoStore().reset()
     useUpdateStore().reload()
     usePlaybackStore().reloadAccountScoped()
