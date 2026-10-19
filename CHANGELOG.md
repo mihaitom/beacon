@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Casting to a Sonos Play:3 plays tracks through instead of jumping back to the start about every 50 seconds (reported by @mjj042, #56)
 - Signing in says why it failed: a server that is busy, unreachable, behind a login page or has a certificate problem no longer reads as a wrong password
 - On a light theme, the "Albums" heading on an artist's page is readable again instead of sitting on the edge of the dark header
+- The right-click menu of an artist or album without artwork no longer ends in an empty "Details" heading
 
 ## [1.9.0] - 2026-10-18
 

@@ -91,11 +91,15 @@
         <template #prepend><v-icon icon="mdi-radio-tower" size="small" /></template>
         <v-list-item-title>{{ $t('library.artistRadio') }}</v-list-item-title>
       </v-list-item>
-      <context-menu-section :label="$t('library.menuDetails')" />
-      <v-list-item v-if="hasArtwork" @click="showArtwork">
-        <template #prepend><v-icon icon="mdi-image-outline" size="small" /></template>
-        <v-list-item-title>{{ $t('library.showArtwork') }}</v-list-item-title>
-      </v-list-item>
+      <!-- Artwork is the section's only entry, so without it the heading
+         - would stand over nothing. -->
+      <template v-if="hasArtwork">
+        <context-menu-section :label="$t('library.menuDetails')" />
+        <v-list-item @click="showArtwork">
+          <template #prepend><v-icon icon="mdi-image-outline" size="small" /></template>
+          <v-list-item-title>{{ $t('library.showArtwork') }}</v-list-item-title>
+        </v-list-item>
+      </template>
     </tile-context-menu>
   </div>
 </template>

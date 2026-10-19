@@ -115,11 +115,15 @@
         <template #prepend><v-icon icon="mdi-account-music" size="small" /></template>
         <v-list-item-title>{{ $t('library.goToArtist') }}</v-list-item-title>
       </v-list-item>
-      <context-menu-section :label="$t('library.menuDetails')" />
-      <v-list-item v-if="album.coverArtId" @click="showArtwork">
-        <template #prepend><v-icon icon="mdi-image-outline" size="small" /></template>
-        <v-list-item-title>{{ $t('library.showArtwork') }}</v-list-item-title>
-      </v-list-item>
+      <!-- Artwork is the section's only entry, so without it the heading
+         - would stand over nothing. -->
+      <template v-if="album.coverArtId">
+        <context-menu-section :label="$t('library.menuDetails')" />
+        <v-list-item @click="showArtwork">
+          <template #prepend><v-icon icon="mdi-image-outline" size="small" /></template>
+          <v-list-item-title>{{ $t('library.showArtwork') }}</v-list-item-title>
+        </v-list-item>
+      </template>
     </tile-context-menu>
     <create-playlist-dialog ref="createDialog" />
   </div>
