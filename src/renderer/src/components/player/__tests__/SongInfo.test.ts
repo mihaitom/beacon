@@ -80,11 +80,11 @@ describe('SongInfo', () => {
       const { wrapper, router } = await mountWithSong()
 
       await wrapper.get('.song-info').trigger('click')
-      // $router.push() isn't awaited by the click handler itself — give
-      // the router's own async navigation a tick to actually land.
-      await flushPromises()
 
-      expect(router.currentRoute.value.path).toBe('/now-playing')
+      // $router.push() isn't awaited by the click handler, and the menu's
+      // overlay holds every navigation for a timer (Vuetify's back-button
+      // guard), so no fixed number of ticks lands it.
+      await vi.waitFor(() => expect(router.currentRoute.value.path).toBe('/now-playing'))
     })
 
     it('star button toggles the current song via the library store', async () => {
@@ -99,6 +99,51 @@ describe('SongInfo', () => {
 
       expect(toggleStarSpy).toHaveBeenCalledWith({ id: 'a', starred: false })
       expect(wrapper.find('.mdi-heart').exists()).toBe(true)
+    })
+  })
+
+  describe('its menu', () => {
+    async function openMenuForSong() {
+      const mounted = await mountInfo()
+      const song = makeSong('a', { title: 'Track A', rating: 2 })
+      usePlaybackStore().setQueue([song], 0)
+      await mounted.wrapper.vm.$nextTick()
+      // Opening the menu warms up the playlist list for its submenu.
+      vi.spyOn(useLibraryStore(), 'fetchPlaylists').mockResolvedValue()
+      await mounted.wrapper.get('.song-info__more').trigger('click')
+      await flushPromises()
+      return { ...mounted, song: usePlaybackStore().currentSong! }
+    }
+
+    it('rates the playing song from its stars', async () => {
+      const { wrapper, song } = await openMenuForSong()
+      const setRating = vi.spyOn(useLibraryStore(), 'setRating').mockResolvedValue()
+
+      wrapper.findComponent({ name: 'VRating' }).vm.$emit('update:modelValue', 4)
+      await flushPromises()
+
+      expect(setRating).toHaveBeenCalledWith('a', 4)
+      expect(song.rating).toBe(4)
+    })
+
+    it('puts the old rating back when the server refuses the new one', async () => {
+      const { wrapper, song } = await openMenuForSong()
+      vi.spyOn(useLibraryStore(), 'setRating').mockRejectedValue(new Error('nope'))
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      wrapper.findComponent({ name: 'VRating' }).vm.$emit('update:modelValue', 5)
+      await flushPromises()
+
+      expect(song.rating).toBe(2)
+    })
+
+    it('leaves the right-click alone with nothing to act on', async () => {
+      const { wrapper } = await mountInfo()
+      const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true })
+
+      wrapper.get('.song-info').element.dispatchEvent(event)
+
+      expect(event.defaultPrevented).toBe(false)
     })
   })
 

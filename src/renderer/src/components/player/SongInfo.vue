@@ -10,6 +10,7 @@
     class="song-info"
     :class="{ 'song-info--clickable': hasPlayable }"
     @click="hasPlayable && $router.push('/now-playing')"
+    @contextmenu="onContextMenu"
   >
     <cover-art v-if="currentSong" :cover-art-id="currentSong.coverArtId" :size="48" class="cover" />
     <cover-art
@@ -57,18 +58,78 @@
       </div>
       <div v-else class="text-body-small text-medium-emphasis" />
     </div>
-    <v-btn
-      v-if="currentSong && authStore.capabilities.favorites"
-      class="song-info__favorite"
-      :icon="currentSong.starred ? 'mdi-heart' : 'mdi-heart-outline'"
-      :color="currentSong.starred ? 'primary' : undefined"
-      :disabled="starringInFlight"
-      variant="text"
-      density="comfortable"
-      :title="favoriteTitle"
-      :aria-label="favoriteTitle"
-      @click.stop="toggleStar"
-    />
+    <div v-if="currentSong" class="song-info__actions">
+      <v-btn
+        v-if="authStore.capabilities.favorites"
+        :icon="currentSong.starred ? 'mdi-heart' : 'mdi-heart-outline'"
+        :color="currentSong.starred ? 'primary' : undefined"
+        :disabled="starringInFlight"
+        variant="text"
+        density="comfortable"
+        :title="favoriteTitle"
+        :aria-label="favoriteTitle"
+        @click.stop="toggleStar"
+      />
+      <!-- The same menu a right-click opens, for anyone who doesn't think
+         - to right-click a player bar. -->
+      <v-btn
+        class="song-info__more"
+        icon="mdi-dots-vertical"
+        variant="text"
+        density="comfortable"
+        size="small"
+        :title="$t('common.moreActions')"
+        :aria-label="$t('common.moreActions')"
+        @click.stop="openMenu"
+      />
+    </div>
+    <!-- SongCard.vue's menu, minus the queue entries: this song is the one
+     - already playing. The stars live here rather than in the bar, which
+     - has no room for five more targets beside the heart (#55). -->
+    <tile-context-menu v-if="currentSong" ref="menu">
+      <context-menu-section
+        v-if="authStore.capabilities.songRadio"
+        :label="$t('library.menuPlayback')"
+      />
+      <v-list-item v-if="authStore.capabilities.songRadio" @click="startSongRadio">
+        <template #prepend><v-icon icon="mdi-radio-tower" size="small" /></template>
+        <v-list-item-title>{{ $t('library.songRadio') }}</v-list-item-title>
+      </v-list-item>
+      <context-menu-section :label="$t('library.menuLibrary')" />
+      <div v-if="authStore.capabilities.personalRating" class="song-info__rating">
+        <v-rating
+          :model-value="currentSong.rating"
+          length="5"
+          size="small"
+          density="compact"
+          active-color="primary"
+          hover
+          clearable
+          :aria-label="$t('library.rating')"
+          @update:model-value="setRating"
+        />
+      </div>
+      <add-to-playlist-submenu @create="createPlaylist" @select="addToPlaylist" />
+      <context-menu-section :label="$t('library.menuNavigation')" />
+      <v-list-item v-if="currentSong.albumId" :to="`/albums/${currentSong.albumId}`">
+        <template #prepend><v-icon icon="mdi-album" size="small" /></template>
+        <v-list-item-title>{{ $t('library.goToAlbum') }}</v-list-item-title>
+      </v-list-item>
+      <v-list-item v-if="currentSong.artistId" :to="`/artists/${currentSong.artistId}`">
+        <template #prepend><v-icon icon="mdi-account-music" size="small" /></template>
+        <v-list-item-title>{{ $t('library.goToArtist') }}</v-list-item-title>
+      </v-list-item>
+      <context-menu-section :label="$t('library.menuDetails')" />
+      <v-list-item v-if="currentSong.coverArtId" @click="showArtwork">
+        <template #prepend><v-icon icon="mdi-image-outline" size="small" /></template>
+        <v-list-item-title>{{ $t('library.showArtwork') }}</v-list-item-title>
+      </v-list-item>
+      <v-list-item @click="showInfo">
+        <template #prepend><v-icon icon="mdi-information-outline" size="small" /></template>
+        <v-list-item-title>{{ $t('library.songInfo') }}</v-list-item-title>
+      </v-list-item>
+    </tile-context-menu>
+    <create-playlist-dialog ref="createDialog" />
   </div>
 </template>
 
@@ -79,12 +140,24 @@ import { useRadioMetadataStore } from '@/stores/radioMetadata'
 import { useLibraryStore } from '@/stores/library'
 import { useAuthStore } from '@/stores/auth'
 import { radioFaviconRequest, type RadioFaviconRequest } from '@/services/connect/radio'
+import { emitter } from '@/emitter'
 import CoverArt from '@/components/library/CoverArt.vue'
+import TileContextMenu from '@/components/library/TileContextMenu.vue'
+import ContextMenuSection from '@/components/library/ContextMenuSection.vue'
+import AddToPlaylistSubmenu from '@/components/library/AddToPlaylistSubmenu.vue'
+import CreatePlaylistDialog from '@/components/library/CreatePlaylistDialog.vue'
 import PreviewStatus from './PreviewStatus.vue'
 
 export default {
   name: 'SongInfo',
-  components: { CoverArt, PreviewStatus },
+  components: {
+    CoverArt,
+    PreviewStatus,
+    TileContextMenu,
+    ContextMenuSection,
+    AddToPlaylistSubmenu,
+    CreatePlaylistDialog,
+  },
   data() {
     return {
       starringInFlight: false,
@@ -127,6 +200,70 @@ export default {
     onLabelsClick(event: MouseEvent) {
       if (!this.currentSong) event.stopPropagation()
     },
+    /** Radio and the idle bar keep the browser's own menu: there is no
+     * song to act on. */
+    onContextMenu(event: MouseEvent) {
+      if (!this.currentSong) return
+      event.preventDefault()
+      this.openMenu(event)
+    },
+    openMenu(event: MouseEvent) {
+      const menu = this.$refs.menu as { open: (event: MouseEvent) => void } | undefined
+      menu?.open(event)
+      // Same eager warm-up as SongRow.vue's openMenu().
+      if (useLibraryStore().playlists.length === 0) {
+        void useLibraryStore().fetchPlaylists()
+      }
+    },
+    /** Rates the song the menu was opened for, optimistically like
+     * SongTable.vue's setRating(). Held on to, not re-read from the store:
+     * the track can change during the round trip. */
+    async setRating(value: number | string) {
+      const song = this.currentSong
+      if (!song) return
+      const library = useLibraryStore()
+      const previous = song.rating
+      library.markRating(song, Number(value))
+      try {
+        await library.setRating(song.id, Number(value))
+      } catch (error) {
+        library.markRating(song, previous)
+        console.error('[song-info] Failed to set rating:', error)
+      }
+    },
+    async startSongRadio() {
+      if (!this.currentSong) return
+      try {
+        await this.playbackStore.startSongRadio(this.currentSong)
+      } catch (error) {
+        emitter.emit('toast', {
+          level: 'error',
+          title: this.$t('library.songRadio'),
+          message: this.$t('library.songRadioError'),
+        })
+        console.error('[song-radio]', error)
+      }
+    },
+    async addToPlaylist(playlistId: string) {
+      if (!this.currentSong) return
+      await useLibraryStore().addToPlaylist(playlistId, [this.currentSong.id])
+    },
+    createPlaylist() {
+      if (!this.currentSong) return
+      const dialog = this.$refs.createDialog as { open: (ids: string[]) => void } | undefined
+      dialog?.open([this.currentSong.id])
+    },
+    showArtwork() {
+      if (!this.currentSong) return
+      emitter.emit('showArtwork', {
+        coverArtId: this.currentSong.coverArtId,
+        title: this.currentSong.title,
+        subtitle: this.currentSong.album || this.currentSong.artist,
+      })
+    },
+    showInfo() {
+      if (this.currentSong) emitter.emit('showSongInfo', this.currentSong)
+    },
     async toggleStar() {
       if (!this.currentSong || this.starringInFlight) return
       this.starringInFlight = true
@@ -141,8 +278,16 @@ export default {
 </script>
 
 <style scoped>
-.song-info__favorite {
-  margin-inline: 8px;
+.song-info__actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  margin-inline: 8px 0;
+}
+
+/* Lined up with the menu items' own text, see ContextMenuSection.vue. */
+.song-info__rating {
+  padding: 2px 12px 6px;
 }
 
 /* Fills its grid track rather than sitting at a fixed 300px inside it.
