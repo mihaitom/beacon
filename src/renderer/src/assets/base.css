@@ -258,6 +258,27 @@ body {
   margin-bottom: 0;
 }
 
+/* Every pill in a filter row - the field, a sort select, .beacon-view-toggle -
+ * on one flat surface. Vuetify's solo field brought a shadow and tinted itself
+ * with its overlay, so the field read as a different kind of control from
+ * the toggle beside it. Focus shows as an amber ring instead of the shadow. */
+.library-filter .v-field {
+  background: color-mix(in srgb, rgb(var(--v-theme-on-surface)) 4%, rgb(var(--v-theme-surface)));
+  box-shadow: none;
+}
+
+.library-filter .v-field__overlay {
+  opacity: 0;
+}
+
+.library-filter .v-field:hover .v-field__overlay {
+  opacity: 0.04;
+}
+
+.library-filter .v-field--focused {
+  box-shadow: 0 0 0 2px rgba(var(--v-theme-primary), 0.35);
+}
+
 /* A grid/list switch in a filter row (Albums, Artists): the same 40px pill
  * and surface as the search field and the sort select beside it, the shown
  * layout picked out in amber like a selected segment. Vuetify's own toggle

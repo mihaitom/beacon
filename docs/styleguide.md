@@ -505,6 +505,16 @@ middle of an empty band. Under the band, the filter row's fields carry
 `hide-details`, so nothing but the sticky row's own padding separates the
 band from the list.
 
+Everything in a filter row is a flat 40px pill on one surface
+(`.library-filter .v-field` in `base.css`): the field (`rounded="pill"`,
+`flat`, its name as a placeholder rather than a label that would float up
+inside the pill), a sort select, the view toggle. Exact spelling is an "Aa"
+toggle in the field's end (`<exact-match-switch />` in `#append-inner`),
+amber when on like a selected toggle segment - it belongs to the search, so
+it does not stand beside it as a labelled switch. The top bar's search
+carries the same toggle; the results page has none of its own and searches
+again when the setting changes.
+
 Scrollbars are hidden app-wide (`base.css`) - scrolling still works, only the
 chrome is gone. A scroll region therefore has to look scrollable on its own.
 

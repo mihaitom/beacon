@@ -22,6 +22,7 @@
         <kbd v-if="!focused && !query" class="top-bar-search__hint" aria-hidden="true">
           {{ shortcutHint }}
         </kbd>
+        <exact-match-switch class="top-bar-search__exact" />
       </template>
     </v-text-field>
   </form>
@@ -29,6 +30,7 @@
 
 <script lang="ts">
 import { emitter } from '@/emitter'
+import ExactMatchSwitch from '@/components/library/ExactMatchSwitch.vue'
 
 // Always a field, not an icon that turns into one: search is the most used
 // way into a library this size, and a bare magnifier in an otherwise empty
@@ -37,6 +39,7 @@ import { emitter } from '@/emitter'
 // live-as-you-type results, see SearchView.vue) once submitted.
 export default {
   name: 'TopBarSearch',
+  components: { ExactMatchSwitch },
   data() {
     return {
       query: '',
@@ -112,6 +115,10 @@ export default {
 
 .top-bar-search__field :deep(.v-field--focused) {
   background: rgba(var(--v-theme-on-surface), 0.1);
+}
+
+.top-bar-search__exact {
+  margin-left: 6px;
 }
 
 .top-bar-search__hint {

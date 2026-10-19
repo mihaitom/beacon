@@ -34,15 +34,19 @@
       <div class="library-filter">
         <v-text-field
           v-model="filterQuery"
-          :label="$t('search.label')"
+          :placeholder="$t('search.label')"
+          :aria-label="$t('search.label')"
           prepend-inner-icon="mdi-magnify"
           variant="solo-filled"
           density="compact"
+          rounded="pill"
+          flat
           clearable
           hide-details
           class="library-search"
-        />
-        <exact-match-switch />
+        >
+          <template #append-inner><exact-match-switch /></template>
+        </v-text-field>
       </div>
     </sticky-filter>
 

@@ -1,13 +1,6 @@
 <template>
   <v-container fluid>
-    <!-- The exact-match switch lives with the heading rather than in the top
-       - bar: the top bar is where a search is typed, but whether it came back
-       - too broad is only visible here, and turning it on re-runs the search
-       - in place. -->
-    <div v-if="query" class="search-head">
-      <h1 class="page-title search-head__title">{{ $t('search.resultsFor', { query }) }}</h1>
-      <exact-match-switch class="search-head__exact" @change="rerunSearch" />
-    </div>
+    <h1 v-if="query" class="page-title">{{ $t('search.resultsFor', { query }) }}</h1>
 
     <!-- Shelves, the same shape Home and the favorites page use, rather
      - than a list and a wrapping grid. A search for a common word can
@@ -82,7 +75,6 @@ import EmptyState from '@/components/EmptyState.vue'
 import AlbumCard from '@/components/library/AlbumCard.vue'
 import ArtistCard from '@/components/library/ArtistCard.vue'
 import CardShelf from '@/components/library/CardShelf.vue'
-import ExactMatchSwitch from '@/components/library/ExactMatchSwitch.vue'
 import SongTable from '@/components/library/SongTable.vue'
 import { readCardGridView, writeCardGridView } from '@/services/cardGridView'
 
@@ -97,7 +89,7 @@ const GRID_VIEW_KEY: Record<CardSection, string> = {
 
 export default {
   name: 'SearchView',
-  components: { EmptyState, AlbumCard, ArtistCard, CardShelf, ExactMatchSwitch, SongTable },
+  components: { EmptyState, AlbumCard, ArtistCard, CardShelf, SongTable },
   data() {
     return {
       query: '',
@@ -130,6 +122,12 @@ export default {
     // search() directly) would only ever pick up the very first query,
     // silently doing nothing for every search after that.
     '$route.query.q': 'syncFromRoute',
+    // The exact-spelling toggle sits in the top bar's field (and every
+    // library filter's), which only store the choice; the results on screen
+    // have to be asked for again with it.
+    'libraryStore.searchExact'() {
+      if (this.query) this.libraryStore.search(this.query)
+    },
   },
   methods: {
     setGridView(section: CardSection, value: boolean) {
@@ -141,11 +139,6 @@ export default {
       this.query = this.$route.query.q
       this.libraryStore.search(this.query)
     },
-    /** The switch itself stores the choice (see ExactMatchSwitch.vue); the
-     * result list has to be asked for again with it. */
-    rerunSearch() {
-      this.libraryStore.search(this.query)
-    },
   },
 }
 </script>
@@ -155,23 +148,6 @@ export default {
  * results per kind of match. */
 .page-title {
   margin-bottom: 16px;
-}
-
-/* The heading and the exact-match switch on one line, the switch to the far
- * side; on a narrow window it wraps under the heading rather than squeezing
- * it. The margin the heading normally carries moves here, so the two stay one
- * block. */
-.search-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 8px 16px;
-  margin-bottom: 16px;
-}
-
-.search-head__title {
-  margin-bottom: 0;
 }
 
 .section-title {

@@ -98,19 +98,16 @@ describe('SearchView reacting to the route', () => {
   })
 })
 
-describe('SearchView exact-match switch', () => {
-  it('stores the choice and re-runs the search when toggled', async () => {
-    const { wrapper, store } = await mountSearchView('/search?q=players')
-    const setExact = vi.spyOn(store, 'setSearchExact')
+describe('SearchView exact spelling', () => {
+  it('asks for the results again when the preference changes', async () => {
+    const { store } = await mountSearchView('/search?q=players')
+    vi.mocked(store.search).mockClear()
 
-    // The switch itself lives in ExactMatchSwitch.vue; this drives its inner
-    // Vuetify switch the way a click would.
-    wrapper.findComponent({ name: 'VSwitch' }).vm.$emit('update:modelValue', true)
+    // The toggle lives in the top bar's field and only stores the choice;
+    // the results on screen still belong to the old setting.
+    store.setSearchExact(!store.searchExact)
     await flushPromises()
 
-    expect(setExact).toHaveBeenCalledWith(true)
-    // The switch only holds the choice; the result list has to be asked for
-    // again with it.
     expect(store.search).toHaveBeenCalledWith('players')
   })
 })

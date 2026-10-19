@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createRouter, createMemoryHistory, type Router } from 'vue-router'
+import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
@@ -40,6 +41,7 @@ async function mountSearch(startRoute = '/') {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  setActivePinia(createPinia())
 })
 
 /** Swapped in for the real field's blur: the real one ends up in jsdom's

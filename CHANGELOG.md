@@ -12,6 +12,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Songs can be rated with stars from their right-click menu everywhere, in lists, on tiles and in the queue. The song in the player bar has that menu too, behind a right-click or the ⋮ next to the heart (requested by @mjj042, #55)
 - Casting to a Sonos that has repeat on in the Sonos app says so and can switch it off: it made every song start over for a moment at its end, and repeat in Beacon works without it
 
+### Changed
+
+- The search row above the library pages is calmer: the search field matches the controls beside it, and exact spelling is an "Aa" button inside the field instead of a switch next to it. The search in the top bar has the same button, so the switch on the results page is gone
+
 ### Fixed
 
 - Casting to a Sonos Play:3 plays tracks through instead of jumping back to the start about every 50 seconds (reported by @mjj042, #56)
