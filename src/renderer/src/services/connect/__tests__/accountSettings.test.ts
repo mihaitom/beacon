@@ -46,6 +46,58 @@ describe('accountSettings', () => {
       })
     })
 
+    /** Pulling the settings applies each through its setter, which pushes
+     * it back - that echo must not write anything. */
+    it('sends nothing for a value the server already holds', async () => {
+      vi.mocked(fetchConnect).mockResolvedValueOnce({ fanartEnabled: true, songColumns: ['bpm'] })
+      await fetchAccountSettings()
+
+      await pushAccountSettings({ fanartEnabled: true })
+      await pushAccountSettings({ songColumns: ['bpm'] })
+
+      expect(fetchConnect).toHaveBeenCalledTimes(1)
+    })
+
+    it('takes an object setting in another key order for the same value', async () => {
+      vi.mocked(fetchConnect).mockResolvedValueOnce({
+        transitions: { mode: 'gapless', crossfadeSeconds: 6, beatmixBars: 8 },
+      })
+      await fetchAccountSettings()
+
+      await pushAccountSettings({
+        transitions: { beatmixBars: 8, crossfadeSeconds: 6, mode: 'gapless' },
+      })
+
+      expect(fetchConnect).toHaveBeenCalledTimes(1)
+    })
+
+    it('sends only the fields that differ, and remembers what it sent', async () => {
+      vi.mocked(fetchConnect).mockResolvedValueOnce({
+        castRadioDirectly: false,
+        fanartEnabled: true,
+      })
+      await fetchAccountSettings()
+
+      await pushAccountSettings({ castRadioDirectly: true, fanartEnabled: true })
+      await pushAccountSettings({ castRadioDirectly: true })
+
+      expect(fetchConnect).toHaveBeenCalledTimes(2)
+      const [, options] = vi.mocked(fetchConnect).mock.calls[1]!
+      expect((options as { body: { settings: unknown } }).body.settings).toEqual({
+        castRadioDirectly: true,
+      })
+    })
+
+    it("does not take one account's settings for another's", async () => {
+      vi.mocked(fetchConnect).mockResolvedValueOnce({ recommendationsEnabled: true })
+      await fetchAccountSettings()
+      useAuthStore().username = 'carol'
+
+      await pushAccountSettings({ recommendationsEnabled: true })
+
+      expect(fetchConnect).toHaveBeenCalledTimes(2)
+    })
+
     it('only names the field it was actually asked to change', async () => {
       await pushAccountSettings({ recommendationsEnabled: false })
 

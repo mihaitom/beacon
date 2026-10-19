@@ -57,7 +57,7 @@ import { clearCoverArtCache } from '@/services/connect/coverArtBatch'
  * sanitization every local change already gets also applies to a value
  * that came off the wire (from an older/newer build, or a hand-edited
  * account_settings.json), and so the resulting pushAccountSettings() call
- * each setter makes is just a harmless no-op merge of the same value the
+ * each setter makes sends nothing at all - it leaves out a value the
  * server just sent. Server wins for whichever fields it actually has; a
  * field it's never seen (first sync ever) leaves the local value exactly
  * as it was rather than overwriting it with nothing — see the plan's own
