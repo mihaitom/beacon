@@ -459,6 +459,8 @@ export default {
     serverLoadCasting: 'Load the queue saved on the server - not while casting',
     serverEmpty: 'There is no queue saved on the server.',
     serverLoadFailed: 'The server could not be reached.',
+    serverLoadCurrent: 'This queue is already the one saved on the server',
+    serverLoadEmpty: 'There is no queue saved on the server',
   },
   party: {
     copied: 'Copied',

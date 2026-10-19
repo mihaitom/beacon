@@ -64,7 +64,7 @@ import {
   savePersisted,
   writeSessionWasPlaying,
 } from '@/services/playback/persistence'
-import { markQueueRestored } from '@/services/playback/serverQueueSync'
+import { markQueueReplaced, markQueueRestored } from '@/services/playback/serverQueueSync'
 
 // Re-exported for stores/auth.ts's logout, which has always reached for it
 // here — see persistence.ts for what it does.
@@ -1249,6 +1249,7 @@ export const usePlaybackStore = defineStore('playback', {
      * shuffle only kicking in from the second song onward. */
     setQueue(songs: Song[], startIndex = 0, pinFirst = true): void {
       this.leaveRadio()
+      markQueueReplaced()
       // A different queue is a different question, even where its last song
       // happens to be one Autoplay gave up on before.
       autoplayExhaustedSeedIds.clear()

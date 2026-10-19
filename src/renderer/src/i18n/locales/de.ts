@@ -463,6 +463,8 @@ export default {
       'Auf dem Server gespeicherte Warteschlange laden - nicht während des Castens',
     serverEmpty: 'Auf dem Server ist keine Warteschlange gespeichert.',
     serverLoadFailed: 'Der Server war nicht erreichbar.',
+    serverLoadCurrent: 'Diese Warteschlange ist schon die auf dem Server gespeicherte',
+    serverLoadEmpty: 'Auf dem Server ist keine Warteschlange gespeichert',
   },
   party: {
     copied: 'Kopiert',

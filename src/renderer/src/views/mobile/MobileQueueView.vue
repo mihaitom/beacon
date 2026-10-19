@@ -7,8 +7,8 @@
         icon="mdi-cloud-download-outline"
         variant="text"
         size="small"
-        :disabled="playbackStore.isCasting"
-        :title="playbackStore.isCasting ? $t('queue.serverLoadCasting') : $t('queue.serverLoad')"
+        :disabled="serverQueueLoad !== 'ready'"
+        :title="$t(SERVER_QUEUE_LOAD_TITLES[serverQueueLoad])"
         @click="loadServerQueue"
       />
       <v-btn
@@ -67,7 +67,13 @@
 <script lang="ts">
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
-import { loadServerQueue } from '@/services/playback/serverQueueSync'
+import {
+  loadServerQueue,
+  refreshServerQueueState,
+  serverQueueLoadState,
+  SERVER_QUEUE_LOAD_TITLES,
+  type ServerQueueLoadState,
+} from '@/services/playback/serverQueueSync'
 import EmptyState from '@/components/EmptyState.vue'
 import MobileQueueRow from '@/components/mobile/MobileQueueRow.vue'
 import MobileSongActionSheet from '@/components/mobile/MobileSongActionSheet.vue'
@@ -154,9 +160,16 @@ export default {
     authStore() {
       return useAuthStore()
     },
+    SERVER_QUEUE_LOAD_TITLES: () => SERVER_QUEUE_LOAD_TITLES,
+    serverQueueLoad(): ServerQueueLoadState {
+      return serverQueueLoadState()
+    },
     actionsIndex(): number {
       return this.actionsSong ? this.playbackStore.queue.indexOf(this.actionsSong) : -1
     },
+  },
+  created() {
+    void refreshServerQueueState()
   },
   beforeUnmount() {
     this.edgeScroller?.stop()

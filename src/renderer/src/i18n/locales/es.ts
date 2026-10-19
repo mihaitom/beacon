@@ -465,6 +465,8 @@ export default {
     serverLoadCasting: 'Cargar la cola guardada en el servidor - no durante la transmisión',
     serverEmpty: 'No hay ninguna cola guardada en el servidor.',
     serverLoadFailed: 'No se pudo conectar con el servidor.',
+    serverLoadCurrent: 'Esta cola ya es la guardada en el servidor',
+    serverLoadEmpty: 'No hay ninguna cola guardada en el servidor',
   },
   party: {
     copied: 'Copiado',

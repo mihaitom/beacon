@@ -7,9 +7,16 @@ vi.mock('@/services/audioEngine', () => ({
   getAudioEngine: () => ({ load: vi.fn(), play: vi.fn(), stop: vi.fn(), pause: vi.fn() }),
 }))
 
+/** A Navidrome holding one queue: what Beacon saves lands here, and
+ * another app's save is a test setting `queue` itself. */
+interface FakeServer {
+  queue: ServerPlayQueue | null
+}
+
 // The module keeps what it has saved and restored between calls, so each
-// test gets a fresh copy of it - and of the stores it reads.
-async function load() {
+// test gets a fresh copy of it - and of the stores it reads. Passing the
+// previous instance's server along is a restart of the app.
+async function load(server: FakeServer = { queue: null }) {
   vi.resetModules()
   const sync = await import('../serverQueueSync')
   const { usePlaybackStore } = await import('@/stores/playback')
@@ -25,8 +32,16 @@ async function load() {
   auth.authenticated = true
   const client = {
     getOpenSubsonicExtensions: vi.fn(async () => new Set(['indexBasedQueue'])),
-    getPlayQueue: vi.fn(async (): Promise<ServerPlayQueue | null> => null),
-    savePlayQueue: vi.fn(async () => {}),
+    getPlayQueue: vi.fn(async (_byIndex: boolean) => server.queue),
+    savePlayQueue: vi.fn(async (ids: string[], currentIndex: number, position: number) => {
+      server.queue = {
+        songs: ids.map((id) => makeSong(id)),
+        currentIndex,
+        position: Math.round(position * 1000) / 1000,
+        changed: Date.now(),
+        changedBy: 'beacon',
+      }
+    }),
     streamUrl: () => 'http://media/song',
   }
   const library = useLibraryStore()
@@ -35,7 +50,15 @@ async function load() {
   )
   const toasts: unknown[] = []
   emitter.on('toast', (toast) => toasts.push(toast))
-  return { sync, playback: usePlaybackStore(), auth, client, toasts, connect: useConnectStore() }
+  return {
+    sync,
+    playback: usePlaybackStore(),
+    auth,
+    client,
+    server,
+    toasts,
+    connect: useConnectStore(),
+  }
 }
 
 function serverQueue(overrides: Partial<ServerPlayQueue> = {}): ServerPlayQueue {
@@ -61,10 +84,7 @@ describe('saving the queue to the server', () => {
 
     await sync.saveServerQueue()
 
-    expect(client.savePlayQueue).toHaveBeenCalledWith(['a', 'b'], 1, 12, {
-      byIndex: true,
-      keepalive: false,
-    })
+    expect(client.savePlayQueue).toHaveBeenCalledWith(['a', 'b'], 1, 12, { byIndex: true })
   })
 
   /** A desktop left open for a week must not push its week-old queue over
@@ -147,10 +167,7 @@ describe('saving the queue to the server', () => {
 
     await sync.saveServerQueue()
 
-    expect(client.savePlayQueue).toHaveBeenCalledWith(['a'], 0, 0, {
-      byIndex: false,
-      keepalive: false,
-    })
+    expect(client.savePlayQueue).toHaveBeenCalledWith(['a'], 0, 0, { byIndex: false })
   })
 })
 
@@ -201,14 +218,11 @@ describe('offering the queue saved elsewhere', () => {
   })
 
   it("does not offer this device's own last save back to it", async () => {
-    const { sync, playback, client, toasts } = await load()
-    playback.setQueue([makeSong('a')], 0)
-    playback.addToQueue([makeSong('b')])
+    const { sync, playback, toasts } = await load()
+    playback.setQueue([makeSong('a'), makeSong('b')], 0)
     await sync.saveServerQueue()
-    // The server's copy is a few seconds older than our own clock says.
-    client.getPlayQueue.mockResolvedValue(
-      serverQueue({ songs: [makeSong('z')], currentIndex: 0, changed: Date.now() + 2000 }),
-    )
+    // Moved on here since, so only recognising its own save keeps it quiet.
+    playback.currentIndex = 1
 
     await sync.checkServerQueue({ force: true })
 
@@ -278,6 +292,159 @@ describe("the queue toolbar's load button", () => {
     await sync.loadServerQueue()
 
     expect(playback.queue.map((song) => song.id)).toEqual(['a'])
+  })
+})
+
+describe('whether the load button has anything to load', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  it('lets the button try while it does not know yet', async () => {
+    const { sync, playback } = await load()
+    playback.setQueue([makeSong('a')], 0)
+
+    expect(sync.serverQueueLoadState()).toBe('ready')
+  })
+
+  it("is greyed out once the server holds this device's own queue", async () => {
+    const { sync, playback } = await load()
+    playback.setQueue([makeSong('a'), makeSong('b')], 0)
+    await sync.saveServerQueue()
+    // Playing on since the last save, but not a periodic save further.
+    playback.localPosition = 20
+
+    expect(sync.serverQueueLoadState()).toBe('current')
+
+    playback.currentIndex = 1
+    expect(sync.serverQueueLoadState()).toBe('ready')
+  })
+
+  it('is greyed out when the server holds no queue', async () => {
+    const { sync, playback } = await load()
+    playback.setQueue([makeSong('a')], 0)
+
+    await sync.refreshServerQueueState()
+
+    expect(sync.serverQueueLoadState()).toBe('empty')
+  })
+
+  it('offers a queue another device saved since', async () => {
+    const { sync, playback, client } = await load()
+    playback.setQueue([makeSong('x'), makeSong('y')], 1)
+    await sync.saveServerQueue()
+    client.getPlayQueue.mockResolvedValue(serverQueue({ position: 600 }))
+
+    await sync.refreshServerQueueState()
+
+    expect(sync.serverQueueLoadState()).toBe('ready')
+  })
+
+  it('is greyed out while casting', async () => {
+    const { sync, connect } = await load()
+    vi.spyOn(connect, 'isActive', 'get').mockReturnValue(true)
+
+    expect(sync.serverQueueLoadState()).toBe('casting')
+  })
+})
+
+describe('never over a queue saved elsewhere', () => {
+  beforeEach(() => {
+    localStorage.clear()
+  })
+
+  /** The case the whole check exists for: the desktop opens on last
+   * week's queue, the phone saved a new one this morning, and a song gets
+   * added here before anyone looked at the toast. */
+  it('does not save edits to a stale queue over a newer one', async () => {
+    const { sync, playback, client, server, toasts } = await load({ queue: serverQueue() })
+    playback.setQueue([makeSong('a')], 0)
+    sync.markQueueRestored(['a'], 0)
+
+    playback.addToQueue([makeSong('b')])
+    await sync.saveServerQueue()
+
+    expect(client.savePlayQueue).not.toHaveBeenCalled()
+    expect(server.queue?.changedBy).toBe('feishin')
+    expect(toasts).toHaveLength(1)
+  })
+
+  /** Two devices both running: the one that didn't save last stops. */
+  it('stops saving once another device has saved over it', async () => {
+    const { sync, playback, client, server, toasts } = await load()
+    playback.setQueue([makeSong('a'), makeSong('b')], 0)
+    await sync.saveServerQueue()
+    server.queue = serverQueue()
+
+    playback.isPlaying = true
+    playback.localPosition = 90
+    await sync.saveServerQueue()
+    playback.localPosition = 120
+    await sync.saveServerQueue()
+
+    expect(client.savePlayQueue).toHaveBeenCalledTimes(1)
+    expect(server.queue.changedBy).toBe('feishin')
+    // Offered once, not on every attempt.
+    expect(toasts).toHaveLength(1)
+  })
+
+  it('saves again once that queue has been taken over', async () => {
+    const { sync, playback, client, server } = await load({ queue: serverQueue() })
+    playback.setQueue([makeSong('a')], 0)
+    sync.markQueueRestored(['a'], 0)
+    await sync.loadServerQueue()
+
+    playback.addToQueue([makeSong('c')])
+    await sync.saveServerQueue()
+
+    expect(client.savePlayQueue).toHaveBeenCalledTimes(1)
+    expect(server.queue?.songs.map((song) => song.id)).toEqual(['x', 'y', 'c'])
+  })
+
+  /** Playing an album is a "now this", the same as it would be after
+   * loading the other queue first. */
+  it('lets a whole new queue replace it', async () => {
+    const { sync, playback, client } = await load({ queue: serverQueue() })
+
+    playback.setQueue([makeSong('n')], 0)
+    await sync.saveServerQueue()
+
+    expect(client.savePlayQueue).toHaveBeenCalledTimes(1)
+  })
+
+  it('recognises its own save after a restart', async () => {
+    const first = await load()
+    first.playback.setQueue([makeSong('a'), makeSong('b')], 1)
+    first.playback.localPosition = 12.3456
+    await first.sync.saveServerQueue()
+
+    const second = await load(first.server)
+    second.playback.setQueue([makeSong('a'), makeSong('b')], 1)
+    second.sync.markQueueRestored(['a', 'b'], 1)
+    second.playback.addToQueue([makeSong('c')])
+    await second.sync.saveServerQueue()
+
+    expect(second.client.savePlayQueue).toHaveBeenCalledTimes(1)
+  })
+
+  /** The plain form names the current song by id and hands back its first
+   * copy - which must still read as this device's own save. */
+  it('recognises its own save of a duplicated song in the plain form', async () => {
+    const first = await load()
+    first.client.getOpenSubsonicExtensions.mockResolvedValue(new Set())
+    first.playback.setQueue([makeSong('a'), makeSong('b'), makeSong('a')], 2)
+    await first.sync.saveServerQueue()
+    // What the plain getPlayQueue hands back for it.
+    first.server.queue!.currentIndex = 0
+
+    const second = await load(first.server)
+    second.client.getOpenSubsonicExtensions.mockResolvedValue(new Set())
+    second.playback.setQueue([makeSong('a'), makeSong('b'), makeSong('a')], 2)
+    second.sync.markQueueRestored(['a', 'b', 'a'], 2)
+    second.playback.addToQueue([makeSong('c')])
+    await second.sync.saveServerQueue()
+
+    expect(second.client.savePlayQueue).toHaveBeenCalledTimes(1)
   })
 })
 

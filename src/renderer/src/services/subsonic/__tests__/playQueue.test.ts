@@ -58,21 +58,16 @@ describe('SubsonicClient play queue', () => {
     expect(await client.getPlayQueue(false)).toBeNull()
   })
 
-  it('posts the queue as a form, with the connect token in the URL', async () => {
+  it('posts the queue as a form', async () => {
     const fetchMock = answer({})
 
-    await client.savePlayQueue(['a', 'b', 'a'], 2, 61.5, { byIndex: true, keepalive: true })
+    await client.savePlayQueue(['a', 'b', 'a'], 2, 61.5, { byIndex: true })
 
     const [url, init] = fetchMock.mock.calls[0]!
-    const requested = new URL(url)
-    expect(requested.pathname).toBe('/rest/savePlayQueueByIndex.view')
-    expect(requested.searchParams.get('token')).toBe('tok')
-    expect(requested.searchParams.get('session')).toBe('sess')
-    // No custom header: a keepalive request that needs a preflight is refused.
-    expect(init?.headers).toBeUndefined()
+    expect(new URL(url).pathname).toBe('/rest/savePlayQueueByIndex.view')
     expect(init?.method).toBe('POST')
-    expect(init?.keepalive).toBe(true)
-    const body = init?.body as URLSearchParams
+    expect(init?.headers).toMatchObject({ 'X-Connect-Token': 'tok', 'X-Connect-Session': 'sess' })
+    const body = init!.body as URLSearchParams
     expect(body.getAll('id')).toEqual(['a', 'b', 'a'])
     expect(body.get('currentIndex')).toBe('2')
     expect(body.get('position')).toBe('61500')

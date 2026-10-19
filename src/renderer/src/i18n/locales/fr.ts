@@ -466,6 +466,8 @@ export default {
       'Charger la file d’attente enregistrée sur le serveur - pas pendant la diffusion',
     serverEmpty: 'Aucune file d’attente n’est enregistrée sur le serveur.',
     serverLoadFailed: 'Le serveur est injoignable.',
+    serverLoadCurrent: 'Cette file d’attente est déjà celle enregistrée sur le serveur',
+    serverLoadEmpty: 'Aucune file d’attente n’est enregistrée sur le serveur',
   },
   party: {
     copied: 'Copié',

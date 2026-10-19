@@ -462,6 +462,8 @@ export default {
     serverLoadCasting: 'Carica la coda salvata sul server - non durante il cast',
     serverEmpty: 'Sul server non è salvata nessuna coda.',
     serverLoadFailed: 'Impossibile raggiungere il server.',
+    serverLoadCurrent: 'Questa coda è già quella salvata sul server',
+    serverLoadEmpty: 'Sul server non è salvata nessuna coda',
   },
   party: {
     copied: 'Copiato',

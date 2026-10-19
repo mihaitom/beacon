@@ -65,10 +65,8 @@
             icon="mdi-cloud-download-outline"
             variant="text"
             size="small"
-            :disabled="playbackStore.isCasting"
-            :title="
-              playbackStore.isCasting ? $t('queue.serverLoadCasting') : $t('queue.serverLoad')
-            "
+            :disabled="serverQueueLoad !== 'ready'"
+            :title="$t(SERVER_QUEUE_LOAD_TITLES[serverQueueLoad])"
             @click="loadServerQueue"
           />
           <v-btn
@@ -322,7 +320,13 @@ import ContextMenuSection from '@/components/library/ContextMenuSection.vue'
 import AddToPlaylistSubmenu from '@/components/library/AddToPlaylistSubmenu.vue'
 import CreatePlaylistDialog from '@/components/library/CreatePlaylistDialog.vue'
 import { useAuthStore } from '@/stores/auth'
-import { loadServerQueue } from '@/services/playback/serverQueueSync'
+import {
+  loadServerQueue,
+  refreshServerQueueState,
+  serverQueueLoadState,
+  SERVER_QUEUE_LOAD_TITLES,
+  type ServerQueueLoadState,
+} from '@/services/playback/serverQueueSync'
 import type { QueueMoveTarget } from '@/stores/playback'
 import type { Song } from '@/types/library'
 
@@ -492,6 +496,10 @@ export default {
   },
   computed: {
     DRAWER_WIDTH: () => DRAWER_WIDTH,
+    SERVER_QUEUE_LOAD_TITLES: () => SERVER_QUEUE_LOAD_TITLES,
+    serverQueueLoad(): ServerQueueLoadState {
+      return serverQueueLoadState()
+    },
     playbackStore() {
       return usePlaybackStore()
     },
@@ -578,6 +586,7 @@ export default {
       handler(open: boolean) {
         if (!open) return
         this.$nextTick(() => this.scrollToCurrent())
+        void refreshServerQueueState()
       },
       immediate: true,
     },
