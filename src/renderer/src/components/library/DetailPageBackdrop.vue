@@ -475,6 +475,14 @@ export default {
   mask-image: linear-gradient(to bottom, #000 calc(100% - var(--night-fade)), transparent);
 }
 
+/* The fade runs below the header, so whatever follows it starts only once
+ * the fade is over: in the hero's usual 28px gap, the artist page's
+ * "Albums" heading sat on the half-dark middle of it, dark text on a
+ * darkened page. */
+.detail-page:not(.detail-page--banded) .detail-page__band--on-light :deep(.detail-hero) {
+  margin-bottom: var(--night-fade);
+}
+
 .detail-page--banded .detail-page__band--on-light .detail-page__night,
 .detail-page--banded .detail-page__band--on-light .detail-page__backdrop,
 .detail-page--banded .detail-page__band--on-light .detail-page__scrim {

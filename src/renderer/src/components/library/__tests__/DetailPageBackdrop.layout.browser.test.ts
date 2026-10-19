@@ -8,6 +8,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { page } from 'vitest/browser'
 import { h } from 'vue'
 import { mount, type VueWrapper } from '@vue/test-utils'
+import { useAppearanceStore } from '@/stores/appearance'
 import DetailPageBackdrop from '../DetailPageBackdrop.vue'
 
 // The theme the header is drawn in comes from the appearance store.
@@ -158,5 +159,34 @@ describe('DetailPageBackdrop photo beside the header text', () => {
 
     expect(filled).toBe(true)
     expect(art.right).toBeCloseTo(band.right, 0)
+  })
+})
+
+describe('DetailPageBackdrop on a light theme', () => {
+  afterEach(() => {
+    for (const wrapper of wrappers.splice(0)) wrapper.unmount()
+    document.body.innerHTML = ''
+  })
+
+  it('has faded out the dark header band before the content under the header starts', async () => {
+    useAppearanceStore().theme = 'paper'
+    await page.viewport(1400, 900)
+    document.body.style.margin = '0'
+    const wrapper = mount(DetailPageBackdrop, {
+      props: { url: photoUrl(false), isPhoto: true },
+      slots: {
+        default: () => [
+          h('section', { class: 'detail-hero', style: { height: '320px' } }),
+          h('h2', { class: 'next', style: { margin: 0 } }, 'Albums'),
+        ],
+      },
+      attachTo: document.body,
+    })
+    wrappers.push(wrapper)
+    const night = () => document.querySelector('.detail-page__night') as HTMLElement
+    await expect.poll(() => night().getBoundingClientRect().height).toBeGreaterThan(320)
+
+    const next = document.querySelector('.next')!.getBoundingClientRect()
+    expect(next.top).toBeGreaterThanOrEqual(night().getBoundingClientRect().bottom - 0.5)
   })
 })
