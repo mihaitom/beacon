@@ -453,6 +453,16 @@ export default {
     sortByBpm: 'Warteschlange nach BPM sortieren',
     sortByBpmNotShuffled: 'Nach BPM sortieren - erst Zufallswiedergabe ausschalten',
     remove: 'Aus der Warteschlange entfernen',
+    serverOfferTitle: 'Weiterhören, wo du aufgehört hast?',
+    serverOfferMessage:
+      '{app} hat {when} eine Warteschlange gespeichert: „{title}“, {count} Titel insgesamt.',
+    serverOfferAction: 'Übernehmen',
+    serverUnknownApp: 'Eine andere App',
+    serverLoad: 'Auf dem Server gespeicherte Warteschlange laden',
+    serverLoadCasting:
+      'Auf dem Server gespeicherte Warteschlange laden - nicht während des Castens',
+    serverEmpty: 'Auf dem Server ist keine Warteschlange gespeichert.',
+    serverLoadFailed: 'Der Server war nicht erreichbar.',
   },
   party: {
     copied: 'Kopiert',

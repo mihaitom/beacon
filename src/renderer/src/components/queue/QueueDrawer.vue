@@ -61,6 +61,17 @@
             @click="playbackStore.sortQueueByBpm()"
           />
           <v-btn
+            v-if="authStore.capabilities.serverQueue"
+            icon="mdi-cloud-download-outline"
+            variant="text"
+            size="small"
+            :disabled="playbackStore.isCasting"
+            :title="
+              playbackStore.isCasting ? $t('queue.serverLoadCasting') : $t('queue.serverLoad')
+            "
+            @click="loadServerQueue"
+          />
+          <v-btn
             v-if="playbackStore.queue.length"
             icon="mdi-playlist-plus"
             variant="text"
@@ -311,6 +322,7 @@ import ContextMenuSection from '@/components/library/ContextMenuSection.vue'
 import AddToPlaylistSubmenu from '@/components/library/AddToPlaylistSubmenu.vue'
 import CreatePlaylistDialog from '@/components/library/CreatePlaylistDialog.vue'
 import { useAuthStore } from '@/stores/auth'
+import { loadServerQueue } from '@/services/playback/serverQueueSync'
 import type { QueueMoveTarget } from '@/stores/playback'
 import type { Song } from '@/types/library'
 
@@ -582,6 +594,7 @@ export default {
     this.edgeScroller?.stop()
   },
   methods: {
+    loadServerQueue,
     queueRowKey,
     onFloatingChange(event: MediaQueryListEvent) {
       this.floating = event.matches

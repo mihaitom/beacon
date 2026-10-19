@@ -108,6 +108,11 @@ export interface ServerCapabilities {
    * docs/plans/smart-playlist-builder.md). Decided by what the server
    * says it is rather than by server type - see capabilitiesFor(). */
   smartPlaylistEditor: boolean
+  /** Keeping the play queue on the server (savePlayQueue/getPlayQueue), so
+   * another app can carry on with it - see services/playback/serverQueueSync.ts. Subsonic
+   * only: Jellyfin and Plex keep no queue per account that any other app
+   * would read. */
+  serverQueue: boolean
 }
 
 const SUBSONIC_CAPABILITIES: ServerCapabilities = {
@@ -124,6 +129,7 @@ const SUBSONIC_CAPABILITIES: ServerCapabilities = {
   playHistoryStats: true,
   logLevelControl: true,
   smartPlaylistEditor: false,
+  serverQueue: true,
 }
 
 const JELLYFIN_CAPABILITIES: ServerCapabilities = {
@@ -147,6 +153,7 @@ const JELLYFIN_CAPABILITIES: ServerCapabilities = {
   playHistoryStats: true,
   logLevelControl: true,
   smartPlaylistEditor: false,
+  serverQueue: false,
 }
 
 // Plex bridges browsing — artists/albums/songs/search/cover art — plus
@@ -200,6 +207,7 @@ const PLEX_CAPABILITIES: ServerCapabilities = {
   playHistoryStats: true,
   logLevelControl: true,
   smartPlaylistEditor: false,
+  serverQueue: false,
 }
 
 /**

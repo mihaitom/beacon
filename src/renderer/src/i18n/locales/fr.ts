@@ -456,6 +456,16 @@ export default {
     sortByBpm: 'Trier la file par BPM',
     sortByBpmNotShuffled: "Trier par BPM - désactivez d'abord la lecture aléatoire",
     remove: "Retirer de la file d'attente",
+    serverOfferTitle: 'Reprendre là où vous en étiez ?',
+    serverOfferMessage:
+      '{app} a enregistré une file d’attente {when} : « {title} », {count} titres au total.',
+    serverOfferAction: 'La charger',
+    serverUnknownApp: 'Une autre application',
+    serverLoad: 'Charger la file d’attente enregistrée sur le serveur',
+    serverLoadCasting:
+      'Charger la file d’attente enregistrée sur le serveur - pas pendant la diffusion',
+    serverEmpty: 'Aucune file d’attente n’est enregistrée sur le serveur.',
+    serverLoadFailed: 'Le serveur est injoignable.',
   },
   party: {
     copied: 'Copié',

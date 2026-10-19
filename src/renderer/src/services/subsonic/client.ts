@@ -6,6 +6,10 @@ import type {
   ArtistsResponse,
   InternetRadioStationsResponse,
   LyricsBySongIdResponse,
+  OpenSubsonicExtensionsResponse,
+  PlayQueueByIndexResponse,
+  PlayQueueResponse,
+  RawPlayQueue,
   PlaylistResponse,
   PlaylistsResponse,
   RawSong,
@@ -67,6 +71,18 @@ function scanProgress(data: ScanStatusResponse): ScanProgress {
     count: data.scanStatus.count ?? null,
     percent: data.scanStatus.progress ?? null,
   }
+}
+
+/** The play queue the server keeps for this account - see
+ * getPlayQueue(). */
+export interface ServerPlayQueue {
+  songs: Song[]
+  currentIndex: number
+  /** Seconds into the current song. */
+  position: number
+  /** Epoch milliseconds, 0 where the server sent none. */
+  changed: number
+  changedBy: string
 }
 
 export class SubsonicClient {
@@ -472,6 +488,85 @@ export class SubsonicClient {
   async getScanStatus(): Promise<ScanProgress> {
     const data = await this.get<ScanStatusResponse>('getScanStatus.view')
     return scanProgress(data)
+  }
+
+  /** The OpenSubsonic extensions this server offers, by name - empty for a
+   * plain Subsonic server, which doesn't know the call. */
+  async getOpenSubsonicExtensions(): Promise<Set<string>> {
+    try {
+      const data = await this.get<OpenSubsonicExtensionsResponse>('getOpenSubsonicExtensions.view')
+      return new Set((data.openSubsonicExtensions ?? []).map((extension) => extension.name))
+    } catch {
+      return new Set()
+    }
+  }
+
+  /** The queue another client (or this one, elsewhere) left on the server,
+   * or null when there is none.
+   *
+   * `byIndex` asks the indexBasedQueue form: the plain one names the
+   * current song by id, which can't say *which* copy of a song that is in
+   * the queue twice. */
+  async getPlayQueue(byIndex: boolean): Promise<ServerPlayQueue | null> {
+    let raw: RawPlayQueue | undefined
+    let currentIndex = 0
+    if (byIndex) {
+      const indexed = (await this.get<PlayQueueByIndexResponse>('getPlayQueueByIndex.view'))
+        .playQueueByIndex
+      raw = indexed
+      currentIndex = indexed?.currentIndex ?? 0
+    } else {
+      const plain = (await this.get<PlayQueueResponse>('getPlayQueue.view')).playQueue
+      raw = plain
+      currentIndex = Math.max(0, plain?.entry?.findIndex((song) => song.id === plain.current) ?? 0)
+    }
+    const entries = raw?.entry ?? []
+    if (!raw || entries.length === 0) return null
+    const changed = raw.changed ? Date.parse(raw.changed) : NaN
+    return {
+      songs: entries.map(mapSong),
+      currentIndex: Math.min(currentIndex, entries.length - 1),
+      position: (raw.position ?? 0) / 1000,
+      changed: Number.isFinite(changed) ? changed : 0,
+      changedBy: raw.changedBy ?? '',
+    }
+  }
+
+  /** Stores the queue on the server for other clients to pick up.
+   *
+   * A form POST rather than a GET: a long queue as repeated `id=`
+   * parameters outgrows what a URL may carry. The connect token travels in
+   * the query string instead of a header, so the request needs no CORS
+   * preflight - a `keepalive` fetch (the one that still goes out while the
+   * page closes) is refused outright when it would need one. */
+  async savePlayQueue(
+    songIds: string[],
+    currentIndex: number,
+    position: number,
+    { byIndex, keepalive = false }: { byIndex: boolean; keepalive?: boolean },
+  ): Promise<void> {
+    const body = this.authParams()
+    for (const id of songIds) body.append('id', id)
+    if (byIndex) body.set('currentIndex', String(currentIndex))
+    else body.set('current', songIds[currentIndex] ?? '')
+    body.set('position', String(Math.round(position * 1000)))
+    const query = new URLSearchParams()
+    if (this.connectToken) query.set('token', this.connectToken)
+    if (this.sessionId) query.set('session', this.sessionId)
+    const endpoint = byIndex ? 'savePlayQueueByIndex.view' : 'savePlayQueue.view'
+    const response = await fetch(`${this.proxyBaseUrl}/rest/${endpoint}?${query.toString()}`, {
+      method: 'POST',
+      body,
+      keepalive,
+    })
+    if (!response.ok) {
+      throw new Error(`Subsonic request failed: ${response.status}`)
+    }
+    const data = await response.json()
+    const subsonic = data['subsonic-response']
+    if (subsonic?.status !== 'ok') {
+      throw new Error(`Subsonic error ${subsonic?.error?.code}: ${subsonic?.error?.message}`)
+    }
   }
 
   /** Like get(), but also appends one or more repeated-key params (Subsonic's

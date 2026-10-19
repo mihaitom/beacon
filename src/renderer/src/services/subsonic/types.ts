@@ -264,3 +264,28 @@ export interface ScanStatusResponse {
     progress?: number
   }
 }
+
+// getPlayQueue.view / getPlayQueueByIndex.view (the latter an OpenSubsonic
+// extension, indexBasedQueue). Navidrome answers an account with no saved
+// queue with `username` alone - no entry, no current, and a zero `changed`.
+export interface RawPlayQueue {
+  entry?: RawSong[]
+  /** Milliseconds into the current song. */
+  position?: number
+  /** ISO 8601. */
+  changed?: string
+  /** The `c` parameter of whichever client saved it. */
+  changedBy?: string
+}
+
+export interface PlayQueueResponse {
+  playQueue?: RawPlayQueue & { current?: string }
+}
+
+export interface PlayQueueByIndexResponse {
+  playQueueByIndex?: RawPlayQueue & { currentIndex?: number }
+}
+
+export interface OpenSubsonicExtensionsResponse {
+  openSubsonicExtensions?: { name: string; versions: number[] }[]
+}

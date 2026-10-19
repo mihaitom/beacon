@@ -64,6 +64,7 @@ import {
   savePersisted,
   writeSessionWasPlaying,
 } from '@/services/playback/persistence'
+import { markQueueRestored } from '@/services/playback/serverQueueSync'
 
 // Re-exported for stores/auth.ts's logout, which has always reached for it
 // here — see persistence.ts for what it does.
@@ -896,6 +897,32 @@ export const usePlaybackStore = defineStore('playback', {
       // live 2026-09-05 as a restored-but-not-started station showing a
       // running time it had never played for.
       this.localPosition = saved.radioStation ? 0 : saved.localPosition
+      markQueueRestored(
+        this.queue.map((song) => song.id),
+        this.currentIndex,
+      )
+    },
+
+    /** Takes over the queue another app saved on the server (see
+     * services/playback/serverQueueSync.ts) - in its order, at its song
+     * and position, loaded but not playing - whatever was playing here
+     * stops. Not while casting. */
+    adoptServerQueue(songs: Song[], index: number, position: number): void {
+      this.leaveRadio()
+      this.isPlaying = false
+      this.preview = null
+      autoplayExhaustedSeedIds.clear()
+      // The order is the other app's, already shuffled or not; Beacon's own
+      // shuffle would claim an original order it doesn't have.
+      this.shuffle = false
+      this.originalQueue = [...songs]
+      this.queue = [...songs]
+      this.currentIndex = index
+      this.localPosition = position
+      const song = this.currentSong
+      if (!song) return
+      this.duration = song.duration
+      this.startLocalSong(song, position, false)
     },
 
     persistNow(): void {

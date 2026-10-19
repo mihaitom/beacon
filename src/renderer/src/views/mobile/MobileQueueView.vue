@@ -3,6 +3,15 @@
     <div class="mobile-header">
       <h1 class="page-title mobile-header__title">{{ $t('queue.title') }}</h1>
       <v-btn
+        v-if="authStore.capabilities.serverQueue"
+        icon="mdi-cloud-download-outline"
+        variant="text"
+        size="small"
+        :disabled="playbackStore.isCasting"
+        :title="playbackStore.isCasting ? $t('queue.serverLoadCasting') : $t('queue.serverLoad')"
+        @click="loadServerQueue"
+      />
+      <v-btn
         v-if="playbackStore.queue.length > 1"
         icon="mdi-notification-clear-all"
         variant="text"
@@ -57,6 +66,8 @@
 
 <script lang="ts">
 import { usePlaybackStore } from '@/stores/playback'
+import { useAuthStore } from '@/stores/auth'
+import { loadServerQueue } from '@/services/playback/serverQueueSync'
 import EmptyState from '@/components/EmptyState.vue'
 import MobileQueueRow from '@/components/mobile/MobileQueueRow.vue'
 import MobileSongActionSheet from '@/components/mobile/MobileSongActionSheet.vue'
@@ -140,6 +151,9 @@ export default {
     playbackStore() {
       return usePlaybackStore()
     },
+    authStore() {
+      return useAuthStore()
+    },
     actionsIndex(): number {
       return this.actionsSong ? this.playbackStore.queue.indexOf(this.actionsSong) : -1
     },
@@ -151,6 +165,7 @@ export default {
   },
   methods: {
     rowKey,
+    loadServerQueue,
     dragOverPosition(index: number): 'before' | 'after' | null {
       return this.overIndex === index ? this.overHalf : null
     },
