@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Changed
 
 - The search row above the library pages is calmer: the search field matches the controls beside it, and exact spelling is an "Aa" button inside the field instead of a switch next to it. The search in the top bar has the same button, so the switch on the results page is gone
+- While a search runs, the results page shows Beacon's loading animation with a "Searching" label in the middle of the page, instead of a small spinner under the previous results
 
 ### Fixed
 

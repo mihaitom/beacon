@@ -1325,6 +1325,7 @@ export default {
     albums: 'Albums',
     songs: 'Songs',
     exactMatch: 'Exact spelling',
+    searching: 'Searching …',
     noResults: 'No results for "{query}".',
   },
   releaseNotes: {

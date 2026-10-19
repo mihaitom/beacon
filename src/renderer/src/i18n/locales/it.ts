@@ -1334,6 +1334,7 @@ export default {
     albums: 'Album',
     songs: 'Brani',
     exactMatch: 'Scrittura esatta',
+    searching: 'Ricerca in corso …',
     noResults: 'Nessun risultato per "{query}".',
   },
   releaseNotes: {

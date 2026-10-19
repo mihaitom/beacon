@@ -1344,6 +1344,7 @@ export default {
     albums: 'Albums',
     songs: 'Titres',
     exactMatch: 'Orthographe exacte',
+    searching: 'Recherche en cours …',
     noResults: 'Aucun résultat pour « {query} ».',
   },
   releaseNotes: {

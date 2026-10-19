@@ -112,6 +112,24 @@ describe('SearchView exact spelling', () => {
   })
 })
 
+describe('SearchView while searching', () => {
+  it('shows the loader in place of the previous results', async () => {
+    const { wrapper, store } = await mountSearchView()
+    setResults(store, { albums: [{ id: 'b' } as Album] })
+    store.loadingCount = 1
+    await flushPromises()
+
+    expect(wrapper.findComponent({ name: 'PageLoader' }).exists()).toBe(true)
+    expect(wrapper.findComponent({ name: 'CardShelf' }).exists()).toBe(false)
+
+    store.loadingCount = 0
+    await flushPromises()
+
+    expect(wrapper.findComponent({ name: 'PageLoader' }).exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'CardShelf' }).exists()).toBe(true)
+  })
+})
+
 describe('SearchView result presence', () => {
   it('reports nothing found when every category is empty', async () => {
     const { store, vm } = await mountSearchView()

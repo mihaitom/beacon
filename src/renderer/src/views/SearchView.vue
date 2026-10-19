@@ -2,46 +2,50 @@
   <v-container fluid>
     <h1 v-if="query" class="page-title">{{ $t('search.resultsFor', { query }) }}</h1>
 
-    <!-- Shelves, the same shape Home and the favorites page use, rather
-     - than a list and a wrapping grid. A search for a common word can
-     - match dozens of each, and stacked downwards they pushed the matching
-     - songs off the screen entirely; sideways each kind of match takes one
-     - row's worth of height however many there are.
-     -
-     - Each shelf carries its own grid toggle, switched and remembered
-     - separately: someone whose search turned up three artists and ninety
-     - albums wants those two laid out differently. -->
-    <card-shelf
-      v-if="libraryStore.searchResults.artists.length"
-      :title="$t('search.artists')"
-      :wrap="gridView.artists"
-      wrap-toggle
-      @update:wrap="setGridView('artists', $event)"
-    >
-      <artist-card
-        v-for="artist in libraryStore.searchResults.artists"
-        :key="artist.id"
-        :artist="artist"
-      />
-    </card-shelf>
+    <!-- In place of the results rather than under the previous ones: a
+       - spinner below a page of stale matches read as more of them loading. -->
+    <page-loader v-if="libraryStore.loading" :label="$t('search.searching')" />
+    <template v-else>
+      <!-- Shelves, the same shape Home and the favorites page use, rather
+       - than a list and a wrapping grid. A search for a common word can
+       - match dozens of each, and stacked downwards they pushed the matching
+       - songs off the screen entirely; sideways each kind of match takes one
+       - row's worth of height however many there are.
+       -
+       - Each shelf carries its own grid toggle, switched and remembered
+       - separately: someone whose search turned up three artists and ninety
+       - albums wants those two laid out differently. -->
+      <card-shelf
+        v-if="libraryStore.searchResults.artists.length"
+        :title="$t('search.artists')"
+        :wrap="gridView.artists"
+        wrap-toggle
+        @update:wrap="setGridView('artists', $event)"
+      >
+        <artist-card
+          v-for="artist in libraryStore.searchResults.artists"
+          :key="artist.id"
+          :artist="artist"
+        />
+      </card-shelf>
 
-    <card-shelf
-      v-if="libraryStore.searchResults.albums.length"
-      :title="$t('search.albums')"
-      :wrap="gridView.albums"
-      wrap-toggle
-      @update:wrap="setGridView('albums', $event)"
-    >
-      <album-card
-        v-for="album in libraryStore.searchResults.albums"
-        :key="album.id"
-        :album="album"
-      />
-    </card-shelf>
+      <card-shelf
+        v-if="libraryStore.searchResults.albums.length"
+        :title="$t('search.albums')"
+        :wrap="gridView.albums"
+        wrap-toggle
+        @update:wrap="setGridView('albums', $event)"
+      >
+        <album-card
+          v-for="album in libraryStore.searchResults.albums"
+          :key="album.id"
+          :album="album"
+        />
+      </card-shelf>
 
-    <template v-if="libraryStore.searchResults.songs.length">
-      <h2 class="section-title">{{ $t('search.songs') }}</h2>
-      <!-- One song, not the whole result set: a search result is a list of
+      <template v-if="libraryStore.searchResults.songs.length">
+        <h2 class="section-title">{{ $t('search.songs') }}</h2>
+        <!-- One song, not the whole result set: a search result is a list of
          - things that merely match a word, not a sequence anyone meant to
          - listen to in order. Playing "Moon" and getting nineteen other
          - songs with "moon" in the title queued behind it is not what the
@@ -52,26 +56,27 @@
          - (best match first) instead of re-sorting them alphabetically,
          - which would bury an exact title behind every other match. A click
          - on a column still sorts them. -->
-      <song-table
-        :songs="libraryStore.searchResults.songs"
-        :queue-whole-list="false"
-        :default-sort-key="null"
+        <song-table
+          :songs="libraryStore.searchResults.songs"
+          :queue-whole-list="false"
+          :default-sort-key="null"
+        />
+      </template>
+
+      <empty-state
+        v-if="query && !hasResults"
+        icon="mdi-magnify-close"
+        :title="$t('search.noResults', { query })"
+        :text="$t('search.noResultsHint')"
       />
     </template>
-
-    <v-progress-circular v-if="libraryStore.loading" indeterminate />
-    <empty-state
-      v-else-if="query && !hasResults"
-      icon="mdi-magnify-close"
-      :title="$t('search.noResults', { query })"
-      :text="$t('search.noResultsHint')"
-    />
   </v-container>
 </template>
 
 <script lang="ts">
 import { useLibraryStore } from '@/stores/library'
 import EmptyState from '@/components/EmptyState.vue'
+import PageLoader from '@/components/PageLoader.vue'
 import AlbumCard from '@/components/library/AlbumCard.vue'
 import ArtistCard from '@/components/library/ArtistCard.vue'
 import CardShelf from '@/components/library/CardShelf.vue'
@@ -89,7 +94,7 @@ const GRID_VIEW_KEY: Record<CardSection, string> = {
 
 export default {
   name: 'SearchView',
-  components: { EmptyState, AlbumCard, ArtistCard, CardShelf, SongTable },
+  components: { EmptyState, PageLoader, AlbumCard, ArtistCard, CardShelf, SongTable },
   data() {
     return {
       query: '',

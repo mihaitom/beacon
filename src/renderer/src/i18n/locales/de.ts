@@ -1339,6 +1339,7 @@ export default {
     albums: 'Alben',
     songs: 'Titel',
     exactMatch: 'Exakte Schreibweise',
+    searching: 'Suche läuft …',
     noResults: 'Keine Treffer für „{query}“.',
   },
   releaseNotes: {

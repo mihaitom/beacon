@@ -1338,6 +1338,7 @@ export default {
     albums: 'Álbumes',
     songs: 'Canciones',
     exactMatch: 'Ortografía exacta',
+    searching: 'Buscando …',
     noResults: 'No hay resultados para "{query}".',
   },
   releaseNotes: {
