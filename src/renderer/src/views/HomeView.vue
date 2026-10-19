@@ -36,7 +36,7 @@
       :title="$t('home.topSongs')"
       :songs="topSongs"
       :loading="loadingTopSongs"
-      @play-all="playSongList(topSongs)"
+      @play-all="playSongList"
     />
 
     <album-shelf

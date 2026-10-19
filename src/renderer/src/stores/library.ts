@@ -28,8 +28,9 @@ import {
 // actually has more songs than that cap without duplicating the number.
 export const TOP_SONGS_LIMIT = 10
 
-// Two columns of five on Home.
-export const HOME_TOP_SONGS = 10
+// Up to three columns of five on Home; TopSongsList shows fewer on a
+// narrower window.
+export const HOME_TOP_SONGS = 15
 
 // Dedupes concurrent fetchAllSongs() calls — fetchAlbum()'s derived path
 // (and things that fan out into many fetchAlbum() calls at once, like

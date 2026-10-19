@@ -485,8 +485,9 @@ Home uses a third form of the same cards. Its recently played albums are
 on a panel's 2% fill at the tile radius, two rows of as many as fit across.
 The whole tile plays; the name still opens the album. Its most played songs
 are `SongCard` with `row` - the album row's geometry with a rank in front and
-the play count behind - in two columns once the section is 760px wide,
-ranked down the first column and on into the second. A song table there
+the play count behind - five to a column, two columns once the section is
+760px wide and a third from 1500px, where two only stretched each line.
+Ranked down the first column and on into the next. A song table there
 brought column headings and sorting to a list that is only ever read.
 
 A tile that is a link does not lift or move on hover; only what is inside

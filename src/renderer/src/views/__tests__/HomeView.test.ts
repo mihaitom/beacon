@@ -202,15 +202,23 @@ describe('HomeView top songs', () => {
     expect(wrapper.getComponent(TopSongsList).props('loading')).toBe(false)
   })
 
-  it('plays the whole chart from its play-all button', async () => {
+  it('plays the songs the chart hands up from its play-all button', async () => {
+    const wrapper = await mountHome()
+    const shown = [makeSong('a'), makeSong('b')]
+    const play = vi.spyOn(usePlaybackStore(), 'playSongList').mockResolvedValue()
+
+    wrapper.getComponent(TopSongsList).vm.$emit('play-all', shown)
+
+    expect(play).toHaveBeenCalledWith(shown, 0, false, true)
+  })
+
+  it('hands the chart its songs most played first', async () => {
     const wrapper = await mountHome()
     useLibraryStore().allSongs = [makeSong('b', { playCount: 2 }), makeSong('a', { playCount: 5 })]
-    const play = vi.spyOn(usePlaybackStore(), 'playSongList').mockResolvedValue()
     await wrapper.vm.$nextTick()
 
-    wrapper.getComponent(TopSongsList).vm.$emit('play-all')
-
-    expect((play.mock.calls[0]![0] as Song[]).map((song) => song.id)).toEqual(['a', 'b'])
+    const songs = wrapper.getComponent(TopSongsList).props('songs') as Song[]
+    expect(songs.map((song) => song.id)).toEqual(['a', 'b'])
   })
 })
 
