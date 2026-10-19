@@ -87,6 +87,9 @@ class AppState:
         # The connections behind active_stream_connections, for the logs
         # only - see StreamConnection.
         self.open_streams: list[StreamConnection] = []
+        # (play_generation, seconds) where that generation's byte space
+        # starts under CAST_STREAM_BYTE_RANGES - see routes/stream.py.
+        self.byte_range_base: tuple[int, float] | None = None
         self.radio_info: dict | None = None
         self.active_delivery: BaseDelivery | DeliveryManager | None = None
         # Bumped by core/session.py's displace_target() whenever its

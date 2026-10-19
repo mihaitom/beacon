@@ -1869,3 +1869,28 @@ def test_strip_stream_extension_removes_only_our_own():
     # rather than being truncated into a different (nonexistent) session.
     assert strip_stream_extension("abc.123") == "abc.123"
     assert strip_stream_extension("abc123.wav") == "abc123.wav"
+
+
+# ── Diagnostic switches (#56) ────────────────────────────────────────────────
+
+
+def test_stream_tracks_sends_unpaced_with_pacing_switched_off(monkeypatch):
+    monkeypatch.setattr("core.streamer.PACING_ENABLED", False)
+    cmd = asyncio.run(_drain("http://nav/stream", FALLBACK_FORMAT))
+    assert "-readrate" not in cmd
+    assert "-reconnect" in cmd
+
+
+def test_byte_range_switch_turns_every_source_into_constant_bitrate_mp3(monkeypatch):
+    flac_copy = OutputFormat(
+        ffmpeg_args=["-acodec", "copy", "-f", "flac"],
+        content_type="audio/flac",
+        source_codec="flac",
+        source_duration=181.25,
+    )
+    monkeypatch.setattr("core.streamer.BYTE_RANGES_ENABLED", True)
+    with patch("core.streamer._resolve_output_format", AsyncMock(return_value=flac_copy)):
+        fmt = asyncio.run(resolve_output_format("http://nav/stream"))
+    assert fmt.content_type == "audio/mpeg"
+    assert "libmp3lame" in fmt.ffmpeg_args
+    assert fmt.source_duration == 181.25

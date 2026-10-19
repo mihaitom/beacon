@@ -3,10 +3,11 @@
 import asyncio
 import logging
 import math
+import os
 import re
 import time
 from collections.abc import AsyncGenerator, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from .ffmpeg import FFMPEG_BIN
 
@@ -72,6 +73,17 @@ _READRATE_ARGS = [
     "-readrate_catchup",
     "2",
 ]
+
+# Diagnostic switches for a Sonos Play:3 that stops reading the cast stream
+# about 45s in, then plays what it holds as if the track had ended (#56).
+# Both default to how casting normally works; each takes one theory out of
+# play. CAST_STREAM_PACING=off sends a track as fast as ffmpeg makes it.
+PACING_ENABLED = os.getenv("CAST_STREAM_PACING", "on").strip().lower() != "off"
+# CAST_STREAM_BYTE_RANGES=on answers /stream with a declared length and byte
+# ranges, the way routes/local_stream.py does for the browser. That takes a
+# constant-bitrate encode: a copied stream's length isn't known up front.
+BYTE_RANGES_ENABLED = os.getenv("CAST_STREAM_BYTE_RANGES", "off").strip().lower() == "on"
+BYTE_RANGE_BITRATE_KBPS = 320
 
 # What ffmpeg does when the connection to the *media server* drops
 # mid-track — a different question from what the listener's own connection
@@ -205,7 +217,6 @@ _FFMPEG_BASE_CMD = [
     "-hide_banner",
     "-loglevel",
     "warning",  # warning so codec/format issues surface in logs
-    *_READRATE_ARGS,
     "-i",
     "{url}",
     "-vn",
@@ -1065,7 +1076,26 @@ def _lossy_ceiling_format(
     )
 
 
-async def resolve_output_format(
+async def resolve_output_format(*args, **kwargs) -> OutputFormat:
+    """_resolve_output_format()'s answer, or with BYTE_RANGES_ENABLED the
+    constant-bitrate encode that switch needs, whatever the source."""
+    fmt = await _resolve_output_format(*args, **kwargs)
+    if not BYTE_RANGES_ENABLED:
+        return fmt
+    ffmpeg_args, content_type = lossy_encode_args("mp3", BYTE_RANGE_BITRATE_KBPS)
+    return replace(
+        fmt,
+        ffmpeg_args=ffmpeg_args,
+        content_type=content_type,
+        label=f"mp3-{BYTE_RANGE_BITRATE_KBPS}k (byte ranges)",
+        target_sample_rate=None,
+        target_bit_depth=None,
+        target_channels=None,
+        target_bitrate_kbps=BYTE_RANGE_BITRATE_KBPS,
+    )
+
+
+async def _resolve_output_format(
     url: str,
     gain: float = 1.0,
     max_sample_rate: int | None = None,
@@ -1318,7 +1348,8 @@ async def stream_tracks(
         cmd = [arg if arg != "{url}" else url for arg in _FFMPEG_BASE_CMD]
         # Input options, so before -i — same insertion the -ss below does.
         i_pos = cmd.index("-i")
-        cmd = cmd[:i_pos] + http_reconnect_args(url) + cmd[i_pos:]
+        pacing = _READRATE_ARGS if PACING_ENABLED else []
+        cmd = cmd[:i_pos] + pacing + http_reconnect_args(url) + cmd[i_pos:]
         cmd = cmd + fmt_args + ["pipe:1"]
         if i == 0 and start_offset > 0.5:
             # Insert -ss before -i for fast input-side seeking on the resumed track

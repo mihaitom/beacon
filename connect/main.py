@@ -40,6 +40,7 @@ from core.party import party, reap_stale_party
 from core.remote import reap_stale_remote, remote
 from core.session import reap_stale_sessions, registry
 from core.state import PORT, get_local_ip
+from core.streamer import BYTE_RANGES_ENABLED, PACING_ENABLED
 from core.upnp_events import renew_due_subscriptions
 from media import jellyfin_bridge, plex_bridge
 from media.login_errors import LoginFailed
@@ -289,6 +290,12 @@ async def lifespan(_: FastAPI):
         )
     else:
         logger.info("🔒 Token auth enabled (custom CONNECT_TOKEN set)")
+    if not PACING_ENABLED:
+        logger.warning("⚠️  CAST_STREAM_PACING=off — cast streams are sent unpaced (diagnostics)")
+    if BYTE_RANGES_ENABLED:
+        logger.warning(
+            "⚠️  CAST_STREAM_BYTE_RANGES=on — cast streams are mp3 with byte ranges (diagnostics)"
+        )
     logger.info("⏳ Waiting for /config (media server credentials)")
 
     discovery_task = asyncio.create_task(_periodic_discovery())

@@ -194,7 +194,7 @@ async def _probe_cached(session_id: str, track_id: str, url: str) -> SourceInfo 
     return info
 
 
-def _parse_range(header: str | None, total: int) -> tuple[int, int] | None:
+def parse_byte_range(header: str | None, total: int) -> tuple[int, int] | None:
     """(first_byte, last_byte) for a Range header against a `total`-byte
     body, or None when there is nothing to honour.
 
@@ -500,7 +500,7 @@ async def local_stream(
     if start is None and fmt == "mp3" and info is not None and info.duration:
         total = transcoded_byte_length(br, info.duration)
         headers["Accept-Ranges"] = "bytes"
-        rng = _parse_range(request.headers.get("range"), total)
+        rng = parse_byte_range(request.headers.get("range"), total)
         if rng is None:
             headers["Content-Length"] = str(total)
             # Capped at exactly what was declared. ffmpeg overshoots the
