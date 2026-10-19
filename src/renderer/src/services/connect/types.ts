@@ -44,6 +44,10 @@ export interface ConnectStatusTarget extends ConnectDeviceRef {
    * is exactly what it does today anyway (see stores/connect.ts's
    * RADIO_VISUALIZER_ENABLED). */
   supports_radio_position?: boolean
+  /** Whether a Sonos has repeat on in its own settings, which Beacon offers
+   * to turn off (see stores/connect.ts's noticeDeviceRepeat). Null where
+   * unknown, absent from an older backend's status. */
+  device_repeat?: boolean | null
 }
 
 export interface DiscoveredDevice {

@@ -267,6 +267,7 @@ def test_play_with_paused_claims_the_target_without_dispatching(client, default_
             "muted": None,
             "volume_push": False,
             "supports_radio_position": True,
+            "device_repeat": None,
         }
     ]
 

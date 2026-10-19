@@ -23,7 +23,7 @@ import time
 from fastapi import APIRouter, Request, Response
 
 from core.claims import claims
-from core.device_volume import record_pushed_volume
+from core.device_volume import device_key, record_pushed_volume
 from core.icy_metadata import strip_pulse
 from core.session import SessionState, build_status_dict, registry
 from core.state import PORT, get_local_ip, radio_dispatch_url
@@ -117,6 +117,28 @@ async def _handle_rendering_control_event(device_type: str, label: str, body: st
     if volume is None and muted is None:
         return
     await record_pushed_volume(device_type, label, volume=volume, muted=muted)
+
+
+# Sonos play modes with repeat in them. Beacon hands a Sonos one track at a
+# time, so the speaker's own repeat only ever replays the track that just
+# ended, until Beacon sends the next one (#56). The frontend offers to turn
+# it off.
+_REPEATING_PLAY_MODES = frozenset({"REPEAT_ALL", "REPEAT_ONE", "SHUFFLE", "SHUFFLE_REPEAT_ONE"})
+
+
+async def _handle_play_mode(label: str, play_mode: str) -> None:
+    """Record whether this Sonos repeats, for whichever session claims it,
+    and rebroadcast that session's status when it changed."""
+    session_id = claims.owner_of("sonos", label)
+    session = registry.get(session_id) if session_id else None
+    if session is None:
+        return
+    key = device_key("sonos", label)
+    repeat = play_mode in _REPEATING_PLAY_MODES
+    if session.state.device_repeat.get(key) == repeat:
+        return
+    session.state.device_repeat[key] = repeat
+    await session.event_bus.broadcast(build_status_dict(session))
 
 
 async def _handle_stream_title_echo(label: str, body: str) -> None:
@@ -373,6 +395,8 @@ async def upnp_event(device_type: str, service: str, label: str, request: Reques
             problem = problem_in(properties) if properties else None
             if problem:
                 await _handle_transport_problem(label, problem)
+            if device_type == "sonos" and "CurrentPlayMode" in properties:
+                await _handle_play_mode(label, properties["CurrentPlayMode"])
             await _handle_stream_title_echo(label, body)
     except Exception:
         # Never let a parse failure reach the device as a 5xx — see above.

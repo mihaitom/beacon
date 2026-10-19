@@ -846,7 +846,8 @@ def build_status_dict(
     # the flag it feeds means nothing to anybody.
     radio_url = radio_dispatch_url(session.session_id, st.radio_info) if st.radio_info else ""
     for target_type, name in list_target_pairs(st.active_delivery):
-        volume, muted = st.device_volumes.get(f"{target_type}:{name}", (None, None))
+        key = f"{target_type}:{name}"
+        volume, muted = st.device_volumes.get(key, (None, None))
         targets.append(
             {
                 "name": name,
@@ -870,6 +871,9 @@ def build_status_dict(
                 # exception at all, since that depends on the URL this
                 # session is dispatching.
                 "supports_radio_position": supports_radio_position(target_type, radio_url),
+                # The device's own repeat setting, None where unknown - see
+                # routes/upnp.py's _REPEATING_PLAY_MODES.
+                "device_repeat": st.device_repeat.get(key),
             }
         )
 

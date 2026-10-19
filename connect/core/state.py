@@ -229,6 +229,9 @@ class AppState:
         # which is exactly DeviceListItem.vue's existing "unfetched" state
         # (the slider hides rather than guessing a starting value).
         self.device_volumes: dict[str, tuple[int | None, bool | None]] = {}
+        # Whether a Sonos has repeat on in its own settings, keyed like
+        # device_volumes, from its AVTransport events - see routes/upnp.py.
+        self.device_repeat: dict[str, bool] = {}
 
 
 class EventBus:

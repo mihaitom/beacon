@@ -585,6 +585,7 @@ async def test_notify_broadcasts_the_updated_status_with_the_new_volume(client, 
             "muted": False,
             "volume_push": False,
             "supports_radio_position": True,
+            "device_repeat": None,
         }
     ]
 
@@ -805,6 +806,7 @@ async def test_a_pushing_device_says_so_in_the_status(client, default_session):
             "muted": None,
             "volume_push": False,
             "supports_radio_position": True,
+            "device_repeat": None,
         }
     ]
 
@@ -819,3 +821,36 @@ def _dlna_delivery(name: str):
     from delivery.dlna import DlnaDelivery
 
     return DlnaDelivery(name)
+
+
+def _play_mode_notify(play_mode: str) -> str:
+    return NOTIFY_BODY.format(state="PLAYING", status="OK").replace(
+        "&lt;CurrentVolume",
+        f"&lt;CurrentPlayMode val=&quot;{play_mode}&quot;/&gt;&lt;CurrentVolume",
+    )
+
+
+@pytest.mark.parametrize(
+    ("play_mode", "repeat"),
+    [("REPEAT_ALL", True), ("SHUFFLE", True), ("REPEAT_ONE", True), ("SHUFFLE_NOREPEAT", False)],
+)
+async def test_notify_records_whether_the_sonos_repeats(client, default_session, play_mode, repeat):
+    from core.claims import claims
+
+    await claims.claim("sonos", "Arbeitszimmer", default_session.session_id)
+
+    client.request(
+        "NOTIFY",
+        "/upnp/events/sonos/avtransport/Arbeitszimmer",
+        content=_play_mode_notify(play_mode),
+    )
+
+    assert default_session.state.device_repeat["sonos:Arbeitszimmer"] is repeat
+
+
+async def test_notify_leaves_an_unclaimed_sonos_repeat_unrecorded(client, default_session):
+    client.request(
+        "NOTIFY", "/upnp/events/sonos/avtransport/Nobody", content=_play_mode_notify("REPEAT_ALL")
+    )
+
+    assert default_session.state.device_repeat == {}

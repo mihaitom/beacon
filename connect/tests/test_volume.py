@@ -224,6 +224,7 @@ def test_volume_get_records_and_broadcasts_the_active_targets_volume(client, def
             "muted": None,
             "volume_push": False,
             "supports_radio_position": True,
+            "device_repeat": None,
         }
     ]
 
@@ -260,6 +261,7 @@ def test_device_volume_get_records_and_broadcasts_for_sonos(client, default_sess
             "muted": None,
             "volume_push": False,
             "supports_radio_position": True,
+            "device_repeat": None,
         }
     ]
 
@@ -290,6 +292,7 @@ def test_device_volume_set_records_and_broadcasts_for_sonos(client, default_sess
             "muted": None,
             "volume_push": False,
             "supports_radio_position": True,
+            "device_repeat": None,
         }
     ]
 
@@ -299,3 +302,25 @@ def test_device_volume_set_does_not_record_chromecast_or_dlna(client, default_se
     with patch.object(ChromecastDelivery, "_get_device", return_value=cast):
         client.post("/device-volume?device_type=chromecast&name=TV", json={"volume": 50})
     assert default_session.state.device_volumes == {}
+
+
+# ── /device-repeat-off ────────────────────────────────────────────────────────
+
+
+def test_device_repeat_off_switches_the_sonos_repeat_off(client, default_session):
+    default_session.state.device_repeat["sonos:Küche"] = True
+    dev = MagicMock()
+    dev.repeat = True
+    with patch.object(SonosDelivery, "_get_device", return_value=dev):
+        r = client.post("/device-repeat-off?name=Küche")
+    assert r.json() == {"repeat": False}
+    assert dev.repeat is False
+    assert default_session.state.device_repeat["sonos:Küche"] is False
+
+
+def test_device_repeat_off_reports_an_unreachable_sonos(client, default_session):
+    default_session.state.device_repeat["sonos:Küche"] = True
+    with patch.object(SonosDelivery, "_get_device", side_effect=RuntimeError("unreachable")):
+        r = client.post("/device-repeat-off?name=Küche")
+    assert r.json() == {"error": "unreachable"}
+    assert default_session.state.device_repeat["sonos:Küche"] is True

@@ -1,4 +1,4 @@
-"""routes/volume.py — /volume (active Sonos group), /device-volume (any device)"""
+"""routes/volume.py — /volume (active Sonos group), /device-volume (any device), /device-repeat-off (a Sonos)"""
 
 import asyncio
 import logging
@@ -92,6 +92,27 @@ def _record_volume(
         volume if volume is not None else prev_volume,
         muted if muted is not None else prev_muted,
     )
+
+
+@router.post("/device-repeat-off")
+async def turn_device_repeat_off(
+    name: str, session: SessionState = Depends(require_authenticated_session)
+):
+    """Switch off a Sonos's own repeat (see routes/upnp.py's
+    _REPEATING_PLAY_MODES), keeping its shuffle as it was."""
+    error = check_ownership("sonos", name, session)
+    if error:
+        return error
+    try:
+        device = await asyncio.to_thread(SonosDelivery(name)._get_device)
+        await asyncio.to_thread(setattr, device, "repeat", False)
+    except Exception as e:
+        logger.warning(f"[device-repeat] '{name}': {e}")
+        return {"error": str(e)}
+    # Ahead of the device's own event, as /device-volume does.
+    session.state.device_repeat[f"sonos:{name}"] = False
+    await session.event_bus.broadcast(build_status_dict(session))
+    return {"repeat": False}
 
 
 @router.get("/device-volume")

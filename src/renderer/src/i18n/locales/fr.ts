@@ -359,6 +359,11 @@ export default {
     interruptedOn: '{device} a fermé la connexion.',
     interruptedResume: 'Reprendre',
     interruptedResumeFailed: 'Impossible de reprendre la lecture.',
+    deviceRepeatTitle: 'La répétition est activée dans l’app Sonos',
+    deviceRepeat:
+      '{device} relance chaque morceau à la fin, un instant avant que Beacon passe au suivant. La répétition de Beacon fonctionne sans elle.',
+    deviceRepeatOff: 'Désactiver',
+    deviceRepeatOffFailed: 'Impossible de désactiver la répétition sur {device}.',
     searchingDevices: "Recherche d'appareils …",
     noDevicesFound: 'Aucun appareil trouvé.',
     inUseBy: 'Utilisé par {name}',

@@ -357,6 +357,11 @@ export default {
     interruptedOn: '{device} hat die Verbindung beendet.',
     interruptedResume: 'Fortsetzen',
     interruptedResumeFailed: 'Fortsetzen fehlgeschlagen.',
+    deviceRepeatTitle: 'Wiederholen ist in der Sonos-App an',
+    deviceRepeat:
+      '{device} fängt jeden Song am Ende kurz noch einmal an, bevor Beacon weitermacht. Wiederholen in Beacon funktioniert auch ohne.',
+    deviceRepeatOff: 'Ausschalten',
+    deviceRepeatOffFailed: 'Wiederholen auf {device} ließ sich nicht ausschalten.',
     searchingDevices: 'Geräte werden gesucht …',
     noDevicesFound: 'Keine Geräte gefunden.',
     inUseBy: 'Belegt von {name}',

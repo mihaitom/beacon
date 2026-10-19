@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Casting to a Sonos that has repeat on in the Sonos app says so and can switch it off: it made every song start over for a moment at its end, and repeat in Beacon works without it
+
 ### Fixed
 
 - Casting to a Sonos Play:3 plays tracks through instead of jumping back to the start about every 50 seconds (reported by @mjj042, #56)

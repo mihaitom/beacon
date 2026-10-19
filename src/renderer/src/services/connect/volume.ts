@@ -32,3 +32,9 @@ export async function setDeviceVolume(
   })
   return data.volume
 }
+
+/** Switches off a Sonos's own repeat, keeping its shuffle as it was. */
+export async function turnDeviceRepeatOff(name: string): Promise<void> {
+  const params = new URLSearchParams({ name })
+  await fetchConnect(`/device-repeat-off?${params.toString()}`, { method: 'POST' })
+}

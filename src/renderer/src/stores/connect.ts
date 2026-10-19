@@ -5,6 +5,7 @@ import { join, claim, deviceStop } from '@/services/connect/devices'
 import {
   getDeviceVolume as apiGetDeviceVolume,
   setDeviceVolume as apiSetDeviceVolume,
+  turnDeviceRepeatOff as apiTurnDeviceRepeatOff,
 } from '@/services/connect/volume'
 import {
   listPaired,
@@ -17,6 +18,8 @@ import { ConnectEventSource } from '@/services/connect/events'
 import { ConnectApiError } from '@/services/connect/http'
 import { isDeviceInUseError } from '@/services/connect/types'
 import { connectErrorMessage } from '@/services/connect/errorMessage'
+import { emitter } from '@/emitter'
+import { i18n } from '@/i18n'
 import type {
   ConnectDeviceRef,
   ConnectStatus,
@@ -84,6 +87,12 @@ interface ConnectState {
 }
 
 let eventSource: ConnectEventSource | null = null
+
+// The Sonos devices whose own repeat has already been pointed out, so the
+// status arriving every couple of seconds does not raise the toast again.
+// A device leaves it once it reports repeat off, so switching repeat back
+// on in the Sonos app is pointed out again.
+const repeatNoticed = new Set<string>()
 
 // eventSource lives outside Pinia's reactive state, so Vite's partial HMR
 // doesn't reset/preserve it consistently on a live edit — see playback.ts's
@@ -440,11 +449,50 @@ export const useConnectStore = defineStore('connect', {
         if (status.delivery_error) {
           this.setError(new ConnectApiError('delivery_failed', status.delivery_error))
         }
+        this.noticeDeviceRepeat(status)
       }
       eventSource.onConnectionChange = (connected) => {
         this.connected = connected
       }
       eventSource.start()
+    },
+
+    /** A Sonos with repeat on in its own app starts every song over once it
+     * ends, for the moment until Beacon sends the next one: Beacon hands it
+     * one song at a time, so its queue holds only that one (#56). Beacon's
+     * own repeat is unaffected, which is the part people get wrong - so
+     * this says so, and offers to switch the speaker's setting off. */
+    noticeDeviceRepeat(status: ConnectStatus): void {
+      for (const target of status.targets) {
+        if (target.type !== 'sonos') continue
+        if (target.device_repeat !== true) {
+          repeatNoticed.delete(target.name)
+          continue
+        }
+        if (repeatNoticed.has(target.name)) continue
+        repeatNoticed.add(target.name)
+        const device = target.name
+        emitter.emit('toast', {
+          level: 'information',
+          title: i18n.global.t('connect.deviceRepeatTitle'),
+          message: i18n.global.t('connect.deviceRepeat', { device }),
+          // Asks for a decision - see notifyCastInterrupted() in
+          // stores/playback.ts for why that needs longer than the default.
+          timeoutMs: 30000,
+          action: {
+            label: i18n.global.t('connect.deviceRepeatOff'),
+            onClick: () => {
+              apiTurnDeviceRepeatOff(device).catch(() => {
+                emitter.emit('toast', [
+                  'error',
+                  i18n.global.t('connect.deviceRepeatTitle'),
+                  i18n.global.t('connect.deviceRepeatOffFailed', { device }),
+                ])
+              })
+            },
+          },
+        })
+      }
     },
 
     unsubscribeEvents(): void {
