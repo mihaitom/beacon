@@ -149,11 +149,15 @@ async function readCacheField<K extends LibraryCacheField>(
   return record
 }
 
+/** IndexedDB structured-clones what it stores, and a reactive proxy cannot be
+ * cloned - so the store's own state (or an item read out of it) has to go in
+ * raw. Otherwise the write fails quietly and the cache keeps the old list. */
 function saveLibraryCacheField<K extends LibraryCacheField>(
   field: K,
   value: LibraryCacheTypes[K][],
 ): Promise<void> {
-  return writeLibraryField(fieldKey(field), value, Date.now(), cacheSchema(field))
+  const raw = toRaw(value).map((item) => toRaw(item))
+  return writeLibraryField(fieldKey(field), raw, Date.now(), cacheSchema(field))
 }
 
 /** Moves an existing localStorage blob into the store, once per account per

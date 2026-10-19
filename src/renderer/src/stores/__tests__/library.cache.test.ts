@@ -14,7 +14,9 @@ const HOUR = 60 * 60 * 1000
 // which jsdom has none of — stood in for here by a plain map, so these
 // tests stay about *when* the store keeps and refreshes things. The store
 // itself is exercised against a real IndexedDB in
-// services/library/__tests__/libraryCacheStore.browser.test.ts.
+// services/library/__tests__/libraryCacheStore.browser.test.ts. Items are
+// structured-cloned like IndexedDB does, and a failed clone is swallowed
+// like the real write does - so handing it reactive state loses the write.
 const cache = vi.hoisted(
   () => new Map<string, { items: unknown[]; fetchedAt: number; schema?: number }>(),
 )
@@ -23,7 +25,11 @@ vi.mock('@/services/library/libraryCacheStore', () => ({
   LEGACY_CACHE_KEY: 'beacon.library-cache',
   readLibraryField: vi.fn(async (key: string) => cache.get(key) ?? null),
   writeLibraryField: vi.fn((key: string, items: unknown[], fetchedAt = Date.now(), schema = 1) => {
-    cache.set(key, { items, fetchedAt, schema })
+    try {
+      cache.set(key, { items: structuredClone(items), fetchedAt, schema })
+    } catch {
+      // DataCloneError - the real store logs it and moves on.
+    }
   }),
   clearLibraryFields: vi.fn((keys: string[]) => {
     for (const key of keys) cache.delete(key)

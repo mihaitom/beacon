@@ -17,13 +17,20 @@ const cache = vi.hoisted(() => new Map<string, { items: unknown[]; fetchedAt: nu
 // The real write goes to IndexedDB and takes a moment to land. Tests that
 // care about that moment turn this up; everything else leaves it at zero.
 const writeDelayMs = vi.hoisted(() => ({ value: 0 }))
+// Structured-cloned like IndexedDB does, and a failed clone swallowed like
+// the real write does: handing it reactive store state must lose the write
+// here too, not pass because a Map takes anything.
 
 vi.mock('@/services/library/libraryCacheStore', () => ({
   LEGACY_CACHE_KEY: 'beacon.library-cache',
   readLibraryField: vi.fn(async (key: string) => cache.get(key) ?? null),
   writeLibraryField: vi.fn(async (key: string, items: unknown[], fetchedAt = Date.now()) => {
     if (writeDelayMs.value) await new Promise((resolve) => setTimeout(resolve, writeDelayMs.value))
-    cache.set(key, { items, fetchedAt })
+    try {
+      cache.set(key, { items: structuredClone(items), fetchedAt })
+    } catch {
+      // DataCloneError - the real store logs it and moves on.
+    }
   }),
   clearLibraryFields: vi.fn((keys: string[]) => {
     for (const key of keys) cache.delete(key)
