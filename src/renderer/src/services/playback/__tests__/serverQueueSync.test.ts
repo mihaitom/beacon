@@ -86,6 +86,7 @@ describe('saving the queue to the server', () => {
 
     expect(client.savePlayQueue).toHaveBeenCalledWith(['a', 'b'], 1, 12, {
       byIndex: true,
+      formPost: false,
       keepalive: false,
     })
   })
@@ -132,8 +133,62 @@ describe('saving the queue to the server', () => {
 
     expect(client.savePlayQueue).toHaveBeenCalledWith(['a'], 0, 0, {
       byIndex: false,
+      formPost: false,
       keepalive: false,
     })
+  })
+
+  it('posts the queue as a form where the server takes one', async () => {
+    const { sync, playback, client } = await load()
+    client.getOpenSubsonicExtensions.mockResolvedValue(new Set(['indexBasedQueue', 'formPost']))
+    playback.setQueue([makeSong('a')], 0)
+
+    await sync.saveServerQueue()
+
+    expect(client.savePlayQueue).toHaveBeenCalledWith(['a'], 0, 0, {
+      byIndex: true,
+      formPost: true,
+      keepalive: false,
+    })
+  })
+
+  /** No answer says nothing about the server - taken for "no extensions",
+   * it would save the plain form for the rest of the session. */
+  it('asks for the extensions again after no answer', async () => {
+    const { sync, playback, client } = await load()
+    client.getOpenSubsonicExtensions.mockRejectedValueOnce(new TypeError('Failed to fetch'))
+    playback.setQueue([makeSong('a')], 0)
+
+    expect(await sync.saveServerQueue()).toBe(false)
+    expect(await sync.saveServerQueue()).toBe(true)
+
+    expect(client.savePlayQueue).toHaveBeenCalledWith(['a'], 0, 0, {
+      byIndex: true,
+      formPost: false,
+      keepalive: false,
+    })
+  })
+
+  /** Paused, the position moves by a seek alone - and another app should
+   * carry on from there. */
+  it('saves a seek made while paused', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'setInterval'] })
+    try {
+      const { sync, playback, client } = await load()
+      sync.initServerQueueSync()
+      playback.setQueue([makeSong('a')], 0)
+      // The save setQueue itself sets off, out of the way first.
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(client.savePlayQueue).toHaveBeenCalledTimes(1)
+
+      playback.localPosition = 40
+      await vi.advanceTimersByTimeAsync(2_000)
+
+      expect(client.savePlayQueue).toHaveBeenCalledTimes(2)
+      expect(client.savePlayQueue).toHaveBeenLastCalledWith(['a'], 0, 40, expect.anything())
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
@@ -248,6 +303,7 @@ describe('only while the server copy is our own', () => {
     await vi.waitFor(() => expect(client.savePlayQueue).toHaveBeenCalledTimes(2))
     expect(client.savePlayQueue).toHaveBeenLastCalledWith(['a'], 0, 50, {
       byIndex: true,
+      formPost: false,
       keepalive: true,
     })
 
@@ -257,6 +313,23 @@ describe('only while the server copy is our own', () => {
     window.dispatchEvent(new Event('pagehide'))
     await Promise.resolve()
     expect(client.savePlayQueue).toHaveBeenCalledTimes(2)
+  })
+
+  /** Seen as its own an hour ago, the server copy may have been saved
+   * over by another device since - so the save that can't ask stays home. */
+  it('does not save on the way out over a copy last seen long ago', async () => {
+    const { sync, playback, client } = await load()
+    sync.initServerQueueSync()
+    playback.setQueue([makeSong('a')], 0)
+    await sync.saveServerQueue()
+    const seenAt = Date.now()
+
+    vi.spyOn(Date, 'now').mockReturnValue(seenAt + 60 * 60_000)
+    playback.addToQueue([makeSong('b')])
+    window.dispatchEvent(new Event('pagehide'))
+    await Promise.resolve()
+
+    expect(client.savePlayQueue).toHaveBeenCalledTimes(1)
   })
 
   it("forgets what it knew about the server with the playback store's restore", async () => {
@@ -544,6 +617,23 @@ describe('whether the buttons have anything to do', () => {
   })
 })
 
+// initServerQueueSync() is once per app; without this, each test's copy of
+// the module would go on hearing the pagehide of every test after it.
+const listeners: [EventTarget, string, EventListenerOrEventListenerObject][] = []
+
+beforeEach(() => {
+  for (const target of [window, document]) {
+    const add = target.addEventListener.bind(target)
+    vi.spyOn(target, 'addEventListener').mockImplementation((type, listener, options) => {
+      if (listener) listeners.push([target, type, listener])
+      add(type, listener, options)
+    })
+  }
+})
+
 afterEach(() => {
+  for (const [target, type, listener] of listeners.splice(0)) {
+    target.removeEventListener(type, listener)
+  }
   vi.restoreAllMocks()
 })

@@ -33,7 +33,7 @@ import { initKeyboardShortcuts } from '@/services/keyboardShortcuts'
 import { initNavigationHistory } from '@/services/navigationHistory'
 import { initWindowTitle } from '@/services/windowTitle'
 import { initTaskbar } from '@/services/taskbar'
-import { initServerQueueSync } from '@/services/playback/serverQueueSync'
+import { initServerQueueSync, saveServerQueue } from '@/services/playback/serverQueueSync'
 import { initAccountScopedStores } from '@/services/accountScopedStores'
 import { routeInOtherShell } from '@/services/shellRoutes'
 
@@ -170,6 +170,9 @@ export default {
     // has. See main/index.ts's requestQuit() for why this has to be the
     // renderer's job rather than something main can do on its own.
     window.api?.appLifecycle.onBeforeQuit(async () => {
+      // The browser build has only pagehide's keepalive save for this,
+      // which can't ask the server first and wouldn't outlive connect here.
+      const queueSaved = saveServerQueue()
       try {
         const connect = useConnectStore()
         if (connect.isActive) await connect.stopAll()
@@ -180,6 +183,7 @@ export default {
       } catch (error) {
         console.error('[app] Failed to stop casting/remote control before quit:', error)
       } finally {
+        await queueSaved
         window.api?.appLifecycle.beforeQuitDone()
       }
     })

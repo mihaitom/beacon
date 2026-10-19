@@ -50,11 +50,16 @@ const SAVE_DEBOUNCE_MS = 2_000
 const CHECK_MIN_INTERVAL_MS = 60_000
 // A question, not a report - see Toast.timeoutMs.
 const OFFER_TIMEOUT_MS = 45_000
+// How long the server copy, last seen as this device's own, is trusted to
+// still be - one periodic save while playing, with room for its request.
+// Past that, the save on the way out stays home rather than risk going
+// over a queue saved elsewhere meanwhile.
+const OURS_TRUSTED_MS = SAVE_INTERVAL_MS + 10_000
 
-// Whether the server held this device's own queue (or none) when this
-// device last looked or saved. What lets the save on the way out go
-// without asking first - it is the one save that can't.
-let ours = false
+// When the server was last seen holding this device's own queue (or none),
+// from looking or saving; 0 where it wasn't. What lets the save on the way
+// out go without asking first - it is the one save that can't.
+let oursSeenAt = 0
 let lastSaved: QueueSnapshot | null = null
 // Mirrors ServerQueueMeta's two saved fingerprints for when localStorage
 // refuses the write - without it this device would take its own save for
@@ -62,7 +67,7 @@ let lastSaved: QueueSnapshot | null = null
 let savedMirror: Pick<ServerQueueMeta, 'savedFingerprint' | 'savedQueue'> | null = null
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 let lastCheckAt = 0
-let byIndexFor: { account: string; byIndex: Promise<boolean> } | null = null
+let featuresFor: { account: string; features: Promise<QueueFeatures> } | null = null
 let lastRefreshAt = 0
 
 // What the server holds, as far as this device last heard - from its own
@@ -80,7 +85,7 @@ function queueKey(songIds: string[], currentIndex: number): string {
  * (app start, account change): what was known about the server belonged to
  * the session before. */
 export function markQueueRestored(): void {
-  ours = false
+  oursSeenAt = 0
   lastSaved = null
   savedMirror = null
   knownServer.value = undefined
@@ -93,7 +98,7 @@ function meta(): ServerQueueMeta {
 function rememberInStep(snapshot: QueueSnapshot, isByIndex: boolean): void {
   lastSaved = snapshot
   knownServer.value = snapshot
-  ours = true
+  oursSeenAt = Date.now()
   savedMirror = {
     savedFingerprint: fingerprint(snapshot, isByIndex),
     savedQueue: queueFingerprint(snapshot),
@@ -103,8 +108,9 @@ function rememberInStep(snapshot: QueueSnapshot, isByIndex: boolean): void {
 
 /** Whether the queue here has been edited since it was last saved or
  * loaded, without that edit reaching the server - what taking over
- * another Beacon's queue would throw away. Playing on doesn't count; an
- * empty queue has nothing to lose. */
+ * another Beacon's queue would throw away. Playing on within a song
+ * doesn't count, moving on to the next one does once saving has stopped
+ * for a foreign queue; an empty queue has nothing to lose. */
 function hasUnsavedEdits(): boolean {
   const local = localSnapshot()
   return local !== null && queueFingerprint(local) !== meta().savedQueue
@@ -114,7 +120,8 @@ function hasUnsavedEdits(): boolean {
 function observe(server: ServerPlayQueue | null, isByIndex: boolean): void {
   const snapshot = server && serverSnapshot(server)
   knownServer.value = snapshot
-  ours = !snapshot || fingerprint(snapshot, isByIndex) === meta().savedFingerprint
+  const ours = !snapshot || fingerprint(snapshot, isByIndex) === meta().savedFingerprint
+  oursSeenAt = ours ? Date.now() : 0
 }
 
 function enabled(): boolean {
@@ -135,19 +142,33 @@ function localSnapshot(): QueueSnapshot | null {
   }
 }
 
-/** indexBasedQueue where the server has it, so a song queued twice keeps
- * the right copy current; asked once per account. */
-function byIndex(): Promise<boolean> {
+interface QueueFeatures {
+  /** indexBasedQueue, so a song queued twice keeps the right copy current. */
+  byIndex: boolean
+  /** formPost, so a long queue goes as a body rather than outgrowing a URL. */
+  formPost: boolean
+}
+
+/** What the server offers for the queue, asked once per account - and
+ * again next time where it gave no answer, which says nothing about it. */
+function queueFeatures(): Promise<QueueFeatures> {
   const auth = useAuthStore()
   const account = `${auth.serverUrl}|${auth.username}`
-  if (byIndexFor?.account !== account) {
+  if (featuresFor?.account !== account) {
     const asked = useLibraryStore()
       .client()
       .getOpenSubsonicExtensions()
-      .then((extensions) => extensions.has('indexBasedQueue'))
-    byIndexFor = { account, byIndex: asked }
+      .then((extensions) => ({
+        byIndex: extensions.has('indexBasedQueue'),
+        formPost: extensions.has('formPost'),
+      }))
+    const entry = { account, features: asked }
+    featuresFor = entry
+    asked.catch(() => {
+      if (featuresFor === entry) featuresFor = null
+    })
   }
-  return byIndexFor.byIndex
+  return featuresFor.features
 }
 
 /** Whether it saved - false for nothing to save, a foreign queue in the
@@ -168,24 +189,24 @@ export async function saveServerQueue({
   if (!overwrite && lastSaved && sameQueue(snapshot, lastSaved, 1)) return true
   const client = useLibraryStore().client()
   try {
-    const isByIndex = await byIndex()
+    const features = await queueFeatures()
     if (!overwrite && !keepalive) {
-      const server = await client.getPlayQueue(isByIndex)
-      observe(server, isByIndex)
+      const server = await client.getPlayQueue(features.byIndex)
+      observe(server, features.byIndex)
       const current = meta()
-      if (isForeign(server, snapshot, current, isByIndex)) {
+      if (isForeign(server, snapshot, current, features.byIndex)) {
         if (server.changed !== current.offeredChanged) {
           saveMeta({ ...current, offeredChanged: server.changed })
-          offer(server)
+          offer(server, features.byIndex)
         }
         return false
       }
     }
     await client.savePlayQueue(snapshot.songIds, snapshot.currentIndex, snapshot.position, {
-      byIndex: isByIndex,
+      ...features,
       keepalive,
     })
-    rememberInStep(snapshot, isByIndex)
+    rememberInStep(snapshot, features.byIndex)
     return true
   } catch (error) {
     console.warn('[serverQueue] Saving the queue failed:', error)
@@ -232,8 +253,9 @@ export async function checkServerQueue({ force = false } = {}): Promise<void> {
   if (!force && now - lastCheckAt < CHECK_MIN_INTERVAL_MS) return
   lastCheckAt = now
   let server: ServerPlayQueue | null
-  const isByIndex = await byIndex()
+  let isByIndex: boolean
   try {
+    isByIndex = (await queueFeatures()).byIndex
     server = await useLibraryStore().client().getPlayQueue(isByIndex)
   } catch (error) {
     console.warn('[serverQueue] Reading the queue failed:', error)
@@ -249,13 +271,13 @@ export async function checkServerQueue({ force = false } = {}): Promise<void> {
   // Not on a reload of a window that was playing: it is about to carry on
   // by itself (resumeLocalPlayback()), and would carry on with this queue.
   if (server.changedBy === APP_NAME && !hasUnsavedEdits() && !readSessionWasPlaying()) {
-    await take(server)
+    take(server, isByIndex)
     announceTaken(server)
     return
   }
   if (server.changed === current.offeredChanged) return
   saveMeta({ ...current, offeredChanged: server.changed })
-  offer(server)
+  offer(server, isByIndex)
 }
 
 function announceTaken(server: ServerPlayQueue): void {
@@ -267,7 +289,7 @@ function announceTaken(server: ServerPlayQueue): void {
   ])
 }
 
-function offer(server: ServerPlayQueue): void {
+function offer(server: ServerPlayQueue, isByIndex: boolean): void {
   const t = i18n.global.t
   const song = server.songs[server.currentIndex]
   emitter.emit('toast', {
@@ -282,27 +304,22 @@ function offer(server: ServerPlayQueue): void {
     timeoutMs: OFFER_TIMEOUT_MS,
     action: {
       label: t('queue.serverOfferAction'),
-      onClick: () => adopt(server),
+      onClick: () => adopt(server, isByIndex),
     },
   })
 }
 
-function adopt(server: ServerPlayQueue): void {
+function adopt(server: ServerPlayQueue, isByIndex: boolean): void {
   // A cast may have started since the toast went up.
   if (usePlaybackStore().isCasting) return
-  void take(server)
+  take(server, isByIndex)
 }
 
-async function take(server: ServerPlayQueue): Promise<void> {
+function take(server: ServerPlayQueue, isByIndex: boolean): void {
   usePlaybackStore().adoptServerQueue(server.songs, server.currentIndex, server.position)
-  // Before the await, so a save landing meanwhile already sees this
-  // device in step and has nothing to send.
-  const snapshot = serverSnapshot(server)
-  lastSaved = snapshot
-  knownServer.value = snapshot
   // Taken, so in step with the server and not to be offered again.
   saveMeta({ ...meta(), offeredChanged: server.changed })
-  rememberInStep(snapshot, await byIndex())
+  rememberInStep(serverSnapshot(server), isByIndex)
 }
 
 /** The queue toolbar's button: whatever the server holds, however old and
@@ -313,8 +330,9 @@ export async function loadServerQueue(): Promise<void> {
   if (!enabled() || usePlaybackStore().isCasting) return
   const t = i18n.global.t
   let server: ServerPlayQueue | null
-  const isByIndex = await byIndex()
+  let isByIndex: boolean
   try {
+    isByIndex = (await queueFeatures()).byIndex
     server = await useLibraryStore().client().getPlayQueue(isByIndex)
   } catch (error) {
     console.warn('[serverQueue] Reading the queue failed:', error)
@@ -326,7 +344,7 @@ export async function loadServerQueue(): Promise<void> {
     emitter.emit('toast', ['information', t('queue.serverLoad'), t('queue.serverEmpty')])
     return
   }
-  await take(server)
+  take(server, isByIndex)
 }
 
 /** Asks the server what it holds, for the load button - called as the
@@ -337,8 +355,8 @@ export async function refreshServerQueueState(): Promise<void> {
   if (now - lastRefreshAt < REFRESH_MIN_INTERVAL_MS) return
   lastRefreshAt = now
   try {
-    const isByIndex = await byIndex()
-    observe(await useLibraryStore().client().getPlayQueue(isByIndex), isByIndex)
+    const { byIndex } = await queueFeatures()
+    observe(await useLibraryStore().client().getPlayQueue(byIndex), byIndex)
   } catch (error) {
     console.warn('[serverQueue] Reading the queue failed:', error)
   }
@@ -385,21 +403,24 @@ export function initServerQueueSync(): void {
   // it is a focus.
   window.addEventListener('focus', () => void checkServerQueue())
 
+  // The position only while paused: there it moves by a seek alone, while
+  // playing it ticks and the interval below carries it.
   watch(
     () =>
       `${playback.isPlaying}|${queueKey(
         playback.queue.map((song) => song.id),
         playback.currentIndex,
-      )}`,
+      )}|${playback.isPlaying ? '' : playback.localPosition}`,
     () => scheduleSave(),
   )
   setInterval(() => {
     if (playback.isPlaying) void saveServerQueue()
   }, SAVE_INTERVAL_MS)
-  // The last position before the window goes away. This one save cannot
-  // ask the server first, so it only goes while the copy there was this
-  // device's own when last seen - at most one interval ago while playing.
+  // The last position before the window goes away - in the browser, that
+  // is; Electron's quit waits for an ordinary save first (App.vue). This
+  // one cannot ask the server first, so it only goes while the copy there
+  // was seen as this device's own recently enough to still be.
   window.addEventListener('pagehide', () => {
-    if (ours && (saveTimer || playback.isPlaying)) void saveServerQueue({ keepalive: true })
+    if (Date.now() - oursSeenAt < OURS_TRUSTED_MS) void saveServerQueue({ keepalive: true })
   })
 }

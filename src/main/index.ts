@@ -222,7 +222,17 @@ function createWindow(): void {
     if (saved?.maximized) mainWindow.maximize()
     mainWindow.show()
   })
-  mainWindow.on('close', () => saveWindowState(mainWindow))
+  mainWindow.on('close', (event) => {
+    saveWindowState(mainWindow)
+    // Closing the window is quitting everywhere but macOS - and by the time
+    // window-all-closed fires, the renderer is gone and can't finish its
+    // part of requestQuit() any more (stop casting, save the play queue).
+    // So the close waits for it here instead; finishQuit()'s own close
+    // goes through.
+    if (process.platform === 'darwin' || quitting) return
+    event.preventDefault()
+    requestQuit()
+  })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
     // Only hand http(s) URLs to the OS's default handler. `details.url`

@@ -61,7 +61,11 @@ describe('SubsonicClient play queue', () => {
   it('posts the queue as a form, with the connect token in the URL', async () => {
     const fetchMock = answer({})
 
-    await client.savePlayQueue(['a', 'b', 'a'], 2, 61.5, { byIndex: true, keepalive: true })
+    await client.savePlayQueue(['a', 'b', 'a'], 2, 61.5, {
+      byIndex: true,
+      formPost: true,
+      keepalive: true,
+    })
 
     const [url, init] = fetchMock.mock.calls[0]!
     const requested = new URL(url)
@@ -82,13 +86,54 @@ describe('SubsonicClient play queue', () => {
   it('names the current song by id in the plain form', async () => {
     const fetchMock = answer({})
 
-    await client.savePlayQueue(['a', 'b'], 1, 0, { byIndex: false })
+    await client.savePlayQueue(['a', 'b'], 1, 0, { byIndex: false, formPost: true })
 
     const [url, init] = fetchMock.mock.calls[0]!
     const body = init!.body as URLSearchParams
     expect(new URL(url).pathname).toBe('/rest/savePlayQueue.view')
     expect(body.get('current')).toBe('b')
     expect(body.has('currentIndex')).toBe(false)
+  })
+
+  /** Without formPost, the Subsonic API's own way: everything in the URL. */
+  it('sends the queue in the URL where the server takes no form', async () => {
+    const fetchMock = answer({})
+
+    await client.savePlayQueue(['a', 'b'], 1, 0, { byIndex: true, formPost: false })
+
+    const [url, init] = fetchMock.mock.calls[0]!
+    const requested = new URL(url)
+    expect(init?.method).toBeUndefined()
+    expect(requested.searchParams.getAll('id')).toEqual(['a', 'b'])
+    expect(requested.searchParams.get('currentIndex')).toBe('1')
+    expect(requested.searchParams.get('token')).toBe('tok')
+  })
+
+  /** Browsers refuse a keepalive body past 64 KiB outright - without the
+   * flag it at least has a chance. */
+  it('leaves keepalive off for a queue too long for it', async () => {
+    const fetchMock = answer({})
+    const ids = Array.from({ length: 3_000 }, (_, i) => `song-id-of-twenty-two-${i}`)
+
+    await client.savePlayQueue(ids, 0, 0, { byIndex: true, formPost: true, keepalive: true })
+
+    expect(fetchMock.mock.calls[0]![1]?.keepalive).toBe(false)
+  })
+
+  it('throws instead of guessing the extensions where no answer came', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('Failed to fetch')
+      }),
+    )
+    await expect(client.getOpenSubsonicExtensions()).rejects.toThrow(TypeError)
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => ({ ok: false, status: 502 })),
+    )
+    await expect(client.getOpenSubsonicExtensions()).rejects.toThrow('502')
   })
 
   it('knows the index form only where the server lists it', async () => {

@@ -29,6 +29,20 @@ const API_VERSION = '1.16.1'
 /** The `c` every request carries - and so the `changedBy` of a queue any
  * Beacon saved (see services/playback/serverQueueSync.ts). */
 export const APP_NAME = 'beacon'
+// Browsers refuse a keepalive request once the bodies of all keepalive
+// requests in flight pass 64 KiB - some room left for the others.
+const KEEPALIVE_BODY_LIMIT = 60 * 1024
+
+/** The server, or connect's proxy in front of it, answered with an HTTP
+ * error status. */
+export class SubsonicHttpError extends Error {
+  readonly status: number
+
+  constructor(status: number) {
+    super(`Subsonic request failed: ${status}`)
+    this.status = status
+  }
+}
 
 /**
  * Builds a Subsonic auth query string (u/t/s/v/c) from a username+password.
@@ -124,7 +138,7 @@ export class SubsonicClient {
       headers: this.requestHeaders(),
     })
     if (!response.ok) {
-      throw new Error(`Subsonic request failed: ${response.status}`)
+      throw new SubsonicHttpError(response.status)
     }
     const data = await response.json()
     const subsonic = data['subsonic-response']
@@ -493,12 +507,17 @@ export class SubsonicClient {
   }
 
   /** The OpenSubsonic extensions this server offers, by name - empty for a
-   * plain Subsonic server, which doesn't know the call. */
+   * plain Subsonic server, which doesn't know the call. Throws where no
+   * answer came back at all (offline, or the proxy not reaching the
+   * server), which says nothing about the server either way. */
   async getOpenSubsonicExtensions(): Promise<Set<string>> {
     try {
       const data = await this.get<OpenSubsonicExtensionsResponse>('getOpenSubsonicExtensions.view')
       return new Set((data.openSubsonicExtensions ?? []).map((extension) => extension.name))
-    } catch {
+    } catch (error) {
+      const unanswered =
+        error instanceof TypeError || (error instanceof SubsonicHttpError && error.status >= 500)
+      if (unanswered) throw error
       return new Set()
     }
   }
@@ -536,33 +555,42 @@ export class SubsonicClient {
 
   /** Stores the queue on the server for other clients to pick up.
    *
-   * A form POST rather than a GET: a long queue as repeated `id=`
-   * parameters outgrows what a URL may carry. The connect token travels in
-   * the query string instead of a header, so the request needs no CORS
+   * A form POST where the server takes one (`formPost`): a long queue as
+   * repeated `id=` parameters outgrows what a URL may carry. Elsewhere a
+   * GET, as the Subsonic API has it. The connect token travels in the
+   * query string instead of a header, so the request needs no CORS
    * preflight - a `keepalive` fetch (the one that still goes out while the
-   * page closes) is refused outright when it would need one. */
+   * page closes) is refused outright when it would need one, and so is a
+   * body past KEEPALIVE_BODY_LIMIT, which goes without and may not make it. */
   async savePlayQueue(
     songIds: string[],
     currentIndex: number,
     position: number,
-    { byIndex, keepalive = false }: { byIndex: boolean; keepalive?: boolean },
+    {
+      byIndex,
+      formPost,
+      keepalive = false,
+    }: { byIndex: boolean; formPost: boolean; keepalive?: boolean },
   ): Promise<void> {
-    const body = this.authParams()
-    for (const id of songIds) body.append('id', id)
-    if (byIndex) body.set('currentIndex', String(currentIndex))
-    else body.set('current', songIds[currentIndex] ?? '')
-    body.set('position', String(Math.round(position * 1000)))
+    const params = this.authParams()
+    for (const id of songIds) params.append('id', id)
+    if (byIndex) params.set('currentIndex', String(currentIndex))
+    else params.set('current', songIds[currentIndex] ?? '')
+    params.set('position', String(Math.round(position * 1000)))
     const query = new URLSearchParams()
     if (this.connectToken) query.set('token', this.connectToken)
     if (this.sessionId) query.set('session', this.sessionId)
     const endpoint = byIndex ? 'savePlayQueueByIndex.view' : 'savePlayQueue.view'
-    const response = await fetch(`${this.proxyBaseUrl}/rest/${endpoint}?${query.toString()}`, {
-      method: 'POST',
-      body,
-      keepalive,
-    })
+    const url = `${this.proxyBaseUrl}/rest/${endpoint}?${query.toString()}`
+    const response = formPost
+      ? await fetch(url, {
+          method: 'POST',
+          body: params,
+          keepalive: keepalive && params.toString().length <= KEEPALIVE_BODY_LIMIT,
+        })
+      : await fetch(`${url}&${params.toString()}`, { keepalive })
     if (!response.ok) {
-      throw new Error(`Subsonic request failed: ${response.status}`)
+      throw new SubsonicHttpError(response.status)
     }
     const data = await response.json()
     const subsonic = data['subsonic-response']
@@ -587,7 +615,7 @@ export class SubsonicClient {
       headers: this.requestHeaders(),
     })
     if (!response.ok) {
-      throw new Error(`Subsonic request failed: ${response.status}`)
+      throw new SubsonicHttpError(response.status)
     }
     const data = await response.json()
     const subsonic = data['subsonic-response']
