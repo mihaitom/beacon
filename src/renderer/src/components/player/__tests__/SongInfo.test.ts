@@ -126,17 +126,6 @@ describe('SongInfo', () => {
       expect(song.rating).toBe(4)
     })
 
-    it('puts the old rating back when the server refuses the new one', async () => {
-      const { wrapper, song } = await openMenuForSong()
-      vi.spyOn(useLibraryStore(), 'setRating').mockRejectedValue(new Error('nope'))
-      vi.spyOn(console, 'error').mockImplementation(() => {})
-
-      wrapper.findComponent({ name: 'VRating' }).vm.$emit('update:modelValue', 5)
-      await flushPromises()
-
-      expect(song.rating).toBe(2)
-    })
-
     it('leaves the right-click alone with nothing to act on', async () => {
       const { wrapper } = await mountInfo()
       const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true })

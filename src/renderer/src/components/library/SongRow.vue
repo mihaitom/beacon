@@ -215,6 +215,9 @@
       <!-- What is still true tomorrow. The queue section above is undone
          - by playing something else; this writes to a playlist. -->
       <context-menu-section :label="$t('library.menuLibrary')" />
+      <!-- One song's own stars, so gone in a multi-selection like Song
+         - Radio above, rather than rating only the row under the pointer. -->
+      <song-rating-item v-if="!showSelectionSubheader" :song="song as Song" />
       <add-to-playlist-submenu
         @create="$emit('create-playlist', { song, index })"
         @select="$emit('add-to-playlist', { song, playlistId: $event, index })"
@@ -270,6 +273,7 @@ import CoverArt from './CoverArt.vue'
 import TileContextMenu from './TileContextMenu.vue'
 import ContextMenuSection from './ContextMenuSection.vue'
 import AddToPlaylistSubmenu from './AddToPlaylistSubmenu.vue'
+import SongRatingItem from './SongRatingItem.vue'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
@@ -279,7 +283,13 @@ import type { Song } from '@/types/library'
 
 export default {
   name: 'SongRow',
-  components: { CoverArt, TileContextMenu, ContextMenuSection, AddToPlaylistSubmenu },
+  components: {
+    CoverArt,
+    TileContextMenu,
+    ContextMenuSection,
+    AddToPlaylistSubmenu,
+    SongRatingItem,
+  },
   props: {
     song: {
       type: Object,

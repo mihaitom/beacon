@@ -398,6 +398,28 @@ describe('library mutations', () => {
       expect(song.starred).toBe(false)
     })
 
+    it('shows a new rating at once and sends it for the object it was given', async () => {
+      const library = useLibraryStore()
+      const client = stubClient({ setRating: vi.fn().mockResolvedValue(undefined) })
+      const song = makeSong('s1', { rating: 2 })
+
+      await library.rate(song, 4)
+
+      expect(client.setRating).toHaveBeenCalledWith('s1', 4)
+      expect(song.rating).toBe(4)
+    })
+
+    it('puts the old rating back when the server refuses the new one', async () => {
+      const library = useLibraryStore()
+      stubClient({ setRating: vi.fn().mockRejectedValue(new Error('nope')) })
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      const song = makeSong('s1', { rating: 2 })
+
+      await library.rate(song, 5)
+
+      expect(song.rating).toBe(2)
+    })
+
     /** On Plex the heart and the fifth star are one value on the server,
      * so the two may not disagree on screen either. */
     describe('where a favourite is five stars (Plex)', () => {

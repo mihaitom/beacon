@@ -1260,12 +1260,25 @@ export const useLibraryStore = defineStore('library', {
       if (useAuthStore().capabilities.favoritesAreTopRating) item.starred = rating === TOP_RATING
     },
 
-    /** Sets a song/album/artist's 1–5 star rating (0 clears it) — the
-     * caller owns optimistic local state (same pattern as toggleStar's
-     * callers), since this can target a Song, Album, or Artist and there's
-     * no single place in state to reconcile all three against. */
+    /** Sets a song/album/artist's 1–5 star rating (0 clears it) on the
+     * server only - see rate() for what the stars in the app use. */
     async setRating(id: string, rating: number): Promise<void> {
       await this.client().setRating(id, rating)
+    },
+
+    /** Rates a song, album or artist the way every row of stars in the app
+     * does: shown at once, put back if the server refuses. Like
+     * toggleFavorite(), it changes the object it was given, not whatever is
+     * showing by the time the answer is back. */
+    async rate(item: Song | Album | Artist, rating: number): Promise<void> {
+      const previous = item.rating
+      this.markRating(item, rating)
+      try {
+        await this.setRating(item.id, rating)
+      } catch (error) {
+        this.markRating(item, previous)
+        console.error('[library] Failed to set rating:', error)
+      }
     },
 
     async fetchRadioStations(): Promise<void> {

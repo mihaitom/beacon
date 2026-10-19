@@ -307,16 +307,7 @@ export default {
       await this.libraryStore.toggleFavorite('album', this.album)
     },
     async setRating(rating: number) {
-      if (!this.album) return
-      const album = this.album
-      const previous = album.rating
-      this.libraryStore.markRating(album, rating)
-      try {
-        await this.libraryStore.setRating(album.id, rating)
-      } catch (error) {
-        this.libraryStore.markRating(album, previous)
-        console.error('[album-detail] Failed to set rating:', error)
-      }
+      if (this.album) await this.libraryStore.rate(this.album, rating)
     },
   },
 }

@@ -96,19 +96,7 @@
         <v-list-item-title>{{ $t('library.songRadio') }}</v-list-item-title>
       </v-list-item>
       <context-menu-section :label="$t('library.menuLibrary')" />
-      <div v-if="authStore.capabilities.personalRating" class="song-info__rating">
-        <v-rating
-          :model-value="currentSong.rating"
-          length="5"
-          size="small"
-          density="compact"
-          active-color="primary"
-          hover
-          clearable
-          :aria-label="$t('library.rating')"
-          @update:model-value="setRating"
-        />
-      </div>
+      <song-rating-item :song="currentSong" />
       <add-to-playlist-submenu @create="createPlaylist" @select="addToPlaylist" />
       <context-menu-section :label="$t('library.menuNavigation')" />
       <v-list-item v-if="currentSong.albumId" :to="`/albums/${currentSong.albumId}`">
@@ -145,6 +133,7 @@ import CoverArt from '@/components/library/CoverArt.vue'
 import TileContextMenu from '@/components/library/TileContextMenu.vue'
 import ContextMenuSection from '@/components/library/ContextMenuSection.vue'
 import AddToPlaylistSubmenu from '@/components/library/AddToPlaylistSubmenu.vue'
+import SongRatingItem from '@/components/library/SongRatingItem.vue'
 import CreatePlaylistDialog from '@/components/library/CreatePlaylistDialog.vue'
 import PreviewStatus from './PreviewStatus.vue'
 
@@ -156,6 +145,7 @@ export default {
     TileContextMenu,
     ContextMenuSection,
     AddToPlaylistSubmenu,
+    SongRatingItem,
     CreatePlaylistDialog,
   },
   data() {
@@ -215,22 +205,6 @@ export default {
         void useLibraryStore().fetchPlaylists()
       }
     },
-    /** Rates the song the menu was opened for, optimistically like
-     * SongTable.vue's setRating(). Held on to, not re-read from the store:
-     * the track can change during the round trip. */
-    async setRating(value: number | string) {
-      const song = this.currentSong
-      if (!song) return
-      const library = useLibraryStore()
-      const previous = song.rating
-      library.markRating(song, Number(value))
-      try {
-        await library.setRating(song.id, Number(value))
-      } catch (error) {
-        library.markRating(song, previous)
-        console.error('[song-info] Failed to set rating:', error)
-      }
-    },
     async startSongRadio() {
       if (!this.currentSong) return
       try {
@@ -283,11 +257,6 @@ export default {
   align-items: center;
   flex-shrink: 0;
   margin-inline: 8px 0;
-}
-
-/* Lined up with the menu items' own text, see ContextMenuSection.vue. */
-.song-info__rating {
-  padding: 2px 12px 6px;
 }
 
 /* Fills its grid track rather than sitting at a fixed 300px inside it.

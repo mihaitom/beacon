@@ -485,16 +485,7 @@ export default {
       await this.libraryStore.toggleFavorite('artist', this.artist)
     },
     async setRating(rating: number) {
-      if (!this.artist) return
-      const artist = this.artist
-      const previous = artist.rating
-      this.libraryStore.markRating(artist, rating)
-      try {
-        await this.libraryStore.setRating(artist.id, rating)
-      } catch (error) {
-        this.libraryStore.markRating(artist, previous)
-        console.error('[artist-detail] Failed to set rating:', error)
-      }
+      if (this.artist) await this.libraryStore.rate(this.artist, rating)
     },
     async startArtistRadio() {
       if (!this.artist) return

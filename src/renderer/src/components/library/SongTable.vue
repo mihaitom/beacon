@@ -752,14 +752,7 @@ export default {
       }
     },
     async setRating({ song, rating }: { song: Song; rating: number }) {
-      const previous = song.rating
-      this.libraryStore.markRating(song, rating)
-      try {
-        await this.libraryStore.setRating(song.id, rating)
-      } catch (error) {
-        this.libraryStore.markRating(song, previous)
-        console.error('[song-table] Failed to set rating:', error)
-      }
+      await this.libraryStore.rate(song, rating)
     },
     addToQueue(song: Song, index?: number) {
       this.playbackStore.addToQueue(this.selectedOrSingle(song, index))

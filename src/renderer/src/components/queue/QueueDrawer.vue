@@ -287,6 +287,7 @@
         </v-list-item>
 
         <context-menu-section :label="$t('library.menuLibrary')" />
+        <song-rating-item v-if="menuSong" :song="menuSong" />
         <add-to-playlist-submenu @create="menuCreatePlaylist" @select="menuAddToPlaylist" />
 
         <template v-if="menuSong?.albumId || menuSong?.artistId">
@@ -327,6 +328,7 @@ import QueueRow, { type QueueDragState } from './QueueRow.vue'
 import TileContextMenu from '@/components/library/TileContextMenu.vue'
 import ContextMenuSection from '@/components/library/ContextMenuSection.vue'
 import AddToPlaylistSubmenu from '@/components/library/AddToPlaylistSubmenu.vue'
+import SongRatingItem from '@/components/library/SongRatingItem.vue'
 import CreatePlaylistDialog from '@/components/library/CreatePlaylistDialog.vue'
 import { useAuthStore } from '@/stores/auth'
 import {
@@ -438,6 +440,7 @@ export default {
     TileContextMenu,
     ContextMenuSection,
     AddToPlaylistSubmenu,
+    SongRatingItem,
     CreatePlaylistDialog,
   },
   provide() {
