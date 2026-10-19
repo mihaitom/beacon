@@ -155,6 +155,26 @@ describe('guest Now Playing source', () => {
     expect(built.source.position).toBeCloseTo(42)
   })
 
+  it("colours the bars with the cover without an artist background, the background's over it", async () => {
+    vi.mocked(extractDominantColor).mockImplementation(async (url: string) =>
+      url.startsWith(BACKDROP_URL) ? [200, 60, 60] : [60, 200, 60],
+    )
+    const store = usePartyGuestStore()
+    store.applySnapshot(snapshot({ current_song: SONG }))
+    const built = useGuestNowPlayingSource()
+    dispose = built.dispose
+    await flushPromises()
+    const channels = () => built.source.visualizer.color.split(',').map(Number)
+
+    const [r, g] = channels()
+    expect(g).toBeGreaterThan(r!)
+
+    store.applySnapshot(snapshot({ backdrop: true, backdrop_count: 1, current_song: SONG }))
+    await flushPromises()
+    const [r2, g2] = channels()
+    expect(r2).toBeGreaterThan(g2!)
+  })
+
   it('keeps the backdrop colour through snapshots that leave the picture alone', async () => {
     vi.mocked(extractDominantColor).mockResolvedValue([20, 140, 220])
     const store = usePartyGuestStore()

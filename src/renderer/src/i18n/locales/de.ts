@@ -650,9 +650,9 @@ export default {
     appearanceTitle: 'Darstellung',
     theme: 'Theme',
     themeHint: 'Gilt nur für dieses Gerät.',
-    adaptiveAccent: '„Läuft gerade“ übernimmt die Farbe des Künstlerbilds',
+    adaptiveAccent: '„Läuft gerade“ übernimmt die Farbe des Bilds',
     adaptiveAccentHint:
-      'Solange „Läuft gerade“ offen ist, nehmen der Visualizer und der Akzent der App die Farbe des Künstlerhintergrunds an. Aus, bleiben sie im Akzent des Themes.',
+      'Solange „Läuft gerade“ offen ist, nehmen der Visualizer und der Akzent der App die Farbe des Künstlerhintergrunds an, ohne einen die des Covers. Aus, bleiben sie im Akzent des Themes.',
     themeGroupDark: 'Dunkel',
     themeGroupLight: 'Hell',
     customTheme: 'Eigene Farben',

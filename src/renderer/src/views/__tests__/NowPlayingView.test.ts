@@ -1015,14 +1015,35 @@ describe('NowPlayingView artist background', () => {
     expect(color).not.toBe('245, 169, 78')
   })
 
-  it('leaves the bars on the app amber without a Fanart.tv background', async () => {
+  it('colours the bars with the cover without a Fanart.tv background', async () => {
+    vi.mocked(extractDominantColor).mockResolvedValue([60, 200, 60] as [number, number, number])
     const { wrapper } = await mountView()
-    usePlaybackStore().setQueue([makeSong('a', { artist: 'Artist A' })], 0)
+    usePlaybackStore().setQueue([makeSong('a', { artist: 'Artist A', coverArtId: 'c1' })], 0)
     await flushPromises()
 
-    expect((wrapper.vm as unknown as { visualizerColor: string }).visualizerColor).toBe(
-      '245, 169, 78',
+    const color = (wrapper.vm as unknown as { visualizerColor: string }).visualizerColor
+    const [r, g, b] = color.split(',').map((part) => Number(part.trim()))
+    expect(g).toBeGreaterThan(r!)
+    expect(g).toBeGreaterThan(b!)
+  })
+
+  it("prefers the background's colour over the cover's for the bars", async () => {
+    vi.mocked(extractDominantColor).mockImplementation(async (url: string) =>
+      url.includes('fanart.tv') ? [200, 60, 60] : [60, 200, 60],
     )
+    vi.mocked(getArtistArt).mockResolvedValue({
+      banner: null,
+      background: 'https://assets.fanart.tv/bg.jpg',
+      backgrounds: ['https://assets.fanart.tv/bg.jpg'],
+      logo: null,
+    })
+    const { wrapper } = await mountView()
+    usePlaybackStore().setQueue([makeSong('a', { artist: 'Artist A', coverArtId: 'c1' })], 0)
+    await flushPromises()
+
+    const color = (wrapper.vm as unknown as { visualizerColor: string }).visualizerColor
+    const [r, g] = color.split(',').map((part) => Number(part.trim()))
+    expect(r).toBeGreaterThan(g!)
   })
 
   it('borrows the background colour as the app accent, and hands it back on unmount', async () => {

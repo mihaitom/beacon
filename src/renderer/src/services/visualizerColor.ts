@@ -3,11 +3,11 @@ import { themeAccent } from '@/services/appAccent'
 /**
  * Picking a colour the Now Playing visualizer bars can actually be seen in.
  *
- * The bars take their colour from the artist background (see
- * NowPlayingView.vue's visualizerColor). That works while the background has
- * a real colour, but a black-and-white or very dark photo extracts to a grey
- * or near-black, and bars drawn in it vanish into the picture behind them -
- * the exact case this exists for. So a grey or dark extraction falls back to
+ * The bars take their colour from the artist background, or the cover
+ * without one (see NowPlayingView.vue's visualizerColor). That works while
+ * the picture has a real colour, but a black-and-white or very dark one
+ * extracts to a grey or near-black, and bars drawn in it vanish into the
+ * picture behind them - the exact case this exists for. So a grey or dark extraction falls back to
  * the theme's accent, and anything kept is lifted to a brightness and
  * saturation that stands off the background rather than matching it.
  */

@@ -201,7 +201,7 @@ export function useGuestNowPlayingSource(
     () => showVisualizer.value && visualizerAvailable.value && playing.value,
   )
   const visualizerColor = computed(() =>
-    visualizerBarColor(store.snapshot?.backdrop ? backdropColor.value : null),
+    visualizerBarColor(store.snapshot?.backdrop ? backdropColor.value : coverColor.value),
   )
 
   const eyebrow = computed(() => {

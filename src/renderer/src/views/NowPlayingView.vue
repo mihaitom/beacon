@@ -501,17 +501,15 @@ export default {
     colorTriplet(): string {
       return this.extractedColor ?? themeAccent.value
     },
-    /** The visualizer bars' colour: the artist background's own dominant
-     * colour, but only once a Fanart.tv background is actually loaded and
-     * its colour extracted - the theme's accent otherwise, and always where
-     * following the background is switched off (Settings -> Appearance).
-     * Lifted for visibility by visualizerBarColor(), which also falls back
-     * to the theme's accent for a grey or dark background the bars would
-     * vanish into. Deliberately not colorTriplet, which follows the cover
-     * and drives the ambient wash and glow. */
+    /** The visualizer bars' colour: the Fanart.tv artist background's own
+     * dominant colour while one is shown, the cover's without one - the
+     * theme's accent where following the picture is switched off (Settings
+     * -> Appearance). Lifted for visibility by visualizerBarColor(), which
+     * also falls back to the theme's accent for a grey or dark picture the
+     * bars would vanish into. */
     visualizerColor(): string {
-      const follow = useAppearanceStore().adaptiveAccent && this.artistBackground
-      return visualizerBarColor(follow ? this.artistColor : null)
+      if (!useAppearanceStore().adaptiveAccent) return visualizerBarColor(null)
+      return visualizerBarColor(this.artistBackground ? this.artistColor : this.extractedColor)
     },
     /** Whether the artwork is actually hidden right now: the wish, and a
      * Fanart.tv artist background that is loaded and ready to show instead.
@@ -843,9 +841,8 @@ export default {
       this.artistBackground = art?.background ?? null
       this.artistBackgrounds = art?.backgrounds ?? []
       this.backgroundArtist = artist
-      // The bars take this image's colour (see visualizerColor); extracted
-      // here rather than from the cover, which is what the ambient wash and
-      // glow stay on.
+      // The bars take this image's colour over the cover's (see
+      // visualizerColor); the ambient wash and glow stay on the cover.
       if (this.artistBackground) {
         const color = await extractDominantColor(this.artistBackground)
         if (this.currentArtist !== artist) return
