@@ -469,6 +469,8 @@ export default {
     serverSaved:
       'Gespeichert - andere Apps bekommen jetzt diese Warteschlange, und Beacon hält sie dort aktuell.',
     serverSaveFailed: 'Die Warteschlange konnte nicht auf dem Server gespeichert werden.',
+    serverSyncedTitle: 'Warteschlange aktualisiert',
+    serverSyncedMessage: 'Von Beacon auf einem anderen Gerät übernommen, weiter bei „{title}“.',
   },
   party: {
     copied: 'Kopiert',

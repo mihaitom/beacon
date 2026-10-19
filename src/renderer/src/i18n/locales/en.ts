@@ -464,6 +464,8 @@ export default {
     serverSave: 'Save the queue on the server',
     serverSaved: 'Saved - other apps get this queue now, and Beacon keeps it up to date there.',
     serverSaveFailed: 'The queue could not be saved on the server.',
+    serverSyncedTitle: 'Queue updated',
+    serverSyncedMessage: 'Carried on from Beacon on another device, at “{title}”.',
   },
   party: {
     copied: 'Copied',

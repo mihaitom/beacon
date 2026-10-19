@@ -26,7 +26,9 @@ import type { Album, Artist, Playlist, RadioStation, Song } from '@/types/librar
 import type { LocalStreamQuality } from '@/services/streamQuality'
 
 const API_VERSION = '1.16.1'
-const APP_NAME = 'beacon'
+/** The `c` every request carries - and so the `changedBy` of a queue any
+ * Beacon saved (see services/playback/serverQueueSync.ts). */
+export const APP_NAME = 'beacon'
 
 /**
  * Builds a Subsonic auth query string (u/t/s/v/c) from a username+password.

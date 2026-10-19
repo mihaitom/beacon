@@ -10,6 +10,11 @@
  * (saveServerQueueByHand()). Either way the server copy is this device's
  * own again, and saving carries on as before, on the way out too.
  *
+ * A queue another Beacon of the same account saved - the phone on the way
+ * home, say - is not foreign in that sense but the same queue carried on
+ * elsewhere: this device takes it over by itself when it comes back to it,
+ * as long as nothing here would be lost by that (see checkServerQueue()).
+ *
  * Nothing here plays: a queue taken over is loaded paused, and only after
  * the user asked for it. */
 
@@ -20,15 +25,16 @@ import { timeAgo } from '@/services/relativeTime'
 import { useAuthStore } from '@/stores/auth'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
-import type { ServerPlayQueue } from '@/services/subsonic/client'
+import { readSessionWasPlaying } from './persistence'
+import { APP_NAME, type ServerPlayQueue } from '@/services/subsonic/client'
 import {
   fingerprint,
   isForeign,
   loadMeta,
+  queueFingerprint,
   sameQueue,
   saveMeta,
   serverSnapshot,
-  shouldOffer,
   type QueueSnapshot,
   type ServerQueueMeta,
 } from './serverQueue'
@@ -50,10 +56,10 @@ const OFFER_TIMEOUT_MS = 45_000
 // without asking first - it is the one save that can't.
 let ours = false
 let lastSaved: QueueSnapshot | null = null
-// Mirrors ServerQueueMeta.savedFingerprint for when localStorage refuses
-// the write - without it this device would take its own save for
+// Mirrors ServerQueueMeta's two saved fingerprints for when localStorage
+// refuses the write - without it this device would take its own save for
 // somebody else's and stop saving.
-let savedFingerprint: string | null = null
+let savedMirror: Pick<ServerQueueMeta, 'savedFingerprint' | 'savedQueue'> | null = null
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 let lastCheckAt = 0
 let byIndexFor: { account: string; byIndex: Promise<boolean> } | null = null
@@ -76,21 +82,32 @@ function queueKey(songIds: string[], currentIndex: number): string {
 export function markQueueRestored(): void {
   ours = false
   lastSaved = null
-  savedFingerprint = null
+  savedMirror = null
   knownServer.value = undefined
 }
 
 function meta(): ServerQueueMeta {
-  const stored = loadMeta()
-  return savedFingerprint === null ? stored : { ...stored, savedFingerprint }
+  return { ...loadMeta(), ...savedMirror }
 }
 
 function rememberInStep(snapshot: QueueSnapshot, isByIndex: boolean): void {
   lastSaved = snapshot
   knownServer.value = snapshot
   ours = true
-  savedFingerprint = fingerprint(snapshot, isByIndex)
-  saveMeta({ ...loadMeta(), savedFingerprint })
+  savedMirror = {
+    savedFingerprint: fingerprint(snapshot, isByIndex),
+    savedQueue: queueFingerprint(snapshot),
+  }
+  saveMeta({ ...loadMeta(), ...savedMirror })
+}
+
+/** Whether the queue here has been edited since it was last saved or
+ * loaded, without that edit reaching the server - what taking over
+ * another Beacon's queue would throw away. Playing on doesn't count; an
+ * empty queue has nothing to lose. */
+function hasUnsavedEdits(): boolean {
+  const local = localSnapshot()
+  return local !== null && queueFingerprint(local) !== meta().savedQueue
 }
 
 /** Takes note of what the server just said it holds. */
@@ -201,10 +218,12 @@ function scheduleSave(): void {
   saveTimer = setTimeout(() => void saveServerQueue(), SAVE_DEBOUNCE_MS)
 }
 
-/** Asks the server for its queue and offers it when somebody else saved it
- * and it is somewhere else. Not while something is playing here, or
- * casting: whoever is listening on this device is not asking to move -
- * saveServerQueue() offers it then, if it comes to that. */
+/** Asks the server for its queue, and where somebody else saved it and it
+ * is somewhere else: takes it over when another Beacon of this account
+ * saved it and nothing here would be lost, offers it otherwise. Not while
+ * something is playing here, or casting: whoever is listening on this
+ * device is not asking to move - saveServerQueue() offers it then, if it
+ * comes to that. */
 export async function checkServerQueue({ force = false } = {}): Promise<void> {
   if (!enabled()) return
   const playback = usePlaybackStore()
@@ -213,21 +232,39 @@ export async function checkServerQueue({ force = false } = {}): Promise<void> {
   if (!force && now - lastCheckAt < CHECK_MIN_INTERVAL_MS) return
   lastCheckAt = now
   let server: ServerPlayQueue | null
+  const isByIndex = await byIndex()
   try {
-    server = await useLibraryStore()
-      .client()
-      .getPlayQueue(await byIndex())
+    server = await useLibraryStore().client().getPlayQueue(isByIndex)
   } catch (error) {
     console.warn('[serverQueue] Reading the queue failed:', error)
     return
   }
-  const isByIndex = await byIndex()
   observe(server, isByIndex)
   const local = localSnapshot() ?? { songIds: [], currentIndex: -1, position: 0 }
   const current = meta()
-  if (!shouldOffer(server, local, current, isByIndex)) return
+  if (!isForeign(server, local, current, isByIndex)) return
+  // Re-checked: the request above may have taken long enough for
+  // something to start.
+  if (playback.isPlaying || playback.isCasting) return
+  // Not on a reload of a window that was playing: it is about to carry on
+  // by itself (resumeLocalPlayback()), and would carry on with this queue.
+  if (server.changedBy === APP_NAME && !hasUnsavedEdits() && !readSessionWasPlaying()) {
+    await take(server)
+    announceTaken(server)
+    return
+  }
+  if (server.changed === current.offeredChanged) return
   saveMeta({ ...current, offeredChanged: server.changed })
   offer(server)
+}
+
+function announceTaken(server: ServerPlayQueue): void {
+  const t = i18n.global.t
+  emitter.emit('toast', [
+    'information',
+    t('queue.serverSyncedTitle'),
+    t('queue.serverSyncedMessage', { title: server.songs[server.currentIndex]?.title ?? '' }),
+  ])
 }
 
 function offer(server: ServerPlayQueue): void {
@@ -344,6 +381,9 @@ export function initServerQueueSync(): void {
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible') void checkServerQueue()
   })
+  // A desktop window left open never stops being visible - coming back to
+  // it is a focus.
+  window.addEventListener('focus', () => void checkServerQueue())
 
   watch(
     () =>

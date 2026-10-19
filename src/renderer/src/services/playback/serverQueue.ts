@@ -49,15 +49,25 @@ export function serverSnapshot(queue: ServerPlayQueue): QueueSnapshot {
  * copy, so there the id is what is compared, not the index. */
 export function fingerprint(snapshot: QueueSnapshot, byIndex: boolean): string {
   const current = byIndex ? snapshot.currentIndex : snapshot.songIds[snapshot.currentIndex]
-  const text = `${current}|${Math.round(snapshot.position * 1000)}|${snapshot.songIds.join(',')}`
-  // FNV-1a: only told apart from the one fingerprint stored, so 32 bits
-  // are plenty, and it keeps a long queue out of localStorage.
-  let hash = 0x811c9dc5
+  return hash(`${current}|${Math.round(snapshot.position * 1000)}|${snapshot.songIds.join(',')}`)
+}
+
+/** The songs and which one is current, without the position - whether the
+ * queue here is still the one last saved or loaded, however far it has
+ * played since. */
+export function queueFingerprint(snapshot: QueueSnapshot): string {
+  return hash(`${snapshot.currentIndex}|${snapshot.songIds.join(',')}`)
+}
+
+// FNV-1a: only told apart from the one fingerprint stored, so 32 bits are
+// plenty, and it keeps a long queue out of localStorage.
+function hash(text: string): string {
+  let value = 0x811c9dc5
   for (let i = 0; i < text.length; i++) {
-    hash ^= text.charCodeAt(i)
-    hash = Math.imul(hash, 0x01000193)
+    value ^= text.charCodeAt(i)
+    value = Math.imul(value, 0x01000193)
   }
-  return (hash >>> 0).toString(16)
+  return (value >>> 0).toString(16)
 }
 
 /** Whether the server holds a queue somebody else saved - not this
@@ -74,20 +84,13 @@ export function isForeign(
   return !sameQueue(snapshot, local)
 }
 
-/** Whether to offer a foreign queue in a toast: each one once. */
-export function shouldOffer(
-  server: ServerPlayQueue | null,
-  local: QueueSnapshot,
-  meta: ServerQueueMeta,
-  byIndex: boolean,
-): server is ServerPlayQueue {
-  return isForeign(server, local, meta, byIndex) && server.changed !== meta.offeredChanged
-}
-
 export interface ServerQueueMeta {
   /** fingerprint() of what this device last saved, or last loaded - either
    * way the server copy it is in step with. */
   savedFingerprint: string
+  /** queueFingerprint() of the same - what tells a queue edited here
+   * since, and never saved, from one that has only played on. */
+  savedQueue: string
   /** The server's `changed` of the last queue offered here - each one is
    * offered once, not on every return to the window. */
   offeredChanged: number
@@ -101,10 +104,11 @@ export function loadMeta(): ServerQueueMeta {
     const parsed = raw ? (JSON.parse(raw) as Partial<ServerQueueMeta>) : {}
     return {
       savedFingerprint: parsed.savedFingerprint ?? '',
+      savedQueue: parsed.savedQueue ?? '',
       offeredChanged: parsed.offeredChanged ?? 0,
     }
   } catch {
-    return { savedFingerprint: '', offeredChanged: 0 }
+    return { savedFingerprint: '', savedQueue: '', offeredChanged: 0 }
   }
 }
 

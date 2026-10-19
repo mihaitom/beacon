@@ -343,6 +343,95 @@ describe('offering the queue saved elsewhere', () => {
   })
 })
 
+describe('another Beacon of the same account', () => {
+  beforeEach(() => {
+    localStorage.clear()
+    sessionStorage.clear()
+  })
+
+  /** The desktop at home, last used with queue D, while the phone carried
+   * on with P on the way. */
+  async function desktopAfterPhone() {
+    const before = await load()
+    before.playback.setQueue([makeSong('d1'), makeSong('d2')], 0)
+    await before.sync.saveServerQueue()
+    before.server.queue = serverQueue({ changedBy: 'beacon' })
+    const desktop = await load(before.server)
+    desktop.playback.setQueue([makeSong('d1'), makeSong('d2')], 0)
+    return desktop
+  }
+
+  it("takes over the phone's queue by itself, paused", async () => {
+    const { sync, playback, client, toasts } = await desktopAfterPhone()
+
+    await sync.checkServerQueue({ force: true })
+
+    expect(playback.queue.map((song) => song.id)).toEqual(['x', 'y'])
+    expect(playback.currentIndex).toBe(1)
+    expect(playback.localPosition).toBe(30)
+    expect(playback.isPlaying).toBe(false)
+    // Said, not asked.
+    expect(toasts).toEqual([['information', expect.any(String), expect.any(String)]])
+    // Its own from here on.
+    playback.addToQueue([makeSong('z')])
+    await sync.saveServerQueue()
+    expect(client.savePlayQueue).toHaveBeenCalledTimes(1)
+  })
+
+  it('asks instead where the queue here was edited and never saved', async () => {
+    const { sync, playback, toasts } = await desktopAfterPhone()
+    playback.addToQueue([makeSong('d3')])
+
+    await sync.checkServerQueue({ force: true })
+
+    expect(playback.queue.map((song) => song.id)).toEqual(['d1', 'd2', 'd3'])
+    expect(toasts).toEqual([expect.objectContaining({ action: expect.anything() })])
+  })
+
+  it('only takes over a queue Beacon saved', async () => {
+    const { sync, playback, server, toasts } = await desktopAfterPhone()
+    server.queue = serverQueue({ changedBy: 'feishin' })
+
+    await sync.checkServerQueue({ force: true })
+
+    expect(playback.queue.map((song) => song.id)).toEqual(['d1', 'd2'])
+    expect(toasts).toEqual([expect.objectContaining({ action: expect.anything() })])
+  })
+
+  /** A reload of a window that was playing resumes by itself - it must not
+   * resume the phone's queue instead of its own. */
+  it('asks instead on a reload of a window that was playing', async () => {
+    const { sync, playback, toasts } = await desktopAfterPhone()
+    sessionStorage.setItem('beacon.playback.session-was-playing', String(Date.now()))
+
+    await sync.checkServerQueue({ force: true })
+
+    expect(playback.queue.map((song) => song.id)).toEqual(['d1', 'd2'])
+    expect(toasts).toHaveLength(1)
+  })
+
+  it('leaves it alone when playback starts while the server is asked', async () => {
+    const { sync, playback, client, server } = await desktopAfterPhone()
+    client.getPlayQueue.mockImplementationOnce(async () => {
+      playback.isPlaying = true
+      return server.queue
+    })
+
+    await sync.checkServerQueue({ force: true })
+
+    expect(playback.queue.map((song) => song.id)).toEqual(['d1', 'd2'])
+  })
+
+  it('takes it over onto an empty queue', async () => {
+    const { sync, playback, server } = await load({ queue: serverQueue({ changedBy: 'beacon' }) })
+
+    await sync.checkServerQueue({ force: true })
+
+    expect(playback.queue.map((song) => song.id)).toEqual(['x', 'y'])
+    expect(server.queue?.changedBy).toBe('beacon')
+  })
+})
+
 describe("the queue toolbar's load button", () => {
   beforeEach(() => {
     localStorage.clear()

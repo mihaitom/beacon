@@ -467,6 +467,8 @@ export default {
     serverSave: 'Salva la coda sul server',
     serverSaved: 'Salvata: le altre app ricevono ora questa coda, e Beacon la tiene aggiornata.',
     serverSaveFailed: 'Impossibile salvare la coda sul server.',
+    serverSyncedTitle: 'Coda aggiornata',
+    serverSyncedMessage: 'Ripresa da Beacon su un altro dispositivo, a «{title}».',
   },
   party: {
     copied: 'Copiato',

@@ -472,6 +472,8 @@ export default {
     serverSaved:
       'Enregistrée : les autres applications reçoivent maintenant cette file d’attente, et Beacon la tient à jour.',
     serverSaveFailed: 'La file d’attente n’a pas pu être enregistrée sur le serveur.',
+    serverSyncedTitle: 'File d’attente mise à jour',
+    serverSyncedMessage: 'Reprise depuis Beacon sur un autre appareil, à « {title} ».',
   },
   party: {
     copied: 'Copié',
