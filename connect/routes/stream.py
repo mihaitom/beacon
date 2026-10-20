@@ -39,16 +39,21 @@ from core.state import (
 )
 from core.stream_format import content_type_from_extension
 from core.streamer import (
+    BYTE_RANGE_BITRATE_KBPS,
+    BYTE_RANGES_ENABLED,
     FALLBACK_FORMAT,
+    GENTLE_PACING,
     SourceUnavailableError,
     resolve_output_format,
     stream_tracks,
     strip_stream_extension,
+    transcoded_byte_length,
 )
 from delivery.errors import source_error_response
 from delivery.sonos import needs_unpaced_stream
 
 from . import mix_cast
+from .local_stream import parse_byte_range
 from .playback import (
     POSITION_RESYNC_INTERVAL,
     _apply_position_offset,
@@ -629,16 +634,80 @@ async def resume_interrupted(session: SessionState = Depends(get_session)):
     return {"resumed": True}
 
 
+@dataclass(frozen=True)
+class _ByteRange:
+    """One response's slice of a generation's encode under
+    CAST_STREAM_BYTE_RANGES (see core/streamer.py)."""
+
+    first: int
+    last: int
+    total: int
+    start_seconds: float
+    partial: bool
+
+    @property
+    def length(self) -> int:
+        return self.last - self.first + 1
+
+    @property
+    def reaches_end(self) -> bool:
+        return self.last == self.total - 1
+
+    def headers(self) -> dict[str, str]:
+        headers = {"Accept-Ranges": "bytes", "Content-Length": str(self.length)}
+        if self.partial:
+            headers["Content-Range"] = f"bytes {self.first}-{self.last}/{self.total}"
+        return headers
+
+
+def _byte_range_for(session: SessionState, range_header: str | None, offset: float) -> _ByteRange:
+    """The byte space starts where this generation's first connection did
+    (`offset` there), so every later request of the same generation - a
+    HEAD, a range further in - maps onto the same encode. Bytes and seconds
+    convert through the same constant bitrate in both directions, as in
+    routes/local_stream.py."""
+    st = session.state
+    generation = st.clock.play_generation
+    if st.byte_range_base is None or st.byte_range_base[0] != generation:
+        st.byte_range_base = (generation, offset)
+    base = st.byte_range_base[1]
+    duration = st.current_output_format.source_duration or st.current_track.duration
+    total = transcoded_byte_length(BYTE_RANGE_BITRATE_KBPS, max(duration - base, 1.0))
+    rng = parse_byte_range(range_header, total)
+    first, last = rng if rng else (0, total - 1)
+    bytes_per_second = BYTE_RANGE_BITRATE_KBPS * 1000 / 8
+    return _ByteRange(first, last, total, base + first / bytes_per_second, rng is not None)
+
+
+async def _capped(audio: AsyncGenerator[bytes], limit: int) -> AsyncGenerator[bytes]:
+    """`audio`, stopped at exactly `limit` bytes: a body longer than its
+    Content-Length is a protocol violation, and the encode overshoots the
+    estimate by its header and final-frame padding."""
+    sent = 0
+    try:
+        async for chunk in audio:
+            if sent + len(chunk) >= limit:
+                yield chunk[: limit - sent]
+                return
+            sent += len(chunk)
+            yield chunk
+    finally:
+        await audio.aclose()
+
+
 @router.head("/stream")
 @router.head("/stream/{session_id}")
 async def audio_stream_head(request: Request, session_id: str = DEFAULT_SESSION_ID):
     """ffmpeg probes the URL with HEAD before streaming — answer without starting ffmpeg."""
     logger.debug("[stream] HEAD" + _cast_device_note(request))
     session = await registry.get_or_create(strip_stream_extension(session_id))
-    return Response(
-        media_type=session.state.current_output_format.content_type,
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-    )
+    headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    st = session.state
+    if BYTE_RANGES_ENABLED and st.current_track is not None and st.mix is None:
+        headers |= _byte_range_for(
+            session, request.headers.get("range"), st.clock.resume_offset
+        ).headers()
+    return Response(media_type=st.current_output_format.content_type, headers=headers)
 
 
 @router.head("/stream/radio/{session_id}")
@@ -1263,7 +1332,25 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
             f"(play_generation={session.state.clock.play_generation})" + _cast_device_note(request)
         )
 
-    paced = not needs_unpaced_stream(request.headers.get("user-agent"))
+    # CAST_STREAM_BYTE_RANGES (see core/streamer.py). A range past byte 0
+    # is the device fetching on from where it stopped reading - the same
+    # track carrying on in its own timeline, not a stream reopened from
+    # the start, so its position must not be re-framed as one.
+    byte_range: _ByteRange | None = None
+    if BYTE_RANGES_ENABLED and mix is None and track.id != TEST_TONE_TRACK_ID:
+        byte_range = _byte_range_for(session, request.headers.get("range"), offset)
+        offset = byte_range.start_seconds
+        if byte_range.first > 0:
+            reconnecting = False
+
+    # GENTLE_PACING and BYTE_RANGES_ENABLED (core/streamer.py) override the
+    # model list, so a switch tests every device the same way.
+    if byte_range is not None:
+        paced = False
+    elif GENTLE_PACING:
+        paced = True
+    else:
+        paced = not needs_unpaced_stream(request.headers.get("user-agent"))
 
     # Debug, not info — routes/playback.py's own "[play] ..." line already
     # announced this same track+device at the user-action level; this is
@@ -1271,7 +1358,13 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
     logger.debug(
         f"[stream] Client connected — {track.artist} — {track.title}"
         + (f" (seek {offset:.1f}s)" if offset > 0.5 else "")
-        + ("" if paced else " (unpaced for this model)")
+        + (
+            f" bytes {byte_range.first}-{byte_range.last}/{byte_range.total}"
+            if byte_range is not None
+            else ""
+        )
+        + ("" if paced else " (unpaced)")
+        + (" (gentle pacing)" if paced and GENTLE_PACING else "")
         + _cast_device_note(request)
     )
 
@@ -1361,6 +1454,8 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
                         paced=paced,
                     )
                 )
+                if byte_range is not None:
+                    audio = _capped(audio, byte_range.length)
                 async for chunk in audio:
                     if conn.first_byte_at is None:
                         conn.first_byte_at = time.monotonic()
@@ -1459,6 +1554,9 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
                 and st.is_streaming
                 and not st.clock.is_paused
                 and st.clock.play_generation == my_generation
+                # A range that stops short of the end is one block of the
+                # track, not the track ending.
+                and (byte_range is None or byte_range.reaches_end)
             ):
                 # (A mix's end is followed by routes/mix_cast.py's follow().)
                 wait = 0.0
@@ -1476,10 +1574,14 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
                 f"{track.title}: {conn.describe()}"
             )
 
+    headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    if byte_range is not None:
+        headers |= byte_range.headers()
     return StreamingResponse(
         stream_with_completion(),
+        status_code=206 if byte_range is not None and byte_range.partial else 200,
         media_type=output_format.content_type,
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        headers=headers,
     )
 
 
