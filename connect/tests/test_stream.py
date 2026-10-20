@@ -1818,3 +1818,26 @@ def test_a_byte_range_get_from_the_start_begins_at_the_current_position(
         client.get("/stream")
 
     assert mocked.call_args.kwargs["start_offset"] > 50.0
+
+
+def test_dlna_metadata_adds_its_headers_to_the_stream_and_its_head(
+    client, default_session, monkeypatch
+):
+    monkeypatch.setattr("delivery.sonos.DLNA_METADATA_ENABLED", True)
+    _configure_and_set_track(client, default_session)
+
+    with patch("routes.stream.stream_tracks", side_effect=_real_stream):
+        get = client.get("/stream")
+    head = client.head("/stream")
+
+    for r in (get, head):
+        assert r.headers["transfermode.dlna.org"] == "Streaming"
+        assert "DLNA.ORG_FLAGS=01700000" in r.headers["contentfeatures.dlna.org"]
+
+
+def test_dlna_metadata_marks_the_radio_relay_as_live(client, default_session, monkeypatch):
+    monkeypatch.setattr("delivery.sonos.DLNA_METADATA_ENABLED", True)
+
+    r = client.head(f"/stream/radio/{default_session.session_id}")
+
+    assert "DLNA.ORG_FLAGS=81700000" in r.headers["contentfeatures.dlna.org"]

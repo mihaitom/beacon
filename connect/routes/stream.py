@@ -50,7 +50,7 @@ from core.streamer import (
     transcoded_byte_length,
 )
 from delivery.errors import source_error_response
-from delivery.sonos import needs_unpaced_stream
+from delivery.sonos import dlna_stream_headers, needs_unpaced_stream
 
 from . import mix_cast
 from .local_stream import parse_byte_range
@@ -705,7 +705,7 @@ async def audio_stream_head(request: Request, session_id: str = DEFAULT_SESSION_
     """ffmpeg probes the URL with HEAD before streaming — answer without starting ffmpeg."""
     logger.debug("[stream] HEAD" + _cast_device_note(request))
     session = await registry.get_or_create(strip_stream_extension(session_id))
-    headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no", **dlna_stream_headers()}
     st = session.state
     if BYTE_RANGES_ENABLED and st.current_track is not None and st.mix is None:
         headers |= _byte_range_for(
@@ -724,7 +724,11 @@ async def radio_stream_head(session_id: str = DEFAULT_SESSION_ID):
     await registry.get_or_create(session_id)
     return Response(
         media_type=FALLBACK_FORMAT.content_type,
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+            **dlna_stream_headers(live=True),
+        },
     )
 
 
@@ -774,6 +778,7 @@ async def radio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
 
     wants_icy = request.headers.get("icy-metadata") == "1"
     headers = {"icy-metaint": str(DEVICE_METAINT)} if wants_icy else {}
+    headers |= dlna_stream_headers(live=True)
     # icy-name: the *station's* name (radio_info["title"], set once at
     # dispatch — see routes/playback.py's /play-url), not the "now playing"
     # tag the injected StreamTitle blocks below carry — same distinction a
@@ -1584,7 +1589,7 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
                 f"{track.title}: {conn.describe()}"
             )
 
-    headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no", **dlna_stream_headers()}
     if byte_range is not None:
         headers |= byte_range.headers()
     return StreamingResponse(

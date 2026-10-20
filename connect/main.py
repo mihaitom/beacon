@@ -44,6 +44,7 @@ from core.session import reap_stale_sessions, registry
 from core.state import PORT, get_local_ip
 from core.streamer import BYTE_RANGES_ENABLED, GENTLE_PACING
 from core.upnp_events import renew_due_subscriptions
+from delivery.sonos import DLNA_METADATA_ENABLED
 from media import jellyfin_bridge, plex_bridge
 from media.login_errors import LoginFailed
 from routes.account_settings import router as account_settings_router
@@ -304,6 +305,11 @@ async def lifespan(_: FastAPI):
     elif GENTLE_PACING:
         logger.warning(
             "⚠️  CAST_STREAM_PACING=gentle — cast streams are paced at 1.1x after 60s (diagnostics)"
+        )
+    if DLNA_METADATA_ENABLED:
+        logger.warning(
+            "⚠️  CAST_STREAM_METADATA=dlna — Sonos gets musicTrack metadata and DLNA flags "
+            "(diagnostics)"
         )
     logger.info("⏳ Waiting for /config (media server credentials)")
 

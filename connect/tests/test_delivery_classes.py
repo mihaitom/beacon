@@ -191,6 +191,51 @@ def test_sonos_play_uses_passed_content_type_in_protocol_info():
     assert 'protocolInfo="http-get:*:audio/flac:*"' in xml
 
 
+# ── CAST_STREAM_METADATA=dlna (#56) ─────────────────────────────────────────
+
+
+def _dispatched_metadata(*play_args) -> str:
+    dev = _mock_sonos_device()
+    with patch.object(SonosDelivery, "_get_device", return_value=dev):
+        asyncio.run(SonosDelivery("Küche").play(*play_args))
+    return dict(dev.avTransport.SetAVTransportURI.call_args.args[0])["CurrentURIMetaData"]
+
+
+def test_dlna_metadata_announces_a_track_with_its_duration(monkeypatch):
+    monkeypatch.setattr(_sonos_mod, "DLNA_METADATA_ENABLED", True)
+
+    xml = _dispatched_metadata("http://stream", "Title", "", None, 464.4)
+
+    assert "object.item.audioItem.musicTrack" in xml
+    assert 'duration="0:07:44"' in xml
+    assert "DLNA.ORG_FLAGS=01500000" in xml
+
+
+def test_dlna_metadata_announces_radio_as_a_broadcast_with_streaming_flags(monkeypatch):
+    monkeypatch.setattr(_sonos_mod, "DLNA_METADATA_ENABLED", True)
+
+    xml = _dispatched_metadata("http://10.0.0.5:9181/stream/radio/abc", "Station")
+
+    assert "object.item.audioItem.audioBroadcast" in xml
+    assert "duration=" not in xml
+    assert "DLNA.ORG_FLAGS=01700000" in xml
+
+
+def test_without_the_switch_a_track_goes_out_as_before():
+    xml = _dispatched_metadata("http://stream", "Title", "", None, 464.4)
+
+    assert "object.item.audioItem.audioBroadcast" in xml
+    assert "duration=" not in xml
+
+
+def test_dlna_stream_headers_only_with_the_switch(monkeypatch):
+    assert _sonos_mod.dlna_stream_headers() == {}
+    monkeypatch.setattr(_sonos_mod, "DLNA_METADATA_ENABLED", True)
+    assert _sonos_mod.dlna_stream_headers()["transferMode.dlna.org"] == "Streaming"
+    live = _sonos_mod.dlna_stream_headers(live=True)["contentFeatures.dlna.org"]
+    assert "DLNA.ORG_FLAGS=81700000" in live
+
+
 # ── SonosDelivery._dispatch_uri() — the x-rincon-mp3radio:// scheme swap ────
 # Reported live 2026-09-04: Sonos radio still dropping out only when relayed
 # through Beacon, buffer measured at ~1s, even after IcyMuxer (see
