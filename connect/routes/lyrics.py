@@ -448,8 +448,11 @@ async def _do_auto(params: dict, wanted: list[LyricSource]) -> tuple[dict[str, A
     # skipped in favour of the next candidate, which may well be the same
     # song from a different source.
     for candidate in ranked:
+        # Skipped, not the end of the walk: the ranking is by length first,
+        # not by score, so an acceptable candidate can sit below one that
+        # isn't.
         if candidate["score"] > MATCH_THRESHOLD:
-            break
+            continue
         # Checked separately from the score, which is lenient enough to let
         # a different act through on a similar title — see artist_matches().
         # An ISRC match is this recording however its artist is billed.

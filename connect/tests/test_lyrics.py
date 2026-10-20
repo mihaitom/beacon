@@ -175,6 +175,30 @@ def test_order_search_results_still_prefers_the_right_length_to_an_isrc_match():
     assert order_search_results(params, results)[0]["duration"] == 201
 
 
+def test_order_search_results_ignores_where_the_featured_artist_is_credited():
+    """The tags say "Gotye feat. Kimbra", the provider puts the credit in
+    the title instead - the same recording, scored 0.57 and so refused
+    automatically while the picker listed it (2026-10-20)."""
+    results = [
+        {"artist": "Gotye", "name": "Somebody That I Used to Know (feat. Kimbra)"},
+    ]
+    params = {"artist": "Gotye feat. Kimbra", "name": "Somebody That I Used to Know"}
+    assert order_search_results(params, results)[0]["score"] == 0.0
+
+    params = {"artist": "Dua Lipa", "name": "Levitating [ft. DaBaby]"}
+    results = [{"artist": "Dua Lipa featuring DaBaby", "name": "Levitating"}]
+    assert order_search_results(params, results)[0]["score"] == 0.0
+
+
+def test_order_search_results_does_not_mistake_a_word_for_a_credit():
+    # "Left" and "Feather" start like the credit words; only a word of
+    # its own is one.
+    results = [{"artist": "A", "name": "Feather"}]
+    assert order_search_results({"artist": "A", "name": "Feather"}, results)[0]["score"] == 0.0
+    results = [{"artist": "A", "name": "Left Behind"}]
+    assert order_search_results({"artist": "A", "name": "Left"}, results)[0]["score"] > 0.0
+
+
 def test_artist_matches_accepts_the_same_act_billed_differently():
     # A featured artist, a dropped article, a spacing difference — all the
     # same act, and all of them fail a plain similarity check.
@@ -698,7 +722,9 @@ def test_auto_takes_the_best_named_match_among_the_well_ranked(client):
     """Ranking leads with the recording's length, so the top entry can be
     one that matches this edit while being titled differently enough to
     fail the name threshold. The next one down may still be a good match —
-    checking only the top entry used to discard the whole search."""
+    checking only the top entry used to discard the whole search, and so
+    did stopping the walk at the first candidate over the threshold. The
+    good one is unsynced so that it really does rank second."""
     search_result = [
         {
             "artist": "Artist",
@@ -711,7 +737,7 @@ def test_auto_takes_the_best_named_match_among_the_well_ranked(client):
         {
             "artist": "Artist",
             "id": "good",
-            "isSync": True,
+            "isSync": False,
             "name": "Song",
             "source": "lrclib.net",
             "duration": 200,

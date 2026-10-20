@@ -25,6 +25,26 @@ def _distance(a: str | None, b: str | None) -> float:
     return 1.0 - SequenceMatcher(None, a.lower(), b.lower()).ratio()
 
 
+# A featured-artist credit: "(feat. Kimbra)", "[ft. X]" in a title, or a
+# trailing " feat. X" / " featuring X" in either field.
+_FEATURING = re.compile(
+    r"\s*(?:[(\[]\s*(?:feat\.?|ft\.?|featuring)\s[^)\]]*[)\]]"
+    r"|\s(?:feat\.?|ft\.?|featuring)\s.*$)",
+    re.IGNORECASE,
+)
+
+
+def _without_featuring(value: str | None) -> str | None:
+    """Where the featured artist is written differs from tag to tag and
+    provider to provider - "Gotye feat. Kimbra" against "Gotye" with the
+    credit in the title instead - and on its own that is enough to push a
+    perfect match past MATCH_THRESHOLD (measured 0.57, 2026-10-20). Left
+    out of the comparison on both sides."""
+    if not value:
+        return value
+    return _FEATURING.sub("", value).strip() or value
+
+
 # How far a candidate's own length may be from the track's before it is
 # treated as a different recording rather than an imprecise tag. Kept the
 # same as LyricsCandidateList.vue's DURATION_MISMATCH_THRESHOLD_S, which
@@ -199,14 +219,14 @@ def order_search_results(
     A result found by the track's ISRC (`_exact`, see lyrics/lrcred.py) is
     that recording by definition: it counts as a perfect name match and
     leads among results of the same length and timing."""
-    name = params.get("name")
-    artist = params.get("artist")
+    name = _without_featuring(params.get("name"))
+    artist = _without_featuring(params.get("artist"))
     duration = params.get("duration")
 
     scored = []
     for item in results:
-        name_score = _distance(name, item.get("name")) if name else 0.0
-        artist_score = _distance(artist, item.get("artist")) if artist else 0.0
+        name_score = _distance(name, _without_featuring(item.get("name"))) if name else 0.0
+        artist_score = _distance(artist, _without_featuring(item.get("artist"))) if artist else 0.0
 
         if item.get("_exact"):
             score = 0.0
