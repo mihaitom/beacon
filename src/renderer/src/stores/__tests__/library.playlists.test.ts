@@ -5,7 +5,7 @@ import { useAuthStore } from '../auth'
 import { emitter } from '@/emitter'
 import type Toast from '@/types/toast'
 import type { SubsonicClient } from '@/services/subsonic/client'
-import type { Playlist } from '@/types/library'
+import type { Album, Artist, Playlist, Song } from '@/types/library'
 import { setExactMatching } from '@/services/textSearch'
 import { makeSong } from './fixtures'
 
@@ -467,6 +467,77 @@ describe('library mutations', () => {
       library.markRating(song, 2)
 
       expect(song.starred).toBe(true)
+    })
+
+    /** The album page and the album list hold two different objects for one
+     * album, and the list is what the IndexedDB cache is written from. */
+    describe('every copy of the same item', () => {
+      const album = (id: string, overrides: Partial<Album> = {}): Album =>
+        ({ id, name: id, rating: 0, starred: false, songs: [], ...overrides }) as Album
+      const artist = (id: string, overrides: Partial<Artist> = {}): Artist =>
+        ({ id, name: id, rating: 0, starred: false, albums: [], ...overrides }) as Artist
+
+      it("reaches the album list and its cache from the album's own page", async () => {
+        const library = useLibraryStore()
+        stubClient({ setRating: vi.fn().mockResolvedValue(undefined) })
+        library.albums = [album('al1'), album('al2')]
+        library.albumCache = { al1: album('al1') }
+
+        await library.rate(library.albumCache.al1!, 4)
+        await vi.waitFor(() => expect(cache.has('albums')).toBe(true))
+
+        expect(library.albums.map((entry) => entry.rating)).toEqual([4, 0])
+        expect((cache.get('albums')!.items as Album[])[0]!.rating).toBe(4)
+      })
+
+      it("reaches the artist list from the artist's own page, heart included", async () => {
+        const library = useLibraryStore()
+        stubClient()
+        library.artists = [artist('ar1')]
+        library.artistCache = { ar1: artist('ar1') }
+
+        await library.toggleFavorite('artist', library.artistCache.ar1!)
+
+        expect(library.artists[0]!.starred).toBe(true)
+      })
+
+      it('reaches the catalogue from a song on its album page, and caches it once complete', async () => {
+        const library = useLibraryStore()
+        library.allSongs = [makeSong('s1')]
+        library.albumCache = { al1: album('al1', { songs: [makeSong('s1')] }) }
+
+        library.markRating(library.albumCache.al1!.songs[0]!, 3)
+        await Promise.resolve()
+        expect(library.allSongs[0]!.rating).toBe(3)
+        expect(cache.has('songs')).toBe(false)
+
+        library.allSongsLoaded = true
+        library.markRating(library.albumCache.al1!.songs[0]!, 2)
+        await vi.waitFor(() => expect(cache.has('songs')).toBe(true))
+        expect((cache.get('songs')!.items as Song[])[0]!.rating).toBe(2)
+      })
+
+      it('reaches an album page already open from the song list', () => {
+        const library = useLibraryStore()
+        library.allSongs = [makeSong('s1')]
+        library.albumCache = { al1: album('al1', { songs: [makeSong('s1')] }) }
+
+        library.markFavorite(library.allSongs[0]!, true)
+
+        expect(library.albumCache.al1!.songs[0]!.starred).toBe(true)
+      })
+
+      it('takes the rating back out of every copy when the server refuses it', async () => {
+        const library = useLibraryStore()
+        stubClient({ setRating: vi.fn().mockRejectedValue(new Error('nope')) })
+        vi.spyOn(console, 'error').mockImplementation(() => {})
+        library.albums = [album('al1', { rating: 1 })]
+        library.albumCache = { al1: album('al1', { rating: 1 }) }
+
+        await library.rate(library.albumCache.al1!, 5)
+
+        expect(library.albums[0]!.rating).toBe(1)
+      })
     })
   })
 

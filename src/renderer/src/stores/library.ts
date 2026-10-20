@@ -1252,16 +1252,60 @@ export const useLibraryStore = defineStore('library', {
      * ServerCapabilities.favoritesAreTopRating), the stars move with it -
      * the server has already changed both. */
     markFavorite(item: Song | Album | Artist, starred: boolean) {
-      item.starred = starred
-      if (!useAuthStore().capabilities.favoritesAreTopRating) return
-      if (starred) item.rating = TOP_RATING
-      else if (item.rating === TOP_RATING) item.rating = 0
+      const topIsFavorite = useAuthStore().capabilities.favoritesAreTopRating
+      this.updateEveryCopy(item, (copy) => {
+        copy.starred = starred
+        if (!topIsFavorite) return
+        if (starred) copy.rating = TOP_RATING
+        else if (copy.rating === TOP_RATING) copy.rating = 0
+      })
     },
 
     /** markFavorite()'s counterpart for a rating. */
     markRating(item: Song | Album | Artist, rating: number) {
-      item.rating = rating
-      if (useAuthStore().capabilities.favoritesAreTopRating) item.starred = rating === TOP_RATING
+      const topIsFavorite = useAuthStore().capabilities.favoritesAreTopRating
+      this.updateEveryCopy(item, (copy) => {
+        copy.rating = rating
+        if (topIsFavorite) copy.starred = rating === TOP_RATING
+      })
+    },
+
+    /** One song, album or artist is several objects in this store: the
+     * album list's entry, the album page's own copy, a song in the
+     * catalogue and the same song in its album. A heart or a rating set
+     * through one of them has to reach the others, or the album list kept
+     * showing the old stars until its cache ran out an hour later. The
+     * cached lists that held a copy are written back for the same reason.
+     * `item` itself is changed too, as it may sit in none of them (a Home
+     * shelf, the queue). */
+    updateEveryCopy(item: Song | Album | Artist, apply: (copy: Song | Album | Artist) => void) {
+      apply(item)
+      const changed = new Set<'albums' | 'artists' | 'songs'>()
+      const visit = (list: (Song | Album | Artist)[], field?: 'albums' | 'artists' | 'songs') => {
+        for (const copy of list) {
+          if (copy.id !== item.id) continue
+          apply(copy)
+          if (field) changed.add(field)
+        }
+      }
+      visit(this.albums, 'albums')
+      visit(this.artists, 'artists')
+      visit(this.allSongs, 'songs')
+      for (const list of [this.starred, this.searchResults]) {
+        visit(list.albums)
+        visit(list.artists)
+        visit(list.songs)
+      }
+      for (const album of Object.values(this.albumCache)) visit([album, ...album.songs])
+      for (const artist of Object.values(this.artistCache)) visit([artist, ...artist.albums])
+
+      if (changed.has('albums')) void saveLibraryCacheField('albums', this.albums)
+      if (changed.has('artists')) void saveLibraryCacheField('artists', this.artists)
+      // Not a catalogue still arriving page by page: that would cache half
+      // of it as the whole.
+      if (changed.has('songs') && this.allSongsLoaded) {
+        void saveLibraryCacheField('songs', this.allSongs)
+      }
     },
 
     /** Sets a song/album/artist's 1–5 star rating (0 clears it) on the
