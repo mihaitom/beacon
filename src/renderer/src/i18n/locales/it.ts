@@ -321,6 +321,7 @@ export default {
     toggleVisualizer: 'Mostra/nascondi visualizzatore',
     toggleArtwork: 'Mostra/nascondi la copertina',
     showArtworkLarge: 'Mostra la copertina in grande',
+    showArtworkSmall: 'Mostra la copertina in piccolo',
     nextBackground: 'Mostra un altro sfondo',
     toggleFullscreen: 'Attiva/disattiva schermo intero',
     reducedMotionToastTitle: 'Visualizzatore',

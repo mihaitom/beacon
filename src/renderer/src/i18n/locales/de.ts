@@ -321,6 +321,7 @@ export default {
     toggleVisualizer: 'Visualisierung ein-/ausblenden',
     toggleArtwork: 'Album-Cover ein-/ausblenden',
     showArtworkLarge: 'Album-Cover groß anzeigen',
+    showArtworkSmall: 'Album-Cover klein anzeigen',
     nextBackground: 'Anderes Hintergrundbild anzeigen',
     toggleFullscreen: 'Vollbild umschalten',
     reducedMotionToastTitle: 'Visualizer',

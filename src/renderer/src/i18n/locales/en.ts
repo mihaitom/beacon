@@ -321,6 +321,7 @@ export default {
     toggleVisualizer: 'Show/hide visualizer',
     toggleArtwork: 'Show/hide album artwork',
     showArtworkLarge: 'Show the album artwork large',
+    showArtworkSmall: 'Show the album artwork small',
     nextBackground: 'Show another background',
     toggleFullscreen: 'Toggle fullscreen',
     reducedMotionToastTitle: 'Visualizer',

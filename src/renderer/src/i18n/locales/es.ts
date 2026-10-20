@@ -325,6 +325,7 @@ export default {
     toggleVisualizer: 'Mostrar/ocultar visualizador',
     toggleArtwork: 'Mostrar/ocultar la portada',
     showArtworkLarge: 'Mostrar la portada en grande',
+    showArtworkSmall: 'Mostrar la portada en pequeño',
     nextBackground: 'Mostrar otro fondo',
     toggleFullscreen: 'Alternar pantalla completa',
     reducedMotionToastTitle: 'Visualizador',

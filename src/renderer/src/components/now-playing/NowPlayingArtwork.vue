@@ -1,9 +1,28 @@
 <template>
   <div class="now-playing__art-wrap" :class="{ 'now-playing__art-wrap--compact': compact }">
     <div class="now-playing__art-glow" :style="{ background: source.glowColor }" />
+    <!-- The counterpart of the small cover in the corner: with an artist
+     - background to reveal, clicking the large artwork makes it small -
+     - the toolbar's toggle again. -->
+    <button
+      v-if="source.song && source.backdrop.isArtist"
+      type="button"
+      class="now-playing__art-button"
+      :aria-label="$t('nowPlaying.showArtworkSmall')"
+      :title="$t('nowPlaying.showArtworkSmall')"
+      @click="source.toggleArtwork()"
+    >
+      <component
+        :is="source.cover"
+        :cover-art-id="source.song.coverArtId"
+        :src="source.song.coverUrl"
+        :size="artSize"
+        class="cover-shadow"
+      />
+    </button>
     <component
       :is="source.cover"
-      v-if="source.song"
+      v-else-if="source.song"
       :cover-art-id="source.song.coverArtId"
       :src="source.song.coverUrl"
       :size="artSize"
@@ -95,6 +114,23 @@ export default {
 .now-playing__art-wrap :deep(.cover-art) {
   position: relative;
   z-index: 1;
+}
+
+.now-playing__art-button {
+  position: relative;
+  z-index: 1;
+  display: block;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  line-height: 0;
+  cursor: zoom-out;
+}
+
+.now-playing__art-button:focus-visible {
+  outline: 2px solid rgb(var(--v-theme-primary));
+  outline-offset: 4px;
 }
 
 /* Applied instead of cover-shadow once the loaded favicon has arrived and

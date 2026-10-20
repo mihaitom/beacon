@@ -324,6 +324,7 @@ export default {
     toggleVisualizer: 'Afficher/masquer le visualiseur',
     toggleArtwork: 'Afficher/masquer la pochette',
     showArtworkLarge: 'Afficher la pochette en grand',
+    showArtworkSmall: 'Afficher la pochette en petit',
     nextBackground: 'Afficher un autre arrière-plan',
     toggleFullscreen: 'Basculer le plein écran',
     reducedMotionToastTitle: 'Visualiseur',
