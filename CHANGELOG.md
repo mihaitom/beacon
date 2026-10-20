@@ -23,6 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Without an artist background, Now Playing takes its colour from the cover, so the visualizer and the app's accent follow the album instead of staying in the theme's colour
 - With the artwork hidden in Now Playing, clicking the small cover in the corner shows it large again
 - While a search runs, the results page shows Beacon's loading animation with a "Searching" label in the middle of the page, instead of a small spinner under the previous results
+- The bundled ffmpeg and the backend's libraries are updated with their latest security fixes, among them one for Ogg radio streams
 
 ### Fixed
 

@@ -15,6 +15,6 @@
 # Checking a bump is cheap and does not need hardware: build it and let
 # scripts/check-ffmpeg-recipe.sh and scripts/verify-ffmpeg.sh answer. For
 # 9.0.1 they did, with component lists byte-identical to 8.1.2's.
-FFMPEG_VERSION=9.0.1
+FFMPEG_VERSION=9.0.2
 # Current as of 2026-09-08.
 OPUS_VERSION=1.6.1
