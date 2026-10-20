@@ -166,8 +166,7 @@ const EARLY_END_TOLERANCE_SECONDS = 5
  * Navidrome's own web player on 2026-08-28: it builds a context only when
  * ReplayGain is set to album/track (ui/src/audioplayer/Player.jsx), plays
  * on through a screen lock with the default 'none', and stops doing so the
- * moment ReplayGain is switched on. Feishin has the same trade behind a
- * "use web audio" setting.
+ * moment ReplayGain is switched on.
  *
  * `pointer: coarse` rather than a viewport width: this is about the kind of
  * device, not the size of the window. It picks out phones and tablets

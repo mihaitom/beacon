@@ -6,8 +6,7 @@
 
     <!-- One list at a time rather than two stacked sections: a phone has
      - room for one, and the search below applies to whichever is showing
-     - (see searchLabel). Same shape as the reference implementation in
-     - feishin's own remote library page. Artists open their own page
+     - (see searchLabel). Artists open their own page
      - (MobileArtistDetailView.vue) rather than playing. -->
     <!-- Sticky, the same as RadioView.vue's own filter — this list runs to
      - a whole catalogue, and a switch you have to scroll back up to reach

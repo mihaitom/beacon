@@ -94,7 +94,8 @@ _BAR_CHOICES = (16, 8, 4, 2, 1)
 POST_SWAP_BARS = 2
 _VOCAL_REACH_BARS = 4
 # Both songs' mids around the swap: down this far at it, over a bar either
-# side (a quarter of a crossfade). The figure is pyCrossfade's.
+# side (a quarter of a crossfade). Listening 3 in
+# docs/investigations/beatmix-pop-rock.md.
 MID_DIP_DB = 6.0
 _DIP_CROSSFADE_SHARE = 0.25
 # Never more of either song than this share of what was analysed.

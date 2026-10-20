@@ -115,8 +115,8 @@ _MODEL_IN_USER_AGENT = re.compile(r"\bSonos/\S+ \((\w+)\)")
 
 
 # Diagnostic switch (#56): CAST_STREAM_METADATA=dlna announces a stream
-# the way Music Assistant and AirConnect do, both of which play on old
-# Sonos models. A track goes out as a musicTrack with its duration and
+# with full DLNA metadata, which other players do and which old Sonos
+# models might decide on. A track goes out as a musicTrack with its duration and
 # DLNA flags instead of an audioBroadcast with neither, a live stream with
 # the flags for one, and /stream and the radio relay add the DLNA headers
 # (dlna_stream_headers()). Off, Beacon announces streams as it always has.

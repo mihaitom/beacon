@@ -142,6 +142,29 @@ def test_a_lone_hit_in_the_tail_does_not_carry_the_beat():
     assert analyse_samples(x, start=0.0).beat_end < 41.0
 
 
+def faded(x, start: float, drop_db: float):
+    """`x` from `start` on turned down to `drop_db` by its end, evenly in
+    dB - the way a fade-out is mastered onto a record."""
+    gain = np.ones(len(x), dtype=np.float32)
+    i = int(start * SR)
+    gain[i:] = 10 ** (np.linspace(0.0, drop_db, len(x) - i) / 20)
+    return x * gain
+
+
+def test_the_beat_ends_where_a_fade_out_begins():
+    """Mixed inside the fade, the old song would already be well down by
+    the bass swap; a DJ mixes out before it."""
+    bar = 4 * 60 / 128
+    region = analyse_samples(faded(track(128, 60, 0.1), 40.0, -30.0), start=0.0)
+    assert 40.0 - 0.01 <= region.beat_end <= 40.0 + 2 * bar
+
+
+def test_a_song_that_gets_quieter_without_fading_out_has_no_fade():
+    """A decrescendo: clearly quieter by the end, but nowhere near gone."""
+    region = analyse_samples(faded(track(128, 60, 0.1), 40.0, -9.0), start=0.0)
+    assert region.beat_end > 60.0 - 2 * 4 * 60 / 128
+
+
 def test_a_beat_from_start_to_end_spans_the_whole_bars():
     region = analyse_samples(track(128, 40, 0.1), start=0.0)
     assert region.beat_start < 0.1 + 4 * 60 / 128

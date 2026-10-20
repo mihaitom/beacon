@@ -85,7 +85,9 @@ analysed (`core/beat_analysis.py`, ~0.1 s of CPU for 30 s of audio):
   is the last such bar, the start the first of four in a row. An ambient
   tail or a long intro is far above -60 dBFS and the grid runs on through
   it, so without this a beatmix lined its overlap and bass swap up on beats
-  nobody plays;
+  nobody plays. Where the song fades out (at least 4 bars that only get
+  quieter, 10 dB down by the end), the beat ends where the fade begins - a
+  DJ mixes out before the record does;
 - a beat grid: spectral-flux onset envelope (hop 5.8 ms), tempo by
   autocorrelation weighted towards the server's BPM tag or 120, period and
   phase by folding the envelope (two passes, parabolic peak), confidence

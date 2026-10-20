@@ -327,6 +327,43 @@ straight in the next song", "in the crossfade the beats run apart", and
 Eye of the Tiger → Levitating "a wild mix, but the beatmix does it well".
 `MAX_STRETCH` is now 6 %.
 
+## Songs that fade out (2026-10-20)
+
+A DJ mixes out before a record's mastered fade-out begins. Beacon's beat
+end was the last bar whose
+bass is within 12 dB of the stretch's typical bar, so in a fade the grid
+ran on until the record was 12 dB down, and the overlap ended there.
+
+Measured with each song paired with itself (tempos always match, only the
+outgoing end counts), 8 bars, the outgoing song's level per bar on its own
+grid against its typical bar:
+
+|                                                                            | old song at the bass swap            | at the end of the overlap |
+| -------------------------------------------------------------------------- | ------------------------------------ | ------------------------- |
+| 12 well-known songs with a fade-out, before                                | -1.1 to -9.7 dB, 7 of 12 below -3 dB | -6.3 to -12.7 dB          |
+| the same, after                                                            | -2.2 to +1.9 dB                      | -1.5 to +0.1 dB           |
+| 3 with a hard ending (Uptown Funk, Levitating, Another One Bites the Dust) | unchanged                            | unchanged                 |
+
+So the old song had half faded away before the new one's bass came in,
+and the new song took over from a record already on its way out.
+
+**Built:** `_fade_start()` in `core/beat_analysis.py`. At the end of the
+analysed stretch, at least 4 bars below the song's own level, none more
+than 1.5 dB louder than the one before, at least 10 dB down by the last
+audible one; the beat end moves to the first of them. Not checked:
+whether the band balance stays put, which would tell a gain ramp from an
+arrangement thinning out. A thinning-out arrangement mostly loses its
+bass first, which the beat end already catches.
+
+On 80 random songs from the test library the check fired on 30, ending
+the overlap a median 5.6 s (up to 17 s) earlier. The four largest were
+looked at bar by bar: all four even fades to -20 dB and below, one after a
+quieter outro section. Of the twelve, Toto - Africa loses the most: its
+last 20 seconds are no longer played. Fleetwood Mac - Dreams fades too
+softly to count and mixes as before.
+
+Not heard yet; a blind A/B round on a few of the twelve would confirm it.
+
 ## Next
 
 Decided against for now: **both songs meeting halfway** (the listener's

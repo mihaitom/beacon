@@ -10,6 +10,8 @@ of them this answers two questions:
   a pad, a reverb, no drums - well above silence, and some take a minute
   of intro before the drums and the bass come in. A grid runs on through
   either, so a beatmix would line its overlap up on beats nobody plays.
+  A song that fades out stops counting where its fade begins: a DJ mixes
+  out before the record does.
 - **Where the beats are** - tempo, the time of one beat, and which beats
   are downbeats (the "one" of a bar), with how sure it is of each. A
   beatmatched transition lines two grids up; one built on a wrong grid is
@@ -76,6 +78,17 @@ _BEAT_BAR_BASS_DB = 12.0
 _BASS_HZ = 150.0
 # How many bars in a row make the beat's start; fewer are a fill or a hit.
 _BEAT_START_BARS = 4
+# A fade-out mastered onto the record: at least _FADE_MIN_BARS bars at the
+# end of the stretch, none more than _FADE_JITTER_DB louder than the one
+# before, _FADE_DROP_DB down by the last audible one. A musical
+# decrescendo rarely drops that far. Mixed inside the fade, the old song
+# was up to 10 dB down by the bass swap
+# (docs/investigations/beatmix-pop-rock.md).
+_FADE_MIN_BARS = 4
+_FADE_DROP_DB = 10.0
+_FADE_JITTER_DB = 1.5
+# Bars further below the stretch's typical one than this are its silence.
+_AUDIBLE_DB = 40.0
 # How long an analysis decode may take before the transition goes ahead
 # without it.
 _DECODE_TIMEOUT_SECONDS = 20.0
@@ -117,8 +130,9 @@ class RegionAnalysis:
     sound_end: float
     grid: BeatGrid | None
     # Where the grid has one: the first bar of the first few in a row with
-    # the beat, and the end of the last bar with it. Before and after is
-    # sound (an intro, an ambient tail), but nothing to mix on.
+    # the beat, and the end of the last bar with it - or, where the song
+    # fades out, the bar its fade begins on. Before and after is sound (an
+    # intro, an ambient tail, a fade), but nothing to mix on.
     beat_start: float | None = None
     beat_end: float | None = None
 
@@ -283,7 +297,8 @@ def beat_bounds(
     samples: np.ndarray, full: np.ndarray, grid: BeatGrid
 ) -> tuple[float | None, float | None]:
     """(beat_start, beat_end) in the same seconds as `grid`, either None
-    where no whole bar qualifies; see RegionAnalysis."""
+    where no whole bar qualifies; see RegionAnalysis. beat_end comes no
+    later than where a fade-out begins."""
     bar = 4 * grid.period
     length = len(full) / _FPS
     starts = grid.downbeats(0.0, length - bar)
@@ -293,7 +308,7 @@ def beat_bounds(
     hops = np.round((beats - _ENVELOPE_OFFSET) * _FPS).astype(int)
     window = hops[..., None] + np.arange(-2, 3)
     strength = full[np.clip(window, 0, len(full) - 1)].max(axis=-1).sum(axis=-1)
-    bass = _bar_bass_db(samples, starts, bar)
+    bass = _bar_db(_low_passed(samples), starts, bar)
     typical = np.percentile(strength, 75)
     if typical <= 0:
         return None, None
@@ -303,19 +318,46 @@ def beat_bounds(
     if not carried.any():
         return None, None
     end = float(starts[np.flatnonzero(carried)[-1]] + bar)
+    fade = _fade_start(starts, _bar_db(samples, starts, bar))
+    if fade is not None:
+        end = min(end, fade)
     runs = np.convolve(carried, np.ones(_BEAT_START_BARS), mode="valid")
     first = np.flatnonzero(runs == _BEAT_START_BARS)
     return (float(starts[first[0]]) if len(first) else None), end
 
 
-def _bar_bass_db(samples: np.ndarray, starts: np.ndarray, bar: float) -> np.ndarray:
-    """The level below _BASS_HZ of each bar from `starts`, in dB."""
+def _low_passed(samples: np.ndarray) -> np.ndarray:
+    """`samples` below _BASS_HZ."""
     spectrum = np.fft.rfft(samples)
     spectrum[np.fft.rfftfreq(len(samples), 1 / ANALYSIS_RATE) > _BASS_HZ] = 0
-    low = np.fft.irfft(spectrum, len(samples))
+    return np.fft.irfft(spectrum, len(samples))
+
+
+def _bar_db(signal: np.ndarray, starts: np.ndarray, bar: float) -> np.ndarray:
+    """The level of each bar from `starts`, in dB."""
     edges = np.round(np.add.outer(starts, [0.0, bar]) * ANALYSIS_RATE).astype(int)
-    power = np.array([np.mean(low[a:b] ** 2) if b > a else 0.0 for a, b in edges])
+    power = np.array([np.mean(signal[a:b] ** 2) if b > a else 0.0 for a, b in edges])
     return 10 * np.log10(power + 1e-12)
+
+
+def _fade_start(starts: np.ndarray, level: np.ndarray) -> float | None:
+    """Where a fade-out at the end of the stretch begins: the first of the
+    last audible bars that sit below the song's own level and only ever get
+    quieter. None where the stretch does not end in one."""
+    typical = np.percentile(level, 75)
+    audible = np.flatnonzero(level > typical - _AUDIBLE_DB)
+    if len(audible) == 0:
+        return None
+    last = first = audible[-1]
+    while (
+        first > 0
+        and level[first - 1] >= level[first] - _FADE_JITTER_DB
+        and level[first - 1] < typical - _FADE_JITTER_DB
+    ):
+        first -= 1
+    if last - first + 1 < _FADE_MIN_BARS or level[first] - level[last] < _FADE_DROP_DB:
+        return None
+    return float(starts[first])
 
 
 def sound_bounds(samples: np.ndarray) -> tuple[float, float] | None:

@@ -81,9 +81,9 @@ _READRATE_ARGS = [
 # apply to every device, the unpaced models in delivery/sonos.py included.
 # They are meant one at a time; with both set, byte ranges win.
 #
-# CAST_STREAM_PACING=gentle paces the way Music Assistant does: 1.1x real
-# time after a 60s head start, so the device's lead keeps growing instead
-# of holding at LOOKAHEAD_SECONDS.
+# CAST_STREAM_PACING=gentle paces at 1.1x real time after a 60s head
+# start, so the device's lead keeps growing instead of holding at
+# LOOKAHEAD_SECONDS.
 GENTLE_PACING = os.getenv("CAST_STREAM_PACING", "").strip().lower() == "gentle"
 _GENTLE_READRATE_ARGS = ["-readrate", "1.1", "-readrate_initial_burst", "60"]
 # CAST_STREAM_BYTE_RANGES=on sends the stream unpaced and answers /stream

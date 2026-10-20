@@ -2,9 +2,8 @@
 // with a single search that applies to whichever half is showing.
 //
 // Replaced the songs-only view. Same shape as the mobile web UI's
-// MobileLibraryView.vue, and as the reference implementation this was
-// modelled on (feishin's own remote library page): one request at a time,
-// switched by the toggle, rather than both halves fetching in parallel.
+// MobileLibraryView.vue: one request at a time, switched by the toggle,
+// rather than both halves fetching in parallel.
 
 import { fetchAlbums, fetchArtists, fetchSongs } from '../api.js';
 import { navigate, registerRoute } from '../router.js';
