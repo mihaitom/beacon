@@ -169,7 +169,7 @@ async def _send_play(device) -> None:
     DmrDevice.async_play() sends nothing at all when the allowed actions
     from its last poll leave Play out, and reports nothing either. Sent
     directly, a renderer that really will not play answers with a fault
-    instead of play() reporting success over silence."""
+    instead of the command reporting success over silence."""
     service = device.profile_device.service_id(_AV_TRANSPORT_ID)
     if service is None or not service.has_action("Play"):
         raise MediaRejectedError("the renderer has no Play action")
@@ -340,7 +340,9 @@ class DlnaDelivery(BaseDelivery):
 
     async def resume(self) -> None:
         device = await self._get_device_or_evict()
-        await device.async_play()
+        # Not async_play(): the allowed actions cached from pause()'s own
+        # refresh are a playing renderer's, which leave Play out.
+        await _send_play(device)
         logger.info(f"[DLNA:{self.target}] resumed")
 
     async def stop(self) -> None:

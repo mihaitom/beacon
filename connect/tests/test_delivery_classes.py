@@ -2109,8 +2109,22 @@ def test_dlna_pause_resume_stop_delegate_to_device():
         asyncio.run(d.resume())
         asyncio.run(d.stop())
     device.async_pause.assert_called_once()
-    device.async_play.assert_called_once()
+    device.play_action.async_call.assert_awaited_once_with(InstanceID=0, Speed="1")
     device.async_stop.assert_called_once()
+
+
+def test_dlna_resume_sends_play_whatever_the_cached_actions_say():
+    """pause() refreshes the allowed actions while the renderer is still
+    playing, and a playing renderer lists Pause and Stop, not Play. Judged
+    on that, async_play() sent nothing and the renderer stayed paused while
+    resume() reported success."""
+    device = _mock_dmr_device()
+    device.can_play = False
+    d = DlnaDelivery("Receiver")
+    with patch.object(DlnaDelivery, "_get_device", new=AsyncMock(return_value=device)):
+        asyncio.run(d.resume())
+    device.play_action.async_call.assert_awaited_once_with(InstanceID=0, Speed="1")
+    device.async_play.assert_not_called()
 
 
 def test_dlna_stop_is_sent_once_a_fresh_look_allows_it():
