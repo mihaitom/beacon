@@ -660,15 +660,19 @@ class _ByteRange:
         return headers
 
 
-def _byte_range_for(session: SessionState, range_header: str | None, offset: float) -> _ByteRange:
-    """The byte space starts where this generation's first connection did
-    (`offset` there), so every later request of the same generation - a
-    HEAD, a range further in - maps onto the same encode. Bytes and seconds
-    convert through the same constant bitrate in both directions, as in
-    routes/local_stream.py."""
+def _byte_range_for(
+    session: SessionState, range_header: str | None, offset: float, starts_over: bool = False
+) -> _ByteRange:
+    """The byte space starts where this generation's latest from-the-start
+    GET did (`offset` there), so every later request of the same generation
+    - a HEAD, a range further in - maps onto the same encode. A GET from
+    byte 0 (`starts_over`) is a device opening the track anew, after a
+    switch to another speaker for one, and starts the space at the current
+    position. Bytes and seconds convert through the same constant bitrate
+    in both directions, as in routes/local_stream.py."""
     st = session.state
     generation = st.clock.play_generation
-    if st.byte_range_base is None or st.byte_range_base[0] != generation:
+    if starts_over or st.byte_range_base is None or st.byte_range_base[0] != generation:
         st.byte_range_base = (generation, offset)
     base = st.byte_range_base[1]
     duration = st.current_output_format.source_duration or st.current_track.duration
@@ -1338,7 +1342,13 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
     # the start, so its position must not be re-framed as one.
     byte_range: _ByteRange | None = None
     if BYTE_RANGES_ENABLED and mix is None and track.id != TEST_TONE_TRACK_ID:
-        byte_range = _byte_range_for(session, request.headers.get("range"), offset)
+        range_header = request.headers.get("range")
+        byte_range = _byte_range_for(
+            session,
+            range_header,
+            offset,
+            starts_over=range_header is None or range_header.strip() == "bytes=0-",
+        )
         offset = byte_range.start_seconds
         if byte_range.first > 0:
             reconnecting = False

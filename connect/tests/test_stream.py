@@ -1799,3 +1799,20 @@ async def test_capped_stops_at_exactly_the_declared_length():
     body = b"".join([chunk async for chunk in stream_routes._capped(_audio(), 6)])
 
     assert body == b"abcdef"
+
+
+def test_a_byte_range_get_from_the_start_begins_at_the_current_position(
+    client, default_session, monkeypatch
+):
+    """Another speaker taking over within the same play generation opens
+    the track anew; it must get the current position, not where the first
+    speaker's connection began."""
+    monkeypatch.setattr("routes.stream.BYTE_RANGES_ENABLED", True)
+    _mid_track_session(client, default_session, elapsed=60.0)
+    st = default_session.state
+    st.byte_range_base = (st.clock.play_generation, 0.0)
+
+    with patch("routes.stream.stream_tracks", side_effect=_real_stream) as mocked:
+        client.get("/stream")
+
+    assert mocked.call_args.kwargs["start_offset"] > 50.0
