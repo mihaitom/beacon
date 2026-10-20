@@ -8,6 +8,7 @@ import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
+import { useAuthStore } from '@/stores/auth'
 import { makeSong } from '@/stores/__tests__/fixtures'
 import AlbumCard from '../AlbumCard.vue'
 import type { Album } from '@/types/library'
@@ -25,7 +26,7 @@ const album = {
   starred: false,
 } as unknown as Album
 
-async function mountTile() {
+async function mountCard(props: Record<string, unknown>) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -37,11 +38,13 @@ async function mountTile() {
   await router.push('/')
   await router.isReady()
   const wrapper = mount(AlbumCard, {
-    props: { album, tile: true },
+    props: { album, ...props },
     global: { plugins: [vuetify, i18n, router], stubs: { CoverArt: true } },
   })
-  return { wrapper }
+  return { wrapper, router }
 }
+
+const mountTile = () => mountCard({ tile: true })
 
 describe('AlbumCard as a tile', () => {
   beforeEach(() => {
@@ -74,5 +77,33 @@ describe('AlbumCard as a tile', () => {
 
     expect(play).not.toHaveBeenCalled()
     expect(name.attributes('href')).toBe('/albums/al1')
+  })
+})
+
+describe('AlbumCard as a list row', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('rates the album from its stars without opening it', async () => {
+    const rate = vi.spyOn(useLibraryStore(), 'rate').mockResolvedValue()
+    const { wrapper, router } = await mountCard({ row: true, album: { ...album, rating: 0 } })
+
+    await wrapper.findAll('.album-row__rating button')[3]!.trigger('click')
+    await flushPromises()
+
+    expect(rate).toHaveBeenCalledWith(expect.objectContaining({ id: 'al1' }), 4)
+    expect(router.currentRoute.value.path).toBe('/')
+  })
+
+  it('has no stars where the server has no rating scale', async () => {
+    useAuthStore().serverType = 'jellyfin'
+    const { wrapper } = await mountCard({ row: true })
+
+    expect(wrapper.find('.album-row__rating').exists()).toBe(false)
   })
 })

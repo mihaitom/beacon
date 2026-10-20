@@ -1,7 +1,11 @@
 <template>
   <div
     class="album-card"
-    :class="{ 'album-card--row': row, 'album-card--tile': tile }"
+    :class="{
+      'album-card--row': row,
+      'album-card--rated': row && authStore.capabilities.personalRating,
+      'album-card--tile': tile,
+    }"
     @click="onCardClick"
     @contextmenu.prevent="openMenu"
   >
@@ -73,6 +77,12 @@
       <span class="album-row__figure text-body-small text-medium-emphasis">{{
         durationLabel
       }}</span>
+      <rating-stars
+        v-if="authStore.capabilities.personalRating"
+        :item="album"
+        class="album-row__rating"
+        :class="{ 'album-row__rating--set': album.rating > 0 }"
+      />
       <v-btn
         v-if="authStore.capabilities.favorites"
         :icon="album.starred ? 'mdi-heart' : 'mdi-heart-outline'"
@@ -176,6 +186,7 @@ import TileContextMenu from './TileContextMenu.vue'
 import ContextMenuSection from './ContextMenuSection.vue'
 import AddToPlaylistSubmenu from './AddToPlaylistSubmenu.vue'
 import RatingItem from './RatingItem.vue'
+import RatingStars from './RatingStars.vue'
 import CreatePlaylistDialog from './CreatePlaylistDialog.vue'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
@@ -192,6 +203,7 @@ export default {
     ContextMenuSection,
     AddToPlaylistSubmenu,
     RatingItem,
+    RatingStars,
     CreatePlaylistDialog,
   },
   props: {
@@ -334,6 +346,26 @@ export default {
   border-radius: 8px;
 }
 
+/* The stars' column, between the figures and the heart - where the song
+ * table has its rating too. */
+.album-card--rated {
+  grid-template-columns: 44px minmax(0, 1fr) 56px 88px 64px 112px 40px;
+}
+
+/* Too narrow for all of it, the stars go first: the name is what the row
+ * is for, and the menu still rates. The container is the list itself
+ * (AlbumsView.vue's .album-grid--list), not the window, whose width says
+ * nothing about how much the sidebar and the alphabet bar leave. */
+@container album-list (max-width: 640px) {
+  .album-card--rated {
+    grid-template-columns: 44px minmax(0, 1fr) 56px 88px 64px 40px;
+  }
+
+  .album-row__rating {
+    display: none;
+  }
+}
+
 .album-card--row:hover {
   background: var(--beacon-hover);
 }
@@ -367,6 +399,22 @@ export default {
   text-align: right;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+/* Shown once set, or on hover like the heart: an unrated library would
+ * otherwise have five hollow stars on every line. On a touch screen there
+ * is no hover to reveal them, so an unrated row's stars are not there at
+ * all rather than invisible but tappable - the right-click menu's own star
+ * row is how a phone rates. */
+.album-row__rating {
+  justify-self: end;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.album-card--row:hover .album-row__rating,
+.album-row__rating--set {
+  opacity: 1;
 }
 
 /* Shown on hover and once set, like the card's. */
@@ -453,6 +501,10 @@ a.album-tile__artist:hover {
 @media (hover: none) {
   .album-row__star {
     opacity: 1;
+  }
+
+  .album-row__rating:not(.album-row__rating--set) {
+    visibility: hidden;
   }
 }
 

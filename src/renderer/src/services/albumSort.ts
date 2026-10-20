@@ -3,11 +3,14 @@
 
 import { ALPHABET_SECTIONS, indexLetterFor, letterForName } from '@/services/alphabetIndex'
 import { accountScopedKey } from '@/services/accountKey'
+import { RATING_SECTIONS, ratingSection, sortByRating } from '@/services/ratingSort'
 import type { Album } from '@/types/library'
 
-export type AlbumSort = 'name' | 'artist' | 'year' | 'added'
+export type AlbumSort = 'name' | 'artist' | 'year' | 'added' | 'rating'
 
-export const ALBUM_SORTS: AlbumSort[] = ['name', 'artist', 'year', 'added']
+/** 'rating' is only offered where the server has a 1-5 scale - see
+ * AlbumsView.vue's sortOptions. */
+export const ALBUM_SORTS: AlbumSort[] = ['name', 'artist', 'year', 'added', 'rating']
 
 /** The section an album without a year goes under in the year order. Last
  * in the bar, where the list puts those albums. */
@@ -61,6 +64,8 @@ export function sortAlbums(albums: Album[], sort: AlbumSort): Album[] {
       return [...albums].sort(byYear)
     case 'added':
       return [...albums].sort(byAdded)
+    case 'rating':
+      return sortByRating(albums)
   }
 }
 
@@ -81,6 +86,8 @@ export function sectionFor(album: Album, sort: AlbumSort): string {
       return album.year == null ? UNKNOWN_YEAR_SECTION : decadeOf(album.year)
     case 'added':
       return ''
+    case 'rating':
+      return ratingSection(album)
   }
 }
 
@@ -91,6 +98,7 @@ export function sectionFor(album: Album, sort: AlbumSort): string {
  * would push the real ones off the bar. */
 export function sectionsFor(albums: Album[], sort: AlbumSort): string[] {
   if (sort === 'added') return []
+  if (sort === 'rating') return RATING_SECTIONS
   if (sort !== 'year') return ALPHABET_SECTIONS
   const years = albums.map((album) => album.year).filter((year): year is number => year != null)
   const sections: string[] = []

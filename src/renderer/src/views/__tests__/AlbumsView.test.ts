@@ -8,6 +8,7 @@ import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
+import { useAuthStore } from '@/stores/auth'
 import type { Album, Artist, Song } from '@/types/library'
 import { makeSong } from '@/stores/__tests__/fixtures'
 import AlbumsView from '../AlbumsView.vue'
@@ -32,7 +33,9 @@ interface AlbumsVm {
   letterAt(index: number): string
   startsLetterSection(index: number): boolean
   jumpToLetter(letter: string): void
-  setSort(sort: 'name' | 'artist' | 'year' | 'added'): void
+  sort: string
+  readonly sortOptions: { value: string }[]
+  setSort(sort: 'name' | 'artist' | 'year' | 'added' | 'rating'): void
   setListView(listView: boolean): void
   listView: boolean
   sectionLabel(section: string): string
@@ -405,6 +408,33 @@ describe('AlbumsView sort order', () => {
     expect(vm.filteredAlbums.map((a) => a.id)).toEqual(['b', 'a'])
     expect([0, 1].map((index) => vm.startsLetterSection(index))).toEqual([false, false])
     expect(vm.barSections).toEqual([])
+  })
+
+  it('puts the most stars first, under dividers drawn as stars', async () => {
+    const { vm } = await mountAlbums([
+      album('none', 'None'),
+      { ...album('four', 'Four'), rating: 4 },
+      { ...album('five', 'Five'), rating: 5 },
+    ])
+
+    vm.setSort('rating')
+    await flushPromises()
+
+    expect(vm.filteredAlbums.map((a) => a.id)).toEqual(['five', 'four', 'none'])
+    expect(vm.sectionLabel(vm.letterAt(1))).toBe('★★★★☆')
+    expect(vm.sectionLabel(vm.letterAt(2))).toBe('Unrated')
+  })
+
+  it('offers no rating order where the server has no stars, even one left in it', async () => {
+    const first = await mountAlbums([album('a', 'A')])
+    first.vm.setSort('rating')
+    first.wrapper.unmount()
+    useAuthStore().serverType = 'jellyfin'
+
+    const { vm } = await mountAlbums([album('a', 'A')])
+
+    expect(vm.sort).toBe('name')
+    expect(vm.sortOptions.map((option) => option.value)).not.toContain('rating')
   })
 
   it('opens in the order it was left in', async () => {

@@ -60,6 +60,22 @@
           <v-btn value="grid" icon="mdi-view-grid-outline" :title="$t('library.layoutGrid')" />
           <v-btn value="list" icon="mdi-view-list" :title="$t('library.layoutList')" />
         </v-btn-toggle>
+        <!-- Name is the only order without stars, so without them there is
+         - nothing to choose between. -->
+        <v-select
+          v-if="authStore.capabilities.personalRating"
+          :model-value="sort"
+          :items="sortOptions"
+          :aria-label="$t('library.sortBy')"
+          prepend-inner-icon="mdi-sort"
+          variant="solo-filled"
+          density="compact"
+          rounded="pill"
+          flat
+          hide-details
+          class="artist-sort"
+          @update:model-value="setSort"
+        />
       </div>
     </sticky-filter>
     <v-alert v-if="libraryStore.error" type="error" variant="tonal" class="view-notice">
@@ -78,7 +94,7 @@
           <!-- A full-width divider before each letter's first card - see
            - .letter-divider's own comment for why it forces a line break. -->
           <div v-if="startsLetterSection(index)" class="letter-divider" aria-hidden="true">
-            <span class="letter-divider__label">{{ letterAt(index) }}</span>
+            <span class="letter-divider__label">{{ sectionLabel(letterAt(index)) }}</span>
           </div>
           <artist-card :data-artist-index="index" :artist="artist" :row="listView" />
         </template>
@@ -111,7 +127,9 @@
               class="letter-divider"
               aria-hidden="true"
             >
-              <span class="letter-divider__label">{{ letterAt(row.startIndex) }}</span>
+              <span class="letter-divider__label">{{
+                sectionLabel(letterAt(row.startIndex))
+              }}</span>
             </div>
             <artist-card
               v-for="(artist, column) in row.items"
@@ -142,6 +160,7 @@
 
     <alphabet-index-bar
       v-if="!libraryStore.loading && filteredArtists.length > 0"
+      :sections="barSections"
       :available="availableLetters"
       :active="activeLetter"
       @select="jumpToLetter"
@@ -154,8 +173,19 @@ import { ref } from 'vue'
 import EmptyState from '@/components/EmptyState.vue'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
+import { useAuthStore } from '@/stores/auth'
 import { useElementWidth } from '@/composables/useElementWidth'
-import { firstIndexByLetter, indexLetterFor } from '@/services/alphabetIndex'
+import { firstIndexByLetter } from '@/services/alphabetIndex'
+import {
+  ARTIST_SORTS,
+  artistSectionFor,
+  artistSectionsFor,
+  loadArtistSort,
+  saveArtistSort,
+  sortArtists,
+  type ArtistSort,
+} from '@/services/artistSort'
+import { ratingSectionLabel } from '@/services/ratingSort'
 import { observeActiveLetter, type ActiveLetterHandle } from '@/services/activeLetter'
 import { shuffled } from '@/services/shuffle'
 import { matchesAllTerms } from '@/services/textSearch'
@@ -245,6 +275,8 @@ export default {
       activeLetter: null as string | null,
       activeLetterObserver: null as ActiveLetterHandle | null,
       listView: readBooleanPreference(LIST_VIEW_KEY),
+      // See AlbumsView.vue's identical fallback.
+      sort: (useAuthStore().capabilities.personalRating ? loadArtistSort() : 'name') as ArtistSort,
     }
   },
   mounted() {
@@ -267,6 +299,18 @@ export default {
     libraryStore() {
       return useLibraryStore()
     },
+    authStore() {
+      return useAuthStore()
+    },
+    sortOptions(): { title: string; value: ArtistSort }[] {
+      return ARTIST_SORTS.map((value) => ({ title: this.$t(`library.artistSort.${value}`), value }))
+    },
+    sortedArtists(): Artist[] {
+      return sortArtists(this.libraryStore.artists, this.sort)
+    },
+    barSections(): string[] {
+      return artistSectionsFor(this.sort)
+    },
     artistItemHeight(): number {
       return this.listView ? ARTIST_LIST_ROW_HEIGHT : ARTIST_ROW_HEIGHT_GUESS
     },
@@ -275,8 +319,8 @@ export default {
     },
     filteredArtists(): Artist[] {
       const query = this.debouncedQuery
-      if (!query.trim()) return this.libraryStore.artists
-      return this.libraryStore.artists.filter((artist: Artist) =>
+      if (!query.trim()) return this.sortedArtists
+      return this.sortedArtists.filter((artist: Artist) =>
         matchesAllTerms(query, [artist.name], { exact: this.libraryStore.searchExact }),
       )
     },
@@ -315,9 +359,9 @@ export default {
       return rows
     },
     letterFirstIndex(): Map<string, number> {
-      // indexLetterFor prefers the server's sort name — see its own comment
-      // on why the display name's first letter can be the wrong section.
-      return firstIndexByLetter(this.filteredArtists, indexLetterFor)
+      return firstIndexByLetter(this.filteredArtists, (artist) =>
+        artistSectionFor(artist, this.sort),
+      )
     },
     availableLetters(): Set<string> {
       return new Set(this.letterFirstIndex.keys())
@@ -327,7 +371,7 @@ export default {
     // The reverse of letterFirstIndex, which only knows where each run
     // starts, not which run a given card is in.
     indexLetters(): string[] {
-      return this.filteredArtists.map(indexLetterFor)
+      return this.filteredArtists.map((artist) => artistSectionFor(artist, this.sort))
     },
   },
   watch: {
@@ -344,6 +388,10 @@ export default {
     filteredArtists() {
       this.$nextTick(() => this.activeLetterObserver?.update())
     },
+    // See AlbumsView.vue's identical watcher.
+    sort() {
+      this.$nextTick(() => this.activeLetterObserver?.update())
+    },
   },
   created() {
     this.libraryStore.fetchArtists()
@@ -358,8 +406,19 @@ export default {
       window.scrollTo({ top: 0 })
       this.$nextTick(() => this.activeLetterObserver?.update())
     },
+    setSort(sort: ArtistSort) {
+      this.sort = sort
+      saveArtistSort(sort)
+      this.visibleCount = PAGE_SIZE
+      this.activeLetter = null
+      window.scrollTo({ top: 0 })
+    },
     loadMore() {
       this.visibleCount += PAGE_SIZE
+    },
+    // A divider's text - see AlbumsView.vue's sectionLabel().
+    sectionLabel(section: string): string {
+      return this.sort === 'rating' ? ratingSectionLabel(section, this.$t) : section
     },
     letterAt(index: number): string {
       return this.indexLetters[index] ?? ''
@@ -456,6 +515,12 @@ export default {
 </script>
 
 <style scoped>
+/* See AlbumsView.vue's .album-sort - narrower, as neither entry here is as
+ * long as "Recently added". */
+.artist-sort {
+  flex: 0 0 200px;
+}
+
 /* See AlbumsView.vue's identical rule. */
 .detail-header__actions-row {
   display: flex;
@@ -475,11 +540,13 @@ export default {
   gap: 20px;
 }
 
-/* The list form: one full-width row under the other. */
+/* The list form: one full-width row under the other. A container, so
+ * ArtistCard.vue's row can tell how much room it has (see its rating column). */
 .artist-grid--list {
   flex-direction: column;
   flex-wrap: nowrap;
   gap: 0;
+  container: artist-list / inline-size;
 }
 
 .artist-grid--list .artist-card {

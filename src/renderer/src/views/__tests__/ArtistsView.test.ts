@@ -8,6 +8,7 @@ import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
+import { useAuthStore } from '@/stores/auth'
 import type { Album, Artist, Song } from '@/types/library'
 import { makeSong } from '@/stores/__tests__/fixtures'
 import ArtistsView from '../ArtistsView.vue'
@@ -38,10 +39,21 @@ interface ArtistsVm {
   jumpToLetter(letter: string): void
   playRandomArtist(): Promise<void>
   playTopArtist(): Promise<void>
+  sort: string
+  setSort(sort: 'name' | 'rating'): void
+  sectionLabel(section: string): string
 }
 
 function artist(id: string, name: string): Artist {
-  return { id, name, albumCount: 1, coverArtId: null, imageUrl: null, starred: false } as Artist
+  return {
+    id,
+    name,
+    albumCount: 1,
+    coverArtId: null,
+    imageUrl: null,
+    starred: false,
+    rating: 0,
+  } as Artist
 }
 
 function makeRouter(): Router {
@@ -82,6 +94,7 @@ const many = (n: number): Artist[] =>
 beforeEach(() => {
   setActivePinia(createPinia())
   vi.clearAllMocks()
+  localStorage.clear()
 })
 
 afterEach(() => {
@@ -373,5 +386,44 @@ describe('ArtistsView random playback', () => {
     expect(playback.playSongList).not.toHaveBeenCalled()
     // The button has to become clickable again.
     expect(vm.playingTopArtist).toBe(false)
+  })
+})
+
+describe('ArtistsView sort order', () => {
+  it('puts the most stars first, under dividers drawn as stars', async () => {
+    const { vm } = await mountArtists([
+      artist('none', 'None'),
+      { ...artist('two', 'Two'), rating: 2 },
+      { ...artist('five', 'Five'), rating: 5 },
+    ])
+
+    vm.setSort('rating')
+    await flushPromises()
+
+    expect(vm.filteredArtists.map((a) => a.id)).toEqual(['five', 'two', 'none'])
+    expect([0, 1, 2].map((index) => vm.startsLetterSection(index))).toEqual([true, true, true])
+    expect(vm.sectionLabel(vm.letterAt(1))).toBe('★★☆☆☆')
+  })
+
+  it('opens in the order it was left in', async () => {
+    const first = await mountArtists([artist('a', 'A')])
+    first.vm.setSort('rating')
+    first.wrapper.unmount()
+
+    const { vm } = await mountArtists([artist('a', 'A')])
+
+    expect(vm.sort).toBe('rating')
+  })
+
+  it('stays in name order with no choice offered where the server has no stars', async () => {
+    const first = await mountArtists([artist('a', 'A')])
+    first.vm.setSort('rating')
+    first.wrapper.unmount()
+    useAuthStore().serverType = 'jellyfin'
+
+    const { wrapper, vm } = await mountArtists([artist('a', 'A')])
+
+    expect(vm.sort).toBe('name')
+    expect(wrapper.find('.artist-sort').exists()).toBe(false)
   })
 })

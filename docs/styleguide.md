@@ -479,6 +479,9 @@ shown layout in amber - remembered per page). A list line is the card itself in
 its `row` form (`AlbumCard`/`ArtistCard` with `row`), 56px tall, figures in
 fixed right-aligned columns - one component, so the two layouts share the
 context menu and the heart instead of keeping two copies in step.
+Where the server has a 1-5 scale, the line also carries its stars before the
+heart, like the song table's rating column: shown once set or on hover, and
+the first thing to go when the list is narrower than 640px.
 
 Home uses a third form of the same cards. Its recently played albums are
 `AlbumCard` with `tile`: 72px tall, a 56px cover beside the name and artist,

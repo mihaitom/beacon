@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { ALPHABET_SECTIONS } from '../alphabetIndex'
 import { UNKNOWN_YEAR_SECTION, sectionFor, sectionsFor, sortAlbums } from '../albumSort'
+import { RATING_SECTIONS, UNRATED_SECTION } from '../ratingSort'
 import type { Album } from '@/types/library'
 
 function album(id: string, fields: Partial<Album> = {}): Album {
@@ -70,6 +71,17 @@ describe('sortAlbums', () => {
     expect(ids(sortAlbums(list, 'added'))).toEqual(['latest', 'first', 'undated'])
   })
 
+  it('puts the most stars first, unrated last, and keeps the name order within a rating', () => {
+    const list = [
+      album('a-unrated'),
+      album('b-three', { rating: 3 }),
+      album('c-five', { rating: 5 }),
+      album('d-three', { rating: 3 }),
+    ]
+
+    expect(ids(sortAlbums(list, 'rating'))).toEqual(['c-five', 'b-three', 'd-three', 'a-unrated'])
+  })
+
   it('leaves the list it was given untouched', () => {
     const list = [album('b', { year: 1 }), album('a', { year: 2 })]
 
@@ -91,6 +103,11 @@ describe('sectionFor', () => {
     expect(sectionFor(album('a', { year: 1987 }), 'year')).toBe('1980')
     expect(sectionFor(album('a', { year: 2020 }), 'year')).toBe('2020')
     expect(sectionFor(album('a'), 'year')).toBe(UNKNOWN_YEAR_SECTION)
+  })
+
+  it('files a rating under its star count, an unrated album last', () => {
+    expect(sectionFor(album('a', { rating: 4 }), 'rating')).toBe('4')
+    expect(sectionFor(album('a'), 'rating')).toBe(UNRATED_SECTION)
   })
 
   it('has no sections for recently added', () => {
@@ -119,5 +136,6 @@ describe('sectionsFor', () => {
     expect(sectionsFor([album('a')], 'name')).toEqual(ALPHABET_SECTIONS)
     expect(sectionsFor([album('a')], 'artist')).toEqual(ALPHABET_SECTIONS)
     expect(sectionsFor([album('a')], 'added')).toEqual([])
+    expect(sectionsFor([album('a')], 'rating')).toEqual(RATING_SECTIONS)
   })
 })

@@ -200,6 +200,7 @@
 import { ref } from 'vue'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
+import { useAuthStore } from '@/stores/auth'
 import { useElementWidth } from '@/composables/useElementWidth'
 import { firstIndexByLetter } from '@/services/alphabetIndex'
 import {
@@ -212,6 +213,7 @@ import {
   sortAlbums,
   type AlbumSort,
 } from '@/services/albumSort'
+import { ratingSectionLabel } from '@/services/ratingSort'
 import EmptyState from '@/components/EmptyState.vue'
 import { readBooleanPreference, writeBooleanPreference } from '@/services/booleanPreference'
 import { matchesAllTerms } from '@/services/textSearch'
@@ -289,6 +291,7 @@ export default {
     return { gridRoot, gridWidth: useElementWidth(gridRoot) }
   },
   data() {
+    const sort = loadAlbumSort()
     return {
       // fetchAlbums() loads the whole catalog in one (cached) go — same
       // "load once, render a growing slice" pattern as ArtistsView. The
@@ -313,7 +316,9 @@ export default {
       // are here" highlight — see observeActiveLetter.
       activeLetter: null as string | null,
       activeLetterObserver: null as ActiveLetterHandle | null,
-      sort: loadAlbumSort(),
+      // A rating order remembered from a server with stars falls back to
+      // name on one without them, without forgetting it for the other.
+      sort: sort === 'rating' && !useAuthStore().capabilities.personalRating ? 'name' : sort,
       listView: readBooleanPreference(LIST_VIEW_KEY),
     }
   },
@@ -363,7 +368,11 @@ export default {
       )
     },
     sortOptions(): { title: string; value: AlbumSort }[] {
-      return ALBUM_SORTS.map((value) => ({ title: this.$t(`library.albumSort.${value}`), value }))
+      const rated = useAuthStore().capabilities.personalRating
+      return ALBUM_SORTS.filter((value) => value !== 'rating' || rated).map((value) => ({
+        title: this.$t(`library.albumSort.${value}`),
+        value,
+      }))
     },
     // From the whole sorted list, not the filtered one: a filter greys
     // sections out (availableLetters) rather than taking them off the bar.
@@ -455,9 +464,11 @@ export default {
       if (!this.indexLetters[index]) return false
       return index === 0 || this.indexLetters[index] !== this.indexLetters[index - 1]
     },
-    // A divider's text: the letter itself, or "1980s"/"No year" for the
-    // decade sections the bar only has room to name by number.
+    // A divider's text: the letter itself, or what the bar only has room
+    // to name by number - "1980s"/"No year" for a decade, the stars
+    // themselves for a rating.
     sectionLabel(section: string): string {
+      if (this.sort === 'rating') return ratingSectionLabel(section, this.$t)
       if (this.sort !== 'year') return section
       if (section === UNKNOWN_YEAR_SECTION) return this.$t('library.unknownYear')
       return this.$t('library.decade', { decade: section })
@@ -595,11 +606,13 @@ export default {
   width: 160px;
 }
 
-/* The list form: one full-width row under the other. */
+/* The list form: one full-width row under the other. A container, so
+ * AlbumCard.vue's row can tell how much room it has (see its rating column). */
 .album-grid--list {
   flex-direction: column;
   flex-wrap: nowrap;
   gap: 0;
+  container: album-list / inline-size;
 }
 
 .album-grid--list .album-card {

@@ -1,7 +1,10 @@
 <template>
   <div
     class="artist-card"
-    :class="{ 'artist-card--row': row }"
+    :class="{
+      'artist-card--row': row,
+      'artist-card--rated': row && authStore.capabilities.personalRating,
+    }"
     @click="$router.push(`/artists/${artist.id}`)"
     @contextmenu.prevent="openMenu"
   >
@@ -20,6 +23,12 @@
       <span class="artist-row__figure text-body-small text-medium-emphasis">{{
         songCount === null ? '' : songCountLabel
       }}</span>
+      <rating-stars
+        v-if="authStore.capabilities.personalRating"
+        :item="artist"
+        class="artist-row__rating"
+        :class="{ 'artist-row__rating--set': artist.rating > 0 }"
+      />
       <v-btn
         v-if="authStore.capabilities.favorites"
         :icon="artist.starred ? 'mdi-heart' : 'mdi-heart-outline'"
@@ -108,6 +117,7 @@
 import CoverArt from './CoverArt.vue'
 import TileContextMenu from './TileContextMenu.vue'
 import ContextMenuSection from './ContextMenuSection.vue'
+import RatingStars from './RatingStars.vue'
 import { useLibraryStore } from '@/stores/library'
 import { artistNameKey } from '@/services/artistCredits'
 import { usePlaybackStore } from '@/stores/playback'
@@ -117,7 +127,7 @@ import type { Artist, Song } from '@/types/library'
 
 export default {
   name: 'ArtistCard',
-  components: { CoverArt, TileContextMenu, ContextMenuSection },
+  components: { CoverArt, TileContextMenu, ContextMenuSection, RatingStars },
   props: {
     artist: {
       type: Object as () => Artist,
@@ -239,6 +249,22 @@ export default {
   cursor: pointer;
 }
 
+/* See AlbumCard.vue's .album-card--rated and the container query under
+ * it - the same column, given up at the same width. */
+.artist-card--rated {
+  grid-template-columns: 44px minmax(0, 1fr) 96px 96px 112px 40px;
+}
+
+@container artist-list (max-width: 640px) {
+  .artist-card--rated {
+    grid-template-columns: 44px minmax(0, 1fr) 96px 96px 40px;
+  }
+
+  .artist-row__rating {
+    display: none;
+  }
+}
+
 .artist-card--row:hover {
   background: var(--beacon-hover);
 }
@@ -259,6 +285,18 @@ export default {
   white-space: nowrap;
 }
 
+/* See AlbumCard.vue's .album-row__rating. */
+.artist-row__rating {
+  justify-self: end;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.artist-card--row:hover .artist-row__rating,
+.artist-row__rating--set {
+  opacity: 1;
+}
+
 .artist-row__star {
   opacity: 0;
 }
@@ -271,6 +309,10 @@ export default {
 @media (hover: none) {
   .artist-row__star {
     opacity: 1;
+  }
+
+  .artist-row__rating:not(.artist-row__rating--set) {
+    visibility: hidden;
   }
 }
 
