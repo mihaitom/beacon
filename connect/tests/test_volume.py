@@ -4,7 +4,13 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from core.claims import claims
-from delivery import ChromecastDelivery, DlnaDelivery, SonosDelivery
+from delivery import (
+    AirPlayDelivery,
+    ChromecastDelivery,
+    DeliveryManager,
+    DlnaDelivery,
+    SonosDelivery,
+)
 
 # ── /volume (session-level, active Sonos target) ───────────────────────────────
 
@@ -76,7 +82,15 @@ def test_device_volume_get_chromecast_maps_0_to_1_to_percent(client, default_ses
     assert r.json() == {"volume": 37}
 
 
-def test_device_volume_get_returns_error_for_airplay(client, default_session):
+def test_device_volume_get_airplay_asks_the_playing_instance(client, default_session):
+    playing = AirPlayDelivery("HomePod")
+    default_session.state.active_delivery = DeliveryManager([SonosDelivery("Küche"), playing])
+    with patch.object(playing, "get_volume", new=AsyncMock(return_value=48)):
+        r = client.get("/device-volume?device_type=airplay&name=HomePod")
+    assert r.json() == {"volume": 48}
+
+
+def test_device_volume_get_airplay_without_a_stream_is_an_error(client, default_session):
     r = client.get("/device-volume?device_type=airplay&name=HomePod")
     assert "error" in r.json()
 
@@ -135,7 +149,24 @@ def test_device_volume_set_clamps_below_zero(client, default_session):
 
 
 def test_device_volume_set_rejects_unsupported_type(client, default_session):
-    r = client.post("/device-volume?device_type=airplay&name=HomePod", json={"volume": 50})
+    r = client.post("/device-volume?device_type=bluetooth&name=Box", json={"volume": 50})
+    assert "error" in r.json()
+
+
+def test_device_volume_set_airplay_goes_to_the_playing_instance(client, default_session):
+    """A fresh AirPlayDelivery has no connection: the volume has to go
+    through the one that is streaming, or it is silently lost."""
+    playing = AirPlayDelivery("HomePod")
+    default_session.state.active_delivery = playing
+    with patch.object(playing, "set_volume", new=AsyncMock()) as set_volume:
+        r = client.post("/device-volume?device_type=airplay&name=HomePod", json={"volume": 35})
+    assert r.json() == {"volume": 35}
+    set_volume.assert_awaited_once_with(35)
+
+
+def test_device_volume_set_airplay_without_a_stream_is_an_error(client, default_session):
+    default_session.state.active_delivery = AirPlayDelivery("Other")
+    r = client.post("/device-volume?device_type=airplay&name=HomePod", json={"volume": 35})
     assert "error" in r.json()
 
 

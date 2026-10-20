@@ -134,8 +134,8 @@ export default {
       )
     },
     showVolume() {
-      // AirPlay/RAOP has no per-device volume endpoint — same gate
-      // DeviceListItem.vue uses, see connectStore.isVolumeCapable().
+      // Same gate DeviceListItem.vue uses, see
+      // connectStore.isVolumeCapable().
       return this.isMyActiveTarget && this.connectStore.isVolumeCapable(this.type)
     },
     // Pushed reading for push-capable types (Sonos today - see

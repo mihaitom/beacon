@@ -227,6 +227,9 @@ class AirPlayDelivery(BaseDelivery):
         self._stream_task: asyncio.Task | None = None
         self._atv = None
         self._play_lock = asyncio.Lock()
+        # The level last asked for, so the next track's fresh RAOP connection
+        # starts at it rather than at whatever pyatv would pick on its own.
+        self._volume: float | None = None
 
     async def _find_device(self):
         pyatv = await import_in_thread("pyatv")
@@ -445,6 +448,13 @@ class AirPlayDelivery(BaseDelivery):
             conf = await self._find_device()
             loop = asyncio.get_event_loop()
             self._atv = await pyatv.connect(conf, loop)
+            if self._volume is not None:
+                # Before the stream: pyatv holds it and sends it with the
+                # stream's setup, so the first note already plays at it.
+                try:
+                    await self._atv.audio.set_volume(self._volume)
+                except Exception as e:
+                    logger.warning(f"[AirPlay:{self.target}] Could not restore volume: {e}")
 
             logger.info(f"[AirPlay:{self.target}] connected — '{title}' (backend: {stream_url})")
 
@@ -563,3 +573,20 @@ class AirPlayDelivery(BaseDelivery):
 
         position = (await atv.metadata.playing()).position
         return None if position is None else position + 0.5
+
+    async def get_volume(self) -> float | None:
+        atv = self._atv
+        if atv is not None:
+            try:
+                return round(atv.audio.volume)
+            except Exception as e:
+                logger.debug(f"[AirPlay:{self.target}] No volume available: {e}")
+        return round(self._volume) if self._volume is not None else None
+
+    async def set_volume(self, volume: float) -> None:
+        """RAOP takes a volume only on a connection, and each track opens
+        its own - so it is kept here as well, for the next one."""
+        self._volume = max(0.0, min(100.0, volume))
+        atv = self._atv
+        if atv is not None:
+            await atv.audio.set_volume(self._volume)

@@ -192,11 +192,11 @@ export const useConnectStore = defineStore('connect', {
     // the same reason as isVolumePushCapable() above: DeviceListItem.vue,
     // MobileDeviceRow.vue and MobileTransportControls.vue each carried
     // their own copy of this set, and each one's *fetch* forgot to consult
-    // it - an active AirPlay target was polled every 4s for a reading that
+    // it - a target without one was polled every 4s for a reading that
     // could never come back and was never shown.
     isVolumeCapable() {
       return (type: DeviceType): boolean =>
-        type === 'sonos' || type === 'chromecast' || type === 'dlna'
+        type === 'sonos' || type === 'chromecast' || type === 'dlna' || type === 'airplay'
     },
     // The pushed reading for a specific device, or null when that device
     // isn't pushing, or when nothing has pushed one yet (an unclaimed

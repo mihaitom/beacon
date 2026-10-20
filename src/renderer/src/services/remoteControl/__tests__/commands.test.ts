@@ -1005,14 +1005,14 @@ describe('resolveRemoteQuery', () => {
 
     expect(refreshSpy).toHaveBeenCalledOnce()
     expect(result.items.map((d) => d.name)).toEqual(['Alpha', 'Zebra', 'Speaker', 'Renderer'])
-    // Sorted alphabetically within Sonos, and volume-capable (unlike AirPlay).
+    // Sorted alphabetically within Sonos.
     expect(result.items[0]).toMatchObject({ type: 'sonos', volume_capable: true })
     // needs_pairing travels through instead of being filtered out (see the
     // function's own comment on why: the phone shows it greyed out with a
     // hint, rather than the device silently never appearing at all).
     expect(result.items.find((d) => d.name === 'Speaker')).toMatchObject({
       type: 'airplay',
-      volume_capable: false,
+      volume_capable: true,
       needs_pairing: true,
     })
     expect(result.items.find((d) => d.name === 'Renderer')).toMatchObject({

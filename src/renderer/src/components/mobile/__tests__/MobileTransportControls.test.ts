@@ -427,19 +427,6 @@ describe('MobileTransportControls', () => {
       expect(getVolumeSpy).not.toHaveBeenCalled()
     })
 
-    it('never asks an AirPlay target for a volume it has no endpoint for', async () => {
-      vi.useFakeTimers()
-      const wrapper = mountControls()
-      const connect = useConnectStore()
-      const getVolumeSpy = vi.spyOn(connect, 'getDeviceVolume').mockResolvedValue(30)
-      castTo('Bedroom', 'airplay')
-      await wrapper.vm.$nextTick()
-      await vi.advanceTimersByTimeAsync(8000)
-
-      expect(getVolumeSpy).not.toHaveBeenCalled()
-      expect(wrapper.get('.mobile-transport__volume-value').text()).toBe('—')
-    })
-
     it('drops the previous device reading the moment the target changes', async () => {
       const wrapper = mountControls()
       const connect = useConnectStore()

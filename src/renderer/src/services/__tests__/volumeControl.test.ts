@@ -57,15 +57,6 @@ describe('volumeControl', () => {
     expect(volumeScope().max).toBe(100)
   })
 
-  it('falls back to local for a device with no volume of its own', async () => {
-    // AirPlay has no per-device volume endpoint — asking for one can only
-    // ever come back empty, so "the volume" can't mean it.
-    const { volumeScope } = await freshModule()
-    castTo('airplay', 'HomePod')
-
-    expect(volumeScope().device).toBeNull()
-  })
-
   it('stays out of it while several devices are active', async () => {
     // With two targets "the" volume is ambiguous — that's what the
     // per-device sliders in the picker are for.
@@ -163,8 +154,8 @@ describe('volumeControl', () => {
     const { nudgeVolume, toggleMute } = await freshModule()
     const playback = usePlaybackStore()
     playback.volume = 0.8
-    // An AirPlay target: casting (so local volume controls nothing), but no
-    // device volume to act on either.
+    // A device with no reading yet: casting (so local volume controls
+    // nothing), but no device volume to act on either.
     castTo('airplay', 'HomePod')
 
     await toggleMute()

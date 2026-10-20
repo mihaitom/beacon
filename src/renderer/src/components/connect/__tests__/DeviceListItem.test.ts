@@ -189,17 +189,6 @@ describe('DeviceListItem', () => {
       expect(wrapper.find('.device-row__volume').exists()).toBe(true)
     })
 
-    it('stays hidden for AirPlay, which has no per-device volume endpoint at all', async () => {
-      castTo('Bedroom', 'airplay')
-      const connect = useConnectStore()
-      const getVolumeSpy = vi.spyOn(connect, 'getDeviceVolume').mockResolvedValue(30)
-      const wrapper = mountItem({ name: 'Bedroom' }, 'airplay')
-      await wrapper.vm.$nextTick()
-
-      expect(wrapper.find('.device-row__volume').exists()).toBe(false)
-      expect(getVolumeSpy).not.toHaveBeenCalled()
-    })
-
     it('opens permanently for a single target, and only on hover once several are casting', async () => {
       const connect = useConnectStore()
       vi.spyOn(connect, 'getDeviceVolume').mockResolvedValue(30)

@@ -56,7 +56,7 @@ function deviceKey(device: ConnectDeviceRef): string {
  * Only ever a device when exactly one is being cast to *and* that device
  * type has a volume endpoint at all — with several active targets "the"
  * volume is ambiguous (that's what the picker's per-device sliders are
- * for), and AirPlay has no per-device volume to ask for (see
+ * for), and a type without a per-device volume has nothing to ask for (see
  * connectStore.isVolumeCapable()).
  */
 export function volumeScope(): VolumeScope {
@@ -133,7 +133,7 @@ export async function nudgeVolume(direction: 1 | -1): Promise<void> {
   const scope = volumeScope()
   const current = await currentVolume(scope)
   // Same gate the mute toggle applies: while casting to something with no
-  // volume of its own (AirPlay), local volume is not what anyone is
+  // volume reading, local volume is not what anyone is
   // hearing, and moving it would silently change what this device plays at
   // once casting ends.
   if (current == null || !volumeControllable(scope, current)) return

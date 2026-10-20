@@ -426,19 +426,6 @@ describe('PlayerToolbar', () => {
       expect(wrapper.get('.volume-value').text()).toBe('55%')
     })
 
-    it('never asks an AirPlay target for a volume it has no endpoint for', async () => {
-      vi.useFakeTimers()
-      const wrapper = mountToolbar()
-      const connect = useConnectStore()
-      const getVolumeSpy = vi.spyOn(connect, 'getDeviceVolume').mockResolvedValue(30)
-      connect.status = makeStatus({ targets: [{ name: 'Bedroom', type: 'airplay' }] })
-      await wrapper.vm.$nextTick()
-      await vi.advanceTimersByTimeAsync(8000)
-
-      expect(getVolumeSpy).not.toHaveBeenCalled()
-      expect(wrapper.get('.volume-value').text()).toBe('—')
-    })
-
     it('mutes/unmutes the device via setDeviceVolume instead of the local store', async () => {
       const wrapper = mountToolbar()
       const connect = useConnectStore()

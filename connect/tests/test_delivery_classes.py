@@ -977,6 +977,78 @@ def test_airplay_sends_no_empty_strings_as_metadata():
     assert md.artwork is None
 
 
+def test_airplay_sets_the_volume_on_the_running_stream():
+    d = AirPlayDelivery("HomePod")
+    atv = MagicMock()
+    atv.audio.set_volume = AsyncMock()
+    d._atv = atv
+
+    asyncio.run(d.set_volume(40))
+
+    atv.audio.set_volume.assert_awaited_once_with(40)
+
+
+def test_airplay_next_track_starts_at_the_volume_set_before():
+    """Every track opens a fresh RAOP connection, which on its own would
+    start at whatever pyatv picks - so a level set during one track has to
+    reach the next one's connection before its first note."""
+    calls = []
+    atv = MagicMock()
+    atv.audio.set_volume = AsyncMock(side_effect=lambda v: calls.append(("volume", v)))
+    atv.stream.stream_file = AsyncMock(side_effect=lambda *a, **k: calls.append(("stream",)))
+    atv.close.return_value = []
+    d = AirPlayDelivery("HomePod")
+    asyncio.run(d.set_volume(25))
+    client = _fake_stream_client(_FakeStreamResponse([b"bytes"]))
+
+    async def run():
+        with (
+            patch.object(AirPlayDelivery, "_find_device", new=AsyncMock(return_value=MagicMock())),
+            patch("pyatv.connect", new=AsyncMock(return_value=atv)),
+            patch("delivery.airplay.httpx.AsyncClient", return_value=client),
+        ):
+            await d.play("http://host/stream/s1", "Title", "Artist", None, 200.0)
+            await d._stream_task
+
+    asyncio.run(run())
+
+    assert calls == [("volume", 25), ("stream",)]
+
+
+def test_airplay_plays_on_when_the_volume_cannot_be_restored():
+    atv = MagicMock()
+    atv.audio.set_volume = AsyncMock(side_effect=pyatv_exceptions.ProtocolError("refused"))
+    atv.stream.stream_file = AsyncMock()
+    atv.close.return_value = []
+    d = AirPlayDelivery("HomePod")
+    d._volume = 25.0
+
+    async def run():
+        with (
+            patch.object(AirPlayDelivery, "_find_device", new=AsyncMock(return_value=MagicMock())),
+            patch("pyatv.connect", new=AsyncMock(return_value=atv)),
+        ):
+            await d.play("http://host/radio.mp3", "Title")
+            await d._stream_task
+
+    asyncio.run(run())
+
+    atv.stream.stream_file.assert_awaited_once()
+
+
+def test_airplay_volume_reads_the_connection_or_what_was_set():
+    d = AirPlayDelivery("HomePod")
+    assert asyncio.run(d.get_volume()) is None
+
+    asyncio.run(d.set_volume(30))
+    assert asyncio.run(d.get_volume()) == 30
+
+    atv = MagicMock()
+    atv.audio.volume = 61.7
+    d._atv = atv
+    assert asyncio.run(d.get_volume()) == 62
+
+
 # ── _fetch_artwork ───────────────────────────────────────────────────────────
 
 

@@ -114,18 +114,6 @@ describe('MobileDeviceRow', () => {
       expect(wrapper.find('.mobile-device-row__volume').exists()).toBe(true)
     })
 
-    it('stays away for AirPlay, which has no per-device volume endpoint at all', async () => {
-      castTo('Bedroom', 'airplay')
-      const connect = useConnectStore()
-      const getVolumeSpy = vi.spyOn(connect, 'getDeviceVolume').mockResolvedValue(30)
-      const wrapper = mountRow({ name: 'Bedroom' }, 'airplay')
-      await wrapper.vm.$nextTick()
-
-      expect(wrapper.find('.mobile-device-row__volume').exists()).toBe(false)
-      // ...and isn't asked for a reading it could never show either.
-      expect(getVolumeSpy).not.toHaveBeenCalled()
-    })
-
     // Chromecast has no push channel (connectStore.isVolumePushCapable()),
     // so this exercises the polling fallback specifically.
     it('polls a non-push-capable device every 4s while casting, and stops on unmount', async () => {

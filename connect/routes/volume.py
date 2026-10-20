@@ -14,7 +14,13 @@ from core.session import (
     require_authenticated_session,
 )
 from core.state import find_sonos
-from delivery import ChromecastDelivery, DlnaDelivery, SonosDelivery
+from delivery import (
+    AirPlayDelivery,
+    ChromecastDelivery,
+    DeliveryManager,
+    DlnaDelivery,
+    SonosDelivery,
+)
 
 logger = logging.getLogger("connect.devices")
 router = APIRouter(dependencies=[Depends(require_token)])
@@ -73,6 +79,19 @@ async def set_volume(
         _record_volume(session, "sonos", d.target, volume, None)
     await session.event_bus.broadcast(build_status_dict(session))
     return {"volume": volume}
+
+
+def _live_airplay(session: SessionState, name: str) -> AirPlayDelivery | None:
+    """The AirPlay delivery this session is playing through. Unlike the
+    other types, a fresh one would know nothing: the connection a volume
+    has to go over lives on the instance (see delivery/airplay.py)."""
+    active = session.state.active_delivery
+    candidates = (
+        active.deliveries if isinstance(active, DeliveryManager) else [active] if active else []
+    )
+    return next(
+        (d for d in candidates if isinstance(d, AirPlayDelivery) and d.target == name), None
+    )
 
 
 def _record_volume(
@@ -144,6 +163,12 @@ async def get_device_volume(
             if volume is None:
                 return {"error": f"Volume control not supported for {name}"}
             return {"volume": volume}
+        if device_type == "airplay":
+            airplay = _live_airplay(session, name)
+            volume = await airplay.get_volume() if airplay else None
+            if volume is None:
+                return {"error": f"Nothing playing on {name}"}
+            return {"volume": volume}
         return {"error": f"Volume control not supported for {device_type}"}
     except Exception as e:
         logger.warning(f"[device-volume] get '{name}': {e}")
@@ -174,6 +199,12 @@ async def set_device_volume(
             return {"volume": volume}
         if device_type == "dlna":
             await DlnaDelivery(name).set_volume(volume)
+            return {"volume": volume}
+        if device_type == "airplay":
+            airplay = _live_airplay(session, name)
+            if airplay is None:
+                return {"error": f"Nothing playing on {name}"}
+            await airplay.set_volume(volume)
             return {"volume": volume}
         return {"error": f"Volume control not supported for {device_type}"}
     except Exception as e:

@@ -547,9 +547,8 @@ export async function resolveRemoteQuery(
       // the UI to grey the row out with a hint instead of pretending the
       // device isn't there.
       const typeOrder: DeviceType[] = ['sonos', 'airplay', 'chromecast', 'dlna']
-      // Matches DeviceListItem.vue's own VOLUME_CAPABLE_TYPES — AirPlay/RAOP
-      // has no per-device volume endpoint (see connect/routes/volume.py).
-      const volumeCapableTypes = new Set<DeviceType>(['sonos', 'chromecast', 'dlna'])
+      // Matches connectStore.isVolumeCapable() (see connect/routes/volume.py).
+      const volumeCapableTypes = new Set<DeviceType>(['sonos', 'airplay', 'chromecast', 'dlna'])
       const flatten = (
         type: DeviceType,
         list: DiscoveredDevice[],

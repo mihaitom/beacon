@@ -220,7 +220,7 @@ export default {
       return this.selected
     },
     canShowVolume() {
-      // Airplay/RAOP has no per-device volume endpoint at all — see
+      // Only types with a per-device volume endpoint — see
       // connectStore.isVolumeCapable().
       return this.isMyActiveTarget && this.connectStore.isVolumeCapable(this.type)
     },

@@ -343,9 +343,9 @@ export default {
         this.deviceVolume = null
         clearInterval(this.volumePollTimer ?? undefined)
         this.volumePollTimer = null
-        // Not just "a target is active": AirPlay has no per-device volume
-        // endpoint (see connectStore.isVolumeCapable()), so asking for one
-        // — once, let alone every 4s — can only ever come back empty.
+        // Not just "a target is active": a type without a per-device volume
+        // endpoint (see connectStore.isVolumeCapable()) can only ever answer
+        // empty — once, let alone every 4s.
         if (
           this.singleActiveTarget &&
           this.connectStore.isVolumeCapable(this.singleActiveTarget.type)
