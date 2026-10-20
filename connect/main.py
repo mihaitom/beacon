@@ -31,6 +31,7 @@ from core.auth import TOKEN as _CONNECT_TOKEN
 from core.auth import TOKEN_WAS_GENERATED as _CONNECT_TOKEN_GENERATED
 from core.device_volume import capture_main_loop
 from core.ffmpeg import FFMPEG_BIN, ffmpeg_available
+from core.http_diagnostics import UVICORN_INVALID_REQUEST_MESSAGE, DiagnosticHTTPProtocol
 from core.log_level import TRACE as _TRACE_LEVEL
 from core.log_level import apply as _apply_log_level
 from core.log_level import initial_level as _initial_log_level
@@ -102,6 +103,9 @@ class _ShortNameFilter(logging.Filter):
         elif record.name.startswith("pychromecast."):
             record.name = record.name.removeprefix("pychromecast.")
         elif record.name == "uvicorn.error":
+            if record.getMessage() == UVICORN_INVALID_REQUEST_MESSAGE:
+                # core/http_diagnostics.py logs the same event with the sender.
+                return False
             # "uvicorn.error" is just uvicorn's logger for general
             # startup/shutdown messages (not actual errors) — rename to
             # avoid the misleading "error" in the name.
@@ -538,6 +542,7 @@ if __name__ == "__main__":
             host="0.0.0.0",
             port=PORT,
             log_config=UVICORN_LOG_CONFIG,
+            http=DiagnosticHTTPProtocol,
             reload=False,
             timeout_graceful_shutdown=3,
         )

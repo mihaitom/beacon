@@ -44,6 +44,18 @@ def test_short_name_filter_leaves_other_names_untouched():
     assert _filtered_name("delivery") == "delivery"
 
 
+def test_short_name_filter_drops_uvicorns_own_invalid_request_line():
+    """core/http_diagnostics.py logs the same event with its sender."""
+    invalid = logging.LogRecord(
+        "uvicorn.error", logging.WARNING, __file__, 1, "Invalid HTTP request received.", None, None
+    )
+    other = logging.LogRecord(
+        "uvicorn.error", logging.WARNING, __file__, 1, "Something else.", None, None
+    )
+    assert _ShortNameFilter().filter(invalid) is False
+    assert _ShortNameFilter().filter(other) is True
+
+
 # ── _asyncio_exception_handler ───────────────────────────────────────────────
 
 
