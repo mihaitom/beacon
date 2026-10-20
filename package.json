@@ -91,7 +91,7 @@
     "concurrently": "^10.0.6",
     "electron": "^44.8.0",
     "electron-builder": "^26.17.0",
-    "electron-vite": "^5.0.0",
+    "electron-vite": "^6.0.0",
     "eslint": "^10.13.0",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-oxlint": "~1.88.0",
