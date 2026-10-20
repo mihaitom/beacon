@@ -270,9 +270,6 @@ class ChromecastDelivery(BaseDelivery):
         album: str = "",
         content_type: str = "audio/mpeg",
     ) -> None:
-        # duration accepted for interface parity with BaseDelivery.play() but
-        # not yet wired up here — not part of the DLNA missing-duration fix
-        # this parameter was added for (see dlna.py).
         import pychromecast
 
         cast = await asyncio.to_thread(self._get_device)
@@ -291,6 +288,11 @@ class ChromecastDelivery(BaseDelivery):
             metadata["images"] = [{"url": album_art_url}]
         if album:
             metadata["albumName"] = album
+        # The whole track's length, even when the stream resumes part-way in:
+        # one that ends before its announced length just ends. Gives the
+        # device's own display (Google Home, a TV) a progress bar; left out
+        # for radio and a mix, which have no end.
+        extra = {"media_info": {"duration": duration}} if duration else {}
         loop = asyncio.get_running_loop()
         self._load_generation += 1
         generation = self._load_generation
@@ -311,6 +313,7 @@ class ChromecastDelivery(BaseDelivery):
             thumb=album_art_url,
             metadata=metadata,
             callback_function=answer.callback,
+            **extra,
         )
         # The device's own answer, rather than waiting for a media session:
         # that wait ran out silently, so a refused stream read as success,

@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - AirPlay speakers have a volume control while Beacon casts to them, like Sonos, Chromecast and DLNA
 - Songs can be rated with stars from their right-click menu everywhere, in lists, on tiles and in the queue. The song in the player bar has that menu too, behind a right-click or the ⋮ next to the heart (requested by @mjj042, #55)
 - Casting to a Sonos that has repeat on in the Sonos app says so and can switch it off: it made every song start over for a moment at its end, and repeat in Beacon works without it
+- A Chromecast shows how long the song is, so Google Home and a TV show a progress bar for it
 
 ### Changed
 

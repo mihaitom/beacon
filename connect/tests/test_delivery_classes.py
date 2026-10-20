@@ -1853,6 +1853,25 @@ def test_chromecast_play_includes_album_art_and_album_in_metadata():
     assert call_kwargs["metadata"]["albumName"] == "The Album"
 
 
+def test_chromecast_play_announces_the_track_length():
+    cast = _mock_cast()
+    d = ChromecastDelivery("TV")
+    with patch.object(ChromecastDelivery, "_get_device", return_value=cast):
+        asyncio.run(d.play("http://stream", "Title", "", None, 215.4))
+    call_kwargs = cast.media_controller.play_media.call_args.kwargs
+    assert call_kwargs["media_info"] == {"duration": 215.4}
+
+
+def test_chromecast_play_announces_no_length_for_a_stream_without_one():
+    """Radio and a transitions mix go on: a length would tell the device
+    where to stop."""
+    cast = _mock_cast()
+    d = ChromecastDelivery("TV")
+    with patch.object(ChromecastDelivery, "_get_device", return_value=cast):
+        asyncio.run(d.play("http://stream", "Title"))
+    assert "media_info" not in cast.media_controller.play_media.call_args.kwargs
+
+
 def test_chromecast_play_omits_album_art_and_album_when_not_given():
     cast = _mock_cast()
     d = ChromecastDelivery("TV")
