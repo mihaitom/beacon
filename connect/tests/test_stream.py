@@ -1670,12 +1670,14 @@ def test_stream_head_answers_the_same_url_a_device_probes(client, default_sessio
     ("user_agent", "paced"),
     [
         ("Linux UPnP/1.0 Sonos/86.10-81100 (ZPS3)", False),
+        ("Linux UPnP/1.0 Sonos/86.10-81100 (ZPS9)", False),
         ("Linux UPnP/1.0 Sonos/97.2-81220 (ZPS57)", True),
         (None, True),
     ],
 )
-def test_a_play3_gets_its_stream_unpaced(client, default_session, user_agent, paced):
-    """A Play:3 gives up on a stream arriving at real time (#56)."""
+def test_old_sonos_models_get_their_stream_unpaced(client, default_session, user_agent, paced):
+    """A Play:3 and a first-generation Playbar give up on a stream arriving
+    at real time (#56)."""
     _configure_and_set_track(client, default_session)
     headers = {"User-Agent": user_agent} if user_agent else {}
 
@@ -1688,9 +1690,9 @@ def test_a_play3_gets_its_stream_unpaced(client, default_session, user_agent, pa
 @pytest.mark.parametrize(
     ("switch", "user_agent", "paced"),
     [
-        # A Play:3 is on the unpaced list, a Playbar is not.
+        # A Play:3 is on the unpaced list, an Era 100 is not.
         ("routes.stream.GENTLE_PACING", "Linux UPnP/1.0 Sonos/86.10-81100 (ZPS3)", True),
-        ("routes.stream.BYTE_RANGES_ENABLED", "Linux UPnP/1.0 Sonos/86.10-81100 (ZPS9)", False),
+        ("routes.stream.BYTE_RANGES_ENABLED", "Linux UPnP/1.0 Sonos/97.2-81220 (ZPS57)", False),
     ],
 )
 def test_a_diagnostic_switch_overrides_the_model_list(
