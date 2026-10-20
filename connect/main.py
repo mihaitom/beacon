@@ -36,6 +36,7 @@ from core.log_level import TRACE as _TRACE_LEVEL
 from core.log_level import apply as _apply_log_level
 from core.log_level import initial_level as _initial_log_level
 from core.log_level import is_at_least
+from core.log_redaction import redact
 from core.loop_health import monitor_loop_lag
 from core.party import party, reap_stale_party
 from core.remote import reap_stale_remote, remote
@@ -130,7 +131,8 @@ _USE_COLOR = not os.getenv("NO_COLOR")
 
 class _ColorLevelFormatter(logging.Formatter):
     """Colors just the level name by log level — the rest of the line keeps
-    the terminal's default color.
+    the terminal's default color. Every line, traceback included, leaves
+    with its credentials masked (core/log_redaction.py).
     """
 
     def __init__(self, format=None, datefmt=None, use_color: bool = True, **kwargs):
@@ -143,7 +145,7 @@ class _ColorLevelFormatter(logging.Formatter):
         color = _LEVEL_COLORS.get(record.levelno) if self._use_color else None
         record.levelname = f"{color}{padded}{_COLOR_RESET}" if color else padded
         try:
-            return super().format(record)
+            return redact(super().format(record))
         finally:
             record.levelname = original
 

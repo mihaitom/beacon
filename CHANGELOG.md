@@ -23,6 +23,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- The backend's logs no longer contain the media server login: usernames, passwords, tokens and API keys in addresses are masked, so a log can be shared without giving away access to the server
 - Casting to a Sonos Play:3 or a first-generation Playbar plays tracks through instead of stopping or jumping back to the start after about 50 seconds (reported by @mjj042, #56)
 - After signing in or a library rescan, the song library is kept for the next start instead of being loaded in full again every time
 - A deleted playlist is gone from the playlist overview straight away, instead of showing up there for another half minute and failing to open

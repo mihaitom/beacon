@@ -6,6 +6,7 @@ deliveries)."""
 import asyncio
 import logging
 import shutil
+import sys
 from unittest.mock import patch
 
 from fastapi import Request
@@ -13,7 +14,12 @@ from fastapi.testclient import TestClient
 from starlette.routing import Route
 
 import main
-from main import _asyncio_exception_handler, _periodic_discovery, _ShortNameFilter
+from main import (
+    _asyncio_exception_handler,
+    _ColorLevelFormatter,
+    _periodic_discovery,
+    _ShortNameFilter,
+)
 
 # ── _ShortNameFilter ─────────────────────────────────────────────────────────
 
@@ -54,6 +60,27 @@ def test_short_name_filter_drops_uvicorns_own_invalid_request_line():
     )
     assert _ShortNameFilter().filter(invalid) is False
     assert _ShortNameFilter().filter(other) is True
+
+
+def test_the_log_formatter_masks_credentials_in_the_message_and_its_traceback():
+    try:
+        raise RuntimeError("failed for url http://nav/rest/x?t=tok3n")
+    except RuntimeError:
+        record = logging.LogRecord(
+            "connect.streamer",
+            logging.WARNING,
+            __file__,
+            1,
+            "fetch http://nav/rest/x?u=admin&p=passw0rd",
+            None,
+            sys.exc_info(),
+        )
+
+    line = _ColorLevelFormatter("%(message)s", use_color=False).format(record)
+
+    assert "passw0rd" not in line
+    assert "admin" not in line
+    assert "tok3n" not in line
 
 
 # ── _asyncio_exception_handler ───────────────────────────────────────────────
