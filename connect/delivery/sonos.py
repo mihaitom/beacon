@@ -106,7 +106,7 @@ def is_beacon_hosted_radio_uri(url: str) -> bool:
 # ERROR_LOST_CONNECTION although the connection is open and still
 # delivering, and plays out its buffer as if the track had ended; sent
 # unpaced they play every track through (#56, see
-# docs/investigations/fixed-sonos-play3-gives-up-on-a-paced-stream.md).
+# docs/investigations/old-sonos-models-stop-reading-the-stream.md).
 _UNPACED_MODELS = frozenset({"ZPS3", "ZPS9"})
 
 # A Sonos fetching a stream names its model at the end of its user agent:
