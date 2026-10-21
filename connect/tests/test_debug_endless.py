@@ -102,3 +102,4 @@ def test_a_sonos_gets_the_measurement_streams_framed_like_the_real_ones():
         asyncio.run(debug.test_radio(sonos)),
     ):
         assert response.headers[CLOSE_DELIMITED_HEADER] == "close"
+        assert response.headers["icy-name"] == "Beacon Test Station"

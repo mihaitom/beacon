@@ -288,6 +288,7 @@ _MARKER_INTERVAL_S = 8.0
 # of bytes is worth — which is exactly what every buffer in the chain is
 # measured in.
 _STATION_BITRATE = "128k"
+_TEST_STATION_NAME = "Beacon Test Station"
 
 
 def _station_cmd(source: str) -> list[str]:
@@ -426,11 +427,11 @@ async def test_radio(request: Request, file: str | None = None) -> Response:
     headers = {
         "Cache-Control": "no-cache",
         "X-Accel-Buffering": "no",
-        **stream_headers(request.headers.get("user-agent")),
+        **stream_headers(request.headers.get("user-agent"), _TEST_STATION_NAME),
     }
     if wants_icy:
         headers["icy-metaint"] = str(DEVICE_METAINT)
-        headers["icy-name"] = "Beacon Test Station"
+        headers["icy-name"] = _TEST_STATION_NAME
     # metaint only matters when the client asked for metadata; without the
     # header a client expects pure audio, and splicing blocks into it
     # anyway would corrupt the stream.
@@ -559,7 +560,7 @@ async def test_endless(request: Request, fmt: str, file: str | None = None) -> R
     headers = {
         "Cache-Control": "no-cache",
         "X-Accel-Buffering": "no",
-        **stream_headers(request.headers.get("user-agent")),
+        **stream_headers(request.headers.get("user-agent"), _TEST_STATION_NAME),
     }
     return StreamingResponse(body(), media_type=_endless_content_type(fmt), headers=headers)
 

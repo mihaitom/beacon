@@ -20,6 +20,7 @@ from core.http_protocol import (
     CLOSE_DELIMITED_HEADER,
     BeaconHTTPProtocol,
     CloseDelimitedFraming,
+    header_value,
 )
 
 _IMPLEMENTATIONS = {
@@ -152,3 +153,24 @@ async def test_a_header_that_would_split_the_response_never_reaches_the_wire(imp
 def test_the_server_serves_with_the_framing_and_the_invalid_request_logging():
     assert issubclass(BeaconHTTPProtocol, CloseDelimitedFraming)
     assert issubclass(BeaconHTTPProtocol, DiagnosticHTTPProtocol)
+
+
+def test_header_value_leaves_a_plain_name_alone():
+    assert header_value("Café del Mar - Song") == "Café del Mar - Song"
+
+
+def test_header_value_replaces_what_a_header_cannot_carry():
+    assert header_value("Ночь – Song\r\nX-Injected: 1") == "???? ? Song  X-Injected: 1"
+
+
+@pytest.mark.parametrize("implementation", _IMPLEMENTATIONS)
+async def test_every_control_character_a_name_can_hold_gets_through_the_framing(implementation):
+    """Whatever a tag holds, the framing's own header check must accept the
+    cleaned name: one it refuses ends the stream before it starts."""
+    name = "".join(chr(c) for c in [*range(0x20), 0x7F])
+    app = _app([(b"icy-name", header_value(name).encode("latin-1")), *_MARKED])
+
+    transport = await _serve(implementation, app, _GET)
+
+    assert transport.written.startswith(b"HTTP/1.0 200 OK")
+    assert transport.written.endswith(b"\xff\xfb\x90\x00\xff\xfb\x90\x01")

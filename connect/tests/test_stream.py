@@ -1711,10 +1711,10 @@ def _relaying(default_session):
     default_session.radio_relay = _OneChunkRelay()
 
 
-def test_a_sonos_gets_a_track_and_its_head_close_delimited(client, default_session):
-    """Framed the way an internet radio server frames a stream, which these
-    speakers read to the end (see core/http_protocol.py); chunked, an old
-    model stopped reading about 40s in."""
+def test_a_sonos_gets_a_track_and_its_head_like_a_radio_station(client, default_session):
+    """Framed and named the way an internet radio server answers, which
+    these speakers read to the end (see core/http_protocol.py); chunked, an
+    old model stopped reading about 40s in."""
     _configure_and_set_track(client, default_session)
 
     with patch("routes.stream.stream_tracks", side_effect=_real_stream):
@@ -1724,9 +1724,14 @@ def test_a_sonos_gets_a_track_and_its_head_close_delimited(client, default_sessi
     for r in (get, head):
         assert r.headers[CLOSE_DELIMITED_HEADER] == "close"
         assert r.headers["accept-ranges"] == "none"
+        assert r.headers["icy-name"] == "Artist - Song"
 
 
-def test_a_sonos_gets_the_relayed_station_and_its_head_close_delimited(client, default_session):
+def test_a_sonos_gets_the_relayed_station_and_its_head_like_a_radio_station(
+    client, default_session
+):
+    """The station's name even when the speaker did not ask for ICY
+    metadata, as a station's own server sends it."""
     _relaying(default_session)
     url = f"/stream/radio/{default_session.session_id}"
 
@@ -1737,6 +1742,7 @@ def test_a_sonos_gets_the_relayed_station_and_its_head_close_delimited(client, d
     for r in (get, head):
         assert r.headers[CLOSE_DELIMITED_HEADER] == "close"
         assert r.headers["accept-ranges"] == "none"
+        assert r.headers["icy-name"] == "Heart 80s"
 
 
 @pytest.mark.parametrize("user_agent", [None, "Mozilla/5.0 (CrKey armv7l 1.56.500000)"])
@@ -1755,3 +1761,4 @@ def test_other_devices_keep_the_framing_they_had(client, default_session, user_a
     for r in responses:
         assert CLOSE_DELIMITED_HEADER not in r.headers
         assert "accept-ranges" not in r.headers
+        assert "icy-name" not in r.headers

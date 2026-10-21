@@ -30,6 +30,16 @@ _FRAMING_HEADERS = frozenset({_MARKER_NAME, b"content-length", b"transfer-encodi
 # smuggled into the response through one.
 _INVALID_NAME = re.compile(b'[\x00-\x1f\x7f()<>@,;:\\[\\]={} \t\\\\"]')
 _INVALID_VALUE = re.compile(b"[\x00-\x08\x0a-\x1f\x7f]")
+_CONTROL_CHARACTERS = re.compile(r"[\x00-\x1f\x7f]")
+
+
+def header_value(text: str) -> str:
+    """`text` as a header can carry it, for a name out of a tag or a radio
+    directory. A control character could fail the whole response (uvicorn
+    and the framing below refuse all but the tab); anything outside
+    latin-1, which Starlette cannot encode, answered a Sonos with a 500 for
+    every Cyrillic or CJK station name. Both become placeholders instead."""
+    return _CONTROL_CHARACTERS.sub(" ", text).encode("latin-1", "replace").decode("latin-1")
 
 
 def _asks_for_close_delimited(message) -> bool:

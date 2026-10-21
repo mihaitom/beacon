@@ -7,7 +7,7 @@ from xml.sax.saxutils import escape
 
 from soco.exceptions import SoCoUPnPException
 
-from core.http_protocol import CLOSE_DELIMITED
+from core.http_protocol import CLOSE_DELIMITED, header_value
 from core.upnp_events import (
     AVTRANSPORT_EVENT_PATH,
     RENDERINGCONTROL_EVENT_PATH,
@@ -115,13 +115,17 @@ _SONOS_IN_USER_AGENT = re.compile(r"\bSonos/")
 _MODEL_IN_USER_AGENT = re.compile(r"\bSonos/\S+ \((\w+)\)")
 
 
-def stream_headers(user_agent: str | None) -> dict[str, str]:
+def stream_headers(user_agent: str | None, name: str | None) -> dict[str, str]:
     """What a cast stream's GET and HEAD add for a Sonos: an internet radio
     server's framing (see core/http_protocol.py), and like such a server,
-    no byte ranges to come back for. Empty for any other device."""
+    no byte ranges to come back for and the stream's name in `icy-name`.
+    Empty for any other device."""
     if not _SONOS_IN_USER_AGENT.search(user_agent or ""):
         return {}
-    return {**CLOSE_DELIMITED, "Accept-Ranges": "none"}
+    headers = {**CLOSE_DELIMITED, "Accept-Ranges": "none"}
+    if name:
+        headers["icy-name"] = header_value(name)
+    return headers
 
 
 def needs_unpaced_stream(user_agent: str | None) -> bool:

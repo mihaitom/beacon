@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import Response, StreamingResponse
 
 from core.auth import require_token
+from core.http_protocol import header_value
 from core.icy_metadata import (
     DEVICE_METAINT,
     IcyMuxer,
@@ -47,6 +48,7 @@ from core.streamer import (
 )
 from delivery.errors import source_error_response
 from delivery.sonos import needs_unpaced_stream, stream_headers
+from media.base import Track
 
 from . import mix_cast
 from .playback import (
@@ -629,15 +631,23 @@ async def resume_interrupted(session: SessionState = Depends(get_session)):
     return {"resumed": True}
 
 
-def _cast_stream_headers(request: Request) -> dict[str, str]:
+def _cast_stream_headers(request: Request, name: str | None) -> dict[str, str]:
     """The headers every cast stream's GET and HEAD answer with. A HEAD has
     to describe the same response its GET would be, framing included: a
     Sonos sends one near the end of what it has buffered."""
     return {
         "Cache-Control": "no-cache",
         "X-Accel-Buffering": "no",
-        **stream_headers(request.headers.get("user-agent")),
+        **stream_headers(request.headers.get("user-agent"), name),
     }
+
+
+def _stream_name(track: Track | None) -> str | None:
+    """The name a track's (or a mix's) stream goes by: its first song, as
+    the dispatch announces it."""
+    if track is None:
+        return None
+    return f"{track.artist} - {track.title}" if track.artist else track.title
 
 
 @router.head("/stream")
@@ -648,7 +658,7 @@ async def audio_stream_head(request: Request, session_id: str = DEFAULT_SESSION_
     session = await registry.get_or_create(strip_stream_extension(session_id))
     return Response(
         media_type=session.state.current_output_format.content_type,
-        headers=_cast_stream_headers(request),
+        headers=_cast_stream_headers(request, _stream_name(session.state.current_track)),
     )
 
 
@@ -659,8 +669,12 @@ async def radio_stream_head(request: Request, session_id: str = DEFAULT_SESSION_
     only answers GET returns 405 to that probe. The speaker then reports
     ERROR_CORRUPT_FILE / ERROR_NO_PLAYABLE_CONTENT for a stream it never
     actually opened, which is a genuinely confusing thing to debug."""
-    await registry.get_or_create(session_id)
-    return Response(media_type=FALLBACK_FORMAT.content_type, headers=_cast_stream_headers(request))
+    session = await registry.get_or_create(session_id)
+    radio_info = session.state.radio_info or {}
+    return Response(
+        media_type=FALLBACK_FORMAT.content_type,
+        headers=_cast_stream_headers(request, radio_info.get("title")),
+    )
 
 
 @router.get("/stream/radio/{session_id}")
@@ -709,13 +723,13 @@ async def radio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
 
     wants_icy = request.headers.get("icy-metadata") == "1"
     headers = {"icy-metaint": str(DEVICE_METAINT)} if wants_icy else {}
-    headers |= stream_headers(request.headers.get("user-agent"))
     # icy-name: the *station's* name (radio_info["title"], set once at
     # dispatch — see routes/playback.py's /play-url), not the "now playing"
     # tag the injected StreamTitle blocks below carry — same distinction a
     # real Icecast server's own icy-name/StreamTitle draw.
     if wants_icy and radio_info.get("title"):
-        headers["icy-name"] = _latin1_header_value(radio_info["title"])
+        headers["icy-name"] = header_value(radio_info["title"])
+    headers |= stream_headers(request.headers.get("user-agent"), radio_info.get("title"))
 
     def current_title() -> str | None:
         # session.radio_title (core/session.py), not radio_info["title"] —
@@ -797,24 +811,6 @@ async def radio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
     if wants_icy:
         audio = _muxed_icy_audio(audio, IcyMuxer(DEVICE_METAINT, current_title, record_injection))
     return StreamingResponse(audio, media_type=FALLBACK_FORMAT.content_type, headers=headers)
-
-
-def _latin1_header_value(text: str) -> str:
-    """`text` reduced to something that can actually go in an HTTP header.
-
-    Starlette encodes header values as latin-1, and a station name is
-    arbitrary user-facing text straight out of the radio directory. Putting
-    one in unchecked raised UnicodeEncodeError *inside the handler* for any
-    station whose name isn't latin-1 representable — every Cyrillic, Greek
-    or CJK name, and plenty of Latin-script ones too (an en dash or an
-    ellipsis in the name is enough). The device got a 500 and no audio at
-    all, and only ever when it asked for ICY, which in practice meant Sonos.
-
-    Replaced rather than dropped or percent-encoded: this header is only
-    ever shown as a station label on a device's own display, so a name that
-    survives with a few placeholder characters is strictly better than one
-    that takes the whole stream down with it."""
-    return text.encode("latin-1", "replace").decode("latin-1")
 
 
 # How long a single write to the device's socket has to block before the
@@ -1488,7 +1484,7 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
     return StreamingResponse(
         stream_with_completion(),
         media_type=output_format.content_type,
-        headers=_cast_stream_headers(request),
+        headers=_cast_stream_headers(request, _stream_name(track)),
     )
 
 

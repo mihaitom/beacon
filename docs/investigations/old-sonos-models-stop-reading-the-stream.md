@@ -69,9 +69,11 @@ projects ran into on the same hardware:
   "no content-length" (HTTP/1.0, close-delimited), which its #582 shows
   playing on a Play:1 with firmware 86.6.
 
-The ICY headers are not what made the station work: Beacon's relay sends
-them too (to a device that asks for ICY metadata), and the relay died after
-about 40 seconds like every other chunked stream.
+The ICY headers alone are not what made the station work: Beacon's relay
+sends them too (to a device that asks for ICY metadata), and the relay died
+after about 40 seconds like every other chunked stream. Whether the framing
+works without them was never observed, though, which is why a Sonos now gets
+`icy-name` as well (see "The fix").
 
 ## What the speaker does with a chunked stream
 
@@ -126,8 +128,13 @@ chunking, which no run before the station run had.
   through the protocol class main.py already used for logging invalid
   requests. Any other response is untouched.
 - `delivery/sonos.py`'s `stream_headers()`: a Sonos, recognised by its user
-  agent, gets that framing and `Accept-Ranges: none` on `/stream` and the
-  radio relay, GET and HEAD. A mix goes through `/stream` too.
+  agent, gets that framing, `Accept-Ranges: none` and the stream's name in
+  `icy-name` on `/stream` and the radio relay, GET and HEAD. A mix goes
+  through `/stream` too. `icy-name` closes the one difference to the
+  station the evidence cannot rule out: the station sent it, and so did
+  the Music Assistant responses that played on a Play:3, which carried no
+  ICY metadata. Neither does Beacon's track stream: a station adds that
+  only when asked, and Music Assistant sends none with a single track.
 - The announcement stays an `audioBroadcast` without a duration, which is
   what the station run used and what every one of these streams is to a
   Sonos: nothing to seek in or fetch again in parts.

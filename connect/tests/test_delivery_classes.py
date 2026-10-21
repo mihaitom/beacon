@@ -212,15 +212,28 @@ def test_a_track_goes_out_as_a_broadcast_without_a_duration():
     ["Linux UPnP/1.0 Sonos/86.10-81100 (ZPS3)", "Linux UPnP/1.0 Sonos/97.2-81220 (ZPS57)"],
 )
 def test_every_sonos_is_answered_like_a_radio_server(user_agent):
-    assert _sonos_mod.stream_headers(user_agent) == {
+    assert _sonos_mod.stream_headers(user_agent, "Artist - Song") == {
         CLOSE_DELIMITED_HEADER: "close",
         "Accept-Ranges": "none",
+        "icy-name": "Artist - Song",
     }
+
+
+def test_a_stream_without_a_name_goes_without_icy_name():
+    assert "icy-name" not in _sonos_mod.stream_headers("Linux UPnP/1.0 Sonos/86.10 (ZPS3)", None)
+
+
+def test_a_name_from_a_tag_cannot_break_the_header():
+    """A newline in a tag would fail the whole response, and Starlette
+    cannot encode a name outside latin-1."""
+    headers = _sonos_mod.stream_headers("Linux UPnP/1.0 Sonos/86.10 (ZPS3)", "Ночь\nSong")
+
+    assert headers["icy-name"] == "???? Song"
 
 
 @pytest.mark.parametrize("user_agent", [None, "", "Mozilla/5.0 (CrKey armv7l 1.56.500000)"])
 def test_other_devices_get_no_stream_headers(user_agent):
-    assert _sonos_mod.stream_headers(user_agent) == {}
+    assert _sonos_mod.stream_headers(user_agent, "Artist - Song") == {}
 
 
 # ── SonosDelivery._dispatch_uri() — the x-rincon-mp3radio:// scheme swap ────
