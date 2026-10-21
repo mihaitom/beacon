@@ -17,6 +17,7 @@ import pytest
 from starlette.requests import Request
 
 import routes.stream as stream_routes
+from core.http_protocol import CLOSE_DELIMITED_HEADER
 from core.session import DEFAULT_SESSION_ID, build_status_dict, mark_interrupted
 from core.streamer import FALLBACK_FORMAT, OutputFormat, SourceUnavailableError
 from delivery import ChromecastDelivery
@@ -1687,157 +1688,70 @@ def test_old_sonos_models_get_their_stream_unpaced(client, default_session, user
     assert mocked.call_args.kwargs["paced"] is paced
 
 
-@pytest.mark.parametrize(
-    ("switch", "user_agent", "paced"),
-    [
-        # A Play:3 is on the unpaced list, an Era 100 is not.
-        ("routes.stream.GENTLE_PACING", "Linux UPnP/1.0 Sonos/86.10-81100 (ZPS3)", True),
-        ("routes.stream.BYTE_RANGES_ENABLED", "Linux UPnP/1.0 Sonos/97.2-81220 (ZPS57)", False),
-    ],
-)
-def test_a_diagnostic_switch_overrides_the_model_list(
-    client, default_session, monkeypatch, switch, user_agent, paced
-):
-    monkeypatch.setattr(switch, True)
-    _configure_and_set_track(client, default_session)
+# ── How a Sonos gets its stream framed (#56) ─────────────────────────────────
 
-    with patch("routes.stream.stream_tracks", side_effect=_real_stream) as mocked:
-        client.get("/stream", headers={"User-Agent": user_agent})
-
-    assert mocked.call_args.kwargs["paced"] is paced
+_SONOS = "Linux UPnP/1.0 Sonos/86.10-81100 (ZPS3)"
 
 
-# ── CAST_STREAM_BYTE_RANGES (#56) ────────────────────────────────────────────
+class _OneChunkRelay:
+    device_content_type = "audio/mpeg"
 
-# 180s track from 42s at 320 kb/s: (180 - 42) * 40000 bytes.
-_REST_OF_TRACK_BYTES = 5_520_000
+    def subscribe_audio(self, *, burst=False):
+        q = asyncio.Queue()
+        q.put_nowait(b"relayed-audio")
+        q.put_nowait(None)
+        return q
 
-
-def test_byte_ranges_declare_the_length_of_the_rest_of_the_track(
-    client, default_session, monkeypatch
-):
-    monkeypatch.setattr("routes.stream.BYTE_RANGES_ENABLED", True)
-    _configure_and_set_track(client, default_session)
-
-    with patch("routes.stream.stream_tracks", side_effect=_real_stream) as mocked:
-        r = client.get("/stream")
-
-    assert r.status_code == 200
-    assert r.headers["accept-ranges"] == "bytes"
-    assert r.headers["content-length"] == str(_REST_OF_TRACK_BYTES)
-    assert mocked.call_args.kwargs["start_offset"] == 42.0
+    def unsubscribe_audio(self, q):
+        pass
 
 
-def test_a_byte_range_fetches_on_from_where_the_device_stopped_reading(
-    client, default_session, monkeypatch
-):
-    """The device carries on with the same track in its own timeline, so
-    this is not a reopened stream: no restart from the clock's position,
-    and no re-framing of the device's position."""
-    monkeypatch.setattr("routes.stream.BYTE_RANGES_ENABLED", True)
-    _mid_track_session(client, default_session, elapsed=60.0)
-    st = default_session.state
-    st.byte_range_base = (st.clock.play_generation, 42.0)
-
-    with (
-        patch("routes.stream.stream_tracks", side_effect=_real_stream) as mocked,
-        patch.object(st.clock, "restream_from") as restream_from,
-    ):
-        r = client.get("/stream", headers={"Range": "bytes=2000000-"})
-
-    assert r.status_code == 206
-    assert (
-        r.headers["content-range"]
-        == f"bytes 2000000-{_REST_OF_TRACK_BYTES - 1}/{_REST_OF_TRACK_BYTES}"
-    )
-    # 2,000,000 bytes at 40,000 per second is 50s past the start at 42s.
-    assert mocked.call_args.kwargs["start_offset"] == pytest.approx(92.0)
-    restream_from.assert_not_called()
+def _relaying(default_session):
+    default_session.state.radio_info = {"title": "Heart 80s", "url": "https://station/mp3"}
+    default_session.radio_relay = _OneChunkRelay()
 
 
-def test_a_head_announces_the_length_and_byte_ranges(client, default_session, monkeypatch):
-    monkeypatch.setattr("routes.stream.BYTE_RANGES_ENABLED", True)
-    _configure_and_set_track(client, default_session)
-
-    r = client.head("/stream")
-
-    assert r.headers["accept-ranges"] == "bytes"
-    assert r.headers["content-length"] == str(_REST_OF_TRACK_BYTES)
-
-
-@pytest.mark.parametrize(("range_header", "ends_track"), [("bytes=0-999", False), (None, True)])
-async def test_only_a_byte_range_reaching_the_end_ends_the_track(
-    client, default_session, monkeypatch, range_header, ends_track
-):
-    monkeypatch.setattr("routes.stream.BYTE_RANGES_ENABLED", True)
-    _configure_and_set_track(client, default_session)
-    st = default_session.state
-    st.clock.start(0.0)
-    st.clock.play_start_time -= 180.0  # at the end, so a track end fires at once
-    headers = [(b"range", range_header.encode())] if range_header else []
-    request = Request(
-        {"type": "http", "method": "GET", "headers": headers, "client": ("10.0.0.5", 1400)}
-    )
-
-    with (
-        patch("routes.stream.stream_tracks", side_effect=_real_stream),
-        patch("routes.stream._advance_or_end", AsyncMock()) as advance,
-    ):
-        resp = await audio_stream(request, session_id=default_session.session_id)
-        async for _ in resp.body_iterator:
-            pass
-        for _ in range(5):
-            await asyncio.sleep(0)
-
-    assert advance.called is ends_track
-
-
-async def test_capped_stops_at_exactly_the_declared_length():
-    async def _audio():
-        yield b"abcd"
-        yield b"efgh"
-        yield b"ijkl"
-
-    body = b"".join([chunk async for chunk in stream_routes._capped(_audio(), 6)])
-
-    assert body == b"abcdef"
-
-
-def test_a_byte_range_get_from_the_start_begins_at_the_current_position(
-    client, default_session, monkeypatch
-):
-    """Another speaker taking over within the same play generation opens
-    the track anew; it must get the current position, not where the first
-    speaker's connection began."""
-    monkeypatch.setattr("routes.stream.BYTE_RANGES_ENABLED", True)
-    _mid_track_session(client, default_session, elapsed=60.0)
-    st = default_session.state
-    st.byte_range_base = (st.clock.play_generation, 0.0)
-
-    with patch("routes.stream.stream_tracks", side_effect=_real_stream) as mocked:
-        client.get("/stream")
-
-    assert mocked.call_args.kwargs["start_offset"] > 50.0
-
-
-def test_dlna_metadata_adds_its_headers_to_the_stream_and_its_head(
-    client, default_session, monkeypatch
-):
-    monkeypatch.setattr("delivery.sonos.DLNA_METADATA_ENABLED", True)
+def test_a_sonos_gets_a_track_and_its_head_close_delimited(client, default_session):
+    """Framed the way an internet radio server frames a stream, which these
+    speakers read to the end (see core/http_protocol.py); chunked, an old
+    model stopped reading about 40s in."""
     _configure_and_set_track(client, default_session)
 
     with patch("routes.stream.stream_tracks", side_effect=_real_stream):
-        get = client.get("/stream")
-    head = client.head("/stream")
+        get = client.get("/stream", headers={"User-Agent": _SONOS})
+    head = client.head("/stream", headers={"User-Agent": _SONOS})
 
     for r in (get, head):
-        assert r.headers["transfermode.dlna.org"] == "Streaming"
-        assert "DLNA.ORG_FLAGS=01700000" in r.headers["contentfeatures.dlna.org"]
+        assert r.headers[CLOSE_DELIMITED_HEADER] == "close"
+        assert r.headers["accept-ranges"] == "none"
 
 
-def test_dlna_metadata_marks_the_radio_relay_as_live(client, default_session, monkeypatch):
-    monkeypatch.setattr("delivery.sonos.DLNA_METADATA_ENABLED", True)
+def test_a_sonos_gets_the_relayed_station_and_its_head_close_delimited(client, default_session):
+    _relaying(default_session)
+    url = f"/stream/radio/{default_session.session_id}"
 
-    r = client.head(f"/stream/radio/{default_session.session_id}")
+    get = client.get(url, headers={"User-Agent": _SONOS})
+    head = client.head(url, headers={"User-Agent": _SONOS})
 
-    assert "DLNA.ORG_FLAGS=81700000" in r.headers["contentfeatures.dlna.org"]
+    assert get.content == b"relayed-audio"
+    for r in (get, head):
+        assert r.headers[CLOSE_DELIMITED_HEADER] == "close"
+        assert r.headers["accept-ranges"] == "none"
+
+
+@pytest.mark.parametrize("user_agent", [None, "Mozilla/5.0 (CrKey armv7l 1.56.500000)"])
+def test_other_devices_keep_the_framing_they_had(client, default_session, user_agent):
+    _configure_and_set_track(client, default_session)
+    _relaying(default_session)
+    headers = {"User-Agent": user_agent} if user_agent else {}
+
+    with patch("routes.stream.stream_tracks", side_effect=_real_stream):
+        responses = [
+            client.get("/stream", headers=headers),
+            client.head("/stream", headers=headers),
+            client.get(f"/stream/radio/{default_session.session_id}", headers=headers),
+        ]
+
+    for r in responses:
+        assert CLOSE_DELIMITED_HEADER not in r.headers
+        assert "accept-ranges" not in r.headers

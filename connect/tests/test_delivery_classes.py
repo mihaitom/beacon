@@ -24,6 +24,7 @@ from soco.exceptions import SoCoUPnPException
 import delivery.chromecast as _chromecast_mod
 import delivery.dlna as _dlna_mod
 import delivery.sonos as _sonos_mod
+from core.http_protocol import CLOSE_DELIMITED_HEADER
 from core.mix_output import encoder_cmd
 from core.state import ctx
 from core.streamer import resolve_mix_format
@@ -191,49 +192,35 @@ def test_sonos_play_uses_passed_content_type_in_protocol_info():
     assert 'protocolInfo="http-get:*:audio/flac:*"' in xml
 
 
-# ── CAST_STREAM_METADATA=dlna (#56) ─────────────────────────────────────────
+# ── What a Sonos is told about a stream (#56) ───────────────────────────────
 
 
-def _dispatched_metadata(*play_args) -> str:
+def test_a_track_goes_out_as_a_broadcast_without_a_duration():
+    """A Sonos gets nothing it could seek in or fetch again in parts, and
+    announced as a musicTrack it treats the stream as a file."""
     dev = _mock_sonos_device()
     with patch.object(SonosDelivery, "_get_device", return_value=dev):
-        asyncio.run(SonosDelivery("Küche").play(*play_args))
-    return dict(dev.avTransport.SetAVTransportURI.call_args.args[0])["CurrentURIMetaData"]
-
-
-def test_dlna_metadata_announces_a_track_with_its_duration(monkeypatch):
-    monkeypatch.setattr(_sonos_mod, "DLNA_METADATA_ENABLED", True)
-
-    xml = _dispatched_metadata("http://stream", "Title", "", None, 464.4)
-
-    assert "object.item.audioItem.musicTrack" in xml
-    assert 'duration="0:07:44"' in xml
-    assert "DLNA.ORG_FLAGS=01500000" in xml
-
-
-def test_dlna_metadata_announces_radio_as_a_broadcast_with_streaming_flags(monkeypatch):
-    monkeypatch.setattr(_sonos_mod, "DLNA_METADATA_ENABLED", True)
-
-    xml = _dispatched_metadata("http://10.0.0.5:9181/stream/radio/abc", "Station")
-
-    assert "object.item.audioItem.audioBroadcast" in xml
-    assert "duration=" not in xml
-    assert "DLNA.ORG_FLAGS=01700000" in xml
-
-
-def test_without_the_switch_a_track_goes_out_as_before():
-    xml = _dispatched_metadata("http://stream", "Title", "", None, 464.4)
+        asyncio.run(SonosDelivery("Küche").play("http://stream", "Title", "", None, 464.4))
+    xml = dict(dev.avTransport.SetAVTransportURI.call_args.args[0])["CurrentURIMetaData"]
 
     assert "object.item.audioItem.audioBroadcast" in xml
     assert "duration=" not in xml
 
 
-def test_dlna_stream_headers_only_with_the_switch(monkeypatch):
-    assert _sonos_mod.dlna_stream_headers() == {}
-    monkeypatch.setattr(_sonos_mod, "DLNA_METADATA_ENABLED", True)
-    assert _sonos_mod.dlna_stream_headers()["transferMode.dlna.org"] == "Streaming"
-    live = _sonos_mod.dlna_stream_headers(live=True)["contentFeatures.dlna.org"]
-    assert "DLNA.ORG_FLAGS=81700000" in live
+@pytest.mark.parametrize(
+    "user_agent",
+    ["Linux UPnP/1.0 Sonos/86.10-81100 (ZPS3)", "Linux UPnP/1.0 Sonos/97.2-81220 (ZPS57)"],
+)
+def test_every_sonos_is_answered_like_a_radio_server(user_agent):
+    assert _sonos_mod.stream_headers(user_agent) == {
+        CLOSE_DELIMITED_HEADER: "close",
+        "Accept-Ranges": "none",
+    }
+
+
+@pytest.mark.parametrize("user_agent", [None, "", "Mozilla/5.0 (CrKey armv7l 1.56.500000)"])
+def test_other_devices_get_no_stream_headers(user_agent):
+    assert _sonos_mod.stream_headers(user_agent) == {}
 
 
 # ── SonosDelivery._dispatch_uri() — the x-rincon-mp3radio:// scheme swap ────

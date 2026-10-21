@@ -7,7 +7,9 @@ import time
 import urllib.error
 from typing import ClassVar
 from unittest.mock import patch
+from urllib.parse import urlsplit
 
+import httptools
 import pytest
 
 from core import icy_metadata, upnp_events
@@ -418,6 +420,39 @@ def test_callback_url_defaults_to_avtransport():
     assert callback_url_for("Arbeitszimmer").endswith(
         "/upnp/events/sonos/avtransport/Arbeitszimmer"
     )
+
+
+@pytest.mark.parametrize("label", ["Dining Room", "Küche", "Kitchen/Dining", "Bob's Room #2"])
+def test_a_device_can_send_its_events_to_the_callback_it_was_given(label):
+    """The device puts the callback's path into its request line verbatim.
+    With the name as it was, a space split that line in two and the HTTP
+    parser rejected every event from that room (#56). Parsed here the
+    way the server parses it - a test client would quietly encode the
+    space itself and never see the problem."""
+    path = urlsplit(callback_url_for(label)).path
+    seen: list[bytes] = []
+
+    class _Url:
+        def on_url(self, url: bytes) -> None:
+            seen.append(url)
+
+    httptools.HttpRequestParser(_Url()).feed_data(
+        f"NOTIFY {path} HTTP/1.1\r\nHOST: beacon\r\nCONTENT-LENGTH: 0\r\n\r\n".encode()
+    )
+
+    assert b"".join(seen) == path.encode()
+
+
+@pytest.mark.parametrize("label", ["Dining Room", "Kitchen/Dining"])
+def test_an_event_reaches_the_handler_under_the_devices_own_name(client, label):
+    path = urlsplit(callback_url_for(label)).path
+    body = NOTIFY_BODY.format(state="STOPPED", status="OK")
+
+    with patch("routes.upnp.handle_event") as handler:
+        response = client.request("NOTIFY", path, content=body)
+
+    assert response.status_code == 200
+    assert handler.call_args[0][0] == label
 
 
 def test_notify_endpoint_logs_the_event_and_answers_200(client):

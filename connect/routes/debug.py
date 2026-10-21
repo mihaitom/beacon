@@ -68,6 +68,7 @@ from core.streamer import (
     lossless_encode_args,
     lossy_encode_args,
 )
+from delivery.sonos import stream_headers
 from media.base import Track
 
 from .playback import _apply_position_offset
@@ -422,7 +423,11 @@ async def test_radio(request: Request, file: str | None = None) -> Response:
         source = _loopable_test_tone()
 
     wants_icy = request.headers.get("icy-metadata") == "1"
-    headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    headers = {
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+        **stream_headers(request.headers.get("user-agent")),
+    }
     if wants_icy:
         headers["icy-metaint"] = str(DEVICE_METAINT)
         headers["icy-name"] = "Beacon Test Station"
@@ -518,7 +523,7 @@ def _endless_content_type(fmt: str) -> str:
 
 
 @router.get("/test-endless.{fmt}")
-async def test_endless(fmt: str, file: str | None = None) -> Response:
+async def test_endless(request: Request, fmt: str, file: str | None = None) -> Response:
     """The endless stream itself, fetched by the device. No auth, like
     /test-radio: a speaker sends no credentials."""
     if fmt not in _ENDLESS_FORMATS:
@@ -551,7 +556,11 @@ async def test_endless(fmt: str, file: str | None = None) -> Response:
                 await proc.wait()
             logger.info(f"[endless] {fmt} stream closed after {sent} bytes")
 
-    headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    headers = {
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+        **stream_headers(request.headers.get("user-agent")),
+    }
     return StreamingResponse(body(), media_type=_endless_content_type(fmt), headers=headers)
 
 

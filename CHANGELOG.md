@@ -28,7 +28,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Fixed
 
 - The backend's logs no longer contain the media server login: usernames, passwords, tokens and API keys in addresses are masked, so a log can be shared without giving away access to the server
-- Casting to a Sonos Play:3 or a first-generation Playbar plays tracks through instead of stopping or jumping back to the start after about 50 seconds (reported by @mjj042, #56)
+- Casting to an older Sonos such as the Play:3 or the first-generation Playbar plays songs to the end, long ones included, and radio without dropping out, instead of stopping or jumping back to the start after about 50 seconds (reported by @mjj042, #56)
+- A Sonos or DLNA speaker with a space in its name keeps Beacon up to date like any other, so its volume follows a change made on the speaker itself or in the Sonos app (reported by @mjj042, #56)
 - Lyrics are found automatically for more songs that showed "no lyrics" although the list of matches had the right one, especially songs with a featured artist
 - Resuming a paused DLNA renderer could leave it paused while Beacon showed it playing
 - A favorite or star rating set in one place shows everywhere else straight away, for example in the album and artist lists after setting it on the album's own page, instead of only after up to an hour

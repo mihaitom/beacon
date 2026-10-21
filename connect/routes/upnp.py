@@ -1,4 +1,4 @@
-"""routes/upnp.py — NOTIFY /upnp/events/{service}/{label}, the callback cast
+"""routes/upnp.py — NOTIFY /upnp/events/{device_type}/{service}/{label}, the callback cast
 devices POST their transport-state and volume changes to.
 
 Lives on the app's existing port rather than a listener of its own: the
@@ -19,6 +19,7 @@ finds no owner and is dropped, same as a stray AVTransport one.
 
 import logging
 import time
+from urllib.parse import quote
 
 from fastapi import APIRouter, Request, Response
 
@@ -89,8 +90,13 @@ def callback_url_for(label: str, service: str = "avtransport", device_type: str 
     renderer and a Sonos room can be called the same thing, and a volume
     reading has to reach the session that claimed *that* one. It defaults to
     sonos only so the AVTransport call sites, which are Sonos-specific
-    anyway (transport problems, ICY title echo), stay as they read."""
-    return f"http://{get_local_ip()}:{PORT}{_CALLBACK_PREFIX}/{device_type}/{service}/{label}"
+    anyway (transport problems, ICY title echo), stay as they read.
+
+    The label is percent-encoded: a space in a room's name went straight
+    into the device's request line, which no HTTP parser accepts, so every
+    event from that room was rejected before it reached the route (#56)."""
+    path = f"{_CALLBACK_PREFIX}/{device_type}/{service}/{quote(label, safe='')}"
+    return f"http://{get_local_ip()}:{PORT}{path}"
 
 
 async def _handle_rendering_control_event(device_type: str, label: str, body: str) -> None:
@@ -372,7 +378,9 @@ async def _redispatch_relayed_station(session: SessionState, label: str, problem
     await session.event_bus.broadcast(build_status_dict(session))
 
 
-@router.api_route(_CALLBACK_PREFIX + "/{device_type}/{service}/{label}", methods=["NOTIFY"])
+# {label:path}: the path arrives decoded, so a name with a slash in it is
+# two path segments by the time it is routed.
+@router.api_route(_CALLBACK_PREFIX + "/{device_type}/{service}/{label:path}", methods=["NOTIFY"])
 async def upnp_event(device_type: str, service: str, label: str, request: Request) -> Response:
     """UPnP's own method name, not POST — Starlette routes arbitrary HTTP
     methods, so this needs no special casing beyond naming it here.

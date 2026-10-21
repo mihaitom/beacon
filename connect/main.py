@@ -31,7 +31,8 @@ from core.auth import TOKEN as _CONNECT_TOKEN
 from core.auth import TOKEN_WAS_GENERATED as _CONNECT_TOKEN_GENERATED
 from core.device_volume import capture_main_loop
 from core.ffmpeg import FFMPEG_BIN, ffmpeg_available
-from core.http_diagnostics import UVICORN_INVALID_REQUEST_MESSAGE, DiagnosticHTTPProtocol
+from core.http_diagnostics import UVICORN_INVALID_REQUEST_MESSAGE
+from core.http_protocol import BeaconHTTPProtocol
 from core.log_level import TRACE as _TRACE_LEVEL
 from core.log_level import apply as _apply_log_level
 from core.log_level import initial_level as _initial_log_level
@@ -42,9 +43,7 @@ from core.party import party, reap_stale_party
 from core.remote import reap_stale_remote, remote
 from core.session import reap_stale_sessions, registry
 from core.state import PORT, get_local_ip
-from core.streamer import BYTE_RANGES_ENABLED, GENTLE_PACING
 from core.upnp_events import renew_due_subscriptions
-from delivery.sonos import DLNA_METADATA_ENABLED
 from media import jellyfin_bridge, plex_bridge
 from media.login_errors import LoginFailed
 from routes.account_settings import router as account_settings_router
@@ -297,20 +296,6 @@ async def lifespan(_: FastAPI):
         )
     else:
         logger.info("🔒 Token auth enabled (custom CONNECT_TOKEN set)")
-    if BYTE_RANGES_ENABLED:
-        logger.warning(
-            "⚠️  CAST_STREAM_BYTE_RANGES=on — cast streams are unpaced mp3 with byte ranges "
-            "(diagnostics)"
-        )
-    elif GENTLE_PACING:
-        logger.warning(
-            "⚠️  CAST_STREAM_PACING=gentle — cast streams are paced at 1.1x after 60s (diagnostics)"
-        )
-    if DLNA_METADATA_ENABLED:
-        logger.warning(
-            "⚠️  CAST_STREAM_METADATA=dlna — Sonos gets musicTrack metadata and DLNA flags "
-            "(diagnostics)"
-        )
     logger.info("⏳ Waiting for /config (media server credentials)")
 
     discovery_task = asyncio.create_task(_periodic_discovery())
@@ -550,7 +535,7 @@ if __name__ == "__main__":
             host="0.0.0.0",
             port=PORT,
             log_config=UVICORN_LOG_CONFIG,
-            http=DiagnosticHTTPProtocol,
+            http=BeaconHTTPProtocol,
             reload=False,
             timeout_graceful_shutdown=3,
         )

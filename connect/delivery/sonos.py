@@ -2,12 +2,12 @@
 
 import asyncio
 import logging
-import os
 import re
 from xml.sax.saxutils import escape
 
 from soco.exceptions import SoCoUPnPException
 
+from core.http_protocol import CLOSE_DELIMITED
 from core.upnp_events import (
     AVTRANSPORT_EVENT_PATH,
     RENDERINGCONTROL_EVENT_PATH,
@@ -101,81 +101,27 @@ def is_beacon_hosted_radio_uri(url: str) -> bool:
     return _BEACON_RADIO_PATH in url
 
 
-# Models that give up on a stream arriving at real time. A Play:3 (ZPS3)
-# or a first-generation Playbar (ZPS9) reads about 45s of it, reports
-# ERROR_LOST_CONNECTION although the connection is open and still
-# delivering, and plays out its buffer as if the track had ended; sent
-# unpaced they play every track through (#56, see
-# docs/investigations/old-sonos-models-stop-reading-the-stream.md).
+# Models sent their track unpaced. A Play:3 (ZPS3) and a first-generation
+# Playbar (ZPS9) stopped reading the chunked stream a Sonos used to get
+# about 45s in, so only a track that reached them faster than that played
+# through (#56). With stream_headers() they get it the way they read a
+# radio station to the end, and unpaced costs nothing there, so this stays
+# as the safety net it was until a long track has played through on them.
 _UNPACED_MODELS = frozenset({"ZPS3", "ZPS9"})
 
-# A Sonos fetching a stream names its model at the end of its user agent:
+# A Sonos fetching a stream names itself and its model in its user agent:
 # "Linux UPnP/1.0 Sonos/86.10-81100 (ZPS3)".
+_SONOS_IN_USER_AGENT = re.compile(r"\bSonos/")
 _MODEL_IN_USER_AGENT = re.compile(r"\bSonos/\S+ \((\w+)\)")
 
 
-# Diagnostic switch (#56): CAST_STREAM_METADATA=dlna announces a stream
-# with full DLNA metadata, which other players do and which old Sonos
-# models might decide on. A track goes out as a musicTrack with its duration and
-# DLNA flags instead of an audioBroadcast with neither, a live stream with
-# the flags for one, and /stream and the radio relay add the DLNA headers
-# (dlna_stream_headers()). Off, Beacon announces streams as it always has.
-DLNA_METADATA_ENABLED = os.getenv("CAST_STREAM_METADATA", "").strip().lower() == "dlna"
-
-# DLNA.ORG_FLAGS, the first 8 of 32 hex digits: 0x01000000 streaming
-# transfer, 0x00400000 background transfer, 0x00200000 connection stalling
-# permitted, 0x00100000 DLNA 1.5, 0x80000000 sender paced.
-_DLNA_TRACK_FLAGS = "01500000" + "0" * 24
-_DLNA_STREAM_FLAGS = "01700000" + "0" * 24
-_DLNA_LIVE_FLAGS = "81700000" + "0" * 24
-
-
-def dlna_stream_headers(live: bool = False) -> dict[str, str]:
-    """The HTTP headers DLNA_METADATA_ENABLED adds to a cast stream's
-    GET and HEAD; empty while it is off."""
-    if not DLNA_METADATA_ENABLED:
+def stream_headers(user_agent: str | None) -> dict[str, str]:
+    """What a cast stream's GET and HEAD add for a Sonos: an internet radio
+    server's framing (see core/http_protocol.py), and like such a server,
+    no byte ranges to come back for. Empty for any other device."""
+    if not _SONOS_IN_USER_AGENT.search(user_agent or ""):
         return {}
-    flags = _DLNA_LIVE_FLAGS if live else _DLNA_STREAM_FLAGS
-    return {
-        "transferMode.dlna.org": "Streaming",
-        "contentFeatures.dlna.org": f"DLNA.ORG_OP=00;DLNA.ORG_FLAGS={flags}",
-    }
-
-
-def _didl_duration(seconds: float) -> str:
-    total = max(0, round(seconds))
-    hours, rest = divmod(total, 3600)
-    minutes, secs = divmod(rest, 60)
-    return f"{hours}:{minutes:02d}:{secs:02d}"
-
-
-def _didl_class_and_res(uri: str, content_type: str, duration: float | None) -> str:
-    """The upnp:class and <res> of the DIDL-Lite item play() dispatches."""
-    if not DLNA_METADATA_ENABLED:
-        return (
-            "<upnp:class>object.item.audioItem.audioBroadcast</upnp:class>"
-            f'<res protocolInfo="http-get:*:{escape(content_type)}:*">{escape(uri)}</res>'
-        )
-    if not duration:
-        # Radio and a mix: no end to announce.
-        return (
-            "<upnp:class>object.item.audioItem.audioBroadcast</upnp:class>"
-            f'<res protocolInfo="http-get:*:{escape(content_type)}:'
-            f'DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS={_DLNA_STREAM_FLAGS}">'
-            f"{escape(uri)}</res>"
-        )
-    # The whole track's duration even for a stream resumed part-way in: a
-    # stream that ends before its announced duration just ends, while one
-    # announced shorter than it runs is cut off.
-    return (
-        "<upnp:class>object.item.audioItem.musicTrack</upnp:class>"
-        f'<res duration="{_didl_duration(duration)}" '
-        f'protocolInfo="http-get:*:{escape(content_type)}:'
-        f'DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS={_DLNA_TRACK_FLAGS}">'
-        f"{escape(uri)}</res>"
-        '<desc id="cdudn" nameSpace="urn:schemas-rinconnetworks-com:metadata-1-0/">'
-        "RINCON_AssociatedZPUDN</desc>"
-    )
+    return {**CLOSE_DELIMITED, "Accept-Ranges": "none"}
 
 
 def needs_unpaced_stream(user_agent: str | None) -> bool:
@@ -313,8 +259,8 @@ class SonosDelivery(BaseDelivery):
         album: str = "",
         content_type: str = "audio/mpeg",
     ) -> None:
-        # duration only reaches the speaker under DLNA_METADATA_ENABLED
-        # (see _didl_class_and_res()).
+        # duration accepted for interface parity with BaseDelivery.play() but
+        # not used: every stream here goes out as an audioBroadcast (below).
         device = await asyncio.to_thread(self._get_device)
         await self._subscribe_to_events(device)
 
@@ -350,7 +296,9 @@ class SonosDelivery(BaseDelivery):
         # only ever a hint about *how much to buffer*, not the transport.
         dispatch_uri = _dispatch_uri(stream_url)
 
-        # DIDL-Lite Metadata
+        # DIDL-Lite Metadata. An audioBroadcast with no duration: nothing a
+        # Sonos gets from here can be sought in or fetched again in parts
+        # (see stream_headers()).
         album_art_tag = (
             f"<upnp:albumArtURI>{escape(album_art_url)}</upnp:albumArtURI>" if album_art_url else ""
         )
@@ -365,7 +313,8 @@ class SonosDelivery(BaseDelivery):
             f"<upnp:artist>{escape(artist)}</upnp:artist>"
             f"{album_tag}"
             f"{album_art_tag}"
-            f"{_didl_class_and_res(dispatch_uri, content_type, duration)}"
+            "<upnp:class>object.item.audioItem.audioBroadcast</upnp:class>"
+            f'<res protocolInfo="http-get:*:{escape(content_type)}:*">{escape(dispatch_uri)}</res>'
             "</item>"
             "</DIDL-Lite>"
         )

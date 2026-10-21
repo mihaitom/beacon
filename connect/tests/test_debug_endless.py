@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from core.http_protocol import CLOSE_DELIMITED_HEADER
 from routes import debug
 
 
@@ -85,8 +86,19 @@ def test_the_beep_is_looped_from_a_file_not_over_http():
     """-stream_loop rewinds by seeking, and /test-tone.wav serves no byte
     ranges: looped from its URL, every "endless" stream ended after the
     tone's ten minutes, which read as the speaker giving up."""
-    endless = _source_ffmpeg_is_given(asyncio.run(debug.test_endless("mp3")))
+    endless = _source_ffmpeg_is_given(asyncio.run(debug.test_endless(MagicMock(headers={}), "mp3")))
     station = _source_ffmpeg_is_given(asyncio.run(debug.test_radio(MagicMock(headers={}))))
 
     for source in (endless, station):
         assert Path(source).read_bytes() == debug._test_tone_bytes()
+
+
+def test_a_sonos_gets_the_measurement_streams_framed_like_the_real_ones():
+    """What these measure on a speaker has to be what the cast stream does."""
+    sonos = MagicMock(headers={"user-agent": "Linux UPnP/1.0 Sonos/86.10-81100 (ZPS3)"})
+
+    for response in (
+        asyncio.run(debug.test_endless(sonos, "mp3")),
+        asyncio.run(debug.test_radio(sonos)),
+    ):
+        assert response.headers[CLOSE_DELIMITED_HEADER] == "close"

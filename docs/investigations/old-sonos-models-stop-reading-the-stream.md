@@ -1,247 +1,209 @@
-# PARTLY FIXED - Old Sonos models stop reading a cast stream (Play:3, first-generation Playbar)
+# FIXED - Old Sonos models stop reading a chunked stream (Play:3, first-generation Playbar)
 
-**Open since 2026-10-17, partly fixed 2026-10-19/20** (#56). Reported
-against 1.8.0 and 1.9.0 as "tracks keep restarting": on a Play:3 (model
-`ZPS3`, firmware 86.10) the track jumped back to its start about every 50
-seconds, audibly, and Beacon's position ran on past the track's length. A
-first-generation Playbar (`ZPS9`, same firmware) turned out to do the
-same. The Play:3 had played whole tracks with feishin-connect. Newer Sonos
-models here never showed it.
+**Open since 2026-10-17, partly fixed 2026-10-19/20, root cause found and
+fixed 2026-10-21** (#56). Reported against 1.8.0 and 1.9.0 as "tracks keep
+restarting": on a Play:3 (model `ZPS3`, firmware 86.10) the track jumped
+back to its start about every 50 seconds, audibly, and Beacon's position
+ran on past the track's length. A first-generation Playbar (`ZPS9`, same
+firmware) did the same. Newer Sonos models here never showed it.
 
-Where it stands:
+**Status of the fix:** Beacon now answers a Sonos the way an internet radio
+server does. That this framing plays through on these speakers is measured
+on the reporter's own Play:3 (below), and that Beacon's responses now look
+exactly like that on the wire is covered by tests against both of uvicorn's
+HTTP implementations. The fixed build itself has not played on those
+speakers yet: no further test runs were asked of the reporter. If a long
+track, a relayed station or a mix still stops on one of them, this file
+goes back to open, and the unpaced model list (see "The fix") is what still
+holds ordinary tracks together.
 
-- **Fixed:** ordinary tracks. Both models get the stream unpaced
-  (`delivery/sonos.py`'s `_UNPACED_MODELS`, recognised by the model the
-  speaker names at the end of its user agent,
-  `Linux UPnP/1.0 Sonos/86.10-81100 (ZPS3)`). A day of normal listening
-  on the Play:3 ran clean apart from the two cases below.
-- **Open:** a track larger than about 14 MiB (6 minutes of a 320 kb/s
-  MP3, about 2 minutes of CD-quality FLAC), radio through Beacon's relay,
-  and very likely a transitions mix. All three hit one of the two limits
-  below.
-- **Under test:** whether announcing the stream the way Music Assistant
-  and AirConnect do changes the speaker's behaviour (see "The lead being
-  tested").
+## Root cause
 
-## What the speaker does
+uvicorn sends every response that has no Content-Length with chunked
+transfer encoding, and Beacon's cast streams have none: a track's length is
+not known before ffmpeg has produced it, and a station or a mix has no end.
+An old Sonos reads such a chunked stream for 30 to 45 seconds, then stops
+reading it without closing the connection, plays out what it has, and
+takes that for the whole track. With Repeat on in the Sonos app and a queue
+of one track, it then plays its buffered start again - the jump of the
+original report.
+
+The same Play:3 plays an internet radio station for as long as it runs. A
+station's server answers with an HTTP/1.0 status line, no Content-Length
+and no chunking: the body simply ends where the connection closes. That is
+the framing a Sonos now gets from Beacon.
+
+## The comparison that settled it
+
+The reporter's run with "Play radio straight from the station" played one
+station for 43 minutes on the Play:3, and on the Playbar grouped with it,
+without a gap. Set against Beacon's own paced track stream on the same
+speaker, which died after 40-46 seconds in every run:
+
+| | Beacon's paced track | The station |
+|---|---|---|
+| Dispatched as | plain `http://` URI | plain `https://` URI |
+| DIDL-Lite | `audioBroadcast`, no duration | the same, from the same code |
+| Delivery | 15s burst, then 1x | about 15s burst, then 1x (measured with curl) |
+| Status line | `HTTP/1.1 200 OK` | `HTTP/1.0 200 OK`, also to an HTTP/1.1 request |
+| Body framing | `Transfer-Encoding: chunked` | none: ends with the connection |
+| `Accept-Ranges` | not sent | `none` |
+| ICY headers | not sent | `icy-name`, `icy-br`, `icy-metaint` |
+| Result | stops reading after about 40s | 43 minutes, no gap |
+
+Same speaker, same dispatch path, same announcement, same pacing. What
+differs is the HTTP response, and of that, the framing is what other
+projects ran into on the same hardware:
+
+- **Music Assistant, support issue #5100** (Play:3 and ZP80, S1): with its
+  default profile or with chunked encoding "it dies between 38-46
+  seconds"; with a forced Content-Length "it seems to play the more of or
+  the whole song". Its default sends no length, which aiohttp turns into
+  chunked encoding for an HTTP/1.1 request, so both failing profiles were
+  chunked. The speaker evidently sent HTTP/1.1: that chunked profile raises
+  for an HTTP/1.0 request, and nothing was said about an error.
+- **The author of AirConnect**, on the Sonos community forum (2016,
+  "Chunked encoding transfer and MP3?"): chunked encoding works with FLAC
+  and WAV, "does not work with MP3 and I can't see the reason why". His
+  workaround was a large fake Content-Length. AirConnect's default today is
+  "no content-length" (HTTP/1.0, close-delimited), which its #582 shows
+  playing on a Play:1 with firmware 86.6.
+
+The ICY headers are not what made the station work: Beacon's relay sends
+them too (to a device that asks for ICY metadata), and the relay died after
+about 40 seconds like every other chunked stream.
+
+## What the speaker does with a chunked stream
 
 Measured over about a dozen runs of debug logs from the reporter, with the
-diagnostic logging added for this case (live ffmpeg stderr, bytes and
-"last read" per `/stream` connection, the speaker's own play mode and
-duration). The speaker has two separate limits, and either one ends the
-track the same way:
+diagnostic logging added for this case (live ffmpeg stderr, bytes and "last
+read" per `/stream` connection, the speaker's own play mode and duration).
+"Last read" is when uvicorn last took a chunk, so it stops as soon as the
+speaker stops reading; with an unpaced copy whose ffmpeg never finished,
+nothing else could have stopped it.
 
-**1. It reads a connection for about 45 seconds of wall time, then never
-again.** The rate does not matter:
+- **It reads for 30-45 seconds of wall time, then never again.** Paced at
+  1x after 15s: last read at 38-46s. Paced at 1.1x after 60s: last read at
+  about 40s with about 64s buffered, far from full. Unpaced: last read at
+  29-37s. A 14:23 track at 128 kb/s: last read at about 40s with 13.0 MB
+  received and only 0.77 MB left, still arriving at about 190 KB/s.
+- **Before that, its buffer can fill.** The Play:3 holds about 14 MiB, the
+  Playbar about 4 MiB (about 100s at 320 kb/s); once full, it reads in 64-128
+  KiB blocks at the rate it plays. The "14 MiB limit" of the earlier
+  analysis was this buffer filling inside the reading window, not a limit
+  of its own.
+- **It never closes the connection.** It stays open with the byte count
+  frozen, in one run for over an hour, until something else ends it.
+- **Near the end of what it has, it sends a `HEAD`** (25-70 seconds before),
+  and then plays out and reports `STOPPED` at position 0. It sends the
+  `HEAD` even when it has the whole track.
+- **A relayed station** fails the same way: about 50s into the first
+  connection the speaker reconnects by itself, about 41-44s into each
+  further one it reports `ERROR_BUFFERING`.
+- **It reports `CurrentTrackDuration=0:00:00`** for a stream announced
+  without a duration.
 
-| Delivery | Read for | Then |
-|---|---|---|
-| Paced 1x after a 15s head start (Beacon's normal pacing) | 40-48s | plays out about a minute, stops |
-| Paced 1.1x after a 60s head start (`CAST_STREAM_PACING=gentle`, Music Assistant's pacing) | 43-45s | plays out about 100s, stops |
-| Live radio through Beacon's relay | 40-50s | `ERROR_BUFFERING`, Beacon redispatches, same again |
+## Why chunked encoding had been ruled out
 
-The connection stays open, the delivered byte count freezes and "last
-read" only grows from there. Around the same moment the speaker sends a
-`HEAD` for the stream, and in one run it reported `ERROR_LOST_CONNECTION`
-over UPnP while Beacon was still delivering. The stop comes after
-roughly the same _time_ at very different byte counts (0.98 MB on a
-low-bitrate track, 2.1-2.35 MB at 320 kb/s), so this limit is not a buffer
-filling up.
+The earlier analysis listed chunked encoding as ruled out, on the strength
+of one run (`CAST_STREAM_BYTE_RANGES=on`, paced) that sent a Content-Length
+and still stopped at about 37 seconds, with `ERROR_LOST_CONNECTION`. That
+run did not compare chunked with a plain stream. It also sent
+`Accept-Ranges: bytes`, which offers a file to fetch in parts (Sonos
+documents its players fetching a file in several GET requests with a
+`Range`), so it compared chunked with a file. The speaker stopped reading
+that one too and never came back for the rest, which leaves open why - the
+announcement said broadcast, and the paced delivery had left it only 15s of
+audio - but it says nothing about a stream with neither a length nor
+chunking, which no run before the station run had.
 
-The Playbar behaves the same: two paced runs, reading stopped at 48s and
-43s, `STOPPED` at 56s and 51s.
+## The fix
 
-**2. Sent unpaced, it reads up to about 14 MiB, then never again.**
-Measured on three long tracks: 14,614,528, 14,746,245 and 14,753,792 bytes,
-at which point ffmpeg was still producing. The speaker plays out what it
-holds (6:02 and 6:10 into 320 kb/s tracks of 6:57 and 7:44), reports
-`STOPPED` at position 0 and asks for nothing more. Beacon waits out the
-track's nominal length, then advances: a couple of minutes of silence.
-Every track up to 13.64 MB played through. Unpaced, a 5-minute track
-arrives in 6-19s, well inside limit 1.
-
-**Both limits together** explain everything seen so far: unpaced, a track
-works as long as it fits in 14 MiB. Paced, nothing works past about 45
-seconds of reading.
-
-With Repeat on in the Sonos app (`play_mode=REPEAT_ALL`) and a queue of one
-track, the speaker plays its buffered start again without fetching
-anything. That replay is the audible jump of the original report. Without
-Repeat the track simply stops early.
-
-The speaker reports `CurrentTrackDuration=0:00:00` for every Beacon
-stream, except with a declared `Content-Length`, where it reports the
-length it worked out from the byte count (`0:03:24` for a 8,180,849-byte
-remainder at 320 kb/s).
-
-## The fix so far
-
-Beacon paces every cast stream to real time after a 15s head start
-(`-readrate 1`, see `core/streamer.py`'s `_READRATE_ARGS`). That runs
-straight into limit 1. Sent unpaced, a normal track is in the speaker
-within seconds. Pacing stays for every other model: it exists because a
-fully delivered stream leaves the connection idle for minutes, which
-dropped connections before (see
-[mid-track-drop-symptom.md](mid-track-drop-symptom.md)).
-
-**Why feishin-connect worked:** it never paced, and it transcoded
-everything to 192 kb/s MP3, where 14 MiB lasts about 10 minutes. Beacon
-copies the original (320 kb/s here), so limit 2 starts at 6 minutes. A
-track over 10 minutes would very likely have stopped in feishin-connect
-too. That was never tested.
-
-## What is still open
-
-- **Long tracks** under the model list, through limit 2.
-- **FLAC.** Sonos gets FLAC copied (`PLAYABLE_CODECS` includes it), and
-  14 MiB of CD-quality FLAC is about 2 minutes. The reporter's library is
-  MP3, so none of the logs has it, but the model list as it stands would
-  cut a FLAC track short early.
-- **Radio through the relay**, through limit 1. A live stream cannot be
-  sent unpaced.
-- **A transitions mix**, for the same reason: the mix engine paces it in
-  real time and it never ends. Not tested on these models yet.
-
-## The lead being tested
-
-Music Assistant (with a provider of its own for S1-era Sonos) and
-AirConnect (tested on a Play:1, with an endless real-time stream) both
-play on these models. Besides pacing, both announce the stream
-differently from Beacon:
-
-| | Beacon | Music Assistant, for a track |
-|---|---|---|
-| `upnp:class` | `audioBroadcast`, for every track | `musicTrack` |
-| `<res duration>` | none | the track's length |
-| protocolInfo | `http-get:*:audio/mpeg:*` | with `DLNA.ORG_OP=01;DLNA.ORG_CI=0;DLNA.ORG_FLAGS=0150...` |
-| HTTP headers | none of these | `transferMode.dlna.org: Streaming`, `contentFeatures.dlna.org` |
-
-Music Assistant announces radio and its continuous stream as
-`audioBroadcast` with the streaming flags (`0170...` in the metadata,
-`8170...`, sender paced, in the header). AirConnect's issue #582 reports
-that a wrong (1ms) duration made some Sonos firmware treat a stream as
-finished almost immediately, and sends 24h for a live one. The
-`audioBroadcast` class in Beacon came along with the code inherited from
-feishin-connect and was never a decision of its own.
-
-The speaker sending `HEAD` as if the track were about to end, and
-reporting no duration, fits the theory that it decides how to read the
-stream from that announcement. Music Assistant's pacing alone (limit 1,
-second row) did not help, but that run kept Beacon's announcement.
-
-`CAST_STREAM_METADATA=dlna` announces streams the way Music Assistant
-does. For a track it sends the whole track's length even when the stream
-resumes part-way in: a stream that ends before its announced length just
-ends, while one announced shorter than it runs gets cut off. The runs
-asked for:
-
-1. `dlna` alone (unpaced through the model list): a 7:44 track to the
-   end, then radio for 3 minutes.
-2. `dlna` plus `CAST_STREAM_PACING=gentle`, Music Assistant rebuilt
-   completely: the same.
-3. `dlna` with transitions on, across a few songs.
-4. Only if radio still drops in 1: radio with "Play radio straight from
-   the station", so the speaker reads the station's own server. Of limited
-   value: that station is https, and a failure there could just as well be
-   old firmware and TLS.
-
-What follows from each outcome:
-
-- **Run 2 plays through:** Music Assistant's approach for every Sonos. The
-  model list and the unpaced stream go, and limit 2 with them.
-- **Only run 1 plays through:** keep the announcement and the model list,
-  and fit long tracks under limit 2 (below).
-- **Neither:** fit long tracks under limit 2, and on these models
-  recommend radio straight from the station.
-
-Fitting under limit 2 means: for these models, a track that would come
-out larger than about 13 MiB gets an MP3 at a bitrate that fits, FLAC
-included. That is a workaround for a speaker that leaves no other way,
-and it gets audibly worse for very long tracks (an hour-long set would be
-around 30 kb/s).
+- `core/http_protocol.py`: a response that sets `CLOSE_DELIMITED` goes out
+  with an HTTP/1.0 status line, no Content-Length, no Transfer-Encoding and
+  `connection: close`, and the connection closes when the body ends. It is
+  mixed into uvicorn's own request cycle, for httptools and h11 alike,
+  through the protocol class main.py already used for logging invalid
+  requests. Any other response is untouched.
+- `delivery/sonos.py`'s `stream_headers()`: a Sonos, recognised by its user
+  agent, gets that framing and `Accept-Ranges: none` on `/stream` and the
+  radio relay, GET and HEAD. A mix goes through `/stream` too.
+- The announcement stays an `audioBroadcast` without a duration, which is
+  what the station run used and what every one of these streams is to a
+  Sonos: nothing to seek in or fetch again in parts.
+- The unpaced model list (`ZPS3`, `ZPS9`) stays. Close-delimited, pacing
+  makes no difference to these speakers, and unpaced is what already played
+  ordinary tracks through on them, so it is the safety net until a long
+  track has played through on the fixed build.
+- The diagnostic switches are gone: `CAST_STREAM_PACING=gentle`,
+  `CAST_STREAM_BYTE_RANGES=on` and `CAST_STREAM_METADATA=dlna`.
 
 ## Ruled out
 
 - **The reverse proxy in front of the music server.** A run with
-  `NAVIDROME_INTERNAL_URL` pointing straight at the server, past the proxy,
-  behaved exactly the same.
-- **ffmpeg's connection to the music server dropping and replaying the
-  file from its start.** Reproduced against a proxied server here without a
-  single reconnect, and the reporter's live ffmpeg stderr never showed one.
+  `NAVIDROME_INTERNAL_URL` pointing straight at the server behaved the
+  same.
+- **ffmpeg's connection to the music server dropping.** Not once in the
+  reporter's live ffmpeg stderr.
 - **A Xing/Info header with a wrong length.** ffmpeg writes none when
   muxing mp3 to a pipe.
-- **Beacon restarting the track.** One connection for the whole run, no
-  reconnect, no second GET.
-- **A full buffer, for the paced case.** See the byte counts under limit
-  1. The unpaced case does have one (limit 2): an earlier version of this
-  entry ruled a full buffer out altogether, which was wrong.
-- **A lead that does not grow.** With Beacon's 1x pacing the speaker's
-  lead holds at 15s, and Music Assistant's comments argue a pace just
-  above real time keeps a player's buffer growing. 1.1x after 60s stopped
-  at the same 45 seconds.
-- **Chunked transfer encoding.** A paced run with a declared
-  `Content-Length` (no chunking) failed the same way.
-- **Missing Content-Length and byte ranges, for the paced case.** The
-  `HEAD` and Sonos's own documentation (a speaker may send `HEAD` for the
-  Content-Length and resume with a `Range`) suggested the Play:3 wanted to
-  fetch in blocks. Answered paced with a constant-bitrate encode, a
-  declared length and 206 ranges (`CAST_STREAM_BYTE_RANGES=on`, the scheme
-  of `routes/local_stream.py`), it never sent a `Range`, reported
-  `ERROR_LOST_CONNECTION` and restarted as before. **Not settled for the
-  unpaced case:** the unpaced byte-range run (Playbar and both Play:3) had
-  no track over 14 MiB, so the speaker never needed the rest. Given the
-  paced run, a `Range` there is not expected.
+- **Beacon restarting the track.** One connection per track, no second GET.
+- **Pacing.** Unpaced, paced at 1x and paced at 1.1x after 60s all stopped
+  after 30-45s of reading, and the station is paced like Beacon.
+- **The size of the speaker's buffer.** It stops reading far from full
+  (paced runs, the long 128 kb/s track).
+- **The announcement.** `CAST_STREAM_METADATA=dlna` (a `musicTrack` with
+  its duration, DLNA flags in the metadata and the headers) changed
+  nothing, on both models: the speaker showed the duration and stopped
+  reading at the same point.
+- **A length with byte ranges, paced** (see "Why chunked encoding had been
+  ruled out").
 - **The `Invalid HTTP request received.` warnings as the speaker asking
-  for more.** They come in pairs every 32s. Not one appeared during hours
-  of the Play:3 playing alone, including both runs that hit limit 2. They
-  began in the second of the first dispatch to room B (the Playbar's
-  group, with two Sonos One), at intervals of 4, 8, 16, then 32 seconds,
-  and carried on whatever was or was not playing: a client retrying
-  something that never succeeds. Not HTTP at all, or Beacon would log it
-  as a request. The sender is not identified yet; `core/http_diagnostics.py`
-  now logs its address and first bytes.
-
-## The diagnostic switches
-
-All three are still in the code and default to how casting normally
-works. Each one overrides the model list, so a run tests every device the
-same way; they go when the case is settled.
-
-- `CAST_STREAM_PACING=gentle` - 1.1x after a 60s head start.
-- `CAST_STREAM_BYTE_RANGES=on` - unpaced, constant-bitrate 320 kb/s MP3,
-  declared length, 206 ranges. Wins over `gentle` when both are set.
-- `CAST_STREAM_METADATA=dlna` - Music Assistant's announcement (above).
-  Combines with either.
-
-An earlier pair (`CAST_STREAM_PACING=off` and a paced
-`CAST_STREAM_BYTE_RANGES`) was added for the first runs and removed with
-the first fix.
+  for more.** They were the Playbar's own UPnP events (below).
 
 ## Found on the way
 
+- **Every event from a room with a space in its name was rejected.** The
+  callback URL handed to a speaker carried the room name as it was, so its
+  `NOTIFY` request line read like `NOTIFY
+  /upnp/events/sonos/avtransport/Dining Room HTTP/1.1`, which httptools refuses
+  ("Expected HTTP/, RTSP/ or ICE/"). Those were the warnings in pairs every
+  32s from room B: one per subscription, retried by the speaker. Such a room
+  never reported a transport error, a change of volume made elsewhere, its
+  repeat setting, or the failure the radio relay recovers from. Fixed: the
+  name is percent-encoded, and the route takes a name with a slash in it.
+- **uvicorn chunks a response for an HTTP/1.0 client too**, a protocol
+  violation. Not acted on: Sonos sends HTTP/1.1, and nothing seen here
+  sends HTTP/1.0.
+- **A HEAD said `Content-Length: 0`**, Starlette's length of its empty
+  body, which for a stream reads as empty. The close-delimited framing drops
+  it for a Sonos; other devices still get it.
+- **A connection a speaker stops reading holds its ffmpeg until the speaker
+  lets go of it**, which on these models was an hour and more. Not fixed:
+  with a stream the speaker reads to the end, it should not arise.
 - **Credentials in the logs.** The debug log's ffmpeg command carried the
-  Subsonic `u`/`t`/`s` of the media server, and logs get attached to public
-  issues. Every log line is masked now (`core/log_redaction.py`).
-- **Another speaker taking over under `CAST_STREAM_BYTE_RANGES`** got the
-  track from where the first speaker's connection had begun, not from the
-  current position. Fixed in the switch.
-
-## Related
-
-- [safari-transcode-jumps.md](safari-transcode-jumps.md) has the same
-  symptom on an iPhone, a jump back to the start about every 45 seconds,
-  with a different cause: WebKit appending each re-fetched block of a
-  stream with no length.
-- [continuous-stream-on-devices.md](continuous-stream-on-devices.md) is
-  what transitions need from each device class. These models are a case
-  it does not cover yet.
-- Music Assistant: `music_assistant/helpers/upnp.py` (the metadata),
-  `controllers/streams/constants.py` (the pacing, and why it is there).
-  AirConnect: issue #582 and the README's `http_length` options.
+  Subsonic `u`/`t`/`s`, and logs get attached to public issues. Every log
+  line is masked now (`core/log_redaction.py`).
 
 ## Why the suites did not catch it
 
-Pacing is a delivery speed and the announcement is a hint, and no test
-models a device with an opinion about either. Every Sonos used in
-development reads a paced, unannounced stream without complaint, so
-nothing short of the old hardware could show it.
+The framing sits below everything the tests look at: the test client parses
+chunked encoding itself and hands a test the plain body, so no test ever
+saw how a response leaves the server. `tests/test_http_protocol.py` now
+feeds a request into uvicorn's protocol and reads the bytes it writes. The
+event bug hid the same way: a test client percent-encodes a space in a URL
+by itself, a speaker does not, so `tests/test_upnp_events.py` now parses
+the request line the way the server does.
+
+## Related
+
+- [safari-transcode-jumps.md](safari-transcode-jumps.md): the same symptom
+  on an iPhone, a jump back to the start about every 45 seconds, with a
+  different cause: WebKit appending each re-fetched block of a stream with
+  no length.
+- [continuous-stream-on-devices.md](continuous-stream-on-devices.md): what
+  transitions need from each device class.
+- Music Assistant support #5100; the Sonos community thread "Chunked
+  encoding transfer and MP3 ? (a technical question)"; AirConnect's README
+  (`http_length`) and its #582; Sonos's "Streaming basics" on a player
+  fetching a file in several requests.
