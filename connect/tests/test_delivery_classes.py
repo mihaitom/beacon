@@ -561,9 +561,16 @@ async def test_airplay_decodes_an_endless_flac_mix():
             enc = subprocess.Popen(encoder_cmd(args), stdin=subprocess.PIPE, stdout=subprocess.PIPE)
 
             def feed():
+                # Closed by the one thread writing it. Left to the garbage
+                # collector, the audio still buffered was flushed into the
+                # pipe of an encoder already killed, and pytest reported
+                # that BrokenPipeError as a warning in about half the runs.
                 with contextlib.suppress(OSError):
-                    while True:
-                        enc.stdin.write(pcm)
+                    try:
+                        while True:
+                            enc.stdin.write(pcm)
+                    finally:
+                        enc.stdin.close()
 
             threading.Thread(target=feed, daemon=True).start()
             try:
@@ -573,6 +580,7 @@ async def test_airplay_decodes_an_endless_flac_mix():
                 pass
             finally:
                 enc.kill()
+                enc.wait()
 
         def log_message(self, *_):
             pass
