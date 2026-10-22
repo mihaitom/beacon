@@ -446,6 +446,7 @@ async def _resync_position_once(session: SessionState, candidate, generation: in
             f"is_streaming={st.is_streaming})"
         )
         return
+    st.device_reading = (generation, time.time(), device_pos)
     # A device clearly reporting well past the track's own duration is a
     # bogus/glitched reading (or has already rolled onto whatever comes
     # after, which our own session doesn't know about yet either way) —

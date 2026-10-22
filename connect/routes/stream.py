@@ -6,7 +6,7 @@ import logging
 import re
 import time
 from collections.abc import AsyncGenerator
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import Response, StreamingResponse
@@ -39,19 +39,24 @@ from core.state import (
     stream_url,
     test_tone_url,
 )
+from core.stream_diagnostics import describe_stream
 from core.stream_format import content_type_from_extension
 from core.streamer import (
     FALLBACK_FORMAT,
+    OutputFormat,
     SourceUnavailableError,
+    lossy_encode_args,
     resolve_output_format,
     stream_tracks,
     strip_stream_extension,
+    transcoded_byte_length,
 )
 from delivery.errors import source_error_response
-from delivery.sonos import is_older_model, needs_unpaced_stream, stream_headers
+from delivery.sonos import model_in_user_agent, older_model_mode, stream_headers
 from media.base import Track
 
 from . import mix_cast
+from .local_stream import parse_byte_range
 from .playback import (
     POSITION_RESYNC_INTERVAL,
     _apply_position_offset,
@@ -601,15 +606,126 @@ async def resume_interrupted(session: SessionState = Depends(get_session)):
     return {"resumed": True}
 
 
-def _cast_stream_headers(request: Request, name: str | None) -> dict[str, str]:
+def _cast_stream_headers(
+    request: Request, name: str | None, byte_range: "_ByteRange | None" = None
+) -> dict[str, str]:
     """The headers every cast stream's GET and HEAD answer with. A HEAD has
     to describe the same response its GET would be, framing included: a
-    Sonos sends one near the end of what it has buffered."""
-    return {
-        "Cache-Control": "no-cache",
-        "X-Accel-Buffering": "no",
-        **stream_headers(request.headers.get("user-agent"), name),
-    }
+    Sonos sends one near the end of what it has buffered. A file (see
+    _ByteRange) is framed by its length instead."""
+    headers = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+    if byte_range is not None:
+        return headers | byte_range.headers()
+    return headers | stream_headers(request.headers.get("user-agent"), name)
+
+
+# ── An older Sonos in the "file" mode (core/older_sonos.py, #56) ────────────
+# A file of known length the speaker may fetch in parts with byte ranges.
+# Only a constant-bitrate encode has a length before a byte of it exists,
+# and maps a byte offset straight onto a second, so the file is always this.
+FILE_BITRATE_KBPS = 320
+_FILE_BYTES_PER_SECOND = FILE_BITRATE_KBPS * 1000 / 8
+
+
+def _file_format(fmt: OutputFormat) -> OutputFormat:
+    ffmpeg_args, content_type = lossy_encode_args("mp3", FILE_BITRATE_KBPS)
+    return replace(
+        fmt,
+        ffmpeg_args=ffmpeg_args,
+        content_type=content_type,
+        label=f"mp3-{FILE_BITRATE_KBPS}k (file)",
+        target_sample_rate=None,
+        target_bit_depth=None,
+        target_channels=None,
+        target_bitrate_kbps=FILE_BITRATE_KBPS,
+    )
+
+
+def _file_seconds(st) -> float:
+    """How long the file is said to be: the longer of the probed and the
+    listed length. A source that runs short is padded with a few seconds
+    of silence (stream_tracks()'s pad_to); one that ran long would be cut."""
+    listed = float(st.current_track.duration) if st.current_track else 0.0
+    probed = st.current_output_format.source_duration or 0.0
+    return max(listed, probed)
+
+
+@dataclass(frozen=True)
+class _ByteRange:
+    """One response's slice of a generation's file."""
+
+    first: int
+    last: int
+    total: int
+    start_seconds: float
+    partial: bool
+
+    @property
+    def length(self) -> int:
+        return self.last - self.first + 1
+
+    @property
+    def reaches_end(self) -> bool:
+        return self.last == self.total - 1
+
+    def headers(self) -> dict[str, str]:
+        headers = {"Accept-Ranges": "bytes", "Content-Length": str(self.length)}
+        if self.partial:
+            headers["Content-Range"] = f"bytes {self.first}-{self.last}/{self.total}"
+        return headers
+
+
+def _byte_range_for(
+    session: SessionState, range_header: str | None, offset: float, starts_over: bool = False
+) -> _ByteRange:
+    """The byte space starts where this generation's latest from-the-start
+    GET did (`offset` there), so every later request of the same generation
+    - a HEAD, a range further in - maps onto the same file. A GET from byte
+    0 (`starts_over`) is a device opening the track anew, after a switch to
+    another speaker for one, and starts the space at the current position.
+    Bytes and seconds convert through the one constant bitrate both ways."""
+    st = session.state
+    generation = st.clock.play_generation
+    if starts_over or st.byte_range_base is None or st.byte_range_base[0] != generation:
+        st.byte_range_base = (generation, offset)
+    base = st.byte_range_base[1]
+    total = transcoded_byte_length(FILE_BITRATE_KBPS, max(_file_seconds(st) - base, 1.0))
+    rng = parse_byte_range(range_header, total)
+    first, last = rng if rng else (0, total - 1)
+    return _ByteRange(first, last, total, base + first / _FILE_BYTES_PER_SECOND, rng is not None)
+
+
+def _range_starts_past_zero(range_header: str | None) -> bool:
+    return bool(range_header) and not range_header.strip().startswith("bytes=0-")
+
+
+async def _capped(audio: AsyncGenerator[bytes], limit: int) -> AsyncGenerator[bytes]:
+    """`audio`, stopped at exactly `limit` bytes: a body longer than its
+    Content-Length is a protocol violation, and the encode is asked for a
+    second more than the range so it never comes up short."""
+    sent = 0
+    try:
+        async for chunk in audio:
+            if sent + len(chunk) >= limit:
+                yield chunk[: limit - sent]
+                return
+            sent += len(chunk)
+            yield chunk
+    finally:
+        await audio.aclose()
+
+
+def _note_request(session: SessionState, request: Request, method: str) -> None:
+    """What a device asked /stream for, for the stream diagnostics."""
+    session.state.stream_requests.append(
+        {
+            "at": time.time(),
+            "method": method,
+            "model": model_in_user_agent(request.headers.get("user-agent")),
+            "range": request.headers.get("range"),
+            "icy": request.headers.get("icy-metadata"),
+        }
+    )
 
 
 def _stream_name(track: Track | None) -> str | None:
@@ -626,9 +742,28 @@ async def audio_stream_head(request: Request, session_id: str = DEFAULT_SESSION_
     """ffmpeg probes the URL with HEAD before streaming — answer without starting ffmpeg."""
     logger.debug("[stream] HEAD" + _cast_device_note(request))
     session = await registry.get_or_create(strip_stream_extension(session_id))
+    _note_request(session, request, "HEAD")
+    st = session.state
+    if _is_file(st, older_model_mode(request.headers.get("user-agent"))):
+        byte_range = _byte_range_for(session, request.headers.get("range"), st.clock.resume_offset)
+        return Response(
+            media_type=_file_format(st.current_output_format).content_type,
+            headers=_cast_stream_headers(request, None, byte_range),
+        )
     return Response(
-        media_type=session.state.current_output_format.content_type,
-        headers=_cast_stream_headers(request, _stream_name(session.state.current_track)),
+        media_type=st.current_output_format.content_type,
+        headers=_cast_stream_headers(request, _stream_name(st.current_track)),
+    )
+
+
+def _is_file(st, mode: str | None) -> bool:
+    """Whether this request is for a track an older Sonos gets as a file.
+    A mix and a station have no length to give it."""
+    return (
+        mode == "file"
+        and st.mix is None
+        and st.current_track is not None
+        and st.current_track.id != TEST_TONE_TRACK_ID
     )
 
 
@@ -1212,6 +1347,11 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
     # making the device audibly restart from 0:00 while our own state (and
     # thus the displayed position) still reports the correct position.
     offset = session.state.clock.resume_offset
+    _note_request(session, request, "GET")
+    user_agent = request.headers.get("user-agent")
+    older_mode = older_model_mode(user_agent)
+    as_file = _is_file(session.state, older_mode)
+    range_header = request.headers.get("range") if as_file else None
 
     # A connection for a generation that has already been served audio is
     # the device reopening the stream by itself — no /play, /seek or /resume
@@ -1229,10 +1369,13 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
     #
     # Gated on is_streaming as well, so this never applies to a session
     # whose playback genuinely ended and whose device is only now getting
-    # round to re-requesting the URL.
+    # round to re-requesting the URL. A range past byte 0 of a file is not
+    # a reopening either: it is the device fetching on from where it
+    # stopped reading, the same track in its own timeline.
     reconnecting = (
         session.state.is_streaming
         and session.state.streamed_generation == session.state.clock.play_generation
+        and not _range_starts_past_zero(range_header)
     )
     if reconnecting:
         offset = session.state.clock.stream_restart_position()
@@ -1242,14 +1385,20 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
             f"(play_generation={session.state.clock.play_generation})" + _cast_device_note(request)
         )
 
-    user_agent = request.headers.get("user-agent")
-    paced = not needs_unpaced_stream(user_agent)
-    if not paced:
-        pacing_note = " (unpaced for this model)"
-    elif is_older_model(user_agent):
-        pacing_note = " (paced by the setting for older Sonos)"
+    byte_range: _ByteRange | None = None
+    if as_file:
+        byte_range = _byte_range_for(
+            session, range_header, offset, starts_over=not _range_starts_past_zero(range_header)
+        )
+        offset = byte_range.start_seconds
+        output_format = _file_format(output_format)
+        pacing_note = f" (file, bytes {byte_range.first}-{byte_range.last}/{byte_range.total})"
     else:
-        pacing_note = ""
+        pacing_note = {
+            "whole": " (unpaced for this model)",
+            "paced": " (paced by the setting for older Sonos)",
+        }.get(older_mode or "", "")
+    paced = older_mode not in ("whole", "file")
 
     # Debug, not info — routes/playback.py's own "[play] ..." line already
     # announced this same track+device at the user-action level; this is
@@ -1328,8 +1477,17 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
         offset_consumed = False
         # Diagnostic bookkeeping for the cancellation snapshot below and the
         # resync loop's log lines - see StreamConnection.
-        conn = StreamConnection()
+        conn = StreamConnection(
+            generation=my_generation,
+            start=offset,
+            model=model_in_user_agent(user_agent),
+            mode=older_mode,
+            byte_range=f"{byte_range.first}-{byte_range.last}/{byte_range.total}"
+            if byte_range is not None
+            else None,
+        )
         session.state.open_streams.append(conn)
+        session.state.recent_streams.append(conn)
         # Set by every way out of the body that knows why it ended; left
         # as is, the generator was closed from outside.
         outcome = "closed"
@@ -1351,8 +1509,14 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
                         output_format=output_format,
                         paced=paced,
                         on_track_end=on_track_end,
+                        on_progress=conn.on_progress,
+                        pad_to=byte_range.length / _FILE_BYTES_PER_SECOND + 1.0
+                        if byte_range is not None
+                        else None,
                     )
                 )
+                if byte_range is not None:
+                    audio = _capped(audio, byte_range.length)
                 async for chunk in audio:
                     if conn.first_byte_at is None:
                         conn.first_byte_at = time.monotonic()
@@ -1447,10 +1611,24 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
             # after receiving all data doesn't cancel the track-end signal.
             st = session.state
             if (
+                byte_range is not None
+                and byte_range.reaches_end
+                and st.clock.play_generation == my_generation
+            ):
+                # Silence pads a short source to the length the file was
+                # given, so that is where the device stops.
+                st.sent_audio_end = (
+                    my_generation,
+                    byte_range.start_seconds + byte_range.length / _FILE_BYTES_PER_SECOND,
+                )
+            if (
                 mix is None
                 and st.is_streaming
                 and not st.clock.is_paused
                 and st.clock.play_generation == my_generation
+                # A range that stops short of the end is one block of the
+                # track, not the track ending.
+                and (byte_range is None or byte_range.reaches_end)
             ):
                 # (A mix's end is followed by routes/mix_cast.py's follow().)
                 wait = 0.0
@@ -1463,6 +1641,7 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
             # ffmpeg failure, or a client disconnect/cancellation).
             session.state.active_stream_connections -= 1
             session.state.open_streams.remove(conn)
+            conn.outcome = outcome
             logger.debug(
                 f"[stream] Connection closed ({outcome}) — {track.artist} — "
                 f"{track.title}: {conn.describe()}"
@@ -1471,13 +1650,21 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
     return StreamingResponse(
         stream_with_completion(),
         media_type=output_format.content_type,
-        headers=_cast_stream_headers(request, _stream_name(track)),
+        status_code=206 if byte_range is not None and byte_range.partial else 200,
+        headers=_cast_stream_headers(request, _stream_name(track), byte_range),
     )
 
 
 @router.get("/status", dependencies=[Depends(require_token)])
 async def status(session: SessionState = Depends(get_session)):
     return build_status_dict(session)
+
+
+@router.get("/stream-diagnostics", dependencies=[Depends(require_token)])
+async def stream_diagnostics(session: SessionState = Depends(get_session)):
+    """How the cast stream reaches its device right now, for Now Playing's
+    overlay while the log level is DEBUG (core/stream_diagnostics.py)."""
+    return describe_stream(session)
 
 
 @router.get("/events", dependencies=[Depends(require_token)])

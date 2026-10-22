@@ -207,6 +207,55 @@ def test_a_track_goes_out_as_a_broadcast_without_a_duration():
     assert "duration=" not in xml
 
 
+def _file_mode_dispatch(model: str, mode: str, url: str = "http://beacon/stream/abc.flac"):
+    from core.older_sonos import set_stream_mode
+
+    set_stream_mode(mode)
+    dev = _mock_sonos_device()
+    dev.get_speaker_info.return_value = {"model_number": model}
+    with patch.object(SonosDelivery, "_get_device", return_value=dev):
+        asyncio.run(SonosDelivery("Study").play(url, "Title", "", None, 464.4, "", "audio/flac"))
+    args = dict(dev.avTransport.SetAVTransportURI.call_args.args[0])
+    return args["CurrentURI"], args["CurrentURIMetaData"]
+
+
+def test_an_older_sonos_in_the_file_mode_is_told_of_an_mp3_track_and_its_length():
+    """A file it may fetch in parts: a track of known length, byte ranges
+    offered (DLNA.ORG_OP=01), and an MP3 whatever the source (#56)."""
+    uri, xml = _file_mode_dispatch("S3", "file")
+
+    assert uri == "http://beacon/stream/abc.mp3"
+    assert "object.item.audioItem.musicTrack" in xml
+    assert 'duration="0:07:44"' in xml
+    assert "http-get:*:audio/mpeg:DLNA.ORG_OP=01" in xml
+
+
+@pytest.mark.parametrize(("model", "mode"), [("S3", "whole"), ("S3", "paced"), ("S14", "file")])
+def test_anything_else_stays_a_broadcast(model, mode):
+    uri, xml = _file_mode_dispatch(model, mode)
+
+    assert uri == "http://beacon/stream/abc.flac"
+    assert "object.item.audioItem.audioBroadcast" in xml
+    assert "duration=" not in xml
+
+
+@pytest.mark.parametrize(
+    ("user_agent", "mode"),
+    [
+        ("Linux UPnP/1.0 Sonos/86.10-81100 (ZPS3)", "file"),
+        ("Linux UPnP/1.0 Sonos/86.10-81100 (ZPS9)", "file"),
+        ("Linux UPnP/1.0 Sonos/97.2-81220 (ZPS57)", None),
+        ("Linux UPnP/1.0 Sonos/97.2-81220 (ZPS14)", None),
+        (None, None),
+    ],
+)
+def test_the_mode_applies_to_the_older_models_only(user_agent, mode):
+    from core.older_sonos import set_stream_mode
+
+    set_stream_mode("file")
+    assert _sonos_mod.older_model_mode(user_agent) == mode
+
+
 @pytest.mark.parametrize(
     "user_agent",
     ["Linux UPnP/1.0 Sonos/86.10-81100 (ZPS3)", "Linux UPnP/1.0 Sonos/97.2-81220 (ZPS57)"],

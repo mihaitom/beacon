@@ -2188,6 +2188,21 @@ def test_resync_position_once_ignores_small_drift(default_session):
     assert default_session.state.clock.position_offset == 0.0
 
 
+def test_resync_position_once_keeps_the_reading_for_the_stream_diagnostics(default_session):
+    default_session.state.is_streaming = True
+    default_session.state.clock.play_start_time = time.time() - 10.0
+    target = SonosDelivery("Küche")
+    default_session.state.active_delivery = target
+    import asyncio
+
+    with patch.object(target, "get_position", new=AsyncMock(return_value=10.2)):
+        asyncio.run(_resync_position_once(default_session, target, 0))
+
+    generation, at, position = default_session.state.device_reading
+    assert (generation, position) == (0, 10.2)
+    assert at == pytest.approx(time.time(), abs=1.0)
+
+
 def test_resync_position_once_ignores_small_drift_on_top_of_large_offset(default_session):
     """Regression for a real prod symptom: once a track has a legitimately
     large standing offset (here -6.0s, e.g. from an earlier real device

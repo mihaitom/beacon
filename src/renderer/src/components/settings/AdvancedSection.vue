@@ -23,17 +23,17 @@
       <!-- Installation-wide like the log level: the speakers belong to
          - this Beacon, not to whoever is signed in. -->
       <div class="setting">
-        <v-switch
-          :model-value="olderSonosPaced"
-          color="primary"
-          density="compact"
-          hide-details
-          :label="$t('settings.olderSonosPaced')"
+        <p class="setting__description">{{ $t('settings.olderSonosModeHint') }}</p>
+        <v-select
+          :model-value="olderSonosMode"
+          :items="olderSonosModeOptions"
+          :label="$t('settings.olderSonosMode')"
           :loading="olderSonosBusy"
-          :disabled="olderSonosBusy || olderSonosPaced === null"
-          @update:model-value="onOlderSonosPacedChange(!!$event)"
+          :disabled="olderSonosBusy || olderSonosMode === null"
+          variant="solo-filled"
+          hide-details
+          @update:model-value="onOlderSonosModeChange"
         />
-        <p class="setting__hint">{{ $t('settings.olderSonosPacedHint') }}</p>
       </div>
 
       <!-- Installation-wide, like the log level above and the API keys
@@ -58,7 +58,11 @@
 import { useAuthStore } from '@/stores/auth'
 import { useConnectStore } from '@/stores/connect'
 import { getLogLevel, setLogLevel, type LogLevel } from '@/services/connect/logLevel'
-import { getSonosPacing, setSonosPacing } from '@/services/connect/sonosPacing'
+import {
+  getOlderSonosMode,
+  setOlderSonosMode,
+  type OlderSonosMode,
+} from '@/services/connect/olderSonos'
 
 /**
  * The backend's log verbosity, how the older Sonos speakers are streamed to
@@ -77,7 +81,7 @@ export default {
     return {
       logLevel: null as LogLevel | null,
       logLevelBusy: false,
-      olderSonosPaced: null as boolean | null,
+      olderSonosMode: null as OlderSonosMode | null,
       olderSonosBusy: false,
       resettingAirplay: false,
     }
@@ -88,7 +92,7 @@ export default {
     // something nobody here can act on.
     if (this.authStore.capabilities.logLevelControl) {
       void this.loadLogLevel()
-      void this.loadOlderSonosPaced()
+      void this.loadOlderSonosMode()
     }
   },
   computed: {
@@ -105,6 +109,13 @@ export default {
         { title: this.$t('settings.logLevelInfo'), value: 'INFO' },
         { title: this.$t('settings.logLevelWarning'), value: 'WARNING' },
         { title: this.$t('settings.logLevelError'), value: 'ERROR' },
+      ]
+    },
+    olderSonosModeOptions() {
+      return [
+        { title: this.$t('settings.olderSonosModeWhole'), value: 'whole' },
+        { title: this.$t('settings.olderSonosModePaced'), value: 'paced' },
+        { title: this.$t('settings.olderSonosModeFile'), value: 'file' },
       ]
     },
   },
@@ -138,24 +149,24 @@ export default {
         this.logLevelBusy = false
       }
     },
-    async loadOlderSonosPaced() {
+    async loadOlderSonosMode() {
       try {
-        const { paced } = await getSonosPacing()
-        this.olderSonosPaced = paced
+        const { mode } = await getOlderSonosMode()
+        this.olderSonosMode = mode
       } catch (error) {
         console.error('[settings] Failed to load the older Sonos setting:', error)
       }
     },
-    async onOlderSonosPacedChange(paced: boolean) {
+    async onOlderSonosModeChange(mode: OlderSonosMode) {
       this.olderSonosBusy = true
       try {
-        await setSonosPacing(paced)
-        this.olderSonosPaced = paced
+        await setOlderSonosMode(mode)
+        this.olderSonosMode = mode
       } catch (error) {
         this.$emitter.emit('toast', {
           level: 'error',
-          title: this.$t('settings.olderSonosPaced'),
-          message: this.$t('settings.olderSonosPacedFailed'),
+          title: this.$t('settings.olderSonosMode'),
+          message: this.$t('settings.olderSonosModeFailed'),
         })
         console.error('[settings] Failed to change the older Sonos setting:', error)
       } finally {

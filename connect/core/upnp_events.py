@@ -284,6 +284,18 @@ def problem_in(properties: dict[str, str]) -> str | None:
     return None
 
 
+# The last transport state and problem each device reported, by its label,
+# as (when, what) - for Now Playing's stream diagnostics
+# (core/stream_diagnostics.py).
+_last_reported: dict[str, dict[str, tuple[float, str]]] = {}
+
+
+def last_reported(label: str) -> dict[str, tuple[float, str]]:
+    """{"state": (when, state), "problem": (when, problem)}, either missing
+    until the device has reported one."""
+    return dict(_last_reported.get(label.lower(), {}))
+
+
 def handle_event(label: str, body: str) -> dict[str, str]:
     """Log what a device reported. Returns the parsed properties so the
     route can stay a thin adapter and the interesting logic stays testable
@@ -293,6 +305,11 @@ def handle_event(label: str, body: str) -> dict[str, str]:
         return properties
 
     problem = problem_in(properties)
+    reported = _last_reported.setdefault(label.lower(), {})
+    if "TransportState" in properties:
+        reported["state"] = (time.time(), properties["TransportState"])
+    if problem:
+        reported["problem"] = (time.time(), problem)
     if problem:
         # The whole point of this module — a WARNING the operator can find
         # when playback died, rather than having to infer it from a stream

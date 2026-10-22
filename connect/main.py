@@ -65,6 +65,7 @@ from routes.local_stream import router as local_stream_router
 from routes.log_level import router as log_level_router
 from routes.lyrics import router as lyrics_router
 from routes.navidrome import router as navidrome_router
+from routes.older_sonos import router as older_sonos_router
 from routes.pairing import reap_stale_pairings
 from routes.pairing import router as pairing_router
 from routes.party import add_security_headers as add_party_security_headers
@@ -77,7 +78,6 @@ from routes.proxy import router as proxy_router
 from routes.radio import router as radio_router
 from routes.recommendations import router as recommendations_router
 from routes.remote import router as remote_router
-from routes.sonos_pacing import router as sonos_pacing_router
 from routes.stream import router as stream_router
 from routes.upnp import router as upnp_router
 from routes.volume import router as volume_router
@@ -478,7 +478,7 @@ app.include_router(discovery_router)
 app.include_router(volume_router)
 app.include_router(join_router)
 app.include_router(log_level_router)
-app.include_router(sonos_pacing_router)
+app.include_router(older_sonos_router)
 app.include_router(account_settings_router)
 app.include_router(cast_permissions_router)
 app.include_router(api_keys_router)

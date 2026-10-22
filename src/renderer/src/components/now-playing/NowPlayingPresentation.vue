@@ -96,13 +96,19 @@
        - way it can never do either: it takes no layout space from the
        - visualizer row at all, floating over whatever's underneath instead
        - (the artwork/backdrop area, not the bars themselves, for the
-       - top-left corner this actually renders in). -->
-      <component
-        :is="source.debugOverlayComponent"
-        v-if="source.debugOverlayComponent"
-        :debug="source.visualizer.debug"
-        class="now-playing__visualizer-debug"
-      />
+       - top-left corner this actually renders in). The cast stream's
+       - overlay stacks above it in the same corner. -->
+      <div
+        v-if="source.debugOverlayComponent || source.streamDebugComponent"
+        class="now-playing__debug"
+      >
+        <component :is="source.streamDebugComponent" v-if="source.streamDebugComponent" />
+        <component
+          :is="source.debugOverlayComponent"
+          v-if="source.debugOverlayComponent"
+          :debug="source.visualizer.debug"
+        />
+      </div>
     </v-theme-provider>
   </div>
 </template>
@@ -434,16 +440,24 @@ export default {
  * the two never collide) — see VisualizerDebugOverlay's own comment for
  * why this lives here rather than inside the bars/the visualizer
  * row: this way it takes no layout space from the bars at all, in a corner
- * they don't reach into either. Applied straight to
- * <visualizer-debug-overlay>'s own root (class fallthrough) — that root is
- * itself v-if'd (nothing rendered, not just hidden, while there's no debug
- * frame to show), so there's no empty positioned element left over to
- * worry about eating clicks the rest of the time. */
-.now-playing__visualizer-debug {
+ * they don't reach into either. Both overlays are v-if'd on their own roots
+ * (nothing rendered while there is nothing to show); the column holding
+ * them lets clicks through, so it never eats any while empty. Anchored at
+ * its bottom, it grows upwards. */
+.now-playing__debug {
   position: absolute;
   bottom: 370px;
   left: 32px;
   z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.now-playing__debug > * {
+  pointer-events: auto;
 }
 
 /* Row 1 of .now-playing's grid (minmax(0, 1fr), see above) — takes up
@@ -603,7 +617,7 @@ export default {
   padding-bottom: 12px;
 }
 
-.now-playing--compact .now-playing__visualizer-debug {
+.now-playing--compact .now-playing__debug {
   /* bottom: auto is load-bearing, not tidying: the desktop rule above sets
    * bottom: 370px, and an absolutely positioned box with height: auto and
    * *both* offsets given gets stretched to span between them. Adding top

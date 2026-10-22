@@ -8,7 +8,8 @@ from xml.sax.saxutils import escape
 from soco.exceptions import SoCoUPnPException
 
 from core.http_protocol import CLOSE_DELIMITED, header_value
-from core.sonos_pacing import old_models_paced
+from core.older_sonos import stream_mode
+from core.streamer import strip_stream_extension
 from core.upnp_events import (
     AVTRANSPORT_EVENT_PATH,
     RENDERINGCONTROL_EVENT_PATH,
@@ -102,19 +103,16 @@ def is_beacon_hosted_radio_uri(url: str) -> bool:
     return _BEACON_RADIO_PATH in url
 
 
-# Models sent their track unpaced, unless Settings → Advanced says
-# otherwise (core/sonos_pacing.py). A Play:3 (ZPS3) and a first-generation
-# Playbar (ZPS9) stop reading a stream 30-45s in, so unpaced, a track that
-# reaches them in that time plays through: about 14 MiB on a Play:3, 5 MiB
-# on a Playbar. Anything longer still stops early, with stream_headers()'
-# framing too (#56). The radio station that plays to the end on both is
-# paced, which is what the switch tries.
-_UNPACED_MODELS = frozenset({"ZPS3", "ZPS9"})
+# The older models, by model number: a Play:3 (S3) and a first-generation
+# Playbar (S9). They stop reading a stream 30-45s in, so how they get a
+# song is Settings → Advanced's choice (core/older_sonos.py, #56).
+_OLDER_MODELS = frozenset({"S3", "S9"})
 
-# A Sonos fetching a stream names itself and its model in its user agent:
-# "Linux UPnP/1.0 Sonos/86.10-81100 (ZPS3)".
+# A Sonos fetching a stream names itself and its model in its user agent,
+# the model number with "ZP" in front: "Linux UPnP/1.0 Sonos/86.10-81100
+# (ZPS3)".
 _SONOS_IN_USER_AGENT = re.compile(r"\bSonos/")
-_MODEL_IN_USER_AGENT = re.compile(r"\bSonos/\S+ \((\w+)\)")
+_MODEL_IN_USER_AGENT = re.compile(r"\bSonos/\S+ \(ZP(\w+)\)")
 
 
 def stream_headers(user_agent: str | None, name: str | None) -> dict[str, str]:
@@ -130,16 +128,44 @@ def stream_headers(user_agent: str | None, name: str | None) -> dict[str, str]:
     return headers
 
 
-def is_older_model(user_agent: str | None) -> bool:
-    """Whether the device behind this user agent is one of _UNPACED_MODELS."""
+def model_in_user_agent(user_agent: str | None) -> str | None:
+    """A Sonos's model number from its user agent ("S3" for a Play:3)."""
     match = _MODEL_IN_USER_AGENT.search(user_agent or "")
-    return match is not None and match.group(1) in _UNPACED_MODELS
+    return match.group(1) if match else None
 
 
-def needs_unpaced_stream(user_agent: str | None) -> bool:
-    """Whether the device behind this user agent must get its stream
-    unpaced (see _UNPACED_MODELS)."""
-    return is_older_model(user_agent) and not old_models_paced()
+def older_model_mode(user_agent: str | None) -> str | None:
+    """How the device behind this user agent gets a song: one of
+    core/older_sonos.py's MODES for an older model, None for any other
+    device."""
+    if model_in_user_agent(user_agent) not in _OLDER_MODELS:
+        return None
+    return stream_mode()
+
+
+def _didl_duration(seconds: float) -> str:
+    total = max(0, round(seconds))
+    hours, rest = divmod(total, 3600)
+    minutes, secs = divmod(rest, 60)
+    return f"{hours}:{minutes:02d}:{secs:02d}"
+
+
+def _didl_class_and_res(uri: str, content_type: str, file_duration: float | None) -> str:
+    """The upnp:class and <res> of the item play() dispatches. An
+    audioBroadcast without a duration: nothing a Sonos gets from here can be
+    sought in or fetched again in parts (see stream_headers()) - except an
+    older model in the "file" mode, which gets a track of known length it
+    may fetch by byte range (DLNA.ORG_OP=01), always as MP3."""
+    if file_duration is None:
+        return (
+            "<upnp:class>object.item.audioItem.audioBroadcast</upnp:class>"
+            f'<res protocolInfo="http-get:*:{escape(content_type)}:*">{escape(uri)}</res>'
+        )
+    return (
+        "<upnp:class>object.item.audioItem.musicTrack</upnp:class>"
+        f'<res duration="{_didl_duration(file_duration)}" '
+        f'protocolInfo="http-get:*:audio/mpeg:DLNA.ORG_OP=01">{escape(uri)}</res>'
+    )
 
 
 def _dispatch_uri(stream_url: str) -> str:
@@ -270,8 +296,6 @@ class SonosDelivery(BaseDelivery):
         album: str = "",
         content_type: str = "audio/mpeg",
     ) -> None:
-        # duration accepted for interface parity with BaseDelivery.play() but
-        # not used: every stream here goes out as an audioBroadcast (below).
         device = await asyncio.to_thread(self._get_device)
         await self._subscribe_to_events(device)
 
@@ -306,10 +330,14 @@ class SonosDelivery(BaseDelivery):
         # scheme still fetches over plain HTTP under the hood, this is
         # only ever a hint about *how much to buffer*, not the transport.
         dispatch_uri = _dispatch_uri(stream_url)
+        file_duration = None
+        if duration and not is_beacon_hosted_radio_uri(stream_url):
+            model = await asyncio.to_thread(lambda: device.get_speaker_info().get("model_number"))
+            if model in _OLDER_MODELS and stream_mode() == "file":
+                file_duration = duration
+                # Whatever the source, the file is an MP3 (routes/stream.py).
+                dispatch_uri = strip_stream_extension(dispatch_uri) + ".mp3"
 
-        # DIDL-Lite Metadata. An audioBroadcast with no duration: nothing a
-        # Sonos gets from here can be sought in or fetched again in parts
-        # (see stream_headers()).
         album_art_tag = (
             f"<upnp:albumArtURI>{escape(album_art_url)}</upnp:albumArtURI>" if album_art_url else ""
         )
@@ -324,8 +352,7 @@ class SonosDelivery(BaseDelivery):
             f"<upnp:artist>{escape(artist)}</upnp:artist>"
             f"{album_tag}"
             f"{album_art_tag}"
-            "<upnp:class>object.item.audioItem.audioBroadcast</upnp:class>"
-            f'<res protocolInfo="http-get:*:{escape(content_type)}:*">{escape(dispatch_uri)}</res>'
+            f"{_didl_class_and_res(dispatch_uri, content_type, file_duration)}"
             "</item>"
             "</DIDL-Lite>"
         )

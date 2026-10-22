@@ -2013,3 +2013,50 @@ def test_a_real_vbr_file_ends_where_its_audio_does_not_where_its_bitrate_says(tm
 
     # ffprobe puts this file at about 54s.
     assert ends == [(0, pytest.approx(80.0, abs=0.2))]
+
+
+# ── a file of declared length, and the running count (#56) ──────────────────
+
+
+def test_stream_tracks_pads_and_cuts_to_a_declared_length_with_gain_kept():
+    proc = _ConfigurableFakeProc(stdout_chunks=[b"x" * 1024, b""])
+    captured, _ = _run_reporting_ends(proc, start_offset=12.0, pad_to=41.5, gain=0.5)
+
+    # One -af: a second one would silently replace the first.
+    assert captured.count("-af") == 1
+    assert captured[captured.index("-af") + 1] == "volume=0.5,apad"
+    # An output option: after -i, before the output itself.
+    assert captured.index("-i") < captured.index("-t") < captured.index("pipe:1")
+    assert captured[captured.index("-t") + 1] == "41.500"
+
+
+def test_stream_tracks_hands_on_each_progress_report():
+    reports = (
+        b"total_size=40000\nout_time_us=1000000\nprogress=continue\n"
+        b"total_size=80000\nout_time_us=2000000\nprogress=end\n"
+    )
+    proc = _ConfigurableFakeProc(stdout_chunks=[b"x" * 1024, b""], stderr=reports)
+    seen: list[tuple[float, int]] = []
+
+    _run_reporting_ends(proc, on_progress=lambda seconds, size: seen.append((seconds, size)))
+
+    assert seen == [(1.0, 40000), (2.0, 80000)]
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="needs a real ffmpeg")
+def test_a_file_from_a_short_source_still_fills_its_declared_length(tmp_path):
+    """A file told to be 90s long from an 80s source: the device was
+    promised the bytes, so they are silence rather than missing."""
+    mp3 = tmp_path / "vbr.mp3"
+    _write_vbr_mp3_without_xing(mp3)
+    args, _ = lossy_encode_args("mp3", 320)
+
+    async def _run() -> int:
+        size = 0
+        async for chunk in stream_tracks(
+            [str(mp3)], output_format=OutputFormat(ffmpeg_args=args), paced=False, pad_to=90.0
+        ):
+            size += len(chunk)
+        return size
+
+    assert asyncio.run(_run()) >= transcoded_byte_length(320, 90.0)

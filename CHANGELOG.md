@@ -13,7 +13,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Songs and albums can be rated with stars from their right-click menu everywhere, in lists, on tiles and in the queue. The song in the player bar has that menu too, behind a right-click or the ⋮ next to the heart. The album and artist lists show the stars in their list view, where they can be set directly, and both can be sorted by rating (requested by @mjj042, #55)
 - Casting to a Sonos that has repeat on in the Sonos app says so and can switch it off: it made every song start over for a moment at its end, and repeat in Beacon works without it
 - A Chromecast shows how long the song is, so Google Home and a TV show a progress bar for it
-- Settings → Advanced has a switch that streams to older Sonos speakers at playback speed, for long songs that still stop early on a Play:3 or a first-generation Playbar (#56)
+- Settings → Advanced can send older Sonos speakers their music in two more ways, at playback speed or as a file they fetch in parts, for long songs that still stop early on a Play:3 or a first-generation Playbar (#56)
+- With the log level at Debug, Now Playing shows how a cast stream reaches its speaker: what was sent, whether the speaker is still reading, how much it has buffered and what it asked for (#56)
 
 ### Changed
 

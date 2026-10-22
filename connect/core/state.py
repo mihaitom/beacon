@@ -7,6 +7,7 @@ import asyncio
 import os
 import socket
 import time
+from collections import deque
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Any
@@ -43,6 +44,31 @@ class StreamConnection:
     first_byte_at: float | None = None
     last_handoff: float = field(default_factory=time.monotonic)
     bytes_delivered: int = 0
+    # For Now Playing's stream diagnostics (core/stream_diagnostics.py):
+    # where in the track this connection starts, how the device gets it
+    # (an older Sonos's mode, see delivery/sonos.py's older_model_mode()),
+    # the byte range it answers, and ffmpeg's latest count of what it has
+    # written, in seconds of audio and bytes.
+    generation: int = 0
+    start: float = 0.0
+    model: str | None = None
+    mode: str | None = None
+    byte_range: str | None = None
+    audio_written: float | None = None
+    bytes_written: int = 0
+    # How it ended (routes/stream.py's outcome), None while it is open.
+    outcome: str | None = None
+
+    def on_progress(self, audio_seconds: float, total_bytes: int) -> None:
+        self.audio_written = audio_seconds
+        self.bytes_written = total_bytes
+
+    def audio_delivered(self) -> float | None:
+        """Seconds of audio the device has taken, by ffmpeg's own ratio of
+        seconds to bytes so far."""
+        if not self.audio_written or not self.bytes_written:
+            return None
+        return self.audio_written * min(1.0, self.bytes_delivered / self.bytes_written)
 
     def describe(self) -> str:
         now = time.monotonic()
@@ -151,6 +177,16 @@ class AppState:
         # reader. Tied to the generation it was measured for, so a seek or a
         # new track never inherits it.
         self.sent_audio_end: tuple[int, float] | None = None
+        # (play_generation, seconds) where that generation's byte space
+        # starts for an older Sonos in the "file" mode - see
+        # routes/stream.py's _byte_range_for().
+        self.byte_range_base: tuple[int, float] | None = None
+        # What devices asked /stream for lately, and the last position one
+        # reported as (play_generation, when, seconds since its stream
+        # began) - read by core/stream_diagnostics.py only.
+        self.stream_requests: deque[dict] = deque(maxlen=12)
+        self.recent_streams: deque[StreamConnection] = deque(maxlen=4)
+        self.device_reading: tuple[int, float, float] | None = None
         # The listener's standing quality ceiling for this cast, as last set
         # by a /play (see routes/playback.py's PlayRequest). Held on the
         # session rather than only per request because auto-advance

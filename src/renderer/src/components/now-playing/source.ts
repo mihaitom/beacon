@@ -165,6 +165,9 @@ export interface NowPlayingSource {
    * endpoint through the app's authenticated client, and a guest is never
    * chasing sync anyway. */
   debugOverlayComponent: Component | null
+  /** The cast stream's diagnostics overlay (host only), for the same
+   * reason: it polls connect through the app's authenticated client. */
+  streamDebugComponent: Component | null
   ui: NowPlayingUi
   /** The corner stack: the current song, then the next one near the end of
    * a track. The source decides when the next one shows. */

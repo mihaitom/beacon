@@ -2,6 +2,7 @@ import { computed, markRaw, reactive } from 'vue'
 import CoverArt from '@/components/library/CoverArt.vue'
 import RadioTitleLog from '@/components/radio/RadioTitleLog.vue'
 import LyricsCandidateList from '@/components/lyrics/LyricsCandidateList.vue'
+import CastStreamDebugOverlay from '@/components/player/CastStreamDebugOverlay.vue'
 import VisualizerDebugOverlay from '@/components/player/VisualizerDebugOverlay.vue'
 import type { Song, RadioStation } from '@/types/library'
 import type { RadioFaviconRequest } from '@/services/connect/radio'
@@ -178,6 +179,7 @@ export function hostNowPlayingSource(api: HostNowPlayingApi): NowPlayingSource {
     titleLogComponent: markRaw(RadioTitleLog),
     lyricsCandidateComponent: markRaw(LyricsCandidateList),
     debugOverlayComponent: markRaw(VisualizerDebugOverlay),
+    streamDebugComponent: markRaw(CastStreamDebugOverlay),
     ui: reactive({
       lyricsOpen: computed(() => api.showLyrics),
       showVisualizer: computed(() => api.showVisualizer),

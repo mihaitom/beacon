@@ -13,9 +13,11 @@ unpaced stream: it still stops reading after 30-37 seconds (see "What the
 framing fix did"). Ordinary tracks play through because they arrive in that
 time; longer ones stop early. The combination the station that plays to the
 end actually has, close-delimited _and_ paced, has never run from Beacon on
-these speakers. Settings → Advanced has a switch for exactly that
-(core/sonos_pacing.py), so the reporter can try it without touching the
-container.
+these speakers, and neither has a file the speaker may fetch in parts.
+Settings → Advanced offers both (core/older_sonos.py, see "Three ways to
+send a song"), so the reporter can try them without touching the container,
+and with the log level at Debug, Now Playing shows the stream as it goes
+(see "Watching it happen").
 
 ## What the framing fix did (2026-10-22)
 
@@ -56,6 +58,50 @@ now in the connection's log line (`icy-metadata 1`).
 
 **Ruled out on the way:** the position polling every 8 s. Beacon polls a
 station played straight from its server too (core/radio_position.py).
+
+## Three ways to send a song
+
+What an older model gets is Settings → Advanced's choice, "whole" by default
+(core/older_sonos.py, delivery/sonos.py's `older_model_mode()`):
+
+- **whole**: as fast as ffmpeg makes it, the radio framing. What played
+  every ordinary track through and stops the long ones (above).
+- **paced**: 15 s ahead, then 1x, the radio framing - the station's way.
+- **file**: an MP3 at a constant 320 kb/s with a Content-Length,
+  `Accept-Ranges: bytes` and 206 for a range, announced as a `musicTrack`
+  with its duration and `DLNA.ORG_OP=01`. A Range maps onto a second through
+  the bitrate (routes/stream.py's `_byte_range_for()`), and ffmpeg pads a
+  source that runs short with silence (`apad`, `-t`), so the body always
+  reaches the length it promised. The length is the longer of the probed and
+  the listed one: a VBR file without a Xing header can be off either way,
+  and padding costs a few seconds of silence where cutting would cost the
+  song's end.
+
+Why "file" is worth a try although run 5 (paced, with ranges) stopped: no
+run ever sent a file _unpaced_ with a track larger than the speaker's
+buffer. Every sign fits a speaker that means to fetch the rest by range:
+without a length it sends a HEAD 25-70 s before it runs dry, with one (the
+byte-range runs) it never did; it stops reading but keeps the connection
+open; and Sonos documents players fetching a file in several requests. No
+range request past byte 0 appears in any log so far - but none of those
+runs offered one for a file it could not hold whole.
+
+## Watching it happen
+
+With the log level at Debug, Now Playing shows how the cast stream reaches
+its speaker (components/player/CastStreamDebugOverlay.vue, fed by
+GET /stream-diagnostics, core/stream_diagnostics.py): what the newest
+connection has handed over, in MiB and as far as it reaches into the song by
+ffmpeg's own count; the read rate and "STALLED" once an open connection has
+not been read for 10 s; the speaker's last reported position and state;
+the buffer ahead of it; and its latest requests - HEAD, a range, ICY
+metadata.
+
+The speaker's own diagnostics pages cannot show this. On current firmware
+(checked on a Beam, 97.2) `:1400/status` lists only the software version,
+WLAN status, `ifconfig`, SonosNet's spanning tree and device info;
+`/status/tcp`, `top`, `netstat`, `dmesg` and `perf` answer empty and
+`/tools.htm` with 403.
 
 ## Chunked encoding
 
@@ -182,7 +228,8 @@ chunking, which no run before the station run had.
   close-delimited, pacing makes no difference to these speakers, and that
   unpaced, which already played ordinary tracks through on them, was a
   safety net. Measured on 2026-10-22: it is not (see "What the framing fix
-  did"). Settings → Advanced can now pace them like every other speaker.
+  did"). Settings → Advanced can now send them a song paced, or as a file
+  (see "Three ways to send a song").
 - The diagnostic switches are gone: `CAST_STREAM_PACING=gentle`,
   `CAST_STREAM_BYTE_RANGES=on` and `CAST_STREAM_METADATA=dlna`.
 

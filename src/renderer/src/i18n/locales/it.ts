@@ -783,10 +783,13 @@ export default {
     logLevelError: 'Errore',
     logLevelChanged: 'Livello di log aggiornato.',
     logLevelChangeFailed: 'Impossibile aggiornare il livello di log.',
-    olderSonosPaced: 'Altoparlanti Sonos meno recenti: trasmetti alla velocità di riproduzione',
-    olderSonosPacedHint:
-      "Altrimenti un Play:3 o una Playbar di prima generazione riceve ogni brano in una volta sola, e i brani lunghi possono interrompersi troppo presto. Attivando l'opzione, la musica arriva alla velocità di riproduzione, come da una radio internet. Vale dal brano successivo.",
-    olderSonosPacedFailed:
+    olderSonosMode: 'Altoparlanti Sonos meno recenti',
+    olderSonosModeHint:
+      'Come un Play:3 o una Playbar di prima generazione riceve ogni brano. Su questi altoparlanti i brani lunghi possono interrompersi troppo presto; in quel caso prova le altre due opzioni. Vale dal brano successivo.',
+    olderSonosModeWhole: 'Il brano intero in una volta',
+    olderSonosModePaced: 'Alla velocità di riproduzione, come una radio',
+    olderSonosModeFile: "Come un file che l'altoparlante scarica a parti",
+    olderSonosModeFailed:
       "Impossibile modificare l'impostazione per gli altoparlanti Sonos meno recenti.",
     recommendations: 'Consigli personalizzati',
     recommendationsHint:

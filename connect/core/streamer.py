@@ -169,19 +169,24 @@ _FAILURE_WORDS = re.compile(r"error|failed|invalid|denied|refused|not found", re
 # ffmpeg's own count of the audio it wrote, as key=value lines on stderr
 # (see _drain_stderr()). A file's listed length can be well off - a VBR MP3
 # without a Xing header is measured from its bitrate - and so can a seek
-# into one, while this is exactly what the device gets to play. Once an
-# hour instead of twice a second: only the report at the end counts.
-_PROGRESS_ARGS = ["-progress", "pipe:2", "-stats_period", "3600"]
+# into one, while this is exactly what the device gets to play. Every two
+# seconds rather than twice a second: often enough to turn the bytes a
+# device has taken into seconds of audio (routes/stream.py's diagnostics).
+_PROGRESS_ARGS = ["-progress", "pipe:2", "-stats_period", "2"]
 _PROGRESS_LINE = re.compile(rb"^[a-z][a-z0-9_]*=")
-_PROGRESS_OUT_TIME = re.compile(rb"^out_time_us=(\d+)\s*$")
+_PROGRESS_VALUE = re.compile(rb"^(out_time_us|total_size)=(\d+)\s*$")
+_PROGRESS_END = re.compile(rb"^progress=")
 
 
 async def _drain_stderr(
-    stream: asyncio.StreamReader, track_number: int
+    stream: asyncio.StreamReader,
+    track_number: int,
+    on_progress: Callable[[float, int], None] | None = None,
 ) -> tuple[bytes, float | None]:
     """The stderr of ffmpeg, logged line by line as it arrives and returned
-    whole, without the -progress report, plus the seconds of audio that
-    report last counted (None without one).
+    whole, without the -progress reports, plus the seconds of audio the last
+    one counted (None without one). Each report is handed to on_progress
+    as (seconds of audio, bytes) written so far.
 
     Live because the lines that matter most come mid-stream: a dropped
     source connection and ffmpeg's own reconnect to it ("Will reconnect
@@ -189,11 +194,16 @@ async def _drain_stderr(
     them only once the track is long over, if at all.
     """
     lines = []
+    report: dict[bytes, int] = {}
     audio_seconds = None
     while line := await stream.readline():
         if _PROGRESS_LINE.match(line):
-            if out_time := _PROGRESS_OUT_TIME.match(line):
-                audio_seconds = int(out_time.group(1)) / 1_000_000
+            if value := _PROGRESS_VALUE.match(line):
+                report[value.group(1)] = int(value.group(2))
+            elif _PROGRESS_END.match(line) and b"out_time_us" in report:
+                audio_seconds = report[b"out_time_us"] / 1_000_000
+                if on_progress:
+                    on_progress(audio_seconds, report.get(b"total_size", 0))
             continue
         lines.append(line)
         logger.debug(f"[ffmpeg] Track {track_number}: {line.decode(errors='replace').rstrip()}")
@@ -1294,6 +1304,8 @@ async def stream_tracks(
     output_format: OutputFormat | None = None,
     paced: bool = True,
     on_track_end: Callable[[int, float], None] | None = None,
+    on_progress: Callable[[float, int], None] | None = None,
+    pad_to: float | None = None,
 ) -> AsyncGenerator[bytes]:
     """Yield continuous audio bytes for all tracks in sequence, encoded per
     `output_format` (defaults to the MP3 192k fallback — see resolve_output_format()).
@@ -1302,6 +1314,11 @@ async def stream_tracks(
     on_track_end(relative_index, position) once ffmpeg has written all of it:
     `position` is where in the track the audio sent ends, by ffmpeg's own
     count (see _PROGRESS_ARGS), counted from `start_offset` for the first.
+    on_progress(seconds, bytes) follows that count as it goes.
+    pad_to makes the first track exactly that many seconds of output, from
+    `start_offset`: padded with silence when the source runs short, cut
+    when it runs long - for a response that declared its length before
+    the encode began.
     start_offset seeks the first track to that many seconds in (e.g. after pause/resume).
     gain is a linear amplitude multiplier (ReplayGain), applied via ffmpeg's
     `volume` filter — 1.0 (the default) leaves the audio unchanged.
@@ -1353,9 +1370,13 @@ async def stream_tracks(
             # Insert -ss before -i for fast input-side seeking on the resumed track
             i_pos = cmd.index("-i")
             cmd = cmd[:i_pos] + ["-ss", f"{seek:.3f}"] + cmd[i_pos:]
-        if gain != 1.0:
+        filters = [f"volume={gain}"] if gain != 1.0 else []
+        if i == 0 and pad_to is not None:
+            filters.append("apad")
+            cmd = cmd[:-1] + ["-t", f"{pad_to:.3f}"] + cmd[-1:]
+        if filters:
             i_pos = cmd.index("-vn")
-            cmd = cmd[:i_pos] + ["-af", f"volume={gain}"] + cmd[i_pos:]
+            cmd = cmd[:i_pos] + ["-af", ",".join(filters)] + cmd[i_pos:]
         logger.debug(f"[ffmpeg] Track {i + 1}/{len(track_urls)} ({fmt.label}): {url[:80]}")
         logger.debug(f"[ffmpeg] Command: {' '.join(cmd)}")
 
@@ -1370,7 +1391,7 @@ async def stream_tracks(
             )
 
             # Read stderr concurrently to prevent pipe buffer deadlock
-            stderr_task = asyncio.create_task(_drain_stderr(proc.stderr, i + 1))
+            stderr_task = asyncio.create_task(_drain_stderr(proc.stderr, i + 1, on_progress))
 
             # Pacing itself is ffmpeg's job now (see _READRATE_ARGS), so
             # this loop just moves bytes. Reset per track — each is its own

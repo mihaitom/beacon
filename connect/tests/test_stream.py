@@ -18,6 +18,7 @@ from starlette.requests import Request
 
 import routes.stream as stream_routes
 from core.http_protocol import CLOSE_DELIMITED_HEADER
+from core.older_sonos import set_stream_mode
 from core.session import (
     DEFAULT_SESSION_ID,
     build_status_dict,
@@ -1739,12 +1740,10 @@ def test_old_sonos_models_get_their_stream_unpaced(client, default_session, user
     assert mocked.call_args.kwargs["paced"] is paced
 
 
-def test_the_setting_for_older_sonos_paces_their_stream_too(client, default_session):
+def test_the_paced_mode_for_older_sonos_paces_their_stream_too(client, default_session):
     """What the station that plays to the end on these speakers does (#56)."""
-    from core.sonos_pacing import set_old_models_paced
-
     _configure_and_set_track(client, default_session)
-    set_old_models_paced(True)
+    set_stream_mode("paced")
 
     with patch("routes.stream.stream_tracks", side_effect=_real_stream) as mocked:
         client.get("/stream", headers={"User-Agent": "Linux UPnP/1.0 Sonos/86.10-81100 (ZPS3)"})
@@ -1807,6 +1806,99 @@ def test_a_sonos_gets_the_relayed_station_and_its_head_like_a_radio_station(
         assert r.headers[CLOSE_DELIMITED_HEADER] == "close"
         assert r.headers["accept-ranges"] == "none"
         assert r.headers["icy-name"] == "Heart 80s"
+
+
+# ── An older Sonos in the "file" mode (#56) ──────────────────────────────────
+# A file of known length it may fetch in parts. 320 kb/s is 40,000 bytes a
+# second, so a track of 180s from 179s is a 40,000-byte file.
+
+
+def _file_mode(client, default_session):
+    set_stream_mode("file")
+    _configure_and_set_track(client, default_session)
+    default_session.state.clock.resume_offset = 179.0
+
+
+def _encoder_writing(nbytes: int, calls: list):
+    async def _encode(*args, **kwargs):
+        calls.append(kwargs)
+        for _ in range(nbytes // 1000):
+            yield b"x" * 1000
+
+    return _encode
+
+
+def test_an_older_sonos_in_the_file_mode_gets_a_file_it_can_fetch_in_parts(client, default_session):
+    _file_mode(client, default_session)
+    calls: list = []
+
+    # The encode is asked for a second more than the file, so it never
+    # comes up short; the body still stops at its length.
+    with patch("routes.stream.stream_tracks", side_effect=_encoder_writing(80_000, calls)):
+        r = client.get("/stream", headers={"User-Agent": _SONOS})
+
+    assert r.status_code == 200
+    assert r.headers["content-length"] == "40000"
+    assert r.headers["accept-ranges"] == "bytes"
+    assert r.headers["content-type"].startswith("audio/mpeg")
+    assert CLOSE_DELIMITED_HEADER not in r.headers
+    assert len(r.content) == 40_000
+    assert calls[0]["paced"] is False
+    assert calls[0]["start_offset"] == pytest.approx(179.0)
+    assert calls[0]["pad_to"] == pytest.approx(2.0)
+    assert calls[0]["output_format"].target_bitrate_kbps == 320
+    # Padded to its length, the file ends where the device stops.
+    st = default_session.state
+    assert st.sent_audio_end == (st.clock.play_generation, pytest.approx(180.0))
+
+
+def test_a_range_further_in_carries_on_the_same_file(client, default_session, caplog):
+    """Not the device reopening the stream: the same track in its own
+    timeline, fetched on from where it stopped reading."""
+    _file_mode(client, default_session)
+    calls: list = []
+    with patch("routes.stream.stream_tracks", side_effect=_encoder_writing(80_000, calls)):
+        # Its first block, as a speaker reads one before it stops reading.
+        client.get("/stream", headers={"User-Agent": _SONOS, "Range": "bytes=0-19999"})
+        with caplog.at_level(logging.INFO, logger="connect.stream"):
+            r = client.get("/stream", headers={"User-Agent": _SONOS, "Range": "bytes=20000-"})
+
+    assert r.status_code == 206
+    assert r.headers["content-range"] == "bytes 20000-39999/40000"
+    assert len(r.content) == 20_000
+    assert calls[1]["start_offset"] == pytest.approx(179.5)
+    assert "reopened the stream" not in caplog.text
+
+
+def test_a_range_short_of_the_end_does_not_end_the_track(client, default_session):
+    _file_mode(client, default_session)
+    with patch("routes.stream.stream_tracks", side_effect=_encoder_writing(80_000, [])):
+        client.get("/stream", headers={"User-Agent": _SONOS, "Range": "bytes=0-9999"})
+
+    st = default_session.state
+    assert st.sent_audio_end is None
+    assert st.is_streaming is True
+    assert st.track_ended is False
+
+
+def test_the_head_of_a_file_says_what_its_get_would(client, default_session):
+    _file_mode(client, default_session)
+
+    r = client.head("/stream", headers={"User-Agent": _SONOS})
+
+    assert r.headers["content-length"] == "40000"
+    assert r.headers["accept-ranges"] == "bytes"
+    assert r.headers["content-type"].startswith("audio/mpeg")
+    assert CLOSE_DELIMITED_HEADER not in r.headers
+
+
+def test_a_newer_sonos_ignores_the_file_mode(client, default_session):
+    _file_mode(client, default_session)
+    with patch("routes.stream.stream_tracks", side_effect=_real_stream) as mocked:
+        r = client.get("/stream", headers={"User-Agent": "Linux UPnP/1.0 Sonos/97.2 (ZPS57)"})
+
+    assert r.headers[CLOSE_DELIMITED_HEADER] == "close"
+    assert mocked.call_args.kwargs["pad_to"] is None
 
 
 @pytest.mark.parametrize("user_agent", [None, "Mozilla/5.0 (CrKey armv7l 1.56.500000)"])

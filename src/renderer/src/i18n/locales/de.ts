@@ -787,10 +787,13 @@ export default {
     logLevelError: 'Fehler',
     logLevelChanged: 'Log-Level aktualisiert.',
     logLevelChangeFailed: 'Log-Level konnte nicht aktualisiert werden.',
-    olderSonosPaced: 'Ältere Sonos-Lautsprecher: in Abspielgeschwindigkeit streamen',
-    olderSonosPacedHint:
-      'Sonst bekommt ein Play:3 oder eine Playbar der ersten Generation jeden Song auf einmal, und lange Songs können darauf zu früh enden. Eingeschaltet kommt die Musik in Abspielgeschwindigkeit, wie von einem Internetradiosender. Gilt ab dem nächsten Song.',
-    olderSonosPacedFailed:
+    olderSonosMode: 'Ältere Sonos-Lautsprecher',
+    olderSonosModeHint:
+      'Wie ein Play:3 oder eine Playbar der ersten Generation jeden Song bekommt. Lange Songs können auf diesen Lautsprechern zu früh enden; dann die anderen beiden ausprobieren. Gilt ab dem nächsten Song.',
+    olderSonosModeWhole: 'Ganzer Song auf einmal',
+    olderSonosModePaced: 'In Abspielgeschwindigkeit, wie ein Radiosender',
+    olderSonosModeFile: 'Als Datei, die der Lautsprecher in Teilen holt',
+    olderSonosModeFailed:
       'Die Einstellung für ältere Sonos-Lautsprecher konnte nicht geändert werden.',
     recommendations: 'Personalisierte Empfehlungen',
     recommendationsHint:
