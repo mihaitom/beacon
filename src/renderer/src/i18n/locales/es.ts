@@ -793,6 +793,12 @@ export default {
     olderSonosModeWhole: 'La canción entera de una vez',
     olderSonosModePaced: 'A velocidad de reproducción, como una emisora de radio',
     olderSonosModeFile: 'Como un archivo que el altavoz descarga por partes',
+    olderSonosModeWholeHint:
+      'Tan rápido como se genera. Suena entero lo que cabe en la memoria del altavoz, unos seis minutos en un Play:3.',
+    olderSonosModePacedHint:
+      'No más rápido de lo que suena, como envía la música una emisora de radio por internet.',
+    olderSonosModeFileHint:
+      'Un archivo de longitud conocida que el altavoz puede descargar por partes. Siempre en MP3.',
     olderSonosModeFailed: 'No se pudo cambiar el ajuste para los altavoces Sonos antiguos.',
     recommendations: 'Recomendaciones personalizadas',
     recommendationsHint:
@@ -1127,6 +1133,7 @@ export default {
     guides: 'Guías',
     faq: 'Preguntas frecuentes',
     conversion: 'Qué se convierte y por qué',
+    olderSonos: 'En qué se diferencian las tres opciones',
   },
   privacy: {
     title: 'Privacidad',

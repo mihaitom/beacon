@@ -24,9 +24,13 @@
          - this Beacon, not to whoever is signed in. -->
       <div class="setting">
         <p class="setting__description">{{ $t('settings.olderSonosModeHint') }}</p>
+        <!-- Each way says what it does under its name in the list (item
+         - props: title, subtitle, value), and the FAQ has the whole story. -->
         <v-select
           :model-value="olderSonosMode"
           :items="olderSonosModeOptions"
+          :item-props="true"
+          :list-props="{ lines: 'two' }"
           :label="$t('settings.olderSonosMode')"
           :loading="olderSonosBusy"
           :disabled="olderSonosBusy || olderSonosMode === null"
@@ -34,6 +38,15 @@
           hide-details
           @update:model-value="onOlderSonosModeChange"
         />
+        <div class="setting__control-row">
+          <v-btn
+            variant="text"
+            prepend-icon="mdi-help-circle-outline"
+            @click="$emitter.emit('openHelp', olderSonosHelp)"
+          >
+            {{ $t('help.olderSonos') }}
+          </v-btn>
+        </div>
       </div>
 
       <!-- Installation-wide, like the log level above and the API keys
@@ -63,6 +76,9 @@ import {
   setOlderSonosMode,
   type OlderSonosMode,
 } from '@/services/connect/olderSonos'
+import { pageFor, type HelpTarget } from '@/services/help/docs'
+
+const OLDER_SONOS_FAQ = 'why-do-long-songs-stop-early-on-an-older-sonos'
 
 /**
  * The backend's log verbosity, how the older Sonos speakers are streamed to
@@ -113,10 +129,26 @@ export default {
     },
     olderSonosModeOptions() {
       return [
-        { title: this.$t('settings.olderSonosModeWhole'), value: 'whole' },
-        { title: this.$t('settings.olderSonosModePaced'), value: 'paced' },
-        { title: this.$t('settings.olderSonosModeFile'), value: 'file' },
+        {
+          title: this.$t('settings.olderSonosModeWhole'),
+          subtitle: this.$t('settings.olderSonosModeWholeHint'),
+          value: 'whole',
+        },
+        {
+          title: this.$t('settings.olderSonosModePaced'),
+          subtitle: this.$t('settings.olderSonosModePacedHint'),
+          value: 'paced',
+        },
+        {
+          title: this.$t('settings.olderSonosModeFile'),
+          subtitle: this.$t('settings.olderSonosModeFileHint'),
+          value: 'file',
+        },
       ]
+    },
+    /** docs/faq.md's entry on the older Sonos models. */
+    olderSonosHelp(): HelpTarget {
+      return { page: pageFor('faq', OLDER_SONOS_FAQ).id, anchor: OLDER_SONOS_FAQ }
     },
   },
   methods: {

@@ -793,6 +793,12 @@ export default {
     olderSonosModeWhole: 'Ganzer Song auf einmal',
     olderSonosModePaced: 'In Abspielgeschwindigkeit, wie ein Radiosender',
     olderSonosModeFile: 'Als Datei, die der Lautsprecher in Teilen holt',
+    olderSonosModeWholeHint:
+      'So schnell, wie er entsteht. Läuft durch, was in den Speicher des Lautsprechers passt, auf einem Play:3 etwa sechs Minuten.',
+    olderSonosModePacedHint:
+      'Nicht schneller, als er spielt, so wie ein Internetradiosender Musik sendet.',
+    olderSonosModeFileHint:
+      'Eine Datei bekannter Länge, die der Lautsprecher in Teilen holen kann. Immer als MP3.',
     olderSonosModeFailed:
       'Die Einstellung für ältere Sonos-Lautsprecher konnte nicht geändert werden.',
     recommendations: 'Personalisierte Empfehlungen',
@@ -1130,6 +1136,7 @@ export default {
     guides: 'Anleitungen',
     faq: 'Häufige Fragen',
     conversion: 'Was wann umgewandelt wird',
+    olderSonos: 'Was die drei Varianten unterscheidet',
   },
   privacy: {
     title: 'Datenschutz',

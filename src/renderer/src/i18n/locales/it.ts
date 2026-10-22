@@ -789,6 +789,12 @@ export default {
     olderSonosModeWhole: 'Il brano intero in una volta',
     olderSonosModePaced: 'Alla velocità di riproduzione, come una radio',
     olderSonosModeFile: "Come un file che l'altoparlante scarica a parti",
+    olderSonosModeWholeHint:
+      "Alla velocità con cui viene prodotto. Suona per intero ciò che entra nella memoria dell'altoparlante, circa sei minuti su un Play:3.",
+    olderSonosModePacedHint:
+      'Non più veloce della riproduzione, come una radio internet invia la musica.',
+    olderSonosModeFileHint:
+      "Un file di lunghezza nota che l'altoparlante può scaricare a parti. Sempre in MP3.",
     olderSonosModeFailed:
       "Impossibile modificare l'impostazione per gli altoparlanti Sonos meno recenti.",
     recommendations: 'Consigli personalizzati',
@@ -1125,6 +1131,7 @@ export default {
     guides: 'Guide',
     faq: 'Domande frequenti',
     conversion: 'Cosa viene convertito e perché',
+    olderSonos: 'In cosa differiscono le tre opzioni',
   },
   privacy: {
     title: 'Privacy',

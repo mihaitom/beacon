@@ -797,6 +797,12 @@ export default {
     olderSonosModeWhole: "Le morceau entier d'un coup",
     olderSonosModePaced: 'À la vitesse de lecture, comme une radio',
     olderSonosModeFile: "Comme un fichier que l'enceinte télécharge par parties",
+    olderSonosModeWholeHint:
+      "Aussi vite qu'il est produit. Passe en entier ce qui tient dans la mémoire de l'enceinte, environ six minutes sur un Play:3.",
+    olderSonosModePacedHint:
+      'Pas plus vite que la lecture, comme une radio internet envoie sa musique.',
+    olderSonosModeFileHint:
+      "Un fichier de longueur connue que l'enceinte peut télécharger par parties. Toujours en MP3.",
     olderSonosModeFailed: 'Impossible de modifier le réglage des anciennes enceintes Sonos.',
     recommendations: 'Recommandations personnalisées',
     recommendationsHint:
@@ -1133,6 +1139,7 @@ export default {
     guides: 'Guides',
     faq: 'FAQ',
     conversion: 'Ce qui est converti, et pourquoi',
+    olderSonos: 'Ce qui distingue les trois options',
   },
   privacy: {
     title: 'Confidentialité',

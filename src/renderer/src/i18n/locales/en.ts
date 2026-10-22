@@ -783,6 +783,12 @@ export default {
     olderSonosModeWhole: 'Whole song at once',
     olderSonosModePaced: 'At playback speed, like a radio station',
     olderSonosModeFile: 'As a file the speaker fetches in parts',
+    olderSonosModeWholeHint:
+      "As fast as it is made. Plays through what fits the speaker's memory, about six minutes on a Play:3.",
+    olderSonosModePacedHint:
+      'No faster than it plays, the way an internet radio station sends music.',
+    olderSonosModeFileHint:
+      'A file of known length the speaker can fetch in parts. Always sent as MP3.',
     olderSonosModeFailed: "Couldn't change how older Sonos speakers get their music.",
     recommendations: 'Personalized recommendations',
     recommendationsHint:
@@ -1116,6 +1122,7 @@ export default {
     guides: 'Guides',
     faq: 'FAQ',
     conversion: 'What gets converted, and why',
+    olderSonos: 'How the three ways differ',
   },
   privacy: {
     title: 'Privacy',

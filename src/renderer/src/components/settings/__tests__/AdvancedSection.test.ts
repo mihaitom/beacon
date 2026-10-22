@@ -11,6 +11,7 @@ import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { useAuthStore } from '@/stores/auth'
 import { getOlderSonosMode, setOlderSonosMode } from '@/services/connect/olderSonos'
+import { findHelpPage, type HelpTarget } from '@/services/help/docs'
 import AdvancedSection from '../AdvancedSection.vue'
 
 vi.mock('@/services/connect/olderSonos', () => ({
@@ -66,6 +67,22 @@ describe('AdvancedSection', () => {
 
     expect(setOlderSonosMode).toHaveBeenCalledWith('paced')
     expect(olderSonosSelect(wrapper).props('modelValue')).toBe('paced')
+  })
+
+  it('opens the FAQ entry that explains the three ways', async () => {
+    const { wrapper, emit } = await mountSection()
+    const label = wrapper.vm.$t('help.olderSonos')
+
+    await wrapper
+      .findAllComponents({ name: 'VBtn' })
+      .find((b) => b.text() === label)!
+      .trigger('click')
+
+    const target = emit.mock.calls.find(([event]) => event === 'openHelp')![1] as HelpTarget
+    // A renamed heading would leave this pointing at nothing.
+    const page = findHelpPage(target.page)
+    expect(page.id).toBe(target.page)
+    expect(page.anchors.has(target.anchor!)).toBe(true)
   })
 
   it('says so and stays as it was when connect refuses the change', async () => {
