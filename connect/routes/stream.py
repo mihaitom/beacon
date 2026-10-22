@@ -28,6 +28,7 @@ from core.session import (
     get_session,
     mark_delivery_failed,
     mark_interrupted,
+    playback_duration,
     registry,
 )
 from core.state import (
@@ -47,7 +48,7 @@ from core.streamer import (
     strip_stream_extension,
 )
 from delivery.errors import source_error_response
-from delivery.sonos import needs_unpaced_stream, stream_headers
+from delivery.sonos import is_older_model, needs_unpaced_stream, stream_headers
 from media.base import Track
 
 from . import mix_cast
@@ -236,37 +237,6 @@ async def _resolve_track(session: SessionState, track_id: str, context: str):
 # only as large as it takes for the loop to terminate rather than spin on
 # sub-millisecond sleeps.
 _TRACK_END_TOLERANCE = 0.05
-
-# How far the probed length may differ from the music server's own before it
-# is treated as measuring something else entirely (a redirect to a different
-# file, a live stream) and ignored. Generous: the two legitimately disagree
-# by up to a second from whole-second rounding alone, and by a bit more for
-# formats whose metadata duration is derived from a bitrate estimate.
-_DURATION_SANITY_WINDOW = 5.0
-
-
-def _playback_duration(st) -> float:
-    """How long the current track actually plays for, in seconds.
-
-    Prefers the length ffmpeg measured off the file itself (hundredths of a
-    second — see core/streamer.py's _DURATION_RE) over the music server's
-    metadata, which is whole seconds and, for Jellyfin/Plex, truncated
-    rather than rounded. Scheduling the end of a track off the metadata
-    figure ends it early by that rounding error, which is audible on tracks
-    that stop abruptly: the queue advances, the device gets a new URI, and
-    the tail is simply gone.
-
-    Falls back to the metadata duration whenever nothing was probed (the
-    forced/probe-failed fallback tiers, radio) or the probed value disagrees
-    with it wildly enough to look like it measured something else — see
-    _DURATION_SANITY_WINDOW."""
-    metadata = float(st.current_track.duration) if st.current_track else 0.0
-    probed = st.current_output_format.source_duration
-    if probed is None or metadata <= 0:
-        return metadata
-    if abs(probed - metadata) > _DURATION_SANITY_WINDOW:
-        return metadata
-    return probed
 
 
 async def _advance_or_end(session: SessionState, my_generation: int) -> None:
@@ -1153,12 +1123,16 @@ def _cast_device_note(request: Request) -> str:
     """The " [address, user agent, range …]" part of a cast device's
     connection lines. The user agent names a speaker's model and firmware,
     and a Range header shows a device fetching in blocks by itself rather
-    than reconnecting after a drop."""
+    than reconnecting after a drop. Icy-MetaData says it would take a
+    stream the way it takes an internet radio station's (#56)."""
     parts = [request.client.host if request.client else "unknown address"]
     parts.append(request.headers.get("user-agent", "no user agent")[:80])
     range_header = request.headers.get("range")
     if range_header:
         parts.append(f"range {range_header[:40]}")
+    icy_header = request.headers.get("icy-metadata")
+    if icy_header:
+        parts.append(f"icy-metadata {icy_header[:8]}")
     return f" [{', '.join(parts)}]"
 
 
@@ -1268,7 +1242,14 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
             f"(play_generation={session.state.clock.play_generation})" + _cast_device_note(request)
         )
 
-    paced = not needs_unpaced_stream(request.headers.get("user-agent"))
+    user_agent = request.headers.get("user-agent")
+    paced = not needs_unpaced_stream(user_agent)
+    if not paced:
+        pacing_note = " (unpaced for this model)"
+    elif is_older_model(user_agent):
+        pacing_note = " (paced by the setting for older Sonos)"
+    else:
+        pacing_note = ""
 
     # Debug, not info — routes/playback.py's own "[play] ..." line already
     # announced this same track+device at the user-action level; this is
@@ -1276,7 +1257,7 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
     logger.debug(
         f"[stream] Client connected — {track.artist} — {track.title}"
         + (f" (seek {offset:.1f}s)" if offset > 0.5 else "")
-        + ("" if paced else " (unpaced for this model)")
+        + pacing_note
         + _cast_device_note(request)
     )
 
@@ -1330,7 +1311,7 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
             while (
                 session.state.clock.play_generation == my_generation and session.state.current_track
             ):
-                remaining = session.state.clock.seconds_until(_playback_duration(session.state))
+                remaining = session.state.clock.seconds_until(playback_duration(session.state))
                 if remaining <= _TRACK_END_TOLERANCE:
                     break
                 await asyncio.sleep(min(remaining, POSITION_RESYNC_INTERVAL))
@@ -1339,6 +1320,11 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
 
     async def stream_with_completion():
         my_generation = session.state.clock.play_generation
+
+        def on_track_end(_: int, position: float) -> None:
+            if session.state.clock.play_generation == my_generation:
+                session.state.sent_audio_end = (my_generation, position)
+
         offset_consumed = False
         # Diagnostic bookkeeping for the cancellation snapshot below and the
         # resync loop's log lines - see StreamConnection.
@@ -1364,6 +1350,7 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
                         gain=session.state.current_track_gain,
                         output_format=output_format,
                         paced=paced,
+                        on_track_end=on_track_end,
                     )
                 )
                 async for chunk in audio:
@@ -1468,7 +1455,7 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
                 # (A mix's end is followed by routes/mix_cast.py's follow().)
                 wait = 0.0
                 if st.current_track and st.clock.play_start_time:
-                    wait = st.clock.seconds_until(_playback_duration(st))
+                    wait = st.clock.seconds_until(playback_duration(st))
                 asyncio.create_task(_fire_track_end(my_generation, wait))
         finally:
             # Mirrors the increment in audio_stream() above — this specific

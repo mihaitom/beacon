@@ -166,8 +166,22 @@ _FFMPEG_LINE_PREFIX = re.compile(r"^\[[^\]]* @ [^\]]*\]\s*")
 _FAILURE_WORDS = re.compile(r"error|failed|invalid|denied|refused|not found", re.IGNORECASE)
 
 
-async def _drain_stderr(stream: asyncio.StreamReader, track_number: int) -> bytes:
-    """The stderr of ffmpeg, logged line by line as it arrives and returned whole.
+# ffmpeg's own count of the audio it wrote, as key=value lines on stderr
+# (see _drain_stderr()). A file's listed length can be well off - a VBR MP3
+# without a Xing header is measured from its bitrate - and so can a seek
+# into one, while this is exactly what the device gets to play. Once an
+# hour instead of twice a second: only the report at the end counts.
+_PROGRESS_ARGS = ["-progress", "pipe:2", "-stats_period", "3600"]
+_PROGRESS_LINE = re.compile(rb"^[a-z][a-z0-9_]*=")
+_PROGRESS_OUT_TIME = re.compile(rb"^out_time_us=(\d+)\s*$")
+
+
+async def _drain_stderr(
+    stream: asyncio.StreamReader, track_number: int
+) -> tuple[bytes, float | None]:
+    """The stderr of ffmpeg, logged line by line as it arrives and returned
+    whole, without the -progress report, plus the seconds of audio that
+    report last counted (None without one).
 
     Live because the lines that matter most come mid-stream: a dropped
     source connection and ffmpeg's own reconnect to it ("Will reconnect
@@ -175,10 +189,15 @@ async def _drain_stderr(stream: asyncio.StreamReader, track_number: int) -> byte
     them only once the track is long over, if at all.
     """
     lines = []
+    audio_seconds = None
     while line := await stream.readline():
+        if _PROGRESS_LINE.match(line):
+            if out_time := _PROGRESS_OUT_TIME.match(line):
+                audio_seconds = int(out_time.group(1)) / 1_000_000
+            continue
         lines.append(line)
         logger.debug(f"[ffmpeg] Track {track_number}: {line.decode(errors='replace').rstrip()}")
-    return b"".join(lines)
+    return b"".join(lines), audio_seconds
 
 
 def failure_reason(stderr: str, returncode: int) -> str:
@@ -1274,11 +1293,15 @@ async def stream_tracks(
     gain: float = 1.0,
     output_format: OutputFormat | None = None,
     paced: bool = True,
+    on_track_end: Callable[[int, float], None] | None = None,
 ) -> AsyncGenerator[bytes]:
     """Yield continuous audio bytes for all tracks in sequence, encoded per
     `output_format` (defaults to the MP3 192k fallback — see resolve_output_format()).
 
-    Calls on_track_start(relative_index) before each track begins.
+    Calls on_track_start(relative_index) before each track begins, and
+    on_track_end(relative_index, position) once ffmpeg has written all of it:
+    `position` is where in the track the audio sent ends, by ffmpeg's own
+    count (see _PROGRESS_ARGS), counted from `start_offset` for the first.
     start_offset seeks the first track to that many seconds in (e.g. after pause/resume).
     gain is a linear amplitude multiplier (ReplayGain), applied via ffmpeg's
     `volume` filter — 1.0 (the default) leaves the audio unchanged.
@@ -1323,12 +1346,13 @@ async def stream_tracks(
         # Input options, so before -i — same insertion the -ss below does.
         i_pos = cmd.index("-i")
         pacing = _READRATE_ARGS if paced else []
-        cmd = cmd[:i_pos] + pacing + http_reconnect_args(url) + cmd[i_pos:]
+        cmd = cmd[:i_pos] + _PROGRESS_ARGS + pacing + http_reconnect_args(url) + cmd[i_pos:]
         cmd = cmd + fmt_args + ["pipe:1"]
-        if i == 0 and start_offset > 0.5:
+        seek = start_offset if i == 0 and start_offset > 0.5 else 0.0
+        if seek:
             # Insert -ss before -i for fast input-side seeking on the resumed track
             i_pos = cmd.index("-i")
-            cmd = cmd[:i_pos] + ["-ss", f"{start_offset:.3f}"] + cmd[i_pos:]
+            cmd = cmd[:i_pos] + ["-ss", f"{seek:.3f}"] + cmd[i_pos:]
         if gain != 1.0:
             i_pos = cmd.index("-vn")
             cmd = cmd[:i_pos] + ["-af", f"volume={gain}"] + cmd[i_pos:]
@@ -1364,12 +1388,13 @@ async def stream_tracks(
                 bytes_produced += len(chunk)
                 yield chunk
 
-            logger.debug(
-                f"[ffmpeg] Track {i + 1} produced {bytes_produced} bytes in "
-                f"{time.monotonic() - track_start:.1f}s wall"
-            )
+            wall = time.monotonic() - track_start
             await proc.wait()
-            stderr = await stderr_task
+            stderr, audio_seconds = await stderr_task
+            audio = f" ({audio_seconds:.1f}s of audio)" if audio_seconds is not None else ""
+            logger.debug(
+                f"[ffmpeg] Track {i + 1} produced {bytes_produced} bytes{audio} in {wall:.1f}s wall"
+            )
 
             if proc.returncode != 0:
                 logger.warning(
@@ -1382,6 +1407,8 @@ async def stream_tracks(
                 # the natural end it always was.
                 if bytes_produced == 0:
                     failed = failure_reason(stderr.decode(errors="replace"), proc.returncode)
+            if on_track_end and bytes_produced and audio_seconds is not None:
+                on_track_end(i, seek + audio_seconds)
 
         except FileNotFoundError:
             logger.error("[ffmpeg] ❌ ffmpeg not found — please install (apk add ffmpeg)")

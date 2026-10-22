@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Songs and albums can be rated with stars from their right-click menu everywhere, in lists, on tiles and in the queue. The song in the player bar has that menu too, behind a right-click or the ⋮ next to the heart. The album and artist lists show the stars in their list view, where they can be set directly, and both can be sorted by rating (requested by @mjj042, #55)
 - Casting to a Sonos that has repeat on in the Sonos app says so and can switch it off: it made every song start over for a moment at its end, and repeat in Beacon works without it
 - A Chromecast shows how long the song is, so Google Home and a TV show a progress bar for it
+- Settings → Advanced has a switch that streams to older Sonos speakers at playback speed, for long songs that still stop early on a Play:3 or a first-generation Playbar (#56)
 
 ### Changed
 
@@ -28,7 +29,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Fixed
 
 - The backend's logs no longer contain the media server login: usernames, passwords, tokens and API keys in addresses are masked, so a log can be shared without giving away access to the server
-- Casting to an older Sonos such as the Play:3 or the first-generation Playbar plays songs to the end, long ones included, and radio without dropping out, instead of stopping or jumping back to the start after about 50 seconds (reported by @mjj042, #56)
+- Casting to an older Sonos such as the Play:3 or the first-generation Playbar no longer jumps back to the start of a song after about 50 seconds (reported by @mjj042, #56)
+- Casting moves on to the next song when a song's audio is shorter than its listed length, as with some VBR MP3s, instead of stopping until pause and play are pressed (reported by @mjj042, #56)
 - A Sonos or DLNA speaker with a space in its name keeps Beacon up to date like any other, so its volume follows a change made on the speaker itself or in the Sonos app (reported by @mjj042, #56)
 - Lyrics are found automatically for more songs that showed "no lyrics" although the list of matches had the right one, especially songs with a featured artist
 - Resuming a paused DLNA renderer could leave it paused while Beacon showed it playing

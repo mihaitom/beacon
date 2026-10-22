@@ -787,6 +787,11 @@ export default {
     logLevelError: 'Fehler',
     logLevelChanged: 'Log-Level aktualisiert.',
     logLevelChangeFailed: 'Log-Level konnte nicht aktualisiert werden.',
+    olderSonosPaced: 'Ältere Sonos-Lautsprecher: in Abspielgeschwindigkeit streamen',
+    olderSonosPacedHint:
+      'Sonst bekommt ein Play:3 oder eine Playbar der ersten Generation jeden Song auf einmal, und lange Songs können darauf zu früh enden. Eingeschaltet kommt die Musik in Abspielgeschwindigkeit, wie von einem Internetradiosender. Gilt ab dem nächsten Song.',
+    olderSonosPacedFailed:
+      'Die Einstellung für ältere Sonos-Lautsprecher konnte nicht geändert werden.',
     recommendations: 'Personalisierte Empfehlungen',
     recommendationsHint:
       'Entdecken auf der Startseite nutzt Künstler, die dem ähneln, was du tatsächlich hörst, nachgeschlagen bei MusicBrainz, ListenBrainz und Deezer - dabei werden ein bis zwei Künstlernamen aus deiner Bibliothek an diese Dienste übermittelt. Aus zeigt stattdessen zufällige Alben; die Seite eines Künstlers schlägt diesen einen Künstler weiterhin nach, so oder so.',

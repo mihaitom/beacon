@@ -18,7 +18,12 @@ from starlette.requests import Request
 
 import routes.stream as stream_routes
 from core.http_protocol import CLOSE_DELIMITED_HEADER
-from core.session import DEFAULT_SESSION_ID, build_status_dict, mark_interrupted
+from core.session import (
+    DEFAULT_SESSION_ID,
+    build_status_dict,
+    mark_interrupted,
+    playback_duration,
+)
 from core.streamer import FALLBACK_FORMAT, OutputFormat, SourceUnavailableError
 from delivery import ChromecastDelivery
 from media import Track
@@ -27,7 +32,6 @@ from routes.stream import (
     _advance_or_end,
     _dispatch_queued_track,
     _mark_disconnected_if_not_reconnected,
-    _playback_duration,
     _resolve_track,
     _resume_after_interruption,
     audio_stream,
@@ -1489,6 +1493,35 @@ async def test_stream_schedules_fire_track_end_with_the_remaining_duration(clien
     assert captured["wait"] == pytest.approx(180.0, abs=0.5)
 
 
+async def test_stream_schedules_the_track_end_where_the_audio_sent_ends(client, default_session):
+    """A VBR MP3 without a Xing header can be listed longer than the audio
+    in it. The device stops where that audio ends, so the track has to end
+    there too, or the cast stalls: the device stopped, Beacon still waiting
+    for the listed length (#56)."""
+    _configure_and_set_track(client, default_session)  # listed at 180s
+    default_session.state.clock.start(0.0)
+
+    async def _stream_reporting_its_end(*args, on_track_end, **kwargs):
+        yield b"chunk"
+        on_track_end(0, 150.0)
+
+    captured = {}
+
+    def _capture_and_discard(coro):
+        captured["wait"] = coro.cr_frame.f_locals["wait"]
+        coro.close()
+        return MagicMock()
+
+    with (
+        patch("routes.stream.stream_tracks", side_effect=_stream_reporting_its_end),
+        patch("routes.stream.asyncio.create_task", side_effect=_capture_and_discard),
+    ):
+        resp = await audio_stream(_device_request(), session_id=default_session.session_id)
+        [_ async for _ in resp.body_iterator]
+
+    assert captured["wait"] == pytest.approx(150.0, abs=0.5)
+
+
 # ── how long a track actually plays ──────────────────────────────────────────
 # The end of a track is scheduled off this, so anything it gets wrong is
 # heard as the tail being cut off (or, the other way, a gap before the next
@@ -1506,7 +1539,7 @@ def test_playback_duration_prefers_the_measured_length_over_whole_second_metadat
     _configure_and_set_track(client, default_session)  # metadata says 180
     default_session.state.current_output_format = OutputFormat(source_duration=180.73)
 
-    assert _playback_duration(default_session.state) == pytest.approx(180.73)
+    assert playback_duration(default_session.state) == pytest.approx(180.73)
 
 
 def test_playback_duration_falls_back_to_metadata_when_nothing_was_probed(client, default_session):
@@ -1514,7 +1547,7 @@ def test_playback_duration_falls_back_to_metadata_when_nothing_was_probed(client
     _configure_and_set_track(client, default_session)
     default_session.state.current_output_format = FALLBACK_FORMAT
 
-    assert _playback_duration(default_session.state) == pytest.approx(180.0)
+    assert playback_duration(default_session.state) == pytest.approx(180.0)
 
 
 def test_playback_duration_ignores_a_measurement_that_disagrees_wildly(client, default_session):
@@ -1524,7 +1557,7 @@ def test_playback_duration_ignores_a_measurement_that_disagrees_wildly(client, d
     _configure_and_set_track(client, default_session)  # metadata says 180
     default_session.state.current_output_format = OutputFormat(source_duration=3600.0)
 
-    assert _playback_duration(default_session.state) == pytest.approx(180.0)
+    assert playback_duration(default_session.state) == pytest.approx(180.0)
 
 
 def test_playback_duration_accepts_the_usual_sub_second_disagreement(client, default_session):
@@ -1533,7 +1566,25 @@ def test_playback_duration_accepts_the_usual_sub_second_disagreement(client, def
     _configure_and_set_track(client, default_session)
     default_session.state.current_output_format = OutputFormat(source_duration=180.99)
 
-    assert _playback_duration(default_session.state) == pytest.approx(180.99)
+    assert playback_duration(default_session.state) == pytest.approx(180.99)
+
+
+def test_playback_duration_ends_where_the_audio_sent_ends(client, default_session):
+    _configure_and_set_track(client, default_session)  # metadata says 180
+    st = default_session.state
+    st.current_output_format = OutputFormat(source_duration=180.73)
+    st.sent_audio_end = (st.clock.play_generation, 157.2)
+
+    assert playback_duration(st) == pytest.approx(157.2)
+
+
+def test_playback_duration_ignores_where_an_earlier_stream_ended(client, default_session):
+    # A seek or the next track starts a new generation, with its own end.
+    _configure_and_set_track(client, default_session)
+    st = default_session.state
+    st.sent_audio_end = (st.clock.play_generation - 1, 157.2)
+
+    assert playback_duration(st) == pytest.approx(180.0)
 
 
 def test_playback_duration_is_zero_for_radio_with_no_known_length(client, default_session):
@@ -1543,7 +1594,7 @@ def test_playback_duration_is_zero_for_radio_with_no_known_length(client, defaul
     )
     default_session.state.current_output_format = OutputFormat(source_duration=None)
 
-    assert _playback_duration(default_session.state) == 0.0
+    assert playback_duration(default_session.state) == 0.0
 
 
 async def test_fire_track_end_waits_out_the_last_half_second_instead_of_cutting_it(
@@ -1686,6 +1737,19 @@ def test_old_sonos_models_get_their_stream_unpaced(client, default_session, user
         client.get("/stream", headers=headers)
 
     assert mocked.call_args.kwargs["paced"] is paced
+
+
+def test_the_setting_for_older_sonos_paces_their_stream_too(client, default_session):
+    """What the station that plays to the end on these speakers does (#56)."""
+    from core.sonos_pacing import set_old_models_paced
+
+    _configure_and_set_track(client, default_session)
+    set_old_models_paced(True)
+
+    with patch("routes.stream.stream_tracks", side_effect=_real_stream) as mocked:
+        client.get("/stream", headers={"User-Agent": "Linux UPnP/1.0 Sonos/86.10-81100 (ZPS3)"})
+
+    assert mocked.call_args.kwargs["paced"] is True
 
 
 # ── How a Sonos gets its stream framed (#56) ─────────────────────────────────

@@ -145,6 +145,12 @@ class AppState:
         # on what's being sent. Resets to the fallback for radio (/play-url
         # never goes through our own /stream proxy, so it's irrelevant there).
         self.current_output_format: OutputFormat = FALLBACK_FORMAT
+        # (play_generation, position): where in current_track the audio
+        # /stream sent ends, by ffmpeg's own count, once it has all been
+        # written — see core/session.py's playback_duration(), the one
+        # reader. Tied to the generation it was measured for, so a seek or a
+        # new track never inherits it.
+        self.sent_audio_end: tuple[int, float] | None = None
         # The listener's standing quality ceiling for this cast, as last set
         # by a /play (see routes/playback.py's PlayRequest). Held on the
         # session rather than only per request because auto-advance

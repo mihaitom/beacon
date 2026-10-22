@@ -787,6 +787,10 @@ export default {
     logLevelError: 'Error',
     logLevelChanged: 'Nivel de registro actualizado.',
     logLevelChangeFailed: 'No se pudo actualizar el nivel de registro.',
+    olderSonosPaced: 'Altavoces Sonos antiguos: transmitir a velocidad de reproducción',
+    olderSonosPacedHint:
+      'Si no, un Play:3 o una Playbar de primera generación recibe cada canción de una vez, y las canciones largas pueden terminar antes de tiempo. Activado, recibe la música a velocidad de reproducción, como de una emisora de radio por internet. Se aplica a partir de la siguiente canción.',
+    olderSonosPacedFailed: 'No se pudo cambiar el ajuste para los altavoces Sonos antiguos.',
     recommendations: 'Recomendaciones personalizadas',
     recommendationsHint:
       'Descubrir en Inicio usa artistas parecidos a lo que escuchas realmente, consultados en MusicBrainz, ListenBrainz y Deezer - esto comparte con ellos uno o dos nombres de artista de tu biblioteca. Desactivado muestra álbumes al azar; abrir la página de un artista sigue consultando a ese artista en cualquier caso.',

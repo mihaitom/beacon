@@ -677,6 +677,47 @@ async def require_authenticated_session(
     return existing
 
 
+# How far the probed length may differ from the music server's own before it
+# is treated as measuring something else entirely (a redirect to a different
+# file, a live stream) and ignored. Generous: the two legitimately disagree
+# by up to a second from whole-second rounding alone, and by a bit more for
+# formats whose metadata duration is derived from a bitrate estimate.
+_DURATION_SANITY_WINDOW = 5.0
+
+
+def playback_duration(st) -> float:
+    """Where in the current track playback ends, in seconds.
+
+    Once ffmpeg has written the last of it, that is where the audio sent
+    ends (AppState.sent_audio_end): the device stops there whatever the
+    track's listed length says. A VBR MP3 without a Xing header can be
+    listed half a minute off its real length, and a seek into one lands
+    somewhere near the asked-for second, not on it (#56).
+
+    Before that, the length ffmpeg measured off the file itself (hundredths
+    of a second — see core/streamer.py's _DURATION_RE) over the music
+    server's metadata, which is whole seconds and, for Jellyfin/Plex,
+    truncated rather than rounded. Scheduling the end of a track off the
+    metadata figure ends it early by that rounding error, which is audible
+    on tracks that stop abruptly: the queue advances, the device gets a new
+    URI, and the tail is simply gone.
+
+    Falls back to the metadata duration whenever nothing was probed (the
+    forced/probe-failed fallback tiers, radio) or the probed value disagrees
+    with it wildly enough to look like it measured something else — see
+    _DURATION_SANITY_WINDOW."""
+    sent = st.sent_audio_end
+    if sent is not None and sent[0] == st.clock.play_generation:
+        return sent[1]
+    metadata = float(st.current_track.duration) if st.current_track else 0.0
+    probed = st.current_output_format.source_duration
+    if probed is None or metadata <= 0:
+        return metadata
+    if abs(probed - metadata) > _DURATION_SANITY_WINDOW:
+        return metadata
+    return probed
+
+
 def compute_position(session: SessionState) -> float:
     """Return elapsed seconds into the current track, clamped to track duration.
 

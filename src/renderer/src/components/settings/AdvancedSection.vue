@@ -20,6 +20,22 @@
         />
       </div>
 
+      <!-- Installation-wide like the log level: the speakers belong to
+         - this Beacon, not to whoever is signed in. -->
+      <div class="setting">
+        <v-switch
+          :model-value="olderSonosPaced"
+          color="primary"
+          density="compact"
+          hide-details
+          :label="$t('settings.olderSonosPaced')"
+          :loading="olderSonosBusy"
+          :disabled="olderSonosBusy || olderSonosPaced === null"
+          @update:model-value="onOlderSonosPacedChange(!!$event)"
+        />
+        <p class="setting__hint">{{ $t('settings.olderSonosPacedHint') }}</p>
+      </div>
+
       <!-- Installation-wide, like the log level above and the API keys
          - below: the pairings live in connect, not in this browser, so
          - resetting them affects everyone using this Beacon. -->
@@ -42,10 +58,11 @@
 import { useAuthStore } from '@/stores/auth'
 import { useConnectStore } from '@/stores/connect'
 import { getLogLevel, setLogLevel, type LogLevel } from '@/services/connect/logLevel'
+import { getSonosPacing, setSonosPacing } from '@/services/connect/sonosPacing'
 
 /**
- * The backend's log verbosity and the AirPlay pairings, both
- * installation-wide.
+ * The backend's log verbosity, how the older Sonos speakers are streamed to
+ * and the AirPlay pairings, all installation-wide.
  *
  * Settings used to hide the things that take setting up behind a "Show
  * advanced features" switch here; the Advanced tab is that hiding place
@@ -60,6 +77,8 @@ export default {
     return {
       logLevel: null as LogLevel | null,
       logLevelBusy: false,
+      olderSonosPaced: null as boolean | null,
+      olderSonosBusy: false,
       resettingAirplay: false,
     }
   },
@@ -67,7 +86,10 @@ export default {
     // Skipped for an account that cannot see the control this feeds
     // (capabilities.logLevelControl) - no point asking connect for
     // something nobody here can act on.
-    if (this.authStore.capabilities.logLevelControl) void this.loadLogLevel()
+    if (this.authStore.capabilities.logLevelControl) {
+      void this.loadLogLevel()
+      void this.loadOlderSonosPaced()
+    }
   },
   computed: {
     authStore() {
@@ -114,6 +136,30 @@ export default {
         void this.loadLogLevel() // re-sync the dropdown with what's actually active
       } finally {
         this.logLevelBusy = false
+      }
+    },
+    async loadOlderSonosPaced() {
+      try {
+        const { paced } = await getSonosPacing()
+        this.olderSonosPaced = paced
+      } catch (error) {
+        console.error('[settings] Failed to load the older Sonos setting:', error)
+      }
+    },
+    async onOlderSonosPacedChange(paced: boolean) {
+      this.olderSonosBusy = true
+      try {
+        await setSonosPacing(paced)
+        this.olderSonosPaced = paced
+      } catch (error) {
+        this.$emitter.emit('toast', {
+          level: 'error',
+          title: this.$t('settings.olderSonosPaced'),
+          message: this.$t('settings.olderSonosPacedFailed'),
+        })
+        console.error('[settings] Failed to change the older Sonos setting:', error)
+      } finally {
+        this.olderSonosBusy = false
       }
     },
     async resetAirplayPairings() {

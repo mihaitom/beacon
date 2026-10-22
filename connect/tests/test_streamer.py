@@ -4,6 +4,8 @@ ffmpeg command selection (stream-copy vs. lossless re-encode vs. the mp3
 
 import asyncio
 import logging
+import shutil
+import subprocess
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
@@ -1888,3 +1890,126 @@ def test_stream_tracks_sends_an_unpaced_stream_when_asked():
     asyncio.run(_run())
     assert "-readrate" not in captured
     assert "-reconnect" in captured
+
+
+# ── where the audio sent ends (#56) ──────────────────────────────────────────
+# A device stops where the audio it was sent ends. A VBR MP3 without a Xing
+# header is listed at whatever its bitrate suggests, and a seek into one
+# lands near the asked-for second, so the end of a track is scheduled off
+# ffmpeg's own count of what it wrote.
+
+_PROGRESS_REPORT = (
+    b"bitrate= 170.2kbits/s\n"
+    b"total_size=7198635\n"
+    b"out_time_us=339000000\n"
+    b"out_time_ms=339000000\n"
+    b"out_time=00:05:39.000000\n"
+    b"speed=19.1x\n"
+    b"progress=end\n"
+)
+
+
+def _run_reporting_ends(proc, ends=None, **kwargs) -> tuple[list[str], list[tuple[int, float]]]:
+    captured: list[str] = []
+    ends = [] if ends is None else ends
+
+    async def _fake_exec(*cmd, **_):
+        captured.extend(cmd)
+        return proc
+
+    async def _run():
+        with patch("asyncio.create_subprocess_exec", _fake_exec):
+            async for _ in stream_tracks(
+                ["http://nav/stream"], on_track_end=lambda i, at: ends.append((i, at)), **kwargs
+            ):
+                pass
+
+    asyncio.run(_run())
+    return captured, ends
+
+
+def test_stream_tracks_reports_where_the_audio_it_wrote_ends():
+    proc = _ConfigurableFakeProc(
+        stdout_chunks=[b"x" * 1024, b""],
+        stderr=b"[in#0/mp3 @ 0x1] Estimating duration from bitrate\n" + _PROGRESS_REPORT,
+    )
+
+    captured, ends = _run_reporting_ends(proc, start_offset=93.4)
+
+    assert captured[captured.index("-progress") + 1] == "pipe:2"
+    assert ends == [(0, pytest.approx(432.4))]
+
+
+def test_stream_tracks_counts_an_unseeked_track_from_its_start():
+    # Below the half second stream_tracks() seeks at all, nothing was skipped.
+    proc = _ConfigurableFakeProc(stdout_chunks=[b"x" * 1024, b""], stderr=_PROGRESS_REPORT)
+
+    _, ends = _run_reporting_ends(proc, start_offset=0.3)
+
+    assert ends == [(0, pytest.approx(339.0))]
+
+
+def test_stream_tracks_reports_no_end_it_did_not_measure():
+    without_report = _ConfigurableFakeProc(stdout_chunks=[b"x" * 1024, b""], stderr=b"")
+    assert _run_reporting_ends(without_report)[1] == []
+
+    # A source that failed before any audio raises instead (see the failure
+    # tests above); the report it still writes is no end of anything.
+    ends: list[tuple[int, float]] = []
+    with pytest.raises(SourceUnavailableError):
+        _run_reporting_ends(
+            _ConfigurableFakeProc(
+                stdout_chunks=[b""], stderr=b"I/O error\n" + _PROGRESS_REPORT, returncode=1
+            ),
+            ends,
+        )
+    assert ends == []
+
+
+def test_stream_tracks_keeps_the_progress_report_out_of_logs_and_failure_reasons(caplog):
+    proc = _ConfigurableFakeProc(
+        stdout_chunks=[b"x" * 1024, b""],
+        stderr=b"[mp3 @ 0x1] Audio packet of size 16 is invalid\n" + _PROGRESS_REPORT,
+        returncode=1,
+    )
+
+    with caplog.at_level(logging.DEBUG, logger="connect.streamer"):
+        _run_reporting_ends(proc)
+
+    assert "Audio packet of size 16" in caplog.text
+    assert "out_time" not in caplog.text
+    assert "progress=end" not in caplog.text
+
+
+def _write_vbr_mp3_without_xing(path: Path) -> None:
+    """40s of noise, which LAME's VBR codes at a high bitrate, then 40s of a
+    sine, which it codes at a low one: a length estimated from the start
+    comes out far too short."""
+    subprocess.run(
+        ["ffmpeg", "-loglevel", "error", "-f", "lavfi", "-i", "anoisesrc=d=40:c=pink:a=0.3"]
+        + ["-f", "lavfi", "-i", "sine=f=440:d=40", "-filter_complex", "[0][1]concat=n=2:v=0:a=1"]
+        + ["-c:a", "libmp3lame", "-q:a", "2", "-write_xing", "0", str(path)],
+        check=True,
+    )
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="needs a real ffmpeg")
+def test_a_real_vbr_file_ends_where_its_audio_does_not_where_its_bitrate_says(tmp_path):
+    mp3 = tmp_path / "vbr.mp3"
+    _write_vbr_mp3_without_xing(mp3)
+    ends: list[tuple[int, float]] = []
+
+    async def _run():
+        async for _ in stream_tracks(
+            [str(mp3)],
+            start_offset=50.0,
+            output_format=OutputFormat(ffmpeg_args=["-acodec", "copy", "-f", "mp3"]),
+            paced=False,
+            on_track_end=lambda i, at: ends.append((i, at)),
+        ):
+            pass
+
+    asyncio.run(_run())
+
+    # ffprobe puts this file at about 54s.
+    assert ends == [(0, pytest.approx(80.0, abs=0.2))]

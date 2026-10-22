@@ -2350,6 +2350,31 @@ def test_resync_position_once_still_recalibrates_a_real_rewind_well_before_durat
     assert default_session.state.clock.position_offset < -POSITION_RESYNC_THRESHOLD
 
 
+def test_resync_position_once_ignores_a_stop_where_the_audio_sent_ends_after_a_seek(
+    default_session,
+):
+    """A VBR file listed at 455s whose audio, from a seek to 93.4s, ran out
+    after 339s: the device stops at 0:00 well short of the listed length,
+    which was taken for a rewind and recalibrated every 8s, so the track
+    never advanced (#56). The clock is compared in the track's own frame,
+    seek included, against where the audio sent ends."""
+    st = default_session.state
+    st.is_streaming = True
+    st.current_track = Track("1", "Crunchy Granola Suite", "Neil Diamond", 455, "")
+    st.clock.start(93.4)
+    st.clock.play_start_time -= 340.0
+    st.clock.position_offset = -0.9
+    st.sent_audio_end = (st.clock.play_generation, 93.4 + 339.0)
+    target = SonosDelivery("Study")
+    st.active_delivery = target
+    import asyncio
+
+    with patch.object(target, "get_position", new=AsyncMock(return_value=0.0)):
+        asyncio.run(_resync_position_once(default_session, target, st.clock.play_generation))
+
+    assert st.clock.position_offset == -0.9
+
+
 def test_resync_position_once_ignores_negative_reading(default_session):
     default_session.state.is_streaming = True
     default_session.state.clock.play_start_time = time.time() - 10.0

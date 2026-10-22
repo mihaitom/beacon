@@ -1,23 +1,63 @@
-# FIXED - Old Sonos models stop reading a chunked stream (Play:3, first-generation Playbar)
+# OPEN - Old Sonos models stop reading a stream (Play:3, first-generation Playbar)
 
-**Open since 2026-10-17, partly fixed 2026-10-19/20, root cause found and
-fixed 2026-10-21** (#56). Reported against 1.8.0 and 1.9.0 as "tracks keep
-restarting": on a Play:3 (model `ZPS3`, firmware 86.10) the track jumped
+**Open since 2026-10-17, partly fixed 2026-10-19/20, chunked encoding found
+and fixed 2026-10-21, that fix measured as not enough 2026-10-22** (#56).
+Reported against 1.8.0 and 1.9.0 as "tracks keep restarting": on a Play:3 (model `ZPS3`, firmware 86.10) the track jumped
 back to its start about every 50 seconds, audibly, and Beacon's position
 ran on past the track's length. A first-generation Playbar (`ZPS9`, same
 firmware) did the same. Newer Sonos models here never showed it.
 
-**Status of the fix:** Beacon now answers a Sonos the way an internet radio
-server does. That this framing plays through on these speakers is measured
-on the reporter's own Play:3 (below), and that Beacon's responses now look
-exactly like that on the wire is covered by tests against both of uvicorn's
-HTTP implementations. The fixed build itself has not played on those
-speakers yet: no further test runs were asked of the reporter. If a long
-track, a relayed station or a mix still stops on one of them, this file
-goes back to open, and the unpaced model list (see "The fix") is what still
-holds ordinary tracks together.
+**Status:** Beacon answers a Sonos the way an internet radio server does
+(see "The fix"), and on the reporter's Play:3 that changed nothing for an
+unpaced stream: it still stops reading after 30-37 seconds (see "What the
+framing fix did"). Ordinary tracks play through because they arrive in that
+time; longer ones stop early. The combination the station that plays to the
+end actually has, close-delimited _and_ paced, has never run from Beacon on
+these speakers. Settings → Advanced has a switch for exactly that
+(core/sonos_pacing.py), so the reporter can try it without touching the
+container.
 
-## Root cause
+## What the framing fix did (2026-10-22)
+
+A full day of the fixed build on the Play:3, no switches, debug logging.
+The build was the right one: a room with a space in its name reported its
+events in it, a fix from the same commit. Every track that reached the
+speaker within about 35 seconds played through, the largest 14.1 MiB in
+35.6 s. Every one that did not, stopped:
+
+| Track                 | Received    | Last read |
+| --------------------- | ----------- | --------- |
+| 400 s                 | 14.16 MiB   | 36.7 s    |
+| 462 s                 | 14.26 MiB   | 36.4 s    |
+| 384 s                 | 14.09 MiB   | 34.7 s    |
+| 573 s                 | 13.61 MiB   | 30.8 s    |
+| Playbar, three tracks | 4.6-5.1 MiB | 30-38 s   |
+
+The same picture as the chunked, unpaced runs before (29-37 s): the buffer
+fills in about 20 s, the speaker then reads at the rate it plays, in 200 KiB
+steps, and about 35 s in it stops for good, plays out what it has, and is
+stopped at 0:00. On the Playbar the buffer is full after a few seconds, so
+there anything longer than about 2 minutes at 320 kb/s stops.
+
+**What was overlooked:** the station that played 43 minutes was paced (15 s
+burst, then 1x) as well as close-delimited. The fix shipped close-delimited
+with the unpaced model list kept as a safety net, a combination that was
+never observed to work for a long track. "Close-delimited, pacing makes no
+difference" (see "The fix") was an assumption, not a measurement.
+
+**What speaks against pacing being all of it:** run 5 (2026-10-19) was paced
+and not chunked (a Content-Length with `Accept-Ranges: bytes`), and the
+speaker stopped reading at about 37 s with `ERROR_LOST_CONNECTION`. That was
+a file to the speaker rather than a stream (see "Why chunked encoding had
+been ruled out"), so it does not settle it. Left between Beacon and the
+station if paced does not play through: the station came over https and
+sent `icy-metaint`. Whether a Sonos asks for ICY metadata on `/stream` is
+now in the connection's log line (`icy-metadata 1`).
+
+**Ruled out on the way:** the position polling every 8 s. Beacon polls a
+station played straight from its server too (core/radio_position.py).
+
+## Chunked encoding
 
 uvicorn sends every response that has no Content-Length with chunked
 transfer encoding, and Beacon's cast streams have none: a track's length is
@@ -33,23 +73,23 @@ station's server answers with an HTTP/1.0 status line, no Content-Length
 and no chunking: the body simply ends where the connection closes. That is
 the framing a Sonos now gets from Beacon.
 
-## The comparison that settled it
+## The comparison with the station
 
 The reporter's run with "Play radio straight from the station" played one
 station for 43 minutes on the Play:3, and on the Playbar grouped with it,
 without a gap. Set against Beacon's own paced track stream on the same
 speaker, which died after 40-46 seconds in every run:
 
-| | Beacon's paced track | The station |
-|---|---|---|
-| Dispatched as | plain `http://` URI | plain `https://` URI |
-| DIDL-Lite | `audioBroadcast`, no duration | the same, from the same code |
-| Delivery | 15s burst, then 1x | about 15s burst, then 1x (measured with curl) |
-| Status line | `HTTP/1.1 200 OK` | `HTTP/1.0 200 OK`, also to an HTTP/1.1 request |
-| Body framing | `Transfer-Encoding: chunked` | none: ends with the connection |
-| `Accept-Ranges` | not sent | `none` |
-| ICY headers | not sent | `icy-name`, `icy-br`, `icy-metaint` |
-| Result | stops reading after about 40s | 43 minutes, no gap |
+|                 | Beacon's paced track          | The station                                    |
+| --------------- | ----------------------------- | ---------------------------------------------- |
+| Dispatched as   | plain `http://` URI           | plain `https://` URI                           |
+| DIDL-Lite       | `audioBroadcast`, no duration | the same, from the same code                   |
+| Delivery        | 15s burst, then 1x            | about 15s burst, then 1x (measured with curl)  |
+| Status line     | `HTTP/1.1 200 OK`             | `HTTP/1.0 200 OK`, also to an HTTP/1.1 request |
+| Body framing    | `Transfer-Encoding: chunked`  | none: ends with the connection                 |
+| `Accept-Ranges` | not sent                      | `none`                                         |
+| ICY headers     | not sent                      | `icy-name`, `icy-br`, `icy-metaint`            |
+| Result          | stops reading after about 40s | 43 minutes, no gap                             |
 
 Same speaker, same dispatch path, same announcement, same pacing. What
 differs is the HTTP response, and of that, the framing is what other
@@ -138,10 +178,11 @@ chunking, which no run before the station run had.
 - The announcement stays an `audioBroadcast` without a duration, which is
   what the station run used and what every one of these streams is to a
   Sonos: nothing to seek in or fetch again in parts.
-- The unpaced model list (`ZPS3`, `ZPS9`) stays. Close-delimited, pacing
-  makes no difference to these speakers, and unpaced is what already played
-  ordinary tracks through on them, so it is the safety net until a long
-  track has played through on the fixed build.
+- The unpaced model list (`ZPS3`, `ZPS9`) stays. The assumption was that
+  close-delimited, pacing makes no difference to these speakers, and that
+  unpaced, which already played ordinary tracks through on them, was a
+  safety net. Measured on 2026-10-22: it is not (see "What the framing fix
+  did"). Settings → Advanced can now pace them like every other speaker.
 - The diagnostic switches are gone: `CAST_STREAM_PACING=gentle`,
   `CAST_STREAM_BYTE_RANGES=on` and `CAST_STREAM_METADATA=dlna`.
 
@@ -155,8 +196,9 @@ chunking, which no run before the station run had.
 - **A Xing/Info header with a wrong length.** ffmpeg writes none when
   muxing mp3 to a pipe.
 - **Beacon restarting the track.** One connection per track, no second GET.
-- **Pacing.** Unpaced, paced at 1x and paced at 1.1x after 60s all stopped
-  after 30-45s of reading, and the station is paced like Beacon.
+- **Pacing, with a chunked stream.** Unpaced, paced at 1x and paced at 1.1x
+  after 60s all stopped after 30-45s of reading. Paced _and_ close-delimited
+  has not run from Beacon yet (see "What the framing fix did").
 - **The size of the speaker's buffer.** It stops reading far from full
   (paced runs, the long 128 kb/s track).
 - **The announcement.** `CAST_STREAM_METADATA=dlna` (a `musicTrack` with
@@ -170,10 +212,22 @@ chunking, which no run before the station run had.
 
 ## Found on the way
 
+- **A track whose audio ended before its listed length stalled the cast.**
+  The end of a track was scheduled off its listed length, and a device
+  stopping well before that was taken for a rewind to 0:00, recalibrated
+  every 8 s, and never advanced. A VBR MP3 without a Xing header is listed at
+  what its bitrate suggests (one here: 455 s listed, about 433 s of audio),
+  and a seek into one lands near the asked-for second, not on it. The guard
+  meant to catch a finished track compared the stream's own elapsed time
+  with the track's length, so after any seek it never applied. Fixed: ffmpeg
+  reports the audio it wrote (`-progress`), the track ends where that ends
+  (core/session.py's `playback_duration()`), and the guard compares in the
+  track's own frame.
+
 - **Every event from a room with a space in its name was rejected.** The
   callback URL handed to a speaker carried the room name as it was, so its
   `NOTIFY` request line read like `NOTIFY
-  /upnp/events/sonos/avtransport/Dining Room HTTP/1.1`, which httptools refuses
+/upnp/events/sonos/avtransport/Dining Room HTTP/1.1`, which httptools refuses
   ("Expected HTTP/, RTSP/ or ICE/"). Those were the warnings in pairs every
   32s from room B: one per subscription, retried by the speaker. Such a room
   never reported a transport error, a change of volume made elsewhere, its

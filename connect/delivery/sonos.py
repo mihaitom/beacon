@@ -8,6 +8,7 @@ from xml.sax.saxutils import escape
 from soco.exceptions import SoCoUPnPException
 
 from core.http_protocol import CLOSE_DELIMITED, header_value
+from core.sonos_pacing import old_models_paced
 from core.upnp_events import (
     AVTRANSPORT_EVENT_PATH,
     RENDERINGCONTROL_EVENT_PATH,
@@ -101,12 +102,13 @@ def is_beacon_hosted_radio_uri(url: str) -> bool:
     return _BEACON_RADIO_PATH in url
 
 
-# Models sent their track unpaced. A Play:3 (ZPS3) and a first-generation
-# Playbar (ZPS9) stopped reading the chunked stream a Sonos used to get
-# about 45s in, so only a track that reached them faster than that played
-# through (#56). With stream_headers() they get it the way they read a
-# radio station to the end, and unpaced costs nothing there, so this stays
-# as the safety net it was until a long track has played through on them.
+# Models sent their track unpaced, unless Settings → Advanced says
+# otherwise (core/sonos_pacing.py). A Play:3 (ZPS3) and a first-generation
+# Playbar (ZPS9) stop reading a stream 30-45s in, so unpaced, a track that
+# reaches them in that time plays through: about 14 MiB on a Play:3, 5 MiB
+# on a Playbar. Anything longer still stops early, with stream_headers()'
+# framing too (#56). The radio station that plays to the end on both is
+# paced, which is what the switch tries.
 _UNPACED_MODELS = frozenset({"ZPS3", "ZPS9"})
 
 # A Sonos fetching a stream names itself and its model in its user agent:
@@ -128,11 +130,16 @@ def stream_headers(user_agent: str | None, name: str | None) -> dict[str, str]:
     return headers
 
 
+def is_older_model(user_agent: str | None) -> bool:
+    """Whether the device behind this user agent is one of _UNPACED_MODELS."""
+    match = _MODEL_IN_USER_AGENT.search(user_agent or "")
+    return match is not None and match.group(1) in _UNPACED_MODELS
+
+
 def needs_unpaced_stream(user_agent: str | None) -> bool:
     """Whether the device behind this user agent must get its stream
     unpaced (see _UNPACED_MODELS)."""
-    match = _MODEL_IN_USER_AGENT.search(user_agent or "")
-    return match is not None and match.group(1) in _UNPACED_MODELS
+    return is_older_model(user_agent) and not old_models_paced()
 
 
 def _dispatch_uri(stream_url: str) -> str:

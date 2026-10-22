@@ -791,6 +791,10 @@ export default {
     logLevelError: 'Erreur',
     logLevelChanged: 'Niveau de journalisation mis à jour.',
     logLevelChangeFailed: 'Impossible de mettre à jour le niveau de journalisation.',
+    olderSonosPaced: 'Anciennes enceintes Sonos : diffuser à la vitesse de lecture',
+    olderSonosPacedHint:
+      "Sinon, un Play:3 ou une Playbar de première génération reçoit chaque morceau d'un coup, et les longs morceaux peuvent s'y arrêter trop tôt. Activé, la musique arrive à la vitesse de lecture, comme depuis une radio internet. S'applique à partir du morceau suivant.",
+    olderSonosPacedFailed: 'Impossible de modifier le réglage des anciennes enceintes Sonos.',
     recommendations: 'Recommandations personnalisées',
     recommendationsHint:
       "Découvrir sur l'accueil s'appuie sur des artistes proches de ce que vous écoutez vraiment, recherchés auprès de MusicBrainz, ListenBrainz et Deezer - cela leur transmet un ou deux noms d'artistes de votre bibliothèque. Désactivé, des albums au hasard sont proposés ; ouvrir la page d'un artiste consulte toujours cet artiste, dans un cas comme dans l'autre.",

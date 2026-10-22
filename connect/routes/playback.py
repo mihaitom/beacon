@@ -28,6 +28,7 @@ from core.session import (
     is_this_sessions_stream,
     mark_delivery_failed,
     mark_interrupted,
+    playback_duration,
     registry,
     require_authenticated_session,
     track_label,
@@ -459,7 +460,7 @@ async def _resync_position_once(session: SessionState, candidate, generation: in
         )
         return
     # The mirror image of the guard above: once the wall clock has already
-    # reached (or nearly reached) the track's own duration, a device
+    # reached (or nearly reached) the end of the track, a device
     # position that suddenly drops back down is far more likely the device
     # having already finished/stopped this track than someone rewinding to
     # the very start in its last second — SonosDelivery.get_position()
@@ -473,14 +474,21 @@ async def _resync_position_once(session: SessionState, candidate, generation: in
     # instead of ever converging, so the track never auto-advanced and the
     # displayed position visibly snapped back toward 0:00 instead (observed
     # live 2026-08-20, a full track stuck until manually restarted).
+    #
+    # In the track's own frame (where this stream began plus how long it has
+    # run) and against where the audio sent ends: after a seek, or with a
+    # file whose listed length is off, the device finishes well short of
+    # the listed duration, and was stuck the same way (#56).
+    track_position = st.clock.track_start_position + wall_elapsed
+    track_end = playback_duration(st)
     if (
         within_one_song
-        and wall_elapsed >= st.current_track.duration - POSITION_RESYNC_THRESHOLD
+        and track_position >= track_end - POSITION_RESYNC_THRESHOLD
         and device_pos < wall_elapsed - POSITION_RESYNC_THRESHOLD
     ):
         logger.debug(
             f"[position-resync] {candidate.target}: wall clock already at/past track end "
-            f"(wall={wall_elapsed:.2f}s, duration={st.current_track.duration}s) and "
+            f"(at {track_position:.2f}s of {track_end:.2f}s) and "
             f"device={device_pos:.2f}s dropped back below it — likely already finished, "
             "not a real rewind — ignoring"
         )

@@ -333,6 +333,15 @@ def _isolate_radio_station_info_cache(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_sonos_pacing_setting(tmp_path, monkeypatch):
+    """core/sonos_pacing.py keeps Settings' switch for the older Sonos
+    models in a file under CONNECT_DATA_DIR, and every /stream asks it - the
+    developer's own choice must not decide how a test streams."""
+    monkeypatch.setattr("core.sonos_pacing._PATH", str(tmp_path / "sonos_pacing.txt"))
+    monkeypatch.setattr("core.sonos_pacing._paced", None)
+
+
+@pytest.fixture(autouse=True)
 def _isolate_radio_favicon_disk_cache(tmp_path, monkeypatch):
     """routes/radio.py keeps resolved station logos in a directory under
     CONNECT_DATA_DIR so they survive a restart (see its _disk_store()). In

@@ -783,6 +783,11 @@ export default {
     logLevelError: 'Errore',
     logLevelChanged: 'Livello di log aggiornato.',
     logLevelChangeFailed: 'Impossibile aggiornare il livello di log.',
+    olderSonosPaced: 'Altoparlanti Sonos meno recenti: trasmetti alla velocità di riproduzione',
+    olderSonosPacedHint:
+      "Altrimenti un Play:3 o una Playbar di prima generazione riceve ogni brano in una volta sola, e i brani lunghi possono interrompersi troppo presto. Attivando l'opzione, la musica arriva alla velocità di riproduzione, come da una radio internet. Vale dal brano successivo.",
+    olderSonosPacedFailed:
+      "Impossibile modificare l'impostazione per gli altoparlanti Sonos meno recenti.",
     recommendations: 'Consigli personalizzati',
     recommendationsHint:
       'Scopri nella Home usa artisti simili a ciò che ascolti davvero, cercati su MusicBrainz, ListenBrainz e Deezer - questo condivide con loro uno o due nomi di artisti della tua libreria. Disattivato mostra album casuali; aprire la pagina di un artista continua comunque a cercare quel singolo artista.',

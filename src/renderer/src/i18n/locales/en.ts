@@ -777,6 +777,10 @@ export default {
     logLevelError: 'Error',
     logLevelChanged: 'Log level updated.',
     logLevelChangeFailed: "Couldn't update the log level.",
+    olderSonosPaced: 'Older Sonos speakers: stream at playback speed',
+    olderSonosPacedHint:
+      'Otherwise a Play:3 or a first-generation Playbar gets each song in one go, and long songs can stop early on it. Switched on, it gets the music at playback speed, as from an internet radio station. Takes effect from the next song.',
+    olderSonosPacedFailed: "Couldn't change how older Sonos speakers are streamed to.",
     recommendations: 'Personalized recommendations',
     recommendationsHint:
       "Discover on Home uses artists similar to what you actually listen to, looked up at MusicBrainz, ListenBrainz and Deezer - this shares a library artist name or two with them. Off falls back to random albums; opening an artist's own page still looks up that one artist either way.",

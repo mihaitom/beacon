@@ -77,6 +77,7 @@ from routes.proxy import router as proxy_router
 from routes.radio import router as radio_router
 from routes.recommendations import router as recommendations_router
 from routes.remote import router as remote_router
+from routes.sonos_pacing import router as sonos_pacing_router
 from routes.stream import router as stream_router
 from routes.upnp import router as upnp_router
 from routes.volume import router as volume_router
@@ -477,6 +478,7 @@ app.include_router(discovery_router)
 app.include_router(volume_router)
 app.include_router(join_router)
 app.include_router(log_level_router)
+app.include_router(sonos_pacing_router)
 app.include_router(account_settings_router)
 app.include_router(cast_permissions_router)
 app.include_router(api_keys_router)
