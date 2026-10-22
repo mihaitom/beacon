@@ -219,24 +219,22 @@ def _file_mode_dispatch(model: str, mode: str, url: str = "http://beacon/stream/
     return args["CurrentURI"], args["CurrentURIMetaData"]
 
 
-def test_an_older_sonos_in_the_file_mode_is_told_of_an_mp3_track_and_its_length():
-    """A file it may fetch in parts: a track of known length, byte ranges
-    offered (DLNA.ORG_OP=01), and an MP3 whatever the source (#56)."""
+def test_an_older_sonos_in_the_file_mode_is_sent_an_mp3():
+    """Whatever the source, the file is an MP3 (routes/stream.py). Still a
+    broadcast: as a musicTrack the Sonos app showed it as "No content"."""
     uri, xml = _file_mode_dispatch("S3", "file")
 
     assert uri == "http://beacon/stream/abc.mp3"
-    assert "object.item.audioItem.musicTrack" in xml
-    assert 'duration="0:07:44"' in xml
-    assert "http-get:*:audio/mpeg:DLNA.ORG_OP=01" in xml
+    assert "object.item.audioItem.audioBroadcast" in xml
+    assert 'protocolInfo="http-get:*:audio/mpeg:*"' in xml
 
 
 @pytest.mark.parametrize(("model", "mode"), [("S3", "whole"), ("S3", "paced"), ("S14", "file")])
-def test_anything_else_stays_a_broadcast(model, mode):
+def test_anything_else_keeps_its_format(model, mode):
     uri, xml = _file_mode_dispatch(model, mode)
 
     assert uri == "http://beacon/stream/abc.flac"
-    assert "object.item.audioItem.audioBroadcast" in xml
-    assert "duration=" not in xml
+    assert 'protocolInfo="http-get:*:audio/flac:*"' in xml
 
 
 @pytest.mark.parametrize(

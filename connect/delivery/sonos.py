@@ -143,31 +143,6 @@ def older_model_mode(user_agent: str | None) -> str | None:
     return stream_mode()
 
 
-def _didl_duration(seconds: float) -> str:
-    total = max(0, round(seconds))
-    hours, rest = divmod(total, 3600)
-    minutes, secs = divmod(rest, 60)
-    return f"{hours}:{minutes:02d}:{secs:02d}"
-
-
-def _didl_class_and_res(uri: str, content_type: str, file_duration: float | None) -> str:
-    """The upnp:class and <res> of the item play() dispatches. An
-    audioBroadcast without a duration: nothing a Sonos gets from here can be
-    sought in or fetched again in parts (see stream_headers()) - except an
-    older model in the "file" mode, which gets a track of known length it
-    may fetch by byte range (DLNA.ORG_OP=01), always as MP3."""
-    if file_duration is None:
-        return (
-            "<upnp:class>object.item.audioItem.audioBroadcast</upnp:class>"
-            f'<res protocolInfo="http-get:*:{escape(content_type)}:*">{escape(uri)}</res>'
-        )
-    return (
-        "<upnp:class>object.item.audioItem.musicTrack</upnp:class>"
-        f'<res duration="{_didl_duration(file_duration)}" '
-        f'protocolInfo="http-get:*:audio/mpeg:DLNA.ORG_OP=01">{escape(uri)}</res>'
-    )
-
-
 def _dispatch_uri(stream_url: str) -> str:
     """The URI actually handed to SetAVTransportURI (and the DIDL `<res>`
     alongside it) — `stream_url` unchanged, except for Beacon's own
@@ -330,14 +305,17 @@ class SonosDelivery(BaseDelivery):
         # scheme still fetches over plain HTTP under the hood, this is
         # only ever a hint about *how much to buffer*, not the transport.
         dispatch_uri = _dispatch_uri(stream_url)
-        file_duration = None
         if duration and not is_beacon_hosted_radio_uri(stream_url):
             model = await asyncio.to_thread(lambda: device.get_speaker_info().get("model_number"))
             if model in _OLDER_MODELS and stream_mode() == "file":
-                file_duration = duration
                 # Whatever the source, the file is an MP3 (routes/stream.py).
                 dispatch_uri = strip_stream_extension(dispatch_uri) + ".mp3"
+                content_type = "audio/mpeg"
 
+        # DIDL-Lite Metadata. An audioBroadcast without a duration, the file
+        # mode's included: announced as a musicTrack with its length, an Era
+        # 100's track showed in the Sonos app as "No content", without its
+        # artwork (#56).
         album_art_tag = (
             f"<upnp:albumArtURI>{escape(album_art_url)}</upnp:albumArtURI>" if album_art_url else ""
         )
@@ -352,7 +330,8 @@ class SonosDelivery(BaseDelivery):
             f"<upnp:artist>{escape(artist)}</upnp:artist>"
             f"{album_tag}"
             f"{album_art_tag}"
-            f"{_didl_class_and_res(dispatch_uri, content_type, file_duration)}"
+            "<upnp:class>object.item.audioItem.audioBroadcast</upnp:class>"
+            f'<res protocolInfo="http-get:*:{escape(content_type)}:*">{escape(dispatch_uri)}</res>'
             "</item>"
             "</DIDL-Lite>"
         )

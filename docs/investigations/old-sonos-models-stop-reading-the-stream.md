@@ -70,12 +70,12 @@ What an older model gets is Settings → Advanced's choice, "whole" by default
   every ordinary track through and stops the long ones (above).
 - **paced**: 15 s ahead, then 1x, the radio framing - the station's way.
 - **file**: an MP3 at a constant 320 kb/s with a Content-Length,
-  `Accept-Ranges: bytes` and 206 for a range, announced as a `musicTrack`
-  with its duration and `DLNA.ORG_OP=01`. A Range maps onto a second through
-  the bitrate (routes/stream.py's `_byte_range_for()`), a range past the end
-  gets a 416, and ffmpeg pads a
-  source that runs short with silence (`apad`, `-t`), so the body always
-  reaches the length it promised. The length is the longer of the probed and
+  `Accept-Ranges: bytes` and 206 for a range, announced like every other
+  stream as an `audioBroadcast` (as a `musicTrack`, the Sonos app showed it
+  as "No content", see below). A Range maps onto a second through the
+  bitrate (routes/stream.py's `_byte_range_for()`), a range past the end gets
+  a 416, and ffmpeg pads a source that runs short with silence (`apad`,
+  `-t`), so the body always reaches the length it promised. The length is the longer of the probed and
   the listed one: a VBR file without a Xing header can be off either way,
   and padding costs a few seconds of silence where cutting would cost the
   song's end.
@@ -121,7 +121,7 @@ far from full.
 
 Tried on an Era 100 with the mode switched on for its model for the test,
 a 68-minute track, transitions off (a mix gets no length and stays a
-broadcast):
+broadcast). First announced as a `musicTrack` with its duration:
 
 - It took the file as offered: a GET without a range, 200 with the
   Content-Length, the duration in its metadata and `X_DLNA_SeekTime` among
@@ -136,8 +136,17 @@ broadcast):
   it sent the same pair, the range at `bytes=142770176-`: 3569 s, where the
   audio it held ended (sent up to 3593 s, played up to 2469 s).
 
-So a speaker that knows the length fetches the rest by range when it needs
-it, as documented. Two bugs this turned up, both fixed before release: the
+Then announced as an `audioBroadcast` like every other stream, the HTTP
+answer unchanged: the Sonos app showed title and artwork again (as a
+`musicTrack` it had shown "No content" and dropped the artwork - probably
+because it looks for a track in the speaker's own queue, which Beacon does
+not use), and the
+speaker behaved the same: the connection dropped 4 s into a pause, and on
+play `Range: bytes=45056000-` from where its audio ended; a seek to 40:00
+fetched `bytes=95993856-` again.
+
+So a speaker that is answered with a length fetches the rest by range when
+it needs it, as documented, whatever the item is announced as. Two bugs this turned up, both fixed before release: the
 GET from the start re-based the file onto the clock's position, so the
 range played two and a half minutes off (a file now belongs to its device
 for the generation, and a speaker taking over gets one of its own); and a
