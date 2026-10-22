@@ -70,7 +70,8 @@ What an older model gets is Settings → Advanced's choice, "whole" by default
 - **file**: an MP3 at a constant 320 kb/s with a Content-Length,
   `Accept-Ranges: bytes` and 206 for a range, announced as a `musicTrack`
   with its duration and `DLNA.ORG_OP=01`. A Range maps onto a second through
-  the bitrate (routes/stream.py's `_byte_range_for()`), and ffmpeg pads a
+  the bitrate (routes/stream.py's `_byte_range_for()`), a range past the end
+  gets a 416, and ffmpeg pads a
   source that runs short with silence (`apad`, `-t`), so the body always
   reaches the length it promised. The length is the longer of the probed and
   the listed one: a VBR file without a Xing header can be off either way,
@@ -85,6 +86,34 @@ byte-range runs) it never did; it stops reading but keeps the connection
 open; and Sonos documents players fetching a file in several requests. No
 range request past byte 0 appears in any log so far - but none of those
 runs offered one for a file it could not hold whole.
+
+## What Sonos documents
+
+Sonos's own developer docs ("Streaming basics" and "Playback on Sonos" on
+docs.sonos.com, written for music services; the archived partner pages of
+2015-2020 say no more about HTTP) describe two kinds of content: individual
+files, and internet radio streams over Icecast2's ICY protocol. For a file:
+
+- "The Sonos player uses repeated HTTP GET requests to obtain the encoded
+  audio data", and "the data may not fit into the local buffer and multiple
+  GET requests may be required to play the song", for "some encodings like
+  MP3 and MP4". It does not cache the whole file first.
+- Every further GET carries a `Range`; a partial answer must be a 206, and
+  a range that cannot be served a 416.
+- "Your service must return an accurate Content-Length", and "in some
+  situations, Sonos players may send a HEAD request to get the
+  Content-Length header."
+- A VBR MP3 needs a TOC in its Xing header, or seeking in it does not work.
+
+That reads like the behaviour measured above: a speaker that stops reading
+once its buffer is full, keeps the connection, and shortly before it runs
+dry sends a HEAD - by the docs, to learn the length it needs for the next
+ranged GET. A track sent without a length has no answer to give it, so it
+stops. The "file" mode is the documented way, and answers a range past the
+end with 416 as asked (a browser on the local path gets the whole body
+instead). What the docs do not settle is the timing: why a paced stream
+with chunked encoding stopped being read at about 40 s too, with its buffer
+far from full.
 
 ## Watching it happen
 
@@ -313,5 +342,7 @@ the request line the way the server does.
   transitions need from each device class.
 - Music Assistant support #5100; the Sonos community thread "Chunked
   encoding transfer and MP3 ? (a technical question)"; AirConnect's README
-  (`http_length`) and its #582; Sonos's "Streaming basics" on a player
-  fetching a file in several requests.
+  (`http_length`) and its #582; Sonos's "Streaming basics"
+  (docs.sonos.com/docs/streaming-basics), "Playback on Sonos"
+  (docs.sonos.com/docs/playback-on-sonos) and, archived from 2020,
+  "Supported audio formats" (the Xing TOC, ICY for radio).

@@ -659,6 +659,9 @@ class _ByteRange:
     total: int
     start_seconds: float
     partial: bool
+    # Asked from at or past the file's end. Sonos documents 416 for that;
+    # the whole file from its start would play the song again.
+    unsatisfiable: bool = False
 
     @property
     def length(self) -> int:
@@ -692,11 +695,26 @@ def _byte_range_for(
     total = transcoded_byte_length(FILE_BITRATE_KBPS, max(_file_seconds(st) - base, 1.0))
     rng = parse_byte_range(range_header, total)
     first, last = rng if rng else (0, total - 1)
-    return _ByteRange(first, last, total, base + first / _FILE_BYTES_PER_SECOND, rng is not None)
+    start = _RANGE_START.match((range_header or "").strip())
+    return _ByteRange(
+        first,
+        last,
+        total,
+        base + first / _FILE_BYTES_PER_SECOND,
+        rng is not None,
+        unsatisfiable=start is not None and int(start.group(1)) >= total,
+    )
+
+
+_RANGE_START = re.compile(r"^bytes=(\d+)-")
 
 
 def _range_starts_past_zero(range_header: str | None) -> bool:
     return bool(range_header) and not range_header.strip().startswith("bytes=0-")
+
+
+def _unsatisfiable(byte_range: _ByteRange) -> Response:
+    return Response(status_code=416, headers={"Content-Range": f"bytes */{byte_range.total}"})
 
 
 async def _capped(audio: AsyncGenerator[bytes], limit: int) -> AsyncGenerator[bytes]:
@@ -746,6 +764,8 @@ async def audio_stream_head(request: Request, session_id: str = DEFAULT_SESSION_
     st = session.state
     if _is_file(st, older_model_mode(request.headers.get("user-agent"))):
         byte_range = _byte_range_for(session, request.headers.get("range"), st.clock.resume_offset)
+        if byte_range.unsatisfiable:
+            return _unsatisfiable(byte_range)
         return Response(
             media_type=_file_format(st.current_output_format).content_type,
             headers=_cast_stream_headers(request, None, byte_range),
@@ -1390,6 +1410,13 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
         byte_range = _byte_range_for(
             session, range_header, offset, starts_over=not _range_starts_past_zero(range_header)
         )
+        if byte_range.unsatisfiable:
+            session.state.active_stream_connections -= 1
+            logger.debug(
+                f"[stream] {range_header} lies past the file's {byte_range.total} bytes — 416"
+                + _cast_device_note(request)
+            )
+            return _unsatisfiable(byte_range)
         offset = byte_range.start_seconds
         output_format = _file_format(output_format)
         pacing_note = f" (file, bytes {byte_range.first}-{byte_range.last}/{byte_range.total})"

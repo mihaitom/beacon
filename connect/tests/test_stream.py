@@ -1870,6 +1870,22 @@ def test_a_range_further_in_carries_on_the_same_file(client, default_session, ca
     assert "reopened the stream" not in caplog.text
 
 
+def test_a_range_past_the_end_of_the_file_is_refused_not_restarted(client, default_session):
+    """416, as Sonos documents it: answered with the whole file instead, the
+    speaker would play the song from its start again."""
+    _file_mode(client, default_session)
+    with patch("routes.stream.stream_tracks", side_effect=_encoder_writing(80_000, [])) as encode:
+        client.get("/stream", headers={"User-Agent": _SONOS, "Range": "bytes=0-19999"})
+        get = client.get("/stream", headers={"User-Agent": _SONOS, "Range": "bytes=40000-"})
+        head = client.head("/stream", headers={"User-Agent": _SONOS, "Range": "bytes=40000-"})
+
+    for r in (get, head):
+        assert r.status_code == 416
+        assert r.headers["content-range"] == "bytes */40000"
+    assert encode.call_count == 1
+    assert default_session.state.active_stream_connections == 0
+
+
 def test_a_range_short_of_the_end_does_not_end_the_track(client, default_session):
     _file_mode(client, default_session)
     with patch("routes.stream.stream_tracks", side_effect=_encoder_writing(80_000, [])):
