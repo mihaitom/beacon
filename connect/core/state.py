@@ -177,10 +177,10 @@ class AppState:
         # reader. Tied to the generation it was measured for, so a seek or a
         # new track never inherits it.
         self.sent_audio_end: tuple[int, float] | None = None
-        # (play_generation, seconds) where that generation's byte space
+        # Per device address, (play_generation, seconds) where its file
         # starts for an older Sonos in the "file" mode - see
         # routes/stream.py's _byte_range_for().
-        self.byte_range_base: tuple[int, float] | None = None
+        self.file_bases: dict[str, tuple[int, float]] = {}
         # What devices asked /stream for lately, and the last position one
         # reported as (play_generation, when, seconds since its stream
         # began) - read by core/stream_diagnostics.py only.

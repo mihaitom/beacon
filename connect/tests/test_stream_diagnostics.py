@@ -102,3 +102,17 @@ def test_the_route_lists_what_the_device_asked_for(client, default_session):
     assert requests[0]["method"] == "HEAD"
     assert requests[0]["model"] == "S3"
     assert requests[0]["icy"] == "1"
+
+
+def test_a_request_turned_away_says_so(client, default_session):
+    """A speaker resumed from its own app after Beacon took the stream for
+    stopped is answered 204 - the request most worth seeing."""
+    st = _playing(default_session)
+    st.is_streaming = False
+    st.streamed_generation = st.clock.play_generation
+
+    client.get(f"/stream/{default_session.session_id}", headers={"User-Agent": "Sonos (ZPS57)"})
+
+    request = client.get("/stream-diagnostics").json()["requests"][0]
+    assert request["method"] == "GET"
+    assert request["answer"] == "204, stopped"

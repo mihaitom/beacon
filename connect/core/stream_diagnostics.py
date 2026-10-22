@@ -88,6 +88,7 @@ def describe_stream(session: SessionState) -> dict:
                 "model": request["model"],
                 "range": request["range"],
                 "icy": request["icy"],
+                "answer": request.get("answer"),
             }
             for request in reversed(st.stream_requests)
         ],

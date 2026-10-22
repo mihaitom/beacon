@@ -39,6 +39,8 @@ export interface StreamRequestInfo {
   model: string | null
   range: string | null
   icy: string | null
+  /** Set when the request was turned away ("204, stopped", "416"). */
+  answer: string | null
 }
 
 export interface StreamDiagnostics {

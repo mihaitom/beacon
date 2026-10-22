@@ -51,7 +51,8 @@
       <dt>Asked</dt>
       <dd>
         What it asked for lately. A <em>HEAD</em> comes shortly before it runs out; a
-        <em>range</em> is it fetching a part of a file.
+        <em>range</em> is it fetching a part of a file; <em>→ 204</em> or <em>→ 416</em> is a
+        request turned away.
       </dd>
     </dl>
   </div>
@@ -159,7 +160,8 @@ export default {
         const asked = info.requests.slice(0, 3).map((r) => {
           const range = r.range ? ` ${r.range}` : ''
           const icy = r.icy ? ` icy-metadata ${r.icy}` : ''
-          return `${r.method}${range}${icy} ${r.ago.toFixed(0)}s ago`
+          const answer = r.answer ? ` → ${r.answer}` : ''
+          return `${r.method}${range}${icy}${answer} ${r.ago.toFixed(0)}s ago`
         })
         lines.push({ label: 'Asked', value: asked.join(' · ') })
       }

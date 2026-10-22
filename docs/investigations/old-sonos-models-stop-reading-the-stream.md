@@ -13,11 +13,13 @@ unpaced stream: it still stops reading after 30-37 seconds (see "What the
 framing fix did"). Ordinary tracks play through because they arrive in that
 time; longer ones stop early. The combination the station that plays to the
 end actually has, close-delimited _and_ paced, has never run from Beacon on
-these speakers, and neither has a file the speaker may fetch in parts.
-Settings → Advanced offers both (core/older_sonos.py, see "Three ways to
-send a song"), so the reporter can try them without touching the container,
-and with the log level at Debug, Now Playing shows the stream as it goes
-(see "Watching it happen").
+these speakers, and neither has a file the speaker may fetch in parts - the
+way Sonos documents for a file (see "What Sonos documents"), and the one an
+Era 100 was seen to use, fetching the rest by range after a seek and a pause
+(see "The file mode on a real speaker"). Settings → Advanced offers both
+(core/older_sonos.py, see "Three ways to send a song"), so the reporter can
+try them without touching the container, and with the log level at Debug,
+Now Playing shows the stream as it goes (see "Watching it happen").
 
 ## What the framing fix did (2026-10-22)
 
@@ -114,6 +116,33 @@ end with 416 as asked (a browser on the local path gets the whole body
 instead). What the docs do not settle is the timing: why a paced stream
 with chunked encoding stopped being read at about 40 s too, with its buffer
 far from full.
+
+## The file mode on a real speaker (2026-10-22)
+
+Tried on an Era 100 with the mode switched on for its model for the test,
+a 68-minute track, transitions off (a mix gets no length and stays a
+broadcast):
+
+- It took the file as offered: a GET without a range, 200 with the
+  Content-Length, the duration in its metadata and `X_DLNA_SeekTime` among
+  its transport actions. It loaded about 45 MB (19 minutes) in 17 s, then
+  read on at the rate it played, in 192 KiB blocks - the Play:3's pattern
+  with more memory.
+- A seek to 40:00 (sent over UPnP; the Sonos app showed "No content" and
+  no seek bar for the item, with or without a `cdudn` desc in its DIDL)
+  brought a GET from the start, dropped at once, then
+  `Range: bytes=95993856-`, exactly 40:00 at 40,000 bytes a second.
+- Paused from the Sonos app, it dropped the connection 6 s later. On play
+  it sent the same pair, the range at `bytes=142770176-`: 3569 s, where the
+  audio it held ended (sent up to 3593 s, played up to 2469 s).
+
+So a speaker that knows the length fetches the rest by range when it needs
+it, as documented. Two bugs this turned up, both fixed before release: the
+GET from the start re-based the file onto the clock's position, so the
+range played two and a half minutes off (a file now belongs to its device
+for the generation, and a speaker taking over gets one of its own); and a
+dropped connection could count as an interruption, which would have
+refused the range on play (a file's connection no longer does).
 
 ## Watching it happen
 

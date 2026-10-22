@@ -25,7 +25,12 @@ from core.session import (
     mark_interrupted,
     playback_duration,
 )
-from core.streamer import FALLBACK_FORMAT, OutputFormat, SourceUnavailableError
+from core.streamer import (
+    FALLBACK_FORMAT,
+    OutputFormat,
+    SourceUnavailableError,
+    transcoded_byte_length,
+)
 from delivery import ChromecastDelivery
 from media import Track
 from routes.stream import (
@@ -1816,7 +1821,8 @@ def test_a_sonos_gets_the_relayed_station_and_its_head_like_a_radio_station(
 def _file_mode(client, default_session):
     set_stream_mode("file")
     _configure_and_set_track(client, default_session)
-    default_session.state.clock.resume_offset = 179.0
+    # Playing from 179s, so a track's end lies ahead of the clock.
+    default_session.state.clock.start(179.0)
 
 
 def _encoder_writing(nbytes: int, calls: list):
@@ -1868,6 +1874,87 @@ def test_a_range_further_in_carries_on_the_same_file(client, default_session, ca
     assert len(r.content) == 20_000
     assert calls[1]["start_offset"] == pytest.approx(179.5)
     assert "reopened the stream" not in caplog.text
+
+
+def test_a_seek_on_the_speaker_keeps_reading_the_same_file(client, default_session):
+    """How an Era 100 seeks: a GET from the start, then the range it wants.
+    Taken for the track opened anew, the GET moved the file to where the
+    clock was, and the range then played two and a half minutes off."""
+    _file_mode(client, default_session)
+    # Long enough that the GET from the start, which the speaker drops at
+    # once, does not reach the end here either.
+    default_session.state.current_track = Track(
+        id="1", title="Song", artist="Artist", duration=600, cover_art_id=""
+    )
+    calls: list = []
+    with patch("routes.stream.stream_tracks", side_effect=_encoder_writing(20_000, calls)):
+        client.get("/stream", headers={"User-Agent": _SONOS, "Range": "bytes=0-19999"})
+        # Two minutes of playing before the seek, as on the Era 100.
+        default_session.state.clock.play_start_time -= 120.0
+        client.get("/stream", headers={"User-Agent": _SONOS})
+        r = client.get("/stream", headers={"User-Agent": _SONOS, "Range": "bytes=40000-"})
+
+    assert r.headers["content-range"].endswith(f"/{transcoded_byte_length(320, 421.0)}")
+    assert [c["start_offset"] for c in calls] == pytest.approx([179.0, 179.0, 180.0])
+    # The speaker's position stays in the file's timeline, not re-based to
+    # where a range began.
+    assert default_session.state.clock.track_start_position == pytest.approx(179.0)
+
+
+def _sonos_at(address: str) -> Request:
+    return Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "headers": [(b"user-agent", _SONOS.encode())],
+            "client": (address, 1400),
+        }
+    )
+
+
+async def test_a_speaker_taking_over_gets_a_file_from_where_playback_is(client, default_session):
+    _file_mode(client, default_session)
+    st = default_session.state
+    st.current_track = Track(id="1", title="Song", artist="Artist", duration=600, cover_art_id="")
+    calls: list = []
+    with patch("routes.stream.stream_tracks", side_effect=_encoder_writing(10_000, calls)):
+        first = await audio_stream(_sonos_at("10.0.0.5"), session_id=default_session.session_id)
+        [_ async for _ in first.body_iterator]
+        # Five minutes in by the clock when the other speaker asks.
+        st.clock.play_start_time = time.time() - 300.0
+        second = await audio_stream(_sonos_at("10.0.0.9"), session_id=default_session.session_id)
+        [_ async for _ in second.body_iterator]
+
+    assert calls[0]["start_offset"] == pytest.approx(179.0)
+    assert calls[1]["start_offset"] == pytest.approx(300.0, abs=0.5)
+    # The rest of the song from there, give or take the clock's microseconds.
+    assert int(second.headers["content-length"]) == pytest.approx(
+        transcoded_byte_length(320, 300.0), abs=400
+    )
+
+
+@pytest.mark.parametrize("mode", ["file", "whole"])
+async def test_a_speaker_dropping_its_file_is_no_interruption(client, default_session, mode):
+    """An Era 100 dropped its file 6s into a pause and, on play, fetched the
+    rest by range. Taken for an interruption, that range would have been
+    refused. A stream without a length is still watched for one."""
+    _file_mode(client, default_session)
+    set_stream_mode(mode)
+
+    async def _dropped_after_one_chunk(*args, **kwargs):
+        yield b"x" * 1000
+        raise asyncio.CancelledError()
+
+    with (
+        patch("routes.stream.stream_tracks", side_effect=_dropped_after_one_chunk),
+        patch("routes.stream._mark_disconnected_if_not_reconnected", new=AsyncMock()) as watch,
+    ):
+        resp = await audio_stream(_sonos_at("10.0.0.5"), session_id=default_session.session_id)
+        with pytest.raises(asyncio.CancelledError):
+            async for _ in resp.body_iterator:
+                pass
+
+    assert watch.called is (mode == "whole")
 
 
 def test_a_range_past_the_end_of_the_file_is_refused_not_restarted(client, default_session):
