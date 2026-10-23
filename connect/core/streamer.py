@@ -1296,6 +1296,16 @@ async def resolve_output_format(
     return _fallback(REASON_CODEC_UNKNOWN, info.duration)
 
 
+def _track_filter_args(gain: float, pad: bool) -> list[str]:
+    """The -af for one track: ReplayGain, and with `pad` silence past the
+    source's end for the -t that cuts a file to its declared length. One
+    -af, since a second would silently replace the first."""
+    filters = [f"volume={gain}"] if gain != 1.0 else []
+    if pad:
+        filters.append("apad")
+    return ["-af", ",".join(filters)] if filters else []
+
+
 async def stream_tracks(
     track_urls: list[str],
     on_track_start: Callable[[int], None] | None = None,
@@ -1370,13 +1380,12 @@ async def stream_tracks(
             # Insert -ss before -i for fast input-side seeking on the resumed track
             i_pos = cmd.index("-i")
             cmd = cmd[:i_pos] + ["-ss", f"{seek:.3f}"] + cmd[i_pos:]
-        filters = [f"volume={gain}"] if gain != 1.0 else []
-        if i == 0 and pad_to is not None:
-            filters.append("apad")
+        pad = i == 0 and pad_to is not None
+        if pad:
             cmd = cmd[:-1] + ["-t", f"{pad_to:.3f}"] + cmd[-1:]
-        if filters:
+        if filter_args := _track_filter_args(gain, pad):
             i_pos = cmd.index("-vn")
-            cmd = cmd[:i_pos] + ["-af", ",".join(filters)] + cmd[i_pos:]
+            cmd = cmd[:i_pos] + filter_args + cmd[i_pos:]
         logger.debug(f"[ffmpeg] Track {i + 1}/{len(track_urls)} ({fmt.label}): {url[:80]}")
         logger.debug(f"[ffmpeg] Command: {' '.join(cmd)}")
 

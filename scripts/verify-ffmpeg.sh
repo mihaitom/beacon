@@ -127,6 +127,10 @@ smoke "encode aac"   -i "$t" -vn -acodec aac        -b:a 192k -ar 44100 -f adts 
 smoke "encode opus"  -i "$t" -vn -acodec libopus    -b:a 128k -ar 48000 -vbr constrained -f ogg "$work/out"
 smoke "encode flac"  -ss 0.2 -i "$t" -vn -acodec flac -frame_size 4096 -f flac   "$work/out"
 
+# An older Sonos's file (stream_tracks()'s pad_to): silence past the tone's
+# one second, cut at the length the file was announced with.
+smoke "pad to length" -ss 0.2 -i "$t" -af volume=0.7,apad -vn -acodec libmp3lame -b:a 320k -ar 44100 -f mp3 -t 2.500 "$work/out"
+
 # The same encoders as HLS segments (core/hls.py's container_args()):
 # fragmented MP4 for WebKit, and mp3 frames with no header of their own.
 smoke "hls aac"  -i "$t" -vn -acodec aac -b:a 192k -ar 44100 -f mp4 -movflags +empty_moov+default_base_moof+skip_trailer -frag_duration 6013968 "$work/out"
