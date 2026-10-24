@@ -8,42 +8,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
-- With Navidrome, Beacon saves the queue on the server, so another app or Beacon on another device can carry on with it, paused at the same song and position. It never saves over a queue another app or device has saved since, so two devices on one account can play different things side by side: that queue is offered once instead, never in the middle of listening, and the queue's toolbar has buttons to load it or to save your own over it
+- Songs and albums can be rated with stars from their right-click menu everywhere, the playing song in the player bar too. The album and artist lists show the stars, set them directly and sort by them (requested by @mjj042, #55)
+- With Navidrome, Beacon keeps the queue on the server, so another app or Beacon on another device can carry on with it at the same song and position. A queue another app or device saved there since is offered once instead of overwritten, so two devices on one account can play different things side by side, and the queue's toolbar loads it or saves your own over it
 - AirPlay speakers have a volume control while Beacon casts to them, like Sonos, Chromecast and DLNA
-- Songs and albums can be rated with stars from their right-click menu everywhere, in lists, on tiles and in the queue. The song in the player bar has that menu too, behind a right-click or the ⋮ next to the heart. The album and artist lists show the stars in their list view, where they can be set directly, and both can be sorted by rating (requested by @mjj042, #55)
-- Casting to a Sonos that has repeat on in the Sonos app says so and can switch it off: it made every song start over for a moment at its end, and repeat in Beacon works without it
-- A Chromecast shows how long the song is, so Google Home and a TV show a progress bar for it
-- With the log level at Debug, Now Playing shows how a cast stream reaches its speaker, on every kind of speaker: what was sent, whether the speaker is still reading, how much it has buffered, what it asked for and the state or error it last reported (#56)
-- The help has a networking guide: which connections casting needs and on which ports, Docker, a server in more than one network, speakers in another VLAN and Wi-Fi settings that get in the way, with a checklist for a speaker that stops or starts a song over
+- Casting to a Sonos with repeat switched on in the Sonos app says so and can switch it off, since it made every song start over for a moment at its end
+- A Chromecast knows how long the song is, so Google Home and a TV show a progress bar for it
+- The help has a networking guide: which connections casting needs, Docker, a server in more than one network, speakers in another VLAN and Wi-Fi settings that get in the way, with a checklist for a speaker that stops or starts a song over
+- With the log level at Debug, Now Playing shows how the cast stream reaches each speaker: what was sent, whether the speaker is still reading, how much it has buffered and the last error it reported (#56)
 
 ### Changed
 
-- Home is tidier: recently played albums are two rows of small tiles, the most played songs a chart in two columns (three, with five more songs, on a wide window) instead of a table, and the Frequently played shelf, which mostly repeated Recently played, is gone
-- Coming back to Home shows what was there straight away while it refreshes, and Discover keeps its picks until you shuffle them. The most played songs are counted across your whole library, so a favourite on an otherwise rarely played album makes it in too
-- The search row above the library pages is calmer: the search field matches the controls beside it, and exact spelling is an "Aa" button inside the field instead of a switch next to it. The search in the top bar has the same button, so the switch on the results page is gone
-- A DJ mix out of a song that fades out now happens before the fade instead of over its quiet end, so the previous song no longer drifts away before the next one has taken over
-- Without an artist background, Now Playing takes its colour from the cover, so the visualizer and the app's accent follow the album instead of staying in the theme's colour
-- The help has a search across all its pages and a table of contents beside the page, with each FAQ question one click away, and goes back to where a link was followed from. The help is sorted into frequently asked questions, guides and background, with casting questions on a page of their own and a new page on reporting a problem. "What Beacon can do" is the first entry of its FAQ now, instead of a dialog and button of its own in Settings
-- In Now Playing, clicking the artwork switches between large and small: the small cover in the corner shows it large again, and over an artist background the large one makes it small
-- While a search runs, the results page shows Beacon's loading animation with a "Searching" label in the middle of the page, instead of a small spinner under the previous results
+- Home is tidier and quicker: recently played albums are two rows of small tiles, the most played songs a chart counted across your whole library, and the Frequently played shelf is gone. Coming back shows the page straight away while it refreshes, and Discover keeps its picks until you shuffle them
+- A DJ mix out of a song that fades out happens before the fade, so the previous song no longer drifts away before the next one has taken over
+- Without an artist background, Now Playing takes its colour from the cover, and clicking the artwork switches between large and small
+- The help has a search across all its pages, a table of contents beside the page and a back button, and is sorted into frequently asked questions, guides and background. "What Beacon can do" is the first entry of the FAQ instead of a dialog and button of its own in Settings
+- The search is calmer: one row of controls, exact spelling as an "Aa" button inside every search field, and Beacon's loading animation in the middle of the page while results come in
 - The bundled ffmpeg, Electron and the backend's libraries are updated with their latest security fixes, among them one for Ogg radio streams
 
 ### Fixed
 
-- The backend's logs no longer contain the media server login: usernames, passwords, tokens and API keys in addresses are masked, so a log can be shared without giving away access to the server
-- Casting works from a computer or server connected to more than one network: each speaker now gets Beacon's address in its own network, where songs used to break off or jump back to their start after about half a minute, on an older Sonos such as the Play:3 too (reported by @mjj042, #56)
-- Casting moves on to the next song when a song's audio is shorter than its listed length, as with some VBR MP3s, instead of stopping until pause and play are pressed (reported by @mjj042, #56)
-- A Sonos or DLNA speaker with a space in its name keeps Beacon up to date like any other, so its volume follows a change made on the speaker itself or in the Sonos app (reported by @mjj042, #56)
-- Lyrics are found automatically for more songs that showed "no lyrics" although the list of matches had the right one, especially songs with a featured artist
+- Casting works from a computer or server connected to more than one network: each speaker gets Beacon's address in its own network, where songs used to break off or start over after about half a minute (reported by @mjj042, #56)
+- Casting moves on to the next song when a song's audio is shorter than its listed length, as with some VBR MP3s, instead of stopping until pause and play are pressed (#56)
+- The backend's logs no longer contain the media server login, so a log can be shared without giving away access to the server
+- Signing in says why it failed: a busy or unreachable server, a login page in front of it or a certificate problem no longer reads as a wrong password
 - Resuming a paused DLNA renderer could leave it paused while Beacon showed it playing
-- A favorite or star rating set in one place shows everywhere else straight away, for example in the album and artist lists after setting it on the album's own page, instead of only after up to an hour
-- After signing in or a library rescan, the song library is kept for the next start instead of being loaded in full again every time
-- The waveform no longer shifts a little every second on songs of ten minutes or more, and the times beside it sit evenly against it, songs of 100 minutes and more included
-- On a phone held sideways, Now Playing over an artist photo no longer leaves a wide gap between the small cover and the song's title
-- A deleted playlist is gone from the playlist overview straight away, instead of showing up there for another half minute and failing to open
-- Signing in says why it failed: a server that is busy, unreachable, behind a login page or has a certificate problem no longer reads as a wrong password
-- On a light theme, the "Albums" heading on an artist's page is readable again instead of sitting on the edge of the dark header
-- The right-click menu of an artist or album without artwork no longer ends in an empty "Details" heading
+- A Sonos or DLNA speaker with a space in its name keeps Beacon up to date, so its volume follows a change made on the speaker or in the Sonos app (#56)
+- Lyrics are found automatically for more songs, especially ones with a featured artist, where the list of matches already had the right one
+- A favorite or star rating set in one place shows everywhere else straight away instead of after up to an hour
+- The song library is kept for the next start after signing in or a rescan, instead of being loaded in full every time, and a new, renamed or deleted playlist shows in the overview straight away
+- Smaller display fixes: the waveform no longer shifts every second on long songs, a phone held sideways no longer leaves a gap beside the small cover in Now Playing, the "Albums" heading on an artist page is readable on a light theme, and artists and albums without artwork no longer show an empty "Details" heading in their menu
 
 ## [1.9.0] - 2026-10-18
 
