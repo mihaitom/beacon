@@ -337,10 +337,10 @@ def _isolate_older_sonos_setting(tmp_path, monkeypatch):
     """core/older_sonos.py keeps Settings' choice for the older Sonos models
     in a file under CONNECT_DATA_DIR, and every /stream asks it - the
     developer's own choice must not decide how a test streams. The UPnP
-    reports core/stream_diagnostics.py reads are kept process-wide too."""
+    The device reports core/stream_diagnostics.py reads are kept process-wide too."""
     monkeypatch.setattr("core.older_sonos._PATH", str(tmp_path / "older_sonos_mode.txt"))
     monkeypatch.setattr("core.older_sonos._mode", None)
-    monkeypatch.setattr("core.upnp_events._last_reported", {})
+    monkeypatch.setattr("core.device_reports._last_reported", {})
 
 
 @pytest.fixture(autouse=True)

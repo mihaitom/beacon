@@ -3,14 +3,17 @@ Now Playing's overlay shows about a cast stream while the log level is
 DEBUG (#56): what was sent, where the device is, how far ahead of it the
 sent audio runs, and what the device asked for."""
 
+import asyncio
 import time
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from core import upnp_events
 from core.state import StreamConnection
 from core.stream_diagnostics import describe_stream
-from delivery import SonosDelivery
+from delivery import ChromecastDelivery, DlnaDelivery, SonosDelivery
+from delivery.chromecast import _MediaReportListener
 from media import Track
 
 # A LastChange shaped like a Sonos's (see test_upnp_events.py).
@@ -79,6 +82,81 @@ def test_no_buffer_is_claimed_for_a_device_that_stopped(default_session):
     assert described["ahead"] is None
     assert described["targets"][0]["state"] == "STOPPED"
     assert described["targets"][0]["problem"] == "ERROR_BUFFERING"
+
+
+def _dlna_reporting(**state_variables):
+    """A renderer whose last poll left these AVTransport variables."""
+    service = MagicMock()
+    service.has_state_variable.side_effect = lambda name: name in state_variables
+    service.state_variable.side_effect = lambda name: MagicMock(value=state_variables[name])
+    device = MagicMock()
+    device.async_update = AsyncMock()
+    device.media_position = 30
+    device.profile_device.service_id.return_value = service
+    return device
+
+
+def test_a_dlna_renderer_reports_its_state_on_the_poll_it_already_gets(default_session):
+    """No eventing of its own, unlike a Sonos: the position poll's
+    GetTransportInfo is what says it stopped, and why."""
+    st = _playing(default_session)
+    st.active_delivery = DlnaDelivery("Receiver")
+    device = _dlna_reporting(TransportState="STOPPED", TransportStatus="ERROR_OCCURRED")
+    with patch.object(DlnaDelivery, "_get_device", new=AsyncMock(return_value=device)):
+        asyncio.run(st.active_delivery.get_position())
+
+    target = describe_stream(default_session)["targets"][0]
+
+    assert target["state"] == "STOPPED"
+    assert target["problem"] == "ERROR_OCCURRED"
+
+
+def test_a_healthy_dlna_renderer_reports_no_problem(default_session):
+    st = _playing(default_session)
+    st.active_delivery = DlnaDelivery("Receiver")
+    device = _dlna_reporting(TransportState="PLAYING", TransportStatus="OK")
+    with patch.object(DlnaDelivery, "_get_device", new=AsyncMock(return_value=device)):
+        asyncio.run(st.active_delivery.get_position())
+
+    target = describe_stream(default_session)["targets"][0]
+
+    assert target["state"] == "PLAYING"
+    assert target["problem"] is None
+
+
+def test_a_chromecast_reports_its_player_state_and_a_playback_error(default_session):
+    st = _playing(default_session)
+    st.active_delivery = ChromecastDelivery("Kitchen")
+    listener = _MediaReportListener("Kitchen")
+
+    listener.new_media_status(MagicMock(player_state="PLAYING", idle_reason=None))
+    assert describe_stream(default_session)["targets"][0]["state"] == "PLAYING"
+
+    listener.new_media_status(MagicMock(player_state="IDLE", idle_reason="ERROR"))
+    target = describe_stream(default_session)["targets"][0]
+    assert target["state"] == "IDLE (ERROR)"
+    assert target["problem"] is not None
+
+
+def test_a_chromecast_finishing_a_track_is_not_a_problem(default_session):
+    """FINISHED and INTERRUPTED are what every track change leaves behind."""
+    st = _playing(default_session)
+    st.active_delivery = ChromecastDelivery("Kitchen")
+    listener = _MediaReportListener("Kitchen")
+
+    listener.new_media_status(MagicMock(player_state="IDLE", idle_reason="INTERRUPTED"))
+    listener.new_media_status(MagicMock(player_state="IDLE", idle_reason="FINISHED"))
+
+    assert describe_stream(default_session)["targets"][0]["problem"] is None
+
+
+def test_a_chromecast_refusing_to_load_is_a_problem(default_session):
+    st = _playing(default_session)
+    st.active_delivery = ChromecastDelivery("Kitchen")
+
+    _MediaReportListener("Kitchen").load_media_failed(1, 104)
+
+    assert "104" in describe_stream(default_session)["targets"][0]["problem"]
 
 
 def test_a_reading_from_an_earlier_stream_is_not_shown(default_session):

@@ -110,6 +110,17 @@ describe('CastStreamDebugOverlay', () => {
     expect(wrapper.find('.stream-debug-overlay__line--bad').text()).toContain('STALLED')
   })
 
+  it('names a speaker without a Sonos model by its kind, and leaves out a state it never reported', async () => {
+    const info = diagnostics({ model: null, mode: null })
+    info.targets = info.targets.map((t) => ({ ...t, type: 'airplay', name: 'Den', state: null }))
+    vi.mocked(getStreamDiagnostics).mockResolvedValue(info)
+    casting(true)
+    const wrapper = await mountOverlay()
+
+    expect(wrapper.text()).toContain('airplay')
+    expect(wrapper.text()).not.toContain('· ?')
+  })
+
   it('does not flag a connection that has sent everything', async () => {
     vi.mocked(getStreamDiagnostics).mockResolvedValue(
       diagnostics({ open: false, outcome: 'source finished', last_read: 300 }),

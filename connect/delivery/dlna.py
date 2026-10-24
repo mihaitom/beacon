@@ -14,7 +14,9 @@ from urllib.parse import urlsplit
 
 from didl_lite.didl_lite import MusicTrack, Resource, to_xml_string
 
+from core.device_reports import note_problem, note_state
 from core.local_address import for_device
+from core.upnp_events import problem_in
 
 from .base import BaseDelivery
 from .errors import DeviceNotFoundError, MediaRejectedError
@@ -365,7 +367,26 @@ class DlnaDelivery(BaseDelivery):
         TimeoutError past it — every caller already treats that as no answer."""
         device = await self._get_device_or_evict()
         await asyncio.wait_for(device.async_update(do_ping=False), _POLL_TIMEOUT)
+        self._note_transport(device)
         return device
+
+    def _note_transport(self, device) -> None:
+        """What the renderer said about its transport on that poll, for the
+        stream diagnostics - what a Sonos says on its own over eventing."""
+        service = device.profile_device.service_id(_AV_TRANSPORT_ID)
+        if service is None:
+            return
+        reported = {}
+        for name in ("TransportState", "TransportStatus"):
+            if service.has_state_variable(name):
+                value = service.state_variable(name).value
+                if isinstance(value, str) and value:
+                    reported[name] = value
+        if "TransportState" in reported:
+            note_state(self.target, reported["TransportState"])
+        problem = problem_in(reported)
+        if problem:
+            note_problem(self.target, problem)
 
     async def get_position(self) -> float | None:
         device = await self._poll_device()

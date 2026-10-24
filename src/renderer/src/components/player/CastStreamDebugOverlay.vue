@@ -31,8 +31,8 @@
     <dl v-if="showLegend" class="stream-debug-overlay__legend">
       <dt>Stream</dt>
       <dd>
-        The speaker, its Sonos model number and, for an older one, how it gets a song (Settings →
-        Advanced).
+        The speaker and what kind it is — for a Sonos its model number and, for an older one, how it
+        gets a song (Settings → Advanced).
       </dd>
       <dt>Sent</dt>
       <dd>
@@ -42,10 +42,14 @@
       <dt>Read</dt>
       <dd>
         How fast it is taking more, and when it last did. Red: the connection is open but it has
-        stopped reading — the speaker will play out what it has and stop there.
+        stopped reading — the speaker will play out what it has and stop there. An AirPlay speaker
+        is sent the song by connect itself, so here this is connect's own sender.
       </dd>
       <dt>Device</dt>
-      <dd>Where the speaker last said it was, and its last reported state.</dd>
+      <dd>
+        Where the speaker last said it was, and its last reported state. AirPlay reports neither:
+        its position is what has gone out, less the fixed delay AirPlay plays behind by.
+      </dd>
       <dt>Ahead</dt>
       <dd>Seconds of song it has beyond that: its buffer. Red under 5s.</dd>
       <dt>Asked</dt>
@@ -118,9 +122,9 @@ export default {
       const target = info.targets[0]
       const conn = this.connection
       const name = target ? target.name : 'nothing'
-      const model = conn?.model ? ` · ${conn.model}` : ''
+      const kind = conn?.model ?? target?.type
       const mode = conn?.mode ? ` · ${conn.mode}` : ''
-      lines.push({ label: 'Stream', value: `${name}${model}${mode}` })
+      lines.push({ label: 'Stream', value: `${name}${kind ? ` · ${kind}` : ''}${mode}` })
       if (conn) {
         const reach = conn.audio_end !== null ? ` · to ${seconds(conn.audio_end)}` : ''
         const range = conn.range ? ` · bytes ${conn.range}` : ''
@@ -138,13 +142,13 @@ export default {
           tone: stalled ? 'bad' : undefined,
         })
       }
-      const state = target?.state ?? '?'
-      lines.push({
-        label: 'Device',
-        value: info.device
-          ? `${seconds(info.device.position)} (${info.device.age.toFixed(0)}s ago) · ${state}`
-          : `— · ${state}`,
-      })
+      const position = info.device
+        ? `${seconds(info.device.position)} (${info.device.age.toFixed(0)}s ago)`
+        : '—'
+      // An AirPlay speaker reports no state of its own, so there is none
+      // to show rather than an unknown one.
+      const state = target?.state ? ` · ${target.state}` : ''
+      lines.push({ label: 'Device', value: `${position}${state}` })
       if (info.ahead !== null) {
         lines.push({
           label: 'Ahead',

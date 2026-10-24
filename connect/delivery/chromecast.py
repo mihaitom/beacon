@@ -6,6 +6,7 @@ import threading
 import time
 from collections.abc import Callable
 
+from core.device_reports import note_problem, note_state
 from core.local_address import for_device
 
 from .base import BaseDelivery
@@ -175,6 +176,43 @@ def _register_volume_listener(cast, target: str) -> None:
         logger.debug(f"[Chromecast:{target}] volume eventing unavailable: {e}")
 
 
+class _MediaReportListener:
+    """Keeps the device's own player state for the stream diagnostics
+    (core/device_reports.py) - what a Sonos says over AVTransport eventing.
+    On pychromecast's connection thread, like _VolumeListener."""
+
+    def __init__(self, target: str) -> None:
+        self.target = target
+
+    def new_media_status(self, status) -> None:
+        state = getattr(status, "player_state", None)
+        if not state:
+            return
+        idle_reason = getattr(status, "idle_reason", None)
+        note_state(self.target, f"{state} ({idle_reason})" if idle_reason else state)
+        # Only ERROR: INTERRUPTED and FINISHED are what every track change
+        # and every stop leave behind.
+        if idle_reason == "ERROR":
+            note_problem(self.target, "idle after a playback error")
+
+    def load_media_failed(self, queue_item_id: int, error_code: int) -> None:
+        note_problem(self.target, f"load failed (error {error_code})")
+
+
+def _register_media_report_listener(cast, target: str) -> None:
+    """Attach a _MediaReportListener once per connection, the way
+    _register_volume_listener() does. Diagnostic only, so a device that
+    won't take it changes nothing."""
+    if getattr(cast, "_beacon_media_listener", None) is not None:
+        return
+    try:
+        listener = _MediaReportListener(target)
+        cast.media_controller.register_status_listener(listener)
+        cast._beacon_media_listener = listener
+    except Exception as e:
+        logger.debug(f"[Chromecast:{target}] media status reports unavailable: {e}")
+
+
 def _get_cached_chromecast(target: str):
     """Return a connected, cached Chromecast or None if not cached / stale."""
     cast = _chromecast_cache.get(target.lower())
@@ -257,6 +295,7 @@ class ChromecastDelivery(BaseDelivery):
                     raise
                 _chromecast_cache[target_lower] = cast
                 _register_volume_listener(cast, self.target)
+                _register_media_report_listener(cast, self.target)
                 return cast
 
         available = [info.friendly_name for info in browser.devices.values()]

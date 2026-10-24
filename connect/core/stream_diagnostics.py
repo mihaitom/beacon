@@ -12,10 +12,10 @@ this is the only place it can be seen while it happens.
 
 import time
 
+from .device_reports import last_reported
 from .older_sonos import stream_mode
 from .session import SessionState, compute_position, playback_duration
 from .state import list_target_pairs
-from .upnp_events import last_reported
 
 
 def describe_stream(session: SessionState) -> dict:
