@@ -9,13 +9,6 @@
           </v-btn>
           <v-btn
             variant="tonal"
-            prepend-icon="mdi-format-list-checks"
-            @click="$emitter.emit('openFeatures')"
-          >
-            {{ $t('features.title') }}
-          </v-btn>
-          <v-btn
-            variant="tonal"
             prepend-icon="mdi-help-circle-outline"
             @click="$emitter.emit('openHelp', 'faq')"
           >

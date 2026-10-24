@@ -126,8 +126,8 @@ export function isFaqPage(page: HelpPage): boolean {
   return page.id.startsWith('faq/')
 }
 
-/** What someone already running Beacon gets out of the README, for the
- * "What Beacon can do" dialog. */
+/** What someone already running Beacon gets out of the README, heading the
+ * help dialog's FAQ as "What Beacon can do". */
 export const FEATURES_PAGE = findHelpPage('features')
 
 /** What a link in the file at `fromPath` (relative to the repository root)

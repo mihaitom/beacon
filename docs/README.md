@@ -6,7 +6,7 @@ the rest for people working on it.
 Everything in `help/` is also the app's help, one file per page
 (`services/help/docs.ts` picks the folder up as it is): the FAQ in `faq/`, one
 file per topic, the guides beside it, and `features.md`, which the app shows
-in a dialog of its own ("What Beacon can do"). A file's `# ` heading is its
+as the first entry of the FAQ ("What Beacon can do"). A file's `# ` heading is its
 title in the app, and `order:` in its front matter its place in the list.
 Links between them are followed inside the app, so a renamed heading needs
 the links to it updated too - the frontend suite checks every one. Headings
@@ -19,6 +19,7 @@ the theories that were ruled out, `investigations/`.
 | What                                                           | Open it when                                                                                                                                                                                                                                                                         |
 | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | [help/faq/](help/faq/)                                         | Wondering why Beacon behaves a particular way, what leaves the deployment, or what to check when a speaker does not turn up. One file per topic; `README.md` links here question by question.                                                                                        |
+| [help/networking.md](help/networking.md)                       | Speakers are not found, or stop or start a song over: which connections casting needs, ports, Docker, several networks, VLANs, Wi-Fi.                                                                                                                                                |
 | [help/features.md](help/features.md)                           | What Beacon can do, in full. The root `README.md` keeps a short version and links here.                                                                                                                                                                                              |
 | [help/party-mode.md](help/party-mode.md)                       | Running a party: what guests can and cannot do, the security model, and reverse proxy setups for letting guests in from outside.                                                                                                                                                     |
 | [help/home-automation.md](help/home-automation.md)             | Connecting Home Assistant or another tool to the desktop app: the key, the fixed port, the mDNS announcement, and every state field and command an integration can rely on. The ready-made Home Assistant integration and its guide are in `home-assistant/` at the repository root. |

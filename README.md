@@ -55,7 +55,7 @@ Beacon is `connect` as the actual foundation instead of an add-on - a frontend b
 
 **Casting is the point.** Beacon grew around a backend that talks to real speakers on its own, and the rest of the app is built on top of that. Everything you would expect is here too - a full library (albums, artists, tracks, genres, playlists, favorites, with local filtering and search), a home page built from your own listening, top tracks, artists, albums and formats on a Stats page, multiselect and bulk queue/playlist actions, starring and rating, synced or unsynced lyrics, light and dark themes or one of your own, and a UI in German, English, Spanish, French and Italian.
 
-What makes Beacon worth running, from casting to several speakers at once to party mode and the Jellyfin and Plex details, is in [docs/help/features.md](docs/help/features.md). The app shows the same page under "What Beacon can do".
+What makes Beacon worth running, from casting to several speakers at once to party mode and the Jellyfin and Plex details, is in [docs/help/features.md](docs/help/features.md). The app's help shows the same page under "What Beacon can do".
 
 ### Keyboard shortcuts
 
@@ -126,7 +126,7 @@ That's it - Beacon asks for your server URL, username, and password on first lau
 ### Requirements
 
 - Navidrome, a Subsonic/OpenSubsonic-compatible server, or Jellyfin/Plex (see above for what differs)
-- Sonos, AirPlay, Chromecast, and/or DLNA/UPnP devices on the same network as the Docker host, if you want to cast
+- Sonos, AirPlay, Chromecast, and/or DLNA/UPnP devices on the same network as the Docker host, if you want to cast (other subnets and VLANs work too, see [docs/help/networking.md](docs/help/networking.md))
 - Docker host on Linux (host networking is Linux-only)
 
 ---

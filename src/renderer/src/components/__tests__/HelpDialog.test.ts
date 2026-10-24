@@ -127,6 +127,18 @@ describe('HelpDialog', () => {
     expect(document.querySelector('[aria-label="Back"]')).toBeNull()
   })
 
+  /** The only way into the README's feature list in the app. */
+  it("opens what Beacon can do from the contents, with the README's list", async () => {
+    const wrapper = await openOn('faq')
+    const entry = [
+      ...document.querySelectorAll<HTMLElement>('.help-dialog__toc .v-list-item'),
+    ].find((item) => item.textContent?.trim() === i18n.global.t('features.title'))!
+    entry.click()
+    await flushPromises()
+    expect((wrapper.vm as unknown as { pageId: string }).pageId).toBe('features')
+    expect(content().querySelectorAll('li').length).toBeGreaterThan(0)
+  })
+
   it('starts afresh each time it is opened', async () => {
     const wrapper = await openOn('faq')
     const vm = wrapper.vm as unknown as {

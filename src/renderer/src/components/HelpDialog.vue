@@ -91,7 +91,7 @@
               <template v-for="page in group.pages" :key="page.id">
                 <v-list-item
                   :active="page.id === pageId"
-                  :title="page.title"
+                  :title="pageTitle(page)"
                   color="primary"
                   @click="go(page.id)"
                 />
@@ -138,6 +138,7 @@
 import { emitter } from '@/emitter'
 import packageJson from '../../../../package.json'
 import {
+  FEATURES_PAGE,
   HELP_PAGES,
   findHelpPage,
   isFaqPage,
@@ -181,6 +182,12 @@ interface Visit {
   scrollTop: number
 }
 
+/** What Beacon can do heads the FAQ: it answers the first question anyone
+ * has. */
+function inFaq(page: HelpPage): boolean {
+  return page === FEATURES_PAGE || isFaqPage(page)
+}
+
 /** The bundled docs (services/help/docs.ts), each opened from where its
  * question comes up and browsable from there: a search over all of them,
  * and the contents of the FAQ and the guides beside the page. */
@@ -208,8 +215,8 @@ export default {
     },
     groups(): { title: string; pages: HelpPage[] }[] {
       return [
-        { title: this.$t('help.faq'), pages: HELP_PAGES.filter(isFaqPage) },
-        { title: this.$t('help.guides'), pages: HELP_PAGES.filter((page) => !isFaqPage(page)) },
+        { title: this.$t('help.faq'), pages: [FEATURES_PAGE, ...HELP_PAGES.filter(isFaqPage)] },
+        { title: this.$t('help.guides'), pages: HELP_PAGES.filter((page) => !inFaq(page)) },
       ]
     },
     contents(): HelpSection[] {
@@ -293,7 +300,12 @@ export default {
      * can read like the guide of the same name. */
     pageLabel(id: string): string {
       const page = findHelpPage(id)
-      return isFaqPage(page) ? `${this.$t('help.faq')} · ${page.title}` : page.title
+      return inFaq(page) ? `${this.$t('help.faq')} · ${this.pageTitle(page)}` : page.title
+    },
+    /** The README's heading ("Features") reads like a section of it, not
+     * like the page it is here - so this one has a title of its own. */
+    pageTitle(page: HelpPage): string {
+      return page === FEATURES_PAGE ? this.$t('features.title') : page.title
     },
     onKeydown(event: KeyboardEvent) {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
