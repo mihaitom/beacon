@@ -1,4 +1,11 @@
-# Beatmix on pop, classic rock and hip hop - OPEN
+# Beatmix on pop, classic rock and hip hop - FIXED
+
+**Status: FIXED, shipped in 1.9.0 (2026-10-18).** Both complaints are
+answered: the old song gone within two bars of the bass swap, at most 6 %
+stretch with Rubber Band instead of WSOLA, and the overlap ending where the
+next song's singing starts. Songs that fade out mix before the fade
+(2026-10-20, next release). What is left under [Next](#next) are ideas, not
+open faults.
 
 Started 2026-10-17, from [the plan](../../plans/beatmix-pop-rock.md). The
 beatmix sounds right on electronic music and "so-so" on pop, classic rock
@@ -365,6 +372,9 @@ softly to count and mixes as before.
 Not heard yet; a blind A/B round on a few of the twelve would confirm it.
 
 ## Next
+
+Ideas for later, none of them a fault.
+
 
 Decided against for now: **both songs meeting halfway** (the listener's
 idea - stretching only the outgoing song was for hiding WSOLA's grain on

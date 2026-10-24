@@ -1,7 +1,7 @@
 # Plan: beatmix for pop and classic rock
 
-Status: step 1 built and step 2 begun (2026-10-17) - the probe and the
-first measurement are in
+Status: done, shipped in 1.9.0 (2026-10-18) - measurements, changes and
+listening rounds are in
 [investigations/transitions/beatmix-pop-rock-hip-hop.md](../investigations/transitions/beatmix-pop-rock-hip-hop.md).
 Hip hop is in scope too. Follows
 [gapless-and-transitions.md](gapless-and-transitions.md).

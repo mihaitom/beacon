@@ -102,7 +102,7 @@ connect's stream pipeline: pacing, reconnects, track ends, the event loop.
 
 Gapless, crossfade and DJ mixes.
 
-- **OPEN** [Beatmix on pop, classic rock and hip hop](transitions/beatmix-pop-rock-hip-hop.md) - 2026-10-17; the stumbling beat measured (classic rock 17 ms median flam against 6 ms on house), and it is beat-to-beat timing, not grid drift - a local grid is ruled out. The mush is not measured yet. Has the probe (`connect/scripts/beatmix_probe.py`) that renders a pair through the real engine with a click track
+- **FIXED** [Beatmix on pop, classic rock and hip hop](transitions/beatmix-pop-rock-hip-hop.md) (1.9.0, 2026-10-18) - doubled kicks and two voices on top of each other. The stumbling is beat-to-beat timing, not grid drift (a local grid is ruled out); fixed by fading the old song within two bars of the bass swap, at most 6 % stretch with Rubber Band, and ending the overlap where the next song's singing starts. Has the probe (`connect/scripts/beatmix_probe.py`) that renders a pair through the real engine with a click track, and the five blind listening rounds
 
 ## Media servers
 
