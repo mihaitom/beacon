@@ -29,7 +29,6 @@ connect/radio-favicons/
 connect/radio-history/
 connect/account_settings.json
 connect/log_level.txt
-connect/older_sonos_mode.txt
 connect/.venv
 connect/__pycache__
 connect/**/__pycache__
