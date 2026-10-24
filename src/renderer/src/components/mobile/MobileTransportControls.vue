@@ -79,9 +79,10 @@
         <radio-live-status />
       </div>
       <template v-else>
-        <span class="text-body-small text-medium-emphasis mobile-transport__time">{{
-          formatTime(seekPreviewPosition ?? playbackStore.localPosition)
-        }}</span>
+        <span
+          class="text-body-small text-medium-emphasis mobile-transport__time mobile-transport__time--start"
+          >{{ formatTime(seekPreviewPosition ?? playbackStore.localPosition) }}</span
+        >
         <song-waveform
           :model-value="seekPreviewPosition ?? playbackStore.localPosition"
           :duration="playbackStore.duration"
@@ -91,10 +92,9 @@
           @update:model-value="seekPreviewPosition = $event"
           @end="onSeekEnd"
         />
-        <span
-          class="text-body-small text-medium-emphasis mobile-transport__time mobile-transport__time--end"
-          >{{ formatTime(playbackStore.duration) }}</span
-        >
+        <span class="text-body-small text-medium-emphasis mobile-transport__time">{{
+          formatTime(playbackStore.duration)
+        }}</span>
       </template>
     </div>
 
@@ -452,13 +452,15 @@ export default {
   color: rgb(var(--v-theme-background));
 }
 
+/* 6ch of tabular digits holds "999:59" - see SeekBar.vue's .seek-bar__time. */
 .mobile-transport__time {
-  width: 36px;
-  flex-shrink: 0;
+  flex: 0 0 6ch;
+  font-variant-numeric: tabular-nums;
 }
 
-/* The duration on the right of the waveform reads toward it. */
-.mobile-transport__time--end {
+/* Both times sit against the waveform, so the gap beside it stays the
+ * same however short the time is. */
+.mobile-transport__time--start {
   text-align: right;
 }
 

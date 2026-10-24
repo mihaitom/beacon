@@ -1,5 +1,5 @@
 <template>
-  <div class="seek-bar" style="gap: 8px">
+  <div class="seek-bar">
     <!-- Radio has no position or length a bar could honestly represent
      - (see SongWaveform.vue's own comment on why it stopped trying) — the
      - live readout replaces the whole label/bar row instead of leaving a
@@ -10,7 +10,7 @@
       <radio-live-status />
     </div>
     <template v-else>
-      <span class="text-body-small text-medium-emphasis" style="width: 40px">{{
+      <span class="text-body-small text-medium-emphasis seek-bar__time seek-bar__time--start">{{
         formatTime(seekPreviewPosition ?? playbackStore.localPosition)
       }}</span>
       <song-waveform
@@ -22,7 +22,7 @@
         @update:model-value="seekPreviewPosition = $event"
         @end="onSeekEnd"
       />
-      <span class="text-body-small text-medium-emphasis" style="width: 40px">{{
+      <span class="text-body-small text-medium-emphasis seek-bar__time">{{
         formatTime(playbackStore.duration)
       }}</span>
     </template>
@@ -105,8 +105,25 @@ export default {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   min-width: var(--control-container-min-width, 220px);
   width: 100%;
+}
+
+/* Fixed, not just a width: as a shrinkable flex item a label gave way down
+ * to its own text width, which changes with every second's digits - and
+ * the waveform beside it took up the difference, redrawing its bars at a
+ * new spacing each tick. 6ch of tabular digits holds "999:59", the longest
+ * time formatTime() writes for anything short of a 1000-minute track. */
+.seek-bar__time {
+  flex: 0 0 6ch;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Both times sit against the waveform, so the gap beside it stays the
+ * same however short the time is. */
+.seek-bar__time--start {
+  text-align: right;
 }
 
 .seek-bar__live {

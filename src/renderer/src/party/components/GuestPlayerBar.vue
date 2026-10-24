@@ -38,7 +38,9 @@
           {{ $t('partyGuest.live') }}
         </span>
         <template v-else>
-          <span class="text-body-small text-medium-emphasis guest-player-bar__time">
+          <span
+            class="text-body-small text-medium-emphasis guest-player-bar__time guest-player-bar__time--start"
+          >
             {{ formatTime(store.position) }}
           </span>
           <!-- Shows where the party is in the song; guests cannot seek. -->
@@ -233,9 +235,16 @@ export default {
   min-height: 24px;
 }
 
+/* 6ch of tabular digits holds "999:59" - see SeekBar.vue's .seek-bar__time. */
 .guest-player-bar__time {
-  flex: 0 0 40px;
-  text-align: center;
+  flex: 0 0 6ch;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Both times sit against the waveform, so the gap beside it stays the
+ * same however short the time is. */
+.guest-player-bar__time--start {
+  text-align: right;
 }
 
 .guest-player-bar__live {
