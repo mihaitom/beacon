@@ -23,7 +23,7 @@ RUN pnpm install
 # Only what `pnpm run build:web` actually touches — an unrelated repo change
 # (e.g. in connect/) shouldn't bust this layer and trigger a needless rebuild.
 COPY src ./src
-COPY CHANGELOG.md web.vite.config.ts party.vite.config.ts tsconfig.json tsconfig.app.json tsconfig.node.json ./
+COPY CHANGELOG.md web.vite.config.ts party.vite.config.ts vite.vuetify-deps.ts tsconfig.json tsconfig.app.json tsconfig.node.json ./
 # The docs the in-app help bundles (src/renderer/src/services/help/docs.ts).
 COPY docs/help ./docs/help
 
