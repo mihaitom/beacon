@@ -204,7 +204,7 @@ export default {
     return {
       visible: false,
       navOpen: false,
-      pageId: pageFor('faq').id,
+      pageId: FEATURES_PAGE.id,
       query: '',
       activeAnchor: null as string | null,
       history: [] as Visit[],

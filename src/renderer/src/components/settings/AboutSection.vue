@@ -10,7 +10,7 @@
           <v-btn
             variant="tonal"
             prepend-icon="mdi-help-circle-outline"
-            @click="$emitter.emit('openHelp', 'faq')"
+            @click="$emitter.emit('openHelp', 'features')"
           >
             {{ $t('help.faq') }}
           </v-btn>

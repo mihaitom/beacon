@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
@@ -43,5 +43,27 @@ describe('AboutSection and the settings dot', () => {
     await wrapper.vm.$nextTick()
 
     expect(update.unseen).toBe(false)
+  })
+})
+
+describe('AboutSection and the help', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  it('opens the FAQ on what Beacon can do, its first entry', async () => {
+    const emit = vi.fn()
+    const wrapper = mount(AboutSection, {
+      global: {
+        plugins: [vuetify, i18n],
+        stubs: { PrivacyDialog: true },
+        mocks: { $emitter: { emit, on: vi.fn(), off: vi.fn() } },
+      },
+    })
+    const faq = wrapper
+      .findAll('button')
+      .find((button) => button.text() === i18n.global.t('help.faq'))!
+    await faq.trigger('click')
+    expect(emit).toHaveBeenCalledWith('openHelp', 'features')
   })
 })
