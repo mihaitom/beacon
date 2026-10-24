@@ -2,8 +2,8 @@
 // are tested where they live (components/settings/__tests__/); what this
 // page owns is the order and the gating — which section a toggle ends up
 // in, and which one disappears for an account that may not see it.
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
@@ -13,6 +13,24 @@ import { useAuthStore } from '@/stores/auth'
 import SettingsView from '../SettingsView.vue'
 
 const vuetify = createVuetify({ components, directives })
+
+/** A connect that never answers. The sections ask it for their state as
+ * they are created, and a real request fails a moment later with a
+ * console.error - under a loaded full run, after this file's environment
+ * is already torn down, which surfaces as an unhandled error beside the
+ * suite. Placement does not depend on any of those answers. Unmounting
+ * matters too: some sections are only created after a test has finished. */
+const neverAnswers = () => new Promise<never>(() => {})
+
+beforeAll(() => {
+  vi.stubGlobal('fetch', vi.fn(neverAnswers))
+})
+
+afterAll(() => {
+  vi.unstubAllGlobals()
+})
+
+enableAutoUnmount(afterEach)
 
 /** The recommendations toggle lives in the Library section, because its
  * seed artists come out of the library. That section also carries the
@@ -112,7 +130,9 @@ describe('SettingsView log level gating', () => {
     // The desktop build runs its own single-user backend — there is nobody
     // to keep these settings from, so the media account's own admin flag
     // must not hide them.
-    window.api = {} as typeof window.api
+    window.api = {
+      appConfig: { getConnectPort: vi.fn(neverAnswers) },
+    } as unknown as typeof window.api
     try {
       const wrapper = mountWith(false)
 
