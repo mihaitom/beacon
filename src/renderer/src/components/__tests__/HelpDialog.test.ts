@@ -82,4 +82,63 @@ describe('HelpDialog', () => {
     await flushPromises()
     expect(content().querySelector<HTMLElement>('#authelia-panel')!.hidden).toBe(false)
   })
+
+  it('finds a question by searching and opens it there', async () => {
+    const wrapper = await openOn('party-mode')
+    const input = document.querySelector<HTMLInputElement>('.help-dialog__search input')!
+    input.value = 'devices found'
+    input.dispatchEvent(new Event('input'))
+    await flushPromises()
+    const result = document.querySelector<HTMLButtonElement>('.help-dialog__result')!
+    expect(result.textContent).toContain('No devices found')
+    expect(result.querySelector('mark')).not.toBeNull()
+    result.click()
+    await flushPromises()
+    const vm = wrapper.vm as unknown as { pageId: string }
+    expect(vm.pageId).toBe('faq/troubleshooting')
+    expect(content().querySelector('#no-devices-found')!.classList).toContain('help-flash')
+  })
+
+  it('says so when a search finds nothing', async () => {
+    await openOn('faq')
+    const input = document.querySelector<HTMLInputElement>('.help-dialog__search input')!
+    input.value = 'xyzzyplugh'
+    input.dispatchEvent(new Event('input'))
+    await flushPromises()
+    expect(document.querySelector('.help-dialog__result')).toBeNull()
+    expect(document.querySelector('.help-dialog__empty')).not.toBeNull()
+  })
+
+  it("lists the open page's questions and goes back to where a link was followed", async () => {
+    const wrapper = await openOn('faq')
+    const vm = wrapper.vm as unknown as { pageId: string }
+    const first = vm.pageId
+    expect(document.querySelectorAll('.help-dialog__toc-entry').length).toBeGreaterThan(0)
+    expect(document.querySelector('[aria-label="Back"]')).toBeNull()
+    const guide = [
+      ...document.querySelectorAll<HTMLElement>('.help-dialog__toc .v-list-item'),
+    ].find((item) => item.textContent?.trim() === 'Party mode')!
+    guide.click()
+    await flushPromises()
+    expect(vm.pageId).toBe('party-mode')
+    document.querySelector<HTMLElement>('[aria-label="Back"]')!.click()
+    await flushPromises()
+    expect(vm.pageId).toBe(first)
+    expect(document.querySelector('[aria-label="Back"]')).toBeNull()
+  })
+
+  it('starts afresh each time it is opened', async () => {
+    const wrapper = await openOn('faq')
+    const vm = wrapper.vm as unknown as {
+      go(page: string): void
+      history: unknown[]
+      query: string
+    }
+    vm.go('party-mode')
+    vm.query = 'sonos'
+    emitter.emit('openHelp', 'transcoding-decisions')
+    await flushPromises()
+    expect(vm.history).toEqual([])
+    expect(vm.query).toBe('')
+  })
 })

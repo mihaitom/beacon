@@ -619,6 +619,7 @@ Width, by what the dialog is for:
 | 400-420     | a form or a confirmation - a rename, a delete, a pairing |
 | 560-720     | something to read - shortcuts, privacy, a track's fields |
 | 820-920     | a list or a long document - Discover, release notes      |
+| 1080        | the help, whose contents column sits beside the page     |
 
 Height is **one value, not a judgement call**: a dialog whose content can be
 arbitrarily long wears `.beacon-dialog`, which caps it at
@@ -686,15 +687,18 @@ quotes, in `base.css` rather than as `:deep()` rules in each dialog, since
 v-html content never gets a component's scope id. A dialog only adds what is
 its own, like the release notes' pill-shaped section headings.
 
-A `### ` section of a bundled doc whose `#### ` subsections are alternatives -
-one reverse proxy's setup out of five - can be shown as tabs, by naming it in
-`services/help/docs.ts`'s `TABBED_SECTIONS`. On GitHub it stays plain
-headings, so the doc reads the same there; the tabs' look is in `base.css`
-with the rest of `.beacon-markdown`.
+Headings between a `<!-- tabs -->` and a `<!-- /tabs -->` line in a bundled
+doc are shown as tabs, one per heading of the level the first one has: for
+alternatives of which a reader wants one, like one reverse proxy's setup out
+of five. GitHub hides the two markers, so the doc reads the same there; the
+tabs' look is in `base.css` with the rest of `.beacon-markdown`.
 
-A doc that wants a help entry somewhere in the app goes into
-`services/help/docs.ts` and is opened with `emitter.emit('openHelp', id)`
-from where its question comes up, not from a central help page.
+A doc that wants a help entry somewhere in the app goes into `docs/help/`
+and is opened with `emitter.emit('openHelp', id)` from where its question
+comes up. The help dialog itself is the exception to `.beacon-dialog`'s cap:
+it takes the same 70vh as a fixed height, since its contents column and the
+page scroll side by side and a card that changed height with each page would
+move the contents under the pointer.
 
 ## Editors that read as sentences
 

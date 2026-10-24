@@ -1117,12 +1117,16 @@ export default {
   },
   help: {
     title: 'Help',
-    topic: 'Topic',
     englishOnly: 'These pages are only available in English.',
     guides: 'Guides',
     faq: 'FAQ',
     conversion: 'What gets converted, and why',
     olderSonos: 'How the three ways differ',
+    search: 'Search help',
+    noResults: 'Nothing found. Try fewer or other words.',
+    back: 'Back',
+    contents: 'Contents',
+    openOnGitHub: 'Open on GitHub',
   },
   privacy: {
     title: 'Privacy',

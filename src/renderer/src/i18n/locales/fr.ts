@@ -1134,12 +1134,16 @@ export default {
   },
   help: {
     title: 'Aide',
-    topic: 'Sujet',
     englishOnly: 'Ces pages ne sont disponibles qu’en anglais.',
     guides: 'Guides',
     faq: 'FAQ',
     conversion: 'Ce qui est converti, et pourquoi',
     olderSonos: 'Ce qui distingue les trois options',
+    search: "Rechercher dans l'aide",
+    noResults: "Aucun résultat. Essayez avec moins de mots ou d'autres mots.",
+    back: 'Retour',
+    contents: 'Sommaire',
+    openOnGitHub: 'Ouvrir sur GitHub',
   },
   privacy: {
     title: 'Confidentialité',

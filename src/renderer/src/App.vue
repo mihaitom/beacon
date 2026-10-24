@@ -5,7 +5,7 @@
   <keyboard-shortcuts-dialog />
   <artwork-lightbox />
   <song-info-dialog />
-  <help-dialog />
+  <help-dialog :compact="isMobileWeb" />
   <features-dialog />
 </template>
 

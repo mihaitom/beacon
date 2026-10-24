@@ -793,6 +793,23 @@ body {
   padding-top: 0.25rem;
 }
 
+/* The heading the help dialog just jumped to, marked for a moment so the eye
+ * finds it (HelpDialog.vue's flash()). */
+.beacon-markdown .help-flash {
+  animation: help-flash 1.6s ease-out;
+  border-radius: 8px;
+}
+
+@keyframes help-flash {
+  0%,
+  30% {
+    background: rgba(var(--v-theme-primary), 0.18);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
 /* Opt-in for plain v-list-item rows (genre/search results, anywhere else
  * that's just a browsable v-list rather than a custom row component) —
  * swaps Vuetify's own grey hover overlay for the shared warm tint above,
