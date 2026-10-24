@@ -1,7 +1,7 @@
 # Cast permissions - concept
 
-**Built 2026-09-21.** This is the design record for TODO.md's "Serveradmins
-bestimmen, wer auf welche Geraete casten darf", kept so the decisions do not
+**Built 2026-09-21.** This is the design record for server admins deciding who
+may cast to which devices, kept so the decisions do not
 have to be re-derived from the code later. The code is
 `connect/core/cast_permissions.py`, `connect/routes/cast_permissions.py`, the
 enforcement points in `/play`, `/play-url`, `/join` and `/claim`, and
@@ -184,7 +184,7 @@ Shape, per server:
   cast.** This is the update migration: an existing instance has no file,
   and reading "nothing configured" as "nobody may cast" would silently
   switch casting off for the whole deployment on update. Same reasoning as
-  the radio-stations migration item in TODO.md. An **empty list is not the
+  [the radio stations migration](backlog/radio/stations-per-account.md). An **empty list is not the
   same thing**: it is a real configuration (allowlist + empty blocks
   everyone but admins, a lockdown; blocklist + empty blocks nobody). That
   is why the entry is written even when the list is empty, and only its

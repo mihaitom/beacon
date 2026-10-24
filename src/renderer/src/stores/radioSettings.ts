@@ -4,7 +4,7 @@ import { accountScopedKey } from '@/services/accountKey'
 const CAST_DIRECTLY_KEY = 'beacon.radio-cast-directly'
 
 // Absent (never toggled before) defaults to false — routing radio through
-// Beacon's own backend relay is the default (TODO.md, decided 2026-09-01):
+// Beacon's own backend relay is the default (decided 2026-09-01):
 // one fetch of the station feeds every cast target's audio, the
 // visualizer, and the now-playing title at once, instead of the up to
 // three independent connections to it "direct to device" meant. This is

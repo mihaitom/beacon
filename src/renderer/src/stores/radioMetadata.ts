@@ -286,7 +286,7 @@ export const useRadioMetadataStore = defineStore('radioMetadata', {
           // held, a counted track change still showed 4s before it was
           // audible. The rest sits between the tag being demuxed on the
           // relay's *input* side and that audio leaving ffmpeg, and is
-          // not measured yet — see TODO.md before adding a constant for
+          // not measured yet — measure it before adding a constant for
           // it.
           const holdSeconds = playback.isCasting
             ? 0

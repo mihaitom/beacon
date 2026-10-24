@@ -185,6 +185,14 @@ Entries sit in one folder per area (`phone-and-browser/`, `casting/`,
 status - the README has the conventions. A change made for a case and taken
 out again still gets a line under "Ruled out" in its entry.
 
+### docs/backlog/
+
+What is still to be built or decided, same layout as the investigations:
+one folder per area, one file per item, `README.md` as the index. Remove an
+item when it is done instead of ticking it off. A finding that is not worth
+fixing right now goes here only when asked for - but then in enough detail
+that nobody has to ask again.
+
 ## Working agreements
 
 - Work happens on the **`development`** branch and is merged to `main`. Check

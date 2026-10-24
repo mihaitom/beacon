@@ -1,10 +1,9 @@
 """core/account_settings.py — settings that follow the *person*, not the
 device: language, personalized-recommendations opt-in, enabled lyrics
-providers, autoplay batch size. See TODO.md's account-vs-device settings
-item — device-local settings (audio quality, caches, the playback resume
-snapshot, ...) already live in the renderer's own localStorage, namespaced
-per account there (services/accountKey.ts) so different accounts sharing
-one device/browser don't leak into each other. These four are different:
+providers, autoplay batch size. Device-local settings (audio quality,
+caches, the playback resume snapshot, ...) already live in the renderer's
+own localStorage, namespaced per account there (services/accountKey.ts) so
+different accounts sharing one device/browser don't leak into each other. These four are different:
 the same person switching devices should see their own choice follow them,
 which needs a server-side store connect didn't have before.
 

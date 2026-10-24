@@ -39,8 +39,8 @@ async def get_volume(session: SessionState = Depends(require_authenticated_sessi
         device = await asyncio.to_thread(sonos_targets[0]._get_device)
         volume = device.volume
         # Seeds device_volumes the same as a RenderingControl push would —
-        # this is DeviceListItem.vue's "initial fetch when the list opens"
-        # (see TODO.md), which still has to be a live round trip since
+        # this is DeviceListItem.vue's "initial fetch when the list opens",
+        # which still has to be a live round trip since
         # nothing has necessarily pushed a value yet. Broadcast, not just
         # recorded: DeviceListItem.vue reads volume from the reactive
         # ConnectStatus (connectStore.activeTargets), not from this

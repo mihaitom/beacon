@@ -202,7 +202,7 @@ class AirPlayDelivery(BaseDelivery):
     # quality and nothing past it (AirPlay 2 raised this on newer hardware,
     # but pyatv's classic RAOP path this delivery uses does not negotiate
     # that). Lower priority than Sonos/Chromecast/DLNA to actually exercise
-    # live (see TODO.md), but declared correctly rather than left at "no
+    # live, but declared correctly rather than left at "no
     # limit" now that the mechanism exists.
     MAX_SAMPLE_RATE_HZ: int | None = 44100
     MAX_BIT_DEPTH: int | None = 16

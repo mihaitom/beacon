@@ -79,6 +79,16 @@ Reproduce it in the running app first, with the sampling recipe below, and
 only then change anything - the two attempts so far both started from a
 harness that was already clean.
 
+Candidates for the second render that nobody has checked yet: the write to
+`drawersStore.queueRevealSongs` and its cleanup timer, the end of
+VNavigationDrawer's own 0.2s open transition, and the switch-over point to
+`virtualizeQueue`. Already tried without reproducing the class collision: a
+forced prop write at `nextTick`, after a double rAF and in `@before-enter`.
+
+If `appear` ever comes back, `QueueDrawer.layout.browser.test.ts`'s "shows
+every row already in place on a peek that also mounts the drawer for the
+first time, no animation" pins down the opposite and has to change with it.
+
 Sampling recipe (this is what produced the numbers above): attach
 `transitionstart`/`transitionend`/`transitioncancel` listeners to
 `[data-queue-index="0"]`, sample `getComputedStyle(row).transform`, its
