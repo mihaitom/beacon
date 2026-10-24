@@ -4,9 +4,9 @@
 what happens after a device has already dropped and someone asks Beacon to
 pick it back up. It does not touch, and does not explain, why the device
 dropped in the first place - that's the still-open
-[Auto-advance onto a still-playing device drops the next track silently](auto-advance-still-playing-device.md)
+[Auto-advance onto a still-playing device drops the next track silently](../casting/mid-track-drop/auto-advance-onto-playing-device.md)
 entry (and the larger
-[Cast device drops mid-track](mid-track-drop-symptom.md) investigation
+[Cast device drops mid-track](../casting/mid-track-drop/symptom-and-ruled-out-theories.md) investigation
 elsewhere in this log). Before this fix, an interruption's *recovery* was
 silently broken on top of the interruption itself; now the recovery works,
 the interruption does not.

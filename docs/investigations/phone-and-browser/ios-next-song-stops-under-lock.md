@@ -2,7 +2,7 @@
 
 **Status: OPEN - not reproduced (2026-10-25).** Reported twice from the same
 phone, never seen on the development phone. Related to, but not the same as,
-[pause then play from the lock screen](ios-pwa-lock-screen-resume.md): there
+[pause then play from the lock screen](ios-pause-then-play-silent-under-lock.md): there
 the listener paused; here nobody touched anything and the next song simply
 did not start.
 
@@ -87,5 +87,5 @@ it either.
   reporter's instance, normal-length songs, 20-30 minutes locked over mobile
   data. Not stuck there either would point at that phone or its iOS version.
 - If it is ever caught live: a temporary trace into connect's log, as in
-  [the lock-screen resume case](ios-pwa-lock-screen-resume.md), to see
+  [the lock-screen resume case](ios-pause-then-play-silent-under-lock.md), to see
   whether the new source gets as far as `loadstart`.

@@ -1,15 +1,15 @@
 # Cast device drops mid-track - test-suite Sonos-discovery leak (RESOLVED 2026-08-24, test-suite side)
 
-See [the shared symptom/evidence file](mid-track-drop-symptom.md) for the
+See [the shared symptom/evidence file](symptom-and-ruled-out-theories.md) for the
 device-side signature, the full drops table, and the ruled-out list. This
 file is the second, independent mechanism found for the identical symptom -
-see also [the reverse-proxy 403 file](mid-track-drop-reverse-proxy-403.md),
+see also [the reverse-proxy 403 file](reverse-proxy-403.md),
 the first one found, which this does **not** replace or override.
 
 **What's resolved:** the test suite can no longer reach real Sonos hardware,
 confirmed by a live A/B (below). **Assessment as of 2026-08-24 (the
 listener's call): probably explains the whole mid-track-drop pattern in
-[the symptom file](mid-track-drop-symptom.md)** - every recent drop lines up
+[the symptom file](symptom-and-ruled-out-theories.md)** - every recent drop lines up
 with a `pytest` run, 5 for 5. Not independently confirmed on the wire - see
 "What this does and does not explain" below for the gap and what would close
 it.
@@ -68,7 +68,7 @@ the drop log: four of the five mid-track drops that evening started 6-35s
 after the start of a *full* `pytest -q` run (which takes ~35-45s), squarely
 inside its execution window; the fifth lines up with the same test suite run
 manually by the listener. See the table in
-[the shared symptom file](mid-track-drop-symptom.md) (rows 12-14) for the
+[the shared symptom file](symptom-and-ruled-out-theories.md) (rows 12-14) for the
 exact figures.
 
 After the fix below was applied, the correlation was tested directly, twice:
@@ -80,7 +80,7 @@ observed stable throughout both times.
 **Reconsidered 2026-08-26 - now believed to explain the very first drop
 that evening too:** 20:31 ("Royal Gigolos"), an auto-advance onto a device
 still playing the previous track rather than a mid-stream drop - see
-[Auto-advance onto a still-playing device drops the next track silently](auto-advance-still-playing-device.md).
+[Auto-advance onto a still-playing device drops the next track silently](auto-advance-onto-playing-device.md).
 Originally filed as unrelated ("the coincidence with a pytest run at the
 time was chance; that entry's own log trace shows Beacon's own
 `device.stop()` call causing the stop, nothing to do with test pollution"),
@@ -106,12 +106,12 @@ the unmocked background tasks was added in `6265bf7` on 2026-08-20 - already
 present throughout "A day of elimination" and "The controlled comparison"
 (2026-08-22/23), which were also, ordinarily, worked on by running this same
 test suite repeatedly against a live cast on the same LAN. See
-[the reverse-proxy 403 file](mid-track-drop-reverse-proxy-403.md) for the full
+[the reverse-proxy 403 file](reverse-proxy-403.md) for the full
 caveat - that root cause is not in doubt, but it was never established as the
 *only* thing dropping casts in that window.
 
 **A related but distinct pre-existing note:** [the shared symptom file's
-"Open lead - Beacon re-runs SSDP discovery every 8 seconds"](mid-track-drop-symptom.md)
+"Open lead - Beacon re-runs SSDP discovery every 8 seconds"](symptom-and-ruled-out-theories.md)
 documents the same `_get_device()`/`soco.discover()` mechanism causing load
 during a *legitimate* cast session - a performance concern, not a leak, since
 a real session is supposed to be able to reach its own device. This entry is
@@ -149,7 +149,7 @@ environment's own responsibility to never touch production systems.
 ## Next step
 
 Whether the mid-track drops in
-[the symptom file](mid-track-drop-symptom.md) stop entirely now that this
+[the symptom file](symptom-and-ruled-out-theories.md) stop entirely now that this
 can't happen is the real test - open until a quiet multi-day stretch (with
 the backend test suite still being run normally) confirms it, or a repro
 attempt with test runs deliberately withheld does.

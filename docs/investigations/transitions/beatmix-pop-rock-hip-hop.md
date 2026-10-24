@@ -1,6 +1,6 @@
 # Beatmix on pop, classic rock and hip hop - OPEN
 
-Started 2026-10-17, from [the plan](../plans/beatmix-pop-rock.md). The
+Started 2026-10-17, from [the plan](../../plans/beatmix-pop-rock.md). The
 beatmix sounds right on electronic music and "so-so" on pop, classic rock
 and hip hop. Asked what "so-so" sounds like, the answer was two things:
 **two voices / two chord progressions mushed together**, and **a stumbling

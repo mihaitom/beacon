@@ -1,7 +1,7 @@
 # The radio list gets the household banned (RESOLVED 2026-09-03)
 
 The same reverse-proxy ban as
-[the cover-art outage](mid-track-drop-reverse-proxy-403.md) — same proxy,
+[the cover-art outage](../casting/mid-track-drop/reverse-proxy-403.md) — same proxy,
 same IPS, same effect on anything playing at the time — reached a second
 time by a different route. That entry is the mechanism; this one is the
 second thing that walked into it, and why the first fix did not cover it.

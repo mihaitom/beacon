@@ -40,7 +40,7 @@ Things that repeatedly turned out to matter while chasing these:
   could show the thing was *still true*, not merely that nothing appeared.
 - **Say when a hypothesis has become unfalsifiable, and then stop.** The
   firmware theory (see
-  [the reverse-proxy 403 file](mid-track-drop-reverse-proxy-403.md)) fits
+  [the reverse-proxy 403 file](casting/mid-track-drop/reverse-proxy-403.md)) fits
   every observation and cannot be tested, because dating the install needs a
   log that was switched off. That is not a lead in reserve; it is a place to
   stop spending time until a new source of evidence exists.
@@ -49,7 +49,7 @@ Things that repeatedly turned out to matter while chasing these:
   the pre-fix build beside the current one, same room, same tooling, is worth
   more than any amount of quiet.
 - **A test suite that reaches real infrastructure is itself a bug.** See the
-  [test-suite Sonos-discovery leak](mid-track-drop-test-suite-sonos-leak.md):
+  [test-suite Sonos-discovery leak](casting/mid-track-drop/test-suite-sonos-leak.md):
   the same rigour applied to production code (measure, don't infer; check the
   correlation, don't assume it) is what actually found it - the fix wasn't
   found by reasoning about test isolation in the abstract, it was found by

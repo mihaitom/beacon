@@ -1,6 +1,6 @@
 # Cast device drops mid-track - reverse-proxy 403 (RESOLVED 2026-08-23)
 
-See [the shared symptom/evidence file](mid-track-drop-symptom.md) for the
+See [the shared symptom/evidence file](symptom-and-ruled-out-theories.md) for the
 device-side signature, the full drops table, and the ruled-out list this
 entry builds on - this file is the specific mechanism, root-caused after
 three days of elimination.
@@ -12,7 +12,7 @@ denies everything, both casting streams lose their source in the same
 instant, and each speaker stops once its buffer runs out. Reproduced
 deliberately at 21:37 by scrolling cover art until it fell over.
 
-Everything [the shared file's ruled-out list](mid-track-drop-symptom.md)
+Everything [the shared file's ruled-out list](symptom-and-ruled-out-theories.md)
 covers stays ruled out - the delivery format, the copy tier, transport
 commands, the cloud, WiFi, the devices themselves. They were all correct and
 all beside the point: the failure is in how much traffic this app generates,
@@ -22,7 +22,7 @@ as a cause, whatever remains interesting about it for other reasons.
 
 **Note added 2026-08-24: a second, independent cause was later found for the
 identical symptom** - see the
-[test-suite Sonos-discovery leak](mid-track-drop-test-suite-sonos-leak.md).
+[test-suite Sonos-discovery leak](test-suite-sonos-leak.md).
 This root cause is not in doubt - it was reproduced deliberately and on
 demand - but it was never established as the *only* thing dropping casts, and
 the leaking test existed since before this investigation even started. Some
@@ -126,7 +126,7 @@ improvements.**
    which exists precisely so a station never sees the user's IP. So they do
    cross the proxy, and a radio list is a screenful of them rather than a
    handful. That is a second, independent route into the same ban — see
-   [the radio-logo entry](radio-favicon-4xx-ban.md).
+   [the radio-logo entry](../../radio/station-logos-get-the-household-banned.md).
 
    Note what none of this is: the settle
    delay added the same day decides *which* covers load, not how many at a
@@ -216,7 +216,7 @@ starvation. The millisecond ordering is what actually settles it.
 | Our own multicast load | Deliberate stress: 183 SSDP searches/min for seven minutes, versus a 23-30/min baseline. Nothing happened |
 | Client activity in the app | Seven separate stimuli over 2.5 hours (see the protocol below), none of them produced an event |
 | Reverse proxy, media server, rate limiter | The millisecond ordering above; and the rate limiter was never even reached (peak 142 req/s against an average of 100/burst 400 - and no 429 in the logs) |
-| The idle-session reaper | Fixed the same day, twice (see [Fixed](README.md)); both fixes verified in the field afterwards |
+| The idle-session reaper | Fixed the same day, twice (see [Fixed](../../README.md)); both fixes verified in the field afterwards |
 
 ### The stimulus protocol, and its complete lack of results
 
@@ -283,7 +283,7 @@ Worth fixing on their own merits, and worth knowing when reading timings:
 
 1. What reaches both speakers at the same moment without touching the data
    path (see the arithmetic above).
-2. The [19.47 s event-loop stall](event-loop-stall-19s.md), still unexplained
+2. The [19.47 s event-loop stall](../../streaming/event-loop-stall-19s.md), still unexplained
    and unrepeated.
 3. The 22 HTTP 403s during the request burst.
 4. Vendor diagnostics: the speakers' own logs are the one record that would
@@ -334,7 +334,7 @@ response bodies out.
 
 ## What a full day of SOAPACTION capture adds (2026-08-22, evening)
 
-A sixth drop that evening (row 9 in [the symptom file](mid-track-drop-symptom.md))
+A sixth drop that evening (row 9 in [the symptom file](symptom-and-ruled-out-theories.md))
 with the capture running all day, and the day's logs read as a whole.
 
 **The signature is unchanged.** 20:38:10 local, `flac (copy)`, 67s into a
@@ -349,7 +349,7 @@ for the whole day. Filtering it to non-`Get` actions yields only Beacon's own
 dispatch triples (`Stop`/`SetAVTransportURI`/`Play`), `SetVolume`, and two
 `ListAlarms`. At every one of the day's four drops the nearest command is the
 dispatch of the track that then dropped, 55-67s earlier. The ruled-out row in
-[the symptom file](mid-track-drop-symptom.md) is upgraded accordingly. This
+[the symptom file](symptom-and-ruled-out-theories.md) is upgraded accordingly. This
 says nothing about phone-to-speaker or cloud traffic, which still never
 reaches this NIC.
 
@@ -377,7 +377,7 @@ after the comparison. Caching the resolved SoCo device would test another.
 
 (That env var was removed 2026-08-26. The same arm is now reachable from the
 frontend's cast quality setting - see
-[the symptom file](mid-track-drop-symptom.md) for what changed and what
+[the symptom file](symptom-and-ruled-out-theories.md) for what changed and what
 didn't. The reasoning above is unaffected; only the switch moved.)
 
 Checked and not supported: whether drops line up with Beacon's own SSDP

@@ -56,7 +56,7 @@ It is dropped anyway, because naming the frame is not the part that is
 missing. What a stall actually does to playback is leave the device's
 position reading rewound, and that reading is not separable from a rewind
 somebody triggered on the device - the same ambiguity documented in
-[Auto-advance onto a still-playing device](auto-advance-still-playing-device.md),
+[Auto-advance onto a still-playing device](../casting/mid-track-drop/auto-advance-onto-playing-device.md),
 "Attempted and reverted", where no threshold could split the two cases
 either. So the watchdog would add a permanently running thread and a burst
 of log output to a process that streams audio, and still leave the decision

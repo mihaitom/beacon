@@ -16,7 +16,7 @@ and the speaker refused it:
     ERROR_UNSUPPORTED_FORMAT: 8,0,On the Run,<host:port>,<stream url>,,0
 
 This is the same class of bug as
-[copy-tier-device-limits.md](copy-tier-device-limits.md) - a device
+[copy-tier-device-limits.md](copy-tier-ignores-device-limits.md) - a device
 capability the tier selection never checked - and it hid behind that fix:
 sample rate and bit depth had been added, so the source was already being
 re-encoded for the rate, and the log line explaining the re-encode read as

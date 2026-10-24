@@ -436,11 +436,11 @@ the request line the way the server does.
 
 ## Related
 
-- [safari-transcode-jumps.md](safari-transcode-jumps.md): the same symptom
+- [safari-transcode-jumps.md](../phone-and-browser/safari-transcode-jumps-to-start.md): the same symptom
   on an iPhone, a jump back to the start about every 45 seconds, with a
   different cause: WebKit appending each re-fetched block of a stream with
   no length.
-- [continuous-stream-on-devices.md](continuous-stream-on-devices.md): what
+- [continuous-stream-on-devices.md](endless-stream-on-speakers.md): what
   transitions need from each device class.
 - Music Assistant support #5100; the Sonos community thread "Chunked
   encoding transfer and MP3 ? (a technical question)"; AirConnect's README

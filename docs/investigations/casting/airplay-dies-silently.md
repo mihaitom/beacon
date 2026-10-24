@@ -1,7 +1,7 @@
 # AirPlay reports nothing when it dies mid-track (FIXED 2026-08-26)
 
 Found 2026-08-22 while checking which cast targets the interruption handling
-(see [Cast device drops mid-track - symptom](mid-track-drop-symptom.md),
+(see [Cast device drops mid-track - symptom](mid-track-drop/symptom-and-ruled-out-theories.md),
 "What Beacon does about it") covers.
 
 Whether a target benefits from any of this depends on **who fetches the
@@ -73,7 +73,7 @@ disconnect had no coverage at all, so nothing ever asked what it did
 **Still not per-device.** The callback marks the whole session interrupted.
 For a single-target AirPlay cast those are the same thing; for a
 multi-target one they are not - see
-[One device dropping out of a multi-target cast is never surfaced](multi-target-partial-drop-not-surfaced.md),
+[One device dropping out of a multi-target cast is never surfaced](multi-target-drop-not-surfaced.md),
 which is the same missing per-device notion of "streaming" and stays open.
 
 ## The RAM half, fixed with it

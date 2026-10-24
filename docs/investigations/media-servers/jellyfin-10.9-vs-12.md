@@ -83,7 +83,7 @@ track only on 10.9, where a tag is never read.
 
 The two generations differ here in both directions, and neither can edit such
 a playlist copy by copy - see
-[playlist-duplicate-entries.md](playlist-duplicate-entries.md), which has the
+[playlist-duplicate-entries.md](playlist-duplicate-not-addressable.md), which has the
 measurements per generation.
 
 ## Ruled out as a difference

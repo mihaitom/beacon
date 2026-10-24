@@ -102,4 +102,4 @@ staying literals. Off by default, so nothing about ordinary casting changes.
 ## Not covered here
 
 The visualizer's own use of the same constant is out of scope — see
-`radio-visualizer-cast-sync.md`.
+[the visualizer's own entry](visualizer-out-of-sync-when-casting.md).

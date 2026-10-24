@@ -22,7 +22,7 @@ than one hardcoded cap: Sonos tops out at 24/48, Chromecast handled 24/96,
 AirPlay is typically 16/44.1, DLNA varies per renderer (a conservative
 24/48 was assumed here, borrowed from Sonos).
 
-**Not related to the drops in [the symptom file](mid-track-drop-symptom.md)**,
+**Not related to the drops in [the symptom file](mid-track-drop/symptom-and-ruled-out-theories.md)**,
 and worth keeping separate: this produces an explicit device-reported error,
 while every mid-track drop reported `TransportStatus` unchanged. It is also
 how that distinction was established at all - the first non-`OK` transport
@@ -60,7 +60,7 @@ status ever seen in this investigation.
 **The same blind spot had one capability left in it.** Channel count was
 never looked at either, and a 5-channel FLAC is refused by the same
 speakers for the same kind of reason - see
-[multichannel-flac-silent-on-sonos.md](multichannel-flac-silent-on-sonos.md)
+[multichannel-flac-silent-on-sonos.md](sonos-silent-on-surround-flac.md)
 (2026-09-13), which extends `MAX_SAMPLE_RATE_HZ`/`MAX_BIT_DEPTH` with
 `MAX_CHANNELS` and turns `_resample_plan()` into `_device_fit_plan()`.
 

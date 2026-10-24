@@ -17,7 +17,7 @@ instead of holding at 15s.
 wrong, and it covers the tiers the old throttle could not: FLAC's stream line
 carries no bitrate at all, and the lossless-reencode tier opted out of pacing
 entirely. `bitrate_bps` and the manual throttle loop were removed. See
-[Pacing threw away the lead it had built](fixed-pacing-threw-away-lead.md)
+[Pacing threw away the lead it had built](pacing-throws-away-its-lead.md)
 for the regression this fix introduced and its own fix.
 
 **Why tests missed it:** `tests/test_streamer.py` fed a probe fixture where

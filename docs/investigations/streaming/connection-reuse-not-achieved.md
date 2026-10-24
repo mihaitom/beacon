@@ -2,7 +2,7 @@
 
 **Symptom:** browsing a large library was slow, and a burst of requests could
 overrun the host's DNS resolver hard enough to break playback (see
-[A slow media-server lookup froze streaming, and a transient one ended it](fixed-slow-media-lookup-froze-streaming.md)).
+[A slow media-server lookup froze streaming, and a transient one ended it](slow-media-lookup-freezes-streaming.md)).
 
 **Cause:** two separate versions of the same mistake. The media adapters
 called `httpx.get()`/`httpx.post()`, the module-level convenience functions,

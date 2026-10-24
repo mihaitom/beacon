@@ -1,10 +1,10 @@
 # Auto-advance onto a still-playing device drops the next track silently (RESOLVED 2026-08-26, via the test-suite leak fix)
 
 One occurrence, 2026-08-24, prod. Distinct from
-[Cast device drops mid-track](mid-track-drop-symptom.md): that one drops a
+[Cast device drops mid-track](symptom-and-ruled-out-theories.md): that one drops a
 stream that had already delivered real audio; this one never starts audio at
 all. Also distinct from the
-[test-suite Sonos-discovery leak](mid-track-drop-test-suite-sonos-leak.md):
+[test-suite Sonos-discovery leak](test-suite-sonos-leak.md):
 that entry's correlation with pytest timing was checked for this drop too and
 was pure coincidence - this drop has its own, unrelated log trace below.
 (Reconsidered 2026-08-26 - see "Reattributed" at the end of this file.)
@@ -15,7 +15,7 @@ ever played (confirmed by the listener). Backend reported the usual
 10s-grace-period drop.
 
 **Ruled out:** the reverse-proxy/cover-art-storm cause (see
-[the reverse-proxy 403 file](mid-track-drop-reverse-proxy-403.md)). The
+[the reverse-proxy 403 file](reverse-proxy-403.md)). The
 reverse proxy's access log and its IP-reputation middleware's log are clean
 for the entire window — no 403s, no elevated request rate, ordinary
 background traffic only (`device-volume` polling, one lyrics/cover-art burst
@@ -59,7 +59,7 @@ of the same thing — a device the *user* paused directly (not through
 Beacon) shows up identically in the log to an unexplained drop (clean FIN,
 `TransportStatus` unchanged, resync reads the frozen position as an
 "external position change"). That ambiguity is deliberate/already documented
-(see [Cast device drops mid-track - symptom](mid-track-drop-symptom.md),
+(see [Cast device drops mid-track - symptom](symptom-and-ruled-out-theories.md),
 "What Beacon does about it") — don't mistake a manual device-side stop for a
 repro of this entry.
 
@@ -95,7 +95,7 @@ closing it would cost - an extra SOAP round trip per tick, or feeding UPnP
 eventing back into playback state instead of leaving it log-only).
 
 **Next step if this recurs:** capture a packet trace across the recurrence
-(see [Instrumentation](instrumentation.md) for what's proven useful before) —
+(see [Instrumentation](../../instrumentation.md) for what's proven useful before) —
 specifically whether SetAVTransportURI lands on the wire while the device's
 existing GET to the same URL is still open, and whether the device's FIN/RST
 precedes or follows our own `device.stop()` SOAP call. One occurrence isn't
@@ -106,14 +106,14 @@ call pattern that otherwise works.
 ~10 minutes after this drop and got silence with no error — that turned out
 to be a second, independent bug (the clock was never frozen at the drop, so
 the resume seeked FFmpeg past the track's own end), fixed separately - see
-[Resuming an old interruption seeked past the track's own end](fixed-resume-seeked-past-track-end.md).
+[Resuming an old interruption seeked past the track's own end](../../streaming/resume-seeks-past-track-end.md).
 It explains that follow-on symptom but says nothing about why the device
 stopped in the first place — this entry is still open.
 
 **Reattributed to the test-suite leak, 2026-08-26.** The "pure coincidence"
 call above didn't hold up to the same standard the rest of this file family
 uses elsewhere: rows 12-14 in
-[the shared symptom file's drops table](mid-track-drop-symptom.md) each show
+[the shared symptom file's drops table](symptom-and-ruled-out-theories.md) each show
 an exact `pytest -q` start time and how many seconds before the drop it
 began; this entry's own pytest-timing check never got that same treatment,
 just the bare assertion above. Once actually looked at the same way, *all
@@ -134,7 +134,7 @@ flight - is a more complete account of why this specific attempt didn't
 recover than "unrelated race, chance timing" was.
 
 Not independently wire-confirmed, same caveat as
-[the leak file](mid-track-drop-test-suite-sonos-leak.md) carries for its
+[the leak file](test-suite-sonos-leak.md) carries for its
 other five rows. Downgrade back to open the same way that file would: a
 recurrence of this exact shape (auto-advance onto a device still PLAYING the
 same session URL, flips to STOPPED within the same second, never recovers)

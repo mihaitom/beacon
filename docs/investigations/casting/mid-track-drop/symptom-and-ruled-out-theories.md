@@ -3,8 +3,8 @@
 Shared diagnostic reference for two confirmed causes that produce the
 identical device-side signature and were, for a while, chased as one bug:
 
-- [reverse-proxy 403](mid-track-drop-reverse-proxy-403.md) - **RESOLVED 2026-08-23**
-- [test-suite Sonos-discovery leak](mid-track-drop-test-suite-sonos-leak.md) - **RESOLVED 2026-08-24 (test-suite side)**
+- [reverse-proxy 403](reverse-proxy-403.md) - **RESOLVED 2026-08-23**
+- [test-suite Sonos-discovery leak](test-suite-sonos-leak.md) - **RESOLVED 2026-08-24 (test-suite side)**
 
 **Assessment as of 2026-08-24 (the listener's call, not independently
 wire-confirmed):** every mid-track drop ever recorded here now has a
@@ -63,23 +63,23 @@ coordinator:
 | 14 | mp3 copy, 320 kb/s ("Armin van Buuren — Es Vedrà") | 197s | 35s | 1.98MB delivered over 34.5s; 23:00:53, coincides with the listener's own manual `pytest -q` run (pre-fix conftest.py) rather than one from this session |
 
 Rows 12-14 are 2026-08-24, the same evening as rows 10-11 - see the
-[test-suite Sonos-discovery leak](mid-track-drop-test-suite-sonos-leak.md)
+[test-suite Sonos-discovery leak](test-suite-sonos-leak.md)
 file. All five mid-track drops that evening line up with a full backend test
 run within about half a minute, four run by the assistant and one run
 manually by the listener while reproducing the correlation deliberately.
 
 Rows 6-9 are all of 2026-08-22; 7 and 8 are the controlled comparison - see
-[the reverse-proxy 403 file](mid-track-drop-reverse-proxy-403.md#the-controlled-comparison-2026-08-22-1853).
+[the reverse-proxy 403 file](reverse-proxy-403.md#the-controlled-comparison-2026-08-22-1853).
 Row 9 came in the evening, with only the pre-fix build streaming at all - the
 current build had no stream open at that moment. Rows 10-11 are 2026-08-24,
 21:14 and 21:47 - production, running the 2026-08-23 build (see
-[Instrumentation](instrumentation.md); nothing unreleased was deployed at the
+[Instrumentation](../../instrumentation.md); nothing unreleased was deployed at the
 time). Reverse-proxy/middleware logs for both windows are clean - not the
 already-fixed 403 cause.
 
 **The same-track correlation noted here earlier did not hold up.** Row 10
 ("Royal Gigolos") and the auto-advance drop documented separately
-([Auto-advance onto a still-playing device drops the next track silently](auto-advance-still-playing-device.md))
+([Auto-advance onto a still-playing device drops the next track silently](auto-advance-onto-playing-device.md))
 happened on the same track, twice within 45 minutes - which read as a real
 lead at the time. A deliberate replay of that exact track less than 25
 minutes later played to completion with no issue at all (207.4s produced,
@@ -89,17 +89,17 @@ three different tracks, one of them proven not to reproduce on demand -
 this is the general, still-unexplained pattern from the rest of this entry,
 not a file-specific one. Kept as a worked example of why n=2 needs a third
 data point before it's trusted (see "Beware n=1 correlation" in
-[Method notes](method-notes.md)) - the embedded-cover-art probe for row 10 is
+[Method notes](../../method-notes.md)) - the embedded-cover-art probe for row 10 is
 still on record above in case a real per-file trigger turns up some other way.
 
 **Row 11 is the first drop in this whole investigation with a live packet
-capture running across it** (see [Instrumentation](instrumentation.md) for
+capture running across it** (see [Instrumentation](../../instrumentation.md) for
 the new always-ready setup). Confirms, on the wire rather than inferred from
 log ordering: the device sends a clean FIN to Beacon's stream
 port at 19:47:29.954 UTC, the same second its own UPnP eventing reports
 `state=STOPPED`. No RST, nothing from Beacon's side first - the device
 aborts, Beacon's chain unwinds behind it, exactly as
-[the reverse-proxy 403 file's "The mechanism" section](mid-track-drop-reverse-proxy-403.md)
+[the reverse-proxy 403 file's "The mechanism" section](reverse-proxy-403.md)
 established for the original incident. Adds a confirmed instance to a
 pattern that was previously only established for that one investigation,
 without pointing to a new cause.
@@ -134,15 +134,15 @@ actionable.
 | The event loop starving the socket | `loop_lag_30s`/`loop_lag_120s` were 0.00-0.01s at every drop |
 | TCP backpressure / device stopped reading | Send-queue depth 0 and `blocked_for` ~0.01s right up to the FIN |
 | Network trouble | Clean FIN, all bytes ACKed, retransmitted bytes ~0.03% |
-| Beacon issuing a transport command (stop/pause) | Airtight for anything crossing this host's NIC, as of the full-day capture on 2026-08-22 (see [the reverse-proxy 403 file](mid-track-drop-reverse-proxy-403.md)). Every non-`Get` UPnP action of the whole day is accounted for: Beacon's own dispatch triples, `SetVolume`, and two `ListAlarms`. At each drop the nearest preceding command is that track's own dispatch, 55-67s earlier, and nothing at the drop itself. **Scope caveat added 2026-08-24: this only ever captured the production container's own NIC** - a read-only `GetPositionInfo`/discovery burst from a *different* host on the same LAN (see the [test-suite Sonos-discovery leak](mid-track-drop-test-suite-sonos-leak.md)) would not appear in it and was never ruled out by this capture |
+| Beacon issuing a transport command (stop/pause) | Airtight for anything crossing this host's NIC, as of the full-day capture on 2026-08-22 (see [the reverse-proxy 403 file](reverse-proxy-403.md)). Every non-`Get` UPnP action of the whole day is accounted for: Beacon's own dispatch triples, `SetVolume`, and two `ListAlarms`. At each drop the nearest preceding command is that track's own dispatch, 55-67s earlier, and nothing at the drop itself. **Scope caveat added 2026-08-24: this only ever captured the production container's own NIC** - a read-only `GetPositionInfo`/discovery burst from a *different* host on the same LAN (see the [test-suite Sonos-discovery leak](test-suite-sonos-leak.md)) would not appear in it and was never ruled out by this capture |
 | The Sonos group re-forming | The satellite emitted no events at all; its transport is bound to the coordinator |
 | The stream declaring a wrong duration | No Xing/Info header in what ffmpeg emits; duration reaches the device only via DIDL metadata, correctly |
-| The session idle reaper | Still ruled out for the drops in this table, but on different evidence than first written: the packet capture shows no `Stop` reaching the speaker at any of them. The original reasoning - "the first drop was 14 min into the session" - measured the wrong clock. What matters is time since the session was last *touched*, not since it started, and a long track touches nothing for its whole duration. That reaper did stop a real cast on 2026-08-23; see [A cast stops half an hour into a long track](fixed-cast-stops-after-30-minutes.md) |
+| The session idle reaper | Still ruled out for the drops in this table, but on different evidence than first written: the packet capture shows no `Stop` reaching the speaker at any of them. The original reasoning - "the first drop was 14 min into the session" - measured the wrong clock. What matters is time since the session was last *touched*, not since it started, and a long track touches nothing for its whole duration. That reaper did stop a real cast on 2026-08-23; see [A cast stops half an hour into a long track](../cast-stops-after-30-minutes.md) |
 | AudioAnalyzer blocking the stream generator | `feed()` is non-blocking (unbounded queue), so it cannot stall it |
 | Embedded cover art / the bitrate factor | A track whose factor was 1.006 dropped just the same |
 | The frontend commanding a stop from a background tab | Two independent checks: no UPnP command reached the speaker, and no `/pause` or `/stop` appears in the backend log at any drop |
 | The media-server account in use | Navidrome stores transcoding settings and bitrate caps per (user, client). All players for every user read `max_bit_rate: 0` and `transcoding_id: ''`, so the delivered bytes are identical whichever account streams |
-| A device capability mismatch | Those produce an explicit `TransportStatus` error from the device (see [The copy tier never checks what the device can actually play](copy-tier-device-limits.md)). Every drop reported `TransportStatus` unchanged, i.e. `OK` |
+| A device capability mismatch | Those produce an explicit `TransportStatus` error from the device (see [The copy tier never checks what the device can actually play](../copy-tier-ignores-device-limits.md)). Every drop reported `TransportStatus` unchanged, i.e. `OK` |
 | The speaker rebooting or losing the network | Positively excluded, not merely unobserved: the UPnP subscriptions held the **same SID all day** across renewals, which a reboot would have invalidated, and the event stream runs straight through the drop without a gap. The device was reachable and answering throughout |
 | A Sonos alarm taking over playback | `ListAlarms` returns `<Alarms></Alarms>` - none configured |
 | The Sonos-SMAPI integration on the same host | Its log holds only its own healthcheck in every drop window |
@@ -216,7 +216,7 @@ missing), and it is the kind of load the simpler upstream this backend derives
 from never put on a speaker. Since fixed for cast sessions themselves (device
 resolution is cached, see `delivery/sonos.py`'s `_get_device()`) - what
 remained unguarded was *test* code reaching the same call, see the
-[test-suite Sonos-discovery leak](mid-track-drop-test-suite-sonos-leak.md).
+[test-suite Sonos-discovery leak](test-suite-sonos-leak.md).
 
 **Not excluded, and not reachable from here:**
 

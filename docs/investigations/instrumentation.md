@@ -24,7 +24,7 @@ Built into the app, always on:
   problem. Log-only by design; it feeds nothing back into playback state.
   This is what turned "the device stopped" into "the device says
   `ERROR_UNSUPPORTED_FREQ ... 96000`" (see
-  [The copy tier never checks what the device can actually play](copy-tier-device-limits.md)),
+  [The copy tier never checks what the device can actually play](casting/copy-tier-ignores-device-limits.md)),
   and equally what lets a drop reporting `TransportStatus` *unchanged* be
   told apart from one reporting an error.
 
@@ -54,7 +54,7 @@ bracketing a real drop can say whether this counter actually *spikes* across
 one or is just steady background noise from ordinary household multicast
 traffic - not yet established either way. If it does spike, that reopens the
 "network trouble" theory
-[the symptom file](mid-track-drop-symptom.md) ruled out early on - that
+[the symptom file](casting/mid-track-drop/symptom-and-ruled-out-theories.md) ruled out early on - that
 finding was about *this host's own capture* seeing clean ACKed traffic,
 which says nothing about loss on the speaker's own last hop.
 

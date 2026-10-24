@@ -8,7 +8,7 @@ real time and therefore never regains a lead it has lost, so any one-off stall
 permanently shortens the device's buffer for the rest of that track.
 
 This was a regression introduced by the fix documented in
-[Pacing used the container bitrate, not the audio bitrate](fixed-pacing-used-container-bitrate.md).
+[Pacing used the container bitrate, not the audio bitrate](pacing-uses-container-bitrate.md).
 The hand-rolled throttle it replaced caught up *incidentally*: it slept only
 while already more than `LOOKAHEAD_SECONDS` ahead, so falling behind simply
 meant it stopped sleeping and ran flat out until the lead was restored.

@@ -1,7 +1,7 @@
 # Does a speaker play a stream that never ends? (OPEN, 2026-10-12)
 
 **Status: first Sonos run invalid (harness bug, fixed), rerun pending.** Needed before transitions can be called done
-on speakers - see [the plan](../plans/gapless-and-transitions.md).
+on speakers - see [the plan](../../plans/gapless-and-transitions.md).
 
 ## The question
 
@@ -10,7 +10,7 @@ songs instead of one song at a time. It is dispatched as a track (plain
 `http://`, DIDL class `audioBroadcast` on Sonos), not as a station, because
 a track keeps the device's position reports the playback clock is
 calibrated against (the radio scheme reports a flat 0.00 s, see
-[radio-buffering-window.md](radio-buffering-window.md)). What is not
+[radio-buffering-window.md](../radio/buffering-bar-outlasts-the-sound.md)). What is not
 known, per device class:
 
 1. Does it play such a stream for an hour and more, without stopping at

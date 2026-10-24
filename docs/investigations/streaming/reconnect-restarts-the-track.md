@@ -52,7 +52,7 @@ reports.
 backward `change` (`_resync_position_once()`, mirroring
 `MAX_PLAUSIBLE_POSITION_LEAD`) turns out unable to separate the two cases
 that matter - see
-[Auto-advance onto a still-playing device drops the next track silently](auto-advance-still-playing-device.md)
+[Auto-advance onto a still-playing device drops the next track silently](../casting/mid-track-drop/auto-advance-onto-playing-device.md)
 for the full reasoning (its own corruption, `change=-7.38s`, is smaller than
 a `change=-40s` case that must still recalibrate normally, so no single
 threshold value can separate them).

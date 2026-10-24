@@ -1,7 +1,7 @@
 # A cast stops half an hour into a long track (RESOLVED 2026-08-23)
 
 The clearest self-inflicted version of
-[Cast device drops mid-track](mid-track-drop-symptom.md)'s own symptom, found
+[Cast device drops mid-track](mid-track-drop/symptom-and-ruled-out-theories.md)'s own symptom, found
 by running the app against a control arm overnight: playback stopped
 mid-track with no cause visible in the app's own reasoning, and was logged
 as a device drop.
@@ -38,7 +38,7 @@ precisely the "start a long set in the evening and close the laptop" case.
 `last_seen` says. Paused casts count as streaming too - somebody may come
 back to one, and stopping the device under them is the same rudeness one step
 later. The device-ownership check documented in
-[A session being reaped stopped a speaker somebody else was using](fixed-session-reap-stopped-someone-elses-speaker.md)
+[A session being reaped stopped a speaker somebody else was using](session-reap-stops-another-users-speaker.md)
 still applies to sessions that have genuinely stopped.
 
 **Why the test suite didn't catch it:** the reap tests set up a stale session

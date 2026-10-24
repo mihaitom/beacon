@@ -31,7 +31,7 @@ all of it. `routes/proxy.py` had already been migrated away from that exact
 pattern; the adapters were missed. They now share one pooled `httpx.Client`
 (`media/http_client.py`), so a burst reuses connections instead of
 re-resolving per call. See
-[Connection reuse was claimed but not achieved](fixed-connection-reuse-not-achieved.md)
+[Connection reuse was claimed but not achieved](connection-reuse-not-achieved.md)
 for the full story of that fix, including the proxy's own half of it.
 
 That fix is correct but probably was not what produced this particular
