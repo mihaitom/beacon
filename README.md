@@ -333,6 +333,7 @@ The answers live in [docs/faq.md](docs/faq.md):
 - [Why does the path column show a path that does not exist on disk?](docs/faq.md#why-does-the-path-column-show-a-path-that-does-not-exist-on-disk)
 - [I removed one of two identical tracks from a playlist and both disappeared](docs/faq.md#i-removed-one-of-two-identical-tracks-from-a-playlist-and-both-disappeared)
 - [No devices found](docs/faq.md#no-devices-found)
+- [A speaker starts playing, then stops or starts over](docs/faq.md#a-speaker-starts-playing-then-stops-or-starts-over)
 - [My Sonos speaker doesn't appear under AirPlay (or DLNA)](docs/faq.md#my-sonos-speaker-doesnt-appear-under-airplay-or-dlna)
 - [Troubleshooting casting](docs/faq.md#troubleshooting-casting)
 - [How do I let party guests in from outside my network?](docs/party-mode.md#over-the-internet)
