@@ -8,6 +8,7 @@ from xml.sax.saxutils import escape
 from soco.exceptions import SoCoUPnPException
 
 from core.http_protocol import CLOSE_DELIMITED, header_value
+from core.local_address import for_device
 from core.older_sonos import stream_mode
 from core.streamer import strip_stream_extension
 from core.upnp_events import (
@@ -272,6 +273,7 @@ class SonosDelivery(BaseDelivery):
         content_type: str = "audio/mpeg",
     ) -> None:
         device = await asyncio.to_thread(self._get_device)
+        stream_url = for_device(stream_url, device.ip_address)
         await self._subscribe_to_events(device)
 
         # Leave any existing group so we play on this specific device
@@ -376,7 +378,7 @@ class SonosDelivery(BaseDelivery):
                 self.target,
                 "avtransport",
                 f"http://{ip}:1400{AVTRANSPORT_EVENT_PATH}",
-                callback_url_for(self.target, "avtransport"),
+                callback_url_for(self.target, "avtransport", device_host=ip),
             )
         except Exception as e:
             logger.debug(f"[Sonos:{self.target}] transport eventing unavailable: {e}")
@@ -386,7 +388,7 @@ class SonosDelivery(BaseDelivery):
                 self.target,
                 "renderingcontrol",
                 f"http://{ip}:1400{RENDERINGCONTROL_EVENT_PATH}",
-                callback_url_for(self.target, "renderingcontrol", "sonos"),
+                callback_url_for(self.target, "renderingcontrol", "sonos", ip),
             )
             # Only once the speaker has actually accepted it: this is what
             # tells every slider showing this device to stop polling it (see

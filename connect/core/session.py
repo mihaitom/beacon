@@ -22,6 +22,7 @@ from media import MediaClient, SubsonicClient
 from . import icy_metadata, local_mixes, radio_ads, radio_history, title_match
 from .claims import claims
 from .device_volume import pushes_volume
+from .local_address import on_default_address
 from .loop_health import peak_lag
 from .radio_position import RadioPositionTracker
 from .radio_relay import RadioRelay
@@ -1243,8 +1244,9 @@ def is_this_sessions_stream(session: SessionState, uri: str) -> bool:
     Compared without the format extension the dispatched URL carries
     (stream_url()'s `content_type`) and the device reports back verbatim,
     rather than rebuilding it from the session's current format — which can
-    have moved on, or not be set yet, since the dispatch."""
-    return strip_stream_extension(uri) == stream_url(session.session_id)
+    have moved on, or not be set yet, since the dispatch. And on the default
+    address: the device was handed the one in its own network."""
+    return strip_stream_extension(on_default_address(uri)) == stream_url(session.session_id)
 
 
 async def _device_is_still_ours(session: SessionState) -> bool:

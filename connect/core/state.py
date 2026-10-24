@@ -5,7 +5,6 @@ SessionState.
 
 import asyncio
 import os
-import socket
 import time
 from collections import deque
 from collections.abc import Awaitable, Callable
@@ -24,6 +23,7 @@ from delivery import (
 from delivery.base import PlaybackFailure
 from media import Track
 
+from .local_address import get_local_ip
 from .mix_engine import MixEngine
 from .playback_clock import PlaybackClock
 from .streamer import FALLBACK_FORMAT, OutputFormat, stream_extension
@@ -335,17 +335,10 @@ ctx = Context()
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 
-def get_local_ip() -> str:
-    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    try:
-        s.connect(("8.8.8.8", 80))
-        return s.getsockname()[0]
-    finally:
-        s.close()
-
-
 def stream_url(session_id: str, content_type: str | None = None) -> str:
-    """Where a device fetches this session's queued track from.
+    """Where a device fetches this session's queued track from, on the
+    default address: each delivery moves it to the one in its device's own
+    network (core/local_address.py's for_device()).
     `content_type` only decides the extension on the end (see
     core/streamer.py's stream_extension()) — pass the same type the device
     is told about, so the URL and the announcement can't disagree."""

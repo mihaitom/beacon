@@ -1977,6 +1977,7 @@ def _mock_dmr_device(media_position=None, volume_level=None):
     device.async_set_volume_level = AsyncMock()
     device.media_position = media_position
     device.volume_level = volume_level
+    device.profile_device.device_url = "http://10.0.0.9:49152/description.xml"
     device.has_pause = device.can_pause = True
     device.has_stop = device.can_stop = True
     # The AVTransport Play action, reached by service id (see _send_play()).

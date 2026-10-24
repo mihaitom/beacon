@@ -3,8 +3,7 @@ devices POST their transport-state and volume changes to.
 
 Lives on the app's existing port rather than a listener of its own: the
 callback URL handed to a device just has to be something it can reach on
-this LAN, and stream_url() already proves that address works for these
-devices (it is where they fetch the audio from).
+this LAN, and the address its stream comes from already works for it.
 
 No token auth, for the same reason GET /stream has none (see its comment):
 the device dialling back in cannot attach one. The AVTransport branch treats
@@ -26,6 +25,7 @@ from fastapi import APIRouter, Request, Response
 from core.claims import claims
 from core.device_volume import device_key, record_pushed_volume
 from core.icy_metadata import strip_pulse
+from core.local_address import for_device
 from core.session import SessionState, build_status_dict, registry
 from core.state import PORT, get_local_ip, radio_dispatch_url
 from core.stream_format import radio_content_type
@@ -78,8 +78,15 @@ _MAX_BODY_BYTES = 256 * 1024
 _PLAUSIBLE_ICY_LAG = (1.0, 12.0)
 
 
-def callback_url_for(label: str, service: str = "avtransport", device_type: str = "sonos") -> str:
-    """The CALLBACK a device should POST its events to. `device_type`,
+def callback_url_for(
+    label: str,
+    service: str = "avtransport",
+    device_type: str = "sonos",
+    device_host: str | None = None,
+) -> str:
+    """The CALLBACK a device should POST its events to, on the address the
+    device at `device_host` reaches this machine at, like its stream
+    (core/local_address.py). `device_type`,
     `label` and `service` come back in the path so one endpoint can serve
     every subscribed device *and* service without needing to match on source
     address — a grouped Sonos pair reports from two different players about
@@ -96,7 +103,7 @@ def callback_url_for(label: str, service: str = "avtransport", device_type: str 
     into the device's request line, which no HTTP parser accepts, so every
     event from that room was rejected before it reached the route (#56)."""
     path = f"{_CALLBACK_PREFIX}/{device_type}/{service}/{quote(label, safe='')}"
-    return f"http://{get_local_ip()}:{PORT}{path}"
+    return for_device(f"http://{get_local_ip()}:{PORT}{path}", device_host)
 
 
 async def _handle_rendering_control_event(device_type: str, label: str, body: str) -> None:

@@ -6,6 +6,8 @@ import threading
 import time
 from collections.abc import Callable
 
+from core.local_address import for_device
+
 from .base import BaseDelivery
 from .errors import DeviceNotFoundError, MediaRejectedError
 
@@ -273,6 +275,7 @@ class ChromecastDelivery(BaseDelivery):
         import pychromecast
 
         cast = await asyncio.to_thread(self._get_device)
+        stream_url = for_device(stream_url, cast.cast_info.host)
         # Some receivers (e.g. Google TV's own home-screen "Media Player")
         # already declare support for the media namespace while running a
         # non-default app, so play_media() below would send LOAD there

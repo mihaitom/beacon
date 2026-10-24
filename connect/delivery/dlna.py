@@ -10,8 +10,11 @@ with plain async methods, so this stays about as small as chromecast.py.
 import asyncio
 import logging
 import xml.etree.ElementTree as ET
+from urllib.parse import urlsplit
 
 from didl_lite.didl_lite import MusicTrack, Resource, to_xml_string
+
+from core.local_address import for_device
 
 from .base import BaseDelivery
 from .errors import DeviceNotFoundError, MediaRejectedError
@@ -251,6 +254,7 @@ class DlnaDelivery(BaseDelivery):
         content_type: str = "audio/mpeg",
     ) -> None:
         device = await self._get_device_or_evict()
+        stream_url = for_device(stream_url, urlsplit(device.profile_device.device_url).hostname)
         # Built ourselves rather than via DmrDevice.construct_play_media_metadata()
         # — that helper auto-detects a DIDL-Lite class from the stream's
         # Content-Type via MIME_TO_UPNP_CLASS_MAPPING, which only has a coarse
@@ -309,7 +313,9 @@ class DlnaDelivery(BaseDelivery):
                 self.target,
                 "renderingcontrol",
                 event_url,
-                callback_url_for(self.target, "renderingcontrol", "dlna"),
+                callback_url_for(
+                    self.target, "renderingcontrol", "dlna", urlsplit(event_url).hostname
+                ),
             )
             if subscription is not None:
                 mark_pushes_volume("dlna", self.target)

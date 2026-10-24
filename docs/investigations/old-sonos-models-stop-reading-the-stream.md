@@ -1,25 +1,65 @@
 # OPEN - Old Sonos models stop reading a stream (Play:3, first-generation Playbar)
 
 **Open since 2026-10-17, partly fixed 2026-10-19/20, chunked encoding found
-and fixed 2026-10-21, that fix measured as not enough 2026-10-22** (#56).
+and fixed 2026-10-21, that fix measured as not enough 2026-10-22, most likely
+cause found 2026-10-24: the network, not the speakers** (#56).
 Reported against 1.8.0 and 1.9.0 as "tracks keep restarting": on a Play:3 (model `ZPS3`, firmware 86.10) the track jumped
 back to its start about every 50 seconds, audibly, and Beacon's position
 ran on past the track's length. A first-generation Playbar (`ZPS9`, same
 firmware) did the same. Newer Sonos models here never showed it.
 
-**Status:** Beacon answers a Sonos the way an internet radio server does
-(see "The fix"), and on the reporter's Play:3 that changed nothing for an
-unpaced stream: it still stops reading after 30-37 seconds (see "What the
-framing fix did"). Ordinary tracks play through because they arrive in that
-time; longer ones stop early. The combination the station that plays to the
-end actually has, close-delimited _and_ paced, has never run from Beacon on
-these speakers, and neither has a file the speaker may fetch in parts - the
-way Sonos documents for a file (see "What Sonos documents"), and the one an
-Era 100 was seen to use, fetching the rest by range after a seek and a pause
-(see "The file mode on a real speaker"). Settings → Advanced offers both
-(core/older_sonos.py, see "Three ways to send a song"), so the reporter can
-try them without touching the container, and with the log level at Debug,
-Now Playing shows the stream as it goes (see "Watching it happen").
+**Status:** Most likely solved, and not by anything about the speakers: the
+reporter's server sits in two networks, and Beacon handed the speakers its
+address in the wrong one (see "The network"). Every device now gets the
+address in its own network. Whether the framing, pacing and file changes
+further down are needed at all stays open until 1.9.0 has played long
+tracks in the speakers' network; they stay until then. Everything from
+"What the framing fix did" on is the history of the theories before that.
+
+## The network (2026-10-24)
+
+The reporter's server has a leg in two networks: the one every speaker is
+in, and a second, faster one that carries its default route. Beacon handed
+every device the default route's address (`get_local_ip()`, the address
+towards 8.8.8.8), so a speaker reached it through the router between the
+two, while the server's replies left directly through its own leg in the
+speakers' network. A router that sees only one half of a TCP connection
+never sees it established, and drops it when its timeout for that runs
+out. With the container moved into the speakers' network alone (macvlan),
+a 7:44 and a 14:23 track played through on the Play:3.
+
+Everything measured before fits it, and none of it needed the speaker's
+model:
+
+- **Reading stopped 30-45 s in, whatever was sent:** chunked or
+  close-delimited, paced or not, stream or file, announced as a broadcast
+  or as a track. That is the router's timeout, not the speaker.
+- **Unpaced, a track that arrived in that time played through:** the buffer
+  was full before the connection died (14 MiB on a Play:3, 4 MiB on the
+  Playbar).
+- **After the stop the speaker answered nothing on that connection**, and
+  the server retried for about 16 minutes (`tcp_retries2`) before it gave
+  up: the speaker's acknowledgements were what the router dropped.
+- **The HEAD near the end went through:** a new connection, with a timeout
+  of its own.
+- **A station straight from the internet played 43 minutes:** that path
+  goes through the router both ways.
+- **"Older models" was a confound:** every speaker the reporter tried is in
+  the speakers' network, and the speakers Beacon is tested on, which never
+  showed it, share one network with the machine running it.
+
+The fix: each delivery hands its device the address the server's routing
+uses towards that device (core/local_address.py's `for_device()`) - for the
+stream, the radio relay and the UPnP event callback - and the check whether
+a device still plays this session's stream accepts any of the server's own
+addresses. On the reporter's original setup a speaker now gets the
+server's address in its own network, with no router in between. A device
+that really is behind the router gets the default route's address as
+before.
+
+Left open: Music Assistant #5100 (a Play:3 stopping at 38-46 s with a
+chunked stream, see "The comparison with the station") could be the same
+network cause or the firmware; nothing in it says which.
 
 ## What the framing fix did (2026-10-22)
 

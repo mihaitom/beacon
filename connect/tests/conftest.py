@@ -7,7 +7,7 @@ from typing import ClassVar
 import pytest
 from fastapi.testclient import TestClient
 
-from core import auth, state
+from core import auth, local_address, state
 from core import claims as claims_module
 from core import party as party_module
 from core import remote as remote_module
@@ -493,6 +493,21 @@ def _no_real_device_network(monkeypatch, request):
         )
 
     monkeypatch.setattr(socket.socket, "connect", _guarded)
+
+
+@pytest.fixture(autouse=True)
+def _single_network(monkeypatch, request):
+    """Every device reaches this machine at its default address, as on a
+    machine in one network. Looking up the route to a device is a UDP
+    connect() to its address, which _no_real_device_network above refuses
+    for a private one although nothing is sent; tests/test_local_address.py
+    gives the machine more networks on purpose."""
+    if request.node.get_closest_marker("live"):
+        return
+    real = local_address.local_ip_towards
+    monkeypatch.setattr(
+        local_address, "local_ip_towards", lambda host: real(local_address._ANYWHERE)
+    )
 
 
 @pytest.fixture

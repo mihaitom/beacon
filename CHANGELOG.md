@@ -30,6 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Fixed
 
 - The backend's logs no longer contain the media server login: usernames, passwords, tokens and API keys in addresses are masked, so a log can be shared without giving away access to the server
+- Casting works from a computer or server connected to more than one network: each speaker now gets Beacon's address in its own network, where songs used to break off or start over after about half a minute (reported by @mjj042, #56)
 - Casting to an older Sonos such as the Play:3 or the first-generation Playbar no longer jumps back to the start of a song after about 50 seconds (reported by @mjj042, #56)
 - Casting moves on to the next song when a song's audio is shorter than its listed length, as with some VBR MP3s, instead of stopping until pause and play are pressed (reported by @mjj042, #56)
 - A Sonos or DLNA speaker with a space in its name keeps Beacon up to date like any other, so its volume follows a change made on the speaker itself or in the Sonos app (reported by @mjj042, #56)

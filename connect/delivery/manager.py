@@ -141,7 +141,8 @@ class DeliveryManager:
 
     async def current_uri(self) -> str | None:
         """First target that can answer — play() hands every target in a
-        manager the same URL, so any one of them answers for the group. A
+        manager the same URL (each on the address in its own network, see
+        core/local_address.py), so any one of them answers for the group. A
         target that can't say (or fails to) is skipped rather than deciding
         the answer for the rest."""
         for delivery in self.deliveries:
