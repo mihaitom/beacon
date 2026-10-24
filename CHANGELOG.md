@@ -26,7 +26,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The help has a search across all its pages and a table of contents beside the page, with each FAQ question one click away, and goes back to where a link was followed from
 - In Now Playing, clicking the artwork switches between large and small: the small cover in the corner shows it large again, and over an artist background the large one makes it small
 - While a search runs, the results page shows Beacon's loading animation with a "Searching" label in the middle of the page, instead of a small spinner under the previous results
-- The bundled ffmpeg and the backend's libraries are updated with their latest security fixes, among them one for Ogg radio streams
+- The bundled ffmpeg, Electron and the backend's libraries are updated with their latest security fixes, among them one for Ogg radio streams
 
 ### Fixed
 
