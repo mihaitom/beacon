@@ -13,6 +13,7 @@ import '@/assets/main.css'
 import 'vuetify/styles'
 import { i18n } from '@/i18n'
 import { emitter } from '@/emitter'
+import { HELP_PAGES } from '@/services/help/docs'
 import HelpDialog from '../HelpDialog.vue'
 
 const vuetify = createVuetify({ components, directives })
@@ -35,7 +36,8 @@ async function open(width: number, height: number, compact = false) {
   )
   wrappers.push(wrapper)
   // The longest page, so a card that grows with its content would show it.
-  emitter.emit('openHelp', 'party-mode')
+  const longest = HELP_PAGES.reduce((a, b) => (b.body.length > a.body.length ? b : a))
+  emitter.emit('openHelp', longest.id)
   // v-dialog's enter transition, measured any earlier mid-scale.
   await new Promise((resolve) => setTimeout(resolve, 450))
   return document.querySelector('.help-dialog') as HTMLElement
