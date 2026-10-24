@@ -1,3 +1,7 @@
+---
+order: 2
+---
+
 # What gets converted, and why
 
 Four things decide whether audio is converted before it reaches an ear: what

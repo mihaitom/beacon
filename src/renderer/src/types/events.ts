@@ -1,6 +1,6 @@
 import type Toast from './toast'
 import type { Song } from './library'
-import type { HelpDocId, HelpTarget } from '@/services/help/docs'
+import type { HelpTarget } from '@/services/help/docs'
 
 /** Shorthand form for emitter.emit('toast', ...) — [level, title, message]. */
 export type ToastTuple = [Toast['level'], string, string]
@@ -9,12 +9,12 @@ export type AppEvents = {
   toast: Toast | ToastTuple
   openReleaseNotes: void
   // Opens HelpDialog.vue (mounted once in App.vue) on one of the bundled
-  // docs, or on one page of them at a heading (a link followed from
+  // docs (a page id or folder from docs/help/), or on one page at a heading (a link followed from
   // FeaturesDialog.vue). Each doc is offered where its question comes up -
   // the party dialog, the home automation key, the quality settings - so
   // the triggers are as spread out as showArtwork's below.
-  openHelp: HelpDocId | HelpTarget
-  // Opens FeaturesDialog.vue, the README's Features section. Same reasoning
+  openHelp: string | HelpTarget
+  // Opens FeaturesDialog.vue, docs/help/features.md. Same reasoning
   // as openReleaseNotes: its button sits in Settings, the dialog in App.vue.
   openFeatures: void
   // Broadcast by SongRow.vue's openMenu() with its own menuId — every other

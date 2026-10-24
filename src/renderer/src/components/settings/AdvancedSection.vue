@@ -146,7 +146,7 @@ export default {
         },
       ]
     },
-    /** docs/faq.md's entry on the older Sonos models. */
+    /** The FAQ's entry on the older Sonos models. */
     olderSonosHelp(): HelpTarget {
       return { page: pageFor('faq', OLDER_SONOS_FAQ).id, anchor: OLDER_SONOS_FAQ }
     },

@@ -156,7 +156,7 @@ fail until the recipe catches up.
   stream from a hostname that bypasses the CDN.
 - **Rights.** Streaming a library over the internet to people outside the
   household is legally a different thing from a party in one room. A
-  decision for whoever runs it, but worth stating in `docs/party-mode.md`
+  decision for whoever runs it, but worth stating in `docs/help/party-mode.md`
   when this ships.
 - **Sync between guests.** Matters more than first thought: in a voice chat
   people react to the music together. Today every guest is the burst
@@ -180,7 +180,7 @@ fail until the recipe catches up.
    card and the lyrics.
 6. The visualizer from the broadcaster's own output.
 7. Radio.
-8. `docs/party-mode.md` and the changelog.
+8. `docs/help/party-mode.md` and the changelog.
 
 ## Tests
 

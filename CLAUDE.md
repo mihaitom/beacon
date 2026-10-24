@@ -25,7 +25,7 @@ conventions are, and which mistakes have already been made once.
 | `connect/core/`          | Sessions, auth, the playback clock, radio (relay, ICY metadata, history), waveform, recommendations                                                                                                                       |
 | `connect/delivery/`      | One module per cast target: `sonos.py`, `airplay.py`, `chromecast.py`, `dlna.py`, coordinated by `manager.py`                                                                                                             |
 | `connect/static/remote/` | The phone Remote Control UI - plain JS, no build step, served by connect itself                                                                                                                                           |
-| `connect/static/party/`  | Build output (gitignored) of the party-mode guest page, `src/renderer/src/party/` via `pnpm build:party`. Reachable without a login, so `routes/party.py` serves only it and checks everything (see `docs/party-mode.md`) |
+| `connect/static/party/`  | Build output (gitignored) of the party-mode guest page, `src/renderer/src/party/` via `pnpm build:party`. Reachable without a login, so `routes/party.py` serves only it and checks everything (see `docs/help/party-mode.md`) |
 
 The frontend never talks to the media server directly: every call goes
 through connect's proxy, which is also what makes Jellyfin and Plex look like

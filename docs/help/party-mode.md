@@ -1,3 +1,7 @@
+---
+order: 1
+---
+
 # Party mode
 
 Guests open a link or scan a QR code and get a page of their own in the app's
@@ -185,6 +189,8 @@ Each one opens `/party` to guests and leaves the rest of Beacon behind your
 login. Without a login in front of Beacon, any of them shortened to the
 plain proxy host does the job.
 
+<!-- tabs -->
+
 #### Traefik (Docker labels)
 
 Give `/party` its own router without the forward-auth middleware and a
@@ -332,6 +338,8 @@ The expression matches `/party` and everything under `/party/`, but not
 another path that happens to start with `/party`. With this rule in place,
 the proxy needs no route of its own for the party: the forward-auth in
 front of Beacon asks Authelia, and Authelia waves `/party` through.
+
+<!-- /tabs -->
 
 ### Client addresses
 

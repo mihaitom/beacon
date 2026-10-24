@@ -35,11 +35,12 @@
 <script lang="ts">
 import { emitter } from '@/emitter'
 import {
+  FEATURES_PAGE,
   HELP_PAGES,
   findHelpPage,
+  isFaqPage,
   pageFor,
   renderHelpPage,
-  type HelpDocId,
   type HelpPage,
   type HelpTarget,
 } from '@/services/help/docs'
@@ -70,7 +71,7 @@ export default {
     return {
       visible: false,
       pageId: pageFor('faq').id,
-      listener: null as ((target: HelpDocId | HelpTarget) => void) | null,
+      listener: null as ((target: string | HelpTarget) => void) | null,
     }
   },
   computed: {
@@ -78,9 +79,10 @@ export default {
       const option = (page: HelpPage) => ({ title: page.title, value: page.id })
       return [
         { type: 'subheader', title: this.$t('help.faq') },
-        ...HELP_PAGES.filter((page) => page.doc === 'faq').map(option),
+        ...HELP_PAGES.filter(isFaqPage).map(option),
         { type: 'subheader', title: this.$t('help.guides') },
-        ...HELP_PAGES.filter((page) => page.doc !== 'faq').map(option),
+        // The features page has a dialog of its own (FeaturesDialog.vue).
+        ...HELP_PAGES.filter((page) => !isFaqPage(page) && page !== FEATURES_PAGE).map(option),
       ]
     },
     html(): string {
@@ -93,14 +95,14 @@ export default {
     },
   },
   mounted() {
-    this.listener = (target: HelpDocId | HelpTarget) => this.open(target)
+    this.listener = (target: string | HelpTarget) => this.open(target)
     emitter.on('openHelp', this.listener)
   },
   beforeUnmount() {
     if (this.listener) emitter.off('openHelp', this.listener)
   },
   methods: {
-    open(target: HelpDocId | HelpTarget) {
+    open(target: string | HelpTarget) {
       const anchor = typeof target === 'string' ? null : target.anchor
       this.pageId = typeof target === 'string' ? pageFor(target).id : target.page
       this.visible = true
@@ -111,7 +113,7 @@ export default {
      * can read like the guide of the same name. */
     selectionLabel(id: string): string {
       const page = findHelpPage(id)
-      return page.doc === 'faq' ? `${this.$t('help.faq')}: ${page.title}` : page.title
+      return isFaqPage(page) ? `${this.$t('help.faq')}: ${page.title}` : page.title
     },
     /** Links between the bundled docs and within one stay in the dialog;
      * everything else was given target="_blank" when it was rendered. */

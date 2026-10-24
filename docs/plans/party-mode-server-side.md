@@ -4,7 +4,7 @@ Status: done (2026-10-07).
 
 ## Why
 
-A party lives in the browser tab that started it (`docs/party-mode.md`,
+A party lives in the browser tab that started it (`docs/help/party-mode.md`,
 "Things to know"). Every guest wish, search and album lookup is relayed to
 that tab, which answers it out of its own playback store, and the tab's
 keepalive is what keeps the party alive: connect ends it after 90 seconds
@@ -157,7 +157,7 @@ cover goes through the existing `remember_cover()` / `/party/api/cover`.
    `/lyrics/auto`) and its artist's background (`core/fanart.py`), so guests
    keep both while the window sleeps. No offset on the fallback lyrics, and
    the window's own match and offset take over once it wakes.
-7. **Host UI** and `docs/party-mode.md`. _Done:_ the party dialog says which
+7. **Host UI** and `docs/help/party-mode.md`. _Done:_ the party dialog says which
    path is in effect ("Runs on the Beacon server while you cast" / "Keep
    this window open"), and a phone starting a party without a cast is told
    the music plays on that device and must stay awake.

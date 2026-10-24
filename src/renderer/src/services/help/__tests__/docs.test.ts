@@ -1,11 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import dockerfile from '../../../../../../Dockerfile?raw'
-import readme from '../../../../../../README.md?raw'
 import dockerignore from '../../../../../../.dockerignore?raw'
 import {
   FEATURES_PAGE,
-  HELP_DOCS,
   HELP_PAGES,
+  isFaqPage,
   pageFor,
   renderHelpPage,
   resolveLink,
@@ -33,55 +32,48 @@ describe('slugify', () => {
 
 describe('resolveLink', () => {
   it('keeps an anchor in the same doc', () => {
-    expect(resolveLink('#client-addresses', 'docs/party-mode.md')).toEqual({
+    expect(resolveLink('#client-addresses', 'docs/help/party-mode.md')).toEqual({
       kind: 'anchor',
       anchor: 'client-addresses',
     })
   })
 
   it('opens another bundled doc in the dialog, at its heading', () => {
-    expect(resolveLink('party-mode.md#over-the-internet', 'docs/faq.md')).toEqual({
+    expect(resolveLink('../party-mode.md#over-the-internet', 'docs/help/faq/privacy.md')).toEqual({
       kind: 'doc',
       id: 'party-mode',
       anchor: 'over-the-internet',
     })
-    expect(resolveLink('faq.md', 'docs/party-mode.md')).toEqual({
+    expect(resolveLink('faq/library.md', 'docs/help/features.md')).toEqual({
       kind: 'doc',
-      id: 'faq',
+      id: 'faq/library',
       anchor: null,
     })
   })
 
   it('sends everything not bundled to the repository on GitHub', () => {
-    expect(resolveLink('investigations/radio-visualizer-cast-sync.md', 'docs/faq.md')).toEqual({
+    expect(
+      resolveLink(
+        '../../investigations/radio-visualizer-cast-sync.md',
+        'docs/help/faq/playback.md',
+      ),
+    ).toEqual({
       kind: 'external',
       url: `${REPO}/blob/main/docs/investigations/radio-visualizer-cast-sync.md`,
     })
-    expect(resolveLink('../build/ffmpeg/README.md', 'docs/faq.md')).toEqual({
+    expect(resolveLink('../../../build/ffmpeg/README.md', 'docs/help/faq/formats.md')).toEqual({
       kind: 'external',
       url: `${REPO}/blob/main/build/ffmpeg/README.md`,
     })
     // A folder is a tree on GitHub, not a blob.
-    expect(resolveLink('../home-assistant/', 'docs/home-automation.md')).toEqual({
-      kind: 'external',
-      url: `${REPO}/tree/main/home-assistant/`,
-    })
-  })
-
-  it('resolves a link in the README from the repository root', () => {
-    expect(resolveLink('docs/party-mode.md', 'README.md')).toEqual({
-      kind: 'doc',
-      id: 'party-mode',
-      anchor: null,
-    })
-    expect(resolveLink('home-assistant/', 'README.md')).toEqual({
+    expect(resolveLink('../../home-assistant/', 'docs/help/home-automation.md')).toEqual({
       kind: 'external',
       url: `${REPO}/tree/main/home-assistant/`,
     })
   })
 
   it('leaves a full URL alone', () => {
-    expect(resolveLink('https://example.com/x', 'docs/faq.md')).toEqual({
+    expect(resolveLink('https://example.com/x', 'docs/help/faq/privacy.md')).toEqual({
       kind: 'external',
       url: 'https://example.com/x',
     })
@@ -89,19 +81,33 @@ describe('resolveLink', () => {
 })
 
 describe('the bundled docs', () => {
-  const rendered = new Map(
-    [...HELP_PAGES, FEATURES_PAGE].map((page) => [page.id, parse(renderHelpPage(page))]),
-  )
+  const rendered = new Map(HELP_PAGES.map((page) => [page.id, parse(renderHelpPage(page))]))
 
-  it('each have a title', () => {
-    for (const doc of HELP_DOCS) expect(doc.title, doc.path).not.toBe('')
-    for (const page of HELP_PAGES) expect(page.title, page.id).not.toBe('')
+  it('are every file under docs/help/, the FAQ one page per topic', () => {
+    expect(HELP_PAGES.map((page) => page.id)).toContain('party-mode')
+    expect(HELP_PAGES.filter(isFaqPage).length).toBeGreaterThan(1)
+    expect(FEATURES_PAGE.id).toBe('features')
+  })
+
+  it('each have a title, and show neither front matter nor markers as text', () => {
+    for (const page of HELP_PAGES) {
+      expect(page.title, page.id).not.toBe('')
+      expect(page.body, page.id).not.toMatch(/^---/)
+      expect(rendered.get(page.id)!.body.textContent, page.id).not.toContain('<!--')
+    }
+  })
+
+  it('come in the order their front matter gives', () => {
+    const faq = HELP_PAGES.filter(isFaqPage)
+    const orders = faq.map((page) => page.order)
+    expect(orders).toEqual([...orders].sort((a, b) => a - b))
+    expect(orders.every(Number.isFinite)).toBe(true)
   })
 
   it('find the FAQ topic that holds a question', () => {
-    for (const page of HELP_PAGES) {
+    for (const page of HELP_PAGES.filter(isFaqPage)) {
       for (const anchor of page.anchors) {
-        expect(pageFor(page.doc!, anchor).id, `${page.id}#${anchor}`).toBe(page.id)
+        expect(pageFor('faq', anchor).id, `${page.id}#${anchor}`).toBe(page.id)
       }
     }
   })
@@ -131,45 +137,26 @@ describe('the bundled docs', () => {
     }
   })
 
-  // The web image copies docs/ file by file; one left out there, or
-  // filtered out again by .dockerignore, only breaks the Docker build.
-  it('are all copied into the Docker build', () => {
+  // Left out there, or filtered out again by .dockerignore, the help only
+  // breaks in the Docker build.
+  it('are copied into the Docker build', () => {
     const ignored = dockerignore
       .split('\n')
       .map((line) => line.trim())
       .filter((line) => line && !line.startsWith('#'))
-    for (const path of [...HELP_DOCS.map((doc) => doc.path), 'README.md']) {
-      expect(dockerfile, path).toMatch(new RegExp(`^COPY .*\\b${path.replace('.', '\\.')}\\b`, 'm'))
-      expect(ignored, path).not.toContain(path)
-      expect(ignored, path).not.toContain(path.split('/')[0])
-    }
-  })
-})
-
-describe('FEATURES_PAGE', () => {
-  it("is the README's Features section with its subsections, and nothing after it", () => {
-    expect(FEATURES_PAGE.body).toMatch(/^- \*\*/m)
-    expect(FEATURES_PAGE.body).not.toMatch(/^## /m)
-    expect(FEATURES_PAGE.anchors.size).toBeGreaterThan(0)
+    expect(dockerfile).toMatch(/^COPY docs\/help\b/m)
+    for (const path of ['docs', 'docs/help', 'docs/help/']) expect(ignored).not.toContain(path)
   })
 
-  it('leaves out the keyboard shortcuts, which have a dialog of their own', () => {
-    const features = readme.slice(readme.search(/^## Features$/m) + 1)
-    const subsections = [...features.slice(0, features.search(/^## /m)).matchAll(/^### (.+)$/gm)]
-    const kept = subsections.map((m) => slugify(m[1]!)).filter((id) => id !== 'keyboard-shortcuts')
-    expect(FEATURES_PAGE.anchors).not.toContain('keyboard-shortcuts')
-    expect(kept.length).toBeGreaterThan(0)
-    for (const id of kept) expect(FEATURES_PAGE.anchors, id).toContain(id)
-  })
-
-  it('opens the bundled docs it links to in the help dialog', () => {
-    const page = new DOMParser().parseFromString(renderHelpPage(FEATURES_PAGE), 'text/html')
-    const inApp = [...page.querySelectorAll<HTMLAnchorElement>('a[data-help-page]')]
+  it('link from the features page to the other docs inside the dialog', () => {
+    const inApp = [
+      ...rendered.get('features')!.querySelectorAll<HTMLAnchorElement>('a[data-help-page]'),
+    ]
     expect(inApp.map((link) => link.dataset.helpPage)).toContain('party-mode')
   })
 })
 
-describe('tabbed sections', () => {
+describe('tab groups', () => {
   const page = parse(renderHelpPage(pageFor('party-mode')))
   const group = page.querySelector('.help-tabs')!
 
@@ -188,32 +175,51 @@ describe('tabbed sections', () => {
     expect(pageFor('party-mode').anchors.has(slugify('Traefik (file provider)'))).toBe(true)
   })
 
-  it('keep a code block whole, lines in it that look like headings included', () => {
-    const body = [
-      '### Example setups',
+  function render(lines: string[]): Document {
+    return parse(renderHelpPage({ ...pageFor('party-mode'), body: lines.join('\n') }))
+  }
+
+  it("start a tab only at headings of the first one's level", () => {
+    const own = render([
+      '<!-- tabs -->',
+      '#### First',
+      '##### Inside the first',
+      '#### Second',
+      '<!-- /tabs -->',
+    ])
+    expect([...own.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual([
+      'First',
+      'Second',
+    ])
+    expect(own.getElementById('first-panel')!.querySelector('h5')).not.toBeNull()
+  })
+
+  it('keep a code block whole, lines in it that look like headings or markers included', () => {
+    const own = render([
+      '<!-- tabs -->',
       '',
       '#### First',
       '',
       '```',
       '## not a heading',
-      '#### nor this',
+      '<!-- /tabs -->',
       '```',
       '',
       '#### Second',
       '',
       'Text.',
-    ].join('\n')
-    const own = parse(renderHelpPage({ ...pageFor('party-mode'), body }))
+      '<!-- /tabs -->',
+    ])
     expect([...own.querySelectorAll('[role="tab"]')].map((tab) => tab.textContent)).toEqual([
       'First',
       'Second',
     ])
     expect(own.getElementById('first-panel')!.querySelector('pre')!.textContent).toContain(
-      '#### nor this',
+      '## not a heading',
     )
   })
 
-  it('leave what follows the section as it was', () => {
+  it('leave what follows the group as it was', () => {
     expect(page.getElementById('client-addresses')?.closest('.help-tabs')).toBeNull()
   })
 })

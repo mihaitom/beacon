@@ -1,3 +1,7 @@
+---
+order: 3
+---
+
 # Home automation
 
 Beacon's desktop app can be watched and controlled by Home Assistant or any
@@ -6,7 +10,7 @@ uses. This page is for whoever writes such an integration.
 
 What Beacon provides is a key that survives restarts, a fixed address, and
 an mDNS announcement. A Home Assistant integration built on them, with a
-ready-made dashboard, lives in [home-assistant/](../home-assistant/).
+ready-made dashboard, lives in [home-assistant/](../../home-assistant/).
 
 ## Setting it up
 

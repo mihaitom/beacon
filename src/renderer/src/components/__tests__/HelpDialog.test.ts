@@ -5,13 +5,13 @@ import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { emitter } from '@/emitter'
-import { HELP_PAGES, type HelpDocId } from '@/services/help/docs'
+import { HELP_PAGES, isFaqPage, pageFor } from '@/services/help/docs'
 import HelpDialog from '../HelpDialog.vue'
 
 const vuetify = createVuetify({ components, directives })
 const wrappers: VueWrapper[] = []
 
-async function openOn(id: HelpDocId) {
+async function openOn(id: string) {
   const wrapper = mount(HelpDialog, {
     attachTo: document.body,
     global: { plugins: [vuetify, i18n] },
@@ -40,7 +40,7 @@ describe('HelpDialog', () => {
   it('follows a link to another page inside the dialog', async () => {
     // A link as renderHelpPage() writes one, so this does not depend on
     // which docs happen to link to each other today.
-    const target = HELP_PAGES.find((page) => page.doc !== 'faq')!
+    const target = HELP_PAGES.find((page) => !isFaqPage(page))!
     const anchor = [...target.anchors].at(-1)!
     const wrapper = await openOn('faq')
     const link = document.createElement('a')
@@ -55,7 +55,7 @@ describe('HelpDialog', () => {
   })
 
   it('opens on one page at a heading, as a link from elsewhere asks', async () => {
-    const page = HELP_PAGES.find((p) => p.doc === 'faq' && p !== HELP_PAGES[0])!
+    const page = HELP_PAGES.find((p) => isFaqPage(p) && p !== pageFor('faq'))!
     const anchor = [...page.anchors].at(-1)!
     const wrapper = await openOn('faq')
     emitter.emit('openHelp', { page: page.id, anchor })

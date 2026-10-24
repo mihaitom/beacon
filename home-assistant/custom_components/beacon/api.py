@@ -1,4 +1,4 @@
-"""Beacon's home automation API (docs/home-automation.md in the Beacon repo)."""
+"""Beacon's home automation API (docs/help/home-automation.md in the Beacon repo)."""
 
 import asyncio
 import json

@@ -24,10 +24,8 @@ RUN pnpm install
 # (e.g. in connect/) shouldn't bust this layer and trigger a needless rebuild.
 COPY src ./src
 COPY CHANGELOG.md web.vite.config.ts party.vite.config.ts tsconfig.json tsconfig.app.json tsconfig.node.json ./
-# The docs the in-app help bundles (src/renderer/src/services/help/docs.ts),
-# README.md for its Features section.
-COPY README.md ./
-COPY docs/faq.md docs/party-mode.md docs/transcoding-decisions.md docs/home-automation.md ./docs/
+# The docs the in-app help bundles (src/renderer/src/services/help/docs.ts).
+COPY docs/help ./docs/help
 
 RUN pnpm run build:web
 # The party guest page, which connect serves itself under /party/ (see

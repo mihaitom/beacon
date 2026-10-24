@@ -8,7 +8,7 @@ otherwise. The record carries the port, so an integration that follows it
 keeps working when the desktop app had to fall back to another one.
 
 TXT properties: `id` (stable across restarts, for telling instances apart),
-`version`, and `path`, where the API lives. See docs/home-automation.md.
+`version`, and `path`, where the API lives. See docs/help/home-automation.md.
 """
 
 import asyncio
