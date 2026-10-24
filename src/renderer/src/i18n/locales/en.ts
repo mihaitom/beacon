@@ -777,19 +777,6 @@ export default {
     logLevelError: 'Error',
     logLevelChanged: 'Log level updated.',
     logLevelChangeFailed: "Couldn't update the log level.",
-    olderSonosMode: 'Older Sonos speakers',
-    olderSonosModeHint:
-      'How a Play:3 or a first-generation Playbar gets each song. Long songs can stop early on these speakers; if they do, try the other two. Takes effect from the next song.',
-    olderSonosModeWhole: 'Whole song at once',
-    olderSonosModePaced: 'At playback speed, like a radio station',
-    olderSonosModeFile: 'As a file the speaker fetches in parts',
-    olderSonosModeWholeHint:
-      "As fast as it is made. Plays through what fits the speaker's memory, about six minutes on a Play:3.",
-    olderSonosModePacedHint:
-      'No faster than it plays, the way an internet radio station sends music.',
-    olderSonosModeFileHint:
-      'A file of known length the speaker can fetch in parts. Always sent as MP3.',
-    olderSonosModeFailed: "Couldn't change how older Sonos speakers get their music.",
     recommendations: 'Personalized recommendations',
     recommendationsHint:
       "Discover on Home uses artists similar to what you actually listen to, looked up at MusicBrainz, ListenBrainz and Deezer - this shares a library artist name or two with them. Off falls back to random albums; opening an artist's own page still looks up that one artist either way.",
@@ -1121,7 +1108,6 @@ export default {
     guides: 'Guides',
     faq: 'FAQ',
     conversion: 'What gets converted, and why',
-    olderSonos: 'How the three ways differ',
     search: 'Search help',
     noResults: 'Nothing found. Try fewer or other words.',
     back: 'Back',

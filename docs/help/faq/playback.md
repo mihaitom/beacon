@@ -4,18 +4,6 @@ order: 3
 
 # How playback behaves
 
-## Why do long songs stop early on an older Sonos?
-
-**A Play:3 or a first-generation Playbar stops reading a stream 30 to 45 seconds after it starts, and then plays only what it took in by then.** Newer Sonos models do not do this. How much that is depends on how the song is sent, so Settings → Advanced → "Older Sonos speakers" offers three ways. The setting applies to these two models only; every other speaker always gets its music at playback speed.
-
-- **Whole song at once** (the default). Beacon sends the song as fast as it is made, and in those first seconds the speaker takes in as much as its memory holds: about 14 MB on a Play:3, six minutes of a 320 kb/s MP3, and about 5 MB on a Playbar, two minutes. A shorter song plays through. A longer one ends early, and pause and play carries it on from where it stopped.
-- **At playback speed, like a radio station.** Beacon stays a few seconds ahead of the speaker and sends no faster than it plays, the way an internet radio station does, and these speakers play a station for as long as it runs. If one stops reading this way too, the song stops about a minute in.
-- **As a file the speaker fetches in parts.** The song goes out as a file of known length that the speaker may fetch piece by piece, the way Sonos plays music from a NAS. It is always a 320 kb/s MP3, so a lossless song arrives lossy on these two speakers, and a file whose own length information is wrong can end in a few seconds of silence.
-
-Which of the two newer ways keeps a long song going on these speakers is not settled yet. With one of them at home, trying both with a song longer than seven minutes and reporting back in [#56](https://github.com/mihaitom/beacon/issues/56) settles it.
-
-**Seeing what happens:** with the log level at Debug (Settings → Advanced), Now Playing shows a small panel while casting: what was sent and how far into the song it reaches, whether the speaker is still reading (`STALLED` once it has stopped), how many seconds it has ahead, and what it asked for. A `GET` with a byte range is the speaker fetching the next part of a file. The whole case, with the measurements, is in [investigations/old-sonos-models-stop-reading-the-stream.md](../../investigations/old-sonos-models-stop-reading-the-stream.md).
-
 ## Why can Beacon feel slower with Jellyfin?
 
 **Mostly on the very first load, and then it stops mattering.**

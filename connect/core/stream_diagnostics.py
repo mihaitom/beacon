@@ -13,7 +13,6 @@ this is the only place it can be seen while it happens.
 import time
 
 from .device_reports import last_reported
-from .older_sonos import stream_mode
 from .session import SessionState, compute_position, playback_duration
 from .state import list_target_pairs
 
@@ -34,8 +33,6 @@ def describe_stream(session: SessionState) -> dict:
                 "outcome": conn.outcome,
                 "age": clock - conn.opened_at,
                 "model": conn.model,
-                "mode": conn.mode,
-                "range": conn.byte_range,
                 "start": conn.start,
                 "bytes": conn.bytes_delivered,
                 "last_read": clock - conn.last_handoff,
@@ -74,7 +71,6 @@ def describe_stream(session: SessionState) -> dict:
         ahead = max(sent_ends) - (device["position"] + device["age"])
 
     return {
-        "older_sonos_mode": stream_mode(),
         "position": compute_position(session) if st.current_track else None,
         "track_end": playback_duration(st) if st.current_track else None,
         "connections": connections,

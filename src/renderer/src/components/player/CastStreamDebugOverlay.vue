@@ -123,17 +123,15 @@ export default {
       const conn = this.connection
       const name = target ? target.name : 'nothing'
       const kind = conn?.model ?? target?.type
-      const mode = conn?.mode ? ` · ${conn.mode}` : ''
-      lines.push({ label: 'Stream', value: `${name}${kind ? ` · ${kind}` : ''}${mode}` })
+      lines.push({ label: 'Stream', value: `${name}${kind ? ` · ${kind}` : ''}` })
       if (conn) {
         const reach = conn.audio_end !== null ? ` · to ${seconds(conn.audio_end)}` : ''
-        const range = conn.range ? ` · bytes ${conn.range}` : ''
         const state = conn.open
           ? 'open'
           : conn.outcome === 'source finished'
             ? 'done'
             : conn.outcome
-        lines.push({ label: 'Sent', value: `${mib(conn.bytes)}${reach}${range} · ${state}` })
+        lines.push({ label: 'Sent', value: `${mib(conn.bytes)}${reach} · ${state}` })
         const stalled = conn.open && conn.last_read > STALLED_SECONDS
         const rate = this.readRate !== null ? `${Math.round(this.readRate / 1024)} KiB/s · ` : ''
         lines.push({

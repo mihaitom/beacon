@@ -36,7 +36,6 @@ from core.streamer import (
     _FALLBACK_ARGS,
     _LOSSLESS_REENCODE_CODECS,
     _LOSSY_ENCODERS,
-    _track_filter_args,
     lossless_encode_args,
     lossy_encode_args,
     pcm_decode_cmd,
@@ -76,8 +75,8 @@ def _components_named_in(args: list[str]) -> tuple[set[str], set[str], set[str]]
         elif flag == "-f" and index > first_input:
             muxers.add(value)
         elif flag == "-af":
-            # "volume=0.7,apad": a filter with options or without. Reading
-            # only the "name=" ones is how apad went missing from a build.
+            # "volume=0.7" and any future chain, a filter with options or
+            # without: reading only the "name=" ones misses the latter.
             filters.update(part.split("=", 1)[0] for part in value.split(","))
     return encoders, muxers, filters
 
@@ -104,8 +103,6 @@ def _every_command() -> list[list[str]]:
     containers."""
     commands = [
         list(_FALLBACK_ARGS),
-        # A cast track's filters, with both of them in there.
-        _track_filter_args(0.7, pad=True),
         list(lossless_encode_args()[0]),
         list(waveform._DECODE_CMD),
         # gain != 1.0 so the ReplayGain filter is actually in there.
@@ -177,7 +174,6 @@ def test_every_filter_the_backend_names_is_in_the_contract():
     for command in _every_command():
         named |= _components_named_in(command)[2]
     assert "volume" in named, "the ReplayGain filter is no longer reachable from these commands"
-    assert "apad" in named, "the padding filter is no longer reachable from these commands"
     assert named <= required, f"not in required-components: {sorted(named - required)}"
 
 

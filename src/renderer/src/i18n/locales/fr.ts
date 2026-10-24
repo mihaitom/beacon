@@ -791,19 +791,6 @@ export default {
     logLevelError: 'Erreur',
     logLevelChanged: 'Niveau de journalisation mis à jour.',
     logLevelChangeFailed: 'Impossible de mettre à jour le niveau de journalisation.',
-    olderSonosMode: 'Anciennes enceintes Sonos',
-    olderSonosModeHint:
-      "Comment un Play:3 ou une Playbar de première génération reçoit chaque morceau. Les longs morceaux peuvent s'y arrêter trop tôt ; dans ce cas, essayez les deux autres options. S'applique à partir du morceau suivant.",
-    olderSonosModeWhole: "Le morceau entier d'un coup",
-    olderSonosModePaced: 'À la vitesse de lecture, comme une radio',
-    olderSonosModeFile: "Comme un fichier que l'enceinte télécharge par parties",
-    olderSonosModeWholeHint:
-      "Aussi vite qu'il est produit. Passe en entier ce qui tient dans la mémoire de l'enceinte, environ six minutes sur un Play:3.",
-    olderSonosModePacedHint:
-      'Pas plus vite que la lecture, comme une radio internet envoie sa musique.',
-    olderSonosModeFileHint:
-      "Un fichier de longueur connue que l'enceinte peut télécharger par parties. Toujours en MP3.",
-    olderSonosModeFailed: 'Impossible de modifier le réglage des anciennes enceintes Sonos.',
     recommendations: 'Recommandations personnalisées',
     recommendationsHint:
       "Découvrir sur l'accueil s'appuie sur des artistes proches de ce que vous écoutez vraiment, recherchés auprès de MusicBrainz, ListenBrainz et Deezer - cela leur transmet un ou deux noms d'artistes de votre bibliothèque. Désactivé, des albums au hasard sont proposés ; ouvrir la page d'un artiste consulte toujours cet artiste, dans un cas comme dans l'autre.",
@@ -1138,7 +1125,6 @@ export default {
     guides: 'Guides',
     faq: 'FAQ',
     conversion: 'Ce qui est converti, et pourquoi',
-    olderSonos: 'Ce qui distingue les trois options',
     search: "Rechercher dans l'aide",
     noResults: "Aucun résultat. Essayez avec moins de mots ou d'autres mots.",
     back: 'Retour',

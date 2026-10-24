@@ -260,7 +260,6 @@ The answers live in [docs/help/faq/](docs/help/faq/):
 - [What actually gets sent to a speaker, and when is it converted?](docs/help/faq/formats.md#what-actually-gets-sent-to-a-speaker-and-when-is-it-converted)
 - [And in Beacon's own player?](docs/help/faq/formats.md#and-in-beacons-own-player)
 - [Why is a surround track quieter than everything else?](docs/help/faq/formats.md#why-is-a-surround-track-quieter-than-everything-else)
-- [Why do long songs stop early on an older Sonos?](docs/help/faq/playback.md#why-do-long-songs-stop-early-on-an-older-sonos)
 - [Why can Beacon feel slower with Jellyfin?](docs/help/faq/playback.md#why-can-beacon-feel-slower-with-jellyfin)
 - [Why is there no visualizer, ReplayGain or volume slider in the mobile web player?](docs/help/faq/playback.md#why-is-there-no-visualizer-replaygain-or-volume-slider-in-the-mobile-web-player)
 - [Why don't OS media keys / lock screen controls work while casting?](docs/help/faq/playback.md#why-dont-os-media-keys--lock-screen-controls-work-while-casting)

@@ -13,10 +13,6 @@ export interface StreamConnectionInfo {
   age: number
   /** A Sonos's model number ("S3"), null for anything else. */
   model: string | null
-  /** An older Sonos's mode: 'whole' | 'paced' | 'file', else null. */
-  mode: string | null
-  /** "first-last/total" of a file's byte range. */
-  range: string | null
   start: number
   bytes: number
   last_read: number
@@ -39,12 +35,11 @@ export interface StreamRequestInfo {
   model: string | null
   range: string | null
   icy: string | null
-  /** Set when the request was turned away ("204, stopped", "416"). */
+  /** Set when the request was turned away ("204, stopped"). */
   answer: string | null
 }
 
 export interface StreamDiagnostics {
-  older_sonos_mode: string
   position: number | null
   track_end: number | null
   connections: StreamConnectionInfo[]

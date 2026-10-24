@@ -360,6 +360,22 @@ class TestRadioStreamIcy:
         # own comment on that distinction).
         assert r.headers["icy-name"] == "OWR International"
 
+    def test_a_station_name_cannot_break_the_icy_name_header(self, client, radio_playing):
+        """Starlette cannot encode a name outside latin-1, and a control
+        character fails the whole response: either took the stream down."""
+        radio_playing.state.radio_info["title"] = "Ночь\nFM"
+
+        async def fake_stream(urls, *args, **kwargs):
+            yield b"audio"
+
+        with patch("routes.stream.stream_tracks", fake_stream):
+            r = client.get(
+                f"/stream/radio/{radio_playing.session_id}", headers={"Icy-MetaData": "1"}
+            )
+
+        assert r.status_code == 200
+        assert r.headers["icy-name"] == "???? FM"
+
     def test_muxed_body_demuxes_back_to_the_original_audio_and_title(self, client, radio_playing):
         radio_playing.radio_title = "Artist - Track"
 

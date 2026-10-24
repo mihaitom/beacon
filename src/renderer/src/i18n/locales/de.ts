@@ -787,20 +787,6 @@ export default {
     logLevelError: 'Fehler',
     logLevelChanged: 'Log-Level aktualisiert.',
     logLevelChangeFailed: 'Log-Level konnte nicht aktualisiert werden.',
-    olderSonosMode: 'Ältere Sonos-Lautsprecher',
-    olderSonosModeHint:
-      'Wie ein Play:3 oder eine Playbar der ersten Generation jeden Song bekommt. Lange Songs können auf diesen Lautsprechern zu früh enden; dann die anderen beiden ausprobieren. Gilt ab dem nächsten Song.',
-    olderSonosModeWhole: 'Ganzer Song auf einmal',
-    olderSonosModePaced: 'In Abspielgeschwindigkeit, wie ein Radiosender',
-    olderSonosModeFile: 'Als Datei, die der Lautsprecher in Teilen holt',
-    olderSonosModeWholeHint:
-      'So schnell, wie er entsteht. Läuft durch, was in den Speicher des Lautsprechers passt, auf einem Play:3 etwa sechs Minuten.',
-    olderSonosModePacedHint:
-      'Nicht schneller, als er spielt, so wie ein Internetradiosender Musik sendet.',
-    olderSonosModeFileHint:
-      'Eine Datei bekannter Länge, die der Lautsprecher in Teilen holen kann. Immer als MP3.',
-    olderSonosModeFailed:
-      'Die Einstellung für ältere Sonos-Lautsprecher konnte nicht geändert werden.',
     recommendations: 'Personalisierte Empfehlungen',
     recommendationsHint:
       'Entdecken auf der Startseite nutzt Künstler, die dem ähneln, was du tatsächlich hörst, nachgeschlagen bei MusicBrainz, ListenBrainz und Deezer - dabei werden ein bis zwei Künstlernamen aus deiner Bibliothek an diese Dienste übermittelt. Aus zeigt stattdessen zufällige Alben; die Seite eines Künstlers schlägt diesen einen Künstler weiterhin nach, so oder so.',
@@ -1135,7 +1121,6 @@ export default {
     guides: 'Anleitungen',
     faq: 'Häufige Fragen',
     conversion: 'Was wann umgewandelt wird',
-    olderSonos: 'Was die drei Varianten unterscheidet',
     search: 'Hilfe durchsuchen',
     noResults: 'Nichts gefunden. Versuch es mit weniger oder anderen Wörtern.',
     back: 'Zurück',

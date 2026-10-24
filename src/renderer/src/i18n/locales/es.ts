@@ -787,19 +787,6 @@ export default {
     logLevelError: 'Error',
     logLevelChanged: 'Nivel de registro actualizado.',
     logLevelChangeFailed: 'No se pudo actualizar el nivel de registro.',
-    olderSonosMode: 'Altavoces Sonos antiguos',
-    olderSonosModeHint:
-      'Cómo recibe cada canción un Play:3 o una Playbar de primera generación. En estos altavoces las canciones largas pueden terminar antes de tiempo; si pasa, prueba las otras dos opciones. Se aplica a partir de la siguiente canción.',
-    olderSonosModeWhole: 'La canción entera de una vez',
-    olderSonosModePaced: 'A velocidad de reproducción, como una emisora de radio',
-    olderSonosModeFile: 'Como un archivo que el altavoz descarga por partes',
-    olderSonosModeWholeHint:
-      'Tan rápido como se genera. Suena entero lo que cabe en la memoria del altavoz, unos seis minutos en un Play:3.',
-    olderSonosModePacedHint:
-      'No más rápido de lo que suena, como envía la música una emisora de radio por internet.',
-    olderSonosModeFileHint:
-      'Un archivo de longitud conocida que el altavoz puede descargar por partes. Siempre en MP3.',
-    olderSonosModeFailed: 'No se pudo cambiar el ajuste para los altavoces Sonos antiguos.',
     recommendations: 'Recomendaciones personalizadas',
     recommendationsHint:
       'Descubrir en Inicio usa artistas parecidos a lo que escuchas realmente, consultados en MusicBrainz, ListenBrainz y Deezer - esto comparte con ellos uno o dos nombres de artista de tu biblioteca. Desactivado muestra álbumes al azar; abrir la página de un artista sigue consultando a ese artista en cualquier caso.',
@@ -1132,7 +1119,6 @@ export default {
     guides: 'Guías',
     faq: 'Preguntas frecuentes',
     conversion: 'Qué se convierte y por qué',
-    olderSonos: 'En qué se diferencian las tres opciones',
     search: 'Buscar en la ayuda',
     noResults: 'No se encontró nada. Prueba con menos palabras o con otras.',
     back: 'Atrás',

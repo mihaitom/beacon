@@ -115,10 +115,9 @@
 # audio_analysis.py both build "-af volume=<gain>"), and its absence is what
 # a missing filter looks like: the build succeeds and playback fails at the
 # moment someone has ReplayGain on, with "Error parsing filterchain
-# 'volume=0.9'". `apad` fills an older Sonos's file to the length it was
-# announced with (streamer.py); without it that mode played nothing at all.
+# 'volume=0.9'".
 --enable-swresample
---enable-filter=aresample,anull,aformat,volume,apad
+--enable-filter=aresample,anull,aformat,volume
 
 # One self-contained executable to copy into an image or an app bundle.
 --disable-shared

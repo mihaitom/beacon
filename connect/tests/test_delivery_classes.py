@@ -24,7 +24,6 @@ from soco.exceptions import SoCoUPnPException
 import delivery.chromecast as _chromecast_mod
 import delivery.dlna as _dlna_mod
 import delivery.sonos as _sonos_mod
-from core.http_protocol import CLOSE_DELIMITED_HEADER
 from core.mix_output import encoder_cmd
 from core.state import ctx
 from core.streamer import resolve_mix_format
@@ -207,80 +206,17 @@ def test_a_track_goes_out_as_a_broadcast_without_a_duration():
     assert "duration=" not in xml
 
 
-def _file_mode_dispatch(model: str, mode: str, url: str = "http://beacon/stream/abc.flac"):
-    from core.older_sonos import set_stream_mode
-
-    set_stream_mode(mode)
-    dev = _mock_sonos_device()
-    dev.get_speaker_info.return_value = {"model_number": model}
-    with patch.object(SonosDelivery, "_get_device", return_value=dev):
-        asyncio.run(SonosDelivery("Study").play(url, "Title", "", None, 464.4, "", "audio/flac"))
-    args = dict(dev.avTransport.SetAVTransportURI.call_args.args[0])
-    return args["CurrentURI"], args["CurrentURIMetaData"]
-
-
-def test_an_older_sonos_in_the_file_mode_is_sent_an_mp3():
-    """Whatever the source, the file is an MP3 (routes/stream.py). Still a
-    broadcast: as a musicTrack the Sonos app showed it as "No content"."""
-    uri, xml = _file_mode_dispatch("S3", "file")
-
-    assert uri == "http://beacon/stream/abc.mp3"
-    assert "object.item.audioItem.audioBroadcast" in xml
-    assert 'protocolInfo="http-get:*:audio/mpeg:*"' in xml
-
-
-@pytest.mark.parametrize(("model", "mode"), [("S3", "whole"), ("S3", "paced"), ("S14", "file")])
-def test_anything_else_keeps_its_format(model, mode):
-    uri, xml = _file_mode_dispatch(model, mode)
-
-    assert uri == "http://beacon/stream/abc.flac"
-    assert 'protocolInfo="http-get:*:audio/flac:*"' in xml
-
-
 @pytest.mark.parametrize(
-    ("user_agent", "mode"),
+    ("user_agent", "model"),
     [
-        ("Linux UPnP/1.0 Sonos/86.10-81100 (ZPS3)", "file"),
-        ("Linux UPnP/1.0 Sonos/86.10-81100 (ZPS9)", "file"),
-        ("Linux UPnP/1.0 Sonos/97.2-81220 (ZPS57)", None),
-        ("Linux UPnP/1.0 Sonos/97.2-81220 (ZPS14)", None),
+        ("Linux UPnP/1.0 Sonos/86.10-81100 (ZPS3)", "S3"),
+        ("Linux UPnP/1.0 Sonos/97.2-81220 (ZPS57)", "S57"),
+        ("Mozilla/5.0 (CrKey armv7l 1.56.500000)", None),
         (None, None),
     ],
 )
-def test_the_mode_applies_to_the_older_models_only(user_agent, mode):
-    from core.older_sonos import set_stream_mode
-
-    set_stream_mode("file")
-    assert _sonos_mod.older_model_mode(user_agent) == mode
-
-
-@pytest.mark.parametrize(
-    "user_agent",
-    ["Linux UPnP/1.0 Sonos/86.10-81100 (ZPS3)", "Linux UPnP/1.0 Sonos/97.2-81220 (ZPS57)"],
-)
-def test_every_sonos_is_answered_like_a_radio_server(user_agent):
-    assert _sonos_mod.stream_headers(user_agent, "Artist - Song") == {
-        CLOSE_DELIMITED_HEADER: "close",
-        "Accept-Ranges": "none",
-        "icy-name": "Artist - Song",
-    }
-
-
-def test_a_stream_without_a_name_goes_without_icy_name():
-    assert "icy-name" not in _sonos_mod.stream_headers("Linux UPnP/1.0 Sonos/86.10 (ZPS3)", None)
-
-
-def test_a_name_from_a_tag_cannot_break_the_header():
-    """A newline in a tag would fail the whole response, and Starlette
-    cannot encode a name outside latin-1."""
-    headers = _sonos_mod.stream_headers("Linux UPnP/1.0 Sonos/86.10 (ZPS3)", "Ночь\nSong")
-
-    assert headers["icy-name"] == "???? Song"
-
-
-@pytest.mark.parametrize("user_agent", [None, "", "Mozilla/5.0 (CrKey armv7l 1.56.500000)"])
-def test_other_devices_get_no_stream_headers(user_agent):
-    assert _sonos_mod.stream_headers(user_agent, "Artist - Song") == {}
+def test_a_sonos_names_its_model_in_its_user_agent(user_agent, model):
+    assert _sonos_mod.model_in_user_agent(user_agent) == model
 
 
 # ── SonosDelivery._dispatch_uri() — the x-rincon-mp3radio:// scheme swap ────

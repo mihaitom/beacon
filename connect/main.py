@@ -31,8 +31,7 @@ from core.auth import TOKEN as _CONNECT_TOKEN
 from core.auth import TOKEN_WAS_GENERATED as _CONNECT_TOKEN_GENERATED
 from core.device_volume import capture_main_loop
 from core.ffmpeg import FFMPEG_BIN, ffmpeg_available
-from core.http_diagnostics import UVICORN_INVALID_REQUEST_MESSAGE
-from core.http_protocol import BeaconHTTPProtocol
+from core.http_diagnostics import UVICORN_INVALID_REQUEST_MESSAGE, DiagnosticHTTPProtocol
 from core.log_level import TRACE as _TRACE_LEVEL
 from core.log_level import apply as _apply_log_level
 from core.log_level import initial_level as _initial_log_level
@@ -65,7 +64,6 @@ from routes.local_stream import router as local_stream_router
 from routes.log_level import router as log_level_router
 from routes.lyrics import router as lyrics_router
 from routes.navidrome import router as navidrome_router
-from routes.older_sonos import router as older_sonos_router
 from routes.pairing import reap_stale_pairings
 from routes.pairing import router as pairing_router
 from routes.party import add_security_headers as add_party_security_headers
@@ -478,7 +476,6 @@ app.include_router(discovery_router)
 app.include_router(volume_router)
 app.include_router(join_router)
 app.include_router(log_level_router)
-app.include_router(older_sonos_router)
 app.include_router(account_settings_router)
 app.include_router(cast_permissions_router)
 app.include_router(api_keys_router)
@@ -537,7 +534,7 @@ if __name__ == "__main__":
             host="0.0.0.0",
             port=PORT,
             log_config=UVICORN_LOG_CONFIG,
-            http=BeaconHTTPProtocol,
+            http=DiagnosticHTTPProtocol,
             reload=False,
             timeout_graceful_shutdown=3,
         )

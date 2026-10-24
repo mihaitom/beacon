@@ -45,15 +45,12 @@ class StreamConnection:
     last_handoff: float = field(default_factory=time.monotonic)
     bytes_delivered: int = 0
     # For Now Playing's stream diagnostics (core/stream_diagnostics.py):
-    # where in the track this connection starts, how the device gets it
-    # (an older Sonos's mode, see delivery/sonos.py's older_model_mode()),
-    # the byte range it answers, and ffmpeg's latest count of what it has
-    # written, in seconds of audio and bytes.
+    # where in the track this connection starts, the Sonos model taking it,
+    # and ffmpeg's latest count of what it has written, in seconds of audio
+    # and bytes.
     generation: int = 0
     start: float = 0.0
     model: str | None = None
-    mode: str | None = None
-    byte_range: str | None = None
     audio_written: float | None = None
     bytes_written: int = 0
     # How it ended (routes/stream.py's outcome), None while it is open.
@@ -177,10 +174,6 @@ class AppState:
         # reader. Tied to the generation it was measured for, so a seek or a
         # new track never inherits it.
         self.sent_audio_end: tuple[int, float] | None = None
-        # Per device address, (play_generation, seconds) where its file
-        # starts for an older Sonos in the "file" mode - see
-        # routes/stream.py's _byte_range_for().
-        self.file_bases: dict[str, tuple[int, float]] = {}
         # What devices asked /stream for lately, and the last position one
         # reported as (play_generation, when, seconds since its stream
         # began) - read by core/stream_diagnostics.py only.

@@ -7,10 +7,7 @@ from xml.sax.saxutils import escape
 
 from soco.exceptions import SoCoUPnPException
 
-from core.http_protocol import CLOSE_DELIMITED, header_value
 from core.local_address import for_device
-from core.older_sonos import stream_mode
-from core.streamer import strip_stream_extension
 from core.upnp_events import (
     AVTRANSPORT_EVENT_PATH,
     RENDERINGCONTROL_EVENT_PATH,
@@ -105,44 +102,15 @@ def is_beacon_hosted_radio_uri(url: str) -> bool:
     return _BEACON_RADIO_PATH in url
 
 
-# The older models, by model number: a Play:3 (S3) and a first-generation
-# Playbar (S9). They stop reading a stream 30-45s in, so how they get a
-# song is Settings → Advanced's choice (core/older_sonos.py, #56).
-_OLDER_MODELS = frozenset({"S3", "S9"})
-
-# A Sonos fetching a stream names itself and its model in its user agent,
-# the model number with "ZP" in front: "Linux UPnP/1.0 Sonos/86.10-81100
-# (ZPS3)".
-_SONOS_IN_USER_AGENT = re.compile(r"\bSonos/")
+# A Sonos fetching a stream names its model in its user agent, the model
+# number with "ZP" in front: "Linux UPnP/1.0 Sonos/86.10-81100 (ZPS3)".
 _MODEL_IN_USER_AGENT = re.compile(r"\bSonos/\S+ \(ZP(\w+)\)")
-
-
-def stream_headers(user_agent: str | None, name: str | None) -> dict[str, str]:
-    """What a cast stream's GET and HEAD add for a Sonos: an internet radio
-    server's framing (see core/http_protocol.py), and like such a server,
-    no byte ranges to come back for and the stream's name in `icy-name`.
-    Empty for any other device."""
-    if not _SONOS_IN_USER_AGENT.search(user_agent or ""):
-        return {}
-    headers = {**CLOSE_DELIMITED, "Accept-Ranges": "none"}
-    if name:
-        headers["icy-name"] = header_value(name)
-    return headers
 
 
 def model_in_user_agent(user_agent: str | None) -> str | None:
     """A Sonos's model number from its user agent ("S3" for a Play:3)."""
     match = _MODEL_IN_USER_AGENT.search(user_agent or "")
     return match.group(1) if match else None
-
-
-def older_model_mode(user_agent: str | None) -> str | None:
-    """How the device behind this user agent gets a song: one of
-    core/older_sonos.py's MODES for an older model, None for any other
-    device."""
-    if model_in_user_agent(user_agent) not in _OLDER_MODELS:
-        return None
-    return stream_mode()
 
 
 def _dispatch_uri(stream_url: str) -> str:
@@ -282,6 +250,8 @@ class SonosDelivery(BaseDelivery):
         album: str = "",
         content_type: str = "audio/mpeg",
     ) -> None:
+        # duration accepted for interface parity with BaseDelivery.play() but
+        # deliberately unused: see the DIDL metadata below.
         device = await asyncio.to_thread(self._get_device)
         stream_url = for_device(stream_url, device.ip_address)
         await self._subscribe_to_events(device)
@@ -317,17 +287,10 @@ class SonosDelivery(BaseDelivery):
         # scheme still fetches over plain HTTP under the hood, this is
         # only ever a hint about *how much to buffer*, not the transport.
         dispatch_uri = _dispatch_uri(stream_url)
-        if duration and not is_beacon_hosted_radio_uri(stream_url):
-            model = await asyncio.to_thread(lambda: device.get_speaker_info().get("model_number"))
-            if model in _OLDER_MODELS and stream_mode() == "file":
-                # Whatever the source, the file is an MP3 (routes/stream.py).
-                dispatch_uri = strip_stream_extension(dispatch_uri) + ".mp3"
-                content_type = "audio/mpeg"
 
-        # DIDL-Lite Metadata. An audioBroadcast without a duration, the file
-        # mode's included: announced as a musicTrack with its length, an Era
-        # 100's track showed in the Sonos app as "No content", without its
-        # artwork (#56).
+        # DIDL-Lite Metadata. An audioBroadcast without a duration: announced
+        # as a musicTrack with its length, an Era 100's track showed in the
+        # Sonos app as "No content", without its artwork (#56).
         album_art_tag = (
             f"<upnp:albumArtURI>{escape(album_art_url)}</upnp:albumArtURI>" if album_art_url else ""
         )

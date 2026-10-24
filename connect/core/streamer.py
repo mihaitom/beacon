@@ -234,6 +234,7 @@ _FFMPEG_BASE_CMD = [
     "-hide_banner",
     "-loglevel",
     "warning",  # warning so codec/format issues surface in logs
+    *_READRATE_ARGS,
     "-i",
     "{url}",
     "-vn",
@@ -1296,26 +1297,14 @@ async def resolve_output_format(
     return _fallback(REASON_CODEC_UNKNOWN, info.duration)
 
 
-def _track_filter_args(gain: float, pad: bool) -> list[str]:
-    """The -af for one track: ReplayGain, and with `pad` silence past the
-    source's end for the -t that cuts a file to its declared length. One
-    -af, since a second would silently replace the first."""
-    filters = [f"volume={gain}"] if gain != 1.0 else []
-    if pad:
-        filters.append("apad")
-    return ["-af", ",".join(filters)] if filters else []
-
-
 async def stream_tracks(
     track_urls: list[str],
     on_track_start: Callable[[int], None] | None = None,
     start_offset: float = 0.0,
     gain: float = 1.0,
     output_format: OutputFormat | None = None,
-    paced: bool = True,
     on_track_end: Callable[[int, float], None] | None = None,
     on_progress: Callable[[float, int], None] | None = None,
-    pad_to: float | None = None,
 ) -> AsyncGenerator[bytes]:
     """Yield continuous audio bytes for all tracks in sequence, encoded per
     `output_format` (defaults to the MP3 192k fallback — see resolve_output_format()).
@@ -1325,10 +1314,6 @@ async def stream_tracks(
     `position` is where in the track the audio sent ends, by ffmpeg's own
     count (see _PROGRESS_ARGS), counted from `start_offset` for the first.
     on_progress(seconds, bytes) follows that count as it goes.
-    pad_to makes the first track exactly that many seconds of output, from
-    `start_offset`: padded with silence when the source runs short, cut
-    when it runs long - for a response that declared its length before
-    the encode began.
     start_offset seeks the first track to that many seconds in (e.g. after pause/resume).
     gain is a linear amplitude multiplier (ReplayGain), applied via ffmpeg's
     `volume` filter — 1.0 (the default) leaves the audio unchanged.
@@ -1351,10 +1336,6 @@ async def stream_tracks(
     simply not producing that far ahead of real consumption in the first
     place. A device reconnecting after a drop only ever has to recover
     this many seconds of buffer, not the rest of a multi-hour file either.
-
-    `paced=False` is for the devices that cannot take that (see
-    delivery/sonos.py's needs_unpaced_stream()): they get each track as
-    fast as ffmpeg makes it, and the idle connection afterwards with it.
     """
     if not track_urls:
         return
@@ -1372,20 +1353,16 @@ async def stream_tracks(
         cmd = [arg if arg != "{url}" else url for arg in _FFMPEG_BASE_CMD]
         # Input options, so before -i — same insertion the -ss below does.
         i_pos = cmd.index("-i")
-        pacing = _READRATE_ARGS if paced else []
-        cmd = cmd[:i_pos] + _PROGRESS_ARGS + pacing + http_reconnect_args(url) + cmd[i_pos:]
+        cmd = cmd[:i_pos] + _PROGRESS_ARGS + http_reconnect_args(url) + cmd[i_pos:]
         cmd = cmd + fmt_args + ["pipe:1"]
         seek = start_offset if i == 0 and start_offset > 0.5 else 0.0
         if seek:
             # Insert -ss before -i for fast input-side seeking on the resumed track
             i_pos = cmd.index("-i")
             cmd = cmd[:i_pos] + ["-ss", f"{seek:.3f}"] + cmd[i_pos:]
-        pad = i == 0 and pad_to is not None
-        if pad:
-            cmd = cmd[:-1] + ["-t", f"{pad_to:.3f}"] + cmd[-1:]
-        if filter_args := _track_filter_args(gain, pad):
+        if gain != 1.0:
             i_pos = cmd.index("-vn")
-            cmd = cmd[:i_pos] + filter_args + cmd[i_pos:]
+            cmd = cmd[:i_pos] + ["-af", f"volume={gain}"] + cmd[i_pos:]
         logger.debug(f"[ffmpeg] Track {i + 1}/{len(track_urls)} ({fmt.label}): {url[:80]}")
         logger.debug(f"[ffmpeg] Command: {' '.join(cmd)}")
 

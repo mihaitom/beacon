@@ -1,20 +1,22 @@
-# OPEN - Old Sonos models stop reading a stream (Play:3, first-generation Playbar)
+# Old Sonos models stop reading a stream (Play:3, first-generation Playbar) - it was the network
 
-**Open since 2026-10-17, partly fixed 2026-10-19/20, chunked encoding found
-and fixed 2026-10-21, that fix measured as not enough 2026-10-22, most likely
-cause found 2026-10-24: the network, not the speakers** (#56).
+**Status: fixed 2026-10-24 - the network, not the speakers** (#56). Open
+since 2026-10-17; chunked encoding was blamed and "fixed" on 2026-10-21, and
+that fix measured as not enough on 2026-10-22.
 Reported against 1.8.0 and 1.9.0 as "tracks keep restarting": on a Play:3 (model `ZPS3`, firmware 86.10) the track jumped
 back to its start about every 50 seconds, audibly, and Beacon's position
 ran on past the track's length. A first-generation Playbar (`ZPS9`, same
 firmware) did the same. Newer Sonos models here never showed it.
 
-**Status:** Most likely solved, and not by anything about the speakers: the
-reporter's server sits in two networks, and Beacon handed the speakers its
-address in the wrong one (see "The network"). Every device now gets the
-address in its own network. Whether the framing, pacing and file changes
-further down are needed at all stays open until 1.9.0 has played long
-tracks in the speakers' network; they stay until then. Everything from
-"What the framing fix did" on is the history of the theories before that.
+**Status:** Solved, and not by anything about the speakers: the reporter's
+server sits in two networks, and Beacon handed the speakers its address in
+the wrong one (see "The network"). Every device now gets the address in its
+own network. Confirmed on the reporter's Play:3: stock 1.9.0, chunked and
+paced as always, played three 6-7 minute tracks through in the speakers'
+network, and the fixed build five tracks with the original two-network
+setup. Everything built for "older models" on the way is rolled back (see
+"Rolled back"); everything from "What the framing fix did" on is the
+history of the theories before that.
 
 ## The network (2026-10-24)
 
@@ -59,7 +61,29 @@ before.
 
 Left open: Music Assistant #5100 (a Play:3 stopping at 38-46 s with a
 chunked stream, see "The comparison with the station") could be the same
-network cause or the firmware; nothing in it says which.
+network cause or the firmware; nothing in it says which. Beacon's own
+measurement says chunked and paced is fine on a Play:3 in a flat network.
+
+## Rolled back (2026-10-24)
+
+Built on the assumption "old firmware", none of these was needed once the
+network was found, and each one is a way of streaming that only two speaker
+models would ever have exercised:
+
+- the internet-radio framing for every Sonos (`core/http_protocol.py`,
+  close-delimited HTTP/1.0 instead of chunked), with `Accept-Ranges: none`
+  and the stream's name in `icy-name`;
+- the model list (`ZPS3`, `ZPS9`) that sent those two unpaced;
+- Settings → Advanced's three ways to send them a song (whole, paced, file),
+  the file mode's constant-bitrate MP3 with byte ranges and `apad`, and the
+  filter in the bundled ffmpeg for it.
+
+Kept, because they stand on their own: the address per device, the end of a
+track taken from ffmpeg's count of the audio sent (a VBR MP3 no longer
+stalls the cast), the percent-encoded room name in the UPnP callback, the
+Sonos repeat hint, the masked credentials in the log, the debug overlay and
+the log line naming the sender of a request uvicorn rejects. The sections
+below describe the rolled-back code as it was.
 
 ## What the framing fix did (2026-10-22)
 
@@ -404,9 +428,9 @@ chunking, which no run before the station run had.
 
 The framing sits below everything the tests look at: the test client parses
 chunked encoding itself and hands a test the plain body, so no test ever
-saw how a response leaves the server. `tests/test_http_protocol.py` now
-feeds a request into uvicorn's protocol and reads the bytes it writes. The
-event bug hid the same way: a test client percent-encodes a space in a URL
+saw how a response leaves the server. The (rolled back)
+`tests/test_http_protocol.py` fed a request into uvicorn's protocol and read
+the bytes it wrote. The event bug hid the same way: a test client percent-encodes a space in a URL
 by itself, a speaker does not, so `tests/test_upnp_events.py` now parses
 the request line the way the server does.
 

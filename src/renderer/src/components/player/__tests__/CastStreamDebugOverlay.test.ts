@@ -19,7 +19,6 @@ vi.mock('@/services/connect/streamDiagnostics', () => ({ getStreamDiagnostics: v
 
 function diagnostics(connection: Partial<StreamConnectionInfo> = {}): StreamDiagnostics {
   return {
-    older_sonos_mode: 'whole',
     position: 40,
     track_end: 400,
     connections: [
@@ -29,8 +28,6 @@ function diagnostics(connection: Partial<StreamConnectionInfo> = {}): StreamDiag
         outcome: null,
         age: 40,
         model: 'S3',
-        mode: 'whole',
-        range: null,
         start: 0,
         bytes: 14_844_634,
         last_read: 1,
@@ -111,7 +108,7 @@ describe('CastStreamDebugOverlay', () => {
   })
 
   it('names a speaker without a Sonos model by its kind, and leaves out a state it never reported', async () => {
-    const info = diagnostics({ model: null, mode: null })
+    const info = diagnostics({ model: null })
     info.targets = info.targets.map((t) => ({ ...t, type: 'airplay', name: 'Den', state: null }))
     vi.mocked(getStreamDiagnostics).mockResolvedValue(info)
     casting(true)

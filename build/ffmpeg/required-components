@@ -18,12 +18,9 @@
 # comma-separated names matches on any one of them.
 
 # --- Filters -----------------------------------------------------------
-# volume is ReplayGain (core/streamer.py, core/audio_analysis.py), apad
-# the silence that fills an older Sonos's file to its declared length
-# (core/streamer.py). The other three are what ffmpeg inserts by itself
-# for -ar/-ac/-sample_fmt.
+# volume is ReplayGain (core/streamer.py, core/audio_analysis.py). The
+# other three are what ffmpeg inserts by itself for -ar/-ac/-sample_fmt.
 filter    volume
-filter    apad
 filter    aresample
 filter    aformat
 filter    anull
