@@ -316,16 +316,39 @@ def test_device_is_still_ours_is_not_fooled_by_another_session_with_an_extension
 
 
 def test_device_is_still_ours_compares_against_the_station_url_for_radio():
-    """Radio never goes through our own /stream — the station URL is what
-    was handed to the device, so that's what its answer has to match, whole.
-    A station URL ending in a format extension of its own is not ours to
-    trim off the way a /stream URL's is."""
+    """Cast directly, the station URL is what was handed to the device, so
+    that's what its answer has to match, whole. A station URL ending in a
+    format extension of its own is not ours to trim off the way a /stream
+    URL's is."""
     from core.session import _device_is_still_ours
 
     session, _ = _stale_session("radio-session", "http://radio/stream.mp3")
     session.state.radio_info = {"title": "FIP", "url": "http://radio/stream.mp3"}
 
     assert asyncio.run(_device_is_still_ours(session)) is True
+
+
+def test_device_is_still_ours_compares_against_the_relay_for_a_relayed_station():
+    """Relayed, the default, the device plays Beacon's own relay rather than
+    the station. Compared against the station URL, a reap never stopped a
+    speaker playing a relayed station."""
+    from core.session import _device_is_still_ours
+    from core.state import radio_stream_url
+
+    session, _ = _stale_session("relayed-radio", radio_stream_url("relayed-radio"))
+    session.state.radio_info = {"title": "FIP", "url": "http://radio/stream.mp3", "relayed": True}
+
+    assert asyncio.run(_device_is_still_ours(session)) is True
+
+
+def test_device_is_still_ours_is_not_fooled_by_another_sessions_relay():
+    from core.session import _device_is_still_ours
+    from core.state import radio_stream_url
+
+    session, _ = _stale_session("my-radio", radio_stream_url("someone-else"))
+    session.state.radio_info = {"title": "FIP", "url": "http://radio/stream.mp3", "relayed": True}
+
+    assert asyncio.run(_device_is_still_ours(session)) is False
 
 
 async def test_reap_stale_sessions_calls_reap_once_after_the_interval():

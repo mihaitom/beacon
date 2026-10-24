@@ -9,7 +9,7 @@ import delivery.sonos as sonos_module
 from core import local_address, upnp_events
 from core.local_address import for_device, on_default_address
 from core.local_address import local_ip_towards as real_local_ip_towards
-from core.session import SessionState, is_this_sessions_stream
+from core.session import SessionState, is_this_sessions_station, is_this_sessions_stream
 from core.state import PORT, stream_url
 from delivery import ChromecastDelivery, DlnaDelivery, SonosDelivery
 from routes.upnp import callback_url_for
@@ -84,6 +84,14 @@ def test_a_device_playing_from_the_leg_still_plays_this_sessions_stream(two_netw
     session = SessionState("abc")
     assert stream_url("abc") == f"http://{DEFAULT}:{PORT}/stream/abc"
     assert is_this_sessions_stream(session, f"http://{LEG}:{PORT}/stream/abc.flac")
+
+
+def test_a_device_playing_the_relay_from_the_leg_still_plays_this_sessions_station(
+    two_networks,
+):
+    session = SessionState("abc")
+    session.state.radio_info = {"url": "http://stream.example.com/live.mp3", "relayed": True}
+    assert is_this_sessions_station(session, f"http://{LEG}:{PORT}/stream/radio/abc")
 
 
 def test_the_same_stream_from_another_machine_is_not_ours(two_networks):

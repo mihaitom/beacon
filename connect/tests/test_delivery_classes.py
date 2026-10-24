@@ -559,6 +559,36 @@ def test_sonos_current_uri_reads_the_devices_own_track_uri():
         assert asyncio.run(d.current_uri()) == "http://host:8071/stream/abc"
 
 
+def test_sonos_current_uri_reports_beacons_own_station_as_it_was_dispatched():
+    """A relayed station goes out over the speaker's radio scheme
+    (_dispatch_uri()) and has to compare with the URL Beacon sent."""
+    dev = MagicMock()
+    dev.get_current_track_info.return_value = {
+        "uri": "x-rincon-mp3radio://10.0.0.5:9181/stream/radio/abc"
+    }
+    d = SonosDelivery("Küche")
+    with patch.object(SonosDelivery, "_get_device", return_value=dev):
+        assert asyncio.run(d.current_uri()) == "http://10.0.0.5:9181/stream/radio/abc"
+
+
+def test_sonos_current_uri_leaves_beacons_own_station_alone_when_sent_over_http():
+    dev = MagicMock()
+    dev.get_current_track_info.return_value = {"uri": "http://10.0.0.5:9181/stream/radio/abc"}
+    d = SonosDelivery("Küche")
+    with patch.object(SonosDelivery, "_get_device", return_value=dev):
+        assert asyncio.run(d.current_uri()) == "http://10.0.0.5:9181/stream/radio/abc"
+
+
+def test_sonos_current_uri_leaves_a_station_from_the_sonos_app_alone():
+    dev = MagicMock()
+    dev.get_current_track_info.return_value = {
+        "uri": "x-rincon-mp3radio://stream.example.com/live.mp3"
+    }
+    d = SonosDelivery("Küche")
+    with patch.object(SonosDelivery, "_get_device", return_value=dev):
+        assert asyncio.run(d.current_uri()) == "x-rincon-mp3radio://stream.example.com/live.mp3"
+
+
 def test_sonos_current_uri_is_none_when_the_device_reports_nothing():
     """An empty string is what a stopped Sonos returns — that's "nothing
     playing", not a URI, and must not be compared against ours as one."""

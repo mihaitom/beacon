@@ -1249,6 +1249,16 @@ def is_this_sessions_stream(session: SessionState, uri: str) -> bool:
     return strip_stream_extension(on_default_address(uri)) == stream_url(session.session_id)
 
 
+def is_this_sessions_station(session: SessionState, uri: str) -> bool:
+    """Whether a device reporting `uri` plays the station this session sent
+    it: Beacon's own relay of it, or the station's own URL when it went to
+    the device directly (core/state.py's radio_dispatch_url()). Compared
+    whole, unlike a /stream URL: a station URL ending in a format extension
+    of its own is not ours to trim off."""
+    dispatched = radio_dispatch_url(session.session_id, session.state.radio_info)
+    return on_default_address(uri) == on_default_address(dispatched)
+
+
 async def _device_is_still_ours(session: SessionState) -> bool:
     """Whether the device this session was casting to is still playing the
     stream *this* session handed it — see reap_once() for why that question
@@ -1259,7 +1269,7 @@ async def _device_is_still_ours(session: SessionState) -> bool:
     so a different Beacon instance's stream is distinguishable even when it
     happens to use the same session id — session ids come from the media
     server login, so two instances serving the same user genuinely share
-    one) or, for radio, the station URL that went straight to the device.
+    one) or, for radio, whatever went out for the station.
 
     A device that can't answer, or fails to, counts as ours: unchanged
     behaviour for AirPlay and anything else with no transport to query, and
@@ -1277,7 +1287,7 @@ async def _device_is_still_ours(session: SessionState) -> bool:
     if uri is None:
         return True
     if st.radio_info:
-        matches = uri == st.radio_info["url"]
+        matches = is_this_sessions_station(session, uri)
     else:
         matches = is_this_sessions_stream(session, uri)
     if matches:

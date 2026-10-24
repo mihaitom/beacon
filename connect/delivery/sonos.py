@@ -94,6 +94,7 @@ def forget_cached_devices() -> None:
 # core/state.py's first_radio_position_delivery(), which has to agree with
 # _dispatch_uri() below on exactly this question — see both docstrings.
 _BEACON_RADIO_PATH = "/stream/radio/"
+_RADIO_SCHEME = "x-rincon-mp3radio://"
 
 
 def is_beacon_hosted_radio_uri(url: str) -> bool:
@@ -190,7 +191,16 @@ def _dispatch_uri(stream_url: str) -> str:
     the longer form."""
     if not is_beacon_hosted_radio_uri(stream_url):
         return stream_url
-    return "x-rincon-mp3radio://" + stream_url.removeprefix("http://").removeprefix("https://")
+    return _RADIO_SCHEME + stream_url.removeprefix("http://").removeprefix("https://")
+
+
+def _undo_dispatch_uri(uri: str) -> str:
+    """The URL play() was handed, from the URI the speaker reports back, so
+    that one compares with what Beacon dispatched (core/session.py's
+    is_this_sessions_station())."""
+    if not (uri.startswith(_RADIO_SCHEME) and is_beacon_hosted_radio_uri(uri)):
+        return uri
+    return "http://" + uri.removeprefix(_RADIO_SCHEME)
 
 
 class SonosDelivery(BaseDelivery):
@@ -427,7 +437,8 @@ class SonosDelivery(BaseDelivery):
     async def current_uri(self) -> str | None:
         device = await asyncio.to_thread(self._get_device)
         info = await asyncio.to_thread(device.get_current_track_info)
-        return info.get("uri") or None
+        uri = info.get("uri")
+        return _undo_dispatch_uri(uri) if uri else None
 
     async def describe_transport(self) -> str | None:
         # Which of these explains a restart: a duration the speaker made up
