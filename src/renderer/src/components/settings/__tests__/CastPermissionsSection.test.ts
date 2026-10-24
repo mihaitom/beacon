@@ -1,6 +1,6 @@
 // The Casting section: shown only in the web/Docker build and only for a
 // server admin, it lets the admin keep the cast policy — one "who may cast"
-// choice plus the account list (see docs/cast-permissions.md). These tests
+// choice plus the account list (see docs/plans/cast-permissions.md). These tests
 // cover the gating, the four-state mapping and the save payload — not the
 // copy or the element count.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'

@@ -1503,7 +1503,7 @@ def test_get_user_reports_an_ordinary_listener_as_such(client, jellyfin_session,
 
 def test_get_users_lists_the_servers_accounts(client, jellyfin_session, monkeypatch):
     """getUsers.view backs the cast-permissions admin UI's account picker
-    (see docs/cast-permissions.md). /Users is admin-only, so a non-admin
+    (see docs/plans/cast-permissions.md). /Users is admin-only, so a non-admin
     would get Jellyfin's own refusal through instead."""
     fake_client, calls = _fake_jf_client(
         {

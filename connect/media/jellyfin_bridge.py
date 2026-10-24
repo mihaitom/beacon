@@ -848,7 +848,7 @@ async def get_user(params: dict, media: JellyfinClient) -> dict:
 async def get_users(_params: dict, media: JellyfinClient) -> dict:
     """Subsonic's getUsers.view, bridged so the admin UI can offer the
     server's real accounts instead of free-typed names (see
-    docs/cast-permissions.md). /Users is admin-only (RequiresElevation), so
+    docs/plans/cast-permissions.md). /Users is admin-only (RequiresElevation), so
     a non-admin gets Jellyfin's own refusal — which is the correct answer
     for a list only an admin may see."""
     users = await _jf_request("GET", media, "/Users")

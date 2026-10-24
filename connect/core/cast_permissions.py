@@ -4,7 +4,7 @@ deployment.
 An admin of a media server can restrict casting to a list of accounts
 ("household"); everyone else on the same connect instance may still browse,
 play locally and use every other feature, they just cannot grab a speaker.
-See docs/cast-permissions.md for the full plan and, importantly, for what
+See docs/plans/cast-permissions.md for the full plan and, importantly, for what
 this is *not*: it is a policy among the people sharing a deployment, not a
 security boundary. The shared CONNECT_TOKEN is instance-wide, and the
 session id is client-asserted and not a secret, so someone who holds the

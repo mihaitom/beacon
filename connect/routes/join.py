@@ -178,7 +178,7 @@ async def join_stream(
     async with session.play_lock:
         # Same check as /play, before the claim: a refused join must not
         # leave the device locked to this session. See
-        # docs/cast-permissions.md.
+        # docs/plans/cast-permissions.md.
         forbidden = await cast_permissions.authorize_async(session)
         if forbidden:
             logger.info(f"[join] Refused: {forbidden}")
@@ -362,7 +362,7 @@ async def claim_device(
     # Same play_lock reasoning as /join above — this write to
     # active_delivery must be serialized against /play, /pause, /seek etc.
     async with session.play_lock:
-        # Same check as /play, before the claim — see docs/cast-permissions.md.
+        # Same check as /play, before the claim — see docs/plans/cast-permissions.md.
         forbidden = await cast_permissions.authorize_async(session)
         if forbidden:
             logger.info(f"[claim] Refused: {forbidden}")

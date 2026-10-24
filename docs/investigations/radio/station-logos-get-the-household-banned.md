@@ -30,7 +30,7 @@ reliably over the line rather than occasionally near it:
 2. **The cache-version bump emptied the cache for everyone at once.**
    Raising `RADIO_FAVICON_CACHE_VERSION` is a deliberate, global,
    simultaneous cache miss — it exists to step around
-   [poisoned entries](../../src/renderer/src/services/connect/radio.ts), and
+   [poisoned entries](../../../src/renderer/src/services/connect/radio.ts), and
    it worked. What it also did was turn every previously cached hit back
    into a request, in the same burst as the 404s that were never cached in
    the first place.

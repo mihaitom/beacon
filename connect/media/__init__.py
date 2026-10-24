@@ -52,7 +52,7 @@ async def resolve_account(media: MediaClient, username_hint: str = "") -> Resolv
 
     Called by /config once media.ping() has succeeded, so the session can
     carry a real identity instead of the request body's `username` (see
-    docs/cast-permissions.md). Dispatches like routes/proxy.py: Jellyfin and
+    docs/plans/cast-permissions.md). Dispatches like routes/proxy.py: Jellyfin and
     Plex through their bridges, Subsonic through the client itself.
 
     `username_hint` is only needed for Subsonic, whose getUser.view requires

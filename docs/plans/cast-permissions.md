@@ -1,11 +1,12 @@
-# Cast permissions - concept
+# Plan: cast permissions
 
-**Built 2026-09-21.** This is the design record for server admins deciding who
-may cast to which devices, kept so the decisions do not
-have to be re-derived from the code later. The code is
+Status: done - built 2026-09-21, Plex added 2026-09-26. Kept as the design
+record for server admins deciding who may cast, so the decisions do not have
+to be re-derived from the code later. The code is
 `connect/core/cast_permissions.py`, `connect/routes/cast_permissions.py`, the
 enforcement points in `/play`, `/play-url`, `/join` and `/claim`, and
-`src/renderer/src/components/settings/CastPermissionsSection.vue`.
+`src/renderer/src/components/settings/CastPermissionsSection.vue`. What users
+are told is in [help/features.md](../help/features.md).
 
 The goal, as the maintainer put it: an admin shares their Beacon with other
 people, but household outsiders should not be able to grab the speakers.
@@ -28,8 +29,6 @@ The feature only makes sense in the Docker/web build. The desktop build
 spawns its own connect per start with a fresh token and exactly one user
 (see `src/main/index.ts`), so there is nobody to restrict and the settings
 surface must not appear there at all.
-
-Written 2026-09-21 against Beacon 1.2.x.
 
 ## The honest framing: this is a policy, not a security boundary
 
@@ -72,26 +71,24 @@ The allow-list holds **verified usernames of the casting session**:
   authenticated against.
 - `username` - resolved from the credential, never from the request body.
 
-`/config` is the only place a session becomes authenticated, so it is the
-natural place to resolve this once and keep it on `SessionState`:
+`/config` is the only place a session becomes authenticated, so that is
+where this is resolved once and kept on `SessionState`:
 
-- Add a small resolved identity to `SessionState` (for example
-  `account_server_type`, `account_server_url`, `account_username`,
-  `account_is_admin`), set in `configure()` **after** `media.ping()`
-  succeeds.
-- Resolve it through a new helper in `media/` that dispatches like
-  `routes/proxy.py` does: Jellyfin -> `jellyfin_bridge.get_user`, Plex ->
-  `plex_bridge.get_user`, Subsonic -> `media.call("getUser.view", ...)`.
+- `account_server_type`, `account_server_url`, `account_username` and
+  `account_is_admin` on `SessionState`, set in `/config`
+  (`routes/devices.py`) **after** `media.ping()` succeeds.
+- Resolved by `resolve_account()` in `media/__init__.py`, which dispatches
+  like `routes/proxy.py` does: Jellyfin -> `jellyfin_bridge.get_user`, Plex
+  -> `plex_bridge.get_user`, Subsonic -> `media.call("getUser.view", ...)`.
   For Subsonic the client-supplied username has to go in as the query
   parameter (the endpoint needs one, and Navidrome only answers about the
   caller's own account), but only the **returned** username is trusted.
-- If the lookup fails, keep the account unverified: it has no rules and is
-  therefore unrestricted (see the default below). Do not guess.
+- If the lookup fails, the account stays unverified and gets the default
+  for accounts not on the list (see `is_allowed()` below). No guessing.
 
-Optional side effect worth taking: point `session.display_name` at the
-verified username too, so "in use by" shows the real account instead of
-whatever the client typed. Same value in the common case, harder to spoof
-in the uncommon one.
+`session.display_name` is the verified username too where there is one, so
+"in use by" shows the real account instead of whatever the client typed;
+the request body's name is only the fallback.
 
 ## Where the account list comes from
 
@@ -139,17 +136,17 @@ the list says.
 
 ## The rules store
 
-A new module `core/cast_permissions.py`, one JSON file under
+`core/cast_permissions.py`, one JSON file (`cast_permissions.json`) under
 `CONNECT_DATA_DIR` next to `radio_stations.json` and
 `account_settings.json`.
 
-**It must not live in `account_settings.json`.** That route
+**It does not live in `account_settings.json`, on purpose.** That route
 (`routes/account_settings.py`) takes `server_type`, `server_url` and
 `username` as query parameters and is gated only by `require_token`, so any
 client can read and write **any account's** settings. Authorization data
 there would let every user grant themselves permission. The cast-permission
-routes must derive the server from the session and verify the writer is an
-admin, and the file must be written only server-side.
+routes derive the server from the session and verify the writer is an
+admin, and the file is written only server-side.
 
 Shape, per server:
 
@@ -184,7 +181,7 @@ Shape, per server:
   cast.** This is the update migration: an existing instance has no file,
   and reading "nothing configured" as "nobody may cast" would silently
   switch casting off for the whole deployment on update. Same reasoning as
-  [the radio stations migration](backlog/radio/stations-per-account.md). An **empty list is not the
+  [the radio stations migration](../backlog/radio/stations-per-account.md). An **empty list is not the
   same thing**: it is a real configuration (allowlist + empty blocks
   everyone but admins, a lockdown; blocklist + empty blocks nobody). That
   is why the entry is written even when the list is empty, and only its
@@ -194,19 +191,18 @@ Shape, per server:
   is no separate break-glass path otherwise. Decision point - if admins
   should be subject to the policy too, this is the line to change.
 
-URL normalization: the rule key must be the _same_ for `http://host` and
+URL normalization: the rule key is the _same_ for `http://host` and
 `https://host` (the frontend adopts `resolved_url` after `/config`, but a
 second session logging in over the other scheme would otherwise hash to a
-different server and miss the rules). Reuse the frontend's rule from
-`services/connect/session-id.ts`'s `normalizeServerUrl` (strip scheme and
-trailing slash, lowercase the authority, drop a default port) as a small
-backend helper. `core/account_settings.py` does not normalize today; that
-is a separate inconsistency and not part of this change.
+different server and miss the rules). `normalize_server_url()` follows the
+frontend's rule from `services/connect/session-id.ts`'s
+`normalizeServerUrl` (strip scheme and trailing slash, lowercase the
+authority, drop a default port). `core/account_settings.py` does not
+normalize; that is a separate inconsistency.
 
-Read/write with the same care `account_settings.py` uses: a
-`threading.Lock` around read-modify-write (routes are sync `def`), and
-write-to-temp + `os.replace()` so an interrupted write cannot take the
-whole file down.
+Reads and writes take the same care `account_settings.py` does: a
+`threading.Lock` around read-modify-write, and write-to-temp +
+`os.replace()` so an interrupted write cannot take the whole file down.
 
 ## Enforcement
 
@@ -214,7 +210,7 @@ Backend-side, in the cast routes, not in the frontend - filtering the
 picker is cosmetic, and `/play` and `/play-url` are reachable with the same
 shared token directly.
 
-The check belongs next to the claim check, where the target has just been
+The check sits next to the claim check, where the target has just been
 resolved:
 
 - `routes/playback.py`'s `/play`
@@ -223,12 +219,12 @@ resolved:
   path)
 - `routes/join.py`'s `/claim`
 
-A helper, say `core/cast_permissions.authorize(session)`, answers a single
-question - "may this account cast at all on its server" - and refuses the
-whole dispatch when it may not. Call it before claiming, so a refused
-dispatch never claims a device and then has to release it. Since the policy
-is server-wide, no per-target walk is needed; `list_target_pairs()` stays
-out of this.
+`authorize()` (called as `authorize_async()` from the routes, since the
+rules are a file read under a lock) answers a single question - "may this
+account cast at all on its server" - and refuses the whole dispatch when it
+may not. It runs before claiming, so a refused dispatch never claims a
+device and then has to release it. Since the policy is server-wide, no
+per-target walk is needed; `list_target_pairs()` stays out of this.
 
 The answer is `is_allowed()`: admins always pass; an unconfigured server
 passes everyone; otherwise a listed account gets the mode's answer and an
@@ -251,17 +247,16 @@ Response shape, mirroring `device_in_use` (`core/session.py`) and
 { "error": "cast_forbidden", "account": "guest" }
 ```
 
-Frontend: add `cast_forbidden` to the error union in
-`services/connect/types.ts` and a `connect.error.castForbidden` key in all
-five locales, phrased as "this account may not cast to speakers on this
-server".
+Frontend: `cast_forbidden` is in the error union in
+`services/connect/types.ts`, with a `castForbidden` message in all five
+locales ("This account may not cast to speakers on this server.").
 
 ## Display filtering
 
-`/discover` (`routes/discovery.py`) and the remote's `/devices`
-(`routes/remote.py`) should hide every cast target from an account that may
-not cast at all, so the picker does not offer a choice that will be
-refused. One exception:
+`/discover` (`routes/discovery.py`, `may_cast()`) hides every cast target
+from an account that may not cast at all, so the picker does not offer a
+choice that will be refused. The Remote Control's `/devices` asks the
+desktop for its list, so it gets the same filtering. One exception:
 
 - A device currently claimed **by this session** stays visible, so a rules
   change cannot hide a device that is still playing for you.
@@ -271,7 +266,7 @@ matters.
 
 ## Admin surface
 
-New routes, admin-only:
+Two routes, admin-only:
 
 - `GET /cast-permissions` - the session's own server's `accounts`, `mode`
   and `default_allow`, plus `suggested_accounts` and `lists_users` for the
@@ -292,7 +287,8 @@ scope.
 
 ## Frontend
 
-A Settings section, shown only when all of these hold:
+A Settings section (`CastPermissionsSection.vue`), shown only when all of
+these hold:
 
 - there is no `window.api` (Docker/web build - same test
   `composables/useIsMobileWeb.ts` uses),
@@ -301,9 +297,9 @@ A Settings section, shown only when all of these hold:
 - `authStore.isAdmin === true` (already resolved through
   `/rest/getUser.view`, see `stores/auth.ts`'s `resolveAdminRole()`).
 
-Follow the capability pattern rather than one-off checks: add a
-`castPermissions` capability to `services/capabilities.ts`, and let the
-component's own web-build check handle the `window.api` half. Unlike the
+It follows the capability pattern rather than one-off checks: a
+`castPermissions` capability in `services/capabilities.ts`, with the
+component's own web-build check handling the `window.api` half. Unlike the
 other admin-gated capabilities, this one requires a _definite_ admin:
 `isAdmin === null` leaves it off, because the save route 403s for a session
 whose admin flag was never resolved and a section that cannot work should
@@ -351,6 +347,9 @@ after listing the servers.
   identifier the login sent stand in.
 
 ## Testing
+
+What the suites cover (`connect/tests/test_cast_permissions.py` and the
+route tests, `CastPermissionsSection.test.ts`):
 
 - `core/cast_permissions.py`: unconfigured means open; allowlist blocks
   unlisted and lets listed through; blocklist the reverse; an empty

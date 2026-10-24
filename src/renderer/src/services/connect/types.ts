@@ -108,7 +108,7 @@ export interface GenericError {
 
 /** A cast refused because the account is not on the server's household
  * allow-list (see connect/core/cast_permissions.py and
- * docs/cast-permissions.md). `account` is the verified media-server
+ * docs/plans/cast-permissions.md). `account` is the verified media-server
  * username, or an empty string when it could not be resolved. */
 export interface CastForbiddenError {
   error: 'cast_forbidden'

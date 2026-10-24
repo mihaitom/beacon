@@ -80,7 +80,7 @@ class SessionState:
         # The account /config resolved from the credential, as opposed to
         # the `username` the request body claimed. Used only by
         # core/cast_permissions.py to decide whether this session may cast
-        # (see docs/cast-permissions.md) — deliberately not what
+        # (see docs/plans/cast-permissions.md) — deliberately not what
         # display_name/claims key on, which stay display-only. Empty until
         # /config has verified a credential, and left empty when the
         # getUser lookup itself failed (an unverified account is treated as

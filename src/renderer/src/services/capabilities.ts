@@ -62,7 +62,7 @@ export interface ServerCapabilities {
    * tables below — see capabilitiesFor()'s `isAdmin` argument. */
   libraryScan: boolean
   /** Settings' "Casting" section, where a server admin keeps the household
-   * allow-list of accounts that may cast (see docs/cast-permissions.md).
+   * allow-list of accounts that may cast (see docs/plans/cast-permissions.md).
    * Two conditions: the server has to be able to list its own users
    * (Subsonic/Navidrome's getUsers.view, Jellyfin's /Users — Plex has no
    * server-side user list and cannot even resolve the casting account's

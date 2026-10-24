@@ -5,7 +5,7 @@ Server-scoped and admin-only. The server identity is taken from the
 session (the one /config verified), never from query parameters — that is
 the whole reason this is not a route in routes/account_settings.py, which
 takes its identity from the caller and would let anyone grant themselves
-permission. See core/cast_permissions.py and docs/cast-permissions.md.
+permission. See core/cast_permissions.py and docs/plans/cast-permissions.md.
 """
 
 import asyncio

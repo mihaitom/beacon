@@ -1,7 +1,7 @@
 <template>
   <!-- Docker/web only: the desktop build spawns a one-user connect, so
      - there is nobody to restrict and this must never appear there (see
-     - docs/cast-permissions.md). window.api is the same web-build test
+     - docs/plans/cast-permissions.md). window.api is the same web-build test
      - useIsMobileWeb.ts uses. -->
   <section v-if="visible" class="settings-section">
     <h2 class="section-title">{{ $t('settings.castPermissionsTitle') }}</h2>
@@ -93,7 +93,7 @@ function fromPolicy(policy: CastPolicy): {
 
 /**
  * The server admin's cast policy: who may cast to speakers at all. See
- * docs/cast-permissions.md. Visible only in the web/Docker build, for a
+ * docs/plans/cast-permissions.md. Visible only in the web/Docker build, for a
  * Subsonic/Jellyfin admin (capabilities.ts's castPermissions handles the
  * server/account half; window.api the build half).
  *

@@ -997,7 +997,7 @@ async def play_tracks(
 
         if target:
             # Before claiming: a refused dispatch must not leave a device
-            # locked to this session. See docs/cast-permissions.md.
+            # locked to this session. See docs/plans/cast-permissions.md.
             forbidden = await cast_permissions.authorize_async(session)
             if forbidden:
                 logger.info(f"[play] Refused: {forbidden}")

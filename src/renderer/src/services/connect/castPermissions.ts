@@ -3,7 +3,7 @@ import { fetchConnect } from './http'
 export type CastPermissionMode = 'allowlist' | 'blocklist'
 
 /** The server-wide cast policy (see connect/core/cast_permissions.py and
- * docs/cast-permissions.md).
+ * docs/plans/cast-permissions.md).
  *
  * `mode` says what the listed accounts get: `allowlist` means they may
  * cast, `blocklist` means they may not. `default_allow` says what accounts

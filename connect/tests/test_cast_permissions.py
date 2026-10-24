@@ -1,6 +1,6 @@
 """Tests for core/cast_permissions.py + routes/cast_permissions.py + the
 enforcement points in the cast routes — the admin's cast policy (mode +
-unlisted default + list). See docs/cast-permissions.md for the plan and
+unlisted default + list). See docs/plans/cast-permissions.md for the plan and
 core/cast_permissions.py's own docstring for the trust model (a policy among
 cooperative users, not a security boundary)."""
 

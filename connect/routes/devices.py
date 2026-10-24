@@ -199,7 +199,7 @@ async def configure(req: ConfigRequest, session: SessionState = Depends(get_sess
 
     # Ask the server who this credential actually belongs to, rather than
     # trusting the request body's `username` (see
-    # docs/cast-permissions.md). A failure here is not fatal to the login:
+    # docs/plans/cast-permissions.md). A failure here is not fatal to the login:
     # browsing and local playback don't need it, and cast permission
     # enforcement treats an unresolved account as "not listed" rather than
     # as an open door (core/cast_permissions.py's is_allowed()).
