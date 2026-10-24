@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
-- With Navidrome, Beacon saves the queue on the server, so another app (or Beacon on another device) can carry on with it. Beacon on your other devices picks it up by itself when you come back to it, paused at the same song and position. It never saves over a queue another app has saved since: that one is offered instead, and the queue's toolbar has buttons to load it or to save your own over it
+- With Navidrome, Beacon saves the queue on the server, so another app or Beacon on another device can carry on with it, paused at the same song and position. It never saves over a queue another app or device has saved since, so two devices on one account can play different things side by side: that queue is offered once instead, never in the middle of listening, and the queue's toolbar has buttons to load it or to save your own over it
 - AirPlay speakers have a volume control while Beacon casts to them, like Sonos, Chromecast and DLNA
 - Songs and albums can be rated with stars from their right-click menu everywhere, in lists, on tiles and in the queue. The song in the player bar has that menu too, behind a right-click or the ⋮ next to the heart. The album and artist lists show the stars in their list view, where they can be set directly, and both can be sorted by rating (requested by @mjj042, #55)
 - Casting to a Sonos that has repeat on in the Sonos app says so and can switch it off: it made every song start over for a moment at its end, and repeat in Beacon works without it

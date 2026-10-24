@@ -26,8 +26,7 @@ import type { Album, Artist, Playlist, RadioStation, Song } from '@/types/librar
 import type { LocalStreamQuality } from '@/services/streamQuality'
 
 const API_VERSION = '1.16.1'
-/** The `c` every request carries - and so the `changedBy` of a queue any
- * Beacon saved (see services/playback/serverQueueSync.ts). */
+/** The `c` every request carries. */
 export const APP_NAME = 'beacon'
 // Browsers refuse a keepalive request once the bodies of all keepalive
 // requests in flight pass 64 KiB - some room left for the others.

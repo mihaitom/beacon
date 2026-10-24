@@ -209,6 +209,10 @@ describe('only while the server copy is our own', () => {
 
     expect(client.savePlayQueue).not.toHaveBeenCalled()
     expect(server.queue?.changedBy).toBe('feishin')
+    // Offered once playback here stops, not in the middle of it.
+    expect(toasts).toHaveLength(0)
+    playback.isPlaying = false
+    await sync.saveServerQueue()
     expect(toasts).toHaveLength(1)
   })
 
@@ -228,8 +232,7 @@ describe('only while the server copy is our own', () => {
 
     expect(client.savePlayQueue).toHaveBeenCalledTimes(1)
     expect(server.queue.changedBy).toBe('feishin')
-    // Offered once, not on every attempt.
-    expect(toasts).toHaveLength(1)
+    expect(toasts).toHaveLength(0)
   })
 
   it('saves on once that queue has been loaded', async () => {
@@ -382,6 +385,48 @@ describe('offering the queue saved elsewhere', () => {
     expect(toasts).toHaveLength(1)
   })
 
+  /** The other device keeps saving its position while it plays - each
+   * save is a new `changed`, not a new queue to ask about. */
+  it('offers it once, however often the other device saves since', async () => {
+    const { sync, playback, server, toasts } = await load()
+    playback.setQueue([makeSong('a')], 0)
+    await sync.saveServerQueue()
+
+    for (let i = 1; i <= 3; i++) {
+      server.queue = serverQueue({ position: i * 30, changed: Date.now() + i })
+      await sync.checkServerQueue({ force: true })
+      playback.localPosition = i
+      await sync.saveServerQueue()
+    }
+
+    expect(toasts).toHaveLength(1)
+  })
+
+  it('offers again once the server copy was its own in between', async () => {
+    const { sync, playback, server, toasts } = await load({ queue: serverQueue() })
+    playback.setQueue([makeSong('a')], 0)
+    await sync.checkServerQueue({ force: true })
+    await sync.saveServerQueueByHand()
+
+    server.queue = serverQueue({ changedBy: 'beacon', position: 90 })
+    await sync.checkServerQueue({ force: true })
+
+    expect(toasts.filter((toast) => !Array.isArray(toast))).toHaveLength(2)
+  })
+
+  it('leaves it alone when playback starts while the server is asked', async () => {
+    const { sync, playback, client, server, toasts } = await load({ queue: serverQueue() })
+    playback.setQueue([makeSong('a')], 0)
+    client.getPlayQueue.mockImplementationOnce(async () => {
+      playback.isPlaying = true
+      return server.queue
+    })
+
+    await sync.checkServerQueue({ force: true })
+
+    expect(toasts).toHaveLength(0)
+  })
+
   it('does not interrupt anything playing here', async () => {
     const { sync, playback, client, toasts } = await load({ queue: serverQueue() })
     playback.setQueue([makeSong('a')], 0)
@@ -419,89 +464,22 @@ describe('offering the queue saved elsewhere', () => {
 describe('another Beacon of the same account', () => {
   beforeEach(() => {
     localStorage.clear()
-    sessionStorage.clear()
   })
 
-  /** The desktop at home, last used with queue D, while the phone carried
-   * on with P on the way. */
-  async function desktopAfterPhone() {
+  /** One account can be two people, or two things at once - the queue
+   * here is nobody's to replace without asking. */
+  it('offers its queue instead of taking it over', async () => {
     const before = await load()
     before.playback.setQueue([makeSong('d1'), makeSong('d2')], 0)
     await before.sync.saveServerQueue()
     before.server.queue = serverQueue({ changedBy: 'beacon' })
-    const desktop = await load(before.server)
-    desktop.playback.setQueue([makeSong('d1'), makeSong('d2')], 0)
-    return desktop
-  }
-
-  it("takes over the phone's queue by itself, paused", async () => {
-    const { sync, playback, client, toasts } = await desktopAfterPhone()
-
-    await sync.checkServerQueue({ force: true })
-
-    expect(playback.queue.map((song) => song.id)).toEqual(['x', 'y'])
-    expect(playback.currentIndex).toBe(1)
-    expect(playback.localPosition).toBe(30)
-    expect(playback.isPlaying).toBe(false)
-    // Neither asked nor announced.
-    expect(toasts).toHaveLength(0)
-    // Its own from here on.
-    playback.addToQueue([makeSong('z')])
-    await sync.saveServerQueue()
-    expect(client.savePlayQueue).toHaveBeenCalledTimes(1)
-  })
-
-  it('asks instead where the queue here was edited and never saved', async () => {
-    const { sync, playback, toasts } = await desktopAfterPhone()
-    playback.addToQueue([makeSong('d3')])
-
-    await sync.checkServerQueue({ force: true })
-
-    expect(playback.queue.map((song) => song.id)).toEqual(['d1', 'd2', 'd3'])
-    expect(toasts).toEqual([expect.objectContaining({ action: expect.anything() })])
-  })
-
-  it('only takes over a queue Beacon saved', async () => {
-    const { sync, playback, server, toasts } = await desktopAfterPhone()
-    server.queue = serverQueue({ changedBy: 'feishin' })
+    const { sync, playback, toasts } = await load(before.server)
+    playback.setQueue([makeSong('d1'), makeSong('d2')], 0)
 
     await sync.checkServerQueue({ force: true })
 
     expect(playback.queue.map((song) => song.id)).toEqual(['d1', 'd2'])
     expect(toasts).toEqual([expect.objectContaining({ action: expect.anything() })])
-  })
-
-  /** A reload of a window that was playing resumes by itself - it must not
-   * resume the phone's queue instead of its own. */
-  it('asks instead on a reload of a window that was playing', async () => {
-    const { sync, playback, toasts } = await desktopAfterPhone()
-    sessionStorage.setItem('beacon.playback.session-was-playing', String(Date.now()))
-
-    await sync.checkServerQueue({ force: true })
-
-    expect(playback.queue.map((song) => song.id)).toEqual(['d1', 'd2'])
-    expect(toasts).toHaveLength(1)
-  })
-
-  it('leaves it alone when playback starts while the server is asked', async () => {
-    const { sync, playback, client, server } = await desktopAfterPhone()
-    client.getPlayQueue.mockImplementationOnce(async () => {
-      playback.isPlaying = true
-      return server.queue
-    })
-
-    await sync.checkServerQueue({ force: true })
-
-    expect(playback.queue.map((song) => song.id)).toEqual(['d1', 'd2'])
-  })
-
-  it('takes it over onto an empty queue', async () => {
-    const { sync, playback, server } = await load({ queue: serverQueue({ changedBy: 'beacon' }) })
-
-    await sync.checkServerQueue({ force: true })
-
-    expect(playback.queue.map((song) => song.id)).toEqual(['x', 'y'])
-    expect(server.queue?.changedBy).toBe('beacon')
   })
 })
 

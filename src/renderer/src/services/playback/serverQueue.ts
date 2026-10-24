@@ -52,13 +52,6 @@ export function fingerprint(snapshot: QueueSnapshot, byIndex: boolean): string {
   return hash(`${current}|${Math.round(snapshot.position * 1000)}|${snapshot.songIds.join(',')}`)
 }
 
-/** The songs and which one is current, without the position - whether the
- * queue here is still the one last saved or loaded, however far it has
- * played since. */
-export function queueFingerprint(snapshot: QueueSnapshot): string {
-  return hash(`${snapshot.currentIndex}|${snapshot.songIds.join(',')}`)
-}
-
 // FNV-1a: only told apart from the one fingerprint stored, so 32 bits are
 // plenty, and it keeps a long queue out of localStorage.
 function hash(text: string): string {
@@ -88,12 +81,10 @@ export interface ServerQueueMeta {
   /** fingerprint() of what this device last saved, or last loaded - either
    * way the server copy it is in step with. */
   savedFingerprint: string
-  /** queueFingerprint() of the same - what tells a queue edited here
-   * since, and never saved, from one that has only played on. */
-  savedQueue: string
-  /** The server's `changed` of the last queue offered here - each one is
-   * offered once, not on every return to the window. */
-  offeredChanged: number
+  /** savedFingerprint as it was when this device last offered the
+   * server's queue - offered once each time the server copy stops being
+   * its own, not on every save or return to the window after that. */
+  offeredAfter: string | null
 }
 
 const META_KEY = 'beacon.serverQueue'
@@ -104,11 +95,10 @@ export function loadMeta(): ServerQueueMeta {
     const parsed = raw ? (JSON.parse(raw) as Partial<ServerQueueMeta>) : {}
     return {
       savedFingerprint: parsed.savedFingerprint ?? '',
-      savedQueue: parsed.savedQueue ?? '',
-      offeredChanged: parsed.offeredChanged ?? 0,
+      offeredAfter: parsed.offeredAfter ?? null,
     }
   } catch {
-    return { savedFingerprint: '', savedQueue: '', offeredChanged: 0 }
+    return { savedFingerprint: '', offeredAfter: null }
   }
 }
 

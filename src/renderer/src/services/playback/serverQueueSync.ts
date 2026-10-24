@@ -5,15 +5,14 @@
  * Saves only while the server copy is this device's own: its own last
  * save, or nothing at all. Every save asks the server first, and once
  * another app or device has saved there since, this device stops saving
- * and offers that queue instead. Only the user moves it on from there -
- * by loading that queue, or by saving over it by hand
+ * and offers that queue instead (offerOnce()). Only the user moves it on
+ * from there - by loading that queue, or by saving over it by hand
  * (saveServerQueueByHand()). Either way the server copy is this device's
  * own again, and saving carries on as before, on the way out too.
  *
- * A queue another Beacon of the same account saved - the phone on the way
- * home, say - is not foreign in that sense but the same queue carried on
- * elsewhere: this device takes it over by itself when it comes back to it,
- * as long as nothing here would be lost by that (see checkServerQueue()).
+ * Another Beacon of the same account is another device like any app: one
+ * account can be two people, or one person listening to two things, and
+ * the server keeps a single queue for all of them.
  *
  * Nothing here plays: a queue taken over is loaded paused, and only after
  * the user asked for it. */
@@ -25,13 +24,11 @@ import { timeAgo } from '@/services/relativeTime'
 import { useAuthStore } from '@/stores/auth'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
-import { readSessionWasPlaying } from './persistence'
-import { APP_NAME, type ServerPlayQueue } from '@/services/subsonic/client'
+import type { ServerPlayQueue } from '@/services/subsonic/client'
 import {
   fingerprint,
   isForeign,
   loadMeta,
-  queueFingerprint,
   sameQueue,
   saveMeta,
   serverSnapshot,
@@ -61,10 +58,10 @@ const OURS_TRUSTED_MS = SAVE_INTERVAL_MS + 10_000
 // out go without asking first - it is the one save that can't.
 let oursSeenAt = 0
 let lastSaved: QueueSnapshot | null = null
-// Mirrors ServerQueueMeta's two saved fingerprints for when localStorage
-// refuses the write - without it this device would take its own save for
-// somebody else's and stop saving.
-let savedMirror: Pick<ServerQueueMeta, 'savedFingerprint' | 'savedQueue'> | null = null
+// Mirrors ServerQueueMeta for when localStorage refuses the write - without
+// it this device would take its own save for somebody else's and stop
+// saving, and offer the same queue on every return to the window.
+let metaMirror: Partial<ServerQueueMeta> = {}
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 let lastCheckAt = 0
 let featuresFor: { account: string; features: Promise<QueueFeatures> } | null = null
@@ -87,33 +84,24 @@ function queueKey(songIds: string[], currentIndex: number): string {
 export function markQueueRestored(): void {
   oursSeenAt = 0
   lastSaved = null
-  savedMirror = null
+  metaMirror = {}
   knownServer.value = undefined
 }
 
 function meta(): ServerQueueMeta {
-  return { ...loadMeta(), ...savedMirror }
+  return { ...loadMeta(), ...metaMirror }
+}
+
+function updateMeta(change: Partial<ServerQueueMeta>): void {
+  metaMirror = { ...metaMirror, ...change }
+  saveMeta(meta())
 }
 
 function rememberInStep(snapshot: QueueSnapshot, isByIndex: boolean): void {
   lastSaved = snapshot
   knownServer.value = snapshot
   oursSeenAt = Date.now()
-  savedMirror = {
-    savedFingerprint: fingerprint(snapshot, isByIndex),
-    savedQueue: queueFingerprint(snapshot),
-  }
-  saveMeta({ ...loadMeta(), ...savedMirror })
-}
-
-/** Whether the queue here has been edited since it was last saved or
- * loaded, without that edit reaching the server - what taking over
- * another Beacon's queue would throw away. Playing on within a song
- * doesn't count, moving on to the next one does once saving has stopped
- * for a foreign queue; an empty queue has nothing to lose. */
-function hasUnsavedEdits(): boolean {
-  const local = localSnapshot()
-  return local !== null && queueFingerprint(local) !== meta().savedQueue
+  updateMeta({ savedFingerprint: fingerprint(snapshot, isByIndex) })
 }
 
 /** Takes note of what the server just said it holds. */
@@ -193,12 +181,8 @@ export async function saveServerQueue({
     if (!overwrite && !keepalive) {
       const server = await client.getPlayQueue(features.byIndex)
       observe(server, features.byIndex)
-      const current = meta()
-      if (isForeign(server, snapshot, current, features.byIndex)) {
-        if (server.changed !== current.offeredChanged) {
-          saveMeta({ ...current, offeredChanged: server.changed })
-          offer(server, features.byIndex)
-        }
+      if (isForeign(server, snapshot, meta(), features.byIndex)) {
+        offerOnce(server, features.byIndex)
         return false
       }
     }
@@ -239,12 +223,10 @@ function scheduleSave(): void {
   saveTimer = setTimeout(() => void saveServerQueue(), SAVE_DEBOUNCE_MS)
 }
 
-/** Asks the server for its queue, and where somebody else saved it and it
- * is somewhere else: takes it over when another Beacon of this account
- * saved it and nothing here would be lost, offers it otherwise. Not while
- * something is playing here, or casting: whoever is listening on this
- * device is not asking to move - saveServerQueue() offers it then, if it
- * comes to that. */
+/** Asks the server for its queue, and offers it where somebody else saved
+ * it and it is somewhere else. Not while something is playing here, or
+ * casting: whoever is listening on this device is not asking to move -
+ * saveServerQueue() offers it once that stops. */
 export async function checkServerQueue({ force = false } = {}): Promise<void> {
   if (!enabled()) return
   const playback = usePlaybackStore()
@@ -263,21 +245,21 @@ export async function checkServerQueue({ force = false } = {}): Promise<void> {
   }
   observe(server, isByIndex)
   const local = localSnapshot() ?? { songIds: [], currentIndex: -1, position: 0 }
-  const current = meta()
-  if (!isForeign(server, local, current, isByIndex)) return
-  // Re-checked: the request above may have taken long enough for
-  // something to start.
+  if (isForeign(server, local, meta(), isByIndex)) offerOnce(server, isByIndex)
+}
+
+/** Offers the server's queue once each time the server copy stops being
+ * this device's own: the device that saved it goes on saving its position
+ * every SAVE_INTERVAL_MS, and asking again for each of those would be a
+ * toast every half minute. Not while something plays here, or casts -
+ * re-checked, since asking the server may have taken long enough for
+ * something to start. */
+function offerOnce(server: ServerPlayQueue, isByIndex: boolean): void {
+  const playback = usePlaybackStore()
   if (playback.isPlaying || playback.isCasting) return
-  // Not on a reload of a window that was playing: it is about to carry on
-  // by itself (resumeLocalPlayback()), and would carry on with this queue.
-  if (server.changedBy === APP_NAME && !hasUnsavedEdits() && !readSessionWasPlaying()) {
-    // Silently: it is the same queue carried on, and coming back to the
-    // window after every listen elsewhere would otherwise be a toast.
-    take(server, isByIndex)
-    return
-  }
-  if (server.changed === current.offeredChanged) return
-  saveMeta({ ...current, offeredChanged: server.changed })
+  const { savedFingerprint, offeredAfter } = meta()
+  if (offeredAfter === savedFingerprint) return
+  updateMeta({ offeredAfter: savedFingerprint })
   offer(server, isByIndex)
 }
 
@@ -309,8 +291,7 @@ function adopt(server: ServerPlayQueue, isByIndex: boolean): void {
 
 function take(server: ServerPlayQueue, isByIndex: boolean): void {
   usePlaybackStore().adoptServerQueue(server.songs, server.currentIndex, server.position)
-  // Taken, so in step with the server and not to be offered again.
-  saveMeta({ ...meta(), offeredChanged: server.changed })
+  // Taken, so in step with the server and not to be offered.
   rememberInStep(serverSnapshot(server), isByIndex)
 }
 
