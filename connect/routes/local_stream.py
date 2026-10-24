@@ -575,7 +575,7 @@ _hls_transcodes = hls.TranscodeRegistry()
 # fetching two segments at once - share one instead of each starting its own.
 _hls_pending: dict[tuple, asyncio.Future] = {}
 
-_HLS_SEGMENT_RE = re.compile(r"^(\d+)\.(m4s|mp3)$")
+_HLS_SEGMENT_RE = re.compile(r"^(\d+)\.(mp4|mp3)$")
 
 
 def reset_hls_encodes() -> None:

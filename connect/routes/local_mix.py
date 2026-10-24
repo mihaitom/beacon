@@ -57,7 +57,7 @@ router = APIRouter(dependencies=[Depends(require_token)])
 LOCAL_LEAD_SECONDS = 20.0
 
 _PLAYER_RE = re.compile(r"^[A-Za-z0-9_-]{6,40}$")
-_HLS_SEGMENT_RE = re.compile(r"^(\d+)\.(m4s|mp3)$")
+_HLS_SEGMENT_RE = re.compile(r"^(\d+)\.(mp4|mp3)$")
 # How long a playlist request waits for the run's first segment: the mix
 # renders its head start within a second or two once the first song's
 # decoder delivers, and an empty playlist is no use to the player.

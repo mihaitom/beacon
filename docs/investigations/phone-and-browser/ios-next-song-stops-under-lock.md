@@ -63,6 +63,12 @@ it either.
   songs, none stuck. The proxy log shows each next song requested the moment
   the previous one ended and all its segments fetched within a second. If the
   session closed on every natural end, every one of those would have stuck.
+  Left running, the whole playlist played through locked: 58 songs over 36
+  minutes, no gap beyond the 12 s where the queue started over. (The run
+  ended in a CrowdSec ban on the reverse proxy - a long song's segments
+  fetched in one burst looked like a crawl, fixed by naming fMP4 segments
+  `.mp4`. Unrelated to this case: the reporter's instance runs no CrowdSec
+  and its log has no 403.)
 
 ## Known elsewhere
 

@@ -67,7 +67,7 @@ def test_the_playlist_carries_the_query_on_every_uri():
     uris = [line for line in text.splitlines() if line and not line.startswith("#EXTINF")]
     assert '#EXT-X-MAP:URI="init.mp4?token=t&session=s&fmt=aac"' in uris
     segments = [uri for uri in uris if not uri.startswith("#")]
-    assert segments == [f"{i}.m4s?token=t&session=s&fmt=aac" for i in range(layout.count)]
+    assert segments == [f"{i}.mp4?token=t&session=s&fmt=aac" for i in range(layout.count)]
     assert text.rstrip().endswith("#EXT-X-ENDLIST")
 
 

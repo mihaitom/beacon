@@ -332,7 +332,7 @@ class FakeHls:
         pass
 
     def playlist(self, query):
-        return f"#EXTM3U\n0.m4s?{query}\n"
+        return f"#EXTM3U\n0.mp4?{query}\n"
 
     async def segment(self, index):
         return b"seg" if index == 0 else None
@@ -352,8 +352,8 @@ def test_webkit_gets_the_run_as_a_live_playlist(configured, fake_hls):
     assert r.status_code == 200
     assert r.headers["content-type"] == "application/vnd.apple.mpegurl"
     assert "token=t" in r.text  # segment URIs carry the auth along
-    assert configured.get(f"/stream/local/mix/{PLAYER}/hls/0.m4s", params=params).content == b"seg"
-    assert configured.get(f"/stream/local/mix/{PLAYER}/hls/1.m4s", params=params).status_code == 404
+    assert configured.get(f"/stream/local/mix/{PLAYER}/hls/0.mp4", params=params).content == b"seg"
+    assert configured.get(f"/stream/local/mix/{PLAYER}/hls/1.mp4", params=params).status_code == 404
     assert configured.get(f"/stream/local/mix/{PLAYER}/hls/0.mp3", params=params).status_code == 404
     # One encode for every request of the same quality.
     assert len(fake_hls) == 1

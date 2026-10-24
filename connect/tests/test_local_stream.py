@@ -899,7 +899,7 @@ def test_the_hls_playlist_lists_the_whole_track_and_encodes_from_start(client, d
     assert sum(durations) == pytest.approx(_DURATION)
     assert "EXT-X-START" not in text
     assert '#EXT-X-MAP:URI="init.mp4?fmt=aac&br=192&start=60"' in text
-    assert "0.m4s?fmt=aac&br=192&start=60" in text
+    assert "0.mp4?fmt=aac&br=192&start=60" in text
     # Encoding starts at the boundary of the segment holding 60s.
     cmd = procs[0][0]
     begins_at = float(cmd[cmd.index("-ss") + 1])
@@ -935,8 +935,8 @@ def test_the_hls_segments_of_one_stream_come_from_one_encode(client, default_ses
         [
             f"/stream/local/1/hls/index.m3u8?{query}",
             f"/stream/local/1/hls/init.mp4?{query}",
-            f"/stream/local/1/hls/0.m4s?{query}",
-            f"/stream/local/1/hls/1.m4s?{query}",
+            f"/stream/local/1/hls/0.mp4?{query}",
+            f"/stream/local/1/hls/1.mp4?{query}",
         ],
         chunks=chunks,
     )
@@ -1010,7 +1010,7 @@ def test_a_source_with_no_duration_is_redirected_to_the_plain_stream(client, def
 
 
 @pytest.mark.parametrize(
-    "segment", ["99.m4s", "0.mp3", "x.m4s", "0.ts"], ids=["past-the-end", "wrong-kind", "nan", "ts"]
+    "segment", ["99.mp4", "0.mp3", "x.mp4", "0.ts"], ids=["past-the-end", "wrong-kind", "nan", "ts"]
 )
 def test_a_segment_that_is_not_in_the_playlist_is_not_found(segment, client, default_session):
     (response,), _ = _hls_requests(

@@ -29,6 +29,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Casting works from a computer or server connected to more than one network: each speaker gets Beacon's address in its own network, where songs used to break off or start over after about half a minute (reported by @mjj042, #56)
 - Casting moves on to the next song when a song's audio is shorter than its listed length, as with some VBR MP3s, instead of stopping until pause and play are pressed (#56)
+- On an iPhone or iPad playing at a reduced quality from outside the home network, a long song no longer gets the phone locked out by a reverse proxy running CrowdSec, which mistook loading the song for a crawler
 - The backend's logs no longer contain the media server login, so a log can be shared without giving away access to the server
 - Signing in says why it failed: a busy or unreachable server, a login page in front of it or a certificate problem no longer reads as a wrong password
 - Resuming a paused DLNA renderer could leave it paused while Beacon showed it playing

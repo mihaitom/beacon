@@ -158,7 +158,12 @@ def playlist(layout: SegmentLayout, packed: bool, query: str) -> str:
 
 
 def segment_extension(packed: bool) -> str:
-    return "mp3" if packed else "m4s"
+    """`mp4` rather than the usual `m4s` for fMP4 segments: WebKit goes by
+    the content, but CrowdSec's http-crawl-non_statics counts a path with an
+    extension it does not know as a page, and a long song's ~60 segments
+    fetched within a second banned the listener's address behind a reverse
+    proxy. It knows .mp3 and .mp4 as static files."""
+    return "mp3" if packed else "mp4"
 
 
 def container_args(layout: SegmentLayout, packed: bool) -> list[str]:
