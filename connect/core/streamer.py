@@ -480,7 +480,7 @@ def lossy_encode_args(
     path was fine. aac and opus *do* encode surround, so the same source
     reaches the same speaker as a 5.1 stream it plays as silence (measured
     on a Sonos — see
-    docs/investigations/multichannel-flac-silent-on-sonos.md).
+    docs/investigations/casting/sonos-silent-on-surround-flac.md).
 
     Opus is encoded in constrained VBR, and which of the three modes to use
     is a decided question rather than a taste: it was `-vbr off` (CBR) for
@@ -676,7 +676,7 @@ _LOOSE_CHANNELS_RE = re.compile(r"^(\d+)\s*channels?$")
 # thing the pacing bug this backend already fixed once read (the container
 # summary line's "Duration: ..., bitrate: N kb/s", which includes embedded
 # cover art and is *not* the audio's own bitrate; see
-# docs/investigations/fixed-pacing-used-container-bitrate.md). Bound to the
+# docs/investigations/streaming/pacing-uses-container-bitrate.md). Bound to the
 # same per-line search as sample rate/bit depth above, for the same reason.
 # Absent for lossless codecs (FLAC/ALAC/PCM never report one here) — never
 # guessed at, same convention as sample_rate/bit_depth being None.
@@ -1128,10 +1128,10 @@ async def resolve_output_format(
     copy of a stream the device cannot decode at all. Both halves of that
     are measured rather than assumed: a 24-bit/96kHz FLAC copied straight
     to a Sonos reported ERROR_UNSUPPORTED_FREQ and stopped 1.1s in (see
-    docs/investigations/copy-tier-device-limits.md), and a 5-channel FLAC
+    docs/investigations/casting/copy-tier-ignores-device-limits.md), and a 5-channel FLAC
     reported ERROR_UNSUPPORTED_FORMAT and never started — at any sample
     rate, and on a soundbar with surround satellites just the same (see
-    docs/investigations/multichannel-flac-silent-on-sonos.md). It's
+    docs/investigations/casting/sonos-silent-on-surround-flac.md). It's
     re-encoded losslessly to FLAC instead, brought down to the limit — the
     same tier _LOSSLESS_REENCODE_CODECS below already uses, just also
     reached from a codec that would otherwise have qualified for copy.

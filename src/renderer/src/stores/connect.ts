@@ -47,7 +47,7 @@ interface ConnectErrors {
 // evening - this time with a number behind it rather than an impression.
 //
 // What that evening established, in short (the long version, with the
-// readings, is docs/investigations/radio-visualizer-cast-sync.md):
+// readings, is docs/investigations/radio/visualizer-out-of-sync-when-casting.md):
 //
 //   * The picture is drawn from the relay's *live edge*, while a cast
 //     device plays from ~13s behind it (measured on Chromecast, three

@@ -18,7 +18,7 @@ Things worth checking:
 - **A server with more than one network connection** (two network cards, a VPN, Docker networks). Beacon gives each speaker the address the server's own routing uses towards it, so that route has to lead into the speaker's network directly. If replies take a different way than requests, a router in between sees only half the connection and drops it.
 - **Mesh Wi-Fi, powerline adapters or a busy wireless link** can lose a connection that a short web request would never notice. A speaker on a cable is the quickest way to rule this out.
 
-[Networking](../guides/networking.md) goes through each of these, with the ports involved and a checklist. The case that led to it is in [investigations/old-sonos-models-stop-reading-the-stream.md](../../investigations/old-sonos-models-stop-reading-the-stream.md).
+[Networking](../guides/networking.md) goes through each of these, with the ports involved and a checklist. The case that led to it is in [investigations/casting/sonos-stops-reading-the-stream.md](../../investigations/casting/sonos-stops-reading-the-stream.md).
 
 ## My Sonos speaker doesn't appear under AirPlay (or DLNA)
 
@@ -38,4 +38,4 @@ Because nothing here plays that was not asked for. Ending a cast leaves the trac
 
 ## Why is there no visualizer while a station is casting?
 
-It is switched off there on purpose, because it could not be made to line up. The analyzer is fed the live edge of the stream while the speaker plays roughly 13 seconds behind it, out of its own buffer, so the bars ran ahead of what the room heard. That gap is not a clock offset, so no correction constant closes it; feeding the analyzer delayed audio would, and that is a real piece of work nobody has taken on. A station playing on this device shows its visualizer as usual, and so does a cast library track, whose pacing Beacon controls itself. The measurements are in [investigations/radio-visualizer-cast-sync.md](../../investigations/radio-visualizer-cast-sync.md).
+It is switched off there on purpose, because it could not be made to line up. The analyzer is fed the live edge of the stream while the speaker plays roughly 13 seconds behind it, out of its own buffer, so the bars ran ahead of what the room heard. That gap is not a clock offset, so no correction constant closes it; feeding the analyzer delayed audio would, and that is a real piece of work nobody has taken on. A station playing on this device shows its visualizer as usual, and so does a cast library track, whose pacing Beacon controls itself. The measurements are in [investigations/radio/visualizer-out-of-sync-when-casting.md](../../investigations/radio/visualizer-out-of-sync-when-casting.md).

@@ -180,6 +180,11 @@ the diff belongs there too. A bug that was found on first look does not need
 an entry. Keep those docs anonymous: no IPs, no real speaker or room names
 ("room A", "room B").
 
+Entries sit in one folder per area (`phone-and-browser/`, `casting/`,
+`streaming/`, `radio/`, ...), named after what was seen, never after the
+status - the README has the conventions. A change made for a case and taken
+out again still gets a line under "Ruled out" in its entry.
+
 ## Working agreements
 
 - Work happens on the **`development`** branch and is merged to `main`. Check

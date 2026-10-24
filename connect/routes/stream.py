@@ -518,9 +518,9 @@ async def _resume_after_interruption(session: SessionState) -> bool:
     reaction so far was to mark the session not-streaming and go quiet - the
     music simply ended and stayed ended. Whatever makes these speakers stop
     has resisted a full day of investigation (see
-    docs/investigations/mid-track-drop-symptom.md; the cause is outside this
-    codebase), so the useful thing left to do is to
-    stop letting it end the session.
+    docs/investigations/casting/mid-track-drop/symptom-and-ruled-out-theories.md; the cause
+    is outside this codebase), so the useful thing left to do is to stop
+    letting it end the session.
 
     Called only when someone asks for it - the toast the interrupted
     broadcast raises in the frontend. Returns True if a fresh stream was
@@ -803,7 +803,7 @@ def _log_buffer_probe(
 ) -> None:
     """The device-buffer measurement's one line of output — see
     core/radio_relay.py's RADIO_BUFFER_PROBE_ENV and
-    docs/investigations/radio-buffering-window.md.
+    docs/investigations/radio/buffering-bar-outlasts-the-sound.md.
 
     `absorbed` is what the receiving side took before it first declined
     more, which is its own buffer *plus* this machine's socket send buffer.
@@ -851,7 +851,7 @@ async def _relayed_radio_audio(
 
     `probe` logs how fast this subscriber actually takes the audio, for the
     device-buffer measurement — see RadioRelay.buffer_probe_enabled() and
-    docs/investigations/radio-buffering-window.md."""
+    docs/investigations/radio/buffering-bar-outlasts-the-sound.md."""
     queue = relay.subscribe_audio(burst=burst)
     started = time.monotonic()
     # Bytes the receiver swallowed before it first pushed back, and when

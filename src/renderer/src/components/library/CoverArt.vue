@@ -120,7 +120,7 @@ function fetchSizeFor(wanted: number): number {
 // proxy's authorisation middleware stopped answering in time, failed closed,
 // and every request through it - including the *casting streams' own media
 // fetches* - was denied for as long as the burst lasted. See
-// docs/investigations/mid-track-drop-reverse-proxy-403.md, "The mechanism".
+// docs/investigations/casting/mid-track-drop/reverse-proxy-403.md, "The mechanism".
 //
 // The number itself is a compromise, and worth re-deriving rather than
 // guessing at if it ever needs changing. A cover takes roughly one proxy

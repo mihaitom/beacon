@@ -160,7 +160,7 @@ describe('MobilePlaylistDetailView', () => {
 
   it('shows what the server actually has, not what was asked for', async () => {
     // Jellyfin 12 cannot tell two copies of one song apart and takes both
-    // (docs/investigations/playlist-duplicate-entries.md) — precisely the
+    // (docs/investigations/media-servers/playlist-duplicate-not-addressable.md) — precisely the
     // playlist this page is mounted on here.
     const { library, wrapper, server } = await mountAgainstServer()
     vi.spyOn(library, 'removeFromPlaylist').mockImplementation(async () => {

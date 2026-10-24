@@ -1007,7 +1007,7 @@ async def _set_playlist_songs(playlist_id: str, song_ids: list[str], media: Plex
 async def _add_to_playlist(playlist_id: str, song_ids: list[str], media: PlexClient) -> None:
     # Plex answers ok and adds nothing for a song the playlist already holds,
     # so this cannot produce a second copy — see
-    # docs/investigations/playlist-duplicate-entries.md.
+    # docs/investigations/media-servers/playlist-duplicate-not-addressable.md.
     await _px_request(
         "PUT",
         media,
@@ -1123,7 +1123,8 @@ async def _stream_binary(
 ) -> StreamingResponse:
     """`keep_length` forwards the upstream Content-Length after all, for a
     track's original file: Safari only plays a media response through when it
-    knows the length (docs/investigations/safari-transcode-jumps.md). Never
+    knows the length
+    (docs/investigations/phone-and-browser/safari-transcode-jumps-to-start.md). Never
     for a compressed body, which httpx decompresses and so makes longer than
     the header says."""
     client = _get_client()

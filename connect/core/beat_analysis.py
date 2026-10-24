@@ -83,7 +83,7 @@ _BEAT_START_BARS = 4
 # before, _FADE_DROP_DB down by the last audible one. A musical
 # decrescendo rarely drops that far. Mixed inside the fade, the old song
 # was up to 10 dB down by the bass swap
-# (docs/investigations/beatmix-pop-rock.md).
+# (docs/investigations/transitions/beatmix-pop-rock-hip-hop.md).
 _FADE_MIN_BARS = 4
 _FADE_DROP_DB = 10.0
 _FADE_JITTER_DB = 1.5

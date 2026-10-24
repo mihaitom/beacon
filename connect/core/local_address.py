@@ -7,7 +7,7 @@ this machine also sits in reaches it through the router, while the replies
 leave directly through this machine's own leg in the speaker's network. A
 router that sees only one half of a connection drops it, and a Sonos then
 stopped reading every stream 30-45 s in (#56, see
-docs/investigations/old-sonos-models-stop-reading-the-stream.md).
+docs/investigations/casting/sonos-stops-reading-the-stream.md).
 """
 
 import ipaddress

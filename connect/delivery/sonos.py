@@ -175,14 +175,14 @@ class SonosDelivery(BaseDelivery):
     """Controls a Sonos speaker via SoCo."""
 
     SUPPORTS_POSITION: bool = True
-    # Confirmed the hard way (see docs/investigations/copy-tier-device-limits.md):
+    # Confirmed the hard way (see docs/investigations/casting/copy-tier-ignores-device-limits.md):
     # a 24-bit/96kHz FLAC
     # sent as-is reported ERROR_UNSUPPORTED_FREQ over UPnP eventing and
     # stopped 1.1s in. Sonos' own published spec tops out at 24-bit/48kHz.
     MAX_SAMPLE_RATE_HZ: int | None = 48000
     MAX_BIT_DEPTH: int | None = 24
     # Measured on both a standalone Era 100 and a Beam with surround
-    # satellites (see docs/investigations/multichannel-flac-silent-on-sonos.md):
+    # satellites (see docs/investigations/casting/sonos-silent-on-surround-flac.md):
     # a 5-channel FLAC is refused with ERROR_UNSUPPORTED_FORMAT and never
     # starts, at 44.1kHz just as at 96kHz. A speaker set that plays surround
     # from a TV still does not decode one out of an HTTP URI, so this is not
@@ -196,7 +196,7 @@ class SonosDelivery(BaseDelivery):
     # gets AAC on a Sonos rather than nothing.
     PLAYABLE_CODECS: frozenset[str] = frozenset({"mp3", "aac", "flac", "vorbis"})
     # Measured on a real speaker: an endless FLAC with no length played 10
-    # minutes without a stop (docs/investigations/continuous-stream-on-devices.md).
+    # minutes without a stop (docs/investigations/casting/endless-stream-on-speakers.md).
     CONTINUOUS_FLAC_OK: bool = True
 
     def _get_device(self):

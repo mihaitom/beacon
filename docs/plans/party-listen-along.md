@@ -28,7 +28,7 @@ has. In the code it is "listening along" (`listen_kbps`,
   the host. What's next, search, wishes and skip votes stay live, as today.
 - **No HLS to start with.** Beacon's radio stream, which has no length
   either, plays steadily on an iPhone, so the same shape should here too.
-  The transcode jumps in `docs/investigations/safari-transcode-jumps.md` were
+  The transcode jumps in `docs/investigations/phone-and-browser/safari-transcode-jumps-to-start.md` were
   about tracks of known length.
 
 ## The broadcaster

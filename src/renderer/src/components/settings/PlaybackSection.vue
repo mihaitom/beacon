@@ -27,7 +27,8 @@
           :label="$t('settings.transitions')"
         />
         <!-- A stepper rather than a slider: Vuetify's slider loses the drag
-         - on a real phone (see docs/investigations/mobile-volume-slider-drag.md).
+         - on a real phone (see
+         - docs/investigations/phone-and-browser/mobile-volume-slider-ignores-drags.md).
          - A beatmix is a choice of phrase lengths, not a number of seconds -
          - see BEATMIX_BARS. -->
         <div v-if="transitionsStore.mode === 'crossfade'" class="crossfade-lengths">

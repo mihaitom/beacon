@@ -186,7 +186,7 @@ class DlnaDelivery(BaseDelivery):
 
     SUPPORTS_POSITION: bool = True
     # "Varies per renderer" is the honest answer (see
-    # docs/investigations/copy-tier-device-limits.md) — DLNA covers
+    # docs/investigations/casting/copy-tier-ignores-device-limits.md) — DLNA covers
     # everything from budget soundbars to full AV receivers, with no
     # single real spec ceiling the way Sonos/Chromecast Audio publish one.
     # Reuses Sonos' own 24-bit/48kHz as the least-surprising shared
@@ -211,7 +211,7 @@ class DlnaDelivery(BaseDelivery):
     PLAYABLE_CODECS: frozenset[str] = frozenset({"mp3", "aac", "flac", "vorbis"})
     # CONTINUOUS_FLAC_OK left off for the same reason: whether a renderer
     # takes an endless FLAC is that renderer's answer, not one a class can
-    # give (see docs/investigations/continuous-stream-on-devices.md).
+    # give (see docs/investigations/casting/endless-stream-on-speakers.md).
 
     async def _get_device(self):
         cached = _device_cache.get(self.target.lower())

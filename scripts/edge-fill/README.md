@@ -22,5 +22,5 @@ change both together.
 Sampling runs in Electron on purpose: Chromium downscales a canvas
 differently from one build or GPU to the next, and headless Chromium judged
 a dozen of the photos differently from the app. See
-`docs/investigations/edge-fill-thresholds.md` for how the continuation got
+`docs/investigations/interface/backdrop-edge-fill-thresholds.md` for how the continuation got
 to where it is.

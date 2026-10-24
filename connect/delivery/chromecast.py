@@ -243,7 +243,7 @@ class ChromecastDelivery(BaseDelivery):
     # target (Google's own Default Media Receiver's real ceiling isn't
     # published as clearly), but a documented number beats a guess, and
     # it's the more permissive end of what's out there rather than the
-    # restrictive one — see docs/investigations/copy-tier-device-limits.md,
+    # restrictive one — see docs/investigations/casting/copy-tier-ignores-device-limits.md,
     # for why guessing wrong in the *restrictive* direction is the one that
     # actually breaks playback.
     MAX_SAMPLE_RATE_HZ: int | None = 96000
@@ -262,7 +262,7 @@ class ChromecastDelivery(BaseDelivery):
     PLAYABLE_CODECS: frozenset[str] = frozenset({"mp3", "aac", "flac", "vorbis", "opus"})
     # CONTINUOUS_FLAC_OK left off on purpose: Google promises FLAC only for
     # the audio models, and this class covers the TV ones too (see
-    # docs/investigations/continuous-stream-on-devices.md).
+    # docs/investigations/casting/endless-stream-on-speakers.md).
     # When this delivery last asked the device for a fresh media status —
     # see get_position(). Class-level default, assigned per instance on
     # first use; a delivery object is per target and per dispatch, and a

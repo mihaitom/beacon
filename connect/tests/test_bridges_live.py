@@ -592,7 +592,7 @@ async def test_jellyfin_reads_the_files_own_lyrics(jellyfin):
     it is given, and they are not equivalent: only a lyric read out of the
     media file's own tag carries the trailing NUL byte asserted below, and
     only a server from 10.10 on reads one at all (10.9 sees a sidecar `.lrc`
-    and nothing else — see docs/investigations/jellyfin-10.9-vs-12.md). Point
+    and nothing else — see docs/investigations/media-servers/jellyfin-10.9-vs-12.md). Point
     it at a tagged track wherever the server can read one."""
     item_id = os.environ.get("JELLYFIN_TEST_LYRICS_ITEM_ID", "")
     if not item_id:

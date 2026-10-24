@@ -433,7 +433,7 @@ export default {
     // either way — connect.ts's RADIO_VISUALIZER_ENABLED answers false for
     // every type, off again after the 2026-09-07 measurements, so all
     // three fall into the same "honestly absent" treatment as AirPlay.
-    // See connect.ts, and docs/investigations/radio-visualizer-cast-sync.md
+    // See connect.ts, and docs/investigations/radio/visualizer-out-of-sync-when-casting.md
     // for why that is not one constant away from working.
     visualizerAvailable() {
       // Casting reads its frequency data from the backend rather than from

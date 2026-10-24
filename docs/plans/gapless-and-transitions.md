@@ -114,7 +114,7 @@ the basses swap in 15 ms. Second half: outgoing mids and highs fall.
 
 The stream runs at the incoming tempo through the overlap: the **outgoing**
 song eases into it over the 8 bars before (`core/timestretch.py`, Rubber
-Band R3 since listening 4 in `docs/investigations/beatmix-pop-rock.md`;
+Band R3 since listening 4 in `docs/investigations/transitions/beatmix-pop-rock-hip-hop.md`;
 WSOLA before) and holds it to the end; the incoming song is never
 stretched. That was the other way round at first - the incoming song
 stretched through the overlap and eased back over 8 bars - and whatever
@@ -199,7 +199,7 @@ as set.
 
 **WebKit** cannot play a stream without a length (it re-fetches 1 MiB
 blocks from byte 0 and appends them,
-[safari-transcode-jumps.md](../investigations/safari-transcode-jumps.md)),
+[safari-transcode-jumps.md](../investigations/phone-and-browser/safari-transcode-jumps-to-start.md)),
 and a mix never has one. So a WebKit tab gets the same run as a live HLS
 playlist, `/stream/local/mix/{player}/hls/index.m3u8?epoch` (`core/mix_hls.py`):
 type EVENT, listing every segment of the run from its first, growing as
@@ -229,7 +229,7 @@ new run, which the broadcaster follows like any other jump of the host's.
 Nothing new in the build: PCM in and out (`s16le` muxer and demuxer) and
 all encoders were already there, and splitting, stretching and limiting run
 in numpy. The stretch was WSOLA in numpy too, until it failed a listening
-test on voices (`docs/investigations/beatmix-pop-rock.md`). It is now
+test on voices (`docs/investigations/transitions/beatmix-pop-rock-hip-hop.md`). It is now
 Rubber Band in process, through `pylibrb` - prebuilt with a static
 librubberband where wheels exist, built against the system's library on
 Linux arm64 and in the Docker image - not ffmpeg's `rubberband` filter,
@@ -241,7 +241,7 @@ platform and a stretch out of process.
 - **Real speakers.** Whether Sonos, Chromecast, DLNA and AirPlay play an
   endless stream for an hour, keep counting their position, and take FLAC
   that never ends: `POST /debug/play-endless` measures it, see
-  [continuous-stream-on-devices.md](../investigations/continuous-stream-on-devices.md).
+  [continuous-stream-on-devices.md](../investigations/casting/endless-stream-on-speakers.md).
   Its result sets `CONTINUOUS_FLAC_OK` per class.
 - **WebKit on the device** (iPhone, Safari): the live HLS playlist is built
   and tested against a real ffmpeg, not yet on a phone. To check there:

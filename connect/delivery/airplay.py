@@ -400,7 +400,7 @@ class AirPlayDelivery(BaseDelivery):
                 # open for the whole track, so their dying closes it and
                 # routes/stream.py sees the absence. AirPlay is pushed to, and
                 # a failed push is the only trace there is (see
-                # docs/investigations/fixed-airplay-silent-death.md).
+                # docs/investigations/casting/airplay-dies-silently.md).
                 #
                 # Only a device failure after the first frame is an
                 # interruption to offer a resume for. A stream refused before

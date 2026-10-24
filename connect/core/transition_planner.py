@@ -72,7 +72,7 @@ MIN_CONFIDENCE = 0.5
 # slowed down to match. With Rubber Band, beatmixes of well-known songs
 # 4.6-5.8 % apart beat a crossfade 8 to 0 (one even); past 6 % is not
 # heard yet - a soul ballad at 6.2 % was too slow under the stretcher
-# before (docs/investigations/beatmix-pop-rock.md, listening 5).
+# before (docs/investigations/transitions/beatmix-pop-rock-hip-hop.md, listening 5).
 MAX_STRETCH = 0.06
 # The bass swap is a cut, not a fade: this short, so it clicks neither.
 SWAP_SECONDS = 0.015
@@ -95,7 +95,7 @@ POST_SWAP_BARS = 2
 _VOCAL_REACH_BARS = 4
 # Both songs' mids around the swap: down this far at it, over a bar either
 # side (a quarter of a crossfade). Listening 3 in
-# docs/investigations/beatmix-pop-rock.md.
+# docs/investigations/transitions/beatmix-pop-rock-hip-hop.md.
 MID_DIP_DB = 6.0
 _DIP_CROSSFADE_SHARE = 0.25
 # Never more of either song than this share of what was analysed.

@@ -642,7 +642,7 @@ describe('CoverArt', () => {
   // every visible cover at once, which over HTTP/2 the browser no longer
   // caps, and the burst took down the reverse proxy's authorisation
   // middleware — which then denied the casting streams' own media fetches.
-  // See docs/investigations/mid-track-drop-reverse-proxy-403.md, "The mechanism".
+  // See docs/investigations/casting/mid-track-drop/reverse-proxy-403.md, "The mechanism".
 
   it('never has more than the limit fetching at once', async () => {
     for (let i = 0; i < MAX + 4; i++) await scrollIntoRest(mountCover())

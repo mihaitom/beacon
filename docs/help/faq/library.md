@@ -12,7 +12,7 @@ Because that is what the server sent. Navidrome hands Subsonic clients a synthes
 
 On a Jellyfin 12 server the two copies are indistinguishable: it reports the same id for both entries, so a removal names both. Jellyfin's own web client does exactly the same thing on the same playlist, which is what puts this in the server rather than in Beacon. Reordering such a playlist is unreliable there for the same reason.
 
-It cannot happen anywhere else. Jellyfin 10.9 and Plex will not hold the same song twice in the first place - adding a song a playlist already has answers success and changes nothing - and Navidrome removes exactly the copy that was clicked. Measured against real servers on 2026-09-12; [investigations/playlist-duplicate-entries.md](../../investigations/playlist-duplicate-entries.md) has the payloads, and the two fixes that were weighed and not taken.
+It cannot happen anywhere else. Jellyfin 10.9 and Plex will not hold the same song twice in the first place - adding a song a playlist already has answers success and changes nothing - and Navidrome removes exactly the copy that was clicked. Measured against real servers on 2026-09-12; [investigations/media-servers/playlist-duplicate-not-addressable.md](../../investigations/media-servers/playlist-duplicate-not-addressable.md) has the payloads, and the two fixes that were weighed and not taken.
 
 ## Why does Beacon ask for my Navidrome password to edit a smart playlist?
 

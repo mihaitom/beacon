@@ -1692,7 +1692,7 @@ def test_get_song_answers_with_the_detailed_mapping(client, jellyfin_session, mo
 
 def test_stream_view_forwards_the_files_length(client, jellyfin_session, monkeypatch):
     """Safari plays a media response through only when it knows its length -
-    see docs/investigations/safari-transcode-jumps.md."""
+    see docs/investigations/phone-and-browser/safari-transcode-jumps-to-start.md."""
     fake_client, _ = _mock_binary_httpx_client({"content-length": "3"})
     monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
 

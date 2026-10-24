@@ -79,7 +79,7 @@ async function afterEarlierWrites(
  * what happened: both bridges drop a position the playlist no longer has
  * without saying so, and Jellyfin 12 takes every copy of a song listed
  * twice rather than the one that was named (see
- * docs/investigations/playlist-duplicate-entries.md). Re-reading is also
+ * docs/investigations/media-servers/playlist-duplicate-not-addressable.md). Re-reading is also
  * what puts the header's track count and running time right. */
 async function reconcile(wasLastWrite: boolean, reload: () => Promise<void>): Promise<void> {
   if (wasLastWrite) await reload()

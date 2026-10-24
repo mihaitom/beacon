@@ -2,7 +2,7 @@
 
 WebKit cannot play a stream that declares no length: it fetches 1 MiB
 blocks, each with a plain GET from byte 0, and appends them (see
-core/hls.py and docs/investigations/safari-transcode-jumps.md). A single
+core/hls.py and docs/investigations/phone-and-browser/safari-transcode-jumps-to-start.md). A single
 song gets a VOD playlist of its known duration instead. A mix has no
 duration at all - its end is only known once it is reached - so it gets
 the other kind Apple's own live audio uses: an EVENT playlist, which lists

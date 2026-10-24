@@ -706,7 +706,7 @@ async def _playlist_entries(playlist_id: str, media: JellyfinClient) -> list[tup
     does that but refuses to hold a duplicate in the first place; Jellyfin 12
     accepts one and reports both ids as the same value, offering nothing else
     per entry, which makes the two copies indistinguishable here — see
-    docs/investigations/playlist-duplicate-entries.md for what that costs."""
+    docs/investigations/media-servers/playlist-duplicate-not-addressable.md for what that costs."""
     items = await _jf_get(media, f"/Playlists/{_quote_id(playlist_id)}/Items", userId=media.user_id)
     return [
         (entry["PlaylistItemId"], str(entry.get("Id", "")))
@@ -1124,7 +1124,8 @@ async def _stream_binary(
 ) -> StreamingResponse:
     """`keep_length` forwards the upstream Content-Length after all, for a
     track's original file: Safari only plays a media response through when it
-    knows the length (docs/investigations/safari-transcode-jumps.md). Never
+    knows the length
+    (docs/investigations/phone-and-browser/safari-transcode-jumps-to-start.md). Never
     for a compressed body, which httpx decompresses and so makes longer than
     the header says."""
     client = _get_client()

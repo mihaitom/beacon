@@ -8,7 +8,8 @@ response that declares no length (or answers its `bytes=0-1` probe with
 appends it - so a song jumps back to its start every ~45 seconds. Only a
 known total length made it play through, and nothing knows that length for
 aac, opus or flac before the encode has finished. The whole investigation,
-including what was ruled out, is docs/investigations/safari-transcode-jumps.md.
+including what was ruled out, is
+docs/investigations/phone-and-browser/safari-transcode-jumps-to-start.md.
 
 HLS is WebKit's own answer: a playlist whose length is known up front (the
 track's duration) and segments whose sizes nobody has to predict.

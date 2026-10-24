@@ -254,7 +254,7 @@ class SessionState:
         # routes/stream.py's radio_stream(), read by radio_is_buffering()
         # as the one observed (rather than assumed) part of its answer. The
         # device's buffer fills from that connection at exactly 1x, measured
-        # 2026-09-10 (see docs/investigations/radio-buffering-window.md), so
+        # 2026-09-10 (see docs/investigations/radio/buffering-bar-outlasts-the-sound.md), so
         # wall time since it is how much audio the device holds.
         #
         # Earliest connection wins until the next dispatch clears it: a
@@ -519,7 +519,7 @@ class SessionState:
           has been silent since it closed its connection here, and a
           teardown nobody asked for is how a session once stopped a
           speaker another Beacon instance was using (see
-          docs/investigations/fixed-session-reap-stopped-someone-elses-speaker.md).
+          docs/investigations/casting/session-reap-stops-another-users-speaker.md).
         - **A station playing locally**, where the relay is started lazily
           by /stream/radio-local and would have been stopped by
           /radio-metadata/stop. Nothing else here belongs to it — the app
@@ -1325,8 +1325,8 @@ async def reap_once() -> list[str]:
         # speaker stopped — proven on the wire, our Stop at 00:27:50.133 UTC
         # and the device's FIN 840ms later. From the outside that is
         # indistinguishable from the unexplained drops in
-        # docs/investigations/mid-track-drop-symptom.md, which is how it went
-        # unnoticed.
+        # docs/investigations/casting/mid-track-drop/symptom-and-ruled-out-theories.md,
+        # which is how it went unnoticed.
         #
         # Whatever is still streaming is by definition not abandoned, so it
         # is not reaped at all.

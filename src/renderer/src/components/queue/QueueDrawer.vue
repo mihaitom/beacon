@@ -157,7 +157,7 @@
          - directly instead of re-solving them by hand. -->
         <!-- No `appear`, deliberately — see below for why, and for what
          - this costs. Tried again on 2026-09-07 and reverted the same day:
-         - see docs/investigations/queue-reveal-first-open.md for what was
+         - see docs/investigations/interface/queue-drawer-first-reveal-not-animated.md for what was
          - measured, what the measurement was mistaken for, and why the
          - workaround is still the shipped behaviour. -->
         <!-- `appear` used to be bound to queueRevealSeq > 0, so a peek that's

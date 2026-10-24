@@ -388,7 +388,7 @@ def test_claim_returns_error_with_no_targets(client, default_session):
 # running cast got whatever the first one could take — measured live as a
 # DLNA renderer capped at 48kHz joining a Chromecast that had been handed a
 # 24/96 source untouched (see
-# docs/investigations/multichannel-flac-silent-on-sonos.md).
+# docs/investigations/casting/sonos-silent-on-surround-flac.md).
 
 
 @pytest.fixture
@@ -502,7 +502,7 @@ def test_join_puts_everything_back_when_the_re_dispatch_fails(client, _casting_a
     Every target is failed deliberately: DeliveryManager.play() re-raises
     only when all of them did, treating a partial failure as a dispatch
     that did start somewhere (see its own comment, and
-    docs/investigations/multi-target-partial-drop-not-surfaced.md)."""
+    docs/investigations/casting/multi-target-drop-not-surfaced.md)."""
     from core.claims import claims
 
     st = _casting_a_track.state

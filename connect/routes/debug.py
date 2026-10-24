@@ -472,7 +472,7 @@ async def list_test_audio() -> dict:
 # playback clock is calibrated against. Whether each device class plays
 # such a stream for an hour, keeps counting its position past any length it
 # was told, and survives pause/resume is what these endpoints measure
-# (docs/investigations/continuous-stream-on-devices.md).
+# (docs/investigations/casting/endless-stream-on-speakers.md).
 
 _ENDLESS_FORMATS = ("mp3", "aac", "flac")
 _ENDLESS_SAMPLE_SECONDS = 15.0

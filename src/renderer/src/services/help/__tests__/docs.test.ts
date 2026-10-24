@@ -63,12 +63,12 @@ describe('resolveLink', () => {
   it('sends everything not bundled to the repository on GitHub', () => {
     expect(
       resolveLink(
-        '../../investigations/radio-visualizer-cast-sync.md',
+        '../../investigations/radio/visualizer-out-of-sync-when-casting.md',
         'docs/help/faq/playback.md',
       ),
     ).toEqual({
       kind: 'external',
-      url: `${REPO}/blob/main/docs/investigations/radio-visualizer-cast-sync.md`,
+      url: `${REPO}/blob/main/docs/investigations/radio/visualizer-out-of-sync-when-casting.md`,
     })
     expect(resolveLink('../../../build/ffmpeg/README.md', 'docs/help/faq/formats.md')).toEqual({
       kind: 'external',

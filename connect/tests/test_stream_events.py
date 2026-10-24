@@ -379,7 +379,7 @@ def test_radio_buffering_prefers_a_measured_lag_over_the_fixed_guess(default_ses
 def test_radio_buffering_measures_from_the_device_connection_not_the_dispatch(default_session):
     """The device's buffer fills from the moment *it* connected to the
     relay, and the relay was measured feeding it at exactly 1x (see
-    docs/investigations/radio-buffering-window.md). /play-url's clock.start()
+    docs/investigations/radio/buffering-bar-outlasts-the-sound.md). /play-url's clock.start()
     runs after target.play() has returned, and the device connects inside
     that call, so counting from the clock held the indicator up for the tail
     of the dispatch on top of the device's real buffer."""

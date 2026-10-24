@@ -1147,7 +1147,7 @@ def test_airplay_reports_a_device_that_died_mid_track():
     whole track, so a device going away closes that connection and
     routes/stream.py notices. AirPlay is pushed to — a failed push was the
     only trace, and it went into a log line and nowhere else. See
-    docs/investigations/fixed-airplay-silent-death.md."""
+    docs/investigations/casting/airplay-dies-silently.md."""
     atv = MagicMock()
     atv.stream.stream_file = AsyncMock(
         side_effect=_fails_after_audio_went_out(RuntimeError("not connected to remote"))

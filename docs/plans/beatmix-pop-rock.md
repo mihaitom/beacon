@@ -2,7 +2,7 @@
 
 Status: step 1 built and step 2 begun (2026-10-17) - the probe and the
 first measurement are in
-[investigations/beatmix-pop-rock.md](../investigations/beatmix-pop-rock.md).
+[investigations/transitions/beatmix-pop-rock-hip-hop.md](../investigations/transitions/beatmix-pop-rock-hip-hop.md).
 Hip hop is in scope too. Follows
 [gapless-and-transitions.md](gapless-and-transitions.md).
 
@@ -62,7 +62,7 @@ Per pair, write down:
 - is the downbeat right;
 - what sounds wrong: flam, mush of two voices, wrong moment, stretch.
 
-Results go in `docs/investigations/beatmix-pop-rock.md`, including the
+Results go in `docs/investigations/transitions/beatmix-pop-rock-hip-hop.md`, including the
 causes that turn out not to matter.
 
 ## Step 3: fix what the measurement points at

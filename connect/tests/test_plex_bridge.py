@@ -1660,7 +1660,7 @@ def test_song_lists_omit_the_column_fields_the_server_did_not_report():
 
 def test_stream_view_forwards_the_files_length(client, plex_session, monkeypatch):
     """Safari plays a media response through only when it knows its length -
-    see docs/investigations/safari-transcode-jumps.md."""
+    see docs/investigations/phone-and-browser/safari-transcode-jumps-to-start.md."""
     monkeypatch.setattr(
         plex_session.media,
         "get_stream_url",

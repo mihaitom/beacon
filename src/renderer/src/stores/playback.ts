@@ -1541,7 +1541,7 @@ export const usePlaybackStore = defineStore('playback', {
       // declines to report that end (routes/stream.py's _advance_or_end
       // guards on exactly that) — leaving playback stuck "playing" for
       // good. Reported live 2026-09-05, two /play 143ms apart; see
-      // docs/investigations/fixed-track-end-never-reported.md.
+      // docs/investigations/streaming/track-end-never-reported.md.
       //
       // Ahead of everything below, startCurrentGuard included: a duplicate
       // that got as far as begin()ing that guard would invalidate the very

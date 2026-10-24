@@ -298,7 +298,7 @@ describe('PlaylistDetailView', () => {
       // A removal is not always granted as sent: both bridges drop a
       // position the playlist no longer holds without a word, and Jellyfin
       // 12 takes every copy of a song listed twice (see
-      // docs/investigations/playlist-duplicate-entries.md). Whatever the
+      // docs/investigations/media-servers/playlist-duplicate-not-addressable.md). Whatever the
       // reason, the page must not go on showing its own guess.
       const { library, vm, server } = await mountAgainstServer()
       vi.spyOn(library, 'removeFromPlaylist').mockImplementation(async () => {
@@ -368,7 +368,7 @@ describe('PlaylistDetailView', () => {
 
       // And back out of it again: the servers all keep an emptied playlist
       // rather than deleting it, so the undo has something to restore into
-      // (measured — see docs/investigations/playlist-duplicate-entries.md).
+      // (measured — see docs/investigations/media-servers/playlist-duplicate-not-addressable.md).
       await undoButton(wrapper)!.trigger('click')
       await flushPromises()
 

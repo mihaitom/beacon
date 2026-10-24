@@ -163,7 +163,7 @@ _BURST_SECONDS = 6.0
 _BURST_MAX_BYTES = 1_000_000
 
 # Diagnostics only, off unless this is set — see buffer_probe_enabled() and
-# docs/investigations/radio-buffering-window.md. It answers the one number
+# docs/investigations/radio/buffering-bar-outlasts-the-sound.md. It answers the one number
 # radio_is_buffering() still has to assume: how many seconds of audio a cast
 # device holds before it starts playing. There is no device-side signal for
 # that on a relayed Sonos (no position over x-rincon-mp3radio://, and ICY
@@ -686,7 +686,7 @@ class RadioRelay:
             # moment, it is refusing this listener — reconnecting into that
             # every 60s for the rest of the session is what got Beacon's own
             # favicon fetches banned once already (see
-            # docs/investigations/radio-favicon-4xx-ban.md). Only while this
+            # docs/investigations/radio/station-logos-get-the-household-banned.md). Only while this
             # relay has never played anything: a refusal arriving mid-run
             # (an expired token, a station reconfigured under a live
             # listener) still reconnects, since something clearly worked a

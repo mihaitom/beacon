@@ -106,7 +106,7 @@ async def _refit_output_format(session: SessionState, new_d: BaseDelivery) -> bo
     later got whatever the first one could take: measured live as a DLNA
     renderer capped at 48kHz joining a Chromecast that had been handed a
     24/96 source untouched on the copy tier, and receiving that same 96kHz
-    stream (see docs/investigations/multichannel-flac-silent-on-sonos.md).
+    stream (see docs/investigations/casting/sonos-silent-on-surround-flac.md).
 
     False without probing at all when the joiner brings no new constraint,
     which is the ordinary case — a second Sonos alongside a first changes

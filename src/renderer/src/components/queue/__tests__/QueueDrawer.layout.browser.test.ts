@@ -225,8 +225,8 @@ describe('QueueDrawer reveal animation layout', () => {
     // render. That case used to animate too, via `appear` — removed
     // 2026-08-26 (see the template's own comment), and tried again and
     // reverted on 2026-09-07 (see
-    // docs/investigations/queue-reveal-first-open.md). Rows render at their
-    // final position immediately, which is what this asserts.
+    // docs/investigations/interface/queue-drawer-first-reveal-not-animated.md). Rows
+    // render at their final position immediately, which is what this asserts.
     await page.viewport(1200, 800)
     setActivePinia(createPinia())
     const playback = usePlaybackStore()

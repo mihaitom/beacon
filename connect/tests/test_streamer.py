@@ -409,7 +409,7 @@ def test_opus_with_replay_gain_still_falls_back_even_where_it_could_be_copied():
 
 # ── resolve_output_format device sample-rate/bit-depth limits ───────────────
 # Regression tests for a real bug (root-caused 2026-08-22, fixed 2026-08-24 —
-# see docs/investigations/copy-tier-device-limits.md): a 24-bit/96kHz FLAC
+# see docs/investigations/casting/copy-tier-ignores-device-limits.md): a 24-bit/96kHz FLAC
 # copied straight to a Sonos reported
 # ERROR_UNSUPPORTED_FREQ over UPnP eventing and stopped 1.1s in.
 
@@ -673,7 +673,7 @@ def test_device_limit_reports_the_bit_depth_it_is_actually_reduced_to():
 
 # ── resolve_output_format device channel limit ─────────────────────────────
 # Regression tests for the second half of the same class of bug (measured
-# 2026-09-13 — see docs/investigations/multichannel-flac-silent-on-sonos.md):
+# 2026-09-13 — see docs/investigations/casting/sonos-silent-on-surround-flac.md):
 # a 5-channel FLAC handed to a Sonos reported ERROR_UNSUPPORTED_FORMAT and
 # never started, at 44.1kHz just as at 96kHz, and on a soundbar with surround
 # satellites just the same.

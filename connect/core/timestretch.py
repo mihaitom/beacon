@@ -9,7 +9,7 @@ WSOLA of our own, which gave every frame a single time offset matched on
 the bass: voices and chords then half-cancelled at each splice and pumped
 at the hop rate, heard as a fan even at -0.7 %. In a blind test against
 WSOLA and Signalsmith Stretch, Rubber Band was best in 6 of 8 pairs and
-never worst (docs/investigations/beatmix-pop-rock.md, listening 4).
+never worst (docs/investigations/transitions/beatmix-pop-rock-hip-hop.md, listening 4).
 
 The input is fed in blocks worth BLOCK output frames at the current rate.
 The ratio is set to exactly 1/rate and only when the rate changes: set

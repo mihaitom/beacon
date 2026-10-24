@@ -128,7 +128,7 @@ _CACHE_CONTROL = "public, max-age=604800"
 # leaks a bucket of 4xx responses per source IP), and it is what got a
 # legitimate user's own IP banned after RADIO_FAVICON_CACHE_VERSION was
 # raised and every previously cached hit turned into a miss at once. See
-# docs/investigations/radio-favicon-4xx-ban.md.
+# docs/investigations/radio/station-logos-get-the-household-banned.md.
 _NEGATIVE_CACHE_CONTROL = "public, max-age=21600"
 
 # rel values that plausibly point at a usable icon. Deliberately broad

@@ -630,7 +630,7 @@ class TestStationRefusal:
     device into the same answer, and the reconnect loop must not keep
     knocking — repeated uncacheable 4xx is what got Beacon banned by a
     station's own front end once already (see
-    docs/investigations/radio-favicon-4xx-ban.md)."""
+    docs/investigations/radio/station-logos-get-the-household-banned.md)."""
 
     def _refusing_stream(self, status: int, attempts: list[str]):
         @asynccontextmanager
