@@ -1,5 +1,5 @@
 import { resolve } from 'path';
-import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
+import { defineConfig } from 'electron-vite';
 import vue from '@vitejs/plugin-vue';
 import vuetify from 'vite-plugin-vuetify';
 import { vuetifyComponentModules } from './vite.vuetify-deps';
@@ -9,13 +9,11 @@ export default defineConfig({
         build: {
             sourcemap: true,
         },
-        plugins: [externalizeDepsPlugin()],
     },
     preload: {
         build: {
             sourcemap: true,
         },
-        plugins: [externalizeDepsPlugin()],
     },
     renderer: {
         resolve: {
