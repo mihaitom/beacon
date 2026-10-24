@@ -561,6 +561,12 @@ export default {
   text-align: left;
 }
 
+/* Read from the left, the text has no centre to keep: the heart's room is
+ * needed on its own side only. */
+.now-playing__panels--start .now-playing__info--favorite {
+  padding-inline-start: 0;
+}
+
 .now-playing__panels--mini-cover .now-playing__panel {
   min-width: 0;
   max-width: 100%;

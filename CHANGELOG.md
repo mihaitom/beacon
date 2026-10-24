@@ -38,6 +38,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Resuming a paused DLNA renderer could leave it paused while Beacon showed it playing
 - A favorite or star rating set in one place shows everywhere else straight away, for example in the album and artist lists after setting it on the album's own page, instead of only after up to an hour
 - After signing in or a library rescan, the song library is kept for the next start instead of being loaded in full again every time
+- On a phone held sideways, Now Playing over an artist photo no longer leaves a wide gap between the small cover and the song's title
 - A deleted playlist is gone from the playlist overview straight away, instead of showing up there for another half minute and failing to open
 - Signing in says why it failed: a server that is busy, unreachable, behind a login page or has a certificate problem no longer reads as a wrong password
 - On a light theme, the "Albums" heading on an artist's page is readable again instead of sitting on the edge of the dark header
