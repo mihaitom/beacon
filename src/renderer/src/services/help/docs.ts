@@ -28,8 +28,8 @@ const REPO_URL = `${packageJson.homepage}/blob/main`
 const REPO_TREE_URL = `${packageJson.homepage}/tree/main`
 
 export interface HelpPage {
-  /** The file's path under docs/help/ without `.md`: `party-mode`,
-   * `faq/playback`. */
+  /** The file's path under docs/help/ without `.md`:
+   * `guides/party-mode`, `faq/playback`. */
   id: string
   /** Where it lives in the repository, which is what links resolve against. */
   path: string
@@ -44,7 +44,7 @@ export interface HelpPage {
 }
 
 /** A heading's anchor as GitHub makes it, so the links the docs already
- * carry for GitHub (`faq/troubleshooting.md#no-devices-found`) work here
+ * carry for GitHub (`faq/casting.md#no-devices-found`) work here
  * unchanged: lower case, punctuation dropped, every space a hyphen - which
  * is why "Traefik + Authentik" becomes `traefik--authentik`. */
 export function slugify(heading: string): string {
@@ -124,6 +124,16 @@ export function pageFor(id: string, anchor: string | null = null): HelpPage {
 /** The FAQ, one page per topic. */
 export function isFaqPage(page: HelpPage): boolean {
   return page.id.startsWith('faq/')
+}
+
+/** Step by step, to set something up or use it. */
+export function isGuidePage(page: HelpPage): boolean {
+  return page.id.startsWith('guides/')
+}
+
+/** To look things up in: how a decision is made, an interface. */
+export function isReferencePage(page: HelpPage): boolean {
+  return page.id.startsWith('reference/')
 }
 
 /** What someone already running Beacon gets out of the README, heading the

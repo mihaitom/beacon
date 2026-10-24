@@ -693,8 +693,9 @@ alternatives of which a reader wants one, like one reverse proxy's setup out
 of five. GitHub hides the two markers, so the doc reads the same there; the
 tabs' look is in `base.css` with the rest of `.beacon-markdown`.
 
-A doc that wants a help entry somewhere in the app goes into `docs/help/`
-and is opened with `emitter.emit('openHelp', id)` from where its question
+A doc that wants a help entry somewhere in the app goes into `docs/help/`,
+in the group it belongs to (`docs/README.md` says which is which), and is
+opened with `emitter.emit('openHelp', id)` from where its question
 comes up. The help dialog itself is the exception to `.beacon-dialog`'s cap:
 it takes the same 70vh as a fixed height, since its contents column and the
 page scroll side by side and a card that changed height with each page would

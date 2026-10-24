@@ -144,7 +144,10 @@ export default {
       this.$emit('update:modelValue', value)
     },
     openSetups() {
-      this.$emitter.emit('openHelp', { page: 'party-mode', anchor: 'over-the-internet' })
+      this.$emitter.emit('openHelp', {
+        page: 'guides/party-over-the-internet',
+        anchor: 'example-setups',
+      })
     },
   },
 }

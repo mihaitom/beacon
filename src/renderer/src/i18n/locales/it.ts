@@ -1114,6 +1114,7 @@ export default {
     title: 'Guida',
     englishOnly: 'Queste pagine sono disponibili solo in inglese.',
     guides: 'Guide',
+    reference: 'Approfondimenti',
     faq: 'Domande frequenti',
     conversion: 'Cosa viene convertito e perché',
     search: 'Cerca nella guida',

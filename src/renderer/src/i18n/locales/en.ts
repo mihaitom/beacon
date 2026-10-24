@@ -1106,6 +1106,7 @@ export default {
     title: 'Help',
     englishOnly: 'These pages are only available in English.',
     guides: 'Guides',
+    reference: 'Background',
     faq: 'FAQ',
     conversion: 'What gets converted, and why',
     search: 'Search help',

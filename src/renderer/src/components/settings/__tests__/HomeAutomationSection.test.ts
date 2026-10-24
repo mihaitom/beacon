@@ -72,7 +72,7 @@ describe('HomeAutomationSection', () => {
   it('opens its doc in the help dialog', async () => {
     const { wrapper, emit } = await mountSection()
     await button(wrapper, 'settings.homeAutomationDocs')!.trigger('click')
-    expect(emit).toHaveBeenCalledWith('openHelp', 'home-automation')
+    expect(emit).toHaveBeenCalledWith('openHelp', 'guides/home-automation')
   })
 
   it('shows a freshly generated key once', async () => {

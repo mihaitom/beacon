@@ -8,7 +8,7 @@
           variant="text"
           density="comfortable"
           :title="$t('help.title')"
-          @click="$emitter.emit('openHelp', 'party-mode')"
+          @click="$emitter.emit('openHelp', 'guides/party-mode')"
         />
       </v-card-title>
       <v-card-text>

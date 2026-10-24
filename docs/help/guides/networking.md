@@ -1,5 +1,5 @@
 ---
-order: 4
+order: 1
 ---
 
 # Networking
@@ -115,7 +115,7 @@ covers the fixed port for that in [Finding Beacon: mDNS](home-automation.md#find
 If you log in to Navidrome or Jellyfin through a public address behind
 Traefik, nginx, Cloudflare or an SSO layer, set `NAVIDROME_INTERNAL_URL` or
 `JELLYFIN_INTERNAL_URL` to an address Beacon reaches it at directly, such as
-`http://192.168.1.10:4533`. The audio then no longer takes the detour
+`http://192.168.0.10:4533`. The audio then no longer takes the detour
 through the proxy, whose timeouts, buffering or rate limits can interrupt a
 song. Speakers also load cover art from that address, so it has to be
 reachable from their network too. See the environment variables in the
@@ -127,8 +127,8 @@ README.
    Playing then shows a small panel with what reaches the speaker.
 2. **Compare the address the speaker was given with its own.** At Debug,
    the log names it for every song, as in
-   `[Sonos:Room A] → play: http://10.0.2.5:7071/stream/...`. If the speaker
-   is at `10.0.1.20`, it was handed an address in another network and
+   `[Sonos:Room A] → play: http://192.168.1.5:7071/stream/...`. If the speaker
+   is at `192.168.0.20`, it was handed an address in another network and
    reaches Beacon through a router. That is the case from
    [A server in more than one network](#a-server-in-more-than-one-network)
    above.
@@ -142,5 +142,5 @@ README.
    a firewall or a route is in the way.
 5. **Try the speaker on a cable**, or a second speaker in the same place.
 
-If none of that explains it, the [troubleshooting FAQ](faq/troubleshooting.md#troubleshooting-casting)
-says how to turn on the detailed log worth sending along with a report.
+If none of that explains it, [Reporting a problem](../faq/reporting.md) says which log to turn on
+and what to send along with a report.

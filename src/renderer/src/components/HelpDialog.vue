@@ -142,6 +142,8 @@ import {
   HELP_PAGES,
   findHelpPage,
   isFaqPage,
+  isGuidePage,
+  isReferencePage,
   pageFor,
   renderHelpPage,
   type HelpPage,
@@ -190,7 +192,8 @@ function inFaq(page: HelpPage): boolean {
 
 /** The bundled docs (services/help/docs.ts), each opened from where its
  * question comes up and browsable from there: a search over all of them,
- * and the contents of the FAQ and the guides beside the page. */
+ * and the contents of the FAQ, the guides and the background beside the
+ * page. */
 export default {
   name: 'HelpDialog',
   props: {
@@ -216,7 +219,8 @@ export default {
     groups(): { title: string; pages: HelpPage[] }[] {
       return [
         { title: this.$t('help.faq'), pages: [FEATURES_PAGE, ...HELP_PAGES.filter(isFaqPage)] },
-        { title: this.$t('help.guides'), pages: HELP_PAGES.filter((page) => !inFaq(page)) },
+        { title: this.$t('help.guides'), pages: HELP_PAGES.filter(isGuidePage) },
+        { title: this.$t('help.reference'), pages: HELP_PAGES.filter(isReferencePage) },
       ]
     },
     contents(): HelpSection[] {

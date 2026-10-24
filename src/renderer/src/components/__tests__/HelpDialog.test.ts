@@ -33,8 +33,8 @@ afterEach(() => {
 
 describe('HelpDialog', () => {
   it('opens on the doc it was asked for', async () => {
-    await openOn('party-mode')
-    expect(content().querySelector('#over-the-internet')).not.toBeNull()
+    await openOn('guides/party-over-the-internet')
+    expect(content().querySelector('#example-setups')).not.toBeNull()
   })
 
   it('follows a link to another page inside the dialog', async () => {
@@ -65,7 +65,7 @@ describe('HelpDialog', () => {
   })
 
   it('switches between the setups of a tab group', async () => {
-    await openOn('party-mode')
+    await openOn('guides/party-over-the-internet')
     const tab = content().querySelector<HTMLElement>('#authelia')!
     const panel = content().querySelector<HTMLElement>('#authelia-panel')!
     expect(panel.hidden).toBe(true)
@@ -77,14 +77,14 @@ describe('HelpDialog', () => {
   })
 
   it('opens the tab a link points into', async () => {
-    const wrapper = await openOn('party-mode')
+    const wrapper = await openOn('guides/party-over-the-internet')
     ;(wrapper.vm as unknown as { scrollTo(anchor: string): Promise<void> }).scrollTo('authelia')
     await flushPromises()
     expect(content().querySelector<HTMLElement>('#authelia-panel')!.hidden).toBe(false)
   })
 
   it('finds a question by searching and opens it there', async () => {
-    const wrapper = await openOn('party-mode')
+    const wrapper = await openOn('guides/party-mode')
     const input = document.querySelector<HTMLInputElement>('.help-dialog__search input')!
     input.value = 'devices found'
     input.dispatchEvent(new Event('input'))
@@ -95,7 +95,7 @@ describe('HelpDialog', () => {
     result.click()
     await flushPromises()
     const vm = wrapper.vm as unknown as { pageId: string }
-    expect(vm.pageId).toBe('faq/troubleshooting')
+    expect(vm.pageId).toBe('faq/casting')
     expect(content().querySelector('#no-devices-found')!.classList).toContain('help-flash')
   })
 
@@ -120,7 +120,7 @@ describe('HelpDialog', () => {
     ].find((item) => item.textContent?.trim() === 'Party mode')!
     guide.click()
     await flushPromises()
-    expect(vm.pageId).toBe('party-mode')
+    expect(vm.pageId).toBe('guides/party-mode')
     document.querySelector<HTMLElement>('[aria-label="Back"]')!.click()
     await flushPromises()
     expect(vm.pageId).toBe(first)
@@ -146,9 +146,9 @@ describe('HelpDialog', () => {
       history: unknown[]
       query: string
     }
-    vm.go('party-mode')
+    vm.go('guides/party-mode')
     vm.query = 'sonos'
-    emitter.emit('openHelp', 'transcoding-decisions')
+    emitter.emit('openHelp', 'reference/transcoding-decisions')
     await flushPromises()
     expect(vm.history).toEqual([])
     expect(vm.query).toBe('')

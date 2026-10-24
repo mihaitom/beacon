@@ -24,7 +24,7 @@ import { useLibraryStore } from '@/stores/library'
 // casting too, but that's fragile enough (autoplay policy quirks,
 // volume-zero edge cases) to deliberately leave unimplemented — the cast
 // target's own controls (its companion app, physical buttons) already
-// cover that case. docs/help/faq/playback.md has the user-facing version of
+// cover that case. docs/help/faq/casting.md has the user-facing version of
 // this same explanation.
 
 // Re-derived on every playbackStore mutation (see initMediaSession()) —

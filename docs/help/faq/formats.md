@@ -1,5 +1,5 @@
 ---
-order: 2
+order: 4
 ---
 
 # Formats and converting
@@ -35,6 +35,8 @@ Three things are worth knowing because they surprise people:
 - **Opus is only sent untouched to a Chromecast.** A Sonos accepts an Opus stream and then plays silence rather than refusing it, and nothing downstream can notice that, so Beacon does not try. An Opus file becomes MP3 there. This is separate from Beacon being able to _encode_ to Opus, which it does for any device that plays it.
 - **ReplayGain rules out step 2.** Adjusting the volume means decoding the audio, and a track sent as it is never gets decoded. With ReplayGain on, a track that would have been passed through is re-encoded instead.
 - **A speaker's sample-rate and bit-depth limits apply on top of all of this.** A 96kHz/24-bit FLAC sent to a device that stops at 48kHz is resampled down rather than sent and cut off a second in. DSD is brought down the same way: it decodes to 352.8kHz, which nothing plays, so it lands at 88.2kHz - the same conversion a DSD player makes.
+
+The whole decision, for this app's own player, radio and transitions too, is in [What gets converted, and why](../reference/transcoding-decisions.md).
 
 ## And in Beacon's own player?
 

@@ -1117,6 +1117,7 @@ export default {
     title: 'Ayuda',
     englishOnly: 'Estas páginas solo están disponibles en inglés.',
     guides: 'Guías',
+    reference: 'Más a fondo',
     faq: 'Preguntas frecuentes',
     conversion: 'Qué se convierte y por qué',
     search: 'Buscar en la ayuda',

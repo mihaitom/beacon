@@ -44,7 +44,7 @@ describe('PlaybackSection', () => {
       .findAllComponents({ name: 'VBtn' })
       .find((b) => b.text() === text)!
       .trigger('click')
-    expect(emit).toHaveBeenCalledWith('openHelp', 'transcoding-decisions')
+    expect(emit).toHaveBeenCalledWith('openHelp', 'reference/transcoding-decisions')
   })
 
   it('sets the crossfade in seconds and the beatmix in bars', async () => {

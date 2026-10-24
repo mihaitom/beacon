@@ -129,7 +129,7 @@
           <v-btn
             variant="text"
             prepend-icon="mdi-help-circle-outline"
-            @click="$emitter.emit('openHelp', 'transcoding-decisions')"
+            @click="$emitter.emit('openHelp', 'reference/transcoding-decisions')"
           >
             {{ $t('help.conversion') }}
           </v-btn>

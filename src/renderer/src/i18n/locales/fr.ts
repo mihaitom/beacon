@@ -1123,6 +1123,7 @@ export default {
     title: 'Aide',
     englishOnly: 'Ces pages ne sont disponibles qu’en anglais.',
     guides: 'Guides',
+    reference: 'Pour aller plus loin',
     faq: 'FAQ',
     conversion: 'Ce qui est converti, et pourquoi',
     search: "Rechercher dans l'aide",

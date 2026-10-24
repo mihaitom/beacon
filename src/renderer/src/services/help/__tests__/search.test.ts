@@ -13,7 +13,7 @@ describe('helpSections', () => {
   })
 
   it("gives a tab's text to its tab, although the tabs come before the panels", () => {
-    const sections = helpSections(findHelpPage('party-mode'))
+    const sections = helpSections(findHelpPage('guides/party-over-the-internet'))
     const authelia = sections.find((s) => s.heading === 'Authelia')!
     const caddy = sections.find((s) => s.heading === 'Caddy')!
     expect(authelia.text).toMatch(/Authelia/)
@@ -28,14 +28,15 @@ describe('tableOfContents', () => {
     const entries = tableOfContents(page).map((s) => s.anchor)
     expect(entries).toContain('no-devices-found')
     expect(entries.indexOf('no-devices-found')).toBeLessThan(
-      entries.indexOf('troubleshooting-casting'),
+      entries.indexOf('my-sonos-speaker-doesnt-appear-under-airplay-or-dlna'),
     )
   })
 
   it('leaves out subsections, which would crowd the column', () => {
-    const entries = tableOfContents(findHelpPage('party-mode')).map((s) => s.heading)
-    expect(entries).toContain('Over the internet')
-    expect(entries).not.toContain('Example setups')
+    const entries = tableOfContents(findHelpPage('guides/party-over-the-internet')).map(
+      (s) => s.heading,
+    )
+    expect(entries).toContain('Example setups')
     expect(entries).not.toContain('Caddy')
   })
 })
@@ -48,7 +49,7 @@ describe('searchHelp', () => {
 
   it('finds text that is only in the body, across pages', () => {
     const results = searchHelp('TRUSTED_PROXIES')
-    expect(results.some((r) => r.section.page === 'party-mode')).toBe(true)
+    expect(results.some((r) => r.section.page === 'guides/party-over-the-internet')).toBe(true)
   })
 
   it('needs every word somewhere in the section', () => {

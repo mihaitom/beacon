@@ -104,7 +104,10 @@ describe('the online party setup test', () => {
     emitter.on('openHelp', opened)
     await runWith({ steps: [], addresses: [], public_addresses: [] })
     ;(document.querySelector('.party-probe__hint a') as HTMLElement).click()
-    expect(opened).toHaveBeenCalledWith({ page: 'party-mode', anchor: 'over-the-internet' })
+    expect(opened).toHaveBeenCalledWith({
+      page: 'guides/party-over-the-internet',
+      anchor: 'example-setups',
+    })
     emitter.off('openHelp', opened)
   })
 

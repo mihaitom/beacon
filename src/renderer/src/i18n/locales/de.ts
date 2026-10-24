@@ -1119,6 +1119,7 @@ export default {
     title: 'Hilfe',
     englishOnly: 'Diese Seiten gibt es nur auf Englisch.',
     guides: 'Anleitungen',
+    reference: 'Hintergrund',
     faq: 'Häufige Fragen',
     conversion: 'Was wann umgewandelt wird',
     search: 'Hilfe durchsuchen',

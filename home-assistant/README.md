@@ -6,7 +6,7 @@ use all of it in automations. This folder holds a Home Assistant integration
 and a ready-made dashboard for it.
 
 Tested with Home Assistant 2026.9. The interface underneath is described in
-[docs/help/home-automation.md](../docs/help/home-automation.md), for anyone who wants
+[docs/help/reference/home-automation-api.md](../docs/help/reference/home-automation-api.md), for anyone who wants
 to build something of their own.
 
 - [What you get](#what-you-get)

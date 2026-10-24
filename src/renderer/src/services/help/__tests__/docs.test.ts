@@ -5,6 +5,8 @@ import {
   FEATURES_PAGE,
   HELP_PAGES,
   isFaqPage,
+  isGuidePage,
+  isReferencePage,
   pageFor,
   renderHelpPage,
   resolveLink,
@@ -32,17 +34,24 @@ describe('slugify', () => {
 
 describe('resolveLink', () => {
   it('keeps an anchor in the same doc', () => {
-    expect(resolveLink('#client-addresses', 'docs/help/party-mode.md')).toEqual({
-      kind: 'anchor',
-      anchor: 'client-addresses',
-    })
+    expect(resolveLink('#client-addresses', 'docs/help/guides/party-over-the-internet.md')).toEqual(
+      {
+        kind: 'anchor',
+        anchor: 'client-addresses',
+      },
+    )
   })
 
   it('opens another bundled doc in the dialog, at its heading', () => {
-    expect(resolveLink('../party-mode.md#over-the-internet', 'docs/help/faq/privacy.md')).toEqual({
+    expect(
+      resolveLink(
+        '../guides/party-over-the-internet.md#example-setups',
+        'docs/help/faq/privacy.md',
+      ),
+    ).toEqual({
       kind: 'doc',
-      id: 'party-mode',
-      anchor: 'over-the-internet',
+      id: 'guides/party-over-the-internet',
+      anchor: 'example-setups',
     })
     expect(resolveLink('faq/library.md', 'docs/help/features.md')).toEqual({
       kind: 'doc',
@@ -66,7 +75,7 @@ describe('resolveLink', () => {
       url: `${REPO}/blob/main/build/ffmpeg/README.md`,
     })
     // A folder is a tree on GitHub, not a blob.
-    expect(resolveLink('../../home-assistant/', 'docs/help/home-automation.md')).toEqual({
+    expect(resolveLink('../../../home-assistant/', 'docs/help/guides/home-automation.md')).toEqual({
       kind: 'external',
       url: `${REPO}/tree/main/home-assistant/`,
     })
@@ -84,8 +93,10 @@ describe('the bundled docs', () => {
   const rendered = new Map(HELP_PAGES.map((page) => [page.id, parse(renderHelpPage(page))]))
 
   it('are every file under docs/help/, the FAQ one page per topic', () => {
-    expect(HELP_PAGES.map((page) => page.id)).toContain('party-mode')
+    expect(HELP_PAGES.map((page) => page.id)).toContain('guides/party-mode')
     expect(HELP_PAGES.filter(isFaqPage).length).toBeGreaterThan(1)
+    expect(HELP_PAGES.filter(isGuidePage).length).toBeGreaterThan(1)
+    expect(HELP_PAGES.filter(isReferencePage).length).toBeGreaterThan(0)
     expect(FEATURES_PAGE.id).toBe('features')
   })
 
@@ -98,10 +109,20 @@ describe('the bundled docs', () => {
   })
 
   it('come in the order their front matter gives', () => {
-    const faq = HELP_PAGES.filter(isFaqPage)
-    const orders = faq.map((page) => page.order)
-    expect(orders).toEqual([...orders].sort((a, b) => a - b))
-    expect(orders.every(Number.isFinite)).toBe(true)
+    for (const group of [isFaqPage, isGuidePage, isReferencePage]) {
+      const orders = HELP_PAGES.filter(group).map((page) => page.order)
+      expect(orders).toEqual([...orders].sort((a, b) => a - b))
+      expect(orders.every(Number.isFinite)).toBe(true)
+    }
+  })
+
+  // features.md is the one page outside the three folders, and the dialog
+  // puts it at the top of the FAQ itself.
+  it('each belong to the FAQ, the guides or the background', () => {
+    for (const page of HELP_PAGES) {
+      if (page === FEATURES_PAGE) continue
+      expect(isFaqPage(page) || isGuidePage(page) || isReferencePage(page), page.id).toBe(true)
+    }
   })
 
   it('find the FAQ topic that holds a question', () => {
@@ -148,16 +169,37 @@ describe('the bundled docs', () => {
     for (const path of ['docs', 'docs/help', 'docs/help/']) expect(ignored).not.toContain(path)
   })
 
+  // A page moved or renamed under docs/help/ while a button still names
+  // its old id opens the wrong page, or none.
+  it('hold every page and heading the app opens the help on', () => {
+    const sources = import.meta.glob<string>('../../../**/*.vue', {
+      query: '?raw',
+      import: 'default',
+      eager: true,
+    })
+    const call =
+      /openHelp',\s*(?:'([^']+)'|\{\s*page:\s*'([^']+)',\s*anchor:\s*(?:'([^']+)'|null))/g
+    const targets = Object.values(sources).flatMap((source) => [...source.matchAll(call)])
+    expect(targets.length).toBeGreaterThan(3)
+    for (const match of targets) {
+      const page = match[1] ?? match[2]!
+      const anchor = match[3]
+      const found = HELP_PAGES.filter((p) => p.id === page || p.id.startsWith(`${page}/`))
+      expect(found.length, match[0]).toBeGreaterThan(0)
+      if (anchor) expect(found[0]!.anchors.has(anchor), match[0]).toBe(true)
+    }
+  })
+
   it('link from the features page to the other docs inside the dialog', () => {
     const inApp = [
       ...rendered.get('features')!.querySelectorAll<HTMLAnchorElement>('a[data-help-page]'),
     ]
-    expect(inApp.map((link) => link.dataset.helpPage)).toContain('party-mode')
+    expect(inApp.map((link) => link.dataset.helpPage)).toContain('guides/party-mode')
   })
 })
 
 describe('tab groups', () => {
-  const page = parse(renderHelpPage(pageFor('party-mode')))
+  const page = parse(renderHelpPage(pageFor('guides/party-over-the-internet')))
   const group = page.querySelector('.help-tabs')!
 
   it('show each reverse proxy setup as a tab, the first one open', () => {
@@ -172,11 +214,15 @@ describe('tab groups', () => {
   it('keep the ids GitHub gives those headings, so links to them still work', () => {
     const tab = page.getElementById(slugify('Traefik (file provider)'))
     expect(tab?.getAttribute('role')).toBe('tab')
-    expect(pageFor('party-mode').anchors.has(slugify('Traefik (file provider)'))).toBe(true)
+    expect(
+      pageFor('guides/party-over-the-internet').anchors.has(slugify('Traefik (file provider)')),
+    ).toBe(true)
   })
 
   function render(lines: string[]): Document {
-    return parse(renderHelpPage({ ...pageFor('party-mode'), body: lines.join('\n') }))
+    return parse(
+      renderHelpPage({ ...pageFor('guides/party-over-the-internet'), body: lines.join('\n') }),
+    )
   }
 
   it("start a tab only at headings of the first one's level", () => {

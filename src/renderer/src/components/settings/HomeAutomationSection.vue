@@ -54,7 +54,7 @@
           <v-btn
             variant="text"
             prepend-icon="mdi-help-circle-outline"
-            @click="$emitter.emit('openHelp', 'home-automation')"
+            @click="$emitter.emit('openHelp', 'guides/home-automation')"
           >
             {{ $t('settings.homeAutomationDocs') }}
           </v-btn>

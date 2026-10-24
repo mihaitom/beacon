@@ -1,42 +1,20 @@
 ---
-order: 3
+order: 2
 ---
 
-# Home automation
+# Home automation API
 
-Beacon's desktop app can be watched and controlled by Home Assistant or any
-other automation tool, through the same HTTP interface the phone remote
-uses. This page is for whoever writes such an integration.
+The HTTP interface Home Assistant and other tools use to watch and control
+Beacon's desktop app - the same one the phone remote uses. This page is for
+whoever writes such an integration; setting it up in Beacon is in
+[Home automation](../guides/home-automation.md).
 
-What Beacon provides is a key that survives restarts, a fixed address, and
-an mDNS announcement. A Home Assistant integration built on them, with a
-ready-made dashboard, lives in [home-assistant/](../../home-assistant/).
+## Discovery
 
-## Setting it up
-
-In the desktop app, **Settings > Advanced > Home automation**:
-
-1. **Create key.** The key is shown once. It stays valid across restarts
-   until it is revoked or replaced by a new one. It works whether or not the
-   phone remote is switched on.
-2. **Fixed port** (optional). Without one, the app picks a free port on
-   every start. With one, it uses that port, unless something else holds it
-   at start, in which case it falls back to a free port and shows a warning
-   in the same place. While the fixed port is in use, the settings show the
-   address and port to enter for a setup by hand. The environment variable
-   `BEACON_PORT` sets it too and wins over the setting. The setting only
-   exists in the installed app; run from source, `PORT` in `connect/.env`
-   decides.
-
-Only the desktop app offers this. The web/Docker build has no desktop
-playback to control.
-
-## Finding Beacon: mDNS
-
-While a key exists, Beacon announces itself as `_beacon._tcp.local.`, named
-"Beacon on _computer name_", with its current address and port. The
-announcement is withdrawn when the key is revoked or the app quits, and
-follows the machine to a new address within a minute.
+While a key exists, Beacon announces itself over mDNS as
+`_beacon._tcp.local.`, named "Beacon on _computer name_", with its current
+address and port. The announcement is withdrawn when the key is revoked or
+the app quits, and follows the machine to a new address within a minute.
 
 TXT properties:
 
