@@ -2,6 +2,7 @@ import { resolve } from 'path';
 import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
 import vue from '@vitejs/plugin-vue';
 import vuetify from 'vite-plugin-vuetify';
+import { vuetifyComponentModules } from './vite.vuetify-deps';
 
 export default defineConfig({
     main: {
@@ -24,6 +25,9 @@ export default defineConfig({
         },
         plugins: [vue(), vuetify({ autoImport: true })],
         root: 'src/renderer',
+        optimizeDeps: {
+            include: vuetifyComponentModules,
+        },
         server: {
             // ReleaseNotes.vue reads CHANGELOG.md and package.json from the
             // project root via `?raw`/JSON imports, both outside `root`

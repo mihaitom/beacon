@@ -4,6 +4,7 @@ import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import vuetify from 'vite-plugin-vuetify';
 import { config as loadDotenv } from 'dotenv';
+import { vuetifyComponentModules } from './vite.vuetify-deps';
 
 // Mirrors src/main/index.ts's readConnectDefaults() — same precedence
 // (explicit CONNECT_TOKEN in connect/.env, then the backend's own persisted
@@ -45,6 +46,9 @@ export default defineConfig(() => {
         },
         plugins: [vue(), vuetify({ autoImport: true })],
         root: 'src/renderer',
+        optimizeDeps: {
+            include: vuetifyComponentModules,
+        },
         build: {
             outDir: resolve('out/web'),
             emptyOutDir: true,

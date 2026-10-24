@@ -4,6 +4,7 @@
   "include": [
     "electron.vite.config.*",
     "web.vite.config.*",
+    "vite.vuetify-deps.ts",
     "eslint.config.*",
     "src/main/**/*",
     "src/preload/**/*"
