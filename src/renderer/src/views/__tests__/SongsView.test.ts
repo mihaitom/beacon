@@ -109,6 +109,6 @@ describe('SongsView filter', () => {
     // match - the alphabetical title sort would have buried the exact one.
     expect(songs.map((s) => s.id)).toEqual(['b', 'a', 'c'])
     // And the table must not re-sort the ranked list by title.
-    expect(table.props('defaultSortKey')).toBeNull()
+    expect(table.props('sort')).toBeNull()
   })
 })

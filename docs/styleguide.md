@@ -528,6 +528,18 @@ it does not stand beside it as a labelled switch. The top bar's search
 carries the same toggle; the results page has none of its own and searches
 again when the setting changes.
 
+The Songs page puts its controls in the same row: the search on the left,
+then, pushed to the right, a "Filter" pill and the sort select at the end.
+The filter is one button with a menu, a submenu per field and checkboxes
+inside, not a pill per field - eleven fields do not fit in a row, and the
+menu says under each field what is picked. The button turns amber with a
+count while anything is filtered. The sort select carries its direction as
+an arrow in its end, and the table's headings are labels there, not
+buttons: one place to change the order, not two to keep in step. Where the
+order has sections (letters, decades, stars, and the filter's ranges for
+BPM, length, plays and dates), the list draws them as `.letter-divider`
+headings and the index bar lists the same sections in short form.
+
 Scrollbars are hidden app-wide (`base.css`) - scrolling still works, only the
 chrome is gone. A scroll region therefore has to look scrollable on its own.
 

@@ -6,6 +6,7 @@
       :configurable="!columns"
       :sort-key="sortKey"
       :sort-direction="sortDirection"
+      :sortable="sort === undefined"
       :selected-count="selectedRowKeys.size"
       :total-count="sortedSongs.length"
       @sort="onSort"
@@ -100,12 +101,55 @@
       v-else-if="virtualizeSongs"
       ref="virtualScroll"
       renderless
-      :items="sortedSongs"
+      :items="virtualItems"
       item-height="48"
     >
-      <template #default="{ item: song, index }">
+      <template #default="{ item }">
+        <div
+          v-if="item.kind === 'section'"
+          :key="`section-${item.section}`"
+          class="song-section letter-divider"
+        >
+          <span class="letter-divider__label">{{ sectionLabel(item.section) }}</span>
+        </div>
         <song-row
-          :key="`${song.id}-${index}`"
+          v-else
+          :key="`${item.song.id}-${item.index}`"
+          :data-song-index="item.index"
+          :song="item.song"
+          :index="item.index"
+          :columns="fittedColumns"
+          :selection-mode="selectionMode"
+          :reorderable="canReorder"
+          :removable="removable"
+          :drag-over-position="dragOverPosition(item.index)"
+          :dragging="dragIndex === item.index"
+          :selected="selectedRowKeys.has(item.index)"
+          :selected-count="selectedRowKeys.size"
+          @play="playSong"
+          @play-next="playNextSong"
+          @song-radio="startSongRadio"
+          @toggle-star="toggleStar"
+          @set-rating="setRating"
+          @add-to-queue="addToQueue"
+          @add-to-playlist="addToPlaylist"
+          @create-playlist="openCreatePlaylistDialog"
+          @remove="onRemoveRequested"
+          @toggle-select="toggleSelect"
+          @dragstart="onRowDragStart"
+          @dragover="onRowDragOver"
+          @dragleave="onRowDragLeave"
+          @drop="onRowDrop"
+          @dragend="onRowDragEnd"
+        />
+      </template>
+    </v-virtual-scroll>
+    <template v-else>
+      <template v-for="(song, index) in visibleSongs" :key="`${song.id}-${index}`">
+        <div v-if="startsSection(index)" class="song-section letter-divider">
+          <span class="letter-divider__label">{{ sectionLabel(sectionAt(index)) }}</span>
+        </div>
+        <song-row
           :data-song-index="index"
           :song="song"
           :index="index"
@@ -134,38 +178,6 @@
           @dragend="onRowDragEnd"
         />
       </template>
-    </v-virtual-scroll>
-    <template v-else>
-      <song-row
-        v-for="(song, index) in visibleSongs"
-        :key="`${song.id}-${index}`"
-        :data-song-index="index"
-        :song="song"
-        :index="index"
-        :columns="fittedColumns"
-        :selection-mode="selectionMode"
-        :reorderable="canReorder"
-        :removable="removable"
-        :drag-over-position="dragOverPosition(index)"
-        :dragging="dragIndex === index"
-        :selected="selectedRowKeys.has(index)"
-        :selected-count="selectedRowKeys.size"
-        @play="playSong"
-        @play-next="playNextSong"
-        @song-radio="startSongRadio"
-        @toggle-star="toggleStar"
-        @set-rating="setRating"
-        @add-to-queue="addToQueue"
-        @add-to-playlist="addToPlaylist"
-        @create-playlist="openCreatePlaylistDialog"
-        @remove="onRemoveRequested"
-        @toggle-select="toggleSelect"
-        @dragstart="onRowDragStart"
-        @dragover="onRowDragOver"
-        @dragleave="onRowDragLeave"
-        @drop="onRowDrop"
-        @dragend="onRowDragEnd"
-      />
     </template>
     <infinite-scroll-trigger
       v-if="!virtualizeSongs && visibleCount < sortedSongs.length"
@@ -174,6 +186,8 @@
 
     <alphabet-index-bar
       v-if="showAlphabetBar"
+      :sections="barSections ?? undefined"
+      :label="barLabel"
       :available="availableLetters"
       :active="activeLetter"
       @select="jumpToLetter"
@@ -205,15 +219,29 @@ import { useAuthStore } from '@/stores/auth'
 import {
   fitSongColumns,
   resolveSongColumns,
-  songColumn,
   type SongColumn,
   type SongColumnKey,
 } from '@/services/library/songColumns'
+import {
+  filterOptionLabel,
+  filterOptionShortLabel,
+  isRangeSectioned,
+  sectionFn,
+  sectionsFor,
+  sortSongs,
+  UNKNOWN_YEAR_SECTION,
+  type FilterField,
+  type SongSort,
+  type SongSortKey,
+} from '@/services/library/songBrowse'
+import { ratingSectionLabel } from '@/services/ratingSort'
 import type { Song } from '@/types/library'
 
 // Anything with a sortValue in the column registry, which is every column
-// except the cover.
-type SortKey = SongColumnKey
+// except the cover, and the artist (see songBrowse.ts).
+type SortKey = SongSortKey
+
+type VirtualItem = { kind: 'section'; section: string } | { kind: 'row'; song: Song; index: number }
 
 const PAGE_SIZE = 100
 // See the v-virtual-scroll template comment (above the v-else-if="virtualizeSongs"
@@ -266,6 +294,15 @@ export default {
     // return".
     defaultSortKey: { type: String as PropType<SortKey | null>, default: 'title' },
     defaultSortDirection: { type: String as () => 'asc' | 'desc', default: 'asc' },
+    // For a view that offers the order outside the table too (SongsView's
+    // sort menu): given this, the table shows that order instead of its
+    // defaults, and a click on a heading is reported as `update:sort`.
+    // Null is the list's own order.
+    sort: { type: Object as PropType<SongSort | null>, default: undefined },
+    // Draws a heading above each letter, decade or star count the order
+    // runs through, the way the album and artist lists do, and gives the
+    // index bar the same sections.
+    sectioned: { type: Boolean, default: false },
     // Whether clicking a song queues the rest of this list too (true,
     // default) or just that one song (false).
     //
@@ -315,14 +352,16 @@ export default {
     // them back to real playlist positions).
     removable: { type: Boolean, default: false },
   },
-  emits: ['reorder', 'remove'],
+  emits: ['reorder', 'remove', 'update:sort'],
   data() {
     return {
       // The table's own width, for fittedColumns; 0 until mounted.
       tableWidth: 0,
       resizeObserver: null as ResizeObserver | null,
-      sortKey: this.defaultSortKey as SortKey | null,
-      sortDirection: this.defaultSortDirection as 'asc' | 'desc',
+      sortKey: (this.sort === undefined
+        ? this.defaultSortKey
+        : (this.sort?.key ?? null)) as SortKey | null,
+      sortDirection: (this.sort?.direction ?? this.defaultSortDirection) as 'asc' | 'desc',
       visibleCount: PAGE_SIZE,
       // Set by onSort() the moment the user picks a column themselves —
       // from then on the defaultSortKey watcher below must leave sortKey
@@ -421,15 +460,36 @@ export default {
     },
     sortedSongs(): Song[] {
       if (!this.sortKey) return this.songs
+      return sortSongs(this.songs, { key: this.sortKey, direction: this.sortDirection })
+    },
+    /** The filter field whose ranges this order's sections are, if any. */
+    rangeField(): FilterField | null {
       const key = this.sortKey
-      const dir = this.sortDirection === 'desc' ? -1 : 1
-      return [...this.songs].sort((a, b) => {
-        const av = this.sortValue(a, key)
-        const bv = this.sortValue(b, key)
-        if (av < bv) return -1 * dir
-        if (av > bv) return 1 * dir
-        return 0
+      return key && isRangeSectioned(key) ? (key as FilterField) : null
+    },
+    activeSort(): SongSort | null {
+      return this.sortKey ? { key: this.sortKey, direction: this.sortDirection } : null
+    },
+    /** Each row's section, position for position with sortedSongs - empty
+     * for a table without sections or an order that has none. */
+    rowSections(): string[] {
+      const section = this.sectioned && this.sortKey ? sectionFn(this.sortKey) : null
+      return section ? this.sortedSongs.map(section) : []
+    },
+    barSections(): string[] | null {
+      if (!this.sectioned || !this.activeSort) return null
+      return sectionsFor(this.sortedSongs, this.activeSort)
+    },
+    /** What v-virtual-scroll walks: the rows, with a heading item before
+     * each section's first one. */
+    virtualItems(): VirtualItem[] {
+      const items: VirtualItem[] = []
+      this.sortedSongs.forEach((song, index) => {
+        if (this.startsSection(index))
+          items.push({ kind: 'section', section: this.rowSections[index]! })
+        items.push({ kind: 'row', song, index })
       })
+      return items
     },
     // Every SongTable list now renders the same "grow on scroll" way (see
     // visibleSongs) instead of the old per-caller pagination/disablePagination
@@ -468,6 +528,9 @@ export default {
         .map(([discNumber, rows]) => ({ discNumber, rows }))
     },
     letterFirstIndex(): Map<string, number> {
+      if (this.rowSections.length) {
+        return firstIndexByLetter(this.rowSections, (section) => section)
+      }
       return firstIndexByLetter(this.sortedSongs, (song) => letterForName(song.title))
     },
     availableLetters(): Set<string> {
@@ -480,7 +543,9 @@ export default {
     // shelf or a single album's tracklist never needs it, even if it
     // happens to be title-sorted; ALPHABET_BAR_MIN_SONGS is that cutoff.
     showAlphabetBar(): boolean {
-      return this.sortKey === 'title' && this.sortedSongs.length >= ALPHABET_BAR_MIN_SONGS
+      if (this.sortedSongs.length < ALPHABET_BAR_MIN_SONGS) return false
+      if (this.sectioned) return Boolean(this.barSections?.length)
+      return this.sortKey === 'title'
     },
   },
   watch: {
@@ -509,11 +574,16 @@ export default {
     // alphabetical default in one clean transition once that's done,
     // instead of re-sorting (and visibly reshuffling already-visible rows)
     // on every single page that arrives in between.
+    sort(value: SongSort | null | undefined) {
+      if (value === undefined) return
+      this.sortKey = value?.key ?? null
+      this.sortDirection = value?.direction ?? 'asc'
+    },
     defaultSortKey(value: SortKey | null) {
       // See userChangedSort's own comment — a prop-driven default change
       // (loading finishing, a route swapping which list is shown) only
       // applies while the user hasn't taken the wheel themselves.
-      if (this.userChangedSort) return
+      if (this.userChangedSort || this.sort !== undefined) return
       this.sortKey = value
     },
   },
@@ -583,7 +653,11 @@ export default {
       if (this.virtualizeSongs) {
         const virtualScroll = this.$refs.virtualScroll as
           { scrollToIndex: (i: number) => void } | undefined
-        virtualScroll?.scrollToIndex(index)
+        // Onto the section's heading where there is one, not the row under it.
+        const itemIndex = this.virtualItems.findIndex((item) =>
+          item.kind === 'section' ? item.section === letter : item.index === index,
+        )
+        virtualScroll?.scrollToIndex(itemIndex)
         return
       }
       // Plain-list path: make sure the target row is actually rendered
@@ -597,11 +671,22 @@ export default {
         document.querySelector(`[data-song-index="${index}"]`)?.scrollIntoView({ block: 'center' })
       })
     },
-    // The column knows what it sorts by - see
-    // services/library/songColumns.ts, where a column's heading, its cell
-    // and its sort order are one entry.
-    sortValue(song: Song, key: SortKey): string | number {
-      return songColumn(key)?.sortValue?.(song) ?? 0
+    sectionAt(index: number): string {
+      return this.rowSections[index] ?? ''
+    },
+    startsSection(index: number): boolean {
+      const section = this.rowSections[index]
+      return Boolean(section) && (index === 0 || section !== this.rowSections[index - 1])
+    },
+    sectionLabel(section: string): string {
+      if (this.sortKey === 'rating') return ratingSectionLabel(section, this.$t)
+      if (this.rangeField) return filterOptionLabel(this.rangeField, section, this.$t)
+      if (this.sortKey !== 'year') return section
+      if (section === UNKNOWN_YEAR_SECTION) return this.$t('library.unknownYear')
+      return this.$t('library.decade', { decade: section })
+    },
+    barLabel(section: string): string {
+      return this.rangeField ? filterOptionShortLabel(this.rangeField, section, this.$t) : section
     },
     // The drag/drop half below mirrors QueueDrawer.vue's, including the
     // original-index vs. post-removal-index conversion — see its own
@@ -668,15 +753,16 @@ export default {
         // track order, the catalog order, and - the case this exists for - a
         // ranked search result's match order, which there was otherwise no
         // way back to once a column had been clicked.
-        if (this.sortDirection === 'desc') {
-          this.sortKey = null
-          return
-        }
-        this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc'
+        if (this.sortDirection === 'desc') this.sortKey = null
+        else this.sortDirection = this.sortDirection === 'asc' ? 'desc' : 'asc'
       } else {
         this.sortKey = key
         this.sortDirection = 'asc'
       }
+      this.$emit(
+        'update:sort',
+        this.sortKey ? { key: this.sortKey, direction: this.sortDirection } : null,
+      )
     },
     playSong(song: Song, index: number | null) {
       // Multi-selection: replace the queue with just the selected songs (in
@@ -881,6 +967,13 @@ export default {
  * the page. */
 .song-table {
   overflow-x: clip;
+}
+
+/* Padding rather than margin: v-virtual-scroll measures each item's own
+ * box, and a margin outside it would throw the offsets of every row below
+ * off. */
+.song-section {
+  padding: 20px 12px 6px;
 }
 
 /* Keeps the rightmost column (song-actions) clear of AlphabetIndexBar's own

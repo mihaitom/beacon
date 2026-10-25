@@ -32,6 +32,13 @@
         @click.stop="$emit('toggle-select-all')"
       />
 
+      <!-- A view that offers the order in a menu of its own (SongsView)
+         - keeps the headings as labels - two places to change one order
+         - only had to be kept in step. -->
+      <span v-else-if="column.sortValue && !sortable" class="sort-header sort-header--static">
+        <span class="sort-header__label">{{ $t(column.labelKey) }}</span>
+        <v-icon v-if="sortKey === column.key" :icon="arrowIcon" size="12" />
+      </span>
       <button
         v-else-if="column.sortValue"
         type="button"
@@ -82,6 +89,7 @@ export default {
     columns: { type: Array as PropType<SongColumn[]>, required: true },
     sortKey: { type: String as PropType<string | null>, default: null },
     sortDirection: { type: String, default: 'asc' },
+    sortable: { type: Boolean, default: true },
     /** False for a table whose columns the view fixed itself (Home's
      * top-songs chart) - there is nothing for the menu to change there. */
     configurable: { type: Boolean, default: true },
@@ -225,8 +233,12 @@ export default {
   white-space: nowrap;
 }
 
-.sort-header:hover {
+.sort-header:not(.sort-header--static):hover {
   color: rgba(var(--v-theme-on-surface), 0.85);
+}
+
+.sort-header--static {
+  cursor: default;
 }
 
 /* The column the list is currently sorted by, lit in the app's amber. The

@@ -18,9 +18,10 @@
       :disabled="!available.has(letter)"
       :aria-current="letter === active ? 'true' : undefined"
       :tabindex="available.has(letter) ? 0 : -1"
+      :data-section="letter"
       @click="$emit('select', letter)"
     >
-      {{ letter }}
+      {{ label(letter) }}
     </button>
   </div>
 </template>
@@ -46,6 +47,12 @@ export default {
     available: {
       type: Object as PropType<Set<string>>,
       required: true,
+    },
+    // What a section shows as, where its id is not already short enough to
+    // read: a song list sorted by date passes "7d" for the last week.
+    label: {
+      type: Function as PropType<(section: string) => string>,
+      default: (section: string) => section,
     },
     // The letter whose section is currently on screen, for the "you are
     // here" highlight — null while it isn't known (a scroll never happened,
@@ -83,10 +90,8 @@ export default {
     // event's own target, which stays pinned to whatever element pointer
     // capture was set on) is what makes that work.
     selectFromPoint(x: number, y: number) {
-      const letter = document
-        .elementFromPoint(x, y)
-        ?.closest('.alphabet-index-letter')
-        ?.textContent?.trim()
+      const letter = document.elementFromPoint(x, y)?.closest<HTMLElement>('.alphabet-index-letter')
+        ?.dataset.section
       if (letter && this.available.has(letter)) this.$emit('select', letter)
     },
   },

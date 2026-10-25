@@ -32,6 +32,11 @@
     </detail-header>
 
     <sticky-filter :z-index="3" :fade="false" @resize="stickyHeaderHeight = $event">
+      <!-- In the sticky block rather than above the list: the list is long,
+       - and an error at its top was out of sight once you had scrolled. -->
+      <v-alert v-if="libraryStore.error" type="error" variant="tonal" class="songs-error">
+        {{ libraryStore.error }}
+      </v-alert>
       <div class="library-filter">
         <v-text-field
           v-model="filterQuery"
@@ -48,15 +53,45 @@
         >
           <template #append-inner><exact-match-switch /></template>
         </v-text-field>
+        <div class="songs-controls">
+          <song-filter-menu
+            v-model="filters"
+            :songs="libraryStore.allSongs"
+            :fields="filterFields"
+          />
+          <v-select
+            :model-value="sortValue"
+            :items="sortItems"
+            :aria-label="$t('library.sortBy')"
+            prepend-inner-icon="mdi-sort"
+            variant="solo-filled"
+            density="compact"
+            rounded="pill"
+            flat
+            hide-details
+            class="song-sort"
+            @update:model-value="pickSort"
+          >
+            <template v-if="!byRelevance" #append-inner>
+              <v-btn
+                :icon="sort.direction === 'desc' ? 'mdi-arrow-down' : 'mdi-arrow-up'"
+                :title="$t(`library.songSort.${sort.direction}`)"
+                :aria-label="$t(`library.songSort.${sort.direction}`)"
+                variant="text"
+                size="x-small"
+                @click.stop="toggleDirection"
+                @mousedown.stop
+              />
+            </template>
+          </v-select>
+        </div>
       </div>
     </sticky-filter>
-    <v-alert v-if="libraryStore.error" type="error" variant="tonal" class="view-notice">
-      {{ libraryStore.error }}
-    </v-alert>
     <song-table
       :songs="filteredSongs"
       :loading="libraryStore.loading"
-      :default-sort-key="defaultSortKey"
+      :sort="tableSort"
+      sectioned
       sticky-header
       :style="{ '--sticky-header-offset': `${stickyHeaderHeight}px` }"
       :queue-whole-list="false"
@@ -76,6 +111,21 @@
 
 <script lang="ts">
 import { useLibraryStore } from '@/stores/library'
+import { useAuthStore } from '@/stores/auth'
+import {
+  defaultDirection,
+  filterFieldsFor,
+  filterSongs,
+  loadSongSort,
+  saveSongSort,
+  sortKeysFor,
+  sortLabelKey,
+  type FilterFieldDef,
+  type SongFilters,
+  type SongSort,
+  type SongSortKey,
+} from '@/services/library/songBrowse'
+import SongFilterMenu from '@/components/library/SongFilterMenu.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { shuffled } from '@/services/shuffle'
@@ -98,7 +148,14 @@ let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
 export default {
   name: 'SongsView',
-  components: { EmptyState, DetailHeader, ExactMatchSwitch, SongTable, StickyFilter },
+  components: {
+    EmptyState,
+    DetailHeader,
+    ExactMatchSwitch,
+    SongFilterMenu,
+    SongTable,
+    StickyFilter,
+  },
   data() {
     return {
       filterQuery: '',
@@ -115,23 +172,43 @@ export default {
       // prop) needs this to stack correctly right below it instead of
       // overlapping it.
       stickyHeaderHeight: 0,
+      sort: loadSongSort(),
+      // While a search is typed, the results come ranked by match and the
+      // menu says so, until another order is picked.
+      byRelevance: false,
+      // Set once an order is picked before the catalog has finished
+      // loading - from then on it applies straight away, not only once the
+      // last page is in (see tableSort).
+      sortPicked: false,
+      filters: {} as SongFilters,
     }
   },
   computed: {
     libraryStore() {
       return useLibraryStore()
     },
+    authStore() {
+      return useAuthStore()
+    },
+    filterFields(): FilterFieldDef[] {
+      return filterFieldsFor(this.authStore.serverType).filter(
+        (def) => def.field !== 'rating' || this.authStore.capabilities.personalRating,
+      )
+    },
+    browsedSongs() {
+      return filterSongs(this.libraryStore.allSongs, this.filters)
+    },
     // The full catalog is fetched once (fetchAllSongs) so filtering and
     // SongTable's column-sort both work across the whole library — SongTable
     // itself paginates the render, this just needs to hand over everything.
     filteredSongs() {
       const query = this.debouncedQuery
-      if (!query.trim()) return this.libraryStore.allSongs
+      if (!query.trim()) return this.browsedSongs
       // Ranked by how well each song answers the query, best first, the same
       // way the search page ranks its results - a plain alphabetical order
       // buries an exact title among the rest.
       return rankByMatch(
-        this.libraryStore.allSongs,
+        this.browsedSongs,
         query,
         (song: { title: string; artist: string; album: string }) => [
           { text: song.title, weight: 2 },
@@ -141,12 +218,32 @@ export default {
         { exact: this.libraryStore.searchExact },
       )
     },
-    /** While a filter is on, the songs arrive already ranked by match, so
-     * SongTable must not re-sort them by title. Without one, it keeps its
-     * usual title sort once the catalog is fully loaded. */
-    defaultSortKey(): 'title' | null {
-      if (this.debouncedQuery.trim()) return null
-      return this.libraryStore.allSongsLoaded ? 'title' : null
+    /** Null keeps the list as handed over: ranked by match while a search
+     * is on, and in arrival order while the catalog is still streaming in,
+     * so rows already on screen are not reshuffled by every page that
+     * arrives. */
+    tableSort(): SongSort | null {
+      if (this.byRelevance) return null
+      if (!this.libraryStore.allSongsLoaded && !this.sortPicked) return null
+      return this.sort
+    },
+    sortKeys(): SongSortKey[] {
+      return sortKeysFor(this.authStore.serverType).filter(
+        (key) => key !== 'rating' || this.authStore.capabilities.personalRating,
+      )
+    },
+    sortValue(): string {
+      return this.byRelevance ? 'relevance' : this.sort.key
+    },
+    sortItems(): { title: string; value: string }[] {
+      const items = this.sortKeys.map((key): { title: string; value: string } => ({
+        title: this.$t(sortLabelKey(key)),
+        value: key,
+      }))
+      if (this.debouncedQuery.trim()) {
+        items.unshift({ title: this.$t('library.songSort.relevance'), value: 'relevance' })
+      }
+      return items
     },
   },
   watch: {
@@ -159,11 +256,37 @@ export default {
         this.debouncedQuery = value ?? ''
       }, 200)
     },
+    debouncedQuery(query: string, previous: string) {
+      const searching = Boolean(query.trim())
+      if (searching !== Boolean(previous.trim())) this.byRelevance = searching
+    },
   },
   created() {
+    // An order saved on a server that has data for it, kept on one that has none.
+    if (!this.sortKeys.includes(this.sort.key)) this.sort = { key: 'title', direction: 'asc' }
     this.libraryStore.fetchAllSongs()
   },
   methods: {
+    pickSort(value: string) {
+      if (value === 'relevance') {
+        this.byRelevance = true
+        return
+      }
+      const key = value as SongSortKey
+      this.applySort({ key, direction: defaultDirection(key) })
+    },
+    toggleDirection() {
+      this.applySort({
+        key: this.sort.key,
+        direction: this.sort.direction === 'asc' ? 'desc' : 'asc',
+      })
+    },
+    applySort(sort: SongSort) {
+      this.byRelevance = false
+      this.sortPicked = true
+      this.sort = sort
+      saveSongSort(sort)
+    },
     // Samples from the full unfiltered catalog, same as GenreDetailView's
     // identical playRandom() — an active filter narrows what's browsable,
     // not what "random" draws from.
@@ -199,6 +322,27 @@ export default {
 </script>
 
 <style scoped>
+.songs-error {
+  margin-bottom: 12px;
+}
+
+.songs-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-left: auto;
+}
+
+/* Clear of the index bar down the right edge, as on Albums. */
+.library-filter {
+  margin-right: 40px;
+}
+
+.song-sort {
+  flex: 0 0 220px;
+}
+
 /* See AlbumsView.vue's identical rule. */
 .detail-header__actions-row {
   display: flex;

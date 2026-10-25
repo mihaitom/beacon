@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- The Songs page is built for finding things in your library: it sorts by every field the table can show, the artist included, with headings in the list and an index bar that follow the order (letters, decades, stars, BPM, length, plays, dates). A filter menu narrows it by genre, decade, rating, favorite, BPM, length, plays, last played, date added, format and sample rate, several values at once. An error now stays in sight above the search while you scroll
 - Home is tidier and quicker: recently played albums are two rows of small tiles, the most played songs a chart counted across your whole library, and the Frequently played shelf is gone. Coming back shows the page straight away while it refreshes, and Discover keeps its picks until you shuffle them
 - Now Playing on a phone held sideways is made for a car mount: only previous, play/pause and next, larger and further apart, plus the progress bar. Shuffle, repeat, Autoplay, casting, volume and the heart are left out there and stay in the upright view
 - A song by several artists links to each of them on their own, with a middle dot instead of "feat.", "&" or "×", and its menu offers every one of their pages. Names like "Years & Years" stay whole as long as the artist is in your library
@@ -36,6 +37,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Signing in says why it failed: a busy or unreachable server, a login page in front of it or a certificate problem no longer reads as a wrong password
 - Resuming a paused DLNA renderer could leave it paused while Beacon showed it playing
 - A Sonos or DLNA speaker with a space in its name keeps Beacon up to date, so its volume follows a change made on the speaker or in the Sonos app (#56)
+- Song lists sorted by last played or date added put songs without a date at the end, newest first as well, instead of at the top
 - Adding a song to a playlist, or making a new one from it, keeps a long song list where it was scrolled to instead of jumping back to the top
 - Lyrics are found automatically for more songs, especially ones with a featured artist, where the list of matches already had the right one
 - A favorite or star rating set in one place shows everywhere else straight away instead of after up to an hour
