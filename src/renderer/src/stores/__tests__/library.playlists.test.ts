@@ -264,6 +264,39 @@ describe('library mutations', () => {
     expect(toasts.at(-1)?.message).toContain('Road trip')
   })
 
+  it('adds and creates without touching the shared loading flag', async () => {
+    // Both are reached from a song list's context menu, and that list is
+    // still on screen: the flag swaps SongTable for its skeleton rows, and
+    // the scroll position goes with them. Watched through the refetch too,
+    // which is where it used to come back.
+    const library = useLibraryStore()
+    const seen: boolean[] = []
+    const watch = () => {
+      seen.push(library.loading)
+      return Promise.resolve([])
+    }
+    stubClient({
+      addToPlaylist: vi.fn(watch),
+      createPlaylist: vi.fn(watch),
+      getPlaylists: vi.fn(watch),
+    })
+
+    await library.addToPlaylist('p1', ['s1'])
+    await library.createPlaylist('Road trip', ['s1'])
+
+    expect(seen).toHaveLength(4)
+    expect(seen).not.toContain(true)
+  })
+
+  it('still reports a failed add on the page', async () => {
+    const library = useLibraryStore()
+    stubClient({ addToPlaylist: vi.fn().mockRejectedValue(new Error('not allowed')) })
+
+    await expect(library.addToPlaylist('p1', ['s1'])).rejects.toThrow('not allowed')
+
+    expect(library.error).toBe('not allowed')
+  })
+
   it('refetches the list after removing songs, so the song count is not left stale', async () => {
     const library = useLibraryStore()
     const client = stubClient({

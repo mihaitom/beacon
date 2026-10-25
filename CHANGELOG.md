@@ -36,6 +36,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Signing in says why it failed: a busy or unreachable server, a login page in front of it or a certificate problem no longer reads as a wrong password
 - Resuming a paused DLNA renderer could leave it paused while Beacon showed it playing
 - A Sonos or DLNA speaker with a space in its name keeps Beacon up to date, so its volume follows a change made on the speaker or in the Sonos app (#56)
+- Adding a song to a playlist, or making a new one from it, keeps a long song list where it was scrolled to instead of jumping back to the top
 - Lyrics are found automatically for more songs, especially ones with a featured artist, where the list of matches already had the right one
 - A favorite or star rating set in one place shows everywhere else straight away instead of after up to an hour
 - The song library is kept for the next start after signing in or a rescan, instead of being loaded in full every time, and a new, renamed or deleted playlist shows in the overview straight away

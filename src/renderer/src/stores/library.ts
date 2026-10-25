@@ -557,14 +557,23 @@ export const useLibraryStore = defineStore('library', {
 
     async withLoading<T>(fn: () => Promise<T>): Promise<T> {
       this.loadingCount++
+      try {
+        return await this.withErrorReported(fn)
+      } finally {
+        this.loadingCount--
+      }
+    },
+
+    /** withLoading() without the loading flag, for writes made from a list
+     * that stays on screen: the flag swaps SongTable for its skeleton rows,
+     * and the scroll position goes with them. */
+    async withErrorReported<T>(fn: () => Promise<T>): Promise<T> {
       this.error = null
       try {
         return await fn()
       } catch (error) {
         this.error = error instanceof Error ? error.message : String(error)
         throw error
-      } finally {
-        this.loadingCount--
       }
     },
 
@@ -1044,10 +1053,11 @@ export const useLibraryStore = defineStore('library', {
 
     /** `force` skips the cache entirely — used right after a mutation
      * (createPlaylist()) that needs the real, current list back, not
-     * whatever was last cached. */
+     * whatever was last cached. Without the loading flag: the list being
+     * replaced is already on screen. */
     async fetchPlaylists(force = false): Promise<void> {
       if (force) {
-        await this.withLoading(async () => {
+        await this.withErrorReported(async () => {
           this.playlists = await this.client().getPlaylists()
           await saveLibraryCacheField('playlists', this.playlists)
         })
@@ -1066,21 +1076,17 @@ export const useLibraryStore = defineStore('library', {
     },
 
     async createPlaylist(name: string, songIds: string[] = []): Promise<void> {
-      await this.withLoading(async () => {
-        await this.client().createPlaylist(name, songIds)
-        await this.fetchPlaylists(true)
-      })
+      await this.withErrorReported(() => this.client().createPlaylist(name, songIds))
+      await this.refreshPlaylistCache()
       announce(i18n.global.t('playlists.created', { name }))
     },
 
     async addToPlaylist(playlistId: string, songIds: string[]): Promise<void> {
-      await this.withLoading(async () => {
-        await this.client().addToPlaylist(playlistId, songIds)
-        // Without this, PlaylistsView's list (and its cached songCount)
-        // silently goes stale until something else happens to force a
-        // refetch — same reasoning as createPlaylist()'s identical call.
-        await this.fetchPlaylists(true)
-      })
+      await this.withErrorReported(() => this.client().addToPlaylist(playlistId, songIds))
+      // Without this, PlaylistsView's list (and its cached songCount)
+      // silently goes stale until something else happens to force a
+      // refetch — same reasoning as createPlaylist()'s identical call.
+      await this.refreshPlaylistCache()
       // Named after the refetch above, so a playlist created moments ago is
       // already in the list to look up.
       const name = this.playlists.find((playlist) => playlist.id === playlistId)?.name ?? ''
