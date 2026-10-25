@@ -531,7 +531,9 @@ again when the setting changes.
 The library lists (Songs, Albums, Artists, a genre's page) put their
 controls in the same row: the search on the left, then, pushed to the right,
 the grid/list toggle where there is one, a "Filter" pill and the sort select
-at the end (`LibraryFilterMenu.vue`, `LibrarySortSelect.vue`). The filter is
+at the end (`LibraryFilterMenu.vue`, `LibrarySortSelect.vue`), grouped in
+`.library-controls` so they wrap as one, the sort select as wide as its
+longest order and the only one of them that gives when space runs out. The filter is
 one button with a menu, a submenu per field and checkboxes inside, not a
 pill per field - the fields do not fit in a row, and the menu says under
 each field what is picked. The button turns amber with a count while

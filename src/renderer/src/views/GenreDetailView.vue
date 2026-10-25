@@ -47,7 +47,7 @@
         >
           <template #append-inner><exact-match-switch /></template>
         </v-text-field>
-        <div class="genre-controls">
+        <div class="library-controls">
           <v-btn-toggle
             :model-value="gridView ? 'grid' : 'list'"
             mandatory
@@ -231,14 +231,6 @@ export default {
 </script>
 
 <style scoped>
-.genre-controls {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 16px;
-  margin-left: auto;
-}
-
 /* Clear of the index bar down the right edge, as on Songs. */
 .library-filter {
   margin-right: 40px;

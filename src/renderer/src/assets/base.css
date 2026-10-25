@@ -258,6 +258,24 @@ body {
   margin-bottom: 0;
 }
 
+/* The layout toggle, the filter menu and the order at the far end of a
+ * filter row: they apply to the whole list, the search beside them only
+ * narrows it. They move as one - a row too narrow for the search and all
+ * three puts the group on a line of its own, where it used to break up and
+ * leave the order alone on a second line. */
+.library-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-left: auto;
+}
+
+/* Only the sort select gives (see LibrarySortSelect.vue): squeezed, the
+ * layout toggle lost its right edge and the filter button its label. */
+.library-controls > :not(.library-sort) {
+  flex-shrink: 0;
+}
+
 /* Every pill in a filter row - the field, a sort select, .beacon-view-toggle -
  * on one flat surface. Vuetify's solo field brought a shadow and tinted itself
  * with its overlay, so the field read as a different kind of control from

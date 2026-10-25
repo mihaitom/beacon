@@ -56,7 +56,7 @@
         >
           <template #append-inner><exact-match-switch /></template>
         </v-text-field>
-        <div class="albums-controls">
+        <div class="library-controls">
           <v-btn-toggle
             :model-value="listView ? 'list' : 'grid'"
             mandatory
@@ -683,19 +683,8 @@ export default {
 </script>
 
 <style scoped>
-/* The layout toggle and the order sit at the far end of the filter row:
- * they apply to the whole list, the field and switch beside the search only
- * narrow it. */
 .view-error {
   margin-bottom: 12px;
-}
-
-.albums-controls {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 16px;
-  margin-left: auto;
 }
 
 /* See this file's own #actions template comment for why this exists. */
