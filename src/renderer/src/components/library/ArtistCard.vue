@@ -1,45 +1,58 @@
 <template>
   <div
     class="artist-card"
-    :class="{
-      'artist-card--row': row,
-      'artist-card--rated': row && authStore.capabilities.personalRating,
-    }"
+    :class="{ 'artist-card--row': row }"
+    :style="row ? { gridTemplateColumns: rowTemplate } : undefined"
     @click="$router.push(`/artists/${artist.id}`)"
     @contextmenu.prevent="openMenu"
   >
     <!-- The artist list's row form - see AlbumCard.vue's identical note. -->
     <template v-if="row">
-      <cover-art
-        :cover-art-id="artist.coverArtId"
-        :image-url="artist.imageUrl"
-        :size="44"
-        fallback-icon="mdi-account-music"
-      />
-      <div class="artist-row__name text-body-medium" :title="artist.name">{{ artist.name }}</div>
-      <span class="artist-row__figure text-body-small text-medium-emphasis">{{
-        albumCountLabel
-      }}</span>
-      <span class="artist-row__figure text-body-small text-medium-emphasis">{{
-        songCount === null ? '' : songCountLabel
-      }}</span>
-      <rating-stars
-        v-if="authStore.capabilities.personalRating"
-        :item="artist"
-        class="artist-row__rating"
-        :class="{ 'artist-row__rating--set': artist.rating > 0 }"
-      />
-      <v-btn
-        v-if="authStore.capabilities.favorites"
-        :icon="artist.starred ? 'mdi-heart' : 'mdi-heart-outline'"
-        :color="artist.starred ? 'primary' : undefined"
-        size="small"
-        variant="text"
-        class="artist-row__star"
-        :class="{ 'artist-row__star--visible': artist.starred }"
-        :title="$t(artist.starred ? 'library.unstar' : 'library.star')"
-        @click.stop="toggleStar"
-      />
+      <template v-for="column in rowColumns" :key="column.key">
+        <cover-art
+          v-if="column.key === 'cover'"
+          :cover-art-id="artist.coverArtId"
+          :image-url="artist.imageUrl"
+          :size="44"
+          fallback-icon="mdi-account-music"
+        />
+        <div
+          v-else-if="column.key === 'name'"
+          class="artist-row__name text-body-medium"
+          :title="artist.name"
+        >
+          {{ artist.name }}
+        </div>
+        <span
+          v-else-if="column.key === 'albumCount'"
+          class="artist-row__figure text-body-small text-medium-emphasis"
+          >{{ albumCountLabel }}</span
+        >
+        <span
+          v-else-if="column.key === 'songCount'"
+          class="artist-row__figure text-body-small text-medium-emphasis"
+          >{{ songCount === null ? '' : songCountLabel }}</span
+        >
+        <rating-stars
+          v-else-if="column.key === 'rating'"
+          :item="artist"
+          class="artist-row__rating"
+          :class="{ 'artist-row__rating--set': artist.rating > 0 }"
+        />
+        <template v-else-if="column.key === 'star'">
+          <v-btn
+            v-if="authStore.capabilities.favorites"
+            :icon="artist.starred ? 'mdi-heart' : 'mdi-heart-outline'"
+            :color="artist.starred ? 'primary' : undefined"
+            size="small"
+            variant="text"
+            class="artist-row__star"
+            :title="$t(artist.starred ? 'library.unstar' : 'library.star')"
+            @click.stop="toggleStar"
+          />
+          <span v-else />
+        </template>
+      </template>
     </template>
     <template v-else>
       <div class="artist-card-cover">
@@ -124,6 +137,13 @@ import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
 import { emitter } from '@/emitter'
 import type { Artist, Song } from '@/types/library'
+import type { PropType } from 'vue'
+import {
+  DEFAULT_ARTIST_COLUMNS,
+  artistColumnsFor,
+  type ArtistColumn,
+} from '@/services/library/artistColumns'
+import { listColumnTemplate } from '@/services/library/listColumns'
 
 export default {
   name: 'ArtistCard',
@@ -138,10 +158,24 @@ export default {
       type: Boolean,
       default: false,
     },
+    // Which of the list's columns this line draws - see AlbumCard.vue's.
+    columns: {
+      type: Array as PropType<ArtistColumn[] | null>,
+      default: null,
+    },
   },
   computed: {
     authStore() {
       return useAuthStore()
+    },
+    rowColumns(): ArtistColumn[] {
+      return (
+        this.columns ??
+        artistColumnsFor(DEFAULT_ARTIST_COLUMNS, 0, this.authStore.capabilities.personalRating)
+      )
+    },
+    rowTemplate(): string {
+      return listColumnTemplate(this.rowColumns)
     },
     hasArtwork(): boolean {
       return Boolean(this.artist.coverArtId || this.artist.imageUrl)
@@ -235,34 +269,17 @@ export default {
 </script>
 
 <style scoped>
-/* Photo, name, the two counts in fixed columns, the heart - the same row
- * as AlbumCard.vue's list form. */
+/* Photo, name, the chosen figures in fixed columns, the heart - the same
+ * row as AlbumCard.vue's list form, its columns from artistColumns.ts. */
 .artist-card--row {
   width: 100%;
   height: 56px;
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) 96px 96px 40px;
   align-items: center;
   gap: 16px;
   padding: 0 8px;
   border-radius: 8px;
   cursor: pointer;
-}
-
-/* See AlbumCard.vue's .album-card--rated and the container query under
- * it - the same column, given up at the same width. */
-.artist-card--rated {
-  grid-template-columns: 44px minmax(0, 1fr) 96px 96px 112px 40px;
-}
-
-@container artist-list (max-width: 640px) {
-  .artist-card--rated {
-    grid-template-columns: 44px minmax(0, 1fr) 96px 96px 40px;
-  }
-
-  .artist-row__rating {
-    display: none;
-  }
 }
 
 .artist-card--row:hover {
@@ -297,20 +314,7 @@ export default {
   opacity: 1;
 }
 
-.artist-row__star {
-  opacity: 0;
-}
-
-.artist-card--row:hover .artist-row__star,
-.artist-row__star--visible {
-  opacity: 1;
-}
-
 @media (hover: none) {
-  .artist-row__star {
-    opacity: 1;
-  }
-
   .artist-row__rating:not(.artist-row__rating--set) {
     visibility: hidden;
   }

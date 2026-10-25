@@ -92,10 +92,12 @@
         v-if="listView && !libraryStore.loading && filteredArtists.length"
         :columns="listColumns"
         :template="listTemplate"
-        :narrow-template="listNarrowTemplate"
         :sort-key="sort.key"
         :direction="sort.direction"
+        :column-choices="columnChoices"
         :style="{ '--sticky-header-offset': `${stickyHeaderHeight}px` }"
+        @toggle-column="libraryColumns.toggle('artist', $event)"
+        @reset-columns="libraryColumns.reset('artist')"
       />
       <div v-if="!virtualizeArtists" class="artist-grid" :class="{ 'artist-grid--list': listView }">
         <template v-for="(artist, index) in visibleArtists" :key="artist.id">
@@ -104,7 +106,12 @@
           <div v-if="startsLetterSection(index)" class="letter-divider" aria-hidden="true">
             <span class="letter-divider__label">{{ sectionLabel(letterAt(index)) }}</span>
           </div>
-          <artist-card :data-artist-index="index" :artist="artist" :row="listView" />
+          <artist-card
+            :data-artist-index="index"
+            :artist="artist"
+            :row="listView"
+            :columns="listView ? artistColumns : null"
+          />
         </template>
       </div>
       <!-- See AlbumsView.vue's identical v-virtual-scroll comment for why
@@ -145,6 +152,7 @@
               :data-artist-index="row.startIndex + column"
               :artist="artist"
               :row="listView"
+              :columns="listView ? artistColumns : null"
             />
           </div>
         </template>
@@ -205,6 +213,14 @@ import {
   type LibraryFilters,
 } from '@/services/library/libraryFilter'
 import LibraryFilterMenu from '@/components/library/LibraryFilterMenu.vue'
+import type { ColumnChoice } from '@/components/library/LibraryColumnMenu.vue'
+import {
+  OPTIONAL_ARTIST_COLUMNS,
+  artistColumnsFor,
+  type ArtistColumn,
+} from '@/services/library/artistColumns'
+import { listColumnTemplate } from '@/services/library/listColumns'
+import { useLibraryColumnsStore } from '@/stores/libraryColumns'
 import LibraryListHeader, {
   type ListHeaderColumn,
 } from '@/components/library/LibraryListHeader.vue'
@@ -349,39 +365,36 @@ export default {
           (def.field !== 'rating' || personalRating) && (def.field !== 'starred' || favorites),
       )
     },
-    // The list form's columns, as ArtistCard.vue lays out a row.
+    libraryColumns() {
+      return useLibraryColumnsStore()
+    },
+    // The chosen columns that fit this width - ArtistCard.vue draws its row
+    // from the same list (see artistColumns.ts).
+    artistColumns(): ArtistColumn[] {
+      return artistColumnsFor(
+        this.libraryColumns.artist,
+        this.gridWidth,
+        this.authStore.capabilities.personalRating,
+      )
+    },
     listColumns(): ListHeaderColumn[] {
-      const columns: ListHeaderColumn[] = [
-        { key: 'photo', label: '' },
-        { key: 'name', label: this.$t('library.artist'), sortKeys: ['name'] },
-        {
-          key: 'albums',
-          label: this.$t('library.albums'),
-          align: 'end',
-          sortKeys: ['albumCount'],
-        },
-        { key: 'songs', label: this.$t('library.songs'), align: 'end' },
-      ]
-      if (this.authStore.capabilities.personalRating) {
-        columns.push({
-          key: 'rating',
-          label: this.$t('library.rating'),
-          align: 'end',
-          sortKeys: ['rating'],
-          dropNarrow: true,
-        })
-      }
-      columns.push({ key: 'star', label: '' })
-      return columns
+      return this.artistColumns.map((column) => ({
+        key: column.key,
+        label: column.labelKey ? this.$t(column.labelKey) : '',
+        align: column.align,
+        sortKeys: column.sortKeys,
+      }))
     },
-    // ArtistCard.vue's .artist-card--row and .artist-card--rated.
     listTemplate(): string {
-      return this.authStore.capabilities.personalRating
-        ? '44px minmax(0, 1fr) 96px 96px 112px 40px'
-        : '44px minmax(0, 1fr) 96px 96px 40px'
+      return listColumnTemplate(this.artistColumns)
     },
-    listNarrowTemplate(): string {
-      return '44px minmax(0, 1fr) 96px 96px 40px'
+    columnChoices(): ColumnChoice[] {
+      const rated = this.authStore.capabilities.personalRating
+      return OPTIONAL_ARTIST_COLUMNS.filter((column) => !column.rated || rated).map((column) => ({
+        key: column.key,
+        label: this.$t(column.labelKey!),
+        checked: this.libraryColumns.artist.includes(column.key),
+      }))
     },
     sortedArtists(): Artist[] {
       return sortArtists(this.libraryStore.artists, this.sort)
@@ -645,17 +658,20 @@ export default {
   gap: 20px;
 }
 
-/* The list form: one full-width row under the other. A container, so
- * ArtistCard.vue's row can tell how much room it has (see its rating column). */
+/* The list form: one full-width row under the other. */
 .artist-grid--list {
   flex-direction: column;
   flex-wrap: nowrap;
   gap: 0;
-  container: artist-list / inline-size;
 }
 
 .artist-grid--list .artist-card {
   width: 100%;
+}
+
+/* See AlbumsView.vue's identical rule. */
+.artist-grid--list .letter-divider {
+  padding: 20px 12px 6px;
 }
 
 /* Clear of AlphabetIndexBar like the grid below (see

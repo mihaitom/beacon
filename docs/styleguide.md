@@ -539,8 +539,9 @@ anything is filtered. The sort select carries its direction as an arrow in
 its end, and column headings are labels, not buttons: one place to change
 the order, not two to keep in step. The album and artist lists label their
 columns in the list form too (`LibraryListHeader.vue`, on the rows' own
-grid; the album list takes both from `albumColumns.ts`, where each column
-names the width it appears from), the sorted column lit in amber with its arrow. Where the order has
+grid; both lists take their columns from `services/library/listColumns.ts`,
+the user's choice in `stores/libraryColumns.ts`, picked from the header like
+the song table's, and narrowed to what fits the list's width), the sorted column lit in amber with its arrow. Where the order has
 sections (letters, decades, stars, and the filter's ranges), the list draws
 them as `.letter-divider` headings and the index bar lists the same
 sections in short form.

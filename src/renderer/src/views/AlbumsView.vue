@@ -95,7 +95,10 @@
         :template="listTemplate"
         :sort-key="sort.key"
         :direction="sort.direction"
+        :column-choices="columnChoices"
         :style="{ '--sticky-header-offset': `${stickyHeaderHeight}px` }"
+        @toggle-column="libraryColumns.toggle('album', $event)"
+        @reset-columns="libraryColumns.reset('album')"
       />
       <div v-if="libraryStore.loading" class="album-grid">
         <div v-for="n in skeletonCount" :key="n" class="album-card">
@@ -242,10 +245,13 @@ import {
   type LibraryFilters,
 } from '@/services/library/libraryFilter'
 import {
-  albumColumnTemplate,
+  OPTIONAL_ALBUM_COLUMNS,
   albumColumnsFor,
   type AlbumColumn,
 } from '@/services/library/albumColumns'
+import { listColumnTemplate } from '@/services/library/listColumns'
+import { useLibraryColumnsStore } from '@/stores/libraryColumns'
+import type { ColumnChoice } from '@/components/library/LibraryColumnMenu.vue'
 import LibraryFilterMenu from '@/components/library/LibraryFilterMenu.vue'
 import LibraryListHeader, {
   type ListHeaderColumn,
@@ -434,10 +440,22 @@ export default {
     rated(): boolean {
       return useAuthStore().capabilities.personalRating
     },
-    // The list form's columns at this width - AlbumCard.vue draws its row
+    libraryColumns() {
+      return useLibraryColumnsStore()
+    },
+    // The chosen columns that fit this width - AlbumCard.vue draws its row
     // from the same list (see albumColumns.ts).
     albumColumns(): AlbumColumn[] {
-      return albumColumnsFor(this.gridWidth, this.rated)
+      return albumColumnsFor(this.libraryColumns.album, this.gridWidth, this.rated)
+    },
+    columnChoices(): ColumnChoice[] {
+      return OPTIONAL_ALBUM_COLUMNS.filter((column) => !column.rated || this.rated).map(
+        (column) => ({
+          key: column.key,
+          label: this.$t(column.labelKey!),
+          checked: this.libraryColumns.album.includes(column.key),
+        }),
+      )
     },
     listColumns(): ListHeaderColumn[] {
       return this.albumColumns.map((column) => ({
@@ -453,7 +471,7 @@ export default {
       }))
     },
     listTemplate(): string {
-      return albumColumnTemplate(this.albumColumns)
+      return listColumnTemplate(this.albumColumns)
     },
     // From the whole sorted list, not the filtered one: a filter greys
     // sections out (availableLetters) rather than taking them off the bar.
@@ -709,8 +727,7 @@ export default {
   width: 160px;
 }
 
-/* The list form: one full-width row under the other. A container, so
- * AlbumCard.vue's row can tell how much room it has (see its rating column). */
+/* The list form: one full-width row under the other. */
 .album-grid--list {
   flex-direction: column;
   flex-wrap: nowrap;
@@ -719,6 +736,13 @@ export default {
 
 .album-grid--list .album-card {
   width: 100%;
+}
+
+/* The song table's section heading (SongTable.vue's .song-section): the
+ * list has no gap of its own to set the heading off the rows. Padding, not
+ * margin, for the virtual scroll's measuring - see that rule's comment. */
+.album-grid--list .letter-divider {
+  padding: 20px 12px 6px;
 }
 
 /* Clear of AlphabetIndexBar like the grid below (see

@@ -4,9 +4,8 @@
 //
 // The stars sit in a fixed column between the figures and the heart: too
 // narrow a column and the fifth star runs under the heart. And in a narrow
-// list they are the column that gives way, so the name keeps its room - the
-// artist row by its own container query, the album row by the columns
-// AlbumsView.vue hands it for the list's width (albumColumns.ts).
+// list they are a column that gives way, so the name keeps its room (the
+// columns the view hands a row for its width, listColumns.ts).
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { page } from 'vitest/browser'
 import { mount, type VueWrapper } from '@vue/test-utils'
@@ -20,7 +19,8 @@ import '@mdi/font/css/materialdesignicons.css'
 import { i18n } from '@/i18n'
 import AlbumCard from '../AlbumCard.vue'
 import ArtistCard from '../ArtistCard.vue'
-import { albumColumnsFor } from '@/services/library/albumColumns'
+import { DEFAULT_ALBUM_COLUMNS, albumColumnsFor } from '@/services/library/albumColumns'
+import { DEFAULT_ARTIST_COLUMNS, artistColumnsFor } from '@/services/library/artistColumns'
 
 const vuetify = createVuetify({ components, directives })
 const wrappers: VueWrapper[] = []
@@ -51,9 +51,8 @@ const artist = {
   albums: [],
 }
 
-/** One row inside a list of the given width, declared the container its
- * view declares (ArtistsView.vue's .artist-grid--list), and given the
- * columns AlbumsView.vue picks for that width. */
+/** One row inside a list of the given width, given the columns its view
+ * picks for that width. */
 async function mountRow(kind: 'album' | 'artist', width: number) {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -63,17 +62,20 @@ async function mountRow(kind: 'album' | 'artist', width: number) {
   await router.isReady()
   const list = document.createElement('div')
   list.style.width = `${width}px`
-  list.style.container = `${kind}-list / inline-size`
   document.body.appendChild(list)
   const wrapper =
     kind === 'album'
       ? mount(AlbumCard, {
-          props: { album, row: true, columns: albumColumnsFor(width, true) },
+          props: { album, row: true, columns: albumColumnsFor(DEFAULT_ALBUM_COLUMNS, width, true) },
           attachTo: list,
           global: { plugins: [vuetify, i18n, router], stubs: { CoverArt: true } },
         })
       : mount(ArtistCard, {
-          props: { artist, row: true },
+          props: {
+            artist,
+            row: true,
+            columns: artistColumnsFor(DEFAULT_ARTIST_COLUMNS, width, true),
+          },
           attachTo: list,
           global: { plugins: [vuetify, i18n, router], stubs: { CoverArt: true } },
         })

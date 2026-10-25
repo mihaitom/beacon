@@ -1,8 +1,6 @@
-/** The columns of the album list in its list form - one definition for the
- * rows (AlbumCard.vue with `row`) and the labels over them
- * (LibraryListHeader.vue), so the two cannot drift apart. */
+/** The album list's columns in its list form - see listColumns.ts. */
 
-import type { AlbumSortKey } from '@/services/albumSort'
+import { fitListColumns, resolveListColumns, type ListColumn } from '@/services/library/listColumns'
 
 export type AlbumColumnKey =
   | 'cover'
@@ -16,95 +14,108 @@ export type AlbumColumnKey =
   | 'rating'
   | 'star'
 
-export interface AlbumColumn {
-  key: AlbumColumnKey
-  width: string
-  labelKey: string | null
-  align: 'start' | 'end'
-  /** The orders this column stands for, lit in the header while one is on. */
-  sortKeys: AlbumSortKey[]
-  /** The list width from which the column is shown. The name is what a row
-   * is for, so the extras give way first, the least asked-for first. */
-  showFrom: number
-}
+export type AlbumColumn = ListColumn<AlbumColumnKey>
 
 export const ALBUM_COLUMNS: AlbumColumn[] = [
-  { key: 'cover', width: '44px', labelKey: null, align: 'start', sortKeys: [], showFrom: 0 },
+  { key: 'cover', width: 44, labelKey: null, align: 'start', sortKeys: [], optional: false },
   {
     key: 'name',
-    width: 'minmax(0, 1fr)',
+    width: null,
     labelKey: null,
     align: 'start',
     sortKeys: ['name', 'artist'],
-    showFrom: 0,
+    optional: false,
   },
   {
     key: 'genre',
-    width: '120px',
+    width: 120,
     labelKey: 'library.genre',
     align: 'start',
     sortKeys: [],
-    showFrom: 960,
+    optional: true,
   },
   {
     key: 'releaseType',
-    width: '96px',
+    width: 96,
     labelKey: 'library.albumColumnType',
     align: 'start',
     sortKeys: [],
-    showFrom: 1100,
+    optional: true,
   },
   {
     key: 'year',
-    width: '56px',
+    width: 56,
     labelKey: 'library.year',
     align: 'end',
     sortKeys: ['year'],
-    showFrom: 0,
+    optional: true,
   },
   {
     key: 'songCount',
-    width: '88px',
+    width: 88,
     labelKey: 'library.songs',
     align: 'end',
     sortKeys: ['songCount'],
-    showFrom: 0,
+    optional: true,
   },
   {
     key: 'duration',
-    width: '64px',
+    width: 64,
     labelKey: 'library.duration',
     align: 'end',
     sortKeys: ['duration'],
-    showFrom: 0,
+    optional: true,
   },
   {
     key: 'added',
-    width: '104px',
+    width: 104,
     labelKey: 'library.songFilter.added',
     align: 'end',
     sortKeys: ['added'],
-    showFrom: 820,
+    optional: true,
   },
   {
     key: 'rating',
-    width: '112px',
+    width: 112,
     labelKey: 'library.rating',
     align: 'end',
     sortKeys: ['rating'],
-    showFrom: 640,
+    optional: true,
+    rated: true,
   },
-  { key: 'star', width: '40px', labelKey: null, align: 'start', sortKeys: [], showFrom: 0 },
+  { key: 'star', width: 40, labelKey: null, align: 'start', sortKeys: [], optional: false },
 ]
 
-/** The columns a list this wide shows. Before the list has been measured
- * (width 0) only the ones that are always there. */
-export function albumColumnsFor(width: number, rated: boolean): AlbumColumn[] {
-  return ALBUM_COLUMNS.filter(
-    (column) => (column.key !== 'rating' || rated) && width >= column.showFrom,
-  )
-}
+export const OPTIONAL_ALBUM_COLUMNS = ALBUM_COLUMNS.filter((column) => column.optional)
 
-export function albumColumnTemplate(columns: AlbumColumn[]): string {
-  return columns.map((column) => column.width).join(' ')
+/** The release type is off to begin with: most libraries are albums
+ * throughout, and a column of the same word says nothing. */
+export const DEFAULT_ALBUM_COLUMNS: AlbumColumnKey[] = [
+  'genre',
+  'year',
+  'songCount',
+  'duration',
+  'added',
+  'rating',
+]
+
+/** First to give way in a narrow list: the least asked-for first, the year
+ * last. */
+const ALBUM_DROP_ORDER: AlbumColumnKey[] = [
+  'releaseType',
+  'genre',
+  'added',
+  'rating',
+  'duration',
+  'songCount',
+  'year',
+]
+
+/** The columns a list this wide draws out of the chosen ones. */
+export function albumColumnsFor(
+  chosen: readonly AlbumColumnKey[],
+  width: number,
+  rated: boolean,
+): AlbumColumn[] {
+  return fitListColumns(resolveListColumns(ALBUM_COLUMNS, chosen, rated), width, ALBUM_DROP_ORDER)
 }

@@ -204,16 +204,13 @@ import type { PropType } from 'vue'
 import { formatDate, formatDuration } from '@/services/library/songFormat'
 import { filterOptionLabel } from '@/services/library/libraryFilter'
 import {
-  albumColumnTemplate,
+  DEFAULT_ALBUM_COLUMNS,
   albumColumnsFor,
   type AlbumColumn,
   type AlbumColumnKey,
 } from '@/services/library/albumColumns'
+import { listColumnTemplate } from '@/services/library/listColumns'
 import type { Album, Song } from '@/types/library'
-
-/** The columns a row draws when its list does not say: the set a list of
- * ordinary width shows. */
-const DEFAULT_LIST_WIDTH = 640
 
 export default {
   name: 'AlbumCard',
@@ -246,8 +243,8 @@ export default {
       type: Boolean,
       default: false,
     },
-    // Which of the list's columns this line draws - the list picks them by
-    // its width (see albumColumns.ts).
+    // Which of the list's columns this line draws - the list picks them
+    // from the user's choice and its own width (see albumColumns.ts).
     columns: {
       type: Array as PropType<AlbumColumn[] | null>,
       default: null,
@@ -267,11 +264,11 @@ export default {
     rowColumns(): AlbumColumn[] {
       return (
         this.columns ??
-        albumColumnsFor(DEFAULT_LIST_WIDTH, this.authStore.capabilities.personalRating)
+        albumColumnsFor(DEFAULT_ALBUM_COLUMNS, 0, this.authStore.capabilities.personalRating)
       )
     },
     rowTemplate(): string {
-      return albumColumnTemplate(this.rowColumns)
+      return listColumnTemplate(this.rowColumns)
     },
   },
   methods: {
@@ -456,14 +453,13 @@ export default {
   opacity: 1;
 }
 
-/* Shown on hover and once set, like the card's. */
-.album-row__star {
+/* The list row's heart is always there, like the song table's; the Home
+ * tile's shows on hover and once set, like the card's. */
+.album-card--tile .album-row__star:not(.album-row__star--visible) {
   opacity: 0;
 }
 
-.album-card--row:hover .album-row__star,
-.album-card--tile:hover .album-row__star,
-.album-row__star--visible {
+.album-card--tile:hover .album-row__star {
   opacity: 1;
 }
 
@@ -538,7 +534,7 @@ a.album-tile__artist:hover {
 }
 
 @media (hover: none) {
-  .album-row__star {
+  .album-card--tile .album-row__star:not(.album-row__star--visible) {
     opacity: 1;
   }
 

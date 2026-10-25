@@ -477,6 +477,26 @@ describe('AlbumsView list layout', () => {
     expect(vm.albumRows.every((row) => row.items.length === 1)).toBe(true)
   })
 
+  it('draws a column picked in the header on the rows and over them', async () => {
+    const { wrapper, vm } = await mountAlbums([album('a', 'A')])
+    vm.setListView(true)
+    await flushPromises()
+    const header = wrapper.getComponent({ name: 'LibraryListHeader' })
+    const shown = () => ({
+      header: (header.props('columns') as { key: string }[]).map((column) => column.key),
+      row: (wrapper.getComponent({ name: 'AlbumCard' }).props('columns') as { key: string }[]).map(
+        (column) => column.key,
+      ),
+    })
+    expect(shown().header).not.toContain('releaseType')
+
+    header.vm.$emit('toggle-column', 'releaseType')
+    await flushPromises()
+
+    expect(shown().header).toContain('releaseType')
+    expect(shown().row).toEqual(shown().header)
+  })
+
   it('opens in the layout it was left in', async () => {
     const first = await mountAlbums([album('a', 'A')])
     first.vm.setListView(true)

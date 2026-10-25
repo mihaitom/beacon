@@ -43,6 +43,7 @@ import {
 } from '@/stores/lyricsProviders'
 import { useAutoplayStore } from '@/stores/autoplay'
 import { useSongColumnsStore } from '@/stores/songColumns'
+import { sanitizeColumns, useLibraryColumnsStore } from '@/stores/libraryColumns'
 import { usePlaylistSummariesStore } from '@/stores/playlistSummaries'
 import { useHomeStore } from '@/stores/home'
 import { useRadioStationInfoStore } from '@/stores/radioStationInfo'
@@ -124,6 +125,18 @@ async function pullAccountSettings(): Promise<void> {
         useSongColumnsStore().setColumns(valid)
       }
     }
+
+    for (const [list, remoteColumns] of [
+      ['album', remote.albumColumns],
+      ['artist', remote.artistColumns],
+    ] as const) {
+      const valid = sanitizeColumns(list, remoteColumns)
+      // The song columns' rule above: an empty list is a choice, a list of
+      // nothing this build knows is not.
+      if (valid && (valid.length > 0 || remoteColumns?.length === 0)) {
+        useLibraryColumnsStore().setColumns(list, valid)
+      }
+    }
   } catch (error) {
     // Best-effort — connect being briefly unreachable shouldn't block using
     // the app with whatever's already local.
@@ -151,6 +164,7 @@ export function initAccountScopedStores(): void {
     useTransitionsStore().reloadForAccount()
     useDrawersStore().reloadForAccount()
     useSongColumnsStore().reloadForAccount()
+    useLibraryColumnsStore().reloadForAccount()
     useLastfmStore().reloadForAccount()
     useListenbrainzStore().reloadForAccount()
     useFanartStore().reloadForAccount()
