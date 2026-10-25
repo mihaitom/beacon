@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
@@ -75,5 +75,23 @@ describe('ArtistCard counts', () => {
     const wrapper = mountCard(makeArtist())
 
     expect(wrapper.findAll('.artist-card-count')).toHaveLength(2)
+  })
+})
+
+describe('ArtistCard as a list row', () => {
+  beforeEach(() => setActivePinia(createPinia()))
+
+  it('opens its menu from the "..." button without opening the artist', async () => {
+    const push = vi.fn()
+    const wrapper = mount(ArtistCard, {
+      props: { artist: makeArtist(), row: true },
+      global: { plugins: [vuetify, i18n], stubs: { CoverArt: true }, mocks: { $router: { push } } },
+    })
+
+    await wrapper.find('.artist-row__actions [aria-label="More actions"]').trigger('click')
+
+    const menu = wrapper.getComponent({ name: 'TileContextMenu' })
+    expect((menu.vm as unknown as { menuOpen: boolean }).menuOpen).toBe(true)
+    expect(push).not.toHaveBeenCalled()
   })
 })

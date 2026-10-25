@@ -100,6 +100,16 @@ describe('AlbumCard as a list row', () => {
     expect(router.currentRoute.value.path).toBe('/')
   })
 
+  it('opens its menu from the "..." button without opening the album', async () => {
+    const { wrapper, router } = await mountCard({ row: true })
+
+    await wrapper.find('.album-row__actions [aria-label="More actions"]').trigger('click')
+
+    const menu = wrapper.getComponent({ name: 'TileContextMenu' })
+    expect((menu.vm as unknown as { menuOpen: boolean }).menuOpen).toBe(true)
+    expect(router.currentRoute.value.path).toBe('/')
+  })
+
   it('has no stars where the server has no rating scale', async () => {
     useAuthStore().serverType = 'jellyfin'
     const { wrapper } = await mountCard({ row: true })

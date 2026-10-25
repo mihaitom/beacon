@@ -2,7 +2,7 @@
 
 import { fitListColumns, resolveListColumns, type ListColumn } from '@/services/library/listColumns'
 
-export type ArtistColumnKey = 'cover' | 'name' | 'albumCount' | 'songCount' | 'rating' | 'star'
+export type ArtistColumnKey = 'cover' | 'name' | 'albumCount' | 'songCount' | 'rating' | 'actions'
 
 export type ArtistColumn = ListColumn<ArtistColumnKey>
 
@@ -41,7 +41,8 @@ export const ARTIST_COLUMNS: ArtistColumn[] = [
     optional: true,
     rated: true,
   },
-  { key: 'star', width: 40, labelKey: null, align: 'start', sortKeys: [], optional: false },
+  // See albumColumns.ts's actions column.
+  { key: 'actions', width: 72, labelKey: null, align: 'end', sortKeys: [], optional: false },
 ]
 
 export const OPTIONAL_ARTIST_COLUMNS = ARTIST_COLUMNS.filter((column) => column.optional)

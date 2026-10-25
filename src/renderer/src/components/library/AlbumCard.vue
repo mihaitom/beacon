@@ -80,7 +80,9 @@
           class="album-row__rating"
           :class="{ 'album-row__rating--set': album.rating > 0 }"
         />
-        <template v-else-if="column.key === 'star'">
+        <!-- The song table's actions cell (SongRow.vue): the heart, then the
+           - same menu a right-click opens, for whoever does not think to. -->
+        <div v-else-if="column.key === 'actions'" class="album-row__actions">
           <v-btn
             v-if="authStore.capabilities.favorites"
             :icon="album.starred ? 'mdi-heart' : 'mdi-heart-outline'"
@@ -92,8 +94,15 @@
             :title="$t(album.starred ? 'library.unstar' : 'library.star')"
             @click.stop="toggleStar"
           />
-          <span v-else />
-        </template>
+          <v-btn
+            icon="mdi-dots-vertical"
+            size="small"
+            variant="text"
+            :title="$t('common.moreActions')"
+            :aria-label="$t('common.moreActions')"
+            @click.stop="openMenu($event)"
+          />
+        </div>
         <span
           v-else
           class="album-row__figure text-body-small text-medium-emphasis"
@@ -643,5 +652,10 @@ a.album-tile__artist:hover {
 /* The gap between the cover and the title under it. */
 .album-card-title {
   margin-top: 8px;
+}
+
+.album-row__actions {
+  display: flex;
+  justify-content: flex-end;
 }
 </style>

@@ -19,7 +19,7 @@
       </div>
     </div>
     <!-- The song table's column button (SongTableHeader.vue), over the
-       - heart's column, which has no heading of its own. -->
+       - menu buttons, whose column has no heading of its own. -->
     <button
       v-if="columnChoices"
       type="button"
@@ -130,10 +130,10 @@ export default {
   color: rgb(var(--v-theme-primary));
 }
 
-/* Centred over the heart's 40px column, at the row's right padding. */
+/* Over the rows' menu buttons, as in SongTableHeader.vue. */
 .column-menu-button {
   position: absolute;
-  right: 20px;
+  right: 14px;
   bottom: 6px;
   display: inline-flex;
   align-items: center;

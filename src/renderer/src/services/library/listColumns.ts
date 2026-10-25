@@ -13,7 +13,7 @@ export interface ListColumn<K extends string = string> {
   /** The orders this column stands for, lit in the header while one is on. */
   sortKeys: readonly string[]
   /** The user's to switch on and off (stores/libraryColumns.ts). The cover,
-   * the name and the heart make the row and are always there. */
+   * the name and the actions make the row and are always there. */
   optional: boolean
   /** Only where the server keeps a 1-5 rating. */
   rated?: boolean

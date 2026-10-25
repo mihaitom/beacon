@@ -5,13 +5,13 @@ import { artistColumnsFor } from '../artistColumns'
 const keys = (columns: { key: string }[]) => columns.map((column) => column.key)
 
 describe('the album list columns', () => {
-  it('draws the chosen ones between the cover, the name and the heart', () => {
+  it('draws the chosen ones between the cover, the name and the actions', () => {
     expect(keys(albumColumnsFor(['year', 'genre'], 0, true))).toEqual([
       'cover',
       'name',
       'genre',
       'year',
-      'star',
+      'actions',
     ])
   })
 
@@ -22,18 +22,18 @@ describe('the album list columns', () => {
   it('gives way in a narrow list, the least asked-for first', () => {
     const wide = keys(albumColumnsFor([...DEFAULT_ALBUM_COLUMNS, 'releaseType'], 2000, true))
     // One column short of room for all of them.
-    const narrow = keys(albumColumnsFor([...DEFAULT_ALBUM_COLUMNS, 'releaseType'], 1000, true))
+    const narrow = keys(albumColumnsFor([...DEFAULT_ALBUM_COLUMNS, 'releaseType'], 1050, true))
 
     expect(wide).toContain('releaseType')
     expect(narrow).not.toContain('releaseType')
     expect(narrow).toEqual(wide.filter((key) => key !== 'releaseType'))
   })
 
-  it('keeps the cover, the name and the heart however narrow', () => {
+  it('keeps the cover, the name and the actions however narrow', () => {
     expect(keys(albumColumnsFor(DEFAULT_ALBUM_COLUMNS, 300, true))).toEqual([
       'cover',
       'name',
-      'star',
+      'actions',
     ])
   })
 
@@ -43,7 +43,7 @@ describe('the album list columns', () => {
       'name',
       'genre',
       'added',
-      'star',
+      'actions',
     ])
   })
 })

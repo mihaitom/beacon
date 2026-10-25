@@ -12,7 +12,7 @@ export type AlbumColumnKey =
   | 'duration'
   | 'added'
   | 'rating'
-  | 'star'
+  | 'actions'
 
 export type AlbumColumn = ListColumn<AlbumColumnKey>
 
@@ -83,7 +83,8 @@ export const ALBUM_COLUMNS: AlbumColumn[] = [
     optional: true,
     rated: true,
   },
-  { key: 'star', width: 40, labelKey: null, align: 'start', sortKeys: [], optional: false },
+  // The heart and the menu button, as SongRow.vue's actions cell.
+  { key: 'actions', width: 72, labelKey: null, align: 'end', sortKeys: [], optional: false },
 ]
 
 export const OPTIONAL_ALBUM_COLUMNS = ALBUM_COLUMNS.filter((column) => column.optional)
