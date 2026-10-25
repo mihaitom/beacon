@@ -2,10 +2,11 @@
   <div class="mobile-now-playing" :class="{ 'mobile-now-playing--landscape': phoneLandscape }">
     <div class="mobile-now-playing__art">
       <!-- Sideways the controls go into the presentation's right column
-         - instead of under it. Either here or there, never both, so rotating
-         - remounts them - which costs one volume reading and nothing else. -->
+         - instead of under it, cut down to what a phone in a car mount
+         - needs. Either here or there, never both, so rotating remounts
+         - them - which costs one volume reading and nothing else. -->
       <now-playing-view compact :landscape="phoneLandscape">
-        <template #controls><mobile-transport-controls /></template>
+        <template #controls><mobile-transport-controls essential /></template>
       </now-playing-view>
     </div>
     <mobile-transport-controls v-if="!phoneLandscape" />

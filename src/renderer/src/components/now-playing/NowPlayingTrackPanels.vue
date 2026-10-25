@@ -209,9 +209,16 @@ export default {
     this.infoObserver?.disconnect()
   },
   methods: {
-    /** On the phone only, and only on the song that is playing. */
+    /** On the upright phone only (sideways is the car mount, where a stray
+     * tap should not change the library), and only on the song that is
+     * playing. */
     offersFavorite(panel: NowPlayingPanel): boolean {
-      return this.compact && this.source.capabilities.favorite && this.isPlaying(panel)
+      return (
+        this.compact &&
+        !this.landscape &&
+        this.source.capabilities.favorite &&
+        this.isPlaying(panel)
+      )
     },
     /** The song that is playing - not the next one announced beside it
      * near the end of a track. */

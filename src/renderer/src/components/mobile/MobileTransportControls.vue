@@ -1,5 +1,5 @@
 <template>
-  <div class="mobile-transport">
+  <div class="mobile-transport" :class="{ 'mobile-transport--essential': essential }">
     <!-- Queue-shaped controls are disabled on radio for the same reason as
      - CenterControls.vue's identical gating — see its own comment: a live
      - stream has no queue for shuffle/repeat/prev/next to act on. -->
@@ -10,7 +10,7 @@
          - there. Disabled on radio like everything else in this row -
          - there is no queue for it to top up while a live stream plays. -->
         <v-btn
-          v-if="authStore.capabilities.songRadio"
+          v-if="authStore.capabilities.songRadio && !essential"
           icon="mdi-infinity"
           :color="!isRadio && autoplayStore.enabled ? 'primary' : undefined"
           variant="text"
@@ -20,6 +20,7 @@
           @click="playbackStore.setAutoplayEnabled(!autoplayStore.enabled)"
         />
         <v-btn
+          v-if="!essential"
           icon="mdi-shuffle"
           :color="!isRadio && playbackStore.shuffle ? 'primary' : undefined"
           variant="text"
@@ -53,6 +54,7 @@
           @click="playbackStore.playNext()"
         />
         <v-btn
+          v-if="!essential"
           :icon="repeatIcon"
           :color="!isRadio && playbackStore.repeatMode !== 'off' ? 'primary' : undefined"
           variant="text"
@@ -61,6 +63,7 @@
           @click="playbackStore.cycleRepeatMode()"
         />
         <v-btn
+          v-if="!essential"
           :icon="connectStore.isActive ? 'mdi-cast-connected' : 'mdi-cast'"
           :color="connectStore.isActive ? 'primary' : undefined"
           variant="text"
@@ -101,7 +104,7 @@
     <!-- Left out entirely where this device's own level cannot be changed
      - from here anyway - see volumeControlAvailable. A speaker being cast
      - to keeps its slider either way, that one is set over the network. -->
-    <div v-if="volumeControlAvailable" class="mobile-transport__bottom-row">
+    <div v-if="volumeControlAvailable && !essential" class="mobile-transport__bottom-row">
       <v-btn
         :icon="volumeIcon"
         :disabled="muteDisabled"
@@ -135,7 +138,7 @@
       }}</span>
     </div>
 
-    <mobile-device-picker v-model="devicePickerOpen" />
+    <mobile-device-picker v-if="!essential" v-model="devicePickerOpen" />
   </div>
 </template>
 
@@ -168,6 +171,14 @@ export default {
     MobileDevicePicker,
     TouchVolumeSlider,
     PreviewStatus,
+  },
+  props: {
+    /** Only what is needed while driving: previous, play and next, large,
+     * and the position. The phone held sideways in a car mount. */
+    essential: {
+      type: Boolean,
+      default: false,
+    },
   },
   data() {
     return {
@@ -489,5 +500,31 @@ export default {
   margin-inline: 8px;
   width: 48px;
   height: 48px;
+}
+
+/* Hit at a glance with one thumb from the wheel: three big targets with
+ * clear gaps between them instead of seven small ones. */
+.mobile-transport--essential .mobile-transport__row {
+  margin-bottom: 8px;
+}
+
+.mobile-transport--essential .mobile-transport__row-side .v-btn {
+  width: 64px;
+  height: 64px;
+  flex-shrink: 0;
+}
+
+.mobile-transport--essential .mobile-transport__row-side .v-btn :deep(.v-icon) {
+  font-size: 40px;
+}
+
+.mobile-transport--essential .mobile-transport__play-btn {
+  margin-inline: 24px;
+  width: 72px;
+  height: 72px;
+}
+
+.mobile-transport--essential .mobile-transport__play-btn :deep(.v-icon) {
+  font-size: 44px;
 }
 </style>

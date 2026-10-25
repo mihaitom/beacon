@@ -33,8 +33,9 @@ const vuetify = createVuetify({ components, directives })
 // song — neither of which jsdom does, and neither of which this component
 // is responsible for. Stubbed to its prop/event contract (model-value +
 // @end, deliberately v-slider-shaped) so the seek wiring stays testable.
-function mountControls() {
+function mountControls(props: { essential?: boolean } = {}) {
   return mount(MobileTransportControls, {
+    props,
     global: {
       plugins: [vuetify, i18n],
       stubs: { SongWaveform: true, MobileDevicePicker: true },
@@ -285,6 +286,41 @@ describe('MobileTransportControls', () => {
 
       expect(button(wrapper, 'mdi-infinity').disabled).toBe(true)
       expect(button(wrapper, 'mdi-infinity').classList.contains('text-primary')).toBe(false)
+    })
+  })
+
+  describe('essential (a phone held sideways in a car mount)', () => {
+    it('keeps previous, play, next and the position working', async () => {
+      const wrapper = mountControls({ essential: true })
+      const playback = usePlaybackStore()
+      playback.queue = [makeSong('1'), makeSong('2')]
+      playback.currentIndex = 0
+      const spies = {
+        previous: vi.spyOn(playback, 'playPrevious').mockResolvedValue(),
+        play: vi.spyOn(playback, 'togglePlay').mockResolvedValue(),
+        next: vi.spyOn(playback, 'playNext').mockResolvedValue(),
+      }
+      await wrapper.vm.$nextTick()
+
+      button(wrapper, 'mdi-skip-previous').click()
+      button(wrapper, 'mdi-play').click()
+      button(wrapper, 'mdi-skip-next').click()
+
+      expect(spies.previous).toHaveBeenCalledOnce()
+      expect(spies.play).toHaveBeenCalledOnce()
+      expect(spies.next).toHaveBeenCalledOnce()
+      expect(wrapper.findComponent({ name: 'SongWaveform' }).exists()).toBe(true)
+    })
+
+    /** Every one of these changes something lasting - the queue's order,
+     * the speaker, the level - from a single stray tap at the wheel. */
+    it('leaves out the mode toggles, casting and volume', () => {
+      const wrapper = mountControls({ essential: true })
+
+      for (const icon of ['mdi-infinity', 'mdi-shuffle', 'mdi-repeat', 'mdi-cast']) {
+        expect(wrapper.find(`.${icon}`).exists()).toBe(false)
+      }
+      expect(wrapper.find('.mdi-volume-high').exists()).toBe(false)
     })
   })
 

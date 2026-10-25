@@ -28,7 +28,12 @@ function panel(s: NowPlayingSong): NowPlayingPanel {
   return { key: s.id, kind: 'song', song: s, eyebrow: '', title: s.title, radioTag: null }
 }
 
-function mountPanels({ favorite = true, compact = true, panels = [panel(song('a'))] } = {}) {
+function mountPanels({
+  favorite = true,
+  compact = true,
+  landscape = false,
+  panels = [panel(song('a'))],
+} = {}) {
   const source = reactive({
     song: panels[0]!.song,
     panels,
@@ -38,7 +43,7 @@ function mountPanels({ favorite = true, compact = true, panels = [panel(song('a'
     toggleFavorite: vi.fn(),
   })
   const wrapper = mount(NowPlayingTrackPanels, {
-    props: { compact },
+    props: { compact, landscape },
     global: { plugins: [vuetify, i18n], provide: { [nowPlayingSourceKey]: source } },
   })
   return { wrapper, source }
@@ -70,6 +75,14 @@ describe("Now Playing's heart", () => {
       false,
     )
     expect(mountPanels({ compact: false }).wrapper.find('.now-playing__favorite').exists()).toBe(
+      false,
+    )
+  })
+
+  /** Sideways is the car mount: a tap meant for the controls beside it
+   * should not change the library. */
+  it('is left out on a phone held sideways', () => {
+    expect(mountPanels({ landscape: true }).wrapper.find('.now-playing__favorite').exists()).toBe(
       false,
     )
   })
