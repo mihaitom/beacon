@@ -7,10 +7,12 @@ from dataclasses import dataclass
 
 logger = logging.getLogger("delivery")
 
-# Sent by connect when it fetches /stream itself on a target's behalf, with
-# that target's name URL-quoted: every such request comes from connect's own
-# address, so the address cannot say which target it is for.
-STREAM_SENDER_HEADER = "x-beacon-sender"
+# The query parameter naming the target on a /stream URL connect fetches
+# itself on that target's behalf (AirPlay): every such request comes from
+# connect's own address, so the address cannot say which target it is for.
+# A parameter rather than a header, because on some paths pyatv fetches the
+# URL itself and sends no header of ours.
+STREAM_SENDER_PARAM = "sender"
 
 
 @dataclass(frozen=True)
@@ -45,7 +47,7 @@ class BaseDelivery(ABC):
     # it - how the stream diagnostics tell apart the connections of several
     # targets cast to at once (core/stream_diagnostics.py). None before the
     # first play(), and for AirPlay, which connect fetches for itself and
-    # names in STREAM_SENDER_HEADER instead.
+    # names in STREAM_SENDER_PARAM instead.
     stream_peer: str | None = None
 
     # Highest sample rate (Hz) / bit depth this device class is known to

@@ -24,6 +24,7 @@ from soco.exceptions import SoCoUPnPException
 import delivery.chromecast as _chromecast_mod
 import delivery.dlna as _dlna_mod
 import delivery.sonos as _sonos_mod
+from core.local_address import get_local_ip
 from core.mix_output import encoder_cmd
 from core.state import ctx
 from core.streamer import resolve_mix_format
@@ -772,6 +773,30 @@ def test_airplay_play_streams_radio_url_directly():
     # from at all — the station name is all the device would otherwise get.
     assert kwargs["metadata"].title == "Title"
     assert kwargs["metadata"].artist == "Artist"
+
+
+def test_airplay_names_itself_on_its_own_stream_even_where_pyatv_fetches_it():
+    """A speaker joining a cast already playing is handed /stream with no
+    duration, which pyatv then fetches itself, sending nothing of ours.
+    Named on the URL, so the stream diagnostics still put that connection
+    under this speaker instead of under connect's own address."""
+    d = AirPlayDelivery("Living Room")
+    atv = MagicMock()
+    atv.stream.stream_file = AsyncMock()
+    atv.close.return_value = []
+    own = f"http://{get_local_ip()}:9181/stream/session123.mp3"
+
+    async def run():
+        with (
+            patch.object(AirPlayDelivery, "_find_device", new=AsyncMock(return_value=MagicMock())),
+            patch("pyatv.connect", new=AsyncMock(return_value=atv)),
+        ):
+            await d.play(own, "Connect")
+            await d._stream_task
+
+    asyncio.run(run())
+    handed_over = atv.stream.stream_file.call_args[0][0]
+    assert handed_over == f"{own}?sender=Living+Room"
 
 
 class _FakeStreamResponse:

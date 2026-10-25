@@ -2,12 +2,14 @@
 
 import asyncio
 import logging
-from urllib.parse import quote
+from urllib.parse import urlencode, urlsplit, urlunsplit
 
 import httpx
 
+from core.local_address import get_local_ip, on_default_address
+
 from . import credentials as creds_store
-from .base import STREAM_SENDER_HEADER, BaseDelivery
+from .base import STREAM_SENDER_PARAM, BaseDelivery
 from .errors import DeviceNotFoundError
 from .lazy_import import import_in_thread
 
@@ -100,6 +102,18 @@ async def _aclose_quietly(closeable) -> None:
         await closeable.aclose()
     except (httpx.HTTPError, RuntimeError) as e:
         logger.debug(f"[AirPlay] Ignoring error while closing stream: {e}")
+
+
+def _naming_sender(url: str, target: str) -> str:
+    """`url` with `target` named on it when it is connect's own /stream, for
+    the stream diagnostics to tell two AirPlay targets' fetches apart. A
+    station's URL is left exactly as it is."""
+    parts = urlsplit(url)
+    own = urlsplit(on_default_address(url)).hostname == get_local_ip()
+    if not own or not parts.path.startswith("/stream"):
+        return url
+    named = urlencode({STREAM_SENDER_PARAM: target})
+    return urlunsplit(parts._replace(query=f"{parts.query}&{named}" if parts.query else named))
 
 
 class _ResponseReader:
@@ -316,6 +330,7 @@ class AirPlayDelivery(BaseDelivery):
         # rather than being told.
         pyatv = await import_in_thread("pyatv")
         MediaMetadata = (await import_in_thread("pyatv.interface")).MediaMetadata
+        stream_url = _naming_sender(stream_url, self.target)
 
         # Told to the device explicitly rather than left for pyatv to read
         # out of the stream. Two reasons it cannot be left to the stream:
@@ -382,9 +397,7 @@ class AirPlayDelivery(BaseDelivery):
                     # `async with` would tear the stream down before a note
                     # played. Both are closed in the finally instead.
                     http = httpx.AsyncClient(follow_redirects=True, timeout=600.0)
-                    sender = {STREAM_SENDER_HEADER: quote(self.target)}
-                    request = http.build_request("GET", stream_url, headers=sender)
-                    resp = await http.send(request, stream=True)
+                    resp = await http.send(http.build_request("GET", stream_url), stream=True)
                     resp.raise_for_status()
                     logger.info(
                         f"[AirPlay:{self.target}] ▶ {title}"

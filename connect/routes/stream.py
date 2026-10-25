@@ -7,7 +7,6 @@ import re
 import time
 from collections.abc import AsyncGenerator
 from dataclasses import dataclass
-from urllib.parse import unquote
 
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import Response, StreamingResponse
@@ -48,7 +47,7 @@ from core.streamer import (
     stream_tracks,
     strip_stream_extension,
 )
-from delivery.base import STREAM_SENDER_HEADER
+from delivery.base import STREAM_SENDER_PARAM
 from delivery.errors import source_error_response
 from delivery.sonos import model_in_user_agent
 
@@ -605,10 +604,9 @@ async def resume_interrupted(session: SessionState = Depends(get_session)):
 def _requested_by(request: Request) -> dict:
     """Who opened a /stream request, for the stream diagnostics to put it
     under its target."""
-    sender = request.headers.get(STREAM_SENDER_HEADER)
     return {
         "peer": request.client.host if request.client else None,
-        "sender": unquote(sender) if sender else None,
+        "sender": request.query_params.get(STREAM_SENDER_PARAM),
     }
 
 

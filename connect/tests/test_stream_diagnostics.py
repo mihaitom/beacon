@@ -318,10 +318,10 @@ def test_a_request_from_an_address_no_target_has_is_listed_on_its_own(client, de
 def test_the_route_puts_connect_s_own_fetch_under_the_airplay_target_it_names(
     client, default_session
 ):
-    """Every AirPlay fetch comes from connect's own address; the name it
-    sends along is what tells two AirPlay targets apart."""
+    """Every AirPlay fetch comes from connect's own address; the name on the
+    URL is what tells two AirPlay targets apart."""
     _cast_to_three(default_session)
-    client.head(f"/stream/{default_session.session_id}", headers={"X-Beacon-Sender": "Den"})
+    client.head(f"/stream/{default_session.session_id}.mp3?sender=Den")
 
     described = client.get("/stream-diagnostics").json()
 

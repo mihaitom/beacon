@@ -55,7 +55,15 @@ async def _real_stream(*args, **kwargs):
 def _device_request() -> Request:
     """What a speaker's GET /stream looks like to audio_stream() when it is
     called directly rather than through the test client."""
-    return Request({"type": "http", "method": "GET", "headers": [], "client": ("10.0.0.5", 1400)})
+    return Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "headers": [],
+            "query_string": b"",
+            "client": ("10.0.0.5", 1400),
+        }
+    )
 
 
 def _drain(q) -> list:
