@@ -129,6 +129,7 @@ export default {
     layoutGrid: 'As a grid',
     layout: 'Layout',
     sortBy: 'Sort by',
+    albumColumnType: 'Type',
     albumSort: {
       name: 'Name',
       artist: 'Artist',

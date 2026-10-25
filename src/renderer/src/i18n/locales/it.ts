@@ -129,6 +129,7 @@ export default {
     layoutGrid: 'A griglia',
     layout: 'Vista',
     sortBy: 'Ordina per',
+    albumColumnType: 'Tipo',
     albumSort: {
       name: 'Nome',
       artist: 'Artista',

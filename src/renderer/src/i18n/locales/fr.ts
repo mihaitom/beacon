@@ -131,6 +131,7 @@ export default {
     layoutGrid: 'En grille',
     layout: 'Affichage',
     sortBy: 'Trier par',
+    albumColumnType: 'Type',
     albumSort: {
       name: 'Nom',
       artist: 'Artiste',

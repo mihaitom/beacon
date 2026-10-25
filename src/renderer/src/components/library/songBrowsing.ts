@@ -12,6 +12,10 @@ import {
   type SongSortKey,
 } from '@/services/library/songBrowse'
 import type { FilterField, LibraryFilters } from '@/services/library/libraryFilter'
+import { readBooleanPreference, writeBooleanPreference } from '@/services/booleanPreference'
+
+/** Tiles or rows, remembered across visits like the album list's toggle. */
+const GRID_VIEW_KEY = 'beacon.songsGridView'
 
 let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -34,6 +38,7 @@ export const songBrowsingMixin = defineComponent({
       // the list is still arriving (see tableSort).
       sortPicked: false,
       filters: {} as LibraryFilters,
+      gridView: readBooleanPreference(GRID_VIEW_KEY),
       /** Fields a page has no use for: every song of a genre has the same
        * genre. */
       excludedFilterFields: [] as FilterField[],
@@ -115,6 +120,12 @@ export const songBrowsingMixin = defineComponent({
         key: this.sort.key,
         direction: this.sort.direction === 'asc' ? 'desc' : 'asc',
       })
+    },
+    setGridView(grid: boolean) {
+      this.gridView = grid
+      writeBooleanPreference(GRID_VIEW_KEY, grid)
+      // The same offset lands somewhere else entirely in the other layout.
+      window.scrollTo({ top: 0 })
     },
     applySort(sort: SongSort) {
       this.byRelevance = false

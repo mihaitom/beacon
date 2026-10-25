@@ -93,7 +93,6 @@
         v-if="listView && !libraryStore.loading && filteredAlbums.length"
         :columns="listColumns"
         :template="listTemplate"
-        :narrow-template="listNarrowTemplate"
         :sort-key="sort.key"
         :direction="sort.direction"
         :style="{ '--sticky-header-offset': `${stickyHeaderHeight}px` }"
@@ -121,7 +120,12 @@
           <div v-if="startsLetterSection(index)" class="letter-divider" aria-hidden="true">
             <span class="letter-divider__label">{{ sectionLabel(letterAt(index)) }}</span>
           </div>
-          <album-card :data-album-index="index" :album="album" :row="listView" />
+          <album-card
+            :data-album-index="index"
+            :album="album"
+            :row="listView"
+            :columns="listView ? albumColumns : null"
+          />
         </template>
       </div>
       <!-- Past ALBUM_VIRTUALIZE_THRESHOLD, chunk the (already fully-loaded)
@@ -176,6 +180,7 @@
               :data-album-index="row.startIndex + column"
               :album="album"
               :row="listView"
+              :columns="listView ? albumColumns : null"
             />
           </div>
         </template>
@@ -236,6 +241,11 @@ import {
   type FilterFieldDef,
   type LibraryFilters,
 } from '@/services/library/libraryFilter'
+import {
+  albumColumnTemplate,
+  albumColumnsFor,
+  type AlbumColumn,
+} from '@/services/library/albumColumns'
 import LibraryFilterMenu from '@/components/library/LibraryFilterMenu.vue'
 import LibraryListHeader, {
   type ListHeaderColumn,
@@ -424,44 +434,26 @@ export default {
     rated(): boolean {
       return useAuthStore().capabilities.personalRating
     },
-    // The list form's columns, as AlbumCard.vue lays out a row.
+    // The list form's columns at this width - AlbumCard.vue draws its row
+    // from the same list (see albumColumns.ts).
+    albumColumns(): AlbumColumn[] {
+      return albumColumnsFor(this.gridWidth, this.rated)
+    },
     listColumns(): ListHeaderColumn[] {
-      const columns: ListHeaderColumn[] = [
-        { key: 'cover', label: '' },
-        {
-          key: 'name',
-          label: `${this.$t('library.album')} · ${this.$t('library.artist')}`,
-          sortKeys: ['name', 'artist'],
-        },
-        { key: 'year', label: this.$t('library.year'), align: 'end', sortKeys: ['year'] },
-        { key: 'songs', label: this.$t('library.songs'), align: 'end', sortKeys: ['songCount'] },
-        {
-          key: 'duration',
-          label: this.$t('library.duration'),
-          align: 'end',
-          sortKeys: ['duration'],
-        },
-      ]
-      if (this.rated) {
-        columns.push({
-          key: 'rating',
-          label: this.$t('library.rating'),
-          align: 'end',
-          sortKeys: ['rating'],
-          dropNarrow: true,
-        })
-      }
-      columns.push({ key: 'star', label: '' })
-      return columns
+      return this.albumColumns.map((column) => ({
+        key: column.key,
+        label:
+          column.key === 'name'
+            ? `${this.$t('library.album')} · ${this.$t('library.artist')}`
+            : column.labelKey
+              ? this.$t(column.labelKey)
+              : '',
+        align: column.align,
+        sortKeys: column.sortKeys,
+      }))
     },
-    // AlbumCard.vue's .album-card--row and .album-card--rated.
     listTemplate(): string {
-      return this.rated
-        ? '44px minmax(0, 1fr) 56px 88px 64px 112px 40px'
-        : '44px minmax(0, 1fr) 56px 88px 64px 40px'
-    },
-    listNarrowTemplate(): string {
-      return '44px minmax(0, 1fr) 56px 88px 64px 40px'
+      return albumColumnTemplate(this.albumColumns)
     },
     // From the whole sorted list, not the filtered one: a filter greys
     // sections out (availableLetters) rather than taking them off the bar.
@@ -723,7 +715,6 @@ export default {
   flex-direction: column;
   flex-wrap: nowrap;
   gap: 0;
-  container: album-list / inline-size;
 }
 
 .album-grid--list .album-card {

@@ -4,7 +4,9 @@
 //
 // The stars sit in a fixed column between the figures and the heart: too
 // narrow a column and the fifth star runs under the heart. And in a narrow
-// list they are the column that gives way, so the name keeps its room.
+// list they are the column that gives way, so the name keeps its room - the
+// artist row by its own container query, the album row by the columns
+// AlbumsView.vue hands it for the list's width (albumColumns.ts).
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { page } from 'vitest/browser'
 import { mount, type VueWrapper } from '@vue/test-utils'
@@ -18,6 +20,7 @@ import '@mdi/font/css/materialdesignicons.css'
 import { i18n } from '@/i18n'
 import AlbumCard from '../AlbumCard.vue'
 import ArtistCard from '../ArtistCard.vue'
+import { albumColumnsFor } from '@/services/library/albumColumns'
 
 const vuetify = createVuetify({ components, directives })
 const wrappers: VueWrapper[] = []
@@ -49,7 +52,8 @@ const artist = {
 }
 
 /** One row inside a list of the given width, declared the container its
- * view declares (AlbumsView.vue's/ArtistsView.vue's .*-grid--list). */
+ * view declares (ArtistsView.vue's .artist-grid--list), and given the
+ * columns AlbumsView.vue picks for that width. */
 async function mountRow(kind: 'album' | 'artist', width: number) {
   const router = createRouter({
     history: createMemoryHistory(),
@@ -64,7 +68,7 @@ async function mountRow(kind: 'album' | 'artist', width: number) {
   const wrapper =
     kind === 'album'
       ? mount(AlbumCard, {
-          props: { album, row: true },
+          props: { album, row: true, columns: albumColumnsFor(width, true) },
           attachTo: list,
           global: { plugins: [vuetify, i18n, router], stubs: { CoverArt: true } },
         })
@@ -114,7 +118,8 @@ describe.each(['album', 'artist'] as const)('the %s row stars', (kind) => {
 
     await mountRow(kind, 560)
 
-    expect(rect(`.${kind}-row__rating`).width).toBe(0)
+    const rating = document.querySelector(`.${kind}-row__rating`)
+    expect(rating?.getBoundingClientRect().width ?? 0).toBe(0)
     expect(rect(`.${kind}-row__name`).width).toBeGreaterThan(150)
   })
 })

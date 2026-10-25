@@ -133,6 +133,7 @@ export default {
     layoutGrid: 'En cuadrícula',
     layout: 'Vista',
     sortBy: 'Ordenar por',
+    albumColumnType: 'Tipo',
     albumSort: {
       name: 'Nombre',
       artist: 'Artista',

@@ -1,6 +1,7 @@
 <template>
   <div class="song-table" :class="{ 'song-table--with-alphabet-bar': showAlphabetBar }">
     <song-table-header
+      v-if="!grid"
       :class="{ 'song-table-header--sticky': stickyHeader }"
       :columns="fittedColumns"
       :configurable="!columns"
@@ -97,6 +98,43 @@
      - views box the table into a fixed-height scroll area of its own, the
      - whole page scrolls, so this rides that scroll parent
      - (document.documentElement) instead. -->
+    <!-- The grid form (SongsView's grid/list toggle): SongCard tiles, the
+     - same sections as the list. Past the virtualize threshold the tiles
+     - are chunked into rows that never span two sections, the way
+     - AlbumsView.vue does it, so each row's heading sits at its top. -->
+    <template v-else-if="grid">
+      <v-virtual-scroll
+        v-if="virtualizeSongs"
+        ref="virtualScroll"
+        renderless
+        :items="gridRows"
+        :item-height="gridRowHeight"
+      >
+        <template #default="{ item: row, index }">
+          <div class="song-grid" :style="{ paddingTop: index === 0 ? '0px' : `${gridGap}px` }">
+            <div v-if="startsSection(row.startIndex)" class="letter-divider">
+              <span class="letter-divider__label">{{
+                sectionLabel(sectionAt(row.startIndex))
+              }}</span>
+            </div>
+            <song-card
+              v-for="(song, column) in row.items"
+              :key="`${song.id}-${row.startIndex + column}`"
+              :data-song-index="row.startIndex + column"
+              :song="song"
+            />
+          </div>
+        </template>
+      </v-virtual-scroll>
+      <div v-else class="song-grid">
+        <template v-for="(song, index) in visibleSongs" :key="`${song.id}-${index}`">
+          <div v-if="startsSection(index)" class="letter-divider">
+            <span class="letter-divider__label">{{ sectionLabel(sectionAt(index)) }}</span>
+          </div>
+          <song-card :data-song-index="index" :song="song" />
+        </template>
+      </div>
+    </template>
     <v-virtual-scroll
       v-else-if="virtualizeSongs"
       ref="virtualScroll"
@@ -213,6 +251,7 @@ import SongRow from './SongRow.vue'
 import SongTableHeader from './SongTableHeader.vue'
 import CreatePlaylistDialog from './CreatePlaylistDialog.vue'
 import AlphabetIndexBar from './AlphabetIndexBar.vue'
+import SongCard from './SongCard.vue'
 import InfiniteScrollTrigger from '@/components/InfiniteScrollTrigger.vue'
 import { useSongColumnsStore } from '@/stores/songColumns'
 import { useAuthStore } from '@/stores/auth'
@@ -254,10 +293,25 @@ const SONG_VIRTUALIZE_THRESHOLD = 500
 // PAGE_SIZE (60), a reasonable "more screens than you'd want to scroll by
 // hand" cutoff for 48px-tall rows too.
 const ALPHABET_BAR_MIN_SONGS = 60
+// SongCard.vue's tile width and the gap between tiles - the same pair as
+// AlbumsView.vue's ALBUM_ITEM_WIDTH/ALBUM_GAP, as the tiles are the same size.
+const GRID_ITEM_WIDTH = 160
+const GRID_GAP = 20
+// Seed for v-virtual-scroll's row height in the grid: cover, title and artist
+// line. It measures each row itself after the first paint.
+const SONG_GRID_ROW_HEIGHT = 210
+
+/** One v-virtual-scroll item in the grid: a row of tiles that never spans
+ * two sections. */
+interface SongGridRow {
+  items: Song[]
+  startIndex: number
+}
 
 export default {
   name: 'SongTable',
   components: {
+    SongCard,
     SongRow,
     SongTableHeader,
     AlphabetIndexBar,
@@ -305,6 +359,8 @@ export default {
     // runs through, the way the album and artist lists do, and gives the
     // index bar the same sections.
     sectioned: { type: Boolean, default: false },
+    // Tiles instead of rows - for a page that offers both (SongsView).
+    grid: { type: Boolean, default: false },
     // Whether clicking a song queues the rest of this list too (true,
     // default) or just that one song (false).
     //
@@ -357,6 +413,8 @@ export default {
   emits: ['reorder', 'remove', 'update:sort'],
   data() {
     return {
+      gridGap: GRID_GAP,
+      gridRowHeight: SONG_GRID_ROW_HEIGHT,
       // The table's own width, for fittedColumns; 0 until mounted.
       tableWidth: 0,
       resizeObserver: null as ResizeObserver | null,
@@ -481,6 +539,28 @@ export default {
     barSections(): string[] | null {
       if (!this.sectioned || !this.activeSort) return null
       return sectionsFor(this.sortedSongs, this.activeSort)
+    },
+    gridColumns(): number {
+      if (this.tableWidth <= 0) return 1
+      return Math.max(1, Math.floor((this.tableWidth + GRID_GAP) / (GRID_ITEM_WIDTH + GRID_GAP)))
+    },
+    gridRows(): SongGridRow[] {
+      if (!this.grid || !this.virtualizeSongs) return []
+      const rows: SongGridRow[] = []
+      let start = 0
+      while (start < this.sortedSongs.length) {
+        let end = start + 1
+        while (
+          end < this.sortedSongs.length &&
+          end - start < this.gridColumns &&
+          !this.startsSection(end)
+        ) {
+          end++
+        }
+        rows.push({ items: this.sortedSongs.slice(start, end), startIndex: start })
+        start = end
+      }
+      return rows
     },
     /** What v-virtual-scroll walks: the rows, with a heading item before
      * each section's first one. */
@@ -652,6 +732,16 @@ export default {
       // Immediate feedback while the jump is still animating; the scroll
       // listener then takes over.
       this.activeLetter = letter
+      if (this.virtualizeSongs && this.grid) {
+        const row = this.gridRows.findIndex(
+          (candidate) =>
+            index >= candidate.startIndex && index < candidate.startIndex + candidate.items.length,
+        )
+        const virtualScroll = this.$refs.virtualScroll as
+          { scrollToIndex: (i: number) => void } | undefined
+        if (row >= 0) virtualScroll?.scrollToIndex(row)
+        return
+      }
       if (this.virtualizeSongs) {
         const virtualScroll = this.$refs.virtualScroll as
           { scrollToIndex: (i: number) => void } | undefined
@@ -969,6 +1059,14 @@ export default {
  * the page. */
 .song-table {
   overflow-x: clip;
+}
+
+/* A wrapping row of tiles, a section's heading forcing a new line (see
+ * .letter-divider in base.css). */
+.song-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
 }
 
 /* Padding rather than margin: v-virtual-scroll measures each item's own

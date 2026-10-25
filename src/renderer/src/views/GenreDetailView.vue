@@ -48,6 +48,16 @@
           <template #append-inner><exact-match-switch /></template>
         </v-text-field>
         <div class="genre-controls">
+          <v-btn-toggle
+            :model-value="gridView ? 'grid' : 'list'"
+            mandatory
+            class="beacon-view-toggle"
+            :aria-label="$t('library.layout')"
+            @update:model-value="setGridView($event === 'grid')"
+          >
+            <v-btn value="grid" icon="mdi-view-grid-outline" :title="$t('library.layoutGrid')" />
+            <v-btn value="list" icon="mdi-view-list" :title="$t('library.layoutList')" />
+          </v-btn-toggle>
           <library-filter-menu v-model="filters" :items="songs" :fields="filterFields" />
           <library-sort-select
             :model-value="sortValue"
@@ -70,6 +80,7 @@
         :queue-whole-list="false"
         :sort="tableSort"
         sectioned
+        :grid="gridView"
         sticky-header
         :style="{ '--sticky-header-offset': `${stickyHeaderHeight}px` }"
         :exclude-columns="['genre']"

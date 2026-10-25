@@ -3,9 +3,9 @@
     class="album-card"
     :class="{
       'album-card--row': row,
-      'album-card--rated': row && authStore.capabilities.personalRating,
       'album-card--tile': tile,
     }"
+    :style="row ? { gridTemplateColumns: rowTemplate } : undefined"
     @click="onCardClick"
     @contextmenu.prevent="openMenu"
   >
@@ -53,47 +53,55 @@
       />
     </template>
     <template v-else-if="row">
-      <cover-art :cover-art-id="album.coverArtId" :size="44" class="album-row__cover" />
-      <div class="album-row__text">
-        <div class="album-row__name text-body-medium" :title="album.name">{{ album.name }}</div>
-        <router-link
-          v-if="album.artistId"
-          :to="`/artists/${album.artistId}`"
-          class="album-row__artist text-body-small text-medium-emphasis"
-          @click.stop
-        >
-          {{ album.artist }}
-        </router-link>
-        <div v-else class="album-row__artist text-body-small text-medium-emphasis">
-          {{ album.artist }}
+      <template v-for="column in rowColumns" :key="column.key">
+        <cover-art
+          v-if="column.key === 'cover'"
+          :cover-art-id="album.coverArtId"
+          :size="44"
+          class="album-row__cover"
+        />
+        <div v-else-if="column.key === 'name'" class="album-row__text">
+          <div class="album-row__name text-body-medium" :title="album.name">{{ album.name }}</div>
+          <router-link
+            v-if="album.artistId"
+            :to="`/artists/${album.artistId}`"
+            class="album-row__artist text-body-small text-medium-emphasis"
+            @click.stop
+          >
+            {{ album.artist }}
+          </router-link>
+          <div v-else class="album-row__artist text-body-small text-medium-emphasis">
+            {{ album.artist }}
+          </div>
         </div>
-      </div>
-      <span class="album-row__figure text-body-small text-medium-emphasis">{{
-        album.year ?? ''
-      }}</span>
-      <span class="album-row__figure text-body-small text-medium-emphasis">{{
-        $t('library.songCount', { count: $n(album.songCount) })
-      }}</span>
-      <span class="album-row__figure text-body-small text-medium-emphasis">{{
-        durationLabel
-      }}</span>
-      <rating-stars
-        v-if="authStore.capabilities.personalRating"
-        :item="album"
-        class="album-row__rating"
-        :class="{ 'album-row__rating--set': album.rating > 0 }"
-      />
-      <v-btn
-        v-if="authStore.capabilities.favorites"
-        :icon="album.starred ? 'mdi-heart' : 'mdi-heart-outline'"
-        :color="album.starred ? 'primary' : undefined"
-        size="small"
-        variant="text"
-        class="album-row__star"
-        :class="{ 'album-row__star--visible': album.starred }"
-        :title="$t(album.starred ? 'library.unstar' : 'library.star')"
-        @click.stop="toggleStar"
-      />
+        <rating-stars
+          v-else-if="column.key === 'rating'"
+          :item="album"
+          class="album-row__rating"
+          :class="{ 'album-row__rating--set': album.rating > 0 }"
+        />
+        <template v-else-if="column.key === 'star'">
+          <v-btn
+            v-if="authStore.capabilities.favorites"
+            :icon="album.starred ? 'mdi-heart' : 'mdi-heart-outline'"
+            :color="album.starred ? 'primary' : undefined"
+            size="small"
+            variant="text"
+            class="album-row__star"
+            :class="{ 'album-row__star--visible': album.starred }"
+            :title="$t(album.starred ? 'library.unstar' : 'library.star')"
+            @click.stop="toggleStar"
+          />
+          <span v-else />
+        </template>
+        <span
+          v-else
+          class="album-row__figure text-body-small text-medium-emphasis"
+          :class="{ 'album-row__figure--start': column.align === 'start' }"
+          :title="cellText(column.key)"
+          >{{ cellText(column.key) }}</span
+        >
+      </template>
     </template>
     <template v-else>
       <div class="album-card-cover" @click="playOnClick && onCoverClick()">
@@ -192,8 +200,20 @@ import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
 import { emitter } from '@/emitter'
-import { formatDuration } from '@/services/library/songFormat'
+import type { PropType } from 'vue'
+import { formatDate, formatDuration } from '@/services/library/songFormat'
+import { filterOptionLabel } from '@/services/library/libraryFilter'
+import {
+  albumColumnTemplate,
+  albumColumnsFor,
+  type AlbumColumn,
+  type AlbumColumnKey,
+} from '@/services/library/albumColumns'
 import type { Album, Song } from '@/types/library'
+
+/** The columns a row draws when its list does not say: the set a list of
+ * ordinary width shows. */
+const DEFAULT_LIST_WIDTH = 640
 
 export default {
   name: 'AlbumCard',
@@ -226,6 +246,12 @@ export default {
       type: Boolean,
       default: false,
     },
+    // Which of the list's columns this line draws - the list picks them by
+    // its width (see albumColumns.ts).
+    columns: {
+      type: Array as PropType<AlbumColumn[] | null>,
+      default: null,
+    },
     // A small wide tile - cover beside the name - for Home's recently
     // played grid. The whole tile plays, since that grid is there to get
     // back into something; the name still leads to the album.
@@ -238,11 +264,38 @@ export default {
     authStore() {
       return useAuthStore()
     },
-    durationLabel(): string {
-      return formatDuration(this.album.duration) ?? ''
+    rowColumns(): AlbumColumn[] {
+      return (
+        this.columns ??
+        albumColumnsFor(DEFAULT_LIST_WIDTH, this.authStore.capabilities.personalRating)
+      )
+    },
+    rowTemplate(): string {
+      return albumColumnTemplate(this.rowColumns)
     },
   },
   methods: {
+    cellText(key: AlbumColumnKey): string {
+      const album = this.album
+      switch (key) {
+        case 'genre':
+          return album.genre ?? ''
+        case 'releaseType':
+          return album.releaseTypes?.length
+            ? filterOptionLabel('releaseType', album.releaseTypes[0]!, this.$t)
+            : ''
+        case 'year':
+          return album.year ? String(album.year) : ''
+        case 'songCount':
+          return this.$t('library.songCount', { count: this.$n(album.songCount) })
+        case 'duration':
+          return formatDuration(album.duration) ?? ''
+        case 'added':
+          return formatDate(album.created, this.$i18n.locale) ?? ''
+        default:
+          return ''
+      }
+    },
     onCardClick(): void {
       if (this.tile) void this.onCoverClick()
       else if (!this.playOnClick) void this.$router.push(`/albums/${this.album.id}`)
@@ -333,37 +386,17 @@ export default {
 }
 
 /* Cover, name over artist, then the figures in fixed columns so they line
- * up down the list, and the heart. Right-aligned figures are tabular, or
- * the column wobbles as it scrolls (see docs/styleguide.md). */
+ * up down the list, and the heart - which columns, and how wide, comes from
+ * albumColumns.ts. Right-aligned figures are tabular, or the column wobbles
+ * as it scrolls (see docs/styleguide.md). */
 .album-card--row {
   width: 100%;
   height: 56px;
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr) 56px 88px 64px 40px;
   align-items: center;
   gap: 16px;
   padding: 0 8px;
   border-radius: 8px;
-}
-
-/* The stars' column, between the figures and the heart - where the song
- * table has its rating too. */
-.album-card--rated {
-  grid-template-columns: 44px minmax(0, 1fr) 56px 88px 64px 112px 40px;
-}
-
-/* Too narrow for all of it, the stars go first: the name is what the row
- * is for, and the menu still rates. The container is the list itself
- * (AlbumsView.vue's .album-grid--list), not the window, whose width says
- * nothing about how much the sidebar and the alphabet bar leave. */
-@container album-list (max-width: 640px) {
-  .album-card--rated {
-    grid-template-columns: 44px minmax(0, 1fr) 56px 88px 64px 40px;
-  }
-
-  .album-row__rating {
-    display: none;
-  }
 }
 
 .album-card--row:hover {
@@ -396,9 +429,15 @@ export default {
 }
 
 .album-row__figure {
+  overflow: hidden;
   text-align: right;
+  text-overflow: ellipsis;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.album-row__figure--start {
+  text-align: left;
 }
 
 /* Shown once set, or on hover like the heart: an unrated library would
