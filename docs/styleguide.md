@@ -724,6 +724,21 @@ inputs.
 - **A name that is edited in place** wears the title's own type
   (`.detail-title`) and shows it is a field only on hover and focus.
 
+## Debug overlays
+
+What Now Playing shows at log level Debug - the visualizer's sync readout
+and the cast stream per speaker - sits in `DebugPanel.vue`, with its readings
+laid out by `DebugReadings.vue`. A new diagnostic goes into the same frame
+rather than getting a look of its own.
+
+- **Dark whatever the theme.** It floats over the artwork, never over the
+  page, so it is the one place a literal near-black is right. The state
+  colours inside it are still the theme's (`success`, `warning`, `error`).
+- **English, not translated.** It is for whoever is chasing a fault, not
+  for listeners.
+- **Every panel can copy its reading** as one timestamped snapshot, and the
+  legend, where there is one, starts folded away.
+
 ## Motion
 
 Two speeds carry almost everything, and a new component should reach for one

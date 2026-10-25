@@ -253,7 +253,8 @@ class SonosDelivery(BaseDelivery):
         # duration accepted for interface parity with BaseDelivery.play() but
         # deliberately unused: see the DIDL metadata below.
         device = await asyncio.to_thread(self._get_device)
-        stream_url = for_device(stream_url, device.ip_address)
+        self.stream_peer = device.ip_address
+        stream_url = for_device(stream_url, self.stream_peer)
         await self._subscribe_to_events(device)
 
         # Leave any existing group so we play on this specific device

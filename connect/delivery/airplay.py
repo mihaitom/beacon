@@ -2,11 +2,12 @@
 
 import asyncio
 import logging
+from urllib.parse import quote
 
 import httpx
 
 from . import credentials as creds_store
-from .base import BaseDelivery
+from .base import STREAM_SENDER_HEADER, BaseDelivery
 from .errors import DeviceNotFoundError
 from .lazy_import import import_in_thread
 
@@ -381,7 +382,9 @@ class AirPlayDelivery(BaseDelivery):
                     # `async with` would tear the stream down before a note
                     # played. Both are closed in the finally instead.
                     http = httpx.AsyncClient(follow_redirects=True, timeout=600.0)
-                    resp = await http.send(http.build_request("GET", stream_url), stream=True)
+                    sender = {STREAM_SENDER_HEADER: quote(self.target)}
+                    request = http.build_request("GET", stream_url, headers=sender)
+                    resp = await http.send(request, stream=True)
                     resp.raise_for_status()
                     logger.info(
                         f"[AirPlay:{self.target}] ▶ {title}"

@@ -2198,7 +2198,7 @@ def test_resync_position_once_keeps_the_reading_for_the_stream_diagnostics(defau
     with patch.object(target, "get_position", new=AsyncMock(return_value=10.2)):
         asyncio.run(_resync_position_once(default_session, target, 0))
 
-    generation, at, position = default_session.state.device_reading
+    generation, at, position, _ = default_session.state.device_reading
     assert (generation, position) == (0, 10.2)
     assert at == pytest.approx(time.time(), abs=1.0)
 

@@ -45,11 +45,14 @@ class StreamConnection:
     last_handoff: float = field(default_factory=time.monotonic)
     bytes_delivered: int = 0
     # For Now Playing's stream diagnostics (core/stream_diagnostics.py):
-    # where in the track this connection starts, the Sonos model taking it,
-    # and ffmpeg's latest count of what it has written, in seconds of audio
-    # and bytes.
+    # where in the track this connection starts, who opened it (its address,
+    # and the target connect named when it fetched on one's behalf), the
+    # Sonos model taking it, and ffmpeg's latest count of what it has
+    # written, in seconds of audio and bytes.
     generation: int = 0
     start: float = 0.0
+    peer: str | None = None
+    sender: str | None = None
     model: str | None = None
     audio_written: float | None = None
     bytes_written: int = 0
@@ -176,10 +179,13 @@ class AppState:
         self.sent_audio_end: tuple[int, float] | None = None
         # What devices asked /stream for lately, and the last position one
         # reported as (play_generation, when, seconds since its stream
-        # began) - read by core/stream_diagnostics.py only.
-        self.stream_requests: deque[dict] = deque(maxlen=12)
-        self.recent_streams: deque[StreamConnection] = deque(maxlen=4)
-        self.device_reading: tuple[int, float, float] | None = None
+        # began, which target) - read by core/stream_diagnostics.py only.
+        # Sized for several targets at once: each of them asks and connects
+        # on its own, and one seek with four of them already turns over
+        # eight connections.
+        self.stream_requests: deque[dict] = deque(maxlen=48)
+        self.recent_streams: deque[StreamConnection] = deque(maxlen=16)
+        self.device_reading: tuple[int, float, float, str] | None = None
         # The listener's standing quality ceiling for this cast, as last set
         # by a /play (see routes/playback.py's PlayRequest). Held on the
         # session rather than only per request because auto-advance

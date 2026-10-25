@@ -314,7 +314,8 @@ class ChromecastDelivery(BaseDelivery):
         import pychromecast
 
         cast = await asyncio.to_thread(self._get_device)
-        stream_url = for_device(stream_url, cast.cast_info.host)
+        self.stream_peer = cast.cast_info.host
+        stream_url = for_device(stream_url, self.stream_peer)
         # Some receivers (e.g. Google TV's own home-screen "Media Player")
         # already declare support for the media namespace while running a
         # non-default app, so play_media() below would send LOAD there

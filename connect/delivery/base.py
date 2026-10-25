@@ -7,6 +7,11 @@ from dataclasses import dataclass
 
 logger = logging.getLogger("delivery")
 
+# Sent by connect when it fetches /stream itself on a target's behalf, with
+# that target's name URL-quoted: every such request comes from connect's own
+# address, so the address cannot say which target it is for.
+STREAM_SENDER_HEADER = "x-beacon-sender"
+
 
 @dataclass(frozen=True)
 class PlaybackFailure:
@@ -35,6 +40,13 @@ class BaseDelivery(ABC):
     # AirPlayDelivery.get_position()). Both are better than a constant,
     # which is all this flag claims.
     SUPPORTS_POSITION: bool = False
+
+    # The address this target fetches /stream from, as play() last resolved
+    # it - how the stream diagnostics tell apart the connections of several
+    # targets cast to at once (core/stream_diagnostics.py). None before the
+    # first play(), and for AirPlay, which connect fetches for itself and
+    # names in STREAM_SENDER_HEADER instead.
+    stream_peer: str | None = None
 
     # Highest sample rate (Hz) / bit depth this device class is known to
     # accept for a stream-copied or lossless-reencoded source — read by

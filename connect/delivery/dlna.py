@@ -256,7 +256,8 @@ class DlnaDelivery(BaseDelivery):
         content_type: str = "audio/mpeg",
     ) -> None:
         device = await self._get_device_or_evict()
-        stream_url = for_device(stream_url, urlsplit(device.profile_device.device_url).hostname)
+        self.stream_peer = urlsplit(device.profile_device.device_url).hostname
+        stream_url = for_device(stream_url, self.stream_peer)
         # Built ourselves rather than via DmrDevice.construct_play_media_metadata()
         # — that helper auto-detects a DIDL-Lite class from the stream's
         # Content-Type via MIME_TO_UPNP_CLASS_MAPPING, which only has a coarse

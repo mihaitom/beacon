@@ -55,7 +55,7 @@ class DeliveryManager:
     ) -> None:
         if not self.deliveries:
             return
-        sonos = [d for d in self.deliveries if isinstance(d, SonosDelivery)]
+        sonos = self._sonos()
         others = [d for d in self.deliveries if not isinstance(d, SonosDelivery)]
 
         tasks = []
@@ -129,6 +129,18 @@ class DeliveryManager:
         await deliveries[0].play(
             stream_url, title, artist, album_art_url, duration, album, content_type
         )
+
+    def _sonos(self) -> list[SonosDelivery]:
+        return [d for d in self.deliveries if isinstance(d, SonosDelivery)]
+
+    def coordinator_of(self, delivery: BaseDelivery) -> SonosDelivery | None:
+        """The Sonos that `delivery` follows in play()'s group - the first one,
+        and the only one handed the stream - or None for a target that
+        fetches the stream itself."""
+        sonos = self._sonos()
+        if len(sonos) > 1 and delivery in sonos[1:]:
+            return sonos[0]
+        return None
 
     async def pause(self) -> None:
         await asyncio.gather(*[d.pause() for d in self.deliveries], return_exceptions=True)

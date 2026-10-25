@@ -1,6 +1,6 @@
 import { fetchConnect } from './http'
 
-// How the cast stream reaches its device right now - connect's
+// How the cast stream reaches each of its devices right now - connect's
 // core/stream_diagnostics.py, shown by CastStreamDebugOverlay.vue while the
 // log level is DEBUG. Seconds and ages are as connect measured them at the
 // moment it answered.
@@ -20,15 +20,6 @@ export interface StreamConnectionInfo {
   audio_end: number | null
 }
 
-export interface StreamTargetInfo {
-  type: string
-  name: string
-  state: string | null
-  state_age: number | null
-  problem: string | null
-  problem_age: number | null
-}
-
 export interface StreamRequestInfo {
   ago: number
   method: string
@@ -39,15 +30,30 @@ export interface StreamRequestInfo {
   answer: string | null
 }
 
-export interface StreamDiagnostics {
-  position: number | null
-  track_end: number | null
-  connections: StreamConnectionInfo[]
+export interface StreamTargetInfo {
+  /** null for an address that asked for the stream but is no target. */
+  type: string | null
+  name: string
+  /** The Sonos this one plays through as a group follower. */
+  follows: string | null
+  state: string | null
+  state_age: number | null
+  problem: string | null
+  problem_age: number | null
+  /** Its newest connection, preferring one of the stream now playing. */
+  connection: StreamConnectionInfo | null
+  /** Only for the one target whose position is read. */
   device: { position: number; age: number } | null
   /** Seconds of audio sent beyond where the device is now. */
   ahead: number | null
-  targets: StreamTargetInfo[]
+  /** Newest first. */
   requests: StreamRequestInfo[]
+}
+
+export interface StreamDiagnostics {
+  position: number | null
+  track_end: number | null
+  targets: StreamTargetInfo[]
 }
 
 export async function getStreamDiagnostics(): Promise<StreamDiagnostics> {

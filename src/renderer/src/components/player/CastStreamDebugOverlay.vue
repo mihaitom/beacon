@@ -1,75 +1,75 @@
 <template>
-  <div v-if="active && info" class="stream-debug-overlay">
-    <button
-      type="button"
-      class="stream-debug-overlay__action"
-      :aria-expanded="showLegend"
-      :title="showLegend ? 'Hide what these mean' : 'What do these mean?'"
-      @click="showLegend = !showLegend"
+  <DebugPanel
+    v-if="active && info"
+    class="stream-debug-overlay"
+    title="Cast stream"
+    :meta="meta"
+    :copy-text="readingText"
+  >
+    <section
+      v-for="speaker in speakers"
+      :key="speaker.name"
+      class="stream-debug-overlay__speaker"
+      :class="`stream-debug-overlay__speaker--${speaker.tone}`"
     >
-      {{ showLegend ? '×' : '?' }}
-    </button>
-    <!-- Copied as one timestamped snapshot for the same reason as the
-     - visualizer overlay's: the numbers change every two seconds, and a
-     - pasted reading is lined up against connect's log by its time. -->
-    <button
-      type="button"
-      class="stream-debug-overlay__action"
-      :title="copied ? 'Copied' : 'Copy this reading'"
-      @click="copyReading"
-    >
-      {{ copied ? '✓' : '⧉' }}
-    </button>
-    <div
-      v-for="line in lines"
-      :key="line.label"
-      :class="line.tone ? `stream-debug-overlay__line--${line.tone}` : null"
-    >
-      {{ line.label }}: {{ line.value }}
-    </div>
+      <div class="stream-debug-overlay__speaker-head">
+        <span class="stream-debug-overlay__dot" aria-hidden="true" />
+        <span class="stream-debug-overlay__name">{{ speaker.name }}</span>
+        <span class="stream-debug-overlay__kind">{{ speaker.kind }}</span>
+        <span v-if="speaker.state" class="stream-debug-overlay__state">{{ speaker.state }}</span>
+      </div>
+      <DebugReadings :rows="speaker.rows" />
+    </section>
 
-    <dl v-if="showLegend" class="stream-debug-overlay__legend">
-      <dt>Stream</dt>
+    <template #legend>
+      <dt>Speakers</dt>
       <dd>
-        The speaker and what kind it is — for a Sonos its model number and, for an older one, how it
-        gets a song (Settings → Advanced).
+        One block per speaker cast to, each with its own connection: the dot is red when it has a
+        problem or stopped reading, amber when its buffer runs low. A block marked
+        <code>not a target</code> is an address that asked for the stream without being one - a
+        speaker playing on from its own app, say.
       </dd>
       <dt>Sent</dt>
       <dd>
-        What the speaker has taken from the newest connection, and how far into the song that
-        reaches. <em>done</em> = the whole song went out.
+        What the speaker has taken from its newest connection, and how far into the song that
+        reaches. <code>done</code> = the whole song went out.
       </dd>
       <dt>Read</dt>
       <dd>
         How fast it is taking more, and when it last did. Red: the connection is open but it has
-        stopped reading — the speaker will play out what it has and stop there. An AirPlay speaker
+        stopped reading - the speaker will play out what it has and stop there. An AirPlay speaker
         is sent the song by connect itself, so here this is connect's own sender.
       </dd>
+      <dt>Via</dt>
+      <dd>A Sonos grouped with another plays through that one and opens no connection itself.</dd>
       <dt>Device</dt>
       <dd>
-        Where the speaker last said it was, and its last reported state. AirPlay reports neither:
-        its position is what has gone out, less the fixed delay AirPlay plays behind by.
+        Where the speaker last said it was. Only one speaker is asked, so the others show none.
+        AirPlay reports no position of its own: its is what has gone out, less the fixed delay
+        AirPlay plays behind by.
       </dd>
       <dt>Ahead</dt>
       <dd>Seconds of song it has beyond that: its buffer. Red under 5s.</dd>
       <dt>Asked</dt>
       <dd>
-        What it asked for lately. A <em>HEAD</em> comes shortly before it runs out; a
-        <em>range</em> is it fetching a part of a file; <em>→ 204</em> or <em>→ 416</em> is a
-        request turned away.
+        What it asked for lately. A <code>HEAD</code> comes shortly before it runs out; a
+        <code>range</code> is it fetching a part of a file; <code>→ 204</code> or
+        <code>→ 416</code> is a request turned away.
       </dd>
-    </dl>
-  </div>
+    </template>
+  </DebugPanel>
 </template>
 
 <script lang="ts">
 import { getLogLevel } from '@/services/connect/logLevel'
 import {
   getStreamDiagnostics,
-  type StreamConnectionInfo,
   type StreamDiagnostics,
+  type StreamTargetInfo,
 } from '@/services/connect/streamDiagnostics'
 import { usePlaybackStore } from '@/stores/playback'
+import DebugPanel from './DebugPanel.vue'
+import DebugReadings, { readingsText, type DebugReading } from './DebugReadings.vue'
 
 // How often connect is asked - often enough to watch a read rate and a
 // buffer move, and the same cadence ffmpeg reports its progress at.
@@ -78,103 +78,49 @@ const POLL_MS = 2000
 // open has stopped reading; one that is merely full reads a block every few
 // seconds as it plays (measured on a Play:3, #56).
 const STALLED_SECONDS = 10
+const AHEAD_BAD_SECONDS = 5
+const AHEAD_LOW_SECONDS = 20
 
-interface Line {
-  label: string
-  value: string
-  tone?: 'bad' | 'warn' | 'good'
+interface Speaker {
+  name: string
+  kind: string
+  state: string | null
+  tone: 'good' | 'warn' | 'bad' | 'idle'
+  rows: DebugReading[]
 }
 
 /**
- * How the cast stream reaches its speaker right now (#56): what it was sent,
- * whether it is still reading, its buffer, and what it asked for. Only while
- * casting with connect's log level at DEBUG or TRACE, like the visualizer
- * overlay beside it, and like that one not translated: a diagnostic for
- * whoever is chasing a speaker that stops, not user-facing copy.
+ * How the cast stream reaches each speaker right now (#56): what it was
+ * sent, whether it is still reading, its buffer, and what it asked for -
+ * one block per speaker, since cast to several at once every one of them
+ * fetches on its own and one can stall while the rest play on. Only while
+ * casting with connect's log level at DEBUG or TRACE.
  */
 export default {
   name: 'CastStreamDebugOverlay',
+  components: { DebugPanel, DebugReadings },
   data() {
     return {
       enabled: false,
       info: null as StreamDiagnostics | null,
       pollTimer: undefined as ReturnType<typeof setInterval> | undefined,
-      // The previous reading of the newest connection, for its read rate.
-      sample: null as { key: number; bytes: number; at: number } | null,
-      readRate: null as number | null,
-      showLegend: false,
-      copied: false,
-      copiedTimer: undefined as ReturnType<typeof setTimeout> | undefined,
+      // Each speaker's previous reading of its connection, for its read rate.
+      samples: {} as Record<string, { key: number; bytes: number; at: number }>,
+      readRates: {} as Record<string, number>,
     }
   },
   computed: {
     active(): boolean {
       return this.enabled && usePlaybackStore().isCasting
     },
-    connection(): StreamConnectionInfo | null {
-      const connections = this.info?.connections ?? []
-      return connections.find((c) => c.current) ?? connections[0] ?? null
-    },
-    lines(): Line[] {
+    meta(): string | null {
       const info = this.info
-      if (!info) return []
-      const lines: Line[] = []
-      const target = info.targets[0]
-      const conn = this.connection
-      const name = target ? target.name : 'nothing'
-      const kind = conn?.model ?? target?.type
-      lines.push({ label: 'Stream', value: `${name}${kind ? ` · ${kind}` : ''}` })
-      if (conn) {
-        const reach = conn.audio_end !== null ? ` · to ${seconds(conn.audio_end)}` : ''
-        const state = conn.open
-          ? 'open'
-          : conn.outcome === 'source finished'
-            ? 'done'
-            : conn.outcome
-        lines.push({ label: 'Sent', value: `${mib(conn.bytes)}${reach} · ${state}` })
-        const stalled = conn.open && conn.last_read > STALLED_SECONDS
-        const rate = this.readRate !== null ? `${Math.round(this.readRate / 1024)} KiB/s · ` : ''
-        lines.push({
-          label: 'Read',
-          value: `${rate}last ${conn.last_read.toFixed(1)}s ago${stalled ? ' · STALLED' : ''}`,
-          tone: stalled ? 'bad' : undefined,
-        })
-      }
-      const position = info.device
-        ? `${seconds(info.device.position)} (${info.device.age.toFixed(0)}s ago)`
-        : '—'
-      // An AirPlay speaker reports no state of its own, so there is none
-      // to show rather than an unknown one.
-      const state = target?.state ? ` · ${target.state}` : ''
-      lines.push({ label: 'Device', value: `${position}${state}` })
-      if (info.ahead !== null) {
-        lines.push({
-          label: 'Ahead',
-          value: seconds(info.ahead),
-          tone: info.ahead < 5 ? 'bad' : info.ahead < 20 ? 'warn' : 'good',
-        })
-      }
-      if (info.track_end !== null) {
-        const now = info.position !== null ? ` · now ${seconds(info.position)}` : ''
-        lines.push({ label: 'Ends at', value: `${seconds(info.track_end)}${now}` })
-      }
-      if (info.requests.length) {
-        const asked = info.requests.slice(0, 3).map((r) => {
-          const range = r.range ? ` ${r.range}` : ''
-          const icy = r.icy ? ` icy-metadata ${r.icy}` : ''
-          const answer = r.answer ? ` → ${r.answer}` : ''
-          return `${r.method}${range}${icy}${answer} ${r.ago.toFixed(0)}s ago`
-        })
-        lines.push({ label: 'Asked', value: asked.join(' · ') })
-      }
-      if (target?.problem && target.problem_age !== null) {
-        lines.push({
-          label: 'Problem',
-          value: `${target.problem} ${target.problem_age.toFixed(0)}s ago`,
-          tone: 'bad',
-        })
-      }
-      return lines
+      if (!info || info.position === null) return null
+      const end = info.track_end !== null ? ` / ${seconds(info.track_end)}` : ''
+      return `${seconds(info.position)}${end}`
+    },
+    speakers(): Speaker[] {
+      return (this.info?.targets ?? []).map((target) => this.describe(target))
     },
   },
   watch: {
@@ -197,9 +143,70 @@ export default {
   },
   beforeUnmount() {
     this.stopPolling()
-    clearTimeout(this.copiedTimer)
   },
   methods: {
+    describe(target: StreamTargetInfo): Speaker {
+      const rows: DebugReading[] = []
+      const conn = target.connection
+      let stalled = false
+      if (target.follows) {
+        rows.push({ label: 'Via', value: target.follows })
+      }
+      if (conn) {
+        const reach = conn.audio_end !== null ? ` · to ${seconds(conn.audio_end)}` : ''
+        const state = conn.open
+          ? 'open'
+          : conn.outcome === 'source finished'
+            ? 'done'
+            : conn.outcome
+        rows.push({ label: 'Sent', value: `${mib(conn.bytes)}${reach} · ${state}` })
+        stalled = conn.open && conn.last_read > STALLED_SECONDS
+        const rate = this.readRates[target.name]
+        const rateText = rate !== undefined ? `${Math.round(rate / 1024)} KiB/s · ` : ''
+        rows.push({
+          label: 'Read',
+          value: `${rateText}last ${conn.last_read.toFixed(1)}s ago${stalled ? ' · STALLED' : ''}`,
+          tone: stalled ? 'bad' : undefined,
+        })
+      }
+      if (target.device) {
+        const { position, age } = target.device
+        rows.push({ label: 'Device', value: `${seconds(position)} (${age.toFixed(0)}s ago)` })
+      }
+      if (target.ahead !== null) {
+        rows.push({
+          label: 'Ahead',
+          value: seconds(target.ahead),
+          tone: aheadTone(target.ahead),
+        })
+      }
+      if (target.requests.length) {
+        const asked = target.requests.map((r) => {
+          const range = r.range ? ` ${r.range}` : ''
+          const icy = r.icy ? ` icy-metadata ${r.icy}` : ''
+          const answer = r.answer ? ` → ${r.answer}` : ''
+          return `${r.method}${range}${icy}${answer} ${r.ago.toFixed(0)}s ago`
+        })
+        rows.push({ label: 'Asked', value: asked.join(' · ') })
+      }
+      if (target.problem && target.problem_age !== null) {
+        rows.push({
+          label: 'Problem',
+          value: `${target.problem} ${target.problem_age.toFixed(0)}s ago`,
+          tone: 'bad',
+        })
+      }
+
+      const kind = target.type === null ? 'not a target' : (conn?.model ?? target.type)
+      const ahead = target.ahead !== null ? aheadTone(target.ahead) : null
+      let tone: Speaker['tone'] = 'idle'
+      if (target.problem || stalled || ahead === 'bad') tone = 'bad'
+      else if (ahead === 'warn' || target.type === null) tone = 'warn'
+      else if (conn?.open || target.follows) tone = 'good'
+      // An AirPlay speaker reports no state of its own, so there is none
+      // to show rather than an unknown one.
+      return { name: target.name, kind, state: target.state, tone, rows }
+    },
     startPolling(): void {
       this.stopPolling()
       void this.poll()
@@ -209,54 +216,52 @@ export default {
       clearInterval(this.pollTimer)
       this.pollTimer = undefined
       this.info = null
-      this.sample = null
-      this.readRate = null
+      this.samples = {}
+      this.readRates = {}
     },
     async poll(): Promise<void> {
       try {
         const info = await getStreamDiagnostics()
         if (!this.pollTimer) return // stopped while this was in flight
         this.info = info
-        this.measureReadRate()
+        this.measureReadRates()
       } catch {
         // The next poll tries again; a missed reading is not worth a word.
       }
     },
-    /** Bytes taken since the last reading of the same connection, which is
-     * recognised by when it opened. */
-    measureReadRate(): void {
-      const conn = this.connection
-      if (!conn) {
-        this.sample = null
-        this.readRate = null
-        return
-      }
+    /** Bytes each speaker took since its last reading of the same
+     * connection, which is recognised by when it opened. */
+    measureReadRates(): void {
       const at = Date.now() / 1000
-      const key = Math.round(at - conn.age)
-      if (this.sample && this.sample.key === key && at > this.sample.at) {
-        this.readRate = (conn.bytes - this.sample.bytes) / (at - this.sample.at)
-      } else {
-        this.readRate = null
+      const samples: typeof this.samples = {}
+      const rates: typeof this.readRates = {}
+      for (const target of this.info?.targets ?? []) {
+        const conn = target.connection
+        if (!conn) continue
+        const key = Math.round(at - conn.age)
+        const before = this.samples[target.name]
+        if (before && before.key === key && at > before.at) {
+          rates[target.name] = (conn.bytes - before.bytes) / (at - before.at)
+        }
+        samples[target.name] = { key, bytes: conn.bytes, at }
       }
-      this.sample = { key, bytes: conn.bytes, at }
+      this.samples = samples
+      this.readRates = rates
     },
     readingText(): string {
-      const at = new Date().toLocaleTimeString()
-      return [`Cast stream @ ${at}`, ...this.lines.map((l) => `${l.label}: ${l.value}`)].join('\n')
-    },
-    async copyReading(): Promise<void> {
-      try {
-        await navigator.clipboard.writeText(this.readingText())
-        clearTimeout(this.copiedTimer)
-        this.copied = true
-        this.copiedTimer = setTimeout(() => {
-          this.copied = false
-        }, 2000)
-      } catch (error) {
-        console.error('[stream-debug] Failed to copy the reading:', error)
+      const lines = this.meta ? [`Track: ${this.meta}`] : []
+      for (const speaker of this.speakers) {
+        const state = speaker.state ? ` · ${speaker.state}` : ''
+        lines.push(`${speaker.name} (${speaker.kind}${state})`, readingsText(speaker.rows, '  '))
       }
+      return lines.join('\n')
     },
   },
+}
+
+function aheadTone(ahead: number): DebugReading['tone'] {
+  if (ahead < AHEAD_BAD_SECONDS) return 'bad'
+  return ahead < AHEAD_LOW_SECONDS ? 'warn' : 'good'
 }
 
 function seconds(value: number): string {
@@ -269,84 +274,60 @@ function mib(bytes: number): string {
 </script>
 
 <style scoped>
-/* The visualizer overlay's look, so the two read as one instrument where
- * they sit stacked in the same corner. */
-.stream-debug-overlay {
-  max-width: 380px;
-  padding: 6px 10px;
-  border-radius: 8px;
-  background: rgba(0, 0, 0, 0.55);
-  color: rgba(255, 255, 255, 0.92);
-  font-family: ui-monospace, 'SF Mono', Consolas, monospace;
-  font-size: 12px;
-  line-height: 1.5;
-  user-select: text;
+.stream-debug-overlay__speaker + .stream-debug-overlay__speaker {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.stream-debug-overlay__action {
-  float: right;
-  margin-left: 10px;
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  border: none;
-  border-radius: 8px;
-  background: rgba(255, 255, 255, 0.12);
-  color: inherit;
-  font: inherit;
-  line-height: 16px;
-  cursor: pointer;
-  transition: background 0.15s ease;
+.stream-debug-overlay__speaker-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 3px;
+  font-size: 12.5px;
 }
 
-.stream-debug-overlay__action:hover {
-  background: rgba(255, 255, 255, 0.22);
+/* The speaker's verdict at a glance, so with four of them the one in
+ * trouble is found before any figure is read. */
+.stream-debug-overlay__dot {
+  flex: none;
+  align-self: center;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.3);
 }
 
-.stream-debug-overlay__line--good {
-  color: rgba(140, 255, 170, 0.95);
+.stream-debug-overlay__speaker--good .stream-debug-overlay__dot {
+  background: rgb(var(--v-theme-success));
 }
 
-.stream-debug-overlay__line--warn {
-  color: rgba(255, 210, 130, 0.95);
+.stream-debug-overlay__speaker--warn .stream-debug-overlay__dot {
+  background: rgb(var(--v-theme-warning));
 }
 
-.stream-debug-overlay__line--bad {
-  color: rgba(255, 120, 120, 0.95);
+.stream-debug-overlay__speaker--bad .stream-debug-overlay__dot {
+  background: rgb(var(--v-theme-error));
+  box-shadow: 0 0 0 3px rgba(var(--v-theme-error), 0.25);
+}
+
+.stream-debug-overlay__name {
   font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.stream-debug-overlay__legend {
-  margin-top: 6px;
-  padding-top: 6px;
-  border-top: 1px solid rgba(255, 255, 255, 0.18);
-  font-family:
-    Inter,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    Roboto,
-    sans-serif;
+.stream-debug-overlay__kind,
+.stream-debug-overlay__state {
+  flex: none;
   font-size: 11px;
-  line-height: 1.45;
-  color: rgba(255, 255, 255, 0.75);
+  color: rgba(255, 255, 255, 0.55);
 }
 
-.stream-debug-overlay__legend dt {
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.92);
-}
-
-.stream-debug-overlay__legend dd {
-  margin: 0 0 6px;
-}
-
-.stream-debug-overlay__legend dd:last-child {
-  margin-bottom: 0;
-}
-
-.stream-debug-overlay__legend em {
-  font-style: normal;
-  color: rgba(140, 255, 170, 0.95);
+.stream-debug-overlay__state {
+  margin-left: auto;
+  font-family: ui-monospace, 'SF Mono', Consolas, monospace;
 }
 </style>
