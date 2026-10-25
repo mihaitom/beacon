@@ -101,12 +101,15 @@ describe('AlbumCard as a list row', () => {
   })
 
   it('opens its menu from the "..." button without opening the album', async () => {
+    // Opening the menu loads the playlists for its submenu.
+    const fetchPlaylists = vi.spyOn(useLibraryStore(), 'fetchPlaylists').mockResolvedValue()
     const { wrapper, router } = await mountCard({ row: true })
 
     await wrapper.find('.album-row__actions [aria-label="More actions"]').trigger('click')
 
     const menu = wrapper.getComponent({ name: 'TileContextMenu' })
     expect((menu.vm as unknown as { menuOpen: boolean }).menuOpen).toBe(true)
+    expect(fetchPlaylists).toHaveBeenCalled()
     expect(router.currentRoute.value.path).toBe('/')
   })
 
