@@ -29,13 +29,13 @@
       </v-btn>
     </header>
 
-    <div class="debug-panel__body">
+    <div class="debug-panel__scroll">
       <slot />
-    </div>
 
-    <dl v-if="showLegend" class="debug-panel__legend">
-      <slot name="legend" />
-    </dl>
+      <dl v-if="showLegend" class="debug-panel__legend">
+        <slot name="legend" />
+      </dl>
+    </div>
   </section>
 </template>
 
@@ -102,7 +102,13 @@ export default {
 /* Dark whatever the theme, on purpose: this sits over the artwork backdrop
  * or the visualizer's bars, never over the app's own surface, so it has to
  * stay readable on any picture rather than blend into a light theme. */
+/* A column that can shrink below its content: where it sits (Now Playing's
+ * debug corner) caps the height, and everything under the head then
+ * scrolls instead of running out of the window. */
 .debug-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   width: max-content;
   min-width: 240px;
   max-width: 340px;
@@ -123,6 +129,7 @@ export default {
 }
 
 .debug-panel__head {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -148,17 +155,14 @@ export default {
   color: rgba(255, 255, 255, 0.7);
 }
 
-/* Several speakers cast to at once stack up; past this the panel scrolls
- * rather than running off the top of the artwork. */
-.debug-panel__body {
-  max-height: min(55vh, 520px);
+.debug-panel__scroll {
   margin-top: 6px;
   padding-right: 6px;
   overflow-y: auto;
 }
 
 .debug-panel__legend {
-  margin: 10px 6px 0 0;
+  margin: 10px 0 0;
   padding-top: 8px;
   border-top: 1px solid rgba(255, 255, 255, 0.12);
   font-size: 11px;

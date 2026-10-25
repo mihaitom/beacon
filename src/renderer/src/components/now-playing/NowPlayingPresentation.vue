@@ -443,16 +443,19 @@ export default {
  * they don't reach into either. Both overlays are v-if'd on their own roots
  * (nothing rendered while there is nothing to show); the column holding
  * them lets clicks through, so it never eats any while empty. Anchored at
- * its bottom, it grows upwards. */
+ * the top and capped at the height there is: an open legend or several
+ * speakers would otherwise grow it out of a small window, so instead the
+ * panels shrink and scroll inside (see DebugPanel). */
 .now-playing__debug {
   position: absolute;
-  bottom: 370px;
+  top: 24px;
   left: 32px;
   z-index: 2;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 8px;
+  max-height: calc(100% - 48px);
   pointer-events: none;
 }
 
@@ -618,13 +621,8 @@ export default {
 }
 
 .now-playing--compact .now-playing__debug {
-  /* bottom: auto is load-bearing, not tidying: the desktop rule above sets
-   * bottom: 370px, and an absolutely positioned box with height: auto and
-   * *both* offsets given gets stretched to span between them. Adding top
-   * alone turned this small badge into a tall dark column of its own
-   * translucent background, straight down the artwork. */
   top: 8px;
-  bottom: auto;
   left: 8px;
+  max-height: calc(100% - 16px);
 }
 </style>
