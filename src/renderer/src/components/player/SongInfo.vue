@@ -38,14 +38,12 @@
           $t('player.nothingPlaying')
         }}
       </div>
-      <router-link
+      <artist-credit
         v-if="currentSong"
-        :to="`/artists/${currentSong.artistId}`"
+        :credit="currentSong.artist"
+        :artist-id="currentSong.artistId"
         class="text-body-small text-medium-emphasis artist-link"
-        @click.stop
-      >
-        {{ currentSong.artist }}
-      </router-link>
+      />
       <!-- Station name, not the ICY tag — swapped with the top label above
        - so the tag (what's actually playing right now) is the prominent
        - one and the station is secondary, same as NowPlayingView.vue's own
@@ -103,10 +101,7 @@
         <template #prepend><v-icon icon="mdi-album" size="small" /></template>
         <v-list-item-title>{{ $t('library.goToAlbum') }}</v-list-item-title>
       </v-list-item>
-      <v-list-item v-if="currentSong.artistId" :to="`/artists/${currentSong.artistId}`">
-        <template #prepend><v-icon icon="mdi-account-music" size="small" /></template>
-        <v-list-item-title>{{ $t('library.goToArtist') }}</v-list-item-title>
-      </v-list-item>
+      <go-to-artist-items :credit="currentSong.artist" :artist-id="currentSong.artistId" />
       <context-menu-section :label="$t('library.menuDetails')" />
       <v-list-item v-if="currentSong.coverArtId" @click="showArtwork">
         <template #prepend><v-icon icon="mdi-image-outline" size="small" /></template>
@@ -129,7 +124,9 @@ import { useLibraryStore } from '@/stores/library'
 import { useAuthStore } from '@/stores/auth'
 import { radioFaviconRequest, type RadioFaviconRequest } from '@/services/connect/radio'
 import { emitter } from '@/emitter'
+import ArtistCredit from '@/components/library/ArtistCredit.vue'
 import CoverArt from '@/components/library/CoverArt.vue'
+import GoToArtistItems from '@/components/library/GoToArtistItems.vue'
 import TileContextMenu from '@/components/library/TileContextMenu.vue'
 import ContextMenuSection from '@/components/library/ContextMenuSection.vue'
 import AddToPlaylistSubmenu from '@/components/library/AddToPlaylistSubmenu.vue'
@@ -140,7 +137,9 @@ import PreviewStatus from './PreviewStatus.vue'
 export default {
   name: 'SongInfo',
   components: {
+    ArtistCredit,
     CoverArt,
+    GoToArtistItems,
     PreviewStatus,
     TileContextMenu,
     ContextMenuSection,
@@ -292,18 +291,13 @@ export default {
   flex-shrink: 0;
 }
 
-/* Block, not the anchor's default inline — the ellipsis rule on
+/* Block, not ArtistCredit's own inline — the ellipsis rule on
  * .song-info__labels' children needs a constrained box to truncate
  * against, which an inline element sitting in normal block flow doesn't
  * have here (this row isn't itself a flex item, see .song-info__labels
  * above it). */
 .artist-link {
   display: block;
-  text-decoration: none;
-}
-
-.artist-link:hover {
-  color: rgb(var(--v-theme-primary));
 }
 
 /* Without min-width: 0, a flex item refuses to shrink below its content's

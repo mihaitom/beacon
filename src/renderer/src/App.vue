@@ -98,6 +98,9 @@ export default {
           // so SongsView's own created() hook calling it again later is a
           // cheap no-op once this has already resolved.
           void useLibraryStore().fetchAllSongs()
+          // The artist list too: it is what splits a song's artist line
+          // into one link per performer (see ArtistCredit.vue).
+          void useLibraryStore().fetchArtists()
         } else {
           connectStore.unsubscribeEvents()
           if (this.$route.name !== 'login') {

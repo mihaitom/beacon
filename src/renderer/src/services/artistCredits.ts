@@ -19,7 +19,8 @@ import type { Artist, Song } from '@/types/library'
  * What joins several performers into one `artist` string.
  *
  * Deliberately not exhaustive. "x" and "with" are left out although both
- * are used that way: "x" matches inside far too much, and an artist named
+ * are used that way: "x" matches inside far too much (the "×" sign is in,
+ * it never appears in a name), and an artist named
  * "With..." is likelier than a page missing one collaboration. Splitting on
  * "," is kept despite names like "Earth, Wind & Fire" because a whole
  * segment still has to match a whole artist name (see creditsArtist), and
@@ -28,7 +29,7 @@ import type { Artist, Song } from '@/types/library'
 // The word forms need the lookahead rather than a closing \b: after the
 // optional dot in "feat." there is no word boundary left to match, and
 // without it "ftw" would split as if it were a credit.
-const PARTICIPANT_SEPARATOR = /\s*(?:&|;|\/|\+|,|\b(?:featuring|feat|ft|vs)\.?(?=\s))\s*/i
+const PARTICIPANT_SEPARATOR = /\s*(?:&|;|\/|\+|,|×|\b(?:featuring|feat|ft|vs)\.?(?=\s))\s*/i
 
 /** Case and surrounding space are never the difference between two artists. */
 function normalize(name: string): string {
@@ -80,4 +81,77 @@ export function creditsArtist(song: Song, artist: Artist): boolean {
 /** The lookup key for an artist in a tally built out of creditedNames(). */
 export function artistNameKey(name: string): string {
   return normalize(name)
+}
+
+/** One piece of a credit as shown: an artist to link to, or text to leave as
+ * it is (`id` null). */
+export interface CreditPart {
+  name: string
+  id: string | null
+}
+
+/**
+ * A credit taken apart for display, each performer on their own.
+ *
+ * Splitting alone cannot tell "The Magician feat. Years & Years" from three
+ * artists, so a performer only stands alone once the library knows them:
+ * adjacent pieces are first rejoined into the longest run that names a known
+ * artist ("Years" + "Years"), and whatever names no one stays as written,
+ * separators included - an "Earth, Wind & Fire" the library has never heard
+ * of comes back whole rather than in three. A credit with nothing known in
+ * it is returned unchanged, so a library not loaded yet costs nothing.
+ *
+ * The whole credit being an artist itself settles nothing: Navidrome makes
+ * one out of "A & B feat. C" when the tags name them in a single string. It
+ * only wins when none of its pieces is known - "Simon & Garfunkel".
+ *
+ * `idByName` is keyed by artistNameKey(). `fallbackId` is the server's own
+ * artistId, used when the credit stays one piece.
+ */
+export function splitCredit(
+  credit: string,
+  idByName: ReadonlyMap<string, string>,
+  fallbackId: string | null = null,
+): CreditPart[] {
+  const whole = credit.trim()
+  const single = (): CreditPart[] => [
+    { name: whole, id: idByName.get(normalize(whole)) ?? (fallbackId || null) },
+  ]
+  if (!whole) return single()
+
+  // split() with a capture group interleaves names and separators, so name
+  // n sits at 2n and a run of names keeps its own separators when rejoined.
+  const pieces = whole.split(new RegExp(`(${PARTICIPANT_SEPARATOR.source})`, 'i'))
+  const nameCount = (pieces.length + 1) / 2
+  const join = (from: number, to: number): string =>
+    pieces
+      .slice(2 * from, 2 * to + 1)
+      .join('')
+      .trim()
+
+  const parts: CreditPart[] = []
+  let unknownFrom = -1
+  const flushUnknown = (to: number): void => {
+    if (unknownFrom < 0) return
+    const text = join(unknownFrom, to)
+    if (text) parts.push({ name: text, id: null })
+    unknownFrom = -1
+  }
+  for (let from = 0; from < nameCount;) {
+    // The whole credit is single()'s to give, after every split has failed.
+    let to = from === 0 ? nameCount - 2 : nameCount - 1
+    while (to >= from && !idByName.has(normalize(join(from, to)))) to--
+    if (to < from) {
+      if (unknownFrom < 0) unknownFrom = from
+      from++
+      continue
+    }
+    flushUnknown(from - 1)
+    const name = join(from, to)
+    parts.push({ name, id: idByName.get(normalize(name))! })
+    from = to + 1
+  }
+  flushUnknown(nameCount - 1)
+
+  return parts.some((part) => part.id) ? parts : single()
 }

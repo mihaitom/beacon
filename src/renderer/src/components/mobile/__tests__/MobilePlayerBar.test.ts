@@ -48,7 +48,7 @@ function playRadio() {
 
 /** The two stacked labels, top (title) first. */
 function labels(wrapper: Awaited<ReturnType<typeof mountBar>>) {
-  return wrapper.findAll('.mobile-player-bar__labels > div').map((el) => el.text())
+  return wrapper.findAll('.mobile-player-bar__labels > *').map((el) => el.text())
 }
 
 describe('MobilePlayerBar', () => {

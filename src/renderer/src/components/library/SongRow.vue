@@ -69,13 +69,11 @@
         <div class="text-body-medium" :class="{ 'text-primary': isCurrentSong }">
           {{ song.title }}
         </div>
-        <router-link
-          :to="`/artists/${song.artistId}`"
+        <artist-credit
+          :credit="song.artist"
+          :artist-id="song.artistId"
           class="song-artist-link text-body-small text-medium-emphasis"
-          @click.stop
-        >
-          {{ song.artist }}
-        </router-link>
+        />
       </div>
 
       <div
@@ -239,10 +237,7 @@
         <template #prepend><v-icon icon="mdi-album" size="small" /></template>
         <v-list-item-title>{{ $t('library.goToAlbum') }}</v-list-item-title>
       </v-list-item>
-      <v-list-item v-if="song.artistId" :to="`/artists/${song.artistId}`">
-        <template #prepend><v-icon icon="mdi-account-music" size="small" /></template>
-        <v-list-item-title>{{ $t('library.goToArtist') }}</v-list-item-title>
-      </v-list-item>
+      <go-to-artist-items :credit="song.artist" :artist-id="song.artistId" />
 
       <!-- Last, and in a section of their own: these two are the only
          - entries that open a dialog rather than acting on the queue or
@@ -269,7 +264,9 @@
 </template>
 
 <script lang="ts">
+import ArtistCredit from './ArtistCredit.vue'
 import CoverArt from './CoverArt.vue'
+import GoToArtistItems from './GoToArtistItems.vue'
 import TileContextMenu from './TileContextMenu.vue'
 import ContextMenuSection from './ContextMenuSection.vue'
 import AddToPlaylistSubmenu from './AddToPlaylistSubmenu.vue'
@@ -284,7 +281,9 @@ import type { Song } from '@/types/library'
 export default {
   name: 'SongRow',
   components: {
+    ArtistCredit,
     CoverArt,
+    GoToArtistItems,
     TileContextMenu,
     ContextMenuSection,
     AddToPlaylistSubmenu,
@@ -628,10 +627,6 @@ export default {
   text-decoration: none;
   width: fit-content;
   max-width: 100%;
-}
-
-.song-artist-link:hover {
-  color: rgb(var(--v-theme-primary));
 }
 
 .song-col--actions,

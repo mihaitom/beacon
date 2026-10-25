@@ -1,4 +1,5 @@
 import { computed, markRaw, reactive } from 'vue'
+import ArtistCredit from '@/components/library/ArtistCredit.vue'
 import CoverArt from '@/components/library/CoverArt.vue'
 import RadioTitleLog from '@/components/radio/RadioTitleLog.vue'
 import LyricsCandidateList from '@/components/lyrics/LyricsCandidateList.vue'
@@ -180,6 +181,7 @@ export function hostNowPlayingSource(api: HostNowPlayingApi): NowPlayingSource {
     lyricsCandidateComponent: markRaw(LyricsCandidateList),
     debugOverlayComponent: markRaw(VisualizerDebugOverlay),
     streamDebugComponent: markRaw(CastStreamDebugOverlay),
+    artistCreditComponent: markRaw(ArtistCredit),
     ui: reactive({
       lyricsOpen: computed(() => api.showLyrics),
       showVisualizer: computed(() => api.showVisualizer),

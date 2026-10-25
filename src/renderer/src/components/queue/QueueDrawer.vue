@@ -296,10 +296,11 @@
             <template #prepend><v-icon icon="mdi-album" size="small" /></template>
             <v-list-item-title>{{ $t('library.goToAlbum') }}</v-list-item-title>
           </v-list-item>
-          <v-list-item v-if="menuSong?.artistId" :to="`/artists/${menuSong.artistId}`">
-            <template #prepend><v-icon icon="mdi-account-music" size="small" /></template>
-            <v-list-item-title>{{ $t('library.goToArtist') }}</v-list-item-title>
-          </v-list-item>
+          <go-to-artist-items
+            v-if="menuSong"
+            :credit="menuSong.artist"
+            :artist-id="menuSong.artistId"
+          />
         </template>
 
         <context-menu-section :label="$t('library.menuDetails')" />
@@ -324,6 +325,7 @@ import { useDrawersStore } from '@/stores/drawers'
 import { useLibraryStore } from '@/stores/library'
 import { markRaw } from 'vue'
 import { EdgeScroller } from '@/services/edgeScroll'
+import GoToArtistItems from '@/components/library/GoToArtistItems.vue'
 import QueueRow, { type QueueDragState } from './QueueRow.vue'
 import TileContextMenu from '@/components/library/TileContextMenu.vue'
 import ContextMenuSection from '@/components/library/ContextMenuSection.vue'
@@ -436,6 +438,7 @@ export default {
   name: 'QueueDrawer',
   components: {
     EmptyState,
+    GoToArtistItems,
     QueueRow,
     TileContextMenu,
     ContextMenuSection,

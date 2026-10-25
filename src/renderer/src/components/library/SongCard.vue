@@ -18,17 +18,11 @@
         <div class="song-card-row__title text-body-medium" :title="song.title">
           {{ song.title }}
         </div>
-        <router-link
-          v-if="song.artistId"
-          :to="`/artists/${song.artistId}`"
+        <artist-credit
+          :credit="song.artist"
+          :artist-id="song.artistId"
           class="song-card-artist text-body-small text-medium-emphasis"
-          @click.stop
-        >
-          {{ song.artist }}
-        </router-link>
-        <div v-else class="song-card-artist text-body-small text-medium-emphasis">
-          {{ song.artist }}
-        </div>
+        />
       </div>
       <span class="song-card-row__figure text-body-small text-medium-emphasis">
         <slot name="figure" />
@@ -71,16 +65,11 @@
         {{ song.title }}
       </router-link>
       <div v-else class="song-card-title text-body-medium">{{ song.title }}</div>
-      <router-link
-        v-if="song.artistId"
-        :to="`/artists/${song.artistId}`"
+      <artist-credit
+        :credit="song.artist"
+        :artist-id="song.artistId"
         class="song-card-artist text-body-small text-medium-emphasis"
-      >
-        {{ song.artist }}
-      </router-link>
-      <div v-else class="song-card-artist text-body-small text-medium-emphasis">
-        {{ song.artist }}
-      </div>
+      />
     </template>
     <!-- SongRow.vue's menu for one song, minus what only a table has
      - (selection, removing from a playlist). -->
@@ -110,10 +99,7 @@
         <template #prepend><v-icon icon="mdi-album" size="small" /></template>
         <v-list-item-title>{{ $t('library.goToAlbum') }}</v-list-item-title>
       </v-list-item>
-      <v-list-item v-if="song.artistId" :to="`/artists/${song.artistId}`">
-        <template #prepend><v-icon icon="mdi-account-music" size="small" /></template>
-        <v-list-item-title>{{ $t('library.goToArtist') }}</v-list-item-title>
-      </v-list-item>
+      <go-to-artist-items :credit="song.artist" :artist-id="song.artistId" />
       <context-menu-section :label="$t('library.menuDetails')" />
       <v-list-item v-if="song.coverArtId" @click="showArtwork">
         <template #prepend><v-icon icon="mdi-image-outline" size="small" /></template>
@@ -129,7 +115,9 @@
 </template>
 
 <script lang="ts">
+import ArtistCredit from './ArtistCredit.vue'
 import CoverArt from './CoverArt.vue'
+import GoToArtistItems from './GoToArtistItems.vue'
 import TileContextMenu from './TileContextMenu.vue'
 import ContextMenuSection from './ContextMenuSection.vue'
 import AddToPlaylistSubmenu from './AddToPlaylistSubmenu.vue'
@@ -144,7 +132,9 @@ import type { Song } from '@/types/library'
 export default {
   name: 'SongCard',
   components: {
+    ArtistCredit,
     CoverArt,
+    GoToArtistItems,
     TileContextMenu,
     ContextMenuSection,
     AddToPlaylistSubmenu,
@@ -315,11 +305,6 @@ export default {
   width: fit-content;
   max-width: 100%;
   text-decoration: none;
-}
-
-a.song-card-artist:hover {
-  color: rgb(var(--v-theme-primary));
-  text-decoration: underline;
 }
 
 .song-card-title,

@@ -404,6 +404,7 @@ export function useGuestNowPlayingSource(
     lyricsCandidateComponent: null,
     debugOverlayComponent: null,
     streamDebugComponent: null,
+    artistCreditComponent: null,
     ui: reactive({
       lyricsOpen: computed(() => showLyrics.value),
       showVisualizer: computed(() => showVisualizer.value),

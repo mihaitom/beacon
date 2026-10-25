@@ -69,15 +69,16 @@
             <next-up-transition-label v-if="panel.transition" :transition="panel.transition" />
           </div>
           <h1 class="detail-title now-playing__title">{{ panel.title }}</h1>
-          <!-- Each shell to its own artist page, like the album line below;
+          <!-- Each shell to its own artist pages, like the album line below;
            - a party guest gets the plain line, having no library at all. -->
-          <router-link
-            v-if="panel.song && source.capabilities.artistLinks"
-            :to="compact ? `/m/artists/${panel.song.artistId}` : `/artists/${panel.song.artistId}`"
+          <component
+            :is="source.artistCreditComponent"
+            v-if="panel.song && source.capabilities.artistLinks && source.artistCreditComponent"
+            :credit="panel.song.artist"
+            :artist-id="panel.song.artistId"
+            :mobile="compact"
             class="text-title-large text-medium-emphasis now-playing__artist-link"
-          >
-            {{ panel.song.artist }}
-          </router-link>
+          />
           <div
             v-else-if="panel.song"
             class="text-title-large text-medium-emphasis now-playing__artist-label"
@@ -459,7 +460,7 @@ export default {
  * number: the parent's artSize measures this block's height. */
 .now-playing__info .now-playing__artist-label {
   font-size: var(--now-playing-artist-size);
-  /* Block, not the anchor's default inline — inline elements ignore
+  /* Block, not ArtistCredit's own inline — inline elements ignore
    * vertical margin and this also keeps the centered text-align behaving
    * exactly like the plain <div> this replaced. */
   display: block;
@@ -480,7 +481,6 @@ export default {
   overflow-wrap: break-word;
 }
 
-.now-playing__artist-link:hover,
 .now-playing__album-link:hover {
   color: rgb(var(--v-theme-primary));
 }

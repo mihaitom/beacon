@@ -13,7 +13,12 @@
       <div class="text-body-medium" :class="{ 'text-primary': isCurrentSong }">
         {{ song.title }}
       </div>
-      <div class="text-body-small text-medium-emphasis">{{ song.artist }}</div>
+      <artist-credit
+        :credit="song.artist"
+        :artist-id="song.artistId"
+        :linked="false"
+        class="text-body-small text-medium-emphasis"
+      />
     </div>
     <!-- The favourite toggle is in the song's actions behind this button
      - rather than a second button on every row. -->
@@ -28,13 +33,14 @@
 </template>
 
 <script lang="ts">
+import ArtistCredit from '@/components/library/ArtistCredit.vue'
 import CoverArt from '@/components/library/CoverArt.vue'
 import { MOBILE_ROW_ART_SIZE } from './rowMetrics'
 import { usePlaybackStore } from '@/stores/playback'
 
 export default {
   name: 'MobileSongRow',
-  components: { CoverArt },
+  components: { ArtistCredit, CoverArt },
   data() {
     return { MOBILE_ROW_ART_SIZE }
   },

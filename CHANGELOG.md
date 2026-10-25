@@ -20,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Home is tidier and quicker: recently played albums are two rows of small tiles, the most played songs a chart counted across your whole library, and the Frequently played shelf is gone. Coming back shows the page straight away while it refreshes, and Discover keeps its picks until you shuffle them
 - Now Playing on a phone held sideways is made for a car mount: only previous, play/pause and next, larger and further apart, plus the progress bar. Shuffle, repeat, Autoplay, casting, volume and the heart are left out there and stay in the upright view
+- A song by several artists links to each of them on their own, with a middle dot instead of "feat.", "&" or "×", and its menu offers every one of their pages. Names like "Years & Years" stay whole as long as the artist is in your library
 - A DJ mix out of a song that fades out happens before the fade, so the previous song no longer drifts away before the next one has taken over
 - Without an artist background, Now Playing takes its colour from the cover, and clicking the artwork switches between large and small
 - The help has a search across all its pages, a table of contents beside the page and a back button, and is sorted into frequently asked questions, guides and background. "What Beacon can do" is the first entry of the FAQ instead of a dialog and button of its own in Settings

@@ -97,7 +97,7 @@ describe('SongCard', () => {
       const play = vi.spyOn(usePlaybackStore(), 'playSongList').mockResolvedValue()
       const wrapper = mountRow()
 
-      await wrapper.find('a.song-card-artist').trigger('click')
+      await wrapper.find('.song-card-artist a').trigger('click')
 
       expect(play).not.toHaveBeenCalled()
     })

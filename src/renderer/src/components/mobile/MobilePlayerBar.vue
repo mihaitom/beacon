@@ -42,9 +42,16 @@
             : (song?.title ?? $t('player.nothingPlaying'))
         }}
       </div>
-      <div class="text-body-small text-medium-emphasis">
-        {{ isRadio ? (radioMeta.nowPlaying ? radioStationName : '') : (song?.artist ?? '') }}
+      <div v-if="isRadio" class="text-body-small text-medium-emphasis">
+        {{ radioMeta.nowPlaying ? radioStationName : '' }}
       </div>
+      <artist-credit
+        v-else
+        :credit="song?.artist ?? ''"
+        :artist-id="song?.artistId"
+        :linked="false"
+        class="text-body-small text-medium-emphasis"
+      />
     </div>
     <!-- Previous/next flank play the same way every transport row does.
      - Not gated on hasPrevious: at the start of a queue "previous" restarts
@@ -79,11 +86,12 @@ import { usePlaybackStore } from '@/stores/playback'
 import { useRadioMetadataStore } from '@/stores/radioMetadata'
 import { MOBILE_ROW_ART_SIZE } from './rowMetrics'
 import { radioFaviconRequest, type RadioFaviconRequest } from '@/services/connect/radio'
+import ArtistCredit from '@/components/library/ArtistCredit.vue'
 import CoverArt from '@/components/library/CoverArt.vue'
 
 export default {
   name: 'MobilePlayerBar',
-  components: { CoverArt },
+  components: { ArtistCredit, CoverArt },
   data() {
     return { MOBILE_ROW_ART_SIZE }
   },

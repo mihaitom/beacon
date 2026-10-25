@@ -168,6 +168,9 @@ export interface NowPlayingSource {
   /** The cast stream's diagnostics overlay (host only), for the same
    * reason: it polls connect through the app's authenticated client. */
   streamDebugComponent: Component | null
+  /** The artist line split into one link per performer (host only): it
+   * reads the library's artist list. */
+  artistCreditComponent: Component | null
   ui: NowPlayingUi
   /** The corner stack: the current song, then the next one near the end of
    * a track. The source decides when the next one shows. */

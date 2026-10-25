@@ -8,7 +8,12 @@
         <cover-art :cover-art-id="song.coverArtId" :size="40" class="mobile-song-actions__art" />
         <div class="mobile-song-actions__labels">
           <div class="text-body-medium">{{ song.title }}</div>
-          <div class="text-body-small text-medium-emphasis">{{ song.artist }}</div>
+          <artist-credit
+            :credit="song.artist"
+            :artist-id="song.artistId"
+            :linked="false"
+            class="text-body-small text-medium-emphasis"
+          />
         </div>
       </div>
       <!-- Opened on a queue row: what the desktop queue's context menu
@@ -57,9 +62,19 @@
           <template #prepend><v-icon icon="mdi-album" /></template>
           <v-list-item-title>{{ $t('library.goToAlbum') }}</v-list-item-title>
         </v-list-item>
-        <v-list-item v-if="song.artistId" @click="goToArtist">
+        <v-list-item
+          v-for="artist in artistTargets"
+          :key="artist.id!"
+          @click="goToArtist(artist.id!)"
+        >
           <template #prepend><v-icon icon="mdi-account-music" /></template>
-          <v-list-item-title>{{ $t('library.goToArtist') }}</v-list-item-title>
+          <v-list-item-title>
+            {{
+              artistTargets.length > 1
+                ? `${$t('library.goToArtist')}: ${artist.name}`
+                : $t('library.goToArtist')
+            }}
+          </v-list-item-title>
         </v-list-item>
         <v-divider />
         <v-list-item v-if="song.coverArtId" @click="showArtwork">
@@ -130,15 +145,17 @@
 </template>
 
 <script lang="ts">
+import ArtistCredit from '@/components/library/ArtistCredit.vue'
 import CoverArt from '@/components/library/CoverArt.vue'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore, type QueueMoveTarget } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
 import type { Song } from '@/types/library'
+import type { CreditPart } from '@/services/artistCredits'
 
 export default {
   name: 'MobileSongActionSheet',
-  components: { CoverArt },
+  components: { ArtistCredit, CoverArt },
   props: {
     modelValue: {
       type: Boolean,
@@ -170,6 +187,13 @@ export default {
   computed: {
     playbackStore() {
       return usePlaybackStore()
+    },
+    /** Every artist the song credits, as ArtistCredit splits them. */
+    artistTargets(): CreditPart[] {
+      if (!this.song) return []
+      return useLibraryStore()
+        .artistCredit(this.song.artist, this.song.artistId)
+        .filter((part) => part.id)
     },
     libraryStore() {
       return useLibraryStore()
@@ -220,9 +244,7 @@ export default {
       if (!albumId) return
       this.act(() => this.$router.push(`/m/albums/${albumId}`))
     },
-    goToArtist() {
-      const artistId = this.song?.artistId
-      if (!artistId) return
+    goToArtist(artistId: string) {
       this.act(() => this.$router.push(`/m/artists/${artistId}`))
     },
     showArtwork() {

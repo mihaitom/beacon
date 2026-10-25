@@ -34,7 +34,10 @@
           <div class="song-info__heading">
             <div v-if="song.album" class="eyebrow-label song-info__eyebrow">{{ song.album }}</div>
             <h2 class="display-title song-info__title">{{ song.title }}</h2>
-            <p v-if="song.artist" class="song-info__subtitle">{{ song.artist }}</p>
+            <!-- Unlinked: a page opening behind the dialog would go unseen. -->
+            <p v-if="song.artist" class="song-info__subtitle">
+              <artist-credit :credit="song.artist" :artist-id="song.artistId" :linked="false" />
+            </p>
           </div>
         </div>
       </header>
@@ -99,6 +102,7 @@
 // row already has: that model deliberately keeps only what the lists need
 // (see subsonic/types.ts's RawSongDetail), and this is the one place that
 // wants the rest.
+import ArtistCredit from './ArtistCredit.vue'
 import CoverArt from './CoverArt.vue'
 import { emitter } from '@/emitter'
 import { useLibraryStore } from '@/stores/library'
@@ -113,7 +117,7 @@ const CODE_ROWS = new Set(['songInfo.path', 'songInfo.musicBrainzId', 'songInfo.
 
 export default {
   name: 'SongInfoDialog',
-  components: { CoverArt },
+  components: { ArtistCredit, CoverArt },
   data() {
     return {
       visible: false,

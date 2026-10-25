@@ -39,18 +39,9 @@
         {{ song.title }}
       </div>
       <div class="text-body-small text-medium-emphasis queue-row__subtitle">
-        <!-- Not draggable itself, or grabbing the row by its artist would
-           - drag the link instead of the row. -->
-        <router-link
-          v-if="song.artistId"
-          :to="`/artists/${song.artistId}`"
-          draggable="false"
-          class="queue-row__artist queue-row__artist-link"
-          @click.stop
-        >
-          {{ song.artist }}
-        </router-link>
-        <span v-else class="queue-row__artist">{{ song.artist }}</span>
+        <!-- Its links are not draggable, or grabbing the row by its artist
+           - would drag the link instead of the row. -->
+        <artist-credit :credit="song.artist" :artist-id="song.artistId" class="queue-row__artist" />
         <!-- A party guest's wish: who asked for it, so the host can tell
          - their own queue from the guests'. -->
         <span
@@ -79,6 +70,7 @@
 </template>
 
 <script lang="ts">
+import ArtistCredit from '@/components/library/ArtistCredit.vue'
 import CoverArt from '@/components/library/CoverArt.vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { usePartyStore } from '@/stores/party'
@@ -98,7 +90,7 @@ export interface QueueDragState {
 
 export default {
   name: 'QueueRow',
-  components: { CoverArt },
+  components: { ArtistCredit, CoverArt },
   inject: {
     queueDrag: { default: null },
   },
@@ -257,15 +249,6 @@ export default {
 .queue-row__index {
   flex: 0 0 28px;
   text-align: center;
-}
-
-.queue-row__artist-link {
-  color: inherit;
-  text-decoration: none;
-}
-
-.queue-row__artist-link:hover {
-  text-decoration: underline;
 }
 
 /* The cover is an image, which the browser would otherwise drag on its own

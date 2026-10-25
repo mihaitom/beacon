@@ -153,7 +153,7 @@ describe('NowPlayingView', () => {
       const { wrapper } = await mountWithSong()
 
       expect(wrapper.get('.now-playing__title').text()).toBe('Track A')
-      const artistLink = wrapper.get('.now-playing__artist-link')
+      const artistLink = wrapper.get('.now-playing__artist-link a')
       expect(artistLink.text()).toBe('Artist A')
       expect(artistLink.attributes('href')).toBe('/artists/artist-1')
       const albumLink = wrapper.get('.now-playing__album-link')
@@ -762,7 +762,7 @@ describe('NowPlayingView', () => {
 
     it("sends the artist to the mobile shell's own page", async () => {
       const { wrapper } = await mountCompactWithSong()
-      const link = wrapper.get('.now-playing__artist-link')
+      const link = wrapper.get('.now-playing__artist-link a')
 
       expect(link.attributes('href')).toMatch(/^\/m\/artists\//)
       expect(link.text()).toBe('Artist A')

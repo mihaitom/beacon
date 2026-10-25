@@ -13,7 +13,13 @@ import {
   type StoredLibraryField,
 } from '@/services/library/libraryCacheStore'
 import type { Album, Artist, Genre, Playlist, RadioStation, Song } from '@/types/library'
-import { creditedNames, creditsArtist } from '@/services/artistCredits'
+import {
+  artistNameKey,
+  creditedNames,
+  creditsArtist,
+  splitCredit,
+  type CreditPart,
+} from '@/services/artistCredits'
 import { resolveTracks } from '@/services/library/lastfmMatcher'
 import { pickRediscoverSongs } from '@/services/library/rediscover'
 import {
@@ -487,6 +493,18 @@ export const useLibraryStore = defineStore('library', {
         }
       }
       return counts
+    },
+    /** Every artist's id by name, for splitCredit() - how a credit on a
+     * song turns into one link per performer. */
+    artistIdByName(state): Map<string, string> {
+      const ids = new Map<string, string>()
+      for (const artist of state.artists) ids.set(artistNameKey(artist.name), artist.id)
+      return ids
+    },
+    /** A song's artist line split into its performers - splitCredit()
+     * against the loaded artist list. */
+    artistCredit(): (credit: string, artistId?: string | null) => CreditPart[] {
+      return (credit, artistId = null) => splitCredit(credit, this.artistIdByName, artistId)
     },
     /** Home's most played songs, from the catalogue rather than the
      * server. There is no "most played songs" endpoint, and the stand-in

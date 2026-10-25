@@ -71,7 +71,7 @@ describe('SongInfo', () => {
       const { wrapper } = await mountWithSong()
 
       expect(wrapper.text()).toContain('Track A')
-      const artistLink = wrapper.get('.artist-link')
+      const artistLink = wrapper.get('.artist-link a')
       expect(artistLink.text()).toBe('Artist A')
       expect(artistLink.attributes('href')).toBe('/artists/artist-1')
     })

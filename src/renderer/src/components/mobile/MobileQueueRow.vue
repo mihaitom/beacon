@@ -33,7 +33,12 @@
       <div class="text-body-medium" :class="{ 'text-primary': isCurrent }">
         {{ song.title }}
       </div>
-      <div class="text-body-small text-medium-emphasis">{{ song.artist }}</div>
+      <artist-credit
+        :credit="song.artist"
+        :artist-id="song.artistId"
+        :linked="false"
+        class="text-body-small text-medium-emphasis"
+      />
     </div>
     <v-btn
       icon="mdi-close"
@@ -55,6 +60,7 @@
 </template>
 
 <script lang="ts">
+import ArtistCredit from '@/components/library/ArtistCredit.vue'
 import CoverArt from '@/components/library/CoverArt.vue'
 import { MOBILE_ROW_ART_SIZE } from './rowMetrics'
 import { LongPress } from '@/services/longPress'
@@ -63,7 +69,7 @@ import type { Song } from '@/types/library'
 
 export default {
   name: 'MobileQueueRow',
-  components: { CoverArt },
+  components: { ArtistCredit, CoverArt },
   data() {
     return {
       MOBILE_ROW_ART_SIZE,

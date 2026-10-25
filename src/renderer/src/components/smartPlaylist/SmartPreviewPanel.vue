@@ -54,9 +54,13 @@
             </span>
             <span class="smart-preview__song-text">
               <span class="smart-preview__title" :title="song.title">{{ song.title }}</span>
-              <span class="smart-preview__artist text-body-small text-medium-emphasis">
-                {{ song.artist }}
-              </span>
+              <!-- Unlinked: the whole row is a button already. -->
+              <artist-credit
+                :credit="song.artist"
+                :artist-id="song.artistId"
+                :linked="false"
+                class="smart-preview__artist text-body-small text-medium-emphasis"
+              />
             </span>
           </button>
         </li>
@@ -85,6 +89,7 @@
 
 <script lang="ts">
 import type { PropType } from 'vue'
+import ArtistCredit from '@/components/library/ArtistCredit.vue'
 import CoverArt from '@/components/library/CoverArt.vue'
 import { formatTotalDuration } from '@/services/totalDuration'
 import type { Preview } from '@/services/navidrome/preview'
@@ -104,7 +109,7 @@ const MOSAIC_TILES = 6
  */
 export default {
   name: 'SmartPreviewPanel',
-  components: { CoverArt },
+  components: { ArtistCredit, CoverArt },
   props: {
     /** Null while the catalogue is still loading. */
     preview: { type: Object as PropType<Preview | null>, default: null },
