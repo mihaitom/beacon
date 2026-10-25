@@ -223,17 +223,19 @@ import {
   type SongColumnKey,
 } from '@/services/library/songColumns'
 import {
-  filterOptionLabel,
-  filterOptionShortLabel,
   isRangeSectioned,
   sectionFn,
   sectionsFor,
   sortSongs,
   UNKNOWN_YEAR_SECTION,
-  type FilterField,
   type SongSort,
   type SongSortKey,
 } from '@/services/library/songBrowse'
+import {
+  filterOptionLabel,
+  filterOptionShortLabel,
+  type FilterField,
+} from '@/services/library/libraryFilter'
 import { ratingSectionLabel } from '@/services/ratingSort'
 import type { Song } from '@/types/library'
 

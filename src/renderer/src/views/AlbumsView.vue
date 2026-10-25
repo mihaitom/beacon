@@ -35,7 +35,11 @@
       </template>
     </detail-header>
 
-    <sticky-filter>
+    <sticky-filter :z-index="3" :fade="!listView" @resize="stickyHeaderHeight = $event">
+      <!-- See SongsView.vue: in sight while the list scrolls. -->
+      <v-alert v-if="libraryStore.error" type="error" variant="tonal" class="view-error">
+        {{ libraryStore.error }}
+      </v-alert>
       <div class="library-filter">
         <v-text-field
           v-model="filterQuery"
@@ -52,34 +56,32 @@
         >
           <template #append-inner><exact-match-switch /></template>
         </v-text-field>
-        <v-btn-toggle
-          :model-value="listView ? 'list' : 'grid'"
-          mandatory
-          class="beacon-view-toggle album-layout-toggle"
-          :aria-label="$t('library.layout')"
-          @update:model-value="setListView($event === 'list')"
-        >
-          <v-btn value="grid" icon="mdi-view-grid-outline" :title="$t('library.layoutGrid')" />
-          <v-btn value="list" icon="mdi-view-list" :title="$t('library.layoutList')" />
-        </v-btn-toggle>
-        <v-select
-          :model-value="sort"
-          :items="sortOptions"
-          :aria-label="$t('library.sortBy')"
-          prepend-inner-icon="mdi-sort"
-          variant="solo-filled"
-          density="compact"
-          rounded="pill"
-          flat
-          hide-details
-          class="album-sort"
-          @update:model-value="setSort"
-        />
+        <div class="albums-controls">
+          <v-btn-toggle
+            :model-value="listView ? 'list' : 'grid'"
+            mandatory
+            class="beacon-view-toggle"
+            :aria-label="$t('library.layout')"
+            @update:model-value="setListView($event === 'list')"
+          >
+            <v-btn value="grid" icon="mdi-view-grid-outline" :title="$t('library.layoutGrid')" />
+            <v-btn value="list" icon="mdi-view-list" :title="$t('library.layoutList')" />
+          </v-btn-toggle>
+          <library-filter-menu
+            v-model="filters"
+            :items="libraryStore.albums"
+            :fields="filterFields"
+          />
+          <library-sort-select
+            :model-value="sort.key"
+            :items="sortItems"
+            :direction="sort.direction"
+            @update:model-value="pickSort"
+            @toggle-direction="toggleDirection"
+          />
+        </div>
       </div>
     </sticky-filter>
-    <v-alert v-if="libraryStore.error" type="error" variant="tonal" class="view-notice">
-      {{ libraryStore.error }}
-    </v-alert>
 
     <div
       ref="gridRoot"
@@ -87,6 +89,15 @@
         'grid-root--with-alphabet-bar': !libraryStore.loading && filteredAlbums.length > 0,
       }"
     >
+      <library-list-header
+        v-if="listView && !libraryStore.loading && filteredAlbums.length"
+        :columns="listColumns"
+        :template="listTemplate"
+        :narrow-template="listNarrowTemplate"
+        :sort-key="sort.key"
+        :direction="sort.direction"
+        :style="{ '--sticky-header-offset': `${stickyHeaderHeight}px` }"
+      />
       <div v-if="libraryStore.loading" class="album-grid">
         <div v-for="n in skeletonCount" :key="n" class="album-card">
           <v-skeleton-loader
@@ -189,6 +200,7 @@
     <alphabet-index-bar
       v-if="!libraryStore.loading && filteredAlbums.length > 0 && barSections.length"
       :sections="barSections"
+      :label="barLabel"
       :available="availableLetters"
       :active="activeLetter"
       @select="jumpToLetter"
@@ -204,15 +216,31 @@ import { useAuthStore } from '@/stores/auth'
 import { useElementWidth } from '@/composables/useElementWidth'
 import { firstIndexByLetter } from '@/services/alphabetIndex'
 import {
-  ALBUM_SORTS,
+  ALBUM_FILTER_FIELDS,
+  ALBUM_SORT_KEYS,
   UNKNOWN_YEAR_SECTION,
+  albumRangeField,
+  defaultAlbumDirection,
   loadAlbumSort,
   saveAlbumSort,
   sectionFor,
   sectionsFor,
   sortAlbums,
   type AlbumSort,
+  type AlbumSortKey,
 } from '@/services/albumSort'
+import {
+  filterItems,
+  filterOptionLabel,
+  filterOptionShortLabel,
+  type FilterFieldDef,
+  type LibraryFilters,
+} from '@/services/library/libraryFilter'
+import LibraryFilterMenu from '@/components/library/LibraryFilterMenu.vue'
+import LibraryListHeader, {
+  type ListHeaderColumn,
+} from '@/components/library/LibraryListHeader.vue'
+import LibrarySortSelect from '@/components/library/LibrarySortSelect.vue'
 import { ratingSectionLabel } from '@/services/ratingSort'
 import EmptyState from '@/components/EmptyState.vue'
 import { readBooleanPreference, writeBooleanPreference } from '@/services/booleanPreference'
@@ -282,6 +310,9 @@ export default {
     InfiniteScrollTrigger,
     StickyFilter,
     ExactMatchSwitch,
+    LibraryFilterMenu,
+    LibraryListHeader,
+    LibrarySortSelect,
   },
   // Composition API escape hatch just for gridWidth (see useElementWidth's
   // own comment) — everything else stays Options API, same idiom as
@@ -318,7 +349,13 @@ export default {
       activeLetterObserver: null as ActiveLetterHandle | null,
       // A rating order remembered from a server with stars falls back to
       // name on one without them, without forgetting it for the other.
-      sort: sort === 'rating' && !useAuthStore().capabilities.personalRating ? 'name' : sort,
+      sort: (sort.key === 'rating' && !useAuthStore().capabilities.personalRating
+        ? { key: 'name', direction: 'asc' }
+        : sort) as AlbumSort,
+      filters: {} as LibraryFilters,
+      // Height of the sticky filter row, which the list's column labels
+      // stack under (see LibraryListHeader).
+      stickyHeaderHeight: 0,
       listView: readBooleanPreference(LIST_VIEW_KEY),
     }
   },
@@ -360,19 +397,71 @@ export default {
     sortedAlbums(): Album[] {
       return sortAlbums(this.libraryStore.albums, this.sort)
     },
+    browsedAlbums(): Album[] {
+      return filterItems(this.sortedAlbums, ALBUM_FILTER_FIELDS, this.filters)
+    },
     filteredAlbums(): Album[] {
       const query = this.debouncedQuery
-      if (!query.trim()) return this.sortedAlbums
-      return this.sortedAlbums.filter((album: Album) =>
+      if (!query.trim()) return this.browsedAlbums
+      return this.browsedAlbums.filter((album: Album) =>
         matchesAllTerms(query, [album.name], { exact: this.libraryStore.searchExact }),
       )
     },
-    sortOptions(): { title: string; value: AlbumSort }[] {
+    sortItems(): { title: string; value: string }[] {
       const rated = useAuthStore().capabilities.personalRating
-      return ALBUM_SORTS.filter((value) => value !== 'rating' || rated).map((value) => ({
-        title: this.$t(`library.albumSort.${value}`),
-        value,
+      return ALBUM_SORT_KEYS.filter((key) => key !== 'rating' || rated).map((key) => ({
+        title: this.$t(`library.albumSort.${key}`),
+        value: key,
       }))
+    },
+    filterFields(): FilterFieldDef<Album>[] {
+      const { personalRating, favorites } = useAuthStore().capabilities
+      return ALBUM_FILTER_FIELDS.filter(
+        (def) =>
+          (def.field !== 'rating' || personalRating) && (def.field !== 'starred' || favorites),
+      )
+    },
+    rated(): boolean {
+      return useAuthStore().capabilities.personalRating
+    },
+    // The list form's columns, as AlbumCard.vue lays out a row.
+    listColumns(): ListHeaderColumn[] {
+      const columns: ListHeaderColumn[] = [
+        { key: 'cover', label: '' },
+        {
+          key: 'name',
+          label: `${this.$t('library.album')} · ${this.$t('library.artist')}`,
+          sortKeys: ['name', 'artist'],
+        },
+        { key: 'year', label: this.$t('library.year'), align: 'end', sortKeys: ['year'] },
+        { key: 'songs', label: this.$t('library.songs'), align: 'end', sortKeys: ['songCount'] },
+        {
+          key: 'duration',
+          label: this.$t('library.duration'),
+          align: 'end',
+          sortKeys: ['duration'],
+        },
+      ]
+      if (this.rated) {
+        columns.push({
+          key: 'rating',
+          label: this.$t('library.rating'),
+          align: 'end',
+          sortKeys: ['rating'],
+          dropNarrow: true,
+        })
+      }
+      columns.push({ key: 'star', label: '' })
+      return columns
+    },
+    // AlbumCard.vue's .album-card--row and .album-card--rated.
+    listTemplate(): string {
+      return this.rated
+        ? '44px minmax(0, 1fr) 56px 88px 64px 112px 40px'
+        : '44px minmax(0, 1fr) 56px 88px 64px 40px'
+    },
+    listNarrowTemplate(): string {
+      return '44px minmax(0, 1fr) 56px 88px 64px 40px'
     },
     // From the whole sorted list, not the filtered one: a filter greys
     // sections out (availableLetters) rather than taking them off the bar.
@@ -458,8 +547,6 @@ export default {
     letterAt(index: number): string {
       return this.indexLetters[index] ?? ''
     },
-    // "Recently added" has no sections (every album's is ''), so no
-    // dividers either.
     startsLetterSection(index: number): boolean {
       if (!this.indexLetters[index]) return false
       return index === 0 || this.indexLetters[index] !== this.indexLetters[index - 1]
@@ -468,10 +555,16 @@ export default {
     // to name by number - "1980s"/"No year" for a decade, the stars
     // themselves for a rating.
     sectionLabel(section: string): string {
-      if (this.sort === 'rating') return ratingSectionLabel(section, this.$t)
-      if (this.sort !== 'year') return section
+      const range = albumRangeField(this.sort.key)
+      if (range) return filterOptionLabel(range, section, this.$t)
+      if (this.sort.key === 'rating') return ratingSectionLabel(section, this.$t)
+      if (this.sort.key !== 'year') return section
       if (section === UNKNOWN_YEAR_SECTION) return this.$t('library.unknownYear')
       return this.$t('library.decade', { decade: section })
+    },
+    barLabel(section: string): string {
+      const range = albumRangeField(this.sort.key)
+      return range ? filterOptionShortLabel(range, section, this.$t) : section
     },
     setListView(listView: boolean) {
       this.listView = listView
@@ -481,6 +574,16 @@ export default {
       this.activeLetter = null
       window.scrollTo({ top: 0 })
       this.$nextTick(() => this.activeLetterObserver?.update())
+    },
+    pickSort(key: string) {
+      const sortKey = key as AlbumSortKey
+      this.setSort({ key: sortKey, direction: defaultAlbumDirection(sortKey) })
+    },
+    toggleDirection() {
+      this.setSort({
+        key: this.sort.key,
+        direction: this.sort.direction === 'asc' ? 'desc' : 'asc',
+      })
     },
     setSort(sort: AlbumSort) {
       this.sort = sort
@@ -573,8 +676,16 @@ export default {
 /* The layout toggle and the order sit at the far end of the filter row:
  * they apply to the whole list, the field and switch beside the search only
  * narrow it. */
-.album-sort {
-  flex: 0 0 240px;
+.view-error {
+  margin-bottom: 12px;
+}
+
+.albums-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-left: auto;
 }
 
 /* See this file's own #actions template comment for why this exists. */
@@ -625,10 +736,6 @@ export default {
  * its end. */
 .library-filter {
   margin-right: 40px;
-}
-
-.album-layout-toggle {
-  margin-left: auto;
 }
 
 /* v-skeleton-loader's width/height props only size the outer wrapper, not

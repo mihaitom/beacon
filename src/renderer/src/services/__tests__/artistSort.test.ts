@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { ALPHABET_SECTIONS } from '../alphabetIndex'
-import { artistSectionFor, artistSectionsFor, sortArtists } from '../artistSort'
+import {
+  artistSectionFor,
+  artistSectionsFor,
+  defaultArtistDirection,
+  sortArtists,
+  type ArtistSortKey,
+} from '../artistSort'
 import { RATING_SECTIONS, UNRATED_SECTION, ratingSectionLabel } from '../ratingSort'
 import type { Artist } from '@/types/library'
 
@@ -20,11 +26,13 @@ function artist(id: string, fields: Partial<Artist> = {}): Artist {
 
 const ids = (artists: Artist[]) => artists.map((a) => a.id)
 
+const by = (key: ArtistSortKey) => ({ key, direction: defaultArtistDirection(key) })
+
 describe('sortArtists', () => {
   it("keeps the server's own alphabetical order for name", () => {
     const list = [artist('b'), artist('a')]
 
-    expect(sortArtists(list, 'name')).toBe(list)
+    expect(sortArtists(list, by('name'))).toBe(list)
   })
 
   it('puts the most stars first, unrated last, and keeps the name order within a rating', () => {
@@ -35,7 +43,7 @@ describe('sortArtists', () => {
       artist('d-two', { rating: 2 }),
     ]
 
-    expect(ids(sortArtists(list, 'rating'))).toEqual(['c-five', 'b-two', 'd-two', 'a-unrated'])
+    expect(ids(sortArtists(list, by('rating')))).toEqual(['c-five', 'b-two', 'd-two', 'a-unrated'])
     expect(ids(list)).toEqual(['a-unrated', 'b-two', 'c-five', 'd-two'])
   })
 })
@@ -44,14 +52,14 @@ describe('artistSectionFor', () => {
   it('files a name under its sort name and a rating under its star count', () => {
     const beatles = artist('x', { name: 'The Beatles', sortName: 'Beatles', rating: 5 })
 
-    expect(artistSectionFor(beatles, 'name')).toBe('B')
-    expect(artistSectionFor(beatles, 'rating')).toBe('5')
-    expect(artistSectionFor(artist('y'), 'rating')).toBe(UNRATED_SECTION)
+    expect(artistSectionFor(beatles, by('name'))).toBe('B')
+    expect(artistSectionFor(beatles, by('rating'))).toBe('5')
+    expect(artistSectionFor(artist('y'), by('rating'))).toBe(UNRATED_SECTION)
   })
 
   it('lists the alphabet for name and the star counts for rating', () => {
-    expect(artistSectionsFor('name')).toEqual(ALPHABET_SECTIONS)
-    expect(artistSectionsFor('rating')).toEqual(RATING_SECTIONS)
+    expect(artistSectionsFor([], by('name'))).toEqual(ALPHABET_SECTIONS)
+    expect(artistSectionsFor([], by('rating'))).toEqual(RATING_SECTIONS)
   })
 })
 

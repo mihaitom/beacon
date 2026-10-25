@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { makeSong } from '@/stores/__tests__/fixtures'
+import { filterOptions } from '@/services/library/libraryFilter'
 import {
   FILTER_FIELDS,
-  filterOptions,
   filterSongs,
   sectionsFor,
   sortKeysFor,

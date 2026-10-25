@@ -47,6 +47,16 @@
         >
           <template #append-inner><exact-match-switch /></template>
         </v-text-field>
+        <div class="genre-controls">
+          <library-filter-menu v-model="filters" :items="songs" :fields="filterFields" />
+          <library-sort-select
+            :model-value="sortValue"
+            :items="sortItems"
+            :direction="byRelevance ? null : sort.direction"
+            @update:model-value="pickSort"
+            @toggle-direction="toggleDirection"
+          />
+        </div>
       </div>
     </sticky-filter>
 
@@ -58,7 +68,8 @@
       <song-table
         :songs="filteredSongs"
         :queue-whole-list="false"
-        :default-sort-key="defaultSortKey"
+        :sort="tableSort"
+        sectioned
         sticky-header
         :style="{ '--sticky-header-offset': `${stickyHeaderHeight}px` }"
         :exclude-columns="['genre']"
@@ -87,6 +98,11 @@ import SongTable from '@/components/library/SongTable.vue'
 import PageLoader from '@/components/PageLoader.vue'
 import StickyFilter from '@/components/StickyFilter.vue'
 import ExactMatchSwitch from '@/components/library/ExactMatchSwitch.vue'
+import LibraryFilterMenu from '@/components/library/LibraryFilterMenu.vue'
+import LibrarySortSelect from '@/components/library/LibrarySortSelect.vue'
+import { songBrowsingMixin } from '@/components/library/songBrowsing'
+import { filterSongs } from '@/services/library/songBrowse'
+import type { FilterField } from '@/services/library/libraryFilter'
 import type { Song } from '@/types/library'
 
 const RANDOM_PLAY_COUNT = 100
@@ -95,19 +111,23 @@ const RANDOM_PLAY_COUNT = 100
 // library.
 const TOP_SONGS_POOL_SIZE = 1000
 
-let debounceTimer: ReturnType<typeof setTimeout> | undefined
-
 export default {
   name: 'GenreDetailView',
-  components: { EmptyState, DetailHeader, SongTable, PageLoader, StickyFilter, ExactMatchSwitch },
+  components: {
+    EmptyState,
+    DetailHeader,
+    SongTable,
+    PageLoader,
+    StickyFilter,
+    ExactMatchSwitch,
+    LibraryFilterMenu,
+    LibrarySortSelect,
+  },
+  mixins: [songBrowsingMixin],
   data() {
     return {
       songs: [] as Song[],
-      filterQuery: '',
-      // filteredSongs reads this instead of filterQuery directly, so
-      // filtering doesn't run synchronously on every keystroke — see the
-      // identical pattern (and its rationale) in SongsView.vue.
-      debouncedQuery: '',
+      excludedFilterFields: ['genre'] as FilterField[],
       // Height of the sticky filter block, reported by StickyFilter's own
       // @resize — SongTable's sticky column header (see its stickyHeader
       // prop) needs this to stack correctly right below it instead of
@@ -130,13 +150,16 @@ export default {
     albumCount(): number {
       return new Set(this.songs.map((song) => song.albumId)).size
     },
+    browsedSongs(): Song[] {
+      return filterSongs(this.songs, this.filters)
+    },
     filteredSongs(): Song[] {
       const query = this.debouncedQuery
-      if (!query.trim()) return this.songs
+      if (!query.trim()) return this.browsedSongs
       // Ranked by match, best first, like the main song list and the search
       // page - SongTable's title sort would bury an exact title.
       return rankByMatch(
-        this.songs,
+        this.browsedSongs,
         query,
         (song) => [
           { text: song.title, weight: 2 },
@@ -146,20 +169,13 @@ export default {
         { exact: this.libraryStore.searchExact },
       )
     },
-    /** While a filter is on the songs arrive already ranked, so SongTable
-     * must not re-sort them; otherwise it keeps its usual title sort. */
-    defaultSortKey(): 'title' | null {
-      return this.debouncedQuery.trim() ? null : 'title'
-    },
   },
   watch: {
-    filterQuery(value: string | null) {
-      clearTimeout(debounceTimer)
-      debounceTimer = setTimeout(() => {
-        this.debouncedQuery = value ?? ''
-      }, 200)
+    // Another genre's songs: what was picked for this one may not exist there.
+    '$route.params.name'() {
+      this.filters = {}
+      this.loadSongs()
     },
-    '$route.params.name': 'loadSongs',
   },
   created() {
     this.loadSongs()
@@ -204,6 +220,19 @@ export default {
 </script>
 
 <style scoped>
+.genre-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-left: auto;
+}
+
+/* Clear of the index bar down the right edge, as on Songs. */
+.library-filter {
+  margin-right: 40px;
+}
+
 /* See AlbumsView.vue's identical rule. */
 .detail-header__actions-row {
   display: flex;

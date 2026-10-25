@@ -133,12 +133,15 @@ export default {
       name: 'Name',
       artist: 'Künstler',
       year: 'Jahr',
-      added: 'Zuletzt hinzugefügt',
+      added: 'Hinzugefügt',
       rating: 'Bewertung',
+      songCount: 'Anzahl Titel',
+      duration: 'Länge',
     },
     artistSort: {
       name: 'Name',
       rating: 'Bewertung',
+      albumCount: 'Anzahl Alben',
     },
     songSort: {
       relevance: 'Beste Treffer',
@@ -147,6 +150,8 @@ export default {
     },
     songFilter: {
       button: 'Filter',
+      releaseType: 'Veröffentlichungsart',
+      added: 'Hinzugefügt',
       reset: 'Filter zurücksetzen',
       unknown: 'Unbekannt',
       starred: 'Favorit',

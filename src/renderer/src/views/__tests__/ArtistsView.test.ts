@@ -39,8 +39,9 @@ interface ArtistsVm {
   jumpToLetter(letter: string): void
   playRandomArtist(): Promise<void>
   playTopArtist(): Promise<void>
-  sort: string
-  setSort(sort: 'name' | 'rating'): void
+  sort: { key: string; direction: 'asc' | 'desc' }
+  readonly sortItems: { value: string }[]
+  pickSort(key: string): void
   sectionLabel(section: string): string
 }
 
@@ -397,7 +398,7 @@ describe('ArtistsView sort order', () => {
       { ...artist('five', 'Five'), rating: 5 },
     ])
 
-    vm.setSort('rating')
+    vm.pickSort('rating')
     await flushPromises()
 
     expect(vm.filteredArtists.map((a) => a.id)).toEqual(['five', 'two', 'none'])
@@ -407,23 +408,23 @@ describe('ArtistsView sort order', () => {
 
   it('opens in the order it was left in', async () => {
     const first = await mountArtists([artist('a', 'A')])
-    first.vm.setSort('rating')
+    first.vm.pickSort('rating')
     first.wrapper.unmount()
 
     const { vm } = await mountArtists([artist('a', 'A')])
 
-    expect(vm.sort).toBe('rating')
+    expect(vm.sort.key).toBe('rating')
   })
 
-  it('stays in name order with no choice offered where the server has no stars', async () => {
+  it('stays in name order with no rating offered where the server has no stars', async () => {
     const first = await mountArtists([artist('a', 'A')])
-    first.vm.setSort('rating')
+    first.vm.pickSort('rating')
     first.wrapper.unmount()
     useAuthStore().serverType = 'jellyfin'
 
-    const { wrapper, vm } = await mountArtists([artist('a', 'A')])
+    const { vm } = await mountArtists([artist('a', 'A')])
 
-    expect(vm.sort).toBe('name')
-    expect(wrapper.find('.artist-sort').exists()).toBe(false)
+    expect(vm.sort.key).toBe('name')
+    expect(vm.sortItems.map((option) => option.value)).not.toContain('rating')
   })
 })

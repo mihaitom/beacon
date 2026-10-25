@@ -33,9 +33,10 @@ interface AlbumsVm {
   letterAt(index: number): string
   startsLetterSection(index: number): boolean
   jumpToLetter(letter: string): void
-  sort: string
-  readonly sortOptions: { value: string }[]
-  setSort(sort: 'name' | 'artist' | 'year' | 'added' | 'rating'): void
+  sort: { key: string; direction: 'asc' | 'desc' }
+  readonly sortItems: { value: string }[]
+  pickSort(key: string): void
+  toggleDirection(): void
   setListView(listView: boolean): void
   listView: boolean
   sectionLabel(section: string): string
@@ -387,7 +388,7 @@ describe('AlbumsView sort order', () => {
       { ...album('mid', 'Mid'), year: 1986 },
     ])
 
-    vm.setSort('year')
+    vm.pickSort('year')
     await flushPromises()
 
     expect(vm.filteredAlbums.map((a) => a.id)).toEqual(['new', 'mid', 'old'])
@@ -396,18 +397,34 @@ describe('AlbumsView sort order', () => {
     expect(vm.sectionLabel(vm.letterAt(1))).toBe('1980s')
   })
 
-  it('shows neither dividers nor a bar for recently added', async () => {
+  it('files recently added under how long ago it was', async () => {
+    const daysAgo = (days: number) => new Date(Date.now() - days * 86_400_000).toISOString()
     const { vm } = await mountAlbums([
-      { ...album('a', 'A'), created: '2026-01-01T00:00:00Z' },
-      { ...album('b', 'B'), created: '2026-02-01T00:00:00Z' },
+      { ...album('a', 'A'), created: daysAgo(60) },
+      { ...album('b', 'B'), created: daysAgo(2) },
     ])
 
-    vm.setSort('added')
+    vm.pickSort('added')
     await flushPromises()
 
     expect(vm.filteredAlbums.map((a) => a.id)).toEqual(['b', 'a'])
-    expect([0, 1].map((index) => vm.startsLetterSection(index))).toEqual([false, false])
-    expect(vm.barSections).toEqual([])
+    expect([0, 1].map((index) => vm.startsLetterSection(index))).toEqual([true, true])
+    expect(vm.barSections).toEqual(['d7', 'm3'])
+    expect(vm.sectionLabel(vm.letterAt(0))).toBe('In the last 7 days')
+  })
+
+  it('turns the order round, the bar with it', async () => {
+    const { vm } = await mountAlbums([
+      { ...album('old', 'Old'), year: 1984 },
+      { ...album('new', 'New'), year: 2012 },
+    ])
+
+    vm.pickSort('year')
+    vm.toggleDirection()
+    await flushPromises()
+
+    expect(vm.filteredAlbums.map((a) => a.id)).toEqual(['old', 'new'])
+    expect(vm.barSections).toEqual(['1980', '1990', '2000', '2010'])
   })
 
   it('puts the most stars first, under dividers drawn as stars', async () => {
@@ -417,7 +434,7 @@ describe('AlbumsView sort order', () => {
       { ...album('five', 'Five'), rating: 5 },
     ])
 
-    vm.setSort('rating')
+    vm.pickSort('rating')
     await flushPromises()
 
     expect(vm.filteredAlbums.map((a) => a.id)).toEqual(['five', 'four', 'none'])
@@ -427,19 +444,19 @@ describe('AlbumsView sort order', () => {
 
   it('offers no rating order where the server has no stars, even one left in it', async () => {
     const first = await mountAlbums([album('a', 'A')])
-    first.vm.setSort('rating')
+    first.vm.pickSort('rating')
     first.wrapper.unmount()
     useAuthStore().serverType = 'jellyfin'
 
     const { vm } = await mountAlbums([album('a', 'A')])
 
-    expect(vm.sort).toBe('name')
-    expect(vm.sortOptions.map((option) => option.value)).not.toContain('rating')
+    expect(vm.sort.key).toBe('name')
+    expect(vm.sortItems.map((option) => option.value)).not.toContain('rating')
   })
 
   it('opens in the order it was left in', async () => {
     const first = await mountAlbums([album('a', 'A')])
-    first.vm.setSort('year')
+    first.vm.pickSort('year')
     first.wrapper.unmount()
 
     const { vm } = await mountAlbums([album('a', 'A')])

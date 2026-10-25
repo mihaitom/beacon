@@ -2,8 +2,21 @@
 
 import { accountScopedKey } from '@/services/accountKey'
 import { ALPHABET_SECTIONS, letterForName } from '@/services/alphabetIndex'
-import { RATING_SECTIONS, ratingSection, ratingSectionLabel } from '@/services/ratingSort'
-import { formatSampleRate } from '@/services/library/songFormat'
+import { RATING_SECTIONS, ratingSection } from '@/services/ratingSort'
+import {
+  AGE_ORDER,
+  RATING_ORDER,
+  UNKNOWN_OPTION,
+  ageOf,
+  decadeOf,
+  decadeOption,
+  filterItems,
+  rangeOf,
+  rangeOrder,
+  type FilterFieldDef,
+  type LibraryFilters,
+  type Ranges,
+} from '@/services/library/libraryFilter'
 import {
   SONG_COLUMNS,
   songColumn,
@@ -122,7 +135,7 @@ export function saveSongSort(sort: SongSort): void {
 }
 
 /** The section a song without a year goes under. */
-export const UNKNOWN_YEAR_SECTION = '?'
+export const UNKNOWN_YEAR_SECTION = UNKNOWN_OPTION
 
 /** The orders that come in sections, with what files a song under one.
  * The rest have nothing a reader would jump between. */
@@ -131,7 +144,7 @@ const SECTION_OF: Partial<Record<SongSortKey, (song: Song) => string>> = {
   artist: (song) => letterForName(song.artist),
   album: (song) => letterForName(song.album),
   genre: (song) => letterForName(song.genre ?? ''),
-  year: (song) => (song.year ? String(decadeOf(song.year)) : UNKNOWN_YEAR_SECTION),
+  year: (song) => decadeOption(song.year),
   rating: (song) => ratingSection(song),
 }
 
@@ -179,34 +192,6 @@ export function sectionsFor(sortedSongs: Song[], sort: SongSort): string[] {
   return listedAscending === (sort.direction === 'asc') ? sections : [...sections].reverse()
 }
 
-/** The fields the filter menu offers. Each one files every song under
- * exactly one of its options, so a menu can count them in one pass, and
- * picking several options of one field means any of them. */
-export type FilterField =
-  | 'genre'
-  | 'year'
-  | 'rating'
-  | 'starred'
-  | 'bpm'
-  | 'duration'
-  | 'playCount'
-  | 'lastPlayed'
-  | 'added'
-  | 'format'
-  | 'sampleRate'
-
-/** The options picked per field. A field with none picked lets
- * everything through. */
-export type SongFilters = Partial<Record<FilterField, string[]>>
-
-/** The option for a song the server sent no value for. */
-export const UNKNOWN_OPTION = '?'
-
-const DAY_MS = 24 * 60 * 60 * 1000
-
-/** Ranges as [option, lower bound inclusive], the last one open-ended. */
-type Ranges = [string, number][]
-
 /** Tens of BPM: a step a DJ would still call the same tempo. */
 const BPM_RANGES: Ranges = [
   ['<70', 0],
@@ -244,160 +229,79 @@ const PLAY_COUNT_RANGES: Ranges = [
   ['100+', 100],
 ]
 
-/** How long ago, as [option, up to this many days]. Past the last one is
- * 'older'. */
-const AGE_STEPS: [string, number][] = [
-  ['d7', 7],
-  ['d30', 30],
-  ['m3', 91],
-  ['m12', 365],
-  ['y3', 1096],
-]
-const AGE_ORDER = [...AGE_STEPS.map(([option]) => option), 'older']
-
-function rangeOf(value: number | null | undefined, ranges: Ranges): string {
-  if (value == null) return UNKNOWN_OPTION
-  let option = ranges[0]![0]
-  for (const [candidate, from] of ranges) if (value >= from) option = candidate
-  return option
-}
-
-function ageOf(value: string | null | undefined, now: number, never: string): string {
-  const time = value ? Date.parse(value) : NaN
-  if (Number.isNaN(time)) return never
-  const days = (now - time) / DAY_MS
-  return AGE_STEPS.find(([, upTo]) => days <= upTo)?.[0] ?? 'older'
-}
-
-export interface FilterFieldDef {
-  field: FilterField
+export interface SongFilterFieldDef extends FilterFieldDef<Song> {
   /** The column whose data this is - the field is only offered where the
    * server sends it. Null for one every server answers. */
   column: SongColumnKey | null
-  optionOf: (song: Song, now: number) => string
-  /** The options in menu order. Left out for the fields whose options are
-   * whatever the library holds, which list biggest first. */
-  order?: string[]
 }
 
-export const FILTER_FIELDS: FilterFieldDef[] = [
-  { field: 'genre', column: 'genre', optionOf: (song) => song.genre || UNKNOWN_OPTION },
-  {
-    field: 'year',
-    column: 'year',
-    optionOf: (song) => (song.year ? String(decadeOf(song.year)) : UNKNOWN_OPTION),
-  },
-  {
+function columnField(
+  column: SongColumnKey,
+  def: Omit<SongFilterFieldDef, 'column' | 'labelKey'>,
+): SongFilterFieldDef {
+  return { ...def, column, labelKey: songColumn(column)?.labelKey ?? '' }
+}
+
+export const FILTER_FIELDS: SongFilterFieldDef[] = [
+  columnField('genre', { field: 'genre', optionOf: (song) => song.genre || UNKNOWN_OPTION }),
+  columnField('year', { field: 'year', optionOf: (song) => decadeOption(song.year) }),
+  columnField('rating', {
     field: 'rating',
-    column: 'rating',
     optionOf: (song) => String(song.rating ?? 0),
-    order: ['5', '4', '3', '2', '1', '0'],
-  },
+    order: RATING_ORDER,
+  }),
   {
     field: 'starred',
     column: null,
+    labelKey: 'library.songFilter.starred',
     optionOf: (song) => (song.starred ? 'yes' : 'no'),
     order: ['yes', 'no'],
   },
-  {
+  columnField('bpm', {
     field: 'bpm',
-    column: 'bpm',
     // A tag of 0 is how a file says it was never measured.
     optionOf: (song) => rangeOf(song.bpm || null, BPM_RANGES),
-    order: [...BPM_RANGES.map(([option]) => option), UNKNOWN_OPTION],
-  },
-  {
+    order: [...rangeOrder(BPM_RANGES), UNKNOWN_OPTION],
+  }),
+  columnField('duration', {
     field: 'duration',
-    column: 'duration',
     optionOf: (song) => rangeOf(song.duration, DURATION_RANGES),
-    order: DURATION_RANGES.map(([option]) => option),
-  },
-  {
+    order: rangeOrder(DURATION_RANGES),
+  }),
+  columnField('playCount', {
     field: 'playCount',
-    column: 'playCount',
     optionOf: (song) => rangeOf(song.playCount ?? 0, PLAY_COUNT_RANGES),
-    order: PLAY_COUNT_RANGES.map(([option]) => option),
-  },
-  {
+    order: rangeOrder(PLAY_COUNT_RANGES),
+  }),
+  columnField('lastPlayed', {
     field: 'lastPlayed',
-    column: 'lastPlayed',
     optionOf: (song, now) => ageOf(song.lastPlayed, now, 'never'),
     order: [...AGE_ORDER, 'never'],
-  },
-  {
+  }),
+  columnField('added', {
     field: 'added',
-    column: 'added',
     optionOf: (song, now) => ageOf(song.added, now, UNKNOWN_OPTION),
     order: [...AGE_ORDER, UNKNOWN_OPTION],
-  },
-  {
+  }),
+  columnField('format', {
     field: 'format',
-    column: 'format',
     optionOf: (song) => song.format?.toLowerCase() || UNKNOWN_OPTION,
-  },
-  {
+  }),
+  columnField('sampleRate', {
     field: 'sampleRate',
-    column: 'sampleRate',
     optionOf: (song) => (song.sampleRate ? String(song.sampleRate) : UNKNOWN_OPTION),
-  },
+  }),
 ]
 
-export function filterFieldsFor(serverType: ServerType | null): FilterFieldDef[] {
+export function filterFieldsFor(serverType: ServerType | null): SongFilterFieldDef[] {
   return FILTER_FIELDS.filter((def) => {
     const column = def.column ? songColumn(def.column) : null
     return !column || songColumnAvailable(column, serverType)
   })
 }
 
-export function activeFilterCount(filters: SongFilters): number {
-  return Object.values(filters).filter((options) => options?.length).length
-}
-
-export function filterSongs(songs: Song[], filters: SongFilters, now = Date.now()): Song[] {
-  const active = FILTER_FIELDS.filter((def) => filters[def.field]?.length).map(
-    (def) => [def, new Set(filters[def.field])] as const,
-  )
-  if (!active.length) return songs
-  return songs.filter((song) =>
-    active.every(([def, picked]) => picked.has(def.optionOf(song, now))),
-  )
-}
-
-/** A field's options with how many songs each holds, in menu order. An
- * option no song falls under is left out, unless the field has a fixed
- * order - an empty "5 stars" still says what the scale is. */
-export function filterOptions(
-  songs: Song[],
-  def: FilterFieldDef,
-  now = Date.now(),
-): { option: string; count: number }[] {
-  const counts = new Map<string, number>()
-  for (const song of songs) {
-    const option = def.optionOf(song, now)
-    counts.set(option, (counts.get(option) ?? 0) + 1)
-  }
-  if (def.order) {
-    return def.order
-      .filter((option) => option !== UNKNOWN_OPTION || counts.has(option))
-      .map((option) => ({ option, count: counts.get(option) ?? 0 }))
-  }
-  const listed = [...counts]
-    .filter(([option]) => option !== UNKNOWN_OPTION)
-    .map(([option, count]) => ({ option, count }))
-  if (def.field === 'year' || def.field === 'sampleRate') {
-    // Newest decade first; sample rates low to high, the way they read.
-    const sign = def.field === 'year' ? -1 : 1
-    listed.sort((a, b) => sign * (Number(a.option) - Number(b.option)))
-  } else {
-    listed.sort((a, b) => b.count - a.count || a.option.localeCompare(b.option))
-  }
-  if (counts.has(UNKNOWN_OPTION))
-    listed.push({ option: UNKNOWN_OPTION, count: counts.get(UNKNOWN_OPTION)! })
-  return listed
-}
-
-function decadeOf(year: number): number {
-  return Math.floor(year / 10) * 10
+export function filterSongs(songs: Song[], filters: LibraryFilters, now = Date.now()): Song[] {
+  return filterItems(songs, FILTER_FIELDS, filters, now)
 }
 
 /** Every decade with at least one song, newest first. */
@@ -405,63 +309,4 @@ export function decadesIn(songs: Song[]): number[] {
   const decades = new Set<number>()
   for (const song of songs) if (song.year) decades.add(decadeOf(song.year))
   return [...decades].sort((a, b) => b - a)
-}
-
-type Translate = (key: string, named?: Record<string, unknown>) => string
-
-/** "90-99" reads as 90–99, "<70" as < 70, "180+" as ≥ 180. */
-function rangeLabel(option: string): string {
-  if (option.startsWith('<')) return `< ${option.slice(1)}`
-  if (option.endsWith('+')) return `≥ ${option.slice(0, -1)}`
-  return option.replace('-', '–')
-}
-
-/** An option as the filter menu and a section heading name it. */
-export function filterOptionLabel(field: FilterField, option: string, t: Translate): string {
-  if (option === UNKNOWN_OPTION) {
-    return t(field === 'year' ? 'library.unknownYear' : 'library.songFilter.unknown')
-  }
-  switch (field) {
-    case 'year':
-      return t('library.decade', { decade: option })
-    case 'rating':
-      return ratingSectionLabel(option, t)
-    case 'starred':
-      return t(`library.songFilter.starred_${option}`)
-    case 'lastPlayed':
-    case 'added':
-      return t(`library.songFilter.age.${option}`)
-    case 'format':
-      return option.toUpperCase()
-    case 'sampleRate':
-      return formatSampleRate(Number(option)) ?? option
-    case 'duration':
-      return `${rangeLabel(option)} min`
-    case 'bpm':
-    case 'playCount':
-      return rangeLabel(option)
-    default:
-      return option
-  }
-}
-
-/** The same option in the few characters the index bar has room for. */
-export function filterOptionShortLabel(field: FilterField, option: string, t: Translate): string {
-  if (option === UNKNOWN_OPTION) return option
-  // A range by where it starts; the open ends keep their sign.
-  const start = (value: string) => (/^[<\d]/.test(value) ? value.split('-')[0]! : value)
-  switch (field) {
-    case 'lastPlayed':
-    case 'added':
-      return option === 'never' ? '–' : t(`library.songFilter.ageShort.${option}`)
-    case 'sampleRate':
-      return String(Number(option) / 1000)
-    case 'duration':
-      return `${start(option)}′`
-    case 'bpm':
-    case 'playCount':
-      return start(option)
-    default:
-      return option
-  }
 }
