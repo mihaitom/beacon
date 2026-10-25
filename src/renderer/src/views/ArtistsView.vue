@@ -193,9 +193,12 @@ import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
 import { useElementWidth } from '@/composables/useElementWidth'
 import { firstIndexByLetter } from '@/services/alphabetIndex'
+import type { ArtistStatsOf } from '@/services/library/artistStats'
+import { artistNameKey } from '@/services/artistCredits'
 import {
-  ARTIST_FILTER_FIELDS,
   ARTIST_SORT_KEYS,
+  artistFilterFields,
+  artistSectionField,
   artistSectionFor,
   artistSectionsFor,
   defaultArtistDirection,
@@ -358,9 +361,21 @@ export default {
         value: key,
       }))
     },
+    /** The figures counted out of the song catalogue - see
+     * services/library/artistStats.ts. Nothing until it has arrived, so
+     * those orders and filters wait for it rather than counting zeros. */
+    statsOf(): ArtistStatsOf {
+      const store = this.libraryStore
+      if (!store.allSongsLoaded) return () => null
+      const stats = store.artistStatsByName
+      return (artist) => stats.get(artistNameKey(artist.name)) ?? null
+    },
+    allFilterFields(): FilterFieldDef<Artist>[] {
+      return artistFilterFields(this.statsOf)
+    },
     filterFields(): FilterFieldDef<Artist>[] {
       const { personalRating, favorites } = this.authStore.capabilities
-      return ARTIST_FILTER_FIELDS.filter(
+      return this.allFilterFields.filter(
         (def) =>
           (def.field !== 'rating' || personalRating) && (def.field !== 'starred' || favorites),
       )
@@ -397,10 +412,10 @@ export default {
       }))
     },
     sortedArtists(): Artist[] {
-      return sortArtists(this.libraryStore.artists, this.sort)
+      return sortArtists(this.libraryStore.artists, this.sort, this.statsOf)
     },
     barSections(): string[] {
-      return artistSectionsFor(this.sortedArtists, this.sort)
+      return artistSectionsFor(this.sortedArtists, this.sort, this.statsOf)
     },
     artistItemHeight(): number {
       return this.listView ? ARTIST_LIST_ROW_HEIGHT : ARTIST_ROW_HEIGHT_GUESS
@@ -409,7 +424,7 @@ export default {
       return this.listView ? 0 : ARTIST_GAP
     },
     browsedArtists(): Artist[] {
-      return filterItems(this.sortedArtists, ARTIST_FILTER_FIELDS, this.filters)
+      return filterItems(this.sortedArtists, this.allFilterFields, this.filters)
     },
     filteredArtists(): Artist[] {
       const query = this.debouncedQuery
@@ -453,9 +468,7 @@ export default {
       return rows
     },
     letterFirstIndex(): Map<string, number> {
-      return firstIndexByLetter(this.filteredArtists, (artist) =>
-        artistSectionFor(artist, this.sort),
-      )
+      return firstIndexByLetter(this.indexLetters, (section) => section)
     },
     availableLetters(): Set<string> {
       return new Set(this.letterFirstIndex.keys())
@@ -465,7 +478,10 @@ export default {
     // The reverse of letterFirstIndex, which only knows where each run
     // starts, not which run a given card is in.
     indexLetters(): string[] {
-      return this.filteredArtists.map((artist) => artistSectionFor(artist, this.sort))
+      const now = Date.now()
+      return this.filteredArtists.map((artist) =>
+        artistSectionFor(artist, this.sort, this.statsOf, now),
+      )
     },
   },
   watch: {
@@ -522,13 +538,13 @@ export default {
     },
     // A divider's text - see AlbumsView.vue's sectionLabel().
     sectionLabel(section: string): string {
-      if (this.sort.key === 'albumCount') return filterOptionLabel('albumCount', section, this.$t)
+      const field = artistSectionField(this.sort.key)
+      if (field) return filterOptionLabel(field, section, this.$t)
       return this.sort.key === 'rating' ? ratingSectionLabel(section, this.$t) : section
     },
     barLabel(section: string): string {
-      return this.sort.key === 'albumCount'
-        ? filterOptionShortLabel('albumCount', section, this.$t)
-        : section
+      const field = artistSectionField(this.sort.key)
+      return field ? filterOptionShortLabel(field, section, this.$t) : section
     },
     letterAt(index: number): string {
       return this.indexLetters[index] ?? ''

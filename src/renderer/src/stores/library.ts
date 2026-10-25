@@ -15,12 +15,12 @@ import {
 import type { Album, Artist, Genre, Playlist, RadioStation, Song } from '@/types/library'
 import {
   artistNameKey,
-  creditedNames,
   creditsArtist,
   splitCredit,
   type CreditPart,
 } from '@/services/artistCredits'
 import { resolveTracks } from '@/services/library/lastfmMatcher'
+import { artistStatsByName, type ArtistStats } from '@/services/library/artistStats'
 import { pickRediscoverSongs } from '@/services/library/rediscover'
 import {
   exactMatchingEnabled,
@@ -485,14 +485,16 @@ export const useLibraryStore = defineStore('library', {
      * Empty until the catalogue is loaded; read it alongside
      * `allSongsLoaded` so "not counted yet" is not shown as zero.
      */
-    trackCountByArtistName(state): Map<string, number> {
+    trackCountByArtistName(): Map<string, number> {
       const counts = new Map<string, number>()
-      for (const song of state.allSongs) {
-        for (const name of creditedNames(song.artist)) {
-          counts.set(name, (counts.get(name) ?? 0) + 1)
-        }
-      }
+      for (const [name, stats] of this.artistStatsByName) counts.set(name, stats.songCount)
       return counts
+    },
+    /** Everything else the artist list shows about an artist, out of the
+     * same one pass - see services/library/artistStats.ts. Empty until the
+     * catalogue is loaded, like trackCountByArtistName. */
+    artistStatsByName(state): Map<string, ArtistStats> {
+      return artistStatsByName(state.allSongs)
     },
     /** Every artist's id by name, for splitCredit() - how a credit on a
      * song turns into one link per performer. */

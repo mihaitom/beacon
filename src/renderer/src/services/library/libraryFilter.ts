@@ -22,6 +22,8 @@ export type FilterField =
   | 'songCount'
   | 'albumCount'
   | 'releaseType'
+  // An artist's songs added up, in hours (a song's or album's is 'duration').
+  | 'totalDuration'
 
 /** The options picked per field. A field with none picked lets
  * everything through. */
@@ -173,6 +175,8 @@ export function filterOptionLabel(field: FilterField, option: string, t: Transla
     }
     case 'duration':
       return `${rangeLabel(option)} min`
+    case 'totalDuration':
+      return `${rangeLabel(option)} h`
     case 'bpm':
     case 'playCount':
     case 'songCount':
@@ -196,6 +200,8 @@ export function filterOptionShortLabel(field: FilterField, option: string, t: Tr
       return String(Number(option) / 1000)
     case 'duration':
       return `${start(option)}′`
+    case 'totalDuration':
+      return `${start(option)}h`
     case 'bpm':
     case 'playCount':
     case 'songCount':

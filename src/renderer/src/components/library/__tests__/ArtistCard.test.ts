@@ -95,3 +95,39 @@ describe('ArtistCard as a list row', () => {
     expect(push).not.toHaveBeenCalled()
   })
 })
+
+describe('ArtistCard row figures from the catalogue', () => {
+  beforeEach(() => setActivePinia(createPinia()))
+
+  const mountRow = () =>
+    mount(ArtistCard, {
+      props: { artist: makeArtist(), row: true },
+      global: {
+        plugins: [vuetify, i18n],
+        stubs: { CoverArt: true, TileContextMenu: true },
+        mocks: { $router: { push: vi.fn() } },
+      },
+    })
+
+  it('shows the genre, the years and the plays once the catalogue is in', () => {
+    const store = useLibraryStore()
+    store.allSongs = [
+      makeSong('s1', { artist: 'Yeah Yeah Yeahs', genre: 'Indie', year: 2003, playCount: 5 }),
+      makeSong('s2', { artist: 'Yeah Yeah Yeahs', genre: 'Indie', year: 2013, playCount: 7 }),
+    ]
+    store.allSongsLoaded = true
+
+    const text = mountRow().text()
+
+    expect(text).toContain('Indie')
+    expect(text).toContain('2003–2013')
+    expect(text).toContain('12')
+  })
+
+  it('leaves them blank until then', () => {
+    const store = useLibraryStore()
+    store.allSongs = [makeSong('s1', { artist: 'Yeah Yeah Yeahs', genre: 'Indie' })]
+
+    expect(mountRow().text()).not.toContain('Indie')
+  })
+})

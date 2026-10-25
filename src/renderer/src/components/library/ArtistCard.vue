@@ -33,6 +33,13 @@
           class="artist-row__figure text-body-small text-medium-emphasis"
           >{{ songCount === null ? '' : songCountLabel }}</span
         >
+        <span
+          v-else-if="column.key in statCells"
+          class="artist-row__figure text-body-small text-medium-emphasis"
+          :class="{ 'artist-row__figure--start': column.align === 'start' }"
+          :title="statCells[column.key]"
+          >{{ statCells[column.key] }}</span
+        >
         <rating-stars
           v-else-if="column.key === 'rating'"
           :item="artist"
@@ -153,6 +160,8 @@ import {
   type ArtistColumn,
 } from '@/services/library/artistColumns'
 import { listColumnTemplate } from '@/services/library/listColumns'
+import { formatTotalDuration } from '@/services/totalDuration'
+import { formatDate } from '@/services/library/songFormat'
 
 export default {
   name: 'ArtistCard',
@@ -204,6 +213,29 @@ export default {
       const store = useLibraryStore()
       if (!store.allSongsLoaded) return null
       return store.trackCountByArtistName.get(artistNameKey(this.artist.name)) ?? 0
+    },
+    /** The other figures out of the same catalogue (artistStats.ts), as a
+     * row shows them - empty while it is still arriving. */
+    statCells(): Record<string, string> {
+      const store = useLibraryStore()
+      const stats = store.allSongsLoaded
+        ? store.artistStatsByName.get(artistNameKey(this.artist.name))
+        : undefined
+      const locale = this.$i18n.locale
+      const years =
+        stats?.firstYear == null
+          ? ''
+          : stats.firstYear === stats.lastYear
+            ? String(stats.firstYear)
+            : `${stats.firstYear}–${stats.lastYear}`
+      return {
+        genre: stats?.genre ?? '',
+        years,
+        duration: stats ? formatTotalDuration(stats.duration, this.$t) : '',
+        playCount: stats ? this.$n(stats.playCount) : '',
+        lastPlayed: formatDate(stats?.lastPlayed, locale) ?? '',
+        added: formatDate(stats?.added, locale) ?? '',
+      }
     },
     songCountLabel(): string {
       const n = this.songCount ?? 0
@@ -306,9 +338,15 @@ export default {
 }
 
 .artist-row__figure {
+  overflow: hidden;
   text-align: right;
+  text-overflow: ellipsis;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
+}
+
+.artist-row__figure--start {
+  text-align: left;
 }
 
 /* See AlbumCard.vue's .album-row__rating. */

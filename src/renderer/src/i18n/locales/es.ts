@@ -143,10 +143,18 @@ export default {
       songCount: 'Número de canciones',
       duration: 'Duración',
     },
+    artistYears: 'Años',
     artistSort: {
       name: 'Nombre',
       rating: 'Valoración',
       albumCount: 'Número de álbumes',
+      songCount: 'Número de canciones',
+      genre: 'Género',
+      years: 'Años de actividad',
+      duration: 'Duración',
+      playCount: 'Escuchas',
+      lastPlayed: 'Última reproducción',
+      added: 'Añadido',
     },
     songSort: {
       relevance: 'Mejor coincidencia',

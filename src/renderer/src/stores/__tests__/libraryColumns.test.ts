@@ -40,12 +40,14 @@ describe('libraryColumns store', () => {
     useLibraryColumnsStore().toggle('artist', 'rating')
     await vi.waitFor(() => expect(pushAccountSettings).toHaveBeenCalled())
 
-    expect(pushAccountSettings).toHaveBeenCalledWith({ artistColumns: ['albumCount', 'songCount'] })
+    expect(pushAccountSettings).toHaveBeenCalledWith({
+      artistColumns: DEFAULT_ARTIST_COLUMNS.filter((key) => key !== 'rating'),
+    })
   })
 
   it('ignores a column it does not know', () => {
     const store = useLibraryColumnsStore()
-    store.toggle('artist', 'genre')
+    store.toggle('artist', 'releaseType')
     expect(store.artist).toEqual(DEFAULT_ARTIST_COLUMNS)
     expect(sanitizeColumns('album', ['year', 'bogus', 'year', 3])).toEqual(['year'])
   })

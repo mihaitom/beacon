@@ -406,6 +406,36 @@ describe('ArtistsView sort order', () => {
     expect(vm.sectionLabel(vm.letterAt(1))).toBe('★★☆☆☆')
   })
 
+  it('orders by plays out of the song catalogue, under the filter menu ranges', async () => {
+    const { vm, store } = await mountArtists([
+      artist('quiet', 'Quiet'),
+      artist('loud', 'Loud'),
+      artist('none', 'None'),
+    ])
+    store.allSongs = [
+      makeSong('1', { artist: 'Quiet', playCount: 3 }),
+      makeSong('2', { artist: 'Loud', playCount: 60 }),
+      makeSong('3', { artist: 'Loud', playCount: 60 }),
+    ]
+    store.allSongsLoaded = true
+
+    vm.pickSort('playCount')
+    await flushPromises()
+
+    expect(vm.filteredArtists.map((a) => a.id)).toEqual(['loud', 'quiet', 'none'])
+    expect(vm.sectionLabel(vm.letterAt(0))).toBe('100–249')
+  })
+
+  it('does not count a catalogue that is still arriving', async () => {
+    const { vm, store } = await mountArtists([artist('quiet', 'Quiet'), artist('loud', 'Loud')])
+    store.allSongs = [makeSong('2', { artist: 'Loud', playCount: 60 })]
+
+    vm.pickSort('playCount')
+    await flushPromises()
+
+    expect(vm.filteredArtists.map((a) => a.id)).toEqual(['quiet', 'loud'])
+  })
+
   it('opens in the order it was left in', async () => {
     const first = await mountArtists([artist('a', 'A')])
     first.vm.pickSort('rating')
