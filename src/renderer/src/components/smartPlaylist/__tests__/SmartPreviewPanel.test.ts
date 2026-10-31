@@ -5,6 +5,7 @@ import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
+import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { makeSong } from '@/stores/__tests__/fixtures'
 import type { Preview } from '@/services/navidrome/preview'
@@ -44,6 +45,7 @@ describe('SmartPreviewPanel', () => {
   it("right-click opens the clicked song's menu, whose Play Next queues that song", async () => {
     const songs = [makeSong('a'), makeSong('b'), makeSong('c')]
     const queueNext = vi.spyOn(usePlaybackStore(), 'queueNext').mockImplementation(() => {})
+    vi.spyOn(useLibraryStore(), 'fetchPlaylists').mockResolvedValue()
     const wrapper = mountPanel({ songs, matched: 3, uncertain: 0, emptiedBy: null })
 
     await wrapper.findAll('.smart-preview__song button')[1]!.trigger('contextmenu')
