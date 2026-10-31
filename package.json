@@ -89,7 +89,7 @@
     "@vue/test-utils": "^2.5.1",
     "@vue/tsconfig": "^0.9.1",
     "concurrently": "^10.0.6",
-    "electron": "^44.9.3",
+    "electron": "^45.1.0",
     "electron-builder": "^26.18.0",
     "electron-vite": "^6.0.0",
     "eslint": "^10.13.0",
