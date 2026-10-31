@@ -266,7 +266,7 @@ function createWindow(): void {
 // via Electron's safeStorage (OS keychain/DPAPI/libsecret) when available.
 // Falls back to a clearly-marked base64 encoding (not real protection, just
 // avoids raw plaintext) on setups without a usable OS credential store —
-// safeStorage.encryptString() throws in that case rather than failing softly.
+// encrypting would throw in that case rather than failing softly.
 interface StoredEntry {
   mode: 'enc' | 'plain'
   data: string
@@ -288,18 +288,34 @@ function writeSecureStore(store: Record<string, StoredEntry>): void {
   writeFileSync(secureStorageFilePath(), JSON.stringify(store))
 }
 
-ipcMain.handle('secure-storage:get', (_event, key: string): string | null => {
+async function encodeEntry(value: string): Promise<StoredEntry> {
+  return (await safeStorage.isAsyncEncryptionAvailable())
+    ? { mode: 'enc', data: (await safeStorage.encryptStringAsync(value)).toString('base64') }
+    : { mode: 'plain', data: Buffer.from(value, 'utf-8').toString('base64') }
+}
+
+ipcMain.handle('secure-storage:get', async (_event, key: string): Promise<string | null> => {
   const entry = readSecureStore()[key]
   if (!entry) return null
   const buffer = Buffer.from(entry.data, 'base64')
-  return entry.mode === 'enc' ? safeStorage.decryptString(buffer) : buffer.toString('utf-8')
+  if (entry.mode === 'plain') return buffer.toString('utf-8')
+
+  const { result, shouldReEncrypt } = await safeStorage.decryptStringAsync(buffer)
+  // The OS key was rotated (or a stronger one became available) - store the
+  // value under the current key so it stays readable.
+  if (shouldReEncrypt) {
+    const reEncrypted = await encodeEntry(result)
+    const store = readSecureStore()
+    store[key] = reEncrypted
+    writeSecureStore(store)
+  }
+  return result
 })
 
-ipcMain.handle('secure-storage:set', (_event, key: string, value: string): void => {
+ipcMain.handle('secure-storage:set', async (_event, key: string, value: string): Promise<void> => {
+  const entry = await encodeEntry(value)
   const store = readSecureStore()
-  store[key] = safeStorage.isEncryptionAvailable()
-    ? { mode: 'enc', data: safeStorage.encryptString(value).toString('base64') }
-    : { mode: 'plain', data: Buffer.from(value, 'utf-8').toString('base64') }
+  store[key] = entry
   writeSecureStore(store)
 })
 
