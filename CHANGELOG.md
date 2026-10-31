@@ -10,6 +10,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Electron, the build tools and the backend's libraries are updated to their latest versions
 
+### Fixed
+
+- The songs in a smart playlist's preview have a right-click menu like songs everywhere else
+
 ## [1.10.0] - 2026-10-25
 
 ### Added

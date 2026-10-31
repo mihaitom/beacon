@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
@@ -15,6 +15,7 @@ const vuetify = createVuetify({ components, directives })
 function mountPanel(preview: Preview) {
   return mount(SmartPreviewPanel, {
     props: { preview },
+    attachTo: document.body,
     global: { plugins: [vuetify, i18n], stubs: { CoverArt: true } },
   })
 }
@@ -38,5 +39,21 @@ describe('SmartPreviewPanel', () => {
     expect(play).toHaveBeenCalledTimes(1)
     expect(play.mock.calls[0]![0]).toEqual([songs[1]])
     expect(play.mock.calls[0]![1]).toBe(0)
+  })
+
+  it("right-click opens the clicked song's menu, whose Play Next queues that song", async () => {
+    const songs = [makeSong('a'), makeSong('b'), makeSong('c')]
+    const queueNext = vi.spyOn(usePlaybackStore(), 'queueNext').mockImplementation(() => {})
+    const wrapper = mountPanel({ songs, matched: 3, uncertain: 0, emptiedBy: null })
+
+    await wrapper.findAll('.smart-preview__song button')[1]!.trigger('contextmenu')
+    await flushPromises()
+    const playNext = [...document.querySelectorAll<HTMLElement>('.v-list-item')].find((item) =>
+      item.textContent?.includes(i18n.global.t('library.playNext')),
+    )
+    playNext!.click()
+
+    expect(queueNext).toHaveBeenCalledWith([songs[1]])
+    wrapper.unmount()
   })
 })

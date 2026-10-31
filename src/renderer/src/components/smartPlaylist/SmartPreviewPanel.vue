@@ -47,6 +47,7 @@
             class="smart-preview__song-button"
             :aria-label="`${$t('library.play')}: ${song.title}`"
             @click="play(song)"
+            @contextmenu.prevent="openMenu(song.id, $event)"
           >
             <span class="smart-preview__song-cover">
               <cover-art :cover-art-id="song.coverArtId" :size="36" />
@@ -63,6 +64,7 @@
               />
             </span>
           </button>
+          <song-context-menu :ref="menuRef(song.id)" :song="song" />
         </li>
       </ol>
       <div
@@ -91,6 +93,7 @@
 import type { PropType } from 'vue'
 import ArtistCredit from '@/components/library/ArtistCredit.vue'
 import CoverArt from '@/components/library/CoverArt.vue'
+import SongContextMenu from '@/components/library/SongContextMenu.vue'
 import { formatTotalDuration } from '@/services/totalDuration'
 import type { Preview } from '@/services/navidrome/preview'
 import { usePlaybackStore } from '@/stores/playback'
@@ -109,7 +112,7 @@ const MOSAIC_TILES = 6
  */
 export default {
   name: 'SmartPreviewPanel',
-  components: { ArtistCredit, CoverArt },
+  components: { ArtistCredit, CoverArt, SongContextMenu },
   props: {
     /** Null while the catalogue is still loading. */
     preview: { type: Object as PropType<Preview | null>, default: null },
@@ -152,6 +155,14 @@ export default {
      * is a guess at what the rules pick, not a queue anybody meant. */
     play(song: Song) {
       void usePlaybackStore().playSongList([song], 0)
+    },
+    menuRef(songId: string): string {
+      return `menu-${songId}`
+    },
+    openMenu(songId: string, event: MouseEvent): void {
+      // A ref inside v-for comes back as an array.
+      const [menu] = this.$refs[this.menuRef(songId)] as { open: (event: MouseEvent) => void }[]
+      menu?.open(event)
     },
   },
 }
