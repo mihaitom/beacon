@@ -703,8 +703,9 @@ export default {
     pressButton: 'Premi ora il pulsante rotondo sul bridge.',
     pair: 'Associa',
     enabled: 'Le luci suonano insieme',
-    follows:
-      'Suona insieme a tutto ciò che riproduce Beacon, tranne la radio. Anteprima a 120 BPM.',
+    follows: 'Suona insieme a tutto ciò che riproduce Beacon, tranne la radio.',
+    previewLive: 'Anteprima sul brano in riproduzione.',
+    previewMadeUp: 'Anteprima a 120 BPM.',
     connected: 'Collegato al bridge su {host}.',
     unreachable: 'Il bridge su {host} non risponde.',
     playing: 'Le luci stanno suonando insieme ora.',

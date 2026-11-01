@@ -1,6 +1,6 @@
 <template>
   <!-- Where each lamp sits on the colour wheel in the rotation, moving on
-     - with the made-up song's beats (stagePreview.ts) - the same clock as
+     - with the song's beats (stagePreview.ts) - the same clock as
      - the stage above, so a dot moves when the lamps light. Decorative: the
      - hint beside it says it in words. -->
   <div class="colour-wheel" aria-hidden="true">
@@ -12,11 +12,13 @@
 <script lang="ts">
 import type { PropType } from 'vue'
 import {
+  MADE_UP_SONG,
   hueOf,
   previewTime,
   previewTurn,
   rgbToHex,
   rotation,
+  type PreviewSong,
   type Rgb,
 } from '@/services/lights/stagePreview'
 
@@ -35,6 +37,9 @@ export default {
      * theme's. */
     start: { type: Array as unknown as PropType<Rgb>, required: true },
     lights: { type: Number, default: 2 },
+    song: { type: Object as PropType<PreviewSong>, default: () => MADE_UP_SONG },
+    /** Seconds into `song` at a requestAnimationFrame time. */
+    clock: { type: Function as PropType<(now: number) => number>, default: previewTime },
   },
   data() {
     return { frameId: 0 }
@@ -63,16 +68,16 @@ export default {
     },
     loop(now: number) {
       this.frameId = requestAnimationFrame(this.loop)
-      this.draw(previewTime(now))
+      this.draw(this.clock(now), this.song)
     },
     drawStill() {
-      if (this.reducedMotion()) this.draw(STILL_AT_SECONDS)
+      if (this.reducedMotion()) this.draw(STILL_AT_SECONDS, MADE_UP_SONG)
     },
-    draw(t: number) {
+    draw(t: number, song: PreviewSong) {
       const dots = ((this.$refs.dot as (HTMLElement | null)[] | undefined) ?? []).filter(
         (dot): dot is HTMLElement => !!dot,
       )
-      const colours = rotation(this.start, dots.length, previewTurn(t))
+      const colours = rotation(this.start, dots.length, previewTurn(song, t))
       dots.forEach((dot, i) => {
         // Clockwise from the top, as the conic gradient runs.
         const angle = hueOf(colours[i]!) * 2 * Math.PI - Math.PI / 2

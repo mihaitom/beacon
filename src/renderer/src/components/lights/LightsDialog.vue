@@ -67,8 +67,13 @@
             :brightness="brightness / 100"
             :rotate="state.colour_mode === 'rotate'"
             :on="state.enabled"
+            :song="previewSong"
+            :clock="previewClock"
           />
-          <p class="lights__caption">{{ $t('lights.follows') }}</p>
+          <p class="lights__caption">
+            {{ $t('lights.follows') }}
+            {{ $t(livePreview ? 'lights.previewLive' : 'lights.previewMadeUp') }}
+          </p>
 
           <div v-if="warning" class="status-row lights__warning">
             <span class="status-dot status-dot--warn" />
@@ -179,6 +184,8 @@
                   v-if="modelValue"
                   :start="hexToRgb(paletteColours[0]!)"
                   :lights="lightCount"
+                  :song="previewSong"
+                  :clock="previewClock"
                 />
                 <p class="setting__hint setting__hint--inline">{{ $t('lights.rotateHint') }}</p>
               </div>
@@ -276,8 +283,10 @@
 </template>
 
 <script lang="ts">
+import { markRaw } from 'vue'
 import {
   discoverBridges,
+  getSongAnalysis,
   type LightsArea,
   type LightsColourMode,
   type LightsState,
@@ -286,10 +295,22 @@ import {
 } from '@/services/connect/lights'
 import { ConnectApiError } from '@/services/connect/http'
 import { fanartImageUrl } from '@/services/connect/fanart'
-import { fromHue, hexToRgb, hueOf, rgbToHex, type Rgb } from '@/services/lights/stagePreview'
+import {
+  MADE_UP_SONG,
+  analysedSong,
+  fromHue,
+  hexToRgb,
+  hueOf,
+  playbackClock,
+  previewTime,
+  rgbToHex,
+  type PreviewSong,
+  type Rgb,
+} from '@/services/lights/stagePreview'
 import { useAppearanceStore } from '@/stores/appearance'
 import { useLibraryStore } from '@/stores/library'
 import { themeColour, themeSettings, useLightsStore } from '@/stores/lights'
+import { usePlaybackStore } from '@/stores/playback'
 import LightsColourWheel from './LightsColourWheel.vue'
 import LightsStage from './LightsStage.vue'
 
@@ -304,6 +325,9 @@ const THUMB_SIZE = 112
 // While open, how often the picture is asked for again: a track change
 // shows its picture within this.
 const PICTURE_REFRESH_MS = 2000
+// While connect is still analysing the playing song (1-2 s for a pop
+// song), how often the preview asks again.
+const ANALYSIS_POLL_MS = 1000
 // The rotation's chip: the whole wheel, as its detail shows.
 const WHEEL = 'conic-gradient(#ff3b3b, #ffd23b, #3bff6b, #3bd8ff, #3b5bff, #d43bff, #ff3b3b)'
 
@@ -340,6 +364,8 @@ export default {
       hue: 0,
       hueTimer: undefined as ReturnType<typeof setTimeout> | undefined,
       pictureTimer: undefined as ReturnType<typeof setTimeout> | undefined,
+      analysisTimer: undefined as ReturnType<typeof setTimeout> | undefined,
+      liveSong: null as { id: string; song: PreviewSong } | null,
       gone: false,
       colourModes: COLOUR_MODES,
       styles: STYLES,
@@ -404,6 +430,28 @@ export default {
     },
     themeName(): string {
       return this.$t(`settings.themes.${useAppearanceStore().theme}.name`)
+    },
+    /** The song the preview plays along with: whatever plays here, paused
+     * or radio aside. */
+    playingSongId(): string | null {
+      if (!this.modelValue || !this.state?.paired) return null
+      const playback = usePlaybackStore()
+      if (!playback.isPlaying || playback.radioStation) return null
+      return playback.currentSong?.id ?? null
+    },
+    livePreview(): boolean {
+      return !!this.liveSong && this.liveSong.id === this.playingSongId
+    },
+    previewSong(): PreviewSong {
+      return this.livePreview ? this.liveSong!.song : MADE_UP_SONG
+    },
+    /** Seconds into the preview's song: the playing song's position, or
+     * the made-up song's own clock. */
+    previewClock(): (now: number) => number {
+      if (!this.livePreview) return previewTime
+      const follow = playbackClock()
+      const playback = usePlaybackStore()
+      return (now) => follow(now, playback.localPosition, playback.isPlaying)
     },
     hueColour(): string {
       return rgbToHex(fromHue(this.hue / 360))
@@ -486,6 +534,13 @@ export default {
       if (!this.state || value === this.state.brightness) return
       this.brightnessTimer = setTimeout(() => void this.save({ brightness: value }), SAVE_DELAY_MS)
     },
+    playingSongId: {
+      immediate: true,
+      handler(id: string | null) {
+        clearTimeout(this.analysisTimer)
+        if (id && this.liveSong?.id !== id) void this.loadAnalysis(id)
+      },
+    },
     foundHosts(hosts: string[]) {
       if (!this.host && hosts.length) this.host = hosts[0]!
     },
@@ -494,6 +549,7 @@ export default {
     clearTimeout(this.brightnessTimer)
     clearTimeout(this.hueTimer)
     clearTimeout(this.pictureTimer)
+    clearTimeout(this.analysisTimer)
     this.gone = true
   },
   methods: {
@@ -507,6 +563,23 @@ export default {
         // Closed or gone while it was asked for: that is the end of it.
         if (this.modelValue && !this.gone) this.followPicture()
       }, PICTURE_REFRESH_MS)
+    },
+    /** connect's analysis of the playing song, asked for again until it
+     * is done. Until then, and for a song it could not analyse, the
+     * preview plays the made-up song. */
+    async loadAnalysis(songId: string) {
+      let reply: Awaited<ReturnType<typeof getSongAnalysis>> | null = null
+      try {
+        reply = await getSongAnalysis(songId)
+      } catch (error) {
+        console.error('[lights] Could not load the song for the preview:', error)
+      }
+      if (this.gone || this.playingSongId !== songId) return
+      if (reply?.status === 'ready') {
+        this.liveSong = { id: songId, song: markRaw(analysedSong(reply)) }
+      } else if (reply?.status === 'pending') {
+        this.analysisTimer = setTimeout(() => void this.loadAnalysis(songId), ANALYSIS_POLL_MS)
+      }
     },
     async search() {
       this.searching = true

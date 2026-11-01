@@ -1,4 +1,4 @@
-"""routes/lights.py — the lights dialog's Hue setup, and local playback reports.
+"""routes/lights.py — the lights dialog's Hue setup and preview, and local playback reports.
 
 Instance-wide like the log level and the integration key: the lights
 belong to the house this connect runs in, so CONNECT_TOKEN is the gate,
@@ -12,7 +12,7 @@ import logging
 import time
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from core import fanart
@@ -20,6 +20,7 @@ from core.auth import require_token
 from core.session import SessionState, get_session
 from lights import config as lights_config
 from lights import hue
+from lights.analysis import ENERGY_RATE, HEARD, SongLights
 from lights.config import MAX_LEAD_MS, MIN_BRIGHTNESS
 from lights.controller import controller
 
@@ -237,3 +238,36 @@ async def report_local(req: LocalReport, session: SessionState = Depends(get_ses
 @router.delete("/local", status_code=204)
 async def stop_local(session: SessionState = Depends(get_session)):
     controller.forget_local(session.session_id)
+
+
+def _song_dict(song: SongLights) -> dict:
+    beats = song.beats
+    return {
+        "energy_rate": ENERGY_RATE,
+        "energy": [round(float(v), 3) for v in song.energy],
+        "beats": None
+        if beats is None
+        else {
+            "times": [round(float(t), 3) for t in beats.times],
+            "downbeat": beats.downbeat,
+            "period": beats.period,
+        },
+        "hits": None if song.hits is None else [round(float(h), 3) for h in song.hits],
+        "heard_from": HEARD,
+    }
+
+
+@router.get("/analysis")
+async def song_analysis(
+    song_id: str = Query(min_length=1, max_length=512),
+    session: SessionState = Depends(get_session),
+):
+    """What the lights know about a song - its beats and loudness - for the
+    dialog's preview to play along with what is playing. Asked again while
+    "pending"."""
+    if not lights_config.get().paired:
+        raise HTTPException(status_code=409, detail="not_paired")
+    status, song = controller.preview_song(session.session_id, song_id)
+    if song is None:
+        return {"status": status}
+    return {"status": status, **_song_dict(song)}

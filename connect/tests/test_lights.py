@@ -1141,6 +1141,30 @@ async def test_a_missing_cover_does_not_hold_back_the_beat(sessions, monkeypatch
     assert session.media.lookups == 1  # only the cover was fetched again
 
 
+async def test_the_preview_sets_an_analysis_going_and_then_has_it(sessions, monkeypatch):
+    _paired()
+    session = SessionState("s1")
+    registry._sessions["s1"] = session
+    session.media = _Media()
+
+    async def colours(url):
+        return (RED,)
+
+    requested = []
+    monkeypatch.setattr("lights.controller.cover_colours", colours)
+    c = LightController()
+    monkeypatch.setattr(c._analysis, "request", lambda song_id, url: requested.append(url))
+    assert c.preview_song("s1", "song-1") == ("pending", None)
+    await _resolved(c, "song-1")
+    assert c.preview_song("s1", "song-1") == ("pending", None)
+    assert requested[-1] == "http://music/song-1"
+    song = SongLights(duration=1.0, beats=None, energy=np.ones(4, np.float32))
+    c._analysis._done["song-1"] = song
+    assert c.preview_song("s1", "song-1") == ("ready", song)
+    c._analysis._done["song-2"] = None
+    assert c.preview_song("s1", "song-2") == ("failed", None)
+
+
 async def test_the_dialog_sees_the_picture_of_the_last_song_followed(sessions, fake_bridge):
     _paired()
     c = LightController()
@@ -1606,6 +1630,32 @@ def test_a_picture_report_takes_only_fanart_images(client, monkeypatch):
     for url in ("https://example.com/a.jpg", "http://assets.fanart.tv/a.jpg", "file:///etc/x"):
         reply = client.put("/lights/picture", json={"song_id": "s", "url": url})
         assert reply.status_code == 422
+
+
+def test_the_preview_gets_the_songs_beats_and_loudness(client, monkeypatch):
+    from lights.controller import controller
+
+    song = SongLights(
+        duration=2.0,
+        beats=analysis.Beats(times=np.array([0.5, 1.0, 1.5]), downbeat=1, period=0.5),
+        energy=np.array([0.25, 1.0], np.float32),
+        hits=np.array([1.0, 0.2, 0.9], np.float32),
+    )
+    asked = []
+    monkeypatch.setattr(controller, "preview_song", lambda *a: asked.append(a) or ("ready", song))
+    assert client.get("/lights/analysis", params={"song_id": "s"}).status_code == 409
+    _paired()
+    body = client.get("/lights/analysis", params={"song_id": "s"}).json()
+    assert asked[0][1] == "s"
+    assert body["status"] == "ready"
+    assert body["beats"] == {"times": [0.5, 1.0, 1.5], "downbeat": 1, "period": 0.5}
+    assert body["energy"] == [0.25, 1.0]
+    assert body["hits"] == [1.0, 0.2, 0.9]
+    assert body["energy_rate"] == analysis.ENERGY_RATE
+    assert body["heard_from"] == analysis.HEARD
+
+    monkeypatch.setattr(controller, "preview_song", lambda *a: ("pending", None))
+    assert client.get("/lights/analysis", params={"song_id": "s"}).json() == {"status": "pending"}
 
 
 def test_local_report_rejects_a_negative_position(client):

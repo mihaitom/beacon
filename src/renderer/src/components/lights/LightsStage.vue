@@ -1,6 +1,6 @@
 <template>
-  <!-- The lights of the picked area, playing a made-up song in the chosen
-     - style (stagePreview.ts). Decorative: the choices next to it say
+  <!-- The lights of the picked area, playing the song that is playing (or
+     - a made-up one) in the chosen style (stagePreview.ts). Decorative: the choices next to it say
      - everything in words. Dimmed, not dark, while the lights are switched
      - off - it is there to choose a style by, which is often done first. -->
   <div class="lights-stage" :class="{ 'lights-stage--off': !on }" aria-hidden="true">
@@ -11,7 +11,13 @@
 <script lang="ts">
 import type { PropType } from 'vue'
 import type { LightsStyle } from '@/services/connect/lights'
-import { previewFrame, previewTime, type Rgb } from '@/services/lights/stagePreview'
+import {
+  MADE_UP_SONG,
+  previewFrame,
+  previewTime,
+  type PreviewSong,
+  type Rgb,
+} from '@/services/lights/stagePreview'
 
 // The preview is meant to be looked at for a few seconds while choosing;
 // a room with more lights than this would only shrink every one of them.
@@ -32,6 +38,9 @@ export default {
      * palette's first. */
     rotate: { type: Boolean, default: false },
     on: { type: Boolean, default: true },
+    song: { type: Object as PropType<PreviewSong>, default: () => MADE_UP_SONG },
+    /** Seconds into `song` at a requestAnimationFrame time. */
+    clock: { type: Function as PropType<(now: number) => number>, default: previewTime },
   },
   data() {
     return { frameId: 0 }
@@ -66,18 +75,20 @@ export default {
       // Asked for first, so one frame that fails to draw does not end the
       // animation for good.
       this.frameId = requestAnimationFrame(this.loop)
-      this.draw(previewTime(now))
+      this.draw(this.clock(now), this.song)
     },
+    // Always the made-up song, which has a beat just before this.
     drawStill() {
-      if (this.reducedMotion()) this.draw(STILL_AT_SECONDS)
+      if (this.reducedMotion()) this.draw(STILL_AT_SECONDS, MADE_UP_SONG)
     },
-    draw(t: number) {
+    draw(t: number, song: PreviewSong) {
       const lamps = ((this.$refs.lamp as (HTMLElement | null)[] | undefined) ?? []).filter(
         (lamp): lamp is HTMLElement => !!lamp,
       )
       if (!this.palette.length || !lamps.length) return
       const frame = previewFrame(
         t,
+        song,
         this.lightStyle,
         this.palette,
         lamps.length,

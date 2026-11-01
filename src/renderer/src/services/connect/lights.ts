@@ -125,3 +125,27 @@ export async function reportPicture(songId: string, url: string | null): Promise
 export async function stopLocalReport(): Promise<void> {
   await fetchConnect('/lights/local', { method: 'DELETE' })
 }
+
+/** connect's analysis of a song (lights/analysis.py's SongLights), for the
+ * dialog's preview. */
+export interface SongAnalysis {
+  /** Values a second of `energy`. */
+  energy_rate: number
+  /** 0-1 loudness, 1 the song's own loud part. */
+  energy: number[]
+  /** Null for a song without a beat worth following. */
+  beats: { times: number[]; downbeat: number; period: number } | null
+  /** 0-1 per beat: how strongly it is heard. Null for every beat a full one. */
+  hits: number[] | null
+  /** A hit at least this strong counts as a beat heard. */
+  heard_from: number
+}
+
+/** "pending" while connect is still decoding the song - ask again. */
+export type SongAnalysisReply =
+  { status: 'pending' | 'failed' } | ({ status: 'ready' } & SongAnalysis)
+
+export async function getSongAnalysis(songId: string): Promise<SongAnalysisReply> {
+  const query = new URLSearchParams({ song_id: songId })
+  return await fetchConnect<SongAnalysisReply>(`/lights/analysis?${query}`)
+}

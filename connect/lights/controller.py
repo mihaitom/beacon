@@ -26,7 +26,7 @@ from core.state import TEST_TONE_TRACK_ID, list_target_pairs
 
 from . import config as lights_config
 from . import hue, show
-from .analysis import RGB, AnalysisCache, cover_colours, fanart_colours
+from .analysis import RGB, AnalysisCache, SongLights, cover_colours, fanart_colours
 
 logger = logging.getLogger("connect.lights")
 
@@ -197,6 +197,16 @@ class LightController:
         url = self._pictures.get(song_id)
         picture = self._picture_colours.get(url) if url else None
         return picture if picture is not None else self._covers.get(song_id)
+
+    def preview_song(self, session_id: str, song_id: str) -> tuple[str, SongLights | None]:
+        """A song's analysis for the dialog's preview - "ready", "pending"
+        (set going now if it was not) or "failed". The same cache as the
+        show's, so a song the lights follow is not decoded twice."""
+        if self._analysis.has(song_id):
+            song = self._analysis.get(song_id)
+            return ("ready", song) if song is not None else ("failed", None)
+        self._prepare(Source(session_id, song_id, 0.0))
+        return "pending", None
 
     def retry_now(self) -> None:
         """The settings changed - a start that failed under the old ones

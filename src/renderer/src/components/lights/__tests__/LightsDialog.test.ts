@@ -13,19 +13,25 @@ import {
   forgetBridge,
   getLights,
   getPicture,
+  getSongAnalysis,
   pairBridge,
   updateLights,
   type LightsState,
+  type SongAnalysisReply,
 } from '@/services/connect/lights'
+import { MADE_UP_SONG } from '@/services/lights/stagePreview'
+import type { Song } from '@/types/library'
 import { DEFAULT_APP_ACCENT, themeAccent } from '@/services/appAccent'
 import { useAppearanceStore } from '@/stores/appearance'
 import { themeColour } from '@/stores/lights'
+import { usePlaybackStore } from '@/stores/playback'
 import LightsDialog from '../LightsDialog.vue'
 import LightsButton from '../LightsButton.vue'
 
 vi.mock('@/services/connect/lights', () => ({
   getLights: vi.fn(),
   getPicture: vi.fn(),
+  getSongAnalysis: vi.fn(),
   discoverBridges: vi.fn(),
   pairBridge: vi.fn(),
   updateLights: vi.fn(),
@@ -403,6 +409,99 @@ describe('LightsDialog', () => {
     await vm.forget()
     expect(forgetBridge).toHaveBeenCalled()
     expect(vm.state?.paired).toBe(false)
+  })
+})
+
+describe('LightsDialog preview', () => {
+  const READY: SongAnalysisReply = {
+    status: 'ready',
+    energy_rate: 4,
+    energy: [0.5],
+    beats: { times: [0.5, 1], downbeat: 0, period: 0.5 },
+    hits: null,
+    heard_from: 0.5,
+  }
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
+
+  function play(playing = true) {
+    usePlaybackStore().$patch({
+      queue: [{ id: 'song-1', title: 'A song' } as Song],
+      currentIndex: 0,
+      isPlaying: playing,
+    })
+  }
+
+  function stageSong(wrapper: Awaited<ReturnType<typeof openDialogWrapper>>) {
+    return wrapper.findComponent({ name: 'LightsStage' }).props('song')
+  }
+
+  it('plays along with the song that is playing', async () => {
+    vi.mocked(getSongAnalysis).mockResolvedValue(READY)
+    play()
+    const wrapper = await openDialogWrapper(PAIRED)
+    expect(getSongAnalysis).toHaveBeenCalledWith('song-1')
+    expect(stageSong(wrapper)).not.toBe(MADE_UP_SONG)
+    expect(stageSong(wrapper).beatAt(0.6)).toEqual([0, expect.closeTo(0.1)])
+  })
+
+  it('plays the made-up song while paused, and with nothing playing', async () => {
+    vi.mocked(getSongAnalysis).mockResolvedValue(READY)
+    play(false)
+    const wrapper = await openDialogWrapper(PAIRED)
+    expect(getSongAnalysis).not.toHaveBeenCalled()
+    expect(stageSong(wrapper)).toBe(MADE_UP_SONG)
+    usePlaybackStore().$patch({ isPlaying: true })
+    await flushPromises()
+    expect(stageSong(wrapper)).not.toBe(MADE_UP_SONG)
+    usePlaybackStore().$patch({ isPlaying: false })
+    await flushPromises()
+    expect(stageSong(wrapper)).toBe(MADE_UP_SONG)
+  })
+
+  it('asks again while connect is still analysing, and stops once closed', async () => {
+    vi.useFakeTimers()
+    try {
+      vi.mocked(getSongAnalysis).mockResolvedValue({ status: 'pending' })
+      play()
+      const wrapper = await openDialogWrapper(PAIRED)
+      expect(stageSong(wrapper)).toBe(MADE_UP_SONG)
+      vi.mocked(getSongAnalysis).mockResolvedValue(READY)
+      await vi.advanceTimersByTimeAsync(1_500)
+      expect(stageSong(wrapper)).not.toBe(MADE_UP_SONG)
+
+      vi.mocked(getSongAnalysis).mockResolvedValue({ status: 'pending' })
+      usePlaybackStore().$patch({ queue: [{ id: 'song-2', title: 'B' } as Song] })
+      await flushPromises()
+      expect(stageSong(wrapper)).toBe(MADE_UP_SONG)
+      await wrapper.setProps({ modelValue: false })
+      vi.mocked(getSongAnalysis).mockClear()
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(getSongAnalysis).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('a song that is no longer playing is not asked for again', async () => {
+    vi.useFakeTimers()
+    try {
+      let answer!: (reply: SongAnalysisReply) => void
+      vi.mocked(getSongAnalysis).mockReturnValueOnce(new Promise((resolve) => (answer = resolve)))
+      vi.mocked(getSongAnalysis).mockResolvedValue(READY)
+      play()
+      await openDialogWrapper(PAIRED)
+      usePlaybackStore().$patch({ queue: [{ id: 'song-2', title: 'B' } as Song] })
+      await flushPromises()
+      answer({ status: 'pending' })
+      await vi.advanceTimersByTimeAsync(5_000)
+      expect(vi.mocked(getSongAnalysis).mock.calls.map(([id]) => id)).toEqual(['song-1', 'song-2'])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
