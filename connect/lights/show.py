@@ -8,7 +8,7 @@ tested and tuned without a bridge. Four styles:
   white); lights on the left and right take turns.
 
 Every flash is as strong as its beat is heard (SongLights.hit): through a
-breakdown the grid runs on, the flashes do not.
+breakdown the beats count on, the flashes do not.
 - calm: no flashes; brightness follows the loudness, the colours glide
   from light to light.
 - party: hard hits, the lights swap colours on every beat, a white flash
@@ -115,9 +115,10 @@ def _second_colour(colour: RGB) -> RGB:
 def heard_beats_at(song: SongLights | None, t: float) -> int | None:
     """How many beats of `song` were heard by `t`; None without a beat to
     count."""
-    if song is None or song.grid is None:
+    beat = song.beat_at(t) if song is not None else None
+    if beat is None:
         return None
-    return song.heard_beats(math.floor((t - song.grid.phase) / song.grid.period))
+    return song.heard_beats(beat[0])
 
 
 def frame(
@@ -150,15 +151,13 @@ def _levels(
     if style == "calm":
         return _calm(t, energy, palette, ordered)
 
-    grid = song.grid
-    if grid is None:
+    beat = song.beat_at(t)
+    if beat is None:
         level = _clamp(_NO_BEAT_FLOOR + _NO_BEAT_RANGE * energy)
         return {cid: scale(c, level) for cid, c in base.items()}
 
-    beat_index = math.floor((t - grid.phase) / grid.period)
-    since = t - (grid.phase + beat_index * grid.period)
-    bar_position = round((grid.phase + beat_index * grid.period - grid.downbeat) / grid.period)
-    downbeat = bar_position % 4 == 0
+    beat_index, since = beat
+    downbeat = song.is_downbeat(beat_index)
     hit = song.hit(beat_index)
 
     if style in ("party", "chase"):

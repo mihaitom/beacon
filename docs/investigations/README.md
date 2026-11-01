@@ -116,6 +116,12 @@ Navidrome, Jellyfin and Plex, and the bridges in front of the last two.
 - **OPEN** [The queue drawer's first-ever reveal does not animate](interface/queue-drawer-first-reveal-not-animated.md) - `appear` tried again and reverted 2026-09-07, behaviour in the app unchanged. Read it before the next attempt: the browser-test harness does not reproduce the bug, and two timing mechanisms are dead ends there
 - **CLOSED** [Which photo edges to continue](interface/backdrop-edge-fill-thresholds.md) - 2026-09-27, question dropped; the detail-page backdrop used to judge whether a photo's edge was calm enough to continue. Tuning that against 1180 labelled samples hit its limit; continuing every edge into the photo's background (or main) colour made the question unnecessary. Has why sampling must run in Electron (headless Chromium judges a dozen photos differently) and why an average colour was wrong
 
+## Lights
+
+The room lights playing along (connect/lights/).
+
+- **FIXED** [The lights are not in time with the song](lights/lights-not-in-time-with-the-song.md) (2026-11-01, unreleased) - the beatmix grid turned a quarter of songs down (a played tempo, sections leaning on different parts) and sat half a beat off the kick for 16 of the rest. The lights place their own beats now. Has the 120-song measurement against BPM tags, four tests for "has a beat" that did not work, and the same half-beat fault still open in the beatmix grid
+
 ## Tools and method
 
 - **REFERENCE** [Instrumentation](instrumentation.md) - what's built into the app and what's scripted on the media host

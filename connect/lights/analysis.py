@@ -1,16 +1,15 @@
 """lights/analysis.py — what the lights need to know about a song.
 
 The whole song is decoded once when it starts (1-2 s for a pop song,
-measured 2026-11-01) rather than analysed live: the beat grid then says
-where every beat falls *before* it is heard, which is what lets a colour
-leave early enough to land on it.
+measured 2026-11-01) rather than analysed live: the beats are then known
+*before* they are heard, which is what lets a colour leave early enough to
+land on one.
 
-Three things come out of it: the beat grid (core/beat_analysis.py, the
-same one beatmixing uses), how strongly each of its beats is actually
-heard, and a slow loudness curve, so a quiet verse and a full chorus do not
-light the room the same. The grid alone runs on through a breakdown as if
-the drums were still there; the beats' own strength is what lets the
-lights go quiet with them.
+Three things come out of it: the beats (beats.py), how strongly each of
+them is actually heard, and a slow loudness curve, so a quiet verse and a
+full chorus do not light the room the same. A beat is placed where the
+tempo says one belongs even through a breakdown; its own strength is what
+lets the lights go quiet with the drums.
 """
 
 from __future__ import annotations
@@ -18,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import math
 import time
 from collections import OrderedDict
 from dataclasses import dataclass
@@ -27,15 +27,13 @@ import numpy as np
 
 from core.beat_analysis import (
     ANALYSIS_RATE,
-    BeatGrid,
     beat_strengths,
-    grid_from_envelopes,
     low_passed,
     onset_envelopes,
     span_db,
 )
 from core.streamer import pcm_decode_cmd
-from core.transition_planner import MIN_CONFIDENCE
+from lights.beats import Beats, find_beats
 
 logger = logging.getLogger("connect.lights")
 
@@ -45,8 +43,8 @@ ENERGY_RATE = 4
 _ENERGY_WINDOW_SECONDS = 2.0
 _DECODE_TIMEOUT_SECONDS = 60.0
 # Only this much of a song is decoded: a one-hour DJ mix in full would be
-# about 240 MB of samples in memory. Past it the beat grid runs on as found
-# and the loudness stays at its last value.
+# about 240 MB of samples in memory. Past it the beats run on at the tempo
+# found and the loudness stays at its last value.
 MAX_ANALYSED_SECONDS = 20 * 60
 # Songs kept analysed: the current one and a few back, for a skip back.
 _CACHE_SIZE = 6
@@ -78,14 +76,12 @@ class SongLights:
     duration: float
     # None where the song has no beat worth following (a ballad without
     # drums, spoken word): the lights then only follow the loudness.
-    grid: BeatGrid | None
+    beats: Beats | None
     # 0..1, ENERGY_RATE values a second; 1 is the song's own loud part.
     energy: np.ndarray
-    # 0..1 per beat of the grid, from beat number `first_beat` on (the
-    # grid's beat_index, see show.py): how strongly it is heard. None for
-    # every beat a full one.
+    # 0..1 per beat of `beats`: how strongly it is heard. None for every
+    # beat a full one.
     hits: np.ndarray | None = None
-    first_beat: int = 0
 
     def energy_at(self, t: float) -> float:
         if len(self.energy) == 0:
@@ -93,22 +89,40 @@ class SongLights:
         i = int(max(0.0, t) * ENERGY_RATE)
         return float(self.energy[min(i, len(self.energy) - 1)])
 
+    def beat_at(self, t: float) -> tuple[int, float] | None:
+        """(the number of the last beat by `t`, seconds since it), or None
+        without beats. Before the first beat and after the last the count
+        runs on at the song's tempo."""
+        beats = self.beats
+        if beats is None:
+            return None
+        times = beats.times
+        if t < times[0]:
+            i = math.floor((t - times[0]) / beats.period)
+            return i, t - (times[0] + i * beats.period)
+        if t >= times[-1]:
+            i = math.floor((t - times[-1]) / beats.period)
+            return len(times) - 1 + i, t - (times[-1] + i * beats.period)
+        i = int(np.searchsorted(times, t, side="right")) - 1
+        return i, t - float(times[i])
+
+    def is_downbeat(self, beat_index: int) -> bool:
+        return self.beats is not None and (beat_index - self.beats.downbeat) % 4 == 0
+
     def hit(self, beat_index: int) -> float:
         """Past the analysed part (MAX_ANALYSED_SECONDS) a full beat, as
         it was before the beats were weighed at all."""
-        i = beat_index - self.first_beat
-        if self.hits is None or not 0 <= i < len(self.hits):
+        if self.hits is None or not 0 <= beat_index < len(self.hits):
             return 1.0
-        return float(self.hits[i])
+        return float(self.hits[beat_index])
 
     def heard_beats(self, beat_index: int) -> int:
         """How many beats up to `beat_index` were heard as one: a count
         that stands still through a breakdown."""
-        i = beat_index - self.first_beat
-        if self.hits is None or i < 0:
+        if self.hits is None or beat_index < 0:
             return beat_index
-        heard = int(np.count_nonzero(self.hits[: i + 1] >= HEARD))
-        return heard + max(0, i + 1 - len(self.hits))
+        heard = int(np.count_nonzero(self.hits[: beat_index + 1] >= HEARD))
+        return heard + max(0, beat_index + 1 - len(self.hits))
 
 
 def energy_curve(samples: np.ndarray, rate: int = ANALYSIS_RATE) -> np.ndarray:
@@ -136,39 +150,30 @@ def _against_typical(strength: np.ndarray) -> np.ndarray:
     return strength / typical if typical > 0 else np.zeros_like(strength)
 
 
-def beat_hits(
-    samples: np.ndarray, full: np.ndarray, kick: np.ndarray, grid: BeatGrid
-) -> tuple[int, np.ndarray]:
-    """(the grid's index of the first beat, how strongly each is heard).
+def beat_hits(samples: np.ndarray, full: np.ndarray, kick: np.ndarray, beats: Beats) -> np.ndarray:
+    """How strongly each of `beats` is heard.
 
     A beat's onset counts in the bass or across the band, whichever is
     stronger - a clap in a breakdown is as much a hit as a kick."""
-    beats = grid.beats(0.0, len(samples) / ANALYSIS_RATE - grid.period)
-    if len(beats) == 0:
-        return 0, np.zeros(0, dtype=np.float32)
-    first = round((beats[0] - grid.phase) / grid.period)
+    times = beats.times
     onset = np.maximum(
-        _against_typical(beat_strengths(kick, beats)),
-        _against_typical(beat_strengths(full, beats)),
+        _against_typical(beat_strengths(kick, times)),
+        _against_typical(beat_strengths(full, times)),
     )
-    bass = span_db(low_passed(samples), beats, grid.period)
+    bass = span_db(low_passed(samples), times, beats.period)
     bass_on = _ramp(bass - np.percentile(bass, 75), _BASS_GONE_DB, _BASS_FULL_DB)
     hits = np.maximum(_ramp(onset, _HIT_FROM, _HIT_FULL), _BASS_PULSE * bass_on)
-    return first, hits.astype(np.float32)
+    return hits.astype(np.float32)
 
 
 def analyse_samples_for_lights(samples: np.ndarray) -> SongLights:
     full, kick = onset_envelopes(samples)
-    grid = grid_from_envelopes(full, kick)
-    if grid is not None and grid.confidence < MIN_CONFIDENCE:
-        grid = None
-    first, hits = beat_hits(samples, full, kick, grid) if grid else (0, None)
+    beats = find_beats(full, kick) if len(full) else None
     return SongLights(
         duration=len(samples) / ANALYSIS_RATE,
-        grid=grid,
+        beats=beats,
         energy=energy_curve(samples),
-        hits=hits,
-        first_beat=first,
+        hits=beat_hits(samples, full, kick, beats) if beats else None,
     )
 
 
@@ -346,7 +351,7 @@ class AnalysisCache:
             gone, _ = self._done.popitem(last=False)
             self._failed.pop(gone, None)
         if result is not None:
-            bpm = f"{result.grid.bpm:.1f} BPM" if result.grid else "no steady beat"
+            bpm = f"{result.beats.bpm:.1f} BPM" if result.beats else "no steady beat"
             logger.debug(f"[lights] Analysed {song_id}: {bpm}")
 
     def cancel_all(self) -> None:

@@ -17,7 +17,7 @@ import httpx
 import numpy as np
 import pytest
 
-from core.beat_analysis import ANALYSIS_RATE, BeatGrid
+from core.beat_analysis import ANALYSIS_RATE
 from core.session import SessionState, registry
 from lights import analysis, hue, show
 from lights import config as lights_config
@@ -262,17 +262,16 @@ def _click_track(bpm: float, seconds: float) -> np.ndarray:
 
 
 def _beats_heard(song: SongLights, start: float, end: float) -> np.ndarray:
-    grid = song.grid
-    first = int(np.ceil((start - grid.phase) / grid.period))
-    last = int(np.floor((end - grid.phase) / grid.period))
-    return np.array([song.hit(i) for i in range(first, last + 1)])
+    times = song.beats.times
+    within = np.flatnonzero((times >= start) & (times <= end))
+    return np.array([song.hit(int(i)) for i in within])
 
 
 def test_beats_in_a_breakdown_are_not_heard():
     x = _click_track(120, 40)
     x[int(16 * ANALYSIS_RATE) : int(26 * ANALYSIS_RATE)] = 0  # the drums stop
     song = analysis.analyse_samples_for_lights(x)
-    assert song.grid is not None
+    assert song.beats is not None
     assert _beats_heard(song, 4, 14).min() > 0.9
     assert _beats_heard(song, 17, 25).max() < 0.1
     assert _beats_heard(song, 28, 38).min() > 0.9
@@ -291,26 +290,36 @@ def test_a_bassline_without_drums_keeps_a_gentler_pulse():
 
 
 def test_beats_past_the_analysed_part_count_in_full():
-    song = SongLights(
-        duration=10, grid=None, energy=np.zeros(0), hits=np.array([0.0, 1.0]), first_beat=3
-    )
-    assert (song.hit(3), song.hit(4), song.hit(5), song.hit(2)) == (0.0, 1.0, 1.0, 1.0)
-    assert [song.heard_beats(i) for i in (3, 4, 5, 6)] == [0, 1, 2, 3]
+    song = SongLights(duration=10, beats=None, energy=np.zeros(0), hits=np.array([0.0, 1.0]))
+    assert (song.hit(0), song.hit(1), song.hit(2), song.hit(-1)) == (0.0, 1.0, 1.0, 1.0)
+    assert [song.heard_beats(i) for i in (0, 1, 2, 3)] == [0, 1, 2, 3]
 
 
-def test_a_steady_beat_gets_a_grid_at_its_tempo():
+def test_a_steady_beat_gets_beats_at_its_tempo_and_bars_on_the_accent():
     song = analysis.analyse_samples_for_lights(_click_track(120, 30))
-    assert song.grid is not None
-    assert song.grid.bpm == pytest.approx(120, rel=0.02)
+    assert song.beats is not None
+    assert song.beats.bpm == pytest.approx(120, rel=0.02)
     assert song.duration == pytest.approx(30, abs=0.01)
+    # Every fourth click is the loud one (_click_track).
+    first_bar = int(np.argmin(np.abs(song.beats.times - 4.0)))
+    assert song.is_downbeat(first_bar)
+    assert not song.is_downbeat(first_bar + 1)
 
 
-def test_noise_gets_no_grid():
+def test_the_count_runs_on_at_the_tempo_before_and_after_the_beats():
+    beats = analysis.Beats(times=np.array([1.0, 1.5, 2.0]), downbeat=0, period=0.5)
+    song = SongLights(duration=10, beats=beats, energy=np.zeros(0))
+    assert song.beat_at(1.6) == (1, pytest.approx(0.1))
+    assert song.beat_at(0.7) == (-1, pytest.approx(0.2))
+    assert song.beat_at(3.1) == (4, pytest.approx(0.1))
+
+
+def test_noise_gets_no_beats():
     rng = np.random.default_rng(1)
     song = analysis.analyse_samples_for_lights(
         (rng.standard_normal(ANALYSIS_RATE * 20) * 0.2).astype(np.float32)
     )
-    assert song.grid is None
+    assert song.beats is None
 
 
 def test_energy_curve_follows_the_loud_section():
@@ -493,13 +502,11 @@ async def test_a_cover_that_cannot_be_fetched_is_worth_another_try(monkeypatch):
 # ── show ─────────────────────────────────────────────────────────────────
 
 
-def _song(energy: float = 0.5, grid: BeatGrid | None = None) -> SongLights:
-    if grid is None:
-        grid = BeatGrid(
-            period=0.5, phase=0.0, downbeat=0.0, confidence=1.0, downbeat_confidence=1.0
-        )
+def _song(energy: float = 0.5) -> SongLights:
+    """A beat every half second from the start, a bar every fourth."""
+    beats = analysis.Beats(times=np.arange(0.0, 60.0, 0.5), downbeat=0, period=0.5)
     return SongLights(
-        duration=60, grid=grid, energy=np.full(60 * analysis.ENERGY_RATE, energy, np.float32)
+        duration=60, beats=beats, energy=np.full(60 * analysis.ENERGY_RATE, energy, np.float32)
     )
 
 
@@ -511,7 +518,7 @@ def _level(rgb) -> float:
 def test_a_beat_that_is_not_heard_does_not_flash(style):
     silent = SongLights(
         duration=60,
-        grid=_song().grid,
+        beats=_song().beats,
         energy=np.full(60 * analysis.ENERGY_RATE, 0.5, np.float32),
         hits=np.zeros(120, np.float32),
     )
@@ -526,7 +533,7 @@ def test_party_colours_hold_while_no_beat_is_heard():
     hits[8:16] = 0.0
     song = SongLights(
         duration=60,
-        grid=_song().grid,
+        beats=_song().beats,
         energy=np.full(60 * analysis.ENERGY_RATE, 0.5, np.float32),
         hits=hits,
     )
@@ -580,7 +587,7 @@ def test_lights_on_one_side_all_pulse():
 
 
 def test_no_beat_follows_loudness_only():
-    song = SongLights(duration=10, grid=None, energy=np.array([0.0, 1.0], np.float32))
+    song = SongLights(duration=10, beats=None, energy=np.array([0.0, 1.0], np.float32))
     quiet = show.frame(0.0, song, (RED,), (LEFT,))[0]
     loud = show.frame(0.3, song, (RED,), (LEFT,))[0]
     assert _level(loud) > _level(quiet)
@@ -680,7 +687,7 @@ def test_the_chase_stands_still_through_a_breakdown():
     hits[4:12] = 0.0
     song = SongLights(
         duration=60,
-        grid=_song().grid,
+        beats=_song().beats,
         energy=np.full(60 * analysis.ENERGY_RATE, 0.5, np.float32),
         hits=hits,
     )
@@ -1315,7 +1322,7 @@ def _rotating(hits: np.ndarray | None) -> LightController:
     c._covers["s"] = (RED,)
     song = _song()
     c._analysis._done["s"] = SongLights(
-        duration=song.duration, grid=song.grid, energy=song.energy, hits=hits
+        duration=song.duration, beats=song.beats, energy=song.energy, hits=hits
     )
     return c
 
