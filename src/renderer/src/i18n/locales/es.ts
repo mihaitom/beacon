@@ -697,6 +697,70 @@ export default {
     needsRegenerate:
       'El código de emparejamiento anterior ya no está disponible. Genera uno nuevo para emparejar un teléfono - esto desconectará cualquier teléfono emparejado anteriormente.',
   },
+  lights: {
+    title: 'Luces de la sala',
+    loadFailed: 'No se pudieron cargar los ajustes de las luces.',
+    pairIntro:
+      'Hace que las luces Philips Hue acompañen la música. Crea primero un área de entretenimiento en la app Hue; sus luces son las que acompañan.',
+    bridge: 'Hue Bridge',
+    search: 'Buscar',
+    pairHint: 'Escribe la dirección del bridge o búscalo, y luego vincúlalo.',
+    pressButton: 'Pulsa ahora el botón redondo del bridge.',
+    pair: 'Vincular',
+    enabled: 'Las luces acompañan',
+    follows: 'Acompaña todo lo que suena en Beacon, salvo la radio. Vista previa a 120 BPM.',
+    connected: 'Conectado al bridge en {host}.',
+    unreachable: 'El bridge en {host} no responde.',
+    playing: 'Las luces están acompañando ahora mismo.',
+    startFailed:
+      'La última vez no se pudieron encender las luces. Puede que otra app esté usando el área, por ejemplo Hue Sync.',
+    area: 'Área',
+    count: '{n} luz | {n} luces',
+    areaHint: 'Las áreas de entretenimiento se crean en la app Hue.',
+    noAreas:
+      'El bridge aún no tiene ningún área de entretenimiento. Crea una en la app Hue, en Ajustes, Áreas de entretenimiento.',
+    style: 'Estilo',
+    styles: {
+      pulse: {
+        name: 'Pulso',
+        hint: 'Un destello en cada golpe, alternando izquierda y derecha. Las partes más fuertes brillan más.',
+      },
+      calm: {
+        name: 'Tranquilo',
+        hint: 'Sin destellos. El brillo sigue despacio el volumen y los colores se funden entre sí.',
+      },
+      party: {
+        name: 'Fiesta',
+        hint: 'Golpes intensos, las luces intercambian colores en cada golpe y un destello blanco en el primero de cada compás.',
+      },
+      wave: {
+        name: 'Ola',
+        hint: 'Cada golpe recorre la sala como una ola, de izquierda a derecha.',
+      },
+    },
+    colour: 'Color',
+    colourModes: {
+      cover: 'De la portada',
+      palette: 'Paleta de la portada',
+      fixed: 'Color fijo',
+    },
+    coverHint: 'El color principal de la portada actual',
+    paletteHint: 'Repartida entre las luces',
+    coverUnknown: 'Se toma de la portada en cuanto suene algo',
+    customColour: 'Color propio',
+    brightness: 'Brillo',
+    advanced: 'Avanzado',
+    lead: 'Adelanto',
+    leadHint:
+      'Con cuánta antelación reciben las luces su color. Súbelo si destellan después del golpe, bájalo si antes.',
+    forget: 'Quitar bridge',
+    noneFound: 'No se encontró ningún bridge. Escribe su dirección a mano.',
+    searchFailed: 'La búsqueda de un bridge ha fallado.',
+    buttonTimeout: 'Nadie pulsó el botón del bridge. Inténtalo de nuevo.',
+    noBridge: 'Ningún Hue Bridge responde en {host}.',
+    pairFailed: 'No se pudo vincular el bridge.',
+    saveFailed: 'No se pudieron guardar los ajustes de las luces.',
+  },
   settings: {
     title: 'Ajustes',
     account: 'Cuenta',

@@ -692,6 +692,71 @@ export default {
     needsRegenerate:
       'Il codice di associazione precedente non è più disponibile. Rigeneralo per associare un telefono: questo disconnetterà qualsiasi telefono associato in precedenza.',
   },
+  lights: {
+    title: 'Luci della stanza',
+    loadFailed: 'Impossibile caricare le impostazioni delle luci.',
+    pairIntro:
+      "Fa suonare insieme alla musica le luci Philips Hue. Crea prima un'area di intrattenimento nell'app Hue; sono le sue luci a suonare.",
+    bridge: 'Hue Bridge',
+    search: 'Cerca',
+    pairHint: "Inserisci l'indirizzo del bridge o cercalo, poi associalo.",
+    pressButton: 'Premi ora il pulsante rotondo sul bridge.',
+    pair: 'Associa',
+    enabled: 'Le luci suonano insieme',
+    follows:
+      'Suona insieme a tutto ciò che riproduce Beacon, tranne la radio. Anteprima a 120 BPM.',
+    connected: 'Collegato al bridge su {host}.',
+    unreachable: 'Il bridge su {host} non risponde.',
+    playing: 'Le luci stanno suonando insieme ora.',
+    startFailed:
+      "L'ultima volta non è stato possibile avviare le luci. Forse un'altra app sta usando l'area, per esempio Hue Sync.",
+    area: 'Area',
+    count: '{n} luce | {n} luci',
+    areaHint: "Le aree di intrattenimento si creano nell'app Hue.",
+    noAreas:
+      "Il bridge non ha ancora un'area di intrattenimento. Creane una nell'app Hue, in Impostazioni, Aree di intrattenimento.",
+    style: 'Stile',
+    styles: {
+      pulse: {
+        name: 'Impulso',
+        hint: 'Un lampo a ogni battito, sinistra e destra a turno. Le parti più forti sono più luminose.',
+      },
+      calm: {
+        name: 'Calmo',
+        hint: "Nessun lampo. La luminosità segue lentamente il volume, i colori sfumano l'uno nell'altro.",
+      },
+      party: {
+        name: 'Festa',
+        hint: 'Colpi decisi, le luci si scambiano i colori a ogni battito, un lampo bianco sul primo di ogni battuta.',
+      },
+      wave: {
+        name: 'Onda',
+        hint: "Ogni battito attraversa la stanza come un'onda, da sinistra a destra.",
+      },
+    },
+    colour: 'Colore',
+    colourModes: {
+      cover: 'Dalla copertina',
+      palette: 'Tavolozza copertina',
+      fixed: 'Colore fisso',
+    },
+    coverHint: 'Il colore principale della copertina attuale',
+    paletteHint: 'Distribuita sulle luci',
+    coverUnknown: 'Preso dalla copertina appena qualcosa suona',
+    customColour: 'Colore personalizzato',
+    brightness: 'Luminosità',
+    advanced: 'Avanzate',
+    lead: 'Anticipo',
+    leadHint:
+      'Quanto prima le luci ricevono il loro colore. Aumentalo se lampeggiano dopo il battito, riducilo se prima.',
+    forget: 'Rimuovi bridge',
+    noneFound: "Nessun bridge trovato. Inserisci l'indirizzo a mano.",
+    searchFailed: 'La ricerca di un bridge non è riuscita.',
+    buttonTimeout: 'Nessuno ha premuto il pulsante sul bridge. Riprova.',
+    noBridge: 'Nessun Hue Bridge risponde su {host}.',
+    pairFailed: "L'associazione con il bridge non è riuscita.",
+    saveFailed: 'Impossibile salvare le impostazioni delle luci.',
+  },
   settings: {
     title: 'Impostazioni',
     account: 'Account',

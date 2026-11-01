@@ -699,6 +699,70 @@ export default {
     needsRegenerate:
       "Le code d'association précédent n'est plus disponible. Générez-en un nouveau pour associer un téléphone - cela déconnectera tout téléphone associé précédemment.",
   },
+  lights: {
+    title: 'Lumières de la pièce',
+    loadFailed: 'Impossible de charger les réglages des lumières.',
+    pairIntro:
+      "Fait jouer les lampes Philips Hue avec la musique. Créez d'abord une zone de divertissement dans l'app Hue ; ce sont ses lampes qui jouent.",
+    bridge: 'Hue Bridge',
+    search: 'Rechercher',
+    pairHint: "Saisissez l'adresse du bridge ou recherchez-le, puis associez-le.",
+    pressButton: 'Appuyez maintenant sur le bouton rond du bridge.',
+    pair: 'Associer',
+    enabled: 'Les lumières jouent avec',
+    follows: 'Joue avec tout ce que Beacon diffuse, sauf la radio. Aperçu à 120 BPM.',
+    connected: 'Connecté au bridge à {host}.',
+    unreachable: 'Le bridge à {host} ne répond pas.',
+    playing: 'Les lumières jouent en ce moment.',
+    startFailed:
+      "Les lumières n'ont pas pu démarrer la dernière fois. Une autre app utilise peut-être la zone, par exemple Hue Sync.",
+    area: 'Zone',
+    count: '{n} lampe | {n} lampes',
+    areaHint: "Les zones de divertissement se créent dans l'app Hue.",
+    noAreas:
+      "Le bridge n'a pas encore de zone de divertissement. Créez-en une dans l'app Hue, sous Paramètres, Zones de divertissement.",
+    style: 'Style',
+    styles: {
+      pulse: {
+        name: 'Pulsation',
+        hint: 'Un éclat à chaque temps, gauche et droite en alternance. Les passages forts sont plus lumineux.',
+      },
+      calm: {
+        name: 'Calme',
+        hint: "Pas d'éclats. La luminosité suit lentement le volume, les couleurs se fondent l'une dans l'autre.",
+      },
+      party: {
+        name: 'Fête',
+        hint: 'Des temps appuyés, les lampes échangent leurs couleurs à chaque temps, un éclat blanc sur le premier de chaque mesure.',
+      },
+      wave: {
+        name: 'Vague',
+        hint: 'Chaque temps traverse la pièce comme une vague, de gauche à droite.',
+      },
+    },
+    colour: 'Couleur',
+    colourModes: {
+      cover: 'De la pochette',
+      palette: 'Palette de la pochette',
+      fixed: 'Couleur fixe',
+    },
+    coverHint: 'La couleur principale de la pochette actuelle',
+    paletteHint: 'Répartie sur les lampes',
+    coverUnknown: "Prise sur la pochette dès qu'un titre joue",
+    customColour: 'Couleur personnalisée',
+    brightness: 'Luminosité',
+    advanced: 'Avancé',
+    lead: 'Avance',
+    leadHint:
+      "Combien de temps à l'avance les lampes reçoivent leur couleur. Augmentez si elles s'allument après le temps, baissez si avant.",
+    forget: 'Retirer le bridge',
+    noneFound: 'Aucun bridge trouvé. Saisissez son adresse à la main.',
+    searchFailed: "La recherche d'un bridge a échoué.",
+    buttonTimeout: "Personne n'a appuyé sur le bouton du bridge. Réessayez.",
+    noBridge: 'Aucun Hue Bridge ne répond à {host}.',
+    pairFailed: "L'association avec le bridge a échoué.",
+    saveFailed: "Impossible d'enregistrer les réglages des lumières.",
+  },
   settings: {
     title: 'Paramètres',
     account: 'Compte',

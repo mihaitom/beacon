@@ -694,6 +694,70 @@ export default {
     needsRegenerate:
       'Der vorherige Pairing-Code ist nicht mehr verfügbar. Erzeuge einen neuen, um ein Handy zu koppeln - bereits gekoppelte Handys werden dabei getrennt.',
   },
+  lights: {
+    title: 'Raumlicht',
+    loadFailed: 'Die Lichteinstellungen konnten nicht geladen werden.',
+    pairIntro:
+      'Lässt Philips-Hue-Lampen zur Musik mitspielen. Lege zuerst in der Hue-App einen Entertainment-Bereich an; dessen Lampen spielen mit.',
+    bridge: 'Hue Bridge',
+    search: 'Suchen',
+    pairHint: 'Gib die Adresse der Bridge ein oder such nach ihr, dann koppeln.',
+    pressButton: 'Drück jetzt den runden Knopf auf der Bridge.',
+    pair: 'Koppeln',
+    enabled: 'Licht spielt mit',
+    follows: 'Spielt mit allem mit, was Beacon spielt, außer Radio. Vorschau bei 120 BPM.',
+    connected: 'Mit der Bridge unter {host} verbunden.',
+    unreachable: 'Die Bridge unter {host} antwortet nicht.',
+    playing: 'Das Licht spielt gerade mit.',
+    startFailed:
+      'Das Licht ließ sich zuletzt nicht starten. Vielleicht nutzt eine andere App den Bereich, zum Beispiel Hue Sync.',
+    area: 'Bereich',
+    count: '{n} Lampe | {n} Lampen',
+    areaHint: 'Entertainment-Bereiche legst du in der Hue-App an.',
+    noAreas:
+      'Die Bridge hat noch keinen Entertainment-Bereich. Leg einen in der Hue-App an, unter Einstellungen, Entertainment-Bereiche.',
+    style: 'Stil',
+    styles: {
+      pulse: {
+        name: 'Puls',
+        hint: 'Ein Aufleuchten auf jedem Schlag, links und rechts im Wechsel. Lautere Stellen sind heller.',
+      },
+      calm: {
+        name: 'Ruhig',
+        hint: 'Kein Blitzen. Die Helligkeit folgt langsam der Lautstärke, die Farben gleiten ineinander.',
+      },
+      party: {
+        name: 'Party',
+        hint: 'Kräftige Schläge, die Lampen tauschen bei jedem Schlag die Farben, auf der Eins ein weißer Blitz.',
+      },
+      wave: {
+        name: 'Welle',
+        hint: 'Jeder Schlag läuft als Welle von links nach rechts durch den Raum.',
+      },
+    },
+    colour: 'Farbe',
+    colourModes: {
+      cover: 'Vom Cover',
+      palette: 'Cover-Palette',
+      fixed: 'Feste Farbe',
+    },
+    coverHint: 'Die Hauptfarbe des aktuellen Covers',
+    paletteHint: 'Verteilt auf die Lampen',
+    coverUnknown: 'Kommt vom Cover, sobald etwas läuft',
+    customColour: 'Eigene Farbe',
+    brightness: 'Helligkeit',
+    advanced: 'Erweitert',
+    lead: 'Vorlauf',
+    leadHint:
+      'Wie viel früher die Lampen ihre Farbe bekommen. Erhöhen, wenn sie nach dem Schlag aufleuchten, senken, wenn davor.',
+    forget: 'Bridge entfernen',
+    noneFound: 'Keine Bridge gefunden. Gib ihre Adresse von Hand ein.',
+    searchFailed: 'Die Suche nach einer Bridge ist fehlgeschlagen.',
+    buttonTimeout: 'Niemand hat den Knopf auf der Bridge gedrückt. Versuch es noch einmal.',
+    noBridge: 'Unter {host} antwortet keine Hue Bridge.',
+    pairFailed: 'Das Koppeln mit der Bridge ist fehlgeschlagen.',
+    saveFailed: 'Die Lichteinstellungen konnten nicht gespeichert werden.',
+  },
   settings: {
     title: 'Einstellungen',
     account: 'Konto',

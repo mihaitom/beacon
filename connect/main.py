@@ -43,6 +43,7 @@ from core.remote import reap_stale_remote, remote
 from core.session import reap_stale_sessions, registry
 from core.state import PORT, get_local_ip
 from core.upnp_events import renew_due_subscriptions
+from lights.controller import controller as light_controller
 from media import jellyfin_bridge, plex_bridge
 from media.login_errors import LoginFailed
 from routes.account_settings import router as account_settings_router
@@ -58,6 +59,7 @@ from routes.fanart import router as fanart_router
 from routes.jellyfin_auth import router as jellyfin_auth_router
 from routes.join import router as join_router
 from routes.lastfm import router as lastfm_router
+from routes.lights import router as lights_router
 from routes.listenbrainz import router as listenbrainz_router
 from routes.local_mix import router as local_mix_router
 from routes.local_stream import reset_hls_encodes
@@ -306,6 +308,7 @@ async def lifespan(_: FastAPI):
     loop_lag_task = asyncio.create_task(monitor_loop_lag())
     upnp_renewal_task = asyncio.create_task(_renew_upnp_subscriptions())
     mdns_task = asyncio.create_task(mdns.keep_announced())
+    light_controller.start()
     background_tasks = (
         discovery_task,
         reaper_task,
@@ -337,6 +340,7 @@ async def lifespan(_: FastAPI):
         # stale enabled state for the next one.
         remote.disable()
         party.disable()
+        await light_controller.stop()
         await mdns.shutdown()
         await close_proxy_client()
         await jellyfin_bridge.close()
@@ -477,6 +481,7 @@ app.include_router(discovery_router)
 app.include_router(volume_router)
 app.include_router(join_router)
 app.include_router(log_level_router)
+app.include_router(lights_router)
 app.include_router(account_settings_router)
 app.include_router(cast_permissions_router)
 app.include_router(api_keys_router)

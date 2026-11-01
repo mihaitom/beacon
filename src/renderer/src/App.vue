@@ -32,6 +32,7 @@ import { initNavigationHistory } from '@/services/navigationHistory'
 import { initWindowTitle } from '@/services/windowTitle'
 import { initTaskbar } from '@/services/taskbar'
 import { initServerQueueSync, saveServerQueue } from '@/services/playback/serverQueueSync'
+import { initLightsReport } from '@/services/lights/localPlaybackReport'
 import { initAccountScopedStores } from '@/services/accountScopedStores'
 import { routeInOtherShell } from '@/services/shellRoutes'
 
@@ -118,6 +119,8 @@ export default {
     initAccountScopedStores()
     usePlaybackStore().init()
     initServerQueueSync()
+    // Room lights following this device's own playback, where switched on.
+    initLightsReport()
     // Window-level, so a shortcut works wherever focus happens to be
     // (see resolveShortcut() for what it deliberately keeps its hands off).
     initKeyboardShortcuts()

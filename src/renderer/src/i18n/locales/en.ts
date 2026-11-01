@@ -688,6 +688,70 @@ export default {
     needsRegenerate:
       'The pairing code from last time is no longer available. Regenerate a new one to pair a phone - this disconnects any phone paired earlier.',
   },
+  lights: {
+    title: 'Room lights',
+    loadFailed: 'The light settings could not be loaded.',
+    pairIntro:
+      'Lets Philips Hue lights play along with the music. Set up an entertainment area in the Hue app first; the lights in it are the ones that play along.',
+    bridge: 'Hue Bridge',
+    search: 'Search',
+    pairHint: "Enter the bridge's address or search for it, then pair.",
+    pressButton: 'Press the round button on the bridge now.',
+    pair: 'Pair',
+    enabled: 'Lights play along',
+    follows: 'Plays along with whatever Beacon plays, radio aside. Preview at 120 BPM.',
+    connected: 'Connected to the bridge at {host}.',
+    unreachable: 'The bridge at {host} is not answering.',
+    playing: 'The lights are playing along right now.',
+    startFailed:
+      'The lights could not be started last time. Another app may be using the area, for example Hue Sync.',
+    area: 'Area',
+    count: '{n} light | {n} lights',
+    areaHint: 'Entertainment areas are set up in the Hue app.',
+    noAreas:
+      'The bridge has no entertainment area yet. Set one up in the Hue app, under Settings, Entertainment areas.',
+    style: 'Style',
+    styles: {
+      pulse: {
+        name: 'Pulse',
+        hint: 'A flash on every beat, left and right taking turns. Louder parts are brighter.',
+      },
+      calm: {
+        name: 'Calm',
+        hint: 'No flashing. The brightness slowly follows the loudness, the colours drift into each other.',
+      },
+      party: {
+        name: 'Party',
+        hint: 'Hard hits, the lights swap colours on every beat, a white flash on the first of each bar.',
+      },
+      wave: {
+        name: 'Wave',
+        hint: 'Every beat runs through the room as a wave, from left to right.',
+      },
+    },
+    colour: 'Colour',
+    colourModes: {
+      cover: 'From the cover',
+      palette: 'Cover palette',
+      fixed: 'Fixed colour',
+    },
+    coverHint: "The current cover's main colour",
+    paletteHint: 'Spread across the lights',
+    coverUnknown: 'Taken from the cover once something plays',
+    customColour: 'Own colour',
+    brightness: 'Brightness',
+    advanced: 'Advanced',
+    lead: 'Lead',
+    leadHint:
+      'How much earlier the lights are sent their colour. Raise it if they flash after the beat, lower it if before.',
+    forget: 'Remove bridge',
+    noneFound: 'No bridge found. Enter its address by hand.',
+    searchFailed: 'The search for a bridge failed.',
+    buttonTimeout: 'Nobody pressed the button on the bridge. Try again.',
+    noBridge: 'No Hue Bridge answers at {host}.',
+    pairFailed: 'Pairing with the bridge failed.',
+    saveFailed: 'The light settings could not be saved.',
+  },
   settings: {
     title: 'Settings',
     account: 'Account',

@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -239,6 +239,7 @@ dependencies = [
     { name = "pyatv" },
     { name = "pychromecast" },
     { name = "pylibrb" },
+    { name = "pyopenssl" },
     { name = "python-dotenv" },
     { name = "soco" },
     { name = "zeroconf" },
@@ -267,6 +268,7 @@ requires-dist = [
     { name = "pyatv", specifier = ">=0.17.0" },
     { name = "pychromecast", specifier = ">=14.0.0" },
     { name = "pylibrb", specifier = ">=0.1.2" },
+    { name = "pyopenssl", specifier = ">=26.4.0" },
     { name = "python-dotenv", specifier = ">=1.2.2" },
     { name = "soco", specifier = ">=0.31.0" },
     { name = "zeroconf", specifier = ">=0.150.0" },
@@ -1793,6 +1795,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/f6/44/09da209c85c1a669d0947dca139d116c78fe452b9bcbc3c64bc3972f729a/pylibrb-0.1.2-cp312-abi3-macosx_11_0_arm64.whl", hash = "sha256:60380fd59fb286700d3f950e9db6388cee1b27a1ab27a1c6ee8e509fd9cd68cf", size = 1578248, upload-time = "2023-12-03T22:10:43.839Z" },
     { url = "https://files.pythonhosted.org/packages/fc/dc/6611dd8376ffcb388d53cc9f3c05417091e74e828b2b3e04ec08cfaa2445/pylibrb-0.1.2-cp312-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:7088cb716fe07540f28bd26bf11315eec73fe6578a7d1d7d55d07019190098df", size = 2168347, upload-time = "2023-12-03T22:10:45.164Z" },
     { url = "https://files.pythonhosted.org/packages/f8/e0/5cbac14c76f8e3cf151c2b6444fe340eeaf9f3097016a5ad205bbc4e753f/pylibrb-0.1.2-cp312-abi3-win_amd64.whl", hash = "sha256:8ab810bd58581da194b4c4bfb8883033dc122a63842ba8d27e2faad084761fe6", size = 1982171, upload-time = "2023-12-03T22:10:47.007Z" },
+]
+
+[[package]]
+name = "pyopenssl"
+version = "26.4.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cryptography" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3f/e8/7325d258199b159eb2c03fe32107533e2832e70e63f4fb88a6aa00023201/pyopenssl-26.4.0.tar.gz", hash = "sha256:28dfcce0162b9211413e26dfbfdf1d24317fbeba18fc93c12400a1856b2a0bc7", size = 182046, upload-time = "2026-08-01T19:50:50.512Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/51/ad/2cf6d3fa2fae5c79e1ed9960c0d42badd0f94d81dd12b50604cdc839e648/pyopenssl-26.4.0-py3-none-any.whl", hash = "sha256:f0eb0cb2d581d3ad2b9c489468485e7f2ab6727d08401bcf9d824c3caddf3c1c", size = 56026, upload-time = "2026-08-01T19:50:48.94Z" },
 ]
 
 [[package]]

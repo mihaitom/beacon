@@ -192,6 +192,28 @@ def _isolated_integration_key(monkeypatch, tmp_path):
     integration_key.forget_cached()
 
 
+@pytest.fixture(autouse=True)
+def _isolated_lights_config(monkeypatch, tmp_path):
+    """No Hue pairing unless a test makes one, never next to the code, and
+    no bridge search on the real network - a developer's own bridge must
+    not light up during a test run."""
+    from lights import config as lights_config
+    from lights import hue
+    from routes import lights as lights_routes
+
+    async def no_bridges(timeout=4.0):
+        return []
+
+    monkeypatch.setattr(lights_config, "_DATA_DIR", str(tmp_path / "lights"))
+    # The bridge search is multicast, like the speaker discovery above.
+    monkeypatch.setattr(hue, "discover", no_bridges)
+    lights_config.reset_cache_for_tests()
+    lights_routes.reset_discovery_for_tests()
+    yield
+    lights_config.reset_cache_for_tests()
+    lights_routes.reset_discovery_for_tests()
+
+
 class _FakeZeroconf:
     """Records what core/mdns.py would announce instead of sending it."""
 
