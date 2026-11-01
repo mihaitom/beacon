@@ -321,11 +321,11 @@ export default {
       }))
     },
     coverSwatches(): string[] {
-      const cover = this.state?.cover_colours ?? [DEFAULT_COLOUR]
+      const cover = this.state?.picture_colours ?? [DEFAULT_COLOUR]
       return this.state?.colour_mode === 'palette' ? cover : cover.slice(0, 1)
     },
     coverLine(): string {
-      if (!this.state?.cover_colours) return this.$t('lights.coverUnknown')
+      if (!this.state?.picture_colours) return this.$t('lights.coverUnknown')
       return this.state.colour_mode === 'palette'
         ? this.$t('lights.paletteHint')
         : this.$t('lights.coverHint')

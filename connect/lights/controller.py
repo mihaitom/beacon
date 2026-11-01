@@ -25,7 +25,7 @@ from core.state import TEST_TONE_TRACK_ID, list_target_pairs
 
 from . import config as lights_config
 from . import hue, show
-from .analysis import DEFAULT_COLOUR, RGB, AnalysisCache, cover_colours
+from .analysis import DEFAULT_COLOUR, RGB, AnalysisCache, cover_colours, fanart_colours
 
 logger = logging.getLogger("connect.lights")
 
@@ -88,6 +88,10 @@ class LightController:
         self._song_meta: dict[str, tuple[str, str | None]] = {}  # id -> (stream url, cover url)
         self._song_meta_pending: set[str] = set()
         self._covers: dict[str, tuple[RGB, ...]] = {}  # song id -> cover palette
+        # The picture an app's Now Playing shows behind a song instead of
+        # its cover (a Fanart.tv artist background), and its colours.
+        self._pictures: dict[str, str | None] = {}  # song id -> image url
+        self._picture_colours: dict[str, tuple[RGB, ...] | None] = {}  # url -> palette
         self._stream: hue.DtlsStream | None = None
         self._streaming_area: str | None = None
         self._channels: tuple[hue.Channel, ...] = ()
@@ -123,11 +127,11 @@ class LightController:
         return self._stream is not None
 
     @property
-    def cover_palette(self) -> tuple[RGB, ...] | None:
-        """The colours of the cover the lights followed last, once known."""
+    def picture_palette(self) -> tuple[RGB, ...] | None:
+        """The colours of the song the lights followed last, once known."""
         if self._last_song_id is None:
             return None
-        return self._covers.get(self._last_song_id)
+        return self._palette_of(self._last_song_id)
 
     # ── inputs ─────────────────────────────────────────────────────────
 
@@ -136,6 +140,27 @@ class LightController:
             session_id, song_id, max(0.0, position), playing, time.monotonic()
         )
         self.notify()
+
+    def set_picture(self, song_id: str, url: str | None) -> None:
+        """What is in the foreground for `song_id`: an artist picture, or
+        None for the cover. The lights take their colours from it."""
+        self._pictures[song_id] = url
+        _trim(self._pictures)
+        if url and url not in self._picture_colours:
+            self._picture_colours[url] = None
+            _trim(self._picture_colours)
+            asyncio.create_task(self._load_picture(url))
+        self.notify()
+
+    async def _load_picture(self, url: str) -> None:
+        self._picture_colours[url] = await fanart_colours(url)
+
+    def _palette_of(self, song_id: str) -> tuple[RGB, ...] | None:
+        """The song's colours: its picture's while one is shown and known,
+        else its cover's (None while that is still being looked at)."""
+        url = self._pictures.get(song_id)
+        picture = self._picture_colours.get(url) if url else None
+        return picture or self._covers.get(song_id)
 
     def forget_local(self, session_id: str) -> None:
         if self._local.pop(session_id, None) is not None:
@@ -255,11 +280,9 @@ class LightController:
         finally:
             self._song_meta_pending.discard(song_id)
         self._song_meta[song_id] = (stream_url or "", cover_url)
-        if len(self._song_meta) > 32:
-            self._song_meta.pop(next(iter(self._song_meta)))
+        _trim(self._song_meta)
         self._covers[song_id] = await cover_colours(cover_url)
-        if len(self._covers) > 32:
-            self._covers.pop(next(iter(self._covers)))
+        _trim(self._covers)
         self.notify()
 
     # ── the stream ─────────────────────────────────────────────────────
@@ -318,7 +341,7 @@ class LightController:
         if source is None:
             # The grace period between songs: hold the colours, dimmed.
             return show.frame(0.0, None, self._palette, self._channels, brightness=brightness * 0.5)
-        wanted = palette_for(cfg, self._covers.get(source.song_id))
+        wanted = palette_for(cfg, self._palette_of(source.song_id))
         self._palette = _fade(self._palette, wanted, (1 / SEND_HZ) / _COLOUR_FADE_SECONDS)
         position = source.position + (now - self._source_at) + cfg.lead_ms / 1000
         song = self._analysis.get(source.song_id)
@@ -348,9 +371,15 @@ class LightController:
             logger.warning(f"[lights] Render loop stopped: {e}")
 
 
+def _trim(cache: dict, keep: int = 32) -> None:
+    """Drops the oldest entries past `keep`."""
+    while len(cache) > keep:
+        cache.pop(next(iter(cache)))
+
+
 def palette_for(cfg: lights_config.LightsConfig, cover: tuple[RGB, ...] | None) -> tuple[RGB, ...]:
-    """The colours the settings ask for. `cover` is None while the song's
-    cover is still being looked at."""
+    """The colours the settings ask for. `cover` is the song's picture's
+    (see _palette_of), None while it is still being looked at."""
     if cfg.colour_mode == "fixed":
         return (hex_colour(cfg.fixed_colour),)
     cover = cover or (DEFAULT_COLOUR,)

@@ -30,9 +30,10 @@ export interface LightsState {
   fixed_colour: string
   /** Percent, 20-100. */
   brightness: number
-  /** The colours of the cover the lights followed last, as `#rrggbb`;
-   * null before they have followed anything. */
-  cover_colours: string[] | null
+  /** The colours of the song the lights followed last, as `#rrggbb`: its
+   * artist picture's where Now Playing showed one, else its cover's; null
+   * before they have followed anything. */
+  picture_colours: string[] | null
   playing: boolean
   /** Not `error`: fetchConnect reads any reply with that key as a
    * failure (isConnectError). */
@@ -84,6 +85,12 @@ export async function reportLocalPlayback(
     method: 'POST',
     body: { song_id: songId, position, playing },
   })
+}
+
+/** What Now Playing shows behind `songId`: a Fanart.tv image URL (as
+ * Fanart.tv serves it, not routed through connect) or null for the cover. */
+export async function reportPicture(songId: string, url: string | null): Promise<void> {
+  await fetchConnect('/lights/picture', { method: 'PUT', body: { song_id: songId, url } })
 }
 
 export async function stopLocalReport(): Promise<void> {

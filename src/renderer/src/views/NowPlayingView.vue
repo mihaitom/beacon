@@ -36,6 +36,7 @@ import { BAR_COUNT, MAX_FREQ_HZ, MIN_FREQ_HZ, resampleBands } from '@/services/v
 import { extractDominantColor } from '@/services/colorExtractor'
 import { visualizerBarColor } from '@/services/visualizerColor'
 import { accountScopedKey } from '@/services/accountKey'
+import { reportForegroundPicture } from '@/services/lights/pictureReport'
 import type { Song } from '@/types/library'
 import type { MixTransition, NoBeatmixReason } from '@/services/connect/types'
 
@@ -507,6 +508,11 @@ export default {
      * -> Appearance). Lifted for visibility by visualizerBarColor(), which
      * also falls back to the theme's accent for a grey or dark picture the
      * bars would vanish into. */
+    /** The picture behind the current song, for the room lights' colours
+     * (pictureReport.ts): the same choice the visualizer bars make. */
+    foregroundPicture(): { songId: string | null; url: string | null } {
+      return { songId: this.currentSong?.id ?? null, url: this.artistBackground }
+    },
     visualizerColor(): string {
       if (!useAppearanceStore().adaptiveAccent) return visualizerBarColor(null)
       return visualizerBarColor(this.artistBackground ? this.artistColor : this.extractedColor)
@@ -542,6 +548,12 @@ export default {
     },
   },
   watch: {
+    foregroundPicture: {
+      immediate: true,
+      handler(picture: { songId: string | null; url: string | null }) {
+        void reportForegroundPicture(picture.songId, picture.url)
+      },
+    },
     coverArtUrl: {
       immediate: true,
       handler(url: string | null) {

@@ -178,6 +178,26 @@ async def cover_colours(url: str | None) -> tuple[RGB, ...]:
         return (DEFAULT_COLOUR,)
 
 
+async def fanart_colours(url: str) -> tuple[RGB, ...] | None:
+    """The colours of a Fanart.tv artist background, from connect's own
+    image store (fetched into it if this is the first ask). None when the
+    image cannot be had - the cover's colours then stay."""
+    from core import fanart
+
+    try:
+        data = fanart.get_cached_image(url)
+        if data is None:
+            fetched = await fanart.fetch_image(url)
+            if fetched is None:
+                return None
+            data = fetched[0]
+            fanart.store_image(url, data)
+        return await asyncio.to_thread(cover_palette, data)
+    except Exception as e:
+        logger.debug(f"[lights] No artist picture colours: {e}")
+        return None
+
+
 class AnalysisCache:
     """Song id -> SongLights, with one analysis in flight per song."""
 

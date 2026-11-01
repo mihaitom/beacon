@@ -19,7 +19,7 @@ const REPLY: LightsState = {
   colour_mode: 'cover',
   fixed_colour: '#3b6bff',
   brightness: 100,
-  cover_colours: null,
+  picture_colours: null,
   playing: false,
   start_error: null,
 }

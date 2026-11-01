@@ -45,7 +45,7 @@ const UNPAIRED: LightsState = {
   colour_mode: 'cover',
   fixed_colour: '#3b6bff',
   brightness: 100,
-  cover_colours: null,
+  picture_colours: null,
   playing: false,
   start_error: null,
 }
@@ -61,7 +61,7 @@ const PAIRED: LightsState = {
     { id: 'area-2', name: 'Living room', lights: 5 },
   ],
   area_id: 'area-1',
-  cover_colours: ['#ff0000', '#0000ff', '#00ff00'],
+  picture_colours: ['#ff0000', '#0000ff', '#00ff00'],
 }
 
 type Vm = {

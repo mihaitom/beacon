@@ -15,6 +15,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
+from core import fanart
 from core.auth import require_token
 from core.session import SessionState, get_session
 from lights import config as lights_config
@@ -94,7 +95,7 @@ async def get_lights():
             logger.info(f"[lights] Bridge not reachable: {e}")
             reachable = False
     found = [] if cfg.paired else await found_bridges()
-    cover = controller.cover_palette
+    picture = controller.picture_palette
     return {
         "paired": cfg.paired,
         "found": [{"host": b.host, "id": b.bridge_id} for b in found],
@@ -108,7 +109,7 @@ async def get_lights():
         "colour_mode": cfg.colour_mode,
         "fixed_colour": cfg.fixed_colour,
         "brightness": cfg.brightness,
-        "cover_colours": [to_hex(c) for c in cover] if cover else None,
+        "picture_colours": [to_hex(c) for c in picture] if picture else None,
         "playing": controller.streaming,
         "start_error": controller.last_error,
     }
@@ -187,6 +188,21 @@ async def forget_lights():
     lights_config.forget()
     controller.start()
     return {"paired": False}
+
+
+class PictureReport(BaseModel):
+    song_id: str = Field(min_length=1, max_length=512)
+    # A Fanart.tv image URL, or None for the cover.
+    url: str | None = Field(default=None, max_length=2048)
+
+
+@router.put("/picture", status_code=204)
+async def report_picture(req: PictureReport):
+    """What an app's Now Playing shows behind a song, so the lights take
+    the colours of what is in the foreground."""
+    if req.url is not None and not fanart.is_allowed_image_url(req.url):
+        raise HTTPException(status_code=422, detail="not_fanart")
+    controller.set_picture(req.song_id, req.url)
 
 
 class LocalReport(BaseModel):

@@ -831,7 +831,7 @@ async def test_resolve_finds_stream_and_colour(sessions, monkeypatch):
 async def test_the_dialog_sees_the_colours_of_the_last_song_followed(sessions, fake_bridge):
     _paired()
     c = LightController()
-    assert c.cover_palette is None
+    assert c.picture_palette is None
     c._song_meta["song-9"] = ("", None)
     c._covers["song-9"] = (RED, BLUE)
     c.report_local("desk", "song-9", 5.0, True)
@@ -839,8 +839,106 @@ async def test_the_dialog_sees_the_colours_of_the_last_song_followed(sessions, f
     c.forget_local("desk")
     await c._tick()
     # Still there after the song stopped.
-    assert c.cover_palette == (RED, BLUE)
+    assert c.picture_palette == (RED, BLUE)
     await c.stop()
+
+
+GREEN = (0.0, 1.0, 0.0)
+PICTURE = "https://assets.fanart.tv/fanart/music/x/artistbackground/a.jpg"
+
+
+async def _picture_loaded(c: LightController, url: str) -> None:
+    for _ in range(100):
+        if c._picture_colours.get(url) is not None:
+            return
+        await asyncio.sleep(0.01)
+
+
+async def test_an_artist_picture_in_the_foreground_gives_the_colours(sessions, monkeypatch):
+    async def colours(url):
+        assert url == PICTURE
+        return (GREEN,)
+
+    monkeypatch.setattr("lights.controller.fanart_colours", colours)
+    c = LightController()
+    c._covers["s"] = (RED, BLUE)
+    assert c._palette_of("s") == (RED, BLUE)
+    c.set_picture("s", PICTURE)
+    await _picture_loaded(c, PICTURE)
+    assert c._palette_of("s") == (GREEN,)
+    # Another song keeps its own cover.
+    c._covers["t"] = (BLUE,)
+    assert c._palette_of("t") == (BLUE,)
+    # Back to the cover when the app shows it again.
+    c.set_picture("s", None)
+    assert c._palette_of("s") == (RED, BLUE)
+
+
+def test_the_show_fades_towards_the_pictures_colours(sessions):
+    _paired()
+    c = LightController()
+    c._channels = (LEFT,)
+    c._palette = (RED,)
+    c._covers["s"] = (BLUE,)
+    c._pictures["s"] = PICTURE
+    c._picture_colours[PICTURE] = (GREEN,)
+    c._source, c._source_at = Source("x", "s", 0.0), time.monotonic()
+    c._frame(time.monotonic())
+    ((_, g, b),) = c._palette
+    assert g > 0 and b == 0
+
+
+async def test_a_picture_that_cannot_be_had_leaves_the_cover(sessions, monkeypatch):
+    async def colours(url):
+        return None
+
+    monkeypatch.setattr("lights.controller.fanart_colours", colours)
+    c = LightController()
+    c._covers["s"] = (RED,)
+    c.set_picture("s", PICTURE)
+    await asyncio.sleep(0.02)
+    assert c._palette_of("s") == (RED,)
+
+
+async def test_a_picture_is_looked_at_once(sessions, monkeypatch):
+    calls = []
+
+    async def colours(url):
+        calls.append(url)
+        return (GREEN,)
+
+    monkeypatch.setattr("lights.controller.fanart_colours", colours)
+    c = LightController()
+    c.set_picture("s", PICTURE)
+    c.set_picture("t", PICTURE)
+    await _picture_loaded(c, PICTURE)
+    c.set_picture("s", PICTURE)
+    await asyncio.sleep(0.02)
+    assert calls == [PICTURE]
+
+
+async def test_fanart_colours_come_from_connects_image_store(monkeypatch):
+    from core import fanart
+
+    monkeypatch.setattr(fanart, "get_cached_image", lambda url: _png((20, 160, 20)))
+    ((r, g, _),) = await analysis.fanart_colours(PICTURE)
+    assert g == pytest.approx(1.0) and r < 0.3
+
+
+async def test_fanart_colours_fetch_what_is_not_stored_yet(monkeypatch):
+    from core import fanart
+
+    stored = {}
+
+    async def fetch(url):
+        return _png((20, 20, 160)), "image/png"
+
+    monkeypatch.setattr(fanart, "get_cached_image", lambda url: None)
+    monkeypatch.setattr(fanart, "fetch_image", fetch)
+    monkeypatch.setattr(fanart, "store_image", lambda url, data: stored.update({url: data}))
+    ((*_, b),) = await analysis.fanart_colours(PICTURE)
+    assert b == pytest.approx(1.0)
+    assert PICTURE in stored
 
 
 def test_hex_round_trip():
@@ -1040,6 +1138,25 @@ def test_local_reports_reach_the_controller(client, monkeypatch):
     assert client.delete("/lights/local").status_code == 204
     assert seen[0][1:] == ("s", 3.5, True)
     assert seen[1][0] == "forget"
+
+
+def test_picture_reports_reach_the_controller(client, monkeypatch):
+    from lights.controller import controller
+
+    seen = []
+    monkeypatch.setattr(controller, "set_picture", lambda *a: seen.append(a))
+    assert client.put("/lights/picture", json={"song_id": "s", "url": PICTURE}).status_code == 204
+    assert client.put("/lights/picture", json={"song_id": "s", "url": None}).status_code == 204
+    assert seen == [("s", PICTURE), ("s", None)]
+
+
+def test_a_picture_report_takes_only_fanart_images(client, monkeypatch):
+    from lights.controller import controller
+
+    monkeypatch.setattr(controller, "set_picture", lambda *a: pytest.fail("should not be set"))
+    for url in ("https://example.com/a.jpg", "http://assets.fanart.tv/a.jpg", "file:///etc/x"):
+        reply = client.put("/lights/picture", json={"song_id": "s", "url": url})
+        assert reply.status_code == 422
 
 
 def test_local_report_rejects_a_negative_position(client):
