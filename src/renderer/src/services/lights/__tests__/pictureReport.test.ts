@@ -57,6 +57,15 @@ describe('reportForegroundPicture', () => {
     expect(reportPicture).not.toHaveBeenCalled()
   })
 
+  it('reports the same picture again once the lights are back on', async () => {
+    await reportForegroundPicture('s1', fanartImageUrl(FANART))
+    lightsActive(false)
+    await reportForegroundPicture('s1', fanartImageUrl(FANART))
+    lightsActive(true)
+    await reportForegroundPicture('s1', fanartImageUrl(FANART))
+    expect(reportPicture).toHaveBeenCalledTimes(2)
+  })
+
   it('tries again after a failed report', async () => {
     vi.mocked(reportPicture).mockRejectedValueOnce(new Error('connect away'))
     await reportForegroundPicture('s1', null)

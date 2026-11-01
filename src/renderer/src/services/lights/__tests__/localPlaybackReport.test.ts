@@ -12,7 +12,10 @@ const fakePlayback = reactive({
   isPlaying: false,
 })
 
+const fakeLights = reactive({ active: true })
+
 vi.mock('@/stores/playback', () => ({ usePlaybackStore: () => fakePlayback }))
+vi.mock('@/stores/lights', () => ({ useLightsStore: () => fakeLights }))
 vi.mock('@/services/connect/lights', () => ({
   reportLocalPlayback: vi.fn(async () => {}),
   stopLocalReport: vi.fn(async () => {}),
@@ -77,6 +80,7 @@ describe('reporting', () => {
       localPosition: 0,
       isPlaying: false,
     })
+    fakeLights.active = true
     ctx = await load()
     // The mocked module outlives resetModules, and with it the call counts.
     vi.clearAllMocks()
@@ -140,6 +144,19 @@ describe('reporting', () => {
     vi.advanceTimersByTime(10_000)
     await tick()
     expect(ctx.report).toHaveBeenCalledTimes(1)
+  })
+
+  it('stays quiet without lights to play along, and stops when they go off', async () => {
+    fakeLights.active = false
+    play('a', 0)
+    await tick()
+    expect(ctx.report).not.toHaveBeenCalled()
+    fakeLights.active = true
+    await tick()
+    expect(ctx.report).toHaveBeenCalledTimes(1)
+    fakeLights.active = false
+    await tick()
+    expect(ctx.stop).toHaveBeenCalledTimes(1)
   })
 
   it('never reports radio or a preview', async () => {

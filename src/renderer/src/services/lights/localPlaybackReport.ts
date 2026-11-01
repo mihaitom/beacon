@@ -2,9 +2,10 @@
  * can play along with it (connect/lights/controller.py). Casts need none
  * of this - connect plays those itself and knows where they are.
  *
- * Only the desktop app reports: it is in the house connect runs in more
- * often than not, while a phone in a browser may be listening on the way
- * to work and must not set the lights at home flashing.
+ * Only the desktop app reports, and only while the lights are set up: it
+ * is in the house connect runs in more often than not, while a phone in a
+ * browser may be listening on the way to work and must not set the lights
+ * at home flashing.
  *
  * Reports go out when something changes (a song, play/pause, a seek) and
  * every few seconds while playing; connect carries the position forward
@@ -12,6 +13,7 @@
 
 import { watch } from 'vue'
 import { usePlaybackStore } from '@/stores/playback'
+import { useLightsStore } from '@/stores/lights'
 import { reportLocalPlayback, stopLocalReport } from '@/services/connect/lights'
 
 // Well inside connect's LOCAL_REPORT_TTL (8 s), so one lost request does
@@ -34,6 +36,7 @@ let last: Reported | null = null
 
 /** What should be reported right now, or null for nothing to follow. */
 function current(): { songId: string; position: number; playing: boolean } | null {
+  if (!useLightsStore().active) return null
   const playback = usePlaybackStore()
   if (playback.isCasting) return null
   if (playback.radioStation || playback.preview) return null
@@ -75,9 +78,10 @@ export function initLightsReport(): void {
   if (timer || !window.api) return
   timer = setInterval(() => void tick(), TICK_MS)
   const playback = usePlaybackStore()
+  const lights = useLightsStore()
   // Changes go out at once rather than on the next tick.
   stopWatching = watch(
-    () => [playback.isCasting, playback.currentSong?.id, playback.isPlaying],
+    () => [lights.active, playback.isCasting, playback.currentSong?.id, playback.isPlaying],
     () => void tick(),
   )
 }

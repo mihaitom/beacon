@@ -194,6 +194,22 @@ describe('LightsDialog', () => {
     expect(wrapper.findAll('.lights__swatch--static')).toHaveLength(5)
   })
 
+  it('saves the brightness once it settles, also when set with the keyboard', async () => {
+    const wrapper = await openDialogWrapper({ ...PAIRED, brightness: 70 })
+    vi.useFakeTimers()
+    try {
+      const thumb = wrapper.find('.v-slider-thumb')
+      await thumb.trigger('keydown', { key: 'ArrowRight' })
+      await thumb.trigger('keydown', { key: 'ArrowRight' })
+      expect(updateLights).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(updateLights).toHaveBeenCalledTimes(1)
+      expect(updateLights).toHaveBeenCalledWith({ brightness: 80 })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('a failed brightness save goes back to what connect has', async () => {
     vi.mocked(updateLights).mockRejectedValue(new Error('down'))
     const vm = await openDialog({ ...PAIRED, brightness: 70 })
@@ -265,9 +281,16 @@ describe('LightsButton', () => {
       expect(wrapper.find('button').exists()).toBe(false)
       await vi.advanceTimersByTimeAsync(60_000)
       expect(wrapper.find('button').exists()).toBe(true)
-      await vi.advanceTimersByTimeAsync(120_000)
-      expect(getLights).toHaveBeenCalledTimes(3)
+      // Switched on from another device: this app learns it within a minute.
+      vi.mocked(getLights).mockResolvedValue({ ...UNPAIRED, ...PAIRED, enabled: true })
+      const { useLightsStore } = await import('@/stores/lights')
+      expect(useLightsStore().active).toBe(false)
+      await vi.advanceTimersByTimeAsync(60_000)
+      expect(useLightsStore().active).toBe(true)
       wrapper.unmount()
+      const calls = vi.mocked(getLights).mock.calls.length
+      await vi.advanceTimersByTimeAsync(120_000)
+      expect(getLights).toHaveBeenCalledTimes(calls)
     } finally {
       vi.useRealTimers()
     }

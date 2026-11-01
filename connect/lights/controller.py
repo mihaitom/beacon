@@ -44,6 +44,9 @@ LOCAL_REPORT_TTL = 8.0
 # After a failed start (bridge away, area taken by another app), wait
 # before trying again rather than hammering it every tick.
 _RETRY_SECONDS = 15.0
+# After a failed song lookup or cover fetch: most likely a hiccup of the
+# media server, so worth another go - but not on every tick.
+_LOOKUP_RETRY_SECONDS = 15.0
 # How long a song's new colour takes to replace the last one's.
 _COLOUR_FADE_SECONDS = 1.5
 # One full turn of the colour wheel in the "rotate" colours. Slow enough to
@@ -91,6 +94,7 @@ class LightController:
         self._analysis = AnalysisCache()
         self._song_meta: dict[str, tuple[str, str | None]] = {}  # id -> (stream url, cover url)
         self._song_meta_pending: set[str] = set()
+        self._lookup_retry: dict[str, float] = {}  # song id -> not before
         self._covers: dict[str, tuple[RGB, ...]] = {}  # song id -> cover palette
         # The picture an app's Now Playing shows behind a song instead of
         # its cover (a Fanart.tv artist background), and its colours.
@@ -166,6 +170,12 @@ class LightController:
         picture = self._picture_colours.get(url) if url else None
         return picture or self._covers.get(song_id)
 
+    def retry_now(self) -> None:
+        """The settings changed - a start that failed under the old ones
+        should not hold back one under the new."""
+        self._retry_after = 0.0
+        self.notify()
+
     def forget_local(self, session_id: str) -> None:
         if self._local.pop(session_id, None) is not None:
             self.notify()
@@ -240,6 +250,12 @@ class LightController:
             self._last_song_id = source.song_id
             self._prepare(source)
 
+        if self._render_task is not None and self._render_task.done():
+            # The render loop gave up (the bridge stopped taking the
+            # stream): hand the area back, so the next start is a fresh one
+            # rather than the lights staying dark while this says playing.
+            await self._stop_stream()
+
         wanted = (
             cfg.area_id if cfg.ready and now - self._last_seen_source < _GRACE_SECONDS else None
         )
@@ -252,41 +268,53 @@ class LightController:
         """Gets the song's analysis and colour going, once each."""
         song_id = source.song_id
         meta = self._song_meta.get(song_id)
+        cover_missing = meta is not None and meta[1] is not None and song_id not in self._covers
+        if (
+            (meta is None or cover_missing)
+            and song_id not in self._song_meta_pending
+            and time.monotonic() >= self._lookup_retry.get(song_id, 0.0)
+        ):
+            self._song_meta_pending.add(song_id)
+            asyncio.create_task(self._resolve(source))
         if meta is None:
-            if song_id not in self._song_meta_pending:
-                self._song_meta_pending.add(song_id)
-                asyncio.create_task(self._resolve(source))
             return
         stream_url, _ = meta
         if stream_url:
             self._analysis.request(song_id, stream_url)
 
     async def _resolve(self, source: Source) -> None:
+        """The song's stream and cover, then the cover's colours. Each is
+        kept once known, and only what failed is tried again later: a
+        cover that will not load must not hold back the beat."""
         from core.session import registry
 
         song_id = source.song_id
-        stream_url: str | None = None
-        cover_url: str | None = None
+        failed = False
         try:
-            session = registry.get(source.session_id)
-            if session is None:
-                return
-            if deezer.is_preview_id(song_id):
-                stream_url = await deezer.preview_stream_url(song_id)
+            meta = self._song_meta.get(song_id)
+            if meta is None:
+                session = registry.get(source.session_id)
+                if session is None:
+                    return
+                meta = await _look_up(session, song_id)
+                self._song_meta[song_id] = meta
+                _trim(self._song_meta)
+            colours = await cover_colours(meta[1])
+            if colours is None:
+                failed = True
             else:
-                media = session.media
-                stream_url = await asyncio.to_thread(media.get_stream_url, song_id)
-                track = await asyncio.to_thread(media.get_track, song_id)
-                if track.cover_art_id:
-                    cover_url = media.get_cover_art_url(track.cover_art_id, internal=True)
+                self._covers[song_id] = colours
+                _trim(self._covers)
         except Exception as e:
             logger.info(f"[lights] Could not look up {song_id}: {e}")
+            failed = True
         finally:
             self._song_meta_pending.discard(song_id)
-        self._song_meta[song_id] = (stream_url or "", cover_url)
-        _trim(self._song_meta)
-        self._covers[song_id] = await cover_colours(cover_url)
-        _trim(self._covers)
+        if failed:
+            self._lookup_retry[song_id] = time.monotonic() + _LOOKUP_RETRY_SECONDS
+            _trim(self._lookup_retry)
+        else:
+            self._lookup_retry.pop(song_id, None)
         self.notify()
 
     # ── the stream ─────────────────────────────────────────────────────
@@ -372,7 +400,24 @@ class LightController:
         except asyncio.CancelledError:
             pass
         except Exception as e:
+            # _tick() notices the loop is gone and hands the area back.
+            self.last_error = str(e)
+            self._retry_after = time.monotonic() + _RETRY_SECONDS
             logger.warning(f"[lights] Render loop stopped: {e}")
+            self.notify()
+
+
+async def _look_up(session, song_id: str) -> tuple[str, str | None]:
+    """(stream url, cover url) of a song; raises when the server fails."""
+    if deezer.is_preview_id(song_id):
+        return (await deezer.preview_stream_url(song_id) or "", None)
+    media = session.media
+    stream_url = await asyncio.to_thread(media.get_stream_url, song_id)
+    track = await asyncio.to_thread(media.get_track, song_id)
+    cover_url = (
+        media.get_cover_art_url(track.cover_art_id, internal=True) if track.cover_art_id else None
+    )
+    return (stream_url or "", cover_url)
 
 
 def _trim(cache: dict, keep: int = 32) -> None:

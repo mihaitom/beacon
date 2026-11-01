@@ -28,6 +28,7 @@ import type { NowPlayingPanel } from '@/components/now-playing/source'
 import type { MixTransition } from '@/services/connect/types'
 import { useRadioMetadataStore } from '@/stores/radioMetadata'
 import { reportForegroundPicture } from '@/services/lights/pictureReport'
+import { useLightsStore } from '@/stores/lights'
 
 // The view asks the engine whether a local analyser exists at all — jsdom
 // has no AudioContext, so a real one would always answer no and every
@@ -46,9 +47,10 @@ vi.mock('@/services/connect/fanart', async (importOriginal) => ({
   getArtistArt: vi.fn().mockResolvedValue(null),
 }))
 
+vi.mock('@/services/lights/pictureReport', () => ({ reportForegroundPicture: vi.fn() }))
+
 // jsdom never fires an image's load event, so the real one would leave the
 // background waiting forever.
-vi.mock('@/services/lights/pictureReport', () => ({ reportForegroundPicture: vi.fn() }))
 vi.mock('@/services/preloadImage', () => ({ preloadImage: vi.fn().mockResolvedValue(undefined) }))
 
 // The real sampler needs a canvas jsdom does not implement; mocked so a
@@ -904,6 +906,19 @@ describe('NowPlayingView artist background', () => {
       'a',
       'https://assets.fanart.tv/bg2.jpg',
     )
+  })
+
+  it('tells the room lights again when they are switched on mid-song', async () => {
+    await mountWithBackground()
+    const calls = vi.mocked(reportForegroundPicture).mock.calls.length
+    useLightsStore().lights = {
+      paired: true,
+      enabled: true,
+      area_id: 'area',
+    } as ReturnType<typeof useLightsStore>['lights']
+    await flushPromises()
+    expect(vi.mocked(reportForegroundPicture).mock.calls.length).toBe(calls + 1)
+    expect(reportForegroundPicture).toHaveBeenLastCalledWith('a', 'https://assets.fanart.tv/bg.jpg')
   })
 
   it('falls back to the blurred cover when there is no background', async () => {

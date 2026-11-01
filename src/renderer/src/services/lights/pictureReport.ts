@@ -15,7 +15,12 @@ export async function reportForegroundPicture(
   songId: string | null,
   shownUrl: string | null,
 ): Promise<void> {
-  if (!songId || !useLightsStore().active) return
+  if (!useLightsStore().active) {
+    // Forgotten, so switching the lights on reports the current picture.
+    last = null
+    return
+  }
+  if (!songId) return
   const url = shownUrl ? fanartSource(shownUrl) : null
   if (last && last.songId === songId && last.url === url) return
   last = { songId, url }

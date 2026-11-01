@@ -23,8 +23,10 @@ import { useLightsStore } from '@/stores/lights'
 import LightsDialog from './LightsDialog.vue'
 
 // A bridge can turn up after startup (its network search not done yet, the
-// bridge only just plugged in); connect itself may still be starting when
-// the app is, which is the quick retry.
+// bridge only just plugged in), and the lights can be set up or switched
+// off from another device - this app only reports its playback while they
+// are on. connect itself may still be starting when the app is, which is
+// the quick retry.
 const RECHECK_MS = 60_000
 const RETRY_MS = 5_000
 
@@ -61,10 +63,9 @@ export default {
     clearTimeout(this.recheck)
   },
   methods: {
-    /** Until there is a bridge to show a button for. */
     async check() {
       await this.lightsStore.load()
-      if (this.lightsStore.available || this.gone || !this.authStore.authenticated) return
+      if (this.gone || !this.authStore.authenticated) return
       this.recheck = setTimeout(
         () => void this.check(),
         this.lightsStore.loadFailed ? RETRY_MS : RECHECK_MS,

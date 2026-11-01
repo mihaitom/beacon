@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import io
 import logging
+import time
 from collections import OrderedDict
 from dataclasses import dataclass
 
@@ -32,8 +33,16 @@ ENERGY_RATE = 4
 # Averaged over this long, so the curve follows sections, not single hits.
 _ENERGY_WINDOW_SECONDS = 2.0
 _DECODE_TIMEOUT_SECONDS = 60.0
+# Only this much of a song is decoded: a one-hour DJ mix in full would be
+# about 240 MB of samples in memory. Past it the beat grid runs on as found
+# and the loudness stays at its last value.
+MAX_ANALYSED_SECONDS = 20 * 60
 # Songs kept analysed: the current one and a few back, for a skip back.
 _CACHE_SIZE = 6
+# A decode that came back empty is tried again this often, this long apart:
+# usually the media server was briefly away, sometimes the file is broken.
+_DECODE_ATTEMPTS = 3
+_DECODE_RETRY_SECONDS = 30.0
 RGB = tuple[float, float, float]
 
 # Fallback when a cover has no usable colour: a warm white.
@@ -85,7 +94,7 @@ def analyse_samples_for_lights(samples: np.ndarray) -> SongLights:
 async def _decode(url: str) -> np.ndarray | None:
     try:
         proc = await asyncio.create_subprocess_exec(
-            *pcm_decode_cmd(url, 0.0, None, channels=1, rate=ANALYSIS_RATE),
+            *pcm_decode_cmd(url, 0.0, MAX_ANALYSED_SECONDS, channels=1, rate=ANALYSIS_RATE),
             stdin=asyncio.subprocess.DEVNULL,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
@@ -165,13 +174,19 @@ def _hue(rgb: np.ndarray, top: np.ndarray, low: np.ndarray) -> np.ndarray:
     return (h / 6.0) % 1.0
 
 
-async def cover_colours(url: str | None) -> tuple[RGB, ...]:
+async def cover_colours(url: str | None) -> tuple[RGB, ...] | None:
+    """DEFAULT_COLOUR for a song without a cover or with one that is no
+    image; None when the cover could not be fetched, worth another try."""
     if not url:
         return (DEFAULT_COLOUR,)
     try:
         async with httpx.AsyncClient(timeout=10, follow_redirects=True) as http:
             reply = await http.get(url)
             reply.raise_for_status()
+    except Exception as e:
+        logger.debug(f"[lights] Could not fetch the cover: {e}")
+        return None
+    try:
         return await asyncio.to_thread(cover_palette, reply.content)
     except Exception as e:
         logger.debug(f"[lights] No cover colours: {e}")
@@ -204,6 +219,8 @@ class AnalysisCache:
     def __init__(self) -> None:
         self._done: OrderedDict[str, SongLights | None] = OrderedDict()
         self._running: dict[str, asyncio.Task] = {}
+        # Song id -> (failed decodes, when the last one failed).
+        self._failed: dict[str, tuple[int, float]] = {}
 
     def get(self, song_id: str) -> SongLights | None:
         return self._done.get(song_id)
@@ -212,28 +229,41 @@ class AnalysisCache:
         return song_id in self._done
 
     def request(self, song_id: str, url: str) -> None:
-        if song_id in self._done or song_id in self._running:
+        if song_id in self._running or self._done.get(song_id) is not None:
             return
+        if song_id in self._done:
+            attempts, at = self._failed.get(song_id, (_DECODE_ATTEMPTS, 0.0))
+            if attempts >= _DECODE_ATTEMPTS or time.monotonic() - at < _DECODE_RETRY_SECONDS:
+                return
         self._running[song_id] = asyncio.create_task(self._run(song_id, url))
 
     async def _run(self, song_id: str, url: str) -> None:
+        attempts = self._failed.get(song_id, (0, 0.0))[0]
         try:
             samples = await _decode(url)
-            result = (
-                None
-                if samples is None
-                else await asyncio.to_thread(analyse_samples_for_lights, samples)
-            )
+            if samples is None:
+                result = None
+                attempts += 1
+            else:
+                result = await asyncio.to_thread(analyse_samples_for_lights, samples)
         except Exception as e:
+            # The analysis itself failing will fail the same way again.
             logger.warning(f"[lights] Analysing {song_id} failed: {e}")
             result = None
+            attempts = _DECODE_ATTEMPTS
         finally:
             self._running.pop(song_id, None)
         # A failed song is remembered too, so it is not decoded again on
-        # every tick - the lights just follow nothing but the colour.
+        # every tick - the lights follow nothing but the colour until the
+        # next attempt, if there is one.
         self._done[song_id] = result
+        if result is None:
+            self._failed[song_id] = (attempts, time.monotonic())
+        else:
+            self._failed.pop(song_id, None)
         while len(self._done) > _CACHE_SIZE:
-            self._done.popitem(last=False)
+            gone, _ = self._done.popitem(last=False)
+            self._failed.pop(gone, None)
         if result is not None:
             bpm = f"{result.grid.bpm:.1f} BPM" if result.grid else "no steady beat"
             logger.debug(f"[lights] Analysed {song_id}: {bpm}")

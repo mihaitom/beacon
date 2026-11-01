@@ -171,18 +171,20 @@
 
           <section class="lights__group">
             <h3 class="lights__label">{{ $t('lights.brightness') }}</h3>
+            <!-- Saved from the brightness watcher, not on @end: Vuetify
+               - only sends that at the end of a drag, never for the arrow
+               - keys. Not disabled while saving either, which would end a
+               - drag that pauses long enough for a save. -->
             <v-slider
               v-model="brightness"
               :min="MIN_BRIGHTNESS"
               :max="100"
               :step="5"
-              :disabled="saving"
               :aria-label="$t('lights.brightness')"
               color="primary"
               prepend-icon="mdi-brightness-5"
               append-icon="mdi-brightness-7"
               hide-details
-              @end="save({ brightness })"
             />
           </section>
 
@@ -259,6 +261,8 @@ import LightsStage from './LightsStage.vue'
 // connect's own bounds (lights/config.py).
 const MAX_LEAD_MS = 1000
 const MIN_BRIGHTNESS = 20
+// A drag or a held arrow key settles into one save.
+const BRIGHTNESS_SAVE_DELAY_MS = 400
 // Before the lights have followed any song: the warm white connect falls
 // back to for a cover without colour.
 const DEFAULT_COLOUR = '#ff9e52'
@@ -295,6 +299,7 @@ export default {
       showAdvanced: false,
       leadInput: '' as string | number,
       brightness: 100,
+      brightnessTimer: undefined as ReturnType<typeof setTimeout> | undefined,
       styles: STYLES,
       swatches: SWATCHES,
       MIN_BRIGHTNESS,
@@ -394,9 +399,20 @@ export default {
         if (value !== undefined) this.brightness = value
       },
     },
+    brightness(value: number) {
+      clearTimeout(this.brightnessTimer)
+      if (!this.state || value === this.state.brightness) return
+      this.brightnessTimer = setTimeout(
+        () => void this.save({ brightness: value }),
+        BRIGHTNESS_SAVE_DELAY_MS,
+      )
+    },
     foundHosts(hosts: string[]) {
       if (!this.host && hosts.length) this.host = hosts[0]!
     },
+  },
+  unmounted() {
+    clearTimeout(this.brightnessTimer)
   },
   methods: {
     async search() {

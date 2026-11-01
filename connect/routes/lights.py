@@ -153,7 +153,7 @@ async def pair_bridge(req: PairRequest):
         clientkey=pairing.clientkey,
         app_id=pairing.app_id,
     )
-    controller.notify()
+    controller.retry_now()
     return await get_lights()
 
 
@@ -176,7 +176,7 @@ async def update_lights(req: LightsUpdate):
     if "fixed_colour" in changes:
         changes["fixed_colour"] = changes["fixed_colour"].lower()
     lights_config.update(**changes)
-    controller.notify()
+    controller.retry_now()
     return await get_lights()
 
 

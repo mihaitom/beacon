@@ -37,6 +37,7 @@ import { extractDominantColor } from '@/services/colorExtractor'
 import { visualizerBarColor } from '@/services/visualizerColor'
 import { accountScopedKey } from '@/services/accountKey'
 import { reportForegroundPicture } from '@/services/lights/pictureReport'
+import { useLightsStore } from '@/stores/lights'
 import type { Song } from '@/types/library'
 import type { MixTransition, NoBeatmixReason } from '@/services/connect/types'
 
@@ -509,9 +510,14 @@ export default {
      * also falls back to the theme's accent for a grey or dark picture the
      * bars would vanish into. */
     /** The picture behind the current song, for the room lights' colours
-     * (pictureReport.ts): the same choice the visualizer bars make. */
-    foregroundPicture(): { songId: string | null; url: string | null } {
-      return { songId: this.currentSong?.id ?? null, url: this.artistBackground }
+     * (pictureReport.ts): the same choice the visualizer bars make. With
+     * the lights' state in it, so switching them on mid-song reports too. */
+    foregroundPicture(): { songId: string | null; url: string | null; lightsOn: boolean } {
+      return {
+        songId: this.currentSong?.id ?? null,
+        url: this.artistBackground,
+        lightsOn: useLightsStore().active,
+      }
     },
     visualizerColor(): string {
       if (!useAppearanceStore().adaptiveAccent) return visualizerBarColor(null)
@@ -550,7 +556,7 @@ export default {
   watch: {
     foregroundPicture: {
       immediate: true,
-      handler(picture: { songId: string | null; url: string | null }) {
+      handler(picture: { songId: string | null; url: string | null; lightsOn: boolean }) {
         void reportForegroundPicture(picture.songId, picture.url)
       },
     },

@@ -367,6 +367,92 @@ async def test_analysis_cache_runs_once_and_remembers_failures(monkeypatch):
     assert calls == ["http://good", "http://bad"]
 
 
+async def _settled(cache: analysis.AnalysisCache) -> None:
+    for _ in range(100):
+        if not cache._running:
+            return
+        await asyncio.sleep(0.01)
+
+
+async def test_a_failed_decode_is_tried_again_later_a_few_times(monkeypatch):
+    calls = []
+
+    async def fake_decode(url):
+        calls.append(url)
+
+    monkeypatch.setattr(analysis, "_decode", fake_decode)
+    cache = analysis.AnalysisCache()
+    for _ in range(analysis._DECODE_ATTEMPTS + 2):
+        cache.request("a", "http://flaky")
+        await _settled(cache)
+        cache.request("a", "http://flaky")  # too soon: no second decode
+        await _settled(cache)
+        cache._failed["a"] = (cache._failed["a"][0], 0.0)  # the wait is over
+    assert len(calls) == analysis._DECODE_ATTEMPTS
+
+
+async def test_a_decode_that_works_on_the_second_go_is_kept(monkeypatch):
+    results = [None, _click_track(120, 10)]
+
+    async def fake_decode(url):
+        return results.pop(0)
+
+    monkeypatch.setattr(analysis, "_decode", fake_decode)
+    cache = analysis.AnalysisCache()
+    cache.request("a", "http://flaky")
+    await _settled(cache)
+    cache._failed["a"] = (1, 0.0)
+    cache.request("a", "http://flaky")
+    await _settled(cache)
+    assert cache.get("a") is not None
+    assert "a" not in cache._failed
+
+
+async def test_a_failing_analysis_is_not_tried_again(monkeypatch):
+    calls = []
+
+    async def fake_decode(url):
+        calls.append(url)
+        return _click_track(120, 10)
+
+    def broken(samples):
+        raise ValueError("no")
+
+    monkeypatch.setattr(analysis, "_decode", fake_decode)
+    monkeypatch.setattr(analysis, "analyse_samples_for_lights", broken)
+    cache = analysis.AnalysisCache()
+    cache.request("a", "http://x")
+    await _settled(cache)
+    cache._failed["a"] = (cache._failed["a"][0], 0.0)
+    cache.request("a", "http://x")
+    await _settled(cache)
+    assert len(calls) == 1
+
+
+async def test_only_the_start_of_a_long_song_is_decoded(monkeypatch):
+    seen = []
+
+    async def fake_exec(*args, **kwargs):
+        seen.extend(args)
+        raise OSError("no ffmpeg here")
+
+    monkeypatch.setattr(analysis.asyncio, "create_subprocess_exec", fake_exec)
+    assert await analysis._decode("http://music/long") is None
+    assert "-t" in seen
+    assert float(seen[seen.index("-t") + 1]) == analysis.MAX_ANALYSED_SECONDS
+
+
+async def test_a_cover_that_cannot_be_fetched_is_worth_another_try(monkeypatch):
+    real = httpx.AsyncClient
+
+    def factory(**kwargs):
+        kwargs.pop("follow_redirects", None)
+        return real(transport=httpx.MockTransport(lambda r: httpx.Response(503)))
+
+    monkeypatch.setattr(analysis.httpx, "AsyncClient", factory)
+    assert await analysis.cover_colours("http://music/cover/c1") is None
+
+
 # ── show ─────────────────────────────────────────────────────────────────
 
 
@@ -672,6 +758,7 @@ def test_of_two_casts_the_newer_one(sessions):
 class FakeStream:
     instances: ClassVar[list[FakeStream]] = []
     fail_handshake = False
+    fail_send = False
 
     def __init__(self, host, identity, key, port=hue.STREAM_PORT):
         self.sent: list[bytes] = []
@@ -683,6 +770,8 @@ class FakeStream:
             raise hue.HueError("no answer")
 
     def send(self, payload):
+        if FakeStream.fail_send:
+            raise ConnectionRefusedError("bridge gone")
         self.sent.append(payload)
 
     def close(self):
@@ -693,6 +782,7 @@ class FakeStream:
 def fake_bridge(monkeypatch):
     FakeStream.instances = []
     FakeStream.fail_handshake = False
+    FakeStream.fail_send = False
     calls: list[tuple[str, bool]] = []
 
     async def get_area(bridge, pairing, area_id):
@@ -758,6 +848,42 @@ async def test_a_failed_start_waits_before_trying_again(sessions, fake_bridge):
     await c._tick()
     assert c.streaming
     assert c.last_error is None
+    await c.stop()
+
+
+async def test_a_changed_setting_does_not_wait_out_a_failed_start(sessions, fake_bridge):
+    _paired()
+    FakeStream.fail_handshake = True
+    c = LightController()
+    c._song_meta["song-9"] = ("", None)
+    c.report_local("desk", "song-9", 5.0, True)
+    await c._tick()
+    assert not c.streaming
+    FakeStream.fail_handshake = False
+    lights_config.update(area_id="other-area")
+    c.retry_now()
+    await c._tick()
+    assert c.streaming
+    await c.stop()
+
+
+async def test_a_dead_render_loop_hands_the_area_back_and_starts_again(sessions, fake_bridge):
+    _paired()
+    c = LightController()
+    c._song_meta["song-9"] = ("", None)
+    c.report_local("desk", "song-9", 5.0, True)
+    await c._tick()
+    FakeStream.fail_send = True
+    await asyncio.sleep(0.05)
+    await c._tick()
+    assert not c.streaming
+    assert c.last_error
+    assert fake_bridge[-1] == (AREA, False)
+    FakeStream.fail_send = False
+    c._retry_after = 0
+    await c._tick()
+    assert c.streaming
+    assert len(FakeStream.instances) == 2
     await c.stop()
 
 
@@ -827,6 +953,85 @@ async def test_resolve_finds_stream_and_colour(sessions, monkeypatch):
     await c._resolve(Source("s1", "song-1", 0.0))
     assert c._song_meta["song-1"] == ("http://music/song-1", "http://music/cover/c1")
     assert c._covers["song-1"] == (RED, BLUE)
+
+
+class _Media:
+    def __init__(self, fail_times: int = 0):
+        self.fail_times = fail_times
+        self.lookups = 0
+
+    def get_stream_url(self, song_id):
+        self.lookups += 1
+        if self.lookups <= self.fail_times:
+            raise ConnectionError("server away")
+        return f"http://music/{song_id}"
+
+    def get_track(self, song_id):
+        return Track(id=song_id, title="t", artist="a", duration=1, cover_art_id="c1")
+
+    def get_cover_art_url(self, cover_id, internal=False, size=300):
+        return f"http://music/cover/{cover_id}"
+
+
+async def _resolved(c: LightController, song_id: str) -> None:
+    for _ in range(100):
+        await asyncio.sleep(0.01)
+        if song_id not in c._song_meta_pending:
+            return
+
+
+async def test_a_failed_lookup_is_tried_again_after_a_while(sessions, monkeypatch):
+    _paired()
+    session = SessionState("s1")
+    registry._sessions["s1"] = session
+    session.media = _Media(fail_times=1)
+
+    async def colours(url):
+        return (RED,)
+
+    monkeypatch.setattr("lights.controller.cover_colours", colours)
+    c = LightController()
+    source = Source("s1", "song-1", 0.0)
+    c._prepare(source)
+    await _resolved(c, "song-1")
+    assert "song-1" not in c._song_meta
+    c._prepare(source)  # too soon
+    await _resolved(c, "song-1")
+    assert session.media.lookups == 1
+    c._lookup_retry["song-1"] = 0.0
+    c._prepare(source)
+    await _resolved(c, "song-1")
+    assert c._song_meta["song-1"] == ("http://music/song-1", "http://music/cover/c1")
+    assert c._covers["song-1"] == (RED,)
+    c._analysis.cancel_all()
+
+
+async def test_a_missing_cover_does_not_hold_back_the_beat(sessions, monkeypatch):
+    _paired()
+    session = SessionState("s1")
+    registry._sessions["s1"] = session
+    session.media = _Media()
+    answers = [None, (BLUE,)]
+
+    async def colours(url):
+        return answers.pop(0)
+
+    requested = []
+    monkeypatch.setattr("lights.controller.cover_colours", colours)
+    c = LightController()
+    monkeypatch.setattr(c._analysis, "request", lambda song_id, url: requested.append(url))
+    source = Source("s1", "song-1", 0.0)
+    c._prepare(source)
+    await _resolved(c, "song-1")
+    assert "song-1" not in c._covers
+    c._prepare(source)
+    # The stream is known, so the analysis goes ahead without the colour.
+    assert requested == ["http://music/song-1"]
+    c._lookup_retry["song-1"] = 0.0
+    c._prepare(source)
+    await _resolved(c, "song-1")
+    assert c._covers["song-1"] == (BLUE,)
+    assert session.media.lookups == 1  # only the cover was fetched again
 
 
 async def test_the_dialog_sees_the_colours_of_the_last_song_followed(sessions, fake_bridge):
