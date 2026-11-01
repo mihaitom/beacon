@@ -369,7 +369,11 @@
                  - what was asked for: the point at which a close match is
                  - either recognised as the right song or spotted as the
                  - wrong one. -->
-                  <div v-if="entry.match" class="track__side track__side--found">
+                  <div
+                    v-if="entry.match"
+                    class="track__side track__side--found"
+                    @contextmenu.prevent="openSongMenu(entry.match.song, $event)"
+                  >
                     <cover-art
                       :cover-art-id="entry.match.song.coverArtId"
                       :size="40"
@@ -398,6 +402,8 @@
                   </div>
                 </li>
               </ul>
+              <!-- One menu for every row, pointed at the song right-clicked. -->
+              <song-context-menu v-if="menuSong" ref="songMenu" :song="menuSong" />
             </div>
           </template>
         </div>
@@ -464,6 +470,7 @@
 <script lang="ts">
 import { useLibraryStore } from '@/stores/library'
 import CoverArt from './CoverArt.vue'
+import SongContextMenu from './SongContextMenu.vue'
 import { ConnectApiError } from '@/services/connect/http'
 import { useLastfmStore } from '@/stores/lastfm'
 import { useListenbrainzStore } from '@/stores/listenbrainz'
@@ -595,7 +602,7 @@ const GENRE_SUGGESTIONS = [
  */
 export default {
   name: 'PlaylistBuilderDialog',
-  components: { CoverArt, SegmentedControl },
+  components: { CoverArt, SegmentedControl, SongContextMenu },
   data() {
     return {
       GENRE_SUGGESTIONS,
@@ -605,6 +612,8 @@ export default {
       creating: false,
       queueing: false,
       error: '',
+      /** The matched song the row menu is open for. */
+      menuSong: null as Song | null,
 
       source: 'deezer' as BuilderSource,
       op: 'charts' as BuilderOp,
@@ -892,6 +901,11 @@ export default {
       if (source === 'deezer') void this.loadDeezerGenres()
       saveProvider(source)
     },
+    /** The menu's album and artist links lead away from here, and the page
+     * they open would sit behind this dialog. */
+    $route() {
+      this.visible = false
+    },
     visible(open: boolean) {
       if (open) {
         this.abortSignal = { aborted: false }
@@ -1106,6 +1120,13 @@ export default {
         if (typeof detail === 'string' && detail) return detail
       }
       return fallback
+    },
+
+    async openSongMenu(song: Song, event: MouseEvent): Promise<void> {
+      this.menuSong = song
+      await this.$nextTick()
+      const menu = this.$refs.songMenu as { open: (event: MouseEvent) => void } | undefined
+      menu?.open(event)
     },
 
     isPreviewing(index: number): boolean {

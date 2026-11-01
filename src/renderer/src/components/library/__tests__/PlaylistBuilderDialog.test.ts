@@ -320,6 +320,33 @@ describe('PlaylistBuilderDialog', () => {
     expect(wrapper.findComponent({ name: 'CoverArt' }).props('coverArtId')).toBe('cover-1')
   })
 
+  it('opens the song menu for the matched song on right-click', async () => {
+    vi.spyOn(lastfmApi, 'getLastfmTracks').mockResolvedValue([
+      { title: 'Believe', artist: 'Cher', mbid: '' },
+      { title: 'Strong Enough', artist: 'Cher', mbid: '' },
+    ])
+    const search3 = vi.fn(async (query: string) => ({
+      songs: query.includes('Strong')
+        ? [makeSong('s2', { title: 'Strong Enough', artist: 'Cher' })]
+        : [makeSong('s1', { title: 'Believe', artist: 'Cher' })],
+    }))
+    vi.spyOn(useLibraryStore(), 'client').mockReturnValue({
+      search3,
+    } as unknown as SubsonicClient)
+
+    const { wrapper, vm } = await openDialog()
+    await (vm as unknown as { search: () => Promise<void> }).search()
+    await flushPromises()
+
+    const rows = document.querySelectorAll('.track__side--found')
+    rows[1]!.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }))
+    await flushPromises()
+
+    const menu = wrapper.findComponent({ name: 'SongContextMenu' })
+    expect(menu.props('song')).toMatchObject({ id: 's2' })
+    expect(dialogText()).toContain(i18n.global.t('library.playNext'))
+  })
+
   it('shows the Last.fm side even for a track the library does not have', async () => {
     vi.spyOn(lastfmApi, 'getLastfmTracks').mockResolvedValue([
       { title: 'Obscurity', artist: 'Nobody', mbid: '' },
