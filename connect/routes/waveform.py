@@ -9,7 +9,7 @@ import logging
 
 from fastapi import APIRouter, Depends
 
-from core import waveform
+from core import deezer, waveform
 from core.auth import require_token
 from core.session import SessionState, get_session
 
@@ -25,5 +25,10 @@ async def get_waveform(
     # Subsonic/Jellyfin, but Plex's needs a real network lookup first (see
     # media/plex.py's docstring) — without this, that lookup would block
     # the whole event loop, not just this one request.
-    url = await asyncio.to_thread(session.media.get_stream_url, track_id)
+    if deezer.is_preview_id(track_id):
+        url = await deezer.preview_stream_url(track_id)
+        if url is None:
+            return {"peaks": []}
+    else:
+        url = await asyncio.to_thread(session.media.get_stream_url, track_id)
     return {"peaks": await waveform.get_waveform(track_id, url)}

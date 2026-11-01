@@ -56,9 +56,9 @@ async def playlists(q: str = "") -> dict:
 
 @router.get("/preview")
 async def preview(artist: str = "", title: str = "", id: int = 0) -> dict:
-    """A 30-second preview, by Deezer track id or by artist and title. An
-    empty previewUrl when Deezer has none - an ordinary answer for a track
-    it does not carry, not an error."""
+    """Which Deezer track a 30-second preview can be played of, by Deezer
+    track id or by artist and title. id 0 when Deezer has none - an
+    ordinary answer for a track it does not carry, not an error."""
     if not id and not (artist.strip() and title.strip()):
         raise HTTPException(status_code=422, detail="preview needs an id or artist and title")
     try:
@@ -67,7 +67,7 @@ async def preview(artist: str = "", title: str = "", id: int = 0) -> dict:
         if not e.not_found:
             raise HTTPException(status_code=502, detail=str(e)) from e
         result = None
-    return result or {"previewUrl": "", "link": ""}
+    return result or {"id": 0, "link": ""}
 
 
 @router.get("/genres")

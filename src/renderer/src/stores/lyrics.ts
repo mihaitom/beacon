@@ -22,6 +22,7 @@ import {
   writeLyrics,
   writeManyLyrics,
 } from '@/services/lyrics/lyricsStore'
+import { isExternalSong } from '@/services/playback/preview'
 import type { Song } from '@/types/library'
 
 // Source id for a song's own embedded/ID3-tag lyrics (getLyricsBySongId.view)
@@ -398,6 +399,20 @@ export const useLyricsStore = defineStore('lyrics', {
     },
 
     async ensureLoaded(song: Song): Promise<void> {
+      // A Deezer preview is 30 seconds from somewhere in the song: synced
+      // lines would run against the wrong part of it, and the server has
+      // no file to ask. Shown as a song without lyrics.
+      if (isExternalSong(song)) {
+        this.songId = song.id
+        this.loading = false
+        this.error = false
+        this.synced = false
+        this.lines = []
+        this.credits = []
+        this.source = null
+        this.remoteId = null
+        return
+      }
       const startedAt = generation
       this.offset = readStoredOffset(song.id)
 

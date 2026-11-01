@@ -56,7 +56,8 @@
       </div>
       <div v-else class="text-body-small text-medium-emphasis" />
     </div>
-    <div v-if="currentSong" class="song-info__actions">
+    <!-- Not for a Deezer preview: the server has nothing to star or add. -->
+    <div v-if="currentSong && playbackStore.currentSongInLibrary" class="song-info__actions">
       <v-btn
         v-if="authStore.capabilities.favorites"
         :icon="currentSong.starred ? 'mdi-heart' : 'mdi-heart-outline'"
@@ -84,7 +85,7 @@
     <!-- SongCard.vue's menu, minus the queue entries: this song is the one
      - already playing. The stars live here rather than in the bar, which
      - has no room for five more targets beside the heart (#55). -->
-    <tile-context-menu v-if="currentSong" ref="menu">
+    <tile-context-menu v-if="currentSong && playbackStore.currentSongInLibrary" ref="menu">
       <context-menu-section
         v-if="authStore.capabilities.songRadio"
         :label="$t('library.menuPlayback')"
@@ -192,7 +193,7 @@ export default {
     /** Radio and the idle bar keep the browser's own menu: there is no
      * song to act on. */
     onContextMenu(event: MouseEvent) {
-      if (!this.currentSong) return
+      if (!this.playbackStore.currentSongInLibrary) return
       event.preventDefault()
       this.openMenu(event)
     },

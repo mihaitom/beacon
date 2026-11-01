@@ -435,7 +435,7 @@ export default {
     // Song Radio entry point uses (SongRow.vue's menu, PlayerToolbar.vue's
     // autoplay button).
     heroCanStartRadio(): boolean {
-      return this.authStore.capabilities.songRadio && this.playbackStore.currentSong != null
+      return this.authStore.capabilities.songRadio && this.playbackStore.currentSongInLibrary
     },
     heroHasContent() {
       return !!(

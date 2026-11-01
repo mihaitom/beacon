@@ -28,3 +28,44 @@ export function pickPreviewSongs(
     return pool[from + Math.floor(random() * (to - from))]!
   })
 }
+
+/** A Deezer preview stands in a preview as a song with this id prefix -
+ * connect reads the prefix and fetches its audio from Deezer
+ * (connect/core/deezer.py's PREVIEW_ID_PREFIX). */
+const DEEZER_PREVIEW_PREFIX = 'deezer:'
+// Deezer's previews are 30 seconds, whatever the song's length.
+const DEEZER_PREVIEW_SECONDS = 30
+
+/** Whether a song is a Deezer preview rather than one of the library's -
+ * nothing the media server knows, so nothing to star, rate or add. */
+export function isExternalSong(song: Song | null | undefined): boolean {
+  return !!song?.id.startsWith(DEEZER_PREVIEW_PREFIX)
+}
+
+/** A track from outside the library as a song a preview can play: its
+ * 30-second Deezer preview. */
+export function deezerPreviewSong(
+  deezerId: number,
+  track: { title: string; artist: string; album?: string },
+): Song {
+  return {
+    id: `${DEEZER_PREVIEW_PREFIX}${deezerId}`,
+    title: track.title,
+    artist: track.artist,
+    artistId: '',
+    album: track.album ?? '',
+    albumId: '',
+    duration: DEEZER_PREVIEW_SECONDS,
+    trackNumber: null,
+    discNumber: null,
+    year: null,
+    genre: null,
+    coverArtId: null,
+    starred: false,
+    rating: 0,
+    playCount: 0,
+    format: null,
+    bitRate: null,
+    replayGain: null,
+  }
+}

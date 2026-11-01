@@ -1304,7 +1304,7 @@ export default {
         purpose:
           'Busca una foto y una página de artista para un artista sugerido, y para la página de artista que tengas abierta, estén o no activadas las recomendaciones, y llena una lista con los éxitos de Deezer, el top o la mezcla de un artista, o una lista de Deezer, y reproduce 30 segundos de una canción en el generador de listas.',
         sends:
-          'El nombre del artista consultado: uno sugerido, aquel cuya página tienes abierta o el que pediste en el generador de listas, y lo que escribes en su búsqueda de listas. Para los éxitos solo el género; Deezer deduce el país de dónde está el servidor de Beacon. Para escuchar un fragmento, el artista y el título; el fragmento llega directamente de Deezer a este dispositivo.',
+          'El nombre del artista consultado: uno sugerido, aquel cuya página tienes abierta o el que pediste en el generador de listas, y lo que escribes en su búsqueda de listas. Para los éxitos solo el género; Deezer deduce el país de dónde está el servidor de Beacon. Para escuchar un fragmento, el artista y el título; el propio servidor de Beacon descarga el fragmento y lo reproduce como cualquier otra canción, así que Deezer no ve este dispositivo.',
       },
       wikidata: {
         name: 'Wikidata',

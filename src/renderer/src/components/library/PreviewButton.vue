@@ -29,7 +29,7 @@
 <script lang="ts">
 import type { PropType } from 'vue'
 import { usePlaybackStore } from '@/stores/playback'
-import { usePartyStore } from '@/stores/party'
+import { previewHeardByGuests } from '@/services/playback/previewAvailability'
 import type { Song } from '@/types/library'
 
 /** Previews an album or playlist - see the playback store's
@@ -51,13 +51,10 @@ export default {
     return { loading: false }
   },
   computed: {
-    /** Not while guests listening along to a party would hear it: they
-     * read the mix of the window hosting it, or the cast's. */
+    /** Not while guests listening along to a party would hear it. */
     available(): boolean {
-      const party = usePartyStore()
-      const heardByGuests = party.enabled && (party.hostedHere || usePlaybackStore().isCasting)
       const count = this.songs ? this.songs.length : this.songCount
-      return count > 0 && !heardByGuests
+      return count > 0 && !previewHeardByGuests()
     },
   },
   methods: {

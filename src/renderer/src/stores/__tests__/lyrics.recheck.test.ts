@@ -115,6 +115,21 @@ describe('lyrics cache re-check', () => {
     return getLyricsBySongId
   }
 
+  it('looks nothing up for a Deezer preview, which is not a library file', async () => {
+    const { lyrics, library, auth } = await loadStores()
+    auth.serverType = 'subsonic'
+    const getLyricsBySongId = stubFileLyrics(library, [])
+    const { autoLyrics } = await import('@/services/connect/lyrics')
+    const { deezerPreviewSong } = await import('@/services/playback/preview')
+
+    await lyrics.ensureLoaded(deezerPreviewSong(42, { title: 'Believe', artist: 'Cher' }))
+
+    expect(getLyricsBySongId).not.toHaveBeenCalled()
+    expect(autoLyrics).not.toHaveBeenCalled()
+    expect(lyrics.loading).toBe(false)
+    expect(lyrics.lines).toEqual([])
+  })
+
   it("swaps in the file's own lyrics once the library has been tagged", async () => {
     const song = makeSong('a')
     cacheProviderHit(song.id, Date.now() - 8 * DAY_MS)

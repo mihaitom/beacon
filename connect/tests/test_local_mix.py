@@ -124,6 +124,21 @@ def test_a_preview_ignores_the_queue_and_checks_its_index(configured, default_se
     )
 
 
+def test_a_deezer_preview_plays_whole_without_asking_the_server(
+    configured, default_session, waveforms
+):
+    body = {
+        "songs": [
+            {"id": "deezer:42", "queue_index": 0, "duration": 30, "artist": "A", "title": "T"}
+        ]
+    }
+    r = configured.post(f"/stream/local/preview/{PLAYER}", json=body)
+    assert r.status_code == 200
+    first = local_mixes.get(default_session.session_id, PLAYER).engine.first
+    assert (first.start, first.end, first.duration) == (0.0, None, 30.0)
+    waveforms.assert_not_called()
+
+
 def test_pause_and_resume_freeze_the_mix(configured, default_session):
     _start(configured, "a")
     engine = local_mixes.get(default_session.session_id, PLAYER).engine

@@ -41,7 +41,7 @@ import { diffCastQueue } from '@/services/playback/queueReconcile'
 import type { RepeatMode } from '@/services/playback/types'
 import { resolveRadioStation } from '@/services/playback/radioStation'
 import { getLocalMix, mixSong, STALE_PAUSE_MS, upcomingSongs } from '@/services/playback/localMix'
-import { pickPreviewSongs } from '@/services/playback/preview'
+import { isExternalSong, pickPreviewSongs } from '@/services/playback/preview'
 import { startRadioMetadataWatch, stopRadioMetadataWatch } from '@/services/connect/radioMetadata'
 import {
   localRadioStreamUrl,
@@ -532,6 +532,11 @@ export const usePlaybackStore = defineStore('playback', {
         return state.preview.songs[state.preview.picks[state.preview.index]!] ?? null
       if (state.radioStation) return null
       return state.currentIndex >= 0 ? (state.queue[state.currentIndex] ?? null) : null
+    },
+    /** Whether what plays is a library song - not a station, and not a
+     * Deezer preview, which the media server knows nothing of. */
+    currentSongInLibrary(): boolean {
+      return !!this.currentSong && !isExternalSong(this.currentSong)
     },
     /** Where the queue itself stands, station or no station — the song a
      * shuffle toggle re-pins around, "play next" inserts after and "clear
@@ -2073,6 +2078,18 @@ export const usePlaybackStore = defineStore('playback', {
       const resumeAt = this.preview?.resumeAt ?? this.localPosition
       this.leaveRadio()
       this.preview = { songs, picks, index: 0, resumeAt, whole: true }
+      await this.playPreviewAt(0)
+    },
+
+    /** Previews one track that need not be in the library - the playlist
+     * builder's, as its 30-second Deezer preview (deezerPreviewSong()).
+     * Everything else is startPreview()'s: the queue pauses and waits,
+     * on this device or the speakers, and the end is silence. There is no
+     * album or playlist to "Play from here" (`whole`). */
+    async startTrackPreview(song: Song): Promise<void> {
+      const resumeAt = this.preview?.resumeAt ?? this.localPosition
+      this.leaveRadio()
+      this.preview = { songs: [song], picks: [0], index: 0, resumeAt, whole: false }
       await this.playPreviewAt(0)
     },
 

@@ -285,16 +285,39 @@ def _pick_preview(entries: list, artist: str, title: str) -> dict | None:
     return max(pool, key=lambda e: e.get("rank") or 0) if pool else None
 
 
+# A Deezer preview stands in a preview run (core/preview.py) as a song with
+# this id prefix, so the mix engine, the cast and the waveform can tell it
+# from a library song and fetch its audio from Deezer instead.
+PREVIEW_ID_PREFIX = "deezer:"
+
+
+def is_preview_id(song_id: str | None) -> bool:
+    return bool(song_id) and song_id.startswith(PREVIEW_ID_PREFIX)
+
+
 async def get_preview(artist: str, title: str, track_id: int = 0) -> dict | None:
-    """A 30-second preview for a track from any of the builder's services.
-    A Deezer track is fetched by its id; anything else is looked up by name.
-    Deezer signs the URL with an expiry (about 15 minutes, measured), so it
-    is fetched when it is about to be played and never stored."""
+    """The Deezer track a preview can be played of, for a track from any
+    of the builder's services: {id, link}, or None when Deezer has no
+    preview of it. A Deezer track is checked by its id; anything else is
+    looked up by name. The audio URL itself is not handed out - it expires
+    (about 15 minutes, measured), so preview_stream_url() asks for a fresh
+    one whenever the preview is played."""
     if track_id:
         entry = await _get(f"/track/{int(track_id)}")
     else:
         data = await _get("/search", q=f"{artist} {title}", limit=_PREVIEW_CANDIDATES)
         entry = _pick_preview(data.get("data") or [], artist, title)
-    if not entry or not entry.get("preview"):
+    if not entry or not entry.get("preview") or not isinstance(entry.get("id"), int):
         return None
-    return {"previewUrl": entry["preview"], "link": entry.get("link") or ""}
+    return {"id": entry["id"], "link": entry.get("link") or ""}
+
+
+async def preview_stream_url(song_id: str) -> str | None:
+    """The audio of a preview id (PREVIEW_ID_PREFIX), freshly signed."""
+    try:
+        track_id = int(song_id.removeprefix(PREVIEW_ID_PREFIX))
+        entry = await _get(f"/track/{track_id}")
+    except (ValueError, DeezerError) as e:
+        logger.warning(f"[deezer] No preview audio for {song_id}: {e}")
+        return None
+    return entry.get("preview") or None

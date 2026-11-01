@@ -40,7 +40,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from core import preview
+from core import deezer, preview
 from core.local_mixes import SongEntry
 from core.mix_engine import MixEngine, MixItem, song_label
 from core.mix_timeline import SAMPLE_RATE
@@ -143,7 +143,9 @@ async def next_item(session: SessionState, current: MixItem) -> MixItem | None:
     return mix_item(session, track, following, st.current_track_gain)
 
 
-async def _source_url(session: SessionState, item: MixItem) -> str:
+async def _source_url(session: SessionState, item: MixItem) -> str | None:
+    if deezer.is_preview_id(item.song_id):
+        return await deezer.preview_stream_url(item.song_id)
     return await asyncio.to_thread(session.media.get_stream_url, item.song_id)
 
 

@@ -15,8 +15,8 @@ import { useLibraryStore } from '@/stores/library'
 import { useListenbrainzStore } from '@/stores/listenbrainz'
 import { useLastfmStore } from '@/stores/lastfm'
 import { usePlaybackStore } from '@/stores/playback'
-import { makeSong, makeStatus } from '@/stores/__tests__/fixtures'
-import { useConnectStore } from '@/stores/connect'
+import { makeSong } from '@/stores/__tests__/fixtures'
+import { usePartyStore } from '@/stores/party'
 import type { SubsonicClient } from '@/services/subsonic/client'
 import PlaylistBuilderDialog from '../PlaylistBuilderDialog.vue'
 import * as lastfmApi from '@/services/connect/lastfm'
@@ -963,26 +963,18 @@ describe('PlaylistBuilderDialog', () => {
   })
 
   describe('previews', () => {
-    let play: ReturnType<typeof vi.spyOn>
-    let pause: ReturnType<typeof vi.spyOn>
-
-    beforeEach(() => {
-      // jsdom has no media playback of its own.
-      play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
-      pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
-    })
-
-    /** A result step with one Deezer track the library does not have. */
-    async function resultWithMissingTrack() {
+    /** A result step with one track the library does not have. */
+    async function resultWithMissingTrack(track: Record<string, unknown> = { deezerId: 42 }) {
       vi.spyOn(deezerApi, 'getDeezerTracks').mockResolvedValue([
         {
           title: 'Song',
           artist: 'Someone',
           mbid: '',
-          album: '',
+          album: 'An Album',
           coverArtUrl: '',
           duration: 0,
-          deezerId: 42,
+          deezerId: 0,
+          ...track,
         },
       ])
       stubSearch([])
@@ -1002,75 +994,67 @@ describe('PlaylistBuilderDialog', () => {
       return document.querySelector('.track__preview') as HTMLButtonElement
     }
 
-    it('plays a missing track’s preview, fetched by its Deezer id', async () => {
-      const getPreview = vi
-        .spyOn(deezerApi, 'getDeezerPreview')
-        .mockResolvedValue('https://cdn/p.mp3')
+    it('plays it the way an album preview plays, by its Deezer id', async () => {
+      const find = vi.spyOn(deezerApi, 'findDeezerPreview').mockResolvedValue(42)
+      const start = vi.spyOn(usePlaybackStore(), 'startTrackPreview').mockResolvedValue()
       await resultWithMissingTrack()
 
       previewButton().click()
       await flushPromises()
 
-      expect(getPreview).toHaveBeenCalledWith({ artist: 'Someone', title: 'Song', id: 42 })
-      expect(play).toHaveBeenCalled()
+      expect(find).toHaveBeenCalledWith({ artist: 'Someone', title: 'Song', id: 42 })
+      expect(start).toHaveBeenCalledWith(
+        expect.objectContaining({ id: 'deezer:42', title: 'Song', artist: 'Someone' }),
+      )
     })
 
-    it('pauses Beacon’s own playback on this device first', async () => {
-      vi.spyOn(deezerApi, 'getDeezerPreview').mockResolvedValue('https://cdn/p.mp3')
+    it('looks a track from another service up by its name', async () => {
+      const find = vi.spyOn(deezerApi, 'findDeezerPreview').mockResolvedValue(7)
+      vi.spyOn(usePlaybackStore(), 'startTrackPreview').mockResolvedValue()
+      await resultWithMissingTrack({ deezerId: undefined })
+
+      previewButton().click()
+      await flushPromises()
+
+      expect(find).toHaveBeenCalledWith({ artist: 'Someone', title: 'Song', id: undefined })
+    })
+
+    it('stops its own preview on a second click', async () => {
+      vi.spyOn(deezerApi, 'findDeezerPreview').mockResolvedValue(42)
       const playback = usePlaybackStore()
-      playback.isPlaying = true
-      const toggle = vi.spyOn(playback, 'togglePlay').mockResolvedValue()
+      vi.spyOn(playback, 'startTrackPreview').mockImplementation(async (song) => {
+        playback.preview = { songs: [song], picks: [0], index: 0, resumeAt: 0, whole: false }
+      })
+      const end = vi.spyOn(playback, 'endPreview').mockImplementation(() => {})
       await resultWithMissingTrack()
 
       previewButton().click()
       await flushPromises()
-
-      expect(toggle).toHaveBeenCalledTimes(1)
-    })
-
-    it('leaves a cast to a speaker playing', async () => {
-      vi.spyOn(deezerApi, 'getDeezerPreview').mockResolvedValue('https://cdn/p.mp3')
-      const playback = usePlaybackStore()
-      playback.isPlaying = true
-      useConnectStore().status = makeStatus({ targets: [{ name: 'Room A', type: 'sonos' }] })
-      const toggle = vi.spyOn(playback, 'togglePlay').mockResolvedValue()
-      await resultWithMissingTrack()
-
+      expect(end).not.toHaveBeenCalled()
       previewButton().click()
       await flushPromises()
 
-      expect(toggle).not.toHaveBeenCalled()
-      expect(play).toHaveBeenCalled()
-    })
-
-    it('stops on a second click, and when the dialog closes', async () => {
-      vi.spyOn(deezerApi, 'getDeezerPreview').mockResolvedValue('https://cdn/p.mp3')
-      const { vm } = await resultWithMissingTrack()
-
-      previewButton().click()
-      await flushPromises()
-      previewButton().click()
-      await flushPromises()
-      expect(pause).toHaveBeenCalled()
-      expect(vm.previewIndex).toBe(-1)
-
-      previewButton().click()
-      await flushPromises()
-      // Starting a preview stops any other first, so only what follows counts.
-      pause.mockClear()
-      vm.visible = false
-      await flushPromises()
-      expect(pause).toHaveBeenCalled()
+      expect(end).toHaveBeenCalledTimes(1)
     })
 
     it('marks a track Deezer has no preview for, without playing anything', async () => {
-      vi.spyOn(deezerApi, 'getDeezerPreview').mockResolvedValue(null)
+      vi.spyOn(deezerApi, 'findDeezerPreview').mockResolvedValue(null)
+      const start = vi.spyOn(usePlaybackStore(), 'startTrackPreview').mockResolvedValue()
       await resultWithMissingTrack()
 
       previewButton().click()
       await flushPromises()
 
-      expect(play).not.toHaveBeenCalled()
+      expect(start).not.toHaveBeenCalled()
+      expect(previewButton().disabled).toBe(true)
+    })
+
+    it('is not offered while party guests would hear it', async () => {
+      const party = usePartyStore()
+      party.enabled = true
+      party.hostedHere = true
+      await resultWithMissingTrack()
+
       expect(previewButton().disabled).toBe(true)
     })
   })

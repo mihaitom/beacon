@@ -249,7 +249,7 @@ export default {
       return this.authStore.capabilities.songRadio
     },
     favoriteAvailable(): boolean {
-      return this.authStore.capabilities.favorites
+      return this.authStore.capabilities.favorites && this.playbackStore.currentSongInLibrary
     },
     // The radio snapshot fields the source hands the log panel, lifted here
     // so hostSource reads them the same way it reads everything else.

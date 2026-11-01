@@ -66,17 +66,17 @@ export async function searchDeezerPlaylists(query: string): Promise<DeezerPlayli
   return data.playlists
 }
 
-/** A 30-second Deezer preview for a track from any service, or null when
- * Deezer has none. `id` is a Deezer track id where the track came from
- * Deezer; otherwise it is looked up by artist and title. The URL expires
- * after a few minutes, so it is asked for right before playing. */
-export async function getDeezerPreview(track: {
+/** The Deezer track whose 30-second preview can be played for a track from
+ * any service, or null when Deezer has none. `id` is a Deezer track id
+ * where the track came from Deezer; otherwise it is looked up by artist
+ * and title. connect fetches the audio itself when the preview plays. */
+export async function findDeezerPreview(track: {
   artist: string
   title: string
   id?: number
-}): Promise<string | null> {
+}): Promise<number | null> {
   const params = new URLSearchParams({ artist: track.artist, title: track.title })
   if (track.id) params.set('id', String(track.id))
-  const data = await fetchConnect<{ previewUrl: string }>(`/deezer/preview?${params.toString()}`)
-  return data.previewUrl || null
+  const data = await fetchConnect<{ id: number }>(`/deezer/preview?${params.toString()}`)
+  return data.id || null
 }

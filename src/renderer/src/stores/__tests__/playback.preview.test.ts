@@ -9,6 +9,7 @@ import * as connectPlayback from '@/services/connect/playback'
 import { getLocalMix, STALE_PAUSE_MS } from '@/services/playback/localMix'
 import type { SubsonicClient } from '@/services/subsonic/client'
 import { makeSong, makeStatus } from './fixtures'
+import { deezerPreviewSong } from '@/services/playback/preview'
 
 vi.mock('@/services/audioEngine', () => ({ getAudioEngine: vi.fn() }))
 vi.mock('@/services/connect/accountSettings', () => ({
@@ -342,6 +343,51 @@ describe('previewing an album or playlist', () => {
       expect(playback.preview).toBeNull()
       const [url, position] = engine.load.mock.calls.at(-1)!
       expect([url, position]).toEqual([expect.stringContaining('q1'), 50])
+    })
+  })
+
+  describe('one track from outside the library', () => {
+    const track = deezerPreviewSong(42, { title: 'Believe', artist: 'Cher' })
+
+    it('plays it over the queue, which waits paused where it was', async () => {
+      const playback = await playingQueue()
+      await playback.startTrackPreview(track)
+
+      expect(previewed()).toEqual([
+        expect.objectContaining({ id: 'deezer:42', title: 'Believe', artist: 'Cher' }),
+      ])
+      expect(playback.currentSong?.id).toBe('deezer:42')
+      expect(playback.currentSongInLibrary).toBe(false)
+      // Nothing to play "from here": it is not part of an album or playlist.
+      expect(playback.preview!.whole).toBe(false)
+      expect(playback.queue.map((s) => s.id)).toEqual(['q1', 'q2'])
+
+      // Its end is the preview's end: silence, the queue song paused at 50 s.
+      await playback.previewNext()
+      expect(playback.preview).toBeNull()
+      expect(playback.isPlaying).toBe(false)
+      expect(playback.currentSong?.id).toBe('q1')
+      expect(playback.currentSongInLibrary).toBe(true)
+      expect(engine.load.mock.calls.at(-1)![1]).toBe(50)
+    })
+
+    it('goes to the speakers while casting', async () => {
+      const playback = await playingQueue()
+      vi.spyOn(useConnectStore(), 'isActive', 'get').mockReturnValue(true)
+      await playback.startTrackPreview(track)
+
+      expect(mix.startPreview).not.toHaveBeenCalled()
+      const [songs, index] = vi.mocked(connectPlayback.startPreview).mock.calls.at(-1)!
+      expect(songs.map((s) => s.id)).toEqual(['deezer:42'])
+      expect(index).toBe(0)
+    })
+
+    it('a second track still goes back to where the queue was', async () => {
+      const playback = await playingQueue()
+      await playback.startTrackPreview(track)
+      playback.localPosition = 12
+      await playback.startTrackPreview(deezerPreviewSong(7, { title: 'T', artist: 'A' }))
+      expect(playback.preview!.resumeAt).toBe(50)
     })
   })
 })

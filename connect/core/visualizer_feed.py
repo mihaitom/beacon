@@ -30,6 +30,7 @@ import os
 import time
 from typing import TYPE_CHECKING
 
+from . import deezer
 from .audio_analysis import AudioAnalyzer, should_analyze
 from .state import TEST_TONE_TRACK_ID, list_target_pairs, test_tone_url
 
@@ -672,13 +673,16 @@ class VisualizerFeed:
             # Resolving a track id is a real network round-trip for Plex
             # (see media/plex.py) — off the event loop, same as
             # routes/stream.py's own resolution does it.
-            source_url = (
-                test_tone_url()
-                if track.id == TEST_TONE_TRACK_ID
-                else await asyncio.to_thread(self._session.media.get_stream_url, track.id)
-            )
+            if track.id == TEST_TONE_TRACK_ID:
+                source_url = test_tone_url()
+            elif deezer.is_preview_id(track.id):
+                source_url = await deezer.preview_stream_url(track.id)
+            else:
+                source_url = await asyncio.to_thread(self._session.media.get_stream_url, track.id)
         except Exception as e:
             logger.warning(f"[visualizer] Could not resolve {track.id} for analysis: {e}")
+            return
+        if source_url is None:
             return
         # That await took time — a track change, a seek, or the last
         # subscriber leaving during it means this analyzer would start at a

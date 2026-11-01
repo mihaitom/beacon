@@ -339,29 +339,59 @@ def test_preview_matching_ignores_case_accents_and_punctuation():
     assert deezer._pick_preview([hyphen], "Ne-Yo", "So Sick") is hyphen
 
 
-async def test_preview_by_id_skips_the_search():
+async def test_preview_by_id_checks_that_track_and_hands_out_no_url():
     with _patch_get(_hit("Daft Punk", "Around the World", rank=3)) as get:
         found = await deezer.get_preview("", "", 3)
     assert get.call_args.args[0].endswith("/track/3")
-    assert found == {
-        "previewUrl": "https://cdn/preview-3.mp3",
-        "link": "https://www.deezer.com/track/3",
-    }
+    # The signed URL expires, so it is fetched again when it plays.
+    assert found == {"id": 3, "link": "https://www.deezer.com/track/3"}
+
+
+async def test_a_preview_id_is_played_from_a_freshly_signed_url():
+    with _patch_get(_hit("Cher", "Believe", rank=42)) as get:
+        url = await deezer.preview_stream_url("deezer:42")
+    assert get.call_args.args[0].endswith("/track/42")
+    assert url == "https://cdn/preview-42.mp3"
+
+
+async def test_a_broken_preview_id_has_no_audio_rather_than_failing():
+    assert await deezer.preview_stream_url("deezer:nope") is None
+    down = AsyncMock(side_effect=httpx.ConnectError("down"))
+    with patch.object(deezer._client, "get", down):
+        assert await deezer.preview_stream_url("deezer:42") is None
+
+
+def test_preview_ids_are_told_from_library_ids():
+    assert deezer.is_preview_id("deezer:42")
+    assert not deezer.is_preview_id("42")
+    assert not deezer.is_preview_id(None)
 
 
 def test_preview_route(client):
     with _patch_get({"data": [_hit("Cher", "Believe", rank=7)]}) as get:
         resp = client.get("/deezer/preview", params={"artist": "Cher", "title": "Believe"})
-    assert resp.json()["previewUrl"] == "https://cdn/preview-7.mp3"
+    assert resp.json() == {"id": 7, "link": "https://www.deezer.com/track/7"}
     assert get.call_args.kwargs["params"]["q"] == "Cher Believe"
 
     with _patch_get({"data": []}):
         resp = client.get("/deezer/preview", params={"artist": "Nobody", "title": "Nothing"})
-    assert resp.json() == {"previewUrl": "", "link": ""}
+    assert resp.json() == {"id": 0, "link": ""}
 
     no_data = {"error": {"type": "DataException", "message": "no data", "code": 800}}
     with _patch_get(no_data):
         resp = client.get("/deezer/preview", params={"id": 1})
-    assert resp.json()["previewUrl"] == ""
+    assert resp.json()["id"] == 0
 
     assert client.get("/deezer/preview", params={"artist": "Cher"}).status_code == 422
+
+
+def test_the_waveform_of_a_preview_is_drawn_from_deezer_not_the_server(client, default_session):
+    with (
+        patch.object(deezer, "preview_stream_url", AsyncMock(return_value="https://cdn/p.mp3")),
+        patch("core.waveform.get_waveform", AsyncMock(return_value=[0.5])) as get,
+        patch.object(default_session.media, "get_stream_url") as server,
+    ):
+        resp = client.get("/waveform/deezer:42")
+    assert resp.json() == {"peaks": [0.5]}
+    get.assert_awaited_once_with("deezer:42", "https://cdn/p.mp3")
+    server.assert_not_called()

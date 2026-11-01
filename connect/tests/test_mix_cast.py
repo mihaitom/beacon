@@ -701,6 +701,39 @@ def test_stopping_a_preview_goes_back_to_the_queue_song_paused(
     assert build_status_dict(default_session)["preview"] is None
 
 
+def test_a_deezer_preview_plays_whole_on_the_speaker_over_the_queue(
+    client, default_session, media, no_waveforms
+):
+    """A track from the playlist builder: its audio and its metadata come
+    from Deezer, never the media server, and the end is the queue's song
+    paused, the same as any preview."""
+    _casting_a_queue(client, default_session)
+    song = {
+        "id": "deezer:42",
+        "queue_index": 0,
+        "duration": 30,
+        "artist": "Cher",
+        "title": "Believe",
+    }
+    with (
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play,
+        patch.object(ChromecastDelivery, "pause", new=AsyncMock()),
+        patch("core.deezer.preview_stream_url", AsyncMock(return_value="https://cdn/p.mp3")),
+    ):
+        r = client.post("/preview", json={"songs": [song], "index": 0})
+        st = default_session.state
+        first = st.mix.first
+        url = asyncio.run(mix_cast._source_url(default_session, first))
+        client.post("/preview/end")
+    assert r.json() == {"status": "playing"}
+    assert (first.start, first.end, first.duration) == (0.0, None, 30.0)
+    assert url == "https://cdn/p.mp3"
+    title, artist = play.await_args.args[1:3]
+    assert (title, artist) == ("Believe", "Cher")
+    assert st.current_track is TRACKS["1"] and st.clock.is_paused
+    assert compute_position(default_session) == pytest.approx(42.0, abs=0.5)
+
+
 def test_a_play_ends_the_preview(client, default_session, media, no_waveforms):
     _casting_a_queue(client, default_session)
     with patch.object(ChromecastDelivery, "play", new=AsyncMock()):

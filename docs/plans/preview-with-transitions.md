@@ -213,6 +213,31 @@ station sits over the queue:
   (`MobileTransportControls.vue`). The waveform is not draggable meanwhile.
 - i18n keys in all five locales.
 
+## One track from Deezer (the playlist builder)
+
+Added 2026-11-01. Each row of the playlist builder's result can be
+previewed, library track or not, as Deezer's own 30-second preview - and it
+plays as a preview of one song, so it pauses the queue and casts like any
+other.
+
+- The app makes the track a `Song` with the id `deezer:<Deezer track id>`
+  (`deezerPreviewSong()` in `services/playback/preview.ts`) and starts it
+  with `startTrackPreview()`: one pick, `whole: false`, no Play from here.
+- connect tells such an id apart (`core/deezer.py`'s `is_preview_id()`):
+  its audio is Deezer's preview URL, asked for fresh on every play because
+  Deezer signs it for about 15 minutes - in the mix's `url_fn`, the
+  waveform and the cast visualizer. `PreviewSongs.item()` plays it whole
+  (it already is an excerpt) and gives it its own `Track` for a cast's
+  title and artist, since the media server has none.
+- No lyrics, heart, rating, menu or Song Radio while it plays
+  (`currentSongInLibrary`): the server knows nothing of it.
+- Which Deezer track: by its id for a Deezer list, by artist and title for
+  Last.fm and ListenBrainz (`_pick_preview()`: same artist, the title as
+  asked before another version of it, no hit rather than a wrong one).
+- Known gap: another client sharing the cast cannot resolve a `deezer:`
+  id from the library, so it does not take such a preview up from the
+  status.
+
 ## Tests
 
 - **pytest:** `test_preview.py` (the loudest window, intro and outro left

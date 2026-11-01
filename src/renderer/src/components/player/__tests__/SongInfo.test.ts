@@ -10,6 +10,7 @@ import { usePlaybackStore } from '@/stores/playback'
 import { useLibraryStore } from '@/stores/library'
 import SongInfo from '../SongInfo.vue'
 import { makeSong } from '@/stores/__tests__/fixtures'
+import { deezerPreviewSong } from '@/services/playback/preview'
 import { useRadioMetadataStore } from '@/stores/radioMetadata'
 
 const vuetify = createVuetify({ components, directives })
@@ -132,6 +133,27 @@ describe('SongInfo', () => {
 
       wrapper.get('.song-info').element.dispatchEvent(event)
 
+      expect(event.defaultPrevented).toBe(false)
+    })
+  })
+
+  describe('a Deezer preview is playing', () => {
+    it('shows the track but offers nothing the server would have to know', async () => {
+      const { wrapper } = await mountInfo()
+      const song = deezerPreviewSong(42, { title: 'Believe', artist: 'Cher' })
+      usePlaybackStore().preview = {
+        songs: [song],
+        picks: [0],
+        index: 0,
+        resumeAt: 0,
+        whole: false,
+      }
+      await wrapper.vm.$nextTick()
+      const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true })
+      wrapper.get('.song-info').element.dispatchEvent(event)
+
+      expect(wrapper.text()).toContain('Believe')
+      expect(wrapper.find('.song-info__actions').exists()).toBe(false)
       expect(event.defaultPrevented).toBe(false)
     })
   })

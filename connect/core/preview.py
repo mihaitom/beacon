@@ -14,7 +14,9 @@ from typing import Any
 
 import numpy as np
 
-from . import waveform
+from media.base import Track
+
+from . import deezer, waveform
 from .local_mixes import SongEntry
 from .mix_engine import MixItem
 from .transition_planner import Settings
@@ -94,6 +96,8 @@ class PreviewSongs:
         if not 0 <= index < len(self.entries):
             return None
         entry = self.entries[index]
+        if deezer.is_preview_id(entry.id):
+            return external_item(entry)
         whole = await self.item_fn(entry) if self.item_fn else entry.item()
         url = await self.url_fn(whole)
         waveform_fn = self.waveform_fn or waveform.get_waveform
@@ -103,6 +107,17 @@ class PreviewSongs:
 
     async def next_item(self, current: MixItem) -> MixItem | None:
         return await self.item((current.queue_index or 0) + 1)
+
+
+def external_item(entry: SongEntry) -> MixItem:
+    """A Deezer preview as a mix item: already an excerpt, so it plays
+    whole, and its own Track stands in for the media server's - a cast's
+    dispatch reads the title and artist off it."""
+    title, artist = entry.title or "", entry.artist or ""
+    return replace(
+        entry.item(),
+        payload=Track(id=entry.id, title=title, artist=artist, duration=round(entry.duration)),
+    )
 
 
 @dataclass
