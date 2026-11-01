@@ -421,13 +421,13 @@ export default {
         return null // not signed in to a server here
       }
     },
-    /** What "theme" lights with: the picture's strongest colour where the
-     * app's accent follows the picture (Settings -> Appearance), else the
-     * theme's accent. */
+    /** What "theme" lights with: the colour the app's accent takes for the
+     * picture where it follows the picture (Settings -> Appearance), else
+     * the theme's accent. */
     themeLight(): string {
       const state = this.state!
-      const colours = state.picture?.colours
-      if (state.theme_follows_picture && colours?.length) return colours[0]!
+      const accent = state.picture?.accent
+      if (state.theme_follows_picture && accent) return accent
       return state.theme_colour
     },
     themeLine(): string {

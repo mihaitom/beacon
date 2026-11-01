@@ -83,6 +83,7 @@ const PAIRED: LightsState = {
     url: null,
     cover_art_id: 'al-1',
     colours: ['#ff0000', '#0000ff', '#00ff00'],
+    accent: '#ff0000',
   },
 }
 
@@ -254,6 +255,7 @@ describe('LightsDialog', () => {
         url: 'https://assets.fanart.tv/x.jpg',
         cover_art_id: null,
         colours: [],
+        accent: null,
       },
     })
     expect(wrapper.text()).toContain(i18n.global.t('lights.paletteGrey'))
@@ -299,20 +301,23 @@ describe('LightsDialog', () => {
     expect(updateLights).not.toHaveBeenCalled()
   })
 
-  it('the theme takes the picture colour where the app accent follows the picture', async () => {
-    const swatch = async (follows: boolean) =>
+  it("the theme takes the app's accent for the picture where that follows the picture", async () => {
+    const swatch = async (follows: boolean, accent: string | null = '#0000ff') =>
       (
         await openDialogWrapper({
           ...PAIRED,
           colour_mode: 'theme',
           theme_colour: themeColour(),
           theme_follows_picture: follows,
+          picture: { ...PAIRED.picture!, accent },
         })
       )
         .find('.lights__detail .lights__swatch')
         .attributes('style')
     useAppearanceStore().adaptiveAccent = true
-    expect(await swatch(true)).toContain('rgb(255, 0, 0)')
+    expect(await swatch(true)).toContain('rgb(0, 0, 255)')
+    // Colours in the picture, but none the app's accent would take.
+    expect(await swatch(true, null)).toContain('rgb(245, 169, 78)')
     useAppearanceStore().adaptiveAccent = false
     expect(await swatch(false)).toContain('rgb(245, 169, 78)')
   })
@@ -335,6 +340,7 @@ describe('LightsDialog', () => {
         url: null,
         cover_art_id: 'al-2',
         colours: ['#00ff00'],
+        accent: '#00ff00',
       }
       vi.mocked(getPicture).mockResolvedValue(next)
       await vi.advanceTimersByTimeAsync(2_500)

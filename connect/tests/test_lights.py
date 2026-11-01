@@ -21,7 +21,7 @@ from core.beat_analysis import ANALYSIS_RATE
 from core.session import SessionState, registry
 from lights import analysis, hue, show
 from lights import config as lights_config
-from lights.analysis import SongLights
+from lights.analysis import NO_COLOURS, PictureColours, SongLights, picture_colours
 from lights.controller import (
     LOCAL_REPORT_TTL,
     ROTATION_BEATS,
@@ -358,14 +358,18 @@ def _striped_png(*colours: tuple[int, int, int], widths: tuple[int, ...] | None 
     return buf.getvalue()
 
 
+def _palette(image: bytes) -> tuple:
+    return picture_colours(image).palette
+
+
 def test_the_palette_takes_the_cover_hue_at_full_value():
-    ((r, g, b),) = analysis.cover_palette(_png((120, 20, 20)))
+    ((r, g, b),) = _palette(_png((120, 20, 20)))
     assert r == pytest.approx(1.0)
     assert g < 0.3 and b < 0.3
 
 
 def test_the_palette_lists_different_colours_strongest_first():
-    palette = analysis.cover_palette(
+    palette = _palette(
         _striped_png((200, 30, 30), (30, 60, 200), (30, 180, 60), widths=(20, 10, 5))
     )
     assert len(palette) == 3
@@ -377,22 +381,49 @@ def test_the_palette_lists_different_colours_strongest_first():
 
 def test_shades_of_one_colour_are_one_palette_entry():
     # Red and an orange 36 degrees away: neighbours, not two colours.
-    palette = analysis.cover_palette(_striped_png((200, 20, 20), (220, 140, 20), (128, 128, 128)))
+    palette = _palette(_striped_png((200, 20, 20), (220, 140, 20), (128, 128, 128)))
     assert len(palette) == 1
 
 
 def test_a_black_and_white_cover_has_no_colours():
-    assert analysis.cover_palette(_png((128, 128, 128))) == ()
+    assert _palette(_png((128, 128, 128))) == ()
 
 
 def test_an_off_white_cover_has_no_colours():
     # A tint the eye reads as white is not a colour, however far it is
     # brightened - the theme's accent stands in, as for the visualizer.
-    assert analysis.cover_palette(_png((242, 246, 250))) == ()
+    assert _palette(_png((242, 246, 250))) == ()
+
+
+def test_the_accent_is_the_colour_the_app_takes():
+    r, g, b = picture_colours(_png((200, 30, 30))).accent
+    assert r == pytest.approx(1.0)
+    assert g == pytest.approx(b) and g < 0.3
+
+
+@pytest.mark.parametrize(
+    "colour",
+    [(60, 40, 30), (128, 128, 128), (250, 250, 250)],
+    ids=["dark brown photo", "grey", "white"],
+)
+def test_a_picture_the_app_keeps_the_theme_for_has_no_accent(colour):
+    # The brown has a palette colour all the same: "palette" lights orange.
+    assert picture_colours(_png(colour)).accent is None
+
+
+def test_the_accent_leaves_out_what_is_see_through():
+    from PIL import Image
+
+    img = Image.new("RGBA", (40, 40), (30, 60, 200, 255))
+    img.paste((200, 30, 30, 0), (0, 0, 30, 40))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    *_, b = picture_colours(buf.getvalue()).accent
+    assert b == pytest.approx(1.0)
 
 
 async def test_cover_colours_without_a_cover():
-    assert await analysis.cover_colours(None) == ()
+    assert await analysis.cover_colours(None) == NO_COLOURS
 
 
 async def test_analysis_cache_runs_once_and_remembers_failures(monkeypatch):
@@ -1029,7 +1060,7 @@ def test_frame_uses_the_song_position_plus_the_lead(sessions):
     c = LightController()
     c._channels = (LEFT,)
     c._palette = (RED,)
-    c._covers["s"] = (RED,)
+    c._covers["s"] = PictureColours((RED,))
     c._analysis._done["s"] = _song()
     now = time.monotonic()
     # 0.4 s in plus 0.1 s lead lands on the beat at 0.5.
@@ -1059,13 +1090,13 @@ async def test_resolve_finds_stream_and_colour(sessions, monkeypatch):
 
     async def colours(url):
         assert url == "http://music/cover/c1"
-        return (RED, BLUE)
+        return PictureColours((RED, BLUE))
 
     monkeypatch.setattr("lights.controller.cover_colours", colours)
     c = LightController()
     await c._resolve(Source("s1", "song-1", 0.0))
     assert c._song_meta["song-1"] == ("http://music/song-1", "http://music/cover/c1")
-    assert c._covers["song-1"] == (RED, BLUE)
+    assert c._covers["song-1"] == PictureColours((RED, BLUE))
 
 
 class _Media:
@@ -1100,7 +1131,7 @@ async def test_a_failed_lookup_is_tried_again_after_a_while(sessions, monkeypatc
     session.media = _Media(fail_times=1)
 
     async def colours(url):
-        return (RED,)
+        return PictureColours((RED,))
 
     monkeypatch.setattr("lights.controller.cover_colours", colours)
     c = LightController()
@@ -1115,7 +1146,7 @@ async def test_a_failed_lookup_is_tried_again_after_a_while(sessions, monkeypatc
     c._prepare(source)
     await _resolved(c, "song-1")
     assert c._song_meta["song-1"] == ("http://music/song-1", "http://music/cover/c1")
-    assert c._covers["song-1"] == (RED,)
+    assert c._covers["song-1"] == PictureColours((RED,))
     c._analysis.cancel_all()
 
 
@@ -1124,7 +1155,7 @@ async def test_a_missing_cover_does_not_hold_back_the_beat(sessions, monkeypatch
     session = SessionState("s1")
     registry._sessions["s1"] = session
     session.media = _Media()
-    answers = [None, (BLUE,)]
+    answers = [None, PictureColours((BLUE,))]
 
     async def colours(url):
         return answers.pop(0)
@@ -1143,7 +1174,7 @@ async def test_a_missing_cover_does_not_hold_back_the_beat(sessions, monkeypatch
     c._lookup_retry["song-1"] = 0.0
     c._prepare(source)
     await _resolved(c, "song-1")
-    assert c._covers["song-1"] == (BLUE,)
+    assert c._covers["song-1"] == PictureColours((BLUE,))
     assert session.media.lookups == 1  # only the cover was fetched again
 
 
@@ -1154,7 +1185,7 @@ async def test_the_preview_sets_an_analysis_going_and_then_has_it(sessions, monk
     session.media = _Media()
 
     async def colours(url):
-        return (RED,)
+        return PictureColours((RED,))
 
     requested = []
     monkeypatch.setattr("lights.controller.cover_colours", colours)
@@ -1177,7 +1208,7 @@ async def test_the_dialog_sees_the_picture_of_the_last_song_followed(sessions, f
     assert c.picture is None
     c._song_meta["song-9"] = ("", None)
     c._cover_art_ids["song-9"] = "al-1"
-    c._covers["song-9"] = (RED, BLUE)
+    c._covers["song-9"] = PictureColours((RED, BLUE))
     c.report_local("desk", "song-9", 5.0, True)
     await c._tick()
     c.forget_local("desk")
@@ -1188,6 +1219,7 @@ async def test_the_dialog_sees_the_picture_of_the_last_song_followed(sessions, f
         "url": None,
         "cover_art_id": "al-1",
         "colours": ["#ff0000", "#0000ff"],
+        "accent": None,
     }
     await c.stop()
 
@@ -1195,10 +1227,16 @@ async def test_the_dialog_sees_the_picture_of_the_last_song_followed(sessions, f
 def test_the_dialog_sees_the_artist_picture_and_a_colourless_one():
     c = LightController()
     c._last_song_id = "s"
-    c._covers["s"] = (RED,)
+    c._covers["s"] = PictureColours((RED,))
     c._pictures["s"] = PICTURE
-    c._picture_colours[PICTURE] = ()
-    assert c.picture == {"source": "artist", "url": PICTURE, "cover_art_id": None, "colours": []}
+    c._picture_colours[PICTURE] = PictureColours(())
+    assert c.picture == {
+        "source": "artist",
+        "url": PICTURE,
+        "cover_art_id": None,
+        "colours": [],
+        "accent": None,
+    }
     # While the picture is still being looked at, the cover's colours show.
     c._picture_colours[PICTURE] = None
     assert c.picture["source"] == "cover"
@@ -1218,21 +1256,21 @@ async def _picture_loaded(c: LightController, url: str) -> None:
 async def test_an_artist_picture_in_the_foreground_gives_the_colours(sessions, monkeypatch):
     async def colours(url):
         assert url == PICTURE
-        return (GREEN,)
+        return PictureColours((GREEN,))
 
     monkeypatch.setattr("lights.controller.fanart_colours", colours)
     c = LightController()
-    c._covers["s"] = (RED, BLUE)
-    assert c._palette_of("s") == (RED, BLUE)
+    c._covers["s"] = PictureColours((RED, BLUE))
+    assert c._palette_of("s").palette == (RED, BLUE)
     c.set_picture("s", PICTURE)
     await _picture_loaded(c, PICTURE)
-    assert c._palette_of("s") == (GREEN,)
+    assert c._palette_of("s").palette == (GREEN,)
     # Another song keeps its own cover.
-    c._covers["t"] = (BLUE,)
-    assert c._palette_of("t") == (BLUE,)
+    c._covers["t"] = PictureColours((BLUE,))
+    assert c._palette_of("t").palette == (BLUE,)
     # Back to the cover when the app shows it again.
     c.set_picture("s", None)
-    assert c._palette_of("s") == (RED, BLUE)
+    assert c._palette_of("s").palette == (RED, BLUE)
 
 
 def test_the_show_fades_towards_the_pictures_colours(sessions):
@@ -1240,9 +1278,9 @@ def test_the_show_fades_towards_the_pictures_colours(sessions):
     c = LightController()
     c._channels = (LEFT,)
     c._palette = (RED,)
-    c._covers["s"] = (BLUE,)
+    c._covers["s"] = PictureColours((BLUE,))
     c._pictures["s"] = PICTURE
-    c._picture_colours[PICTURE] = (GREEN,)
+    c._picture_colours[PICTURE] = PictureColours((GREEN,))
     c._source, c._source_at = Source("x", "s", 0.0), time.monotonic()
     c._frame(time.monotonic())
     ((_, g, b),) = c._palette
@@ -1255,10 +1293,10 @@ async def test_a_picture_that_cannot_be_had_leaves_the_cover(sessions, monkeypat
 
     monkeypatch.setattr("lights.controller.fanart_colours", colours)
     c = LightController()
-    c._covers["s"] = (RED,)
+    c._covers["s"] = PictureColours((RED,))
     c.set_picture("s", PICTURE)
     await asyncio.sleep(0.02)
-    assert c._palette_of("s") == (RED,)
+    assert c._palette_of("s").palette == (RED,)
 
 
 async def test_a_picture_is_looked_at_once(sessions, monkeypatch):
@@ -1266,7 +1304,7 @@ async def test_a_picture_is_looked_at_once(sessions, monkeypatch):
 
     async def colours(url):
         calls.append(url)
-        return (GREEN,)
+        return PictureColours((GREEN,))
 
     monkeypatch.setattr("lights.controller.fanart_colours", colours)
     c = LightController()
@@ -1282,7 +1320,7 @@ async def test_fanart_colours_come_from_connects_image_store(monkeypatch):
     from core import fanart
 
     monkeypatch.setattr(fanart, "get_cached_image", lambda url: _png((20, 160, 20)))
-    ((r, g, _),) = await analysis.fanart_colours(PICTURE)
+    ((r, g, _),) = (await analysis.fanart_colours(PICTURE)).palette
     assert g == pytest.approx(1.0) and r < 0.3
 
 
@@ -1297,7 +1335,7 @@ async def test_fanart_colours_fetch_what_is_not_stored_yet(monkeypatch):
     monkeypatch.setattr(fanart, "get_cached_image", lambda url: None)
     monkeypatch.setattr(fanart, "fetch_image", fetch)
     monkeypatch.setattr(fanart, "store_image", lambda url, data: stored.update({url: data}))
-    ((*_, b),) = await analysis.fanart_colours(PICTURE)
+    ((*_, b),) = (await analysis.fanart_colours(PICTURE)).palette
     assert b == pytest.approx(1.0)
     assert PICTURE in stored
 
@@ -1309,19 +1347,23 @@ def test_hex_round_trip():
 
 
 def test_the_settings_pick_the_colours():
-    picture = (RED, BLUE)
+    picture = PictureColours((RED, BLUE), accent=GREEN)
     assert palette_for(_paired(colour_mode="palette"), picture) == (RED, BLUE)
     assert palette_for(_paired(colour_mode="fixed", fixed_colour="#0000ff"), picture) == (BLUE,)
-    theme = _paired(colour_mode="theme", theme_colour="#00ff00", theme_follows_picture=False)
-    assert palette_for(theme, picture) == (GREEN,)
+    theme = _paired(colour_mode="theme", theme_colour="#0000ff", theme_follows_picture=False)
+    assert palette_for(theme, picture) == (BLUE,)
 
 
-def test_a_theme_that_follows_the_picture_takes_its_strongest_colour():
+def test_a_theme_that_follows_the_picture_takes_the_apps_accent_for_it():
     cfg = _paired(colour_mode="theme", theme_colour="#00ff00", theme_follows_picture=True)
-    assert palette_for(cfg, (BLUE, RED)) == (BLUE,)
+    assert palette_for(cfg, PictureColours((BLUE, RED), accent=RED)) == (RED,)
+    # Colours in it, but none the app would take: the theme's.
+    assert palette_for(cfg, PictureColours((BLUE, RED))) == (GREEN,)
 
 
-@pytest.mark.parametrize("picture", [None, ()], ids=["not looked at yet", "black and white"])
+@pytest.mark.parametrize(
+    "picture", [None, NO_COLOURS], ids=["not looked at yet", "black and white"]
+)
 def test_a_picture_without_colours_gives_the_theme_colour(picture):
     cfg = _paired(colour_mode="palette", theme_colour="#00ff00")
     assert palette_for(cfg, picture) == (GREEN,)
@@ -1333,14 +1375,14 @@ def test_a_picture_without_colours_gives_the_theme_colour(picture):
 
 def test_rotation_gives_every_light_its_own_colour_and_turns():
     cfg = _paired(colour_mode="rotate")
-    three = palette_for(cfg, (RED,), 3, 0.0)
+    three = palette_for(cfg, PictureColours((RED,)), 3, 0.0)
     assert len(three) == 3
     # Starts at the picture's colour, the others a third of the wheel on.
     assert three[0] == pytest.approx(RED)
     assert three[1] == pytest.approx(GREEN)
     assert three[2] == pytest.approx(BLUE)
     # A third of the way round later, each light has the next one's colour.
-    later = palette_for(cfg, (RED,), 3, 1 / 3)
+    later = palette_for(cfg, PictureColours((RED,)), 3, 1 / 3)
     assert later[0] == pytest.approx(GREEN)
     assert later[2] == pytest.approx(RED)
 
@@ -1349,7 +1391,7 @@ def _rotating(hits: np.ndarray | None) -> LightController:
     _paired(colour_mode="rotate", lead_ms=0)
     c = LightController()
     c._channels = (LEFT, RIGHT)
-    c._covers["s"] = (RED,)
+    c._covers["s"] = PictureColours((RED,))
     song = _song()
     c._analysis._done["s"] = SongLights(
         duration=song.duration, beats=song.beats, energy=song.energy, hits=hits
@@ -1406,7 +1448,7 @@ def test_a_new_palette_fades_in(sessions):
     c = LightController()
     c._channels = (LEFT, RIGHT)
     c._palette = (RED,)
-    c._covers["s"] = (BLUE, BLUE)
+    c._covers["s"] = PictureColours((BLUE, BLUE))
     c._source, c._source_at = Source("x", "s", 0.0), time.monotonic()
     c._frame(time.monotonic())
     assert len(c._palette) == 2

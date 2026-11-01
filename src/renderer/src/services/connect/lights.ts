@@ -25,6 +25,9 @@ export interface LightsPicture {
   /** The media server's id, for a cover. */
   cover_art_id: string | null
   colours: string[]
+  /** The colour the app's accent takes for it on Now Playing, or null
+   * where it keeps the theme's - what "theme" lights with. */
+  accent: string | null
 }
 
 export interface LightsState {

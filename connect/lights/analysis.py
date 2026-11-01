@@ -15,6 +15,7 @@ lets the lights go quiet with the drums.
 from __future__ import annotations
 
 import asyncio
+import colorsys
 import io
 import logging
 import math
@@ -213,16 +214,65 @@ _MIN_SATURATION = 0.2
 PALETTE_SIZE = 3
 
 
-def cover_palette(image: bytes, size: int = PALETTE_SIZE) -> tuple[RGB, ...]:
-    """The cover's most present colours, the strongest first, each
-    brightened to full value - the lights carry brightness separately, so
-    only the hue matters. Fewer than `size` when the cover has fewer
-    clearly different colours; none for one without colour, black-and-white
-    or nearly white."""
+# The app's accent on Now Playing (services/colorExtractor.ts's colour put
+# through services/visualizerColor.ts), mirrored so "theme" lights the room
+# in the colour the app shows: below these it keeps the theme's accent,
+# above them the colour is lifted to the bars' saturation and lightness.
+_ACCENT_MIN_SATURATION = 0.2
+_ACCENT_MIN_LIGHTNESS = 0.25
+_ACCENT_SATURATION = 0.65
+_ACCENT_LIGHTNESS = (0.55, 0.72)
+
+
+@dataclass(frozen=True)
+class PictureColours:
+    """A picture's colours as the lights take them: `palette` for "palette"
+    and "rotate", `accent` for "theme" - None where the app keeps the
+    theme's own accent for it."""
+
+    palette: tuple[RGB, ...] = ()
+    accent: RGB | None = None
+
+
+NO_COLOURS = PictureColours()
+
+
+def picture_colours(image: bytes) -> PictureColours:
     from PIL import Image
 
     with Image.open(io.BytesIO(image)) as img:
-        small = np.asarray(img.convert("RGB").resize((32, 32))).reshape(-1, 3) / 255.0
+        small = np.asarray(img.convert("RGBA").resize((32, 32))).reshape(-1, 4) / 255.0
+    return PictureColours(_palette(small[:, :3]), _accent(small))
+
+
+def _accent(rgba: np.ndarray) -> RGB | None:
+    """The app's accent for the picture at full value, or None for the
+    theme's: a weighted average leaning on saturated mid-tones, dropped
+    when it comes out grey or dark."""
+    rgb = rgba[rgba[:, 3] >= 128 / 255, :3]
+    top = rgb.max(axis=1)
+    low = rgb.min(axis=1)
+    lightness = (top + low) / 2
+    saturation = (top - low) / np.maximum(1 - np.abs(top + low - 1), 1e-6)
+    weight = np.maximum(saturation**2 * (1 - np.abs(lightness - 0.5) * 1.4), 0)
+    if weight.sum() <= 0:
+        return None
+    mean = np.round((rgb * weight[:, None]).sum(axis=0) / weight.sum() * 255) / 255
+    h, l, s = colorsys.rgb_to_hls(*mean)
+    if s < _ACCENT_MIN_SATURATION or l < _ACCENT_MIN_LIGHTNESS:
+        return None
+    lo, hi = _ACCENT_LIGHTNESS
+    colour = colorsys.hls_to_rgb(h, min(max(l, lo), hi), max(s, _ACCENT_SATURATION))
+    peak = max(colour)
+    return (colour[0] / peak, colour[1] / peak, colour[2] / peak)
+
+
+def _palette(small: np.ndarray, size: int = PALETTE_SIZE) -> tuple[RGB, ...]:
+    """The picture's most present colours, the strongest first, each
+    brightened to full value - the lights carry brightness separately, so
+    only the hue matters. Fewer than `size` when it has fewer clearly
+    different colours; none for one without colour, black-and-white or
+    nearly white."""
     top = small.max(axis=1)
     low = small.min(axis=1)
     saturation = np.where(top > 0, (top - low) / np.maximum(top, 1e-6), 0)
@@ -267,11 +317,11 @@ def _hue(rgb: np.ndarray, top: np.ndarray, low: np.ndarray) -> np.ndarray:
     return (h / 6.0) % 1.0
 
 
-async def cover_colours(url: str | None) -> tuple[RGB, ...] | None:
+async def cover_colours(url: str | None) -> PictureColours | None:
     """No colours for a song without a cover or with one that is no image;
     None when the cover could not be fetched, worth another try."""
     if not url:
-        return ()
+        return NO_COLOURS
     try:
         async with httpx.AsyncClient(timeout=10, follow_redirects=True) as http:
             reply = await http.get(url)
@@ -280,13 +330,13 @@ async def cover_colours(url: str | None) -> tuple[RGB, ...] | None:
         logger.debug(f"[lights] Could not fetch the cover: {e}")
         return None
     try:
-        return await asyncio.to_thread(cover_palette, reply.content)
+        return await asyncio.to_thread(picture_colours, reply.content)
     except Exception as e:
         logger.debug(f"[lights] No cover colours: {e}")
-        return ()
+        return NO_COLOURS
 
 
-async def fanart_colours(url: str) -> tuple[RGB, ...] | None:
+async def fanart_colours(url: str) -> PictureColours | None:
     """The colours of a Fanart.tv artist background, from connect's own
     image store (fetched into it if this is the first ask). None when the
     image cannot be had - the cover's colours then stay."""
@@ -300,7 +350,7 @@ async def fanart_colours(url: str) -> tuple[RGB, ...] | None:
                 return None
             data = fetched[0]
             fanart.store_image(url, data)
-        return await asyncio.to_thread(cover_palette, data)
+        return await asyncio.to_thread(picture_colours, data)
     except Exception as e:
         logger.debug(f"[lights] No artist picture colours: {e}")
         return None

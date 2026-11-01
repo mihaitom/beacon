@@ -56,8 +56,8 @@ class LightsConfig:
     # The accent of the theme the app shows, as it last reported it.
     theme_colour: str = DEFAULT_THEME_COLOUR
     # The app's "accent follows the picture" (Settings -> Appearance): then
-    # "theme" takes the picture's strongest colour, as the visualizer does,
-    # and theme_colour only for a picture without one.
+    # "theme" takes the colour the app's accent takes for the picture, and
+    # theme_colour where the app keeps the theme's (a grey or dark picture).
     theme_follows_picture: bool = True
     brightness: int = 100
 

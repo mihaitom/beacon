@@ -26,7 +26,14 @@ from core.state import TEST_TONE_TRACK_ID, list_target_pairs
 
 from . import config as lights_config
 from . import hue, show
-from .analysis import RGB, AnalysisCache, SongLights, cover_colours, fanart_colours
+from .analysis import (
+    RGB,
+    AnalysisCache,
+    PictureColours,
+    SongLights,
+    cover_colours,
+    fanart_colours,
+)
 
 logger = logging.getLogger("connect.lights")
 
@@ -100,12 +107,12 @@ class LightController:
         self._song_meta: dict[str, tuple[str, str | None]] = {}  # id -> (stream url, cover url)
         self._song_meta_pending: set[str] = set()
         self._lookup_retry: dict[str, float] = {}  # song id -> not before
-        self._covers: dict[str, tuple[RGB, ...]] = {}  # song id -> cover palette
+        self._covers: dict[str, PictureColours] = {}  # song id -> cover colours
         self._cover_art_ids: dict[str, str] = {}  # song id -> the server's cover art id
         # The picture an app's Now Playing shows behind a song instead of
         # its cover (a Fanart.tv artist background), and its colours.
         self._pictures: dict[str, str | None] = {}  # song id -> image url
-        self._picture_colours: dict[str, tuple[RGB, ...] | None] = {}  # url -> palette
+        self._picture_colours: dict[str, PictureColours | None] = {}  # url -> colours
         self._stream: hue.DtlsStream | None = None
         self._streaming_area: str | None = None
         self._channels: tuple[hue.Channel, ...] = ()
@@ -152,7 +159,8 @@ class LightController:
     @property
     def picture(self) -> dict | None:
         """The picture of the song the lights followed last - which one, and
-        its colours (none for a black-and-white one) - once looked at."""
+        its colours (none for a black-and-white one) and the app's accent
+        for it (None for the theme's) - once looked at."""
         song_id = self._last_song_id
         if song_id is None:
             return None
@@ -165,7 +173,8 @@ class LightController:
             "source": "artist" if artist else "cover",
             "url": url if artist else None,
             "cover_art_id": None if artist else self._cover_art_ids.get(song_id),
-            "colours": [to_hex(c) for c in colours],
+            "colours": [to_hex(c) for c in colours.palette],
+            "accent": to_hex(colours.accent) if colours.accent else None,
         }
 
     # ── inputs ─────────────────────────────────────────────────────────
@@ -190,10 +199,9 @@ class LightController:
     async def _load_picture(self, url: str) -> None:
         self._picture_colours[url] = await fanart_colours(url)
 
-    def _palette_of(self, song_id: str) -> tuple[RGB, ...] | None:
+    def _palette_of(self, song_id: str) -> PictureColours | None:
         """The song's colours: its picture's while one is shown and known,
-        else its cover's (None while that is still being looked at). Empty
-        for a picture without colour."""
+        else its cover's (None while that is still being looked at)."""
         url = self._pictures.get(song_id)
         picture = self._picture_colours.get(url) if url else None
         return picture if picture is not None else self._covers.get(song_id)
@@ -480,23 +488,24 @@ def _trim(cache: dict, keep: int = 32) -> None:
 
 def palette_for(
     cfg: lights_config.LightsConfig,
-    picture: tuple[RGB, ...] | None,
+    picture: PictureColours | None,
     lights: int = 1,
     turn: float = 0.0,
 ) -> tuple[RGB, ...]:
     """The colours the settings ask for. `picture` is the song's picture's
-    (see _palette_of): None while it is still being looked at, empty for
-    one without colour - the theme's colour stands in for both. `lights`
+    (see _palette_of): None while it is still being looked at, an empty
+    palette for one without colour - the theme's colour stands in for both. `lights`
     and `turn` (0..1 round the wheel) are for the rotation."""
     theme = hex_colour(cfg.theme_colour)
     if cfg.colour_mode == "theme":
-        # The app's accent follows the picture: its strongest colour.
-        if cfg.theme_follows_picture and picture:
-            return (picture[0],)
+        # The app's accent follows the picture: the colour it takes on Now
+        # Playing, which for a grey or dark picture is the theme's own.
+        if cfg.theme_follows_picture and picture and picture.accent:
+            return (picture.accent,)
         return (theme,)
     if cfg.colour_mode == "fixed":
         return (hex_colour(cfg.fixed_colour),)
-    colours = picture or (theme,)
+    colours = (picture.palette if picture else ()) or (theme,)
     if cfg.colour_mode == "rotate":
         return rotation(colours[0], lights, turn)
     return colours
