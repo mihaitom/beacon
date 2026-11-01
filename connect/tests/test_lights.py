@@ -24,7 +24,7 @@ from lights import config as lights_config
 from lights.analysis import SongLights
 from lights.controller import (
     LOCAL_REPORT_TTL,
-    ROTATION_SECONDS,
+    ROTATION_BEATS,
     LightController,
     Source,
     hex_colour,
@@ -372,12 +372,12 @@ def test_shades_of_one_colour_are_one_palette_entry():
     assert len(palette) == 1
 
 
-def test_a_grey_cover_falls_back_to_warm_white():
-    assert analysis.cover_palette(_png((128, 128, 128))) == (analysis.DEFAULT_COLOUR,)
+def test_a_black_and_white_cover_has_no_colours():
+    assert analysis.cover_palette(_png((128, 128, 128))) == ()
 
 
 async def test_cover_colours_without_a_cover():
-    assert await analysis.cover_colours(None) == (analysis.DEFAULT_COLOUR,)
+    assert await analysis.cover_colours(None) == ()
 
 
 async def test_analysis_cache_runs_once_and_remembers_failures(monkeypatch):
@@ -746,7 +746,7 @@ def test_a_style_this_version_no_longer_has_falls_back_to_the_default():
     with open(os.path.join(lights_config._DATA_DIR, "hue_lights.json"), "w") as f:
         f.write('{"bridge_host": "h", "style": "wave", "colour_mode": "disco", "brightness": 40}')
     cfg = lights_config.get()
-    assert (cfg.style, cfg.colour_mode) == ("pulse", "cover")
+    assert (cfg.style, cfg.colour_mode) == ("pulse", "palette")
     assert (cfg.bridge_host, cfg.brightness) == ("h", 40)
 
 
@@ -1134,19 +1134,37 @@ async def test_a_missing_cover_does_not_hold_back_the_beat(sessions, monkeypatch
     assert session.media.lookups == 1  # only the cover was fetched again
 
 
-async def test_the_dialog_sees_the_colours_of_the_last_song_followed(sessions, fake_bridge):
+async def test_the_dialog_sees_the_picture_of_the_last_song_followed(sessions, fake_bridge):
     _paired()
     c = LightController()
-    assert c.picture_palette is None
+    assert c.picture is None
     c._song_meta["song-9"] = ("", None)
+    c._cover_art_ids["song-9"] = "al-1"
     c._covers["song-9"] = (RED, BLUE)
     c.report_local("desk", "song-9", 5.0, True)
     await c._tick()
     c.forget_local("desk")
     await c._tick()
     # Still there after the song stopped.
-    assert c.picture_palette == (RED, BLUE)
+    assert c.picture == {
+        "source": "cover",
+        "url": None,
+        "cover_art_id": "al-1",
+        "colours": ["#ff0000", "#0000ff"],
+    }
     await c.stop()
+
+
+def test_the_dialog_sees_the_artist_picture_and_a_colourless_one():
+    c = LightController()
+    c._last_song_id = "s"
+    c._covers["s"] = (RED,)
+    c._pictures["s"] = PICTURE
+    c._picture_colours[PICTURE] = ()
+    assert c.picture == {"source": "artist", "url": PICTURE, "cover_art_id": None, "colours": []}
+    # While the picture is still being looked at, the cover's colours show.
+    c._picture_colours[PICTURE] = None
+    assert c.picture["source"] == "cover"
 
 
 GREEN = (0.0, 1.0, 0.0)
@@ -1250,16 +1268,22 @@ async def test_fanart_colours_fetch_what_is_not_stored_yet(monkeypatch):
 def test_hex_round_trip():
     assert to_hex((1.0, 0.5, 0.0)) == "#ff8000"
     assert hex_colour("#ff8000") == pytest.approx((1.0, 128 / 255, 0.0))
-    assert hex_colour("nonsense") == analysis.DEFAULT_COLOUR
+    assert to_hex(hex_colour("nonsense")) == lights_config.DEFAULT_THEME_COLOUR
 
 
 def test_the_settings_pick_the_colours():
-    cover = (RED, BLUE)
-    assert palette_for(_paired(colour_mode="cover"), cover) == (RED,)
-    assert palette_for(_paired(colour_mode="palette"), cover) == (RED, BLUE)
-    assert palette_for(_paired(colour_mode="fixed", fixed_colour="#0000ff"), cover) == (BLUE,)
-    # The cover not looked at yet.
-    assert palette_for(_paired(colour_mode="palette"), None) == (analysis.DEFAULT_COLOUR,)
+    picture = (RED, BLUE)
+    assert palette_for(_paired(colour_mode="palette"), picture) == (RED, BLUE)
+    assert palette_for(_paired(colour_mode="fixed", fixed_colour="#0000ff"), picture) == (BLUE,)
+    assert palette_for(_paired(colour_mode="theme", theme_colour="#00ff00"), picture) == (GREEN,)
+
+
+@pytest.mark.parametrize("picture", [None, ()], ids=["not looked at yet", "black and white"])
+def test_a_picture_without_colours_gives_the_theme_colour(picture):
+    cfg = _paired(colour_mode="palette", theme_colour="#00ff00")
+    assert palette_for(cfg, picture) == (GREEN,)
+    rotate = _paired(colour_mode="rotate", theme_colour="#00ff00")
+    assert palette_for(rotate, picture, 3)[0] == pytest.approx(GREEN)
 
 
 def test_rotation_gives_every_light_its_own_colour_and_turns():
@@ -1271,26 +1295,65 @@ def test_rotation_gives_every_light_its_own_colour_and_turns():
     assert three[1] == pytest.approx(GREEN)
     assert three[2] == pytest.approx(BLUE)
     # A third of the way round later, each light has the next one's colour.
-    later = palette_for(cfg, (RED,), 3, ROTATION_SECONDS / 3)
+    later = palette_for(cfg, (RED,), 3, 1 / 3)
     assert later[0] == pytest.approx(GREEN)
     assert later[2] == pytest.approx(RED)
 
 
-def test_the_show_turns_the_rotation_over_time(sessions):
-    _paired(colour_mode="rotate")
+def _rotating(hits: np.ndarray | None) -> LightController:
+    _paired(colour_mode="rotate", lead_ms=0)
     c = LightController()
     c._channels = (LEFT, RIGHT)
     c._covers["s"] = (RED,)
+    song = _song()
+    c._analysis._done["s"] = SongLights(
+        duration=song.duration, grid=song.grid, energy=song.energy, hits=hits
+    )
+    return c
+
+
+def _turn_after(c: LightController, seconds: float) -> float:
     now = time.monotonic()
-    c._source, c._source_at = Source("x", "s", 0.0), now
-    start = (RED, BLUE)
-    c._palette = start
+    for t in np.arange(0.0, seconds, 0.1):
+        c._source, c._source_at = Source("x", "s", float(t)), now
+        c._frame(now)
+    return c._turn
+
+
+def test_the_rotation_turns_with_the_beats_heard(sessions):
+    c = _rotating(np.ones(120, np.float32))
+    # 16 beats at 120 BPM.
+    assert _turn_after(c, 8.0) == pytest.approx(16 / ROTATION_BEATS, abs=1 / ROTATION_BEATS)
+
+
+def test_the_rotation_stands_still_without_a_beat(sessions):
+    assert _turn_after(_rotating(np.zeros(120, np.float32)), 8.0) == 0.0
+    no_song = _rotating(None)
+    no_song._analysis._done.pop("s")
+    assert _turn_after(no_song, 8.0) == 0.0
+
+
+def test_a_new_song_starts_counting_without_a_jump(sessions):
+    c = _rotating(np.ones(120, np.float32))
+    _turn_after(c, 8.0)
+    before = c._turn
+    c._analysis._done["t"] = c._analysis._done["s"]
+    now = time.monotonic()
+    # 30 s into the next song: nothing heard there yet as far as the
+    # rotation knows, so it does not leap 60 beats on.
+    c._source, c._source_at = Source("x", "t", 30.0), now
     c._frame(now)
-    soon = c._palette
-    c._palette = start
-    c._frame(now + ROTATION_SECONDS / 2)
-    # The same step from the same colours heads somewhere else half a turn on.
-    assert c._palette != soon
+    assert c._turn == before
+
+
+def test_a_seek_back_does_not_turn_the_rotation_back(sessions):
+    c = _rotating(np.ones(120, np.float32))
+    _turn_after(c, 8.0)
+    before = c._turn
+    now = time.monotonic()
+    c._source, c._source_at = Source("x", "s", 1.0), now
+    c._frame(now)
+    assert c._turn == before
 
 
 def test_a_new_palette_fades_in(sessions):
@@ -1325,7 +1388,8 @@ def test_get_paired_lists_the_areas(client, monkeypatch):
     body = client.get("/lights").json()
     assert body["reachable"] is True
     assert body["areas"] == [{"id": AREA, "name": "Office", "lights": 2}]
-    assert body["style"] == "pulse" and body["colour_mode"] == "cover"
+    assert body["style"] == "pulse" and body["colour_mode"] == "palette"
+    assert body["theme_colour"] == lights_config.DEFAULT_THEME_COLOUR
     # Never the keys.
     assert "clientkey" not in str(body) and "user" not in body
 
@@ -1433,6 +1497,14 @@ def test_an_area_id_has_to_look_like_the_bridges(client, area_id):
     _paired()
     assert client.put("/lights", json={"area_id": area_id}).status_code == 422
     assert lights_config.get().area_id == AREA
+
+
+def test_an_app_reports_its_theme_colour(client, monkeypatch):
+    _paired()
+    monkeypatch.setattr(hue, "list_areas", _no_areas)
+    body = client.put("/lights", json={"theme_colour": "#2FE08B"}).json()
+    assert body["theme_colour"] == "#2fe08b"
+    assert client.put("/lights", json={"theme_colour": "teal"}).status_code == 422
 
 
 def test_rotate_is_a_colour_mode(client, monkeypatch):

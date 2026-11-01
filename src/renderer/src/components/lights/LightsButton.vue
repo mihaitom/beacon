@@ -18,6 +18,7 @@
 </template>
 
 <script lang="ts">
+import { themeAccent } from '@/services/appAccent'
 import { useAuthStore } from '@/stores/auth'
 import { useLightsStore } from '@/stores/lights'
 import LightsDialog from './LightsDialog.vue'
@@ -47,8 +48,15 @@ export default {
     authStore() {
       return useAuthStore()
     },
+    themeAccent(): string {
+      return themeAccent.value
+    },
   },
   watch: {
+    // The theme changed here: the lights' theme colour follows.
+    themeAccent() {
+      void this.lightsStore.syncTheme()
+    },
     // Not before: until then the app does not know where connect is.
     'authStore.authenticated': {
       immediate: true,

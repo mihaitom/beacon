@@ -740,17 +740,23 @@ export default {
     },
     colour: 'Color',
     colourModes: {
-      cover: 'Imagen',
+      theme: 'Tema',
       palette: 'Paleta',
       rotate: 'Rotación',
       fixed: 'Fijo',
     },
-    coverHint:
-      'El color principal de la portada, o de la foto del artista cuando Reproducción muestra una',
-    rotateHint: 'Cada luz con su propio color, todos girando despacio por la rueda de color',
-    paletteHint: 'Varios de sus colores, repartidos entre las luces',
-    coverUnknown: 'Se toma de la imagen en cuanto suene algo',
-    customColour: 'Color propio',
+    themeHint: 'Sigue el tema de Ajustes → Apariencia',
+    paletteFrom: {
+      cover: 'De la portada',
+      artist: 'De la imagen del artista',
+    },
+    paletteUnknown: 'En cuanto suene algo, los colores saldrán de la imagen de «Reproducción».',
+    paletteGrey: 'La imagen no tiene color: mientras tanto, la paleta usa el color del tema.',
+    paletteCount:
+      'Un color para todas las luces. | {n} colores, repartidos por turnos entre las luces.',
+    rotateHint:
+      'Cada luz con su propio color, repartidos por la rueda de color. Avanza un paso con cada golpe que se oye y se detiene en un break.',
+    hue: 'Tono',
     brightness: 'Brillo',
     advanced: 'Avanzado',
     lead: 'Adelanto',

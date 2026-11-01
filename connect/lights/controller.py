@@ -26,7 +26,7 @@ from core.state import TEST_TONE_TRACK_ID, list_target_pairs
 
 from . import config as lights_config
 from . import hue, show
-from .analysis import DEFAULT_COLOUR, RGB, AnalysisCache, cover_colours, fanart_colours
+from .analysis import RGB, AnalysisCache, cover_colours, fanart_colours
 
 logger = logging.getLogger("connect.lights")
 
@@ -49,9 +49,11 @@ _RETRY_SECONDS = 15.0
 _LOOKUP_RETRY_SECONDS = 15.0
 # How long a song's new colour takes to replace the last one's.
 _COLOUR_FADE_SECONDS = 1.5
-# One full turn of the colour wheel in the "rotate" colours. Slow enough to
-# read as drifting rather than cycling; the beat is the styles' job.
-ROTATION_SECONDS = 30.0
+# Heard beats for one full turn of the colour wheel in the "rotate"
+# colours: half a minute at 128 BPM, slow enough to read as drifting rather
+# than cycling. Counted in beats, not seconds, so it stands still through a
+# breakdown and with nothing playing - the lights move only with the music.
+ROTATION_BEATS = 64
 
 
 async def _cancel(task: asyncio.Task | None) -> None:
@@ -99,6 +101,7 @@ class LightController:
         self._song_meta_pending: set[str] = set()
         self._lookup_retry: dict[str, float] = {}  # song id -> not before
         self._covers: dict[str, tuple[RGB, ...]] = {}  # song id -> cover palette
+        self._cover_art_ids: dict[str, str] = {}  # song id -> the server's cover art id
         # The picture an app's Now Playing shows behind a song instead of
         # its cover (a Fanart.tv artist background), and its colours.
         self._pictures: dict[str, str | None] = {}  # song id -> image url
@@ -112,7 +115,11 @@ class LightController:
         self._last_song_id: str | None = None
         self._last_seen_source = 0.0
         self._retry_after = 0.0
-        self._palette: tuple[RGB, ...] = (DEFAULT_COLOUR,)
+        self._palette: tuple[RGB, ...] = (hex_colour(lights_config.DEFAULT_THEME_COLOUR),)
+        # The rotation's position on the wheel (0..1), moved on by the
+        # beats heard in the song counted in _heard.
+        self._turn = 0.0
+        self._heard: tuple[str, int] | None = None
         self.last_error: str | None = None
 
     # ── lifecycle ──────────────────────────────────────────────────────
@@ -143,11 +150,23 @@ class LightController:
         return self._stream is not None
 
     @property
-    def picture_palette(self) -> tuple[RGB, ...] | None:
-        """The colours of the song the lights followed last, once known."""
-        if self._last_song_id is None:
+    def picture(self) -> dict | None:
+        """The picture of the song the lights followed last - which one, and
+        its colours (none for a black-and-white one) - once looked at."""
+        song_id = self._last_song_id
+        if song_id is None:
             return None
-        return self._palette_of(self._last_song_id)
+        colours = self._palette_of(song_id)
+        if colours is None:
+            return None
+        url = self._pictures.get(song_id)
+        artist = bool(url) and self._picture_colours.get(url) is not None
+        return {
+            "source": "artist" if artist else "cover",
+            "url": url if artist else None,
+            "cover_art_id": None if artist else self._cover_art_ids.get(song_id),
+            "colours": [to_hex(c) for c in colours],
+        }
 
     # ── inputs ─────────────────────────────────────────────────────────
 
@@ -173,10 +192,11 @@ class LightController:
 
     def _palette_of(self, song_id: str) -> tuple[RGB, ...] | None:
         """The song's colours: its picture's while one is shown and known,
-        else its cover's (None while that is still being looked at)."""
+        else its cover's (None while that is still being looked at). Empty
+        for a picture without colour."""
         url = self._pictures.get(song_id)
         picture = self._picture_colours.get(url) if url else None
-        return picture or self._covers.get(song_id)
+        return picture if picture is not None else self._covers.get(song_id)
 
     def retry_now(self) -> None:
         """The settings changed - a start that failed under the old ones
@@ -304,9 +324,13 @@ class LightController:
                 session = registry.get(source.session_id)
                 if session is None:
                     return
-                meta = await _look_up(session, song_id)
+                stream_url, cover_url, cover_art_id = await _look_up(session, song_id)
+                meta = (stream_url, cover_url)
                 self._song_meta[song_id] = meta
                 _trim(self._song_meta)
+                if cover_art_id:
+                    self._cover_art_ids[song_id] = cover_art_id
+                    _trim(self._cover_art_ids)
             colours = await cover_colours(meta[1])
             if colours is None:
                 failed = True
@@ -381,11 +405,21 @@ class LightController:
         if source is None:
             # The grace period between songs: hold the colours, dimmed.
             return show.frame(0.0, None, self._palette, self._channels, brightness=brightness * 0.5)
-        wanted = palette_for(cfg, self._palette_of(source.song_id), len(self._channels), now)
-        self._palette = _fade(self._palette, wanted, (1 / SEND_HZ) / _COLOUR_FADE_SECONDS)
         position = source.position + (now - self._source_at) + cfg.lead_ms / 1000
         song = self._analysis.get(source.song_id)
+        self._turn_with(source.song_id, show.heard_beats_at(song, position))
+        wanted = palette_for(cfg, self._palette_of(source.song_id), len(self._channels), self._turn)
+        self._palette = _fade(self._palette, wanted, (1 / SEND_HZ) / _COLOUR_FADE_SECONDS)
         return show.frame(position, song, self._palette, self._channels, cfg.style, brightness)
+
+    def _turn_with(self, song_id: str, heard: int | None) -> None:
+        """Moves the rotation on by the beats heard since the last frame.
+        A new song, or a seek back, starts counting afresh without a jump."""
+        if heard is None:
+            return
+        if self._heard is not None and self._heard[0] == song_id and heard > self._heard[1]:
+            self._turn = (self._turn + (heard - self._heard[1]) / ROTATION_BEATS) % 1.0
+        self._heard = (song_id, heard)
 
     async def _render(self) -> None:
         interval = 1 / SEND_HZ
@@ -415,17 +449,17 @@ class LightController:
             self.notify()
 
 
-async def _look_up(session, song_id: str) -> tuple[str, str | None]:
-    """(stream url, cover url) of a song; raises when the server fails."""
+async def _look_up(session, song_id: str) -> tuple[str, str | None, str | None]:
+    """(stream url, cover url, cover art id) of a song; raises when the
+    server fails."""
     if deezer.is_preview_id(song_id):
-        return (await deezer.preview_stream_url(song_id) or "", None)
+        return (await deezer.preview_stream_url(song_id) or "", None, None)
     media = session.media
     stream_url = await asyncio.to_thread(media.get_stream_url, song_id)
     track = await asyncio.to_thread(media.get_track, song_id)
-    cover_url = (
-        media.get_cover_art_url(track.cover_art_id, internal=True) if track.cover_art_id else None
-    )
-    return (stream_url or "", cover_url)
+    cover_id = track.cover_art_id or None
+    cover_url = media.get_cover_art_url(cover_id, internal=True) if cover_id else None
+    return (stream_url or "", cover_url, cover_id)
 
 
 def _trim(cache: dict, keep: int = 32) -> None:
@@ -436,25 +470,29 @@ def _trim(cache: dict, keep: int = 32) -> None:
 
 def palette_for(
     cfg: lights_config.LightsConfig,
-    cover: tuple[RGB, ...] | None,
+    picture: tuple[RGB, ...] | None,
     lights: int = 1,
-    now: float = 0.0,
+    turn: float = 0.0,
 ) -> tuple[RGB, ...]:
-    """The colours the settings ask for. `cover` is the song's picture's
-    (see _palette_of), None while it is still being looked at; `lights`
-    and `now` are for the rotation."""
+    """The colours the settings ask for. `picture` is the song's picture's
+    (see _palette_of): None while it is still being looked at, empty for
+    one without colour - the theme's colour stands in for both. `lights`
+    and `turn` (0..1 round the wheel) are for the rotation."""
+    theme = hex_colour(cfg.theme_colour)
+    if cfg.colour_mode == "theme":
+        return (theme,)
     if cfg.colour_mode == "fixed":
         return (hex_colour(cfg.fixed_colour),)
-    cover = cover or (DEFAULT_COLOUR,)
+    colours = picture or (theme,)
     if cfg.colour_mode == "rotate":
-        return rotation(cover[0], lights, now)
-    return cover if cfg.colour_mode == "palette" else cover[:1]
+        return rotation(colours[0], lights, turn)
+    return colours
 
 
-def rotation(start: RGB, lights: int, now: float) -> tuple[RGB, ...]:
-    """A colour per light, evenly round the wheel from `start`'s hue, the
-    whole wheel turning once every ROTATION_SECONDS."""
-    first = colorsys.rgb_to_hsv(*start)[0] + now / ROTATION_SECONDS
+def rotation(start: RGB, lights: int, turn: float) -> tuple[RGB, ...]:
+    """A colour per light, evenly round the wheel from `start`'s hue,
+    turned on by `turn` (a whole turn is 1)."""
+    first = colorsys.rgb_to_hsv(*start)[0] + turn
     n = max(lights, 1)
     return tuple(colorsys.hsv_to_rgb((first + i / n) % 1.0, 1.0, 1.0) for i in range(n))
 
@@ -467,7 +505,7 @@ def hex_colour(value: str) -> RGB:
     try:
         n = int(value.lstrip("#"), 16)
     except ValueError:
-        return DEFAULT_COLOUR
+        n = int(lights_config.DEFAULT_THEME_COLOUR.lstrip("#"), 16)
     return ((n >> 16 & 255) / 255, (n >> 8 & 255) / 255, (n & 255) / 255)
 
 

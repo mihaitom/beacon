@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { themeAccent } from '@/services/appAccent'
 import {
   forgetBridge,
   getLights,
@@ -7,6 +8,18 @@ import {
   type LightsState,
   type LightsUpdate,
 } from '@/services/connect/lights'
+
+/** This device's theme accent as `#rrggbb` - the colour the lights take in
+ * "theme" mode, and for a picture without colour. */
+export function themeColour(): string {
+  return (
+    '#' +
+    themeAccent.value
+      .split(',')
+      .map((part) => Number(part.trim()).toString(16).padStart(2, '0'))
+      .join('')
+  )
+}
 
 /** connect's Hue setup, for the toolbar's lights button and its dialog.
  * The button loads it (and keeps asking while there is no bridge yet), the
@@ -48,6 +61,20 @@ export const useLightsStore = defineStore('lights', {
     },
     async update(update: LightsUpdate): Promise<void> {
       this.lights = await updateLights(update)
+    },
+    /** Tells connect this device's theme accent where it has another one.
+     * Called where somebody is looking at the lights here - the dialog
+     * opening, the theme changing - not at every app start, or two devices
+     * on different themes would keep taking it from each other. */
+    async syncTheme(): Promise<void> {
+      if (!this.lights?.paired) return
+      const colour = themeColour()
+      if (colour === this.lights.theme_colour) return
+      try {
+        await this.update({ theme_colour: colour })
+      } catch (error) {
+        console.error('[lights] Could not report the theme colour:', error)
+      }
     },
     async forget(): Promise<void> {
       await forgetBridge()

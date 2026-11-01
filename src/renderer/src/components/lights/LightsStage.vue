@@ -11,7 +11,7 @@
 <script lang="ts">
 import type { PropType } from 'vue'
 import type { LightsStyle } from '@/services/connect/lights'
-import { previewFrame, type Rgb } from '@/services/lights/stagePreview'
+import { previewFrame, previewTime, type Rgb } from '@/services/lights/stagePreview'
 
 // The preview is meant to be looked at for a few seconds while choosing;
 // a room with more lights than this would only shrink every one of them.
@@ -34,7 +34,7 @@ export default {
     on: { type: Boolean, default: true },
   },
   data() {
-    return { frameId: 0, startedAt: 0 }
+    return { frameId: 0 }
   },
   computed: {
     count(): number {
@@ -52,7 +52,6 @@ export default {
     },
   },
   mounted() {
-    this.startedAt = performance.now()
     if (this.reducedMotion()) this.drawStill()
     else this.frameId = requestAnimationFrame(this.loop)
   },
@@ -67,7 +66,7 @@ export default {
       // Asked for first, so one frame that fails to draw does not end the
       // animation for good.
       this.frameId = requestAnimationFrame(this.loop)
-      this.draw((now - this.startedAt) / 1000)
+      this.draw(previewTime(now))
     },
     drawStill() {
       if (this.reducedMotion()) this.draw(STILL_AT_SECONDS)

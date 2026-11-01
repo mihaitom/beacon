@@ -72,9 +72,6 @@ _BASS_PULSE = 0.6
 # A beat at least this strong counts as one for the colour steps.
 HEARD = 0.5
 
-# Fallback when a cover has no usable colour: a warm white.
-DEFAULT_COLOUR: RGB = (1.0, 0.62, 0.32)
-
 
 @dataclass(frozen=True)
 class SongLights:
@@ -211,7 +208,7 @@ def cover_palette(image: bytes, size: int = PALETTE_SIZE) -> tuple[RGB, ...]:
     """The cover's most present colours, the strongest first, each
     brightened to full value - the lights carry brightness separately, so
     only the hue matters. Fewer than `size` when the cover has fewer
-    clearly different colours; DEFAULT_COLOUR alone for a grey one."""
+    clearly different colours; none for a black-and-white one."""
     from PIL import Image
 
     with Image.open(io.BytesIO(image)) as img:
@@ -222,7 +219,7 @@ def cover_palette(image: bytes, size: int = PALETTE_SIZE) -> tuple[RGB, ...]:
     # Grey, black and white pixels say nothing about the cover's colour.
     weight = saturation**2 * (top > 0.15)
     if weight.sum() < 1e-3:
-        return (DEFAULT_COLOUR,)
+        return ()
 
     hue = _hue(small, top, low)
     bucket = np.minimum((hue * _HUE_BUCKETS).astype(int), _HUE_BUCKETS - 1)
@@ -245,7 +242,7 @@ def cover_palette(image: bytes, size: int = PALETTE_SIZE) -> tuple[RGB, ...]:
         if all(min(abs(h - o), 1 - abs(h - o)) >= _MIN_HUE_GAP for o in hues):
             colours.append((float(colour[0]), float(colour[1]), float(colour[2])))
             hues.append(h)
-    return tuple(colours) or (DEFAULT_COLOUR,)
+    return tuple(colours)
 
 
 def _hue(rgb: np.ndarray, top: np.ndarray, low: np.ndarray) -> np.ndarray:
@@ -259,10 +256,10 @@ def _hue(rgb: np.ndarray, top: np.ndarray, low: np.ndarray) -> np.ndarray:
 
 
 async def cover_colours(url: str | None) -> tuple[RGB, ...] | None:
-    """DEFAULT_COLOUR for a song without a cover or with one that is no
-    image; None when the cover could not be fetched, worth another try."""
+    """No colours for a song without a cover or with one that is no image;
+    None when the cover could not be fetched, worth another try."""
     if not url:
-        return (DEFAULT_COLOUR,)
+        return ()
     try:
         async with httpx.AsyncClient(timeout=10, follow_redirects=True) as http:
             reply = await http.get(url)
@@ -274,7 +271,7 @@ async def cover_colours(url: str | None) -> tuple[RGB, ...] | None:
         return await asyncio.to_thread(cover_palette, reply.content)
     except Exception as e:
         logger.debug(f"[lights] No cover colours: {e}")
-        return (DEFAULT_COLOUR,)
+        return ()
 
 
 async def fanart_colours(url: str) -> tuple[RGB, ...] | None:

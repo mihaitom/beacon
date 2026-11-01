@@ -16,6 +16,7 @@ import {
   updateLights,
   type LightsState,
 } from '@/services/connect/lights'
+import { DEFAULT_APP_ACCENT, themeAccent } from '@/services/appAccent'
 import LightsDialog from '../LightsDialog.vue'
 import LightsButton from '../LightsButton.vue'
 
@@ -42,10 +43,11 @@ const UNPAIRED: LightsState = {
   enabled: false,
   lead_ms: 80,
   style: 'pulse',
-  colour_mode: 'cover',
+  colour_mode: 'palette',
   fixed_colour: '#3b6bff',
+  theme_colour: '#f5a94e',
   brightness: 100,
-  picture_colours: null,
+  picture: null,
   playing: false,
   start_error: null,
 }
@@ -61,7 +63,12 @@ const PAIRED: LightsState = {
     { id: 'area-2', name: 'Living room', lights: 5 },
   ],
   area_id: 'area-1',
-  picture_colours: ['#ff0000', '#0000ff', '#00ff00'],
+  picture: {
+    source: 'cover',
+    url: null,
+    cover_art_id: 'al-1',
+    colours: ['#ff0000', '#0000ff', '#00ff00'],
+  },
 }
 
 type Vm = {
@@ -80,7 +87,11 @@ type Vm = {
 const global = {
   plugins: [vuetify, i18n],
   mocks: { $emitter: { emit, on: vi.fn(), off: vi.fn() } },
-  stubs: { 'v-dialog': { template: '<div><slot /></div>' }, 'lights-stage': true },
+  stubs: {
+    'v-dialog': { template: '<div><slot /></div>' },
+    'lights-stage': true,
+    'lights-colour-wheel': true,
+  },
 }
 
 async function openDialog(state: LightsState) {
@@ -106,6 +117,7 @@ describe('LightsDialog', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+    themeAccent.value = DEFAULT_APP_ACCENT
   })
 
   it('loads when opened, not before', async () => {
@@ -172,27 +184,97 @@ describe('LightsDialog', () => {
     expect(updateLights).toHaveBeenLastCalledWith({ colour_mode: 'fixed' })
   })
 
-  it('a fixed colour comes from a swatch or the colour picker', async () => {
+  it('a fixed colour comes from the hue band, saved once it settles', async () => {
     const wrapper = await openDialogWrapper({ ...PAIRED, colour_mode: 'fixed' })
-    await wrapper.find('button[aria-label="#ff3b5c"]').trigger('click')
-    expect(updateLights).toHaveBeenLastCalledWith({ fixed_colour: '#ff3b5c' })
-    await flushPromises() // the picker waits for that save
-    const picker = wrapper.find('input[type="color"]')
-    ;(picker.element as HTMLInputElement).value = '#123456'
-    await picker.trigger('change')
-    expect(updateLights).toHaveBeenLastCalledWith({ fixed_colour: '#123456' })
+    vi.useFakeTimers()
+    try {
+      // Dragged along, then let go on green.
+      await wrapper.find('input[type="range"]').setValue('200')
+      await wrapper.find('input[type="range"]').setValue('120')
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(updateLights).toHaveBeenCalledTimes(1)
+      expect(updateLights).toHaveBeenLastCalledWith({ fixed_colour: '#00ff00' })
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
-  it("shows the cover's colours: one, or all of them as a palette", async () => {
-    const swatches = (w: Awaited<ReturnType<typeof openDialogWrapper>>) =>
-      w.findAll('.lights__swatch--static').length
-    expect(swatches(await openDialogWrapper(PAIRED))).toBe(1)
-    expect(swatches(await openDialogWrapper({ ...PAIRED, colour_mode: 'palette' }))).toBe(3)
+  it('the hue band starts on the stored colour and leaves it be when opened', async () => {
+    const wrapper = await openDialogWrapper({
+      ...PAIRED,
+      colour_mode: 'fixed',
+      fixed_colour: '#3b6bff',
+    })
+    vi.useFakeTimers()
+    try {
+      const band = wrapper.find('input[type="range"]').element as HTMLInputElement
+      expect(Number(band.value)).toBe(225)
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(updateLights).not.toHaveBeenCalledWith(
+        expect.objectContaining({ fixed_colour: expect.anything() }),
+      )
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
-  it('the rotation shows a colour for every light of the area', async () => {
-    const wrapper = await openDialogWrapper({ ...PAIRED, colour_mode: 'rotate', area_id: 'area-2' })
-    expect(wrapper.findAll('.lights__swatch--static')).toHaveLength(5)
+  it("the palette shows the picture's colours and where they come from", async () => {
+    const wrapper = await openDialogWrapper(PAIRED)
+    const shown = wrapper
+      .findAll('.lights__detail .lights__swatch')
+      .map((s) => s.attributes('style'))
+    expect(shown.join()).toContain('rgb(255, 0, 0)')
+    expect(shown.join()).toContain('rgb(0, 0, 255)')
+    expect(wrapper.text()).toContain(i18n.global.t('lights.paletteFrom.cover'))
+    expect(wrapper.find('.lights__thumb').exists()).toBe(true)
+  })
+
+  it('a black-and-white picture says the theme colour stands in', async () => {
+    themeAccent.value = '0, 255, 0'
+    const wrapper = await openDialogWrapper({
+      ...PAIRED,
+      theme_colour: '#00ff00',
+      picture: {
+        source: 'artist',
+        url: 'https://assets.fanart.tv/x.jpg',
+        cover_art_id: null,
+        colours: [],
+      },
+    })
+    expect(wrapper.text()).toContain(i18n.global.t('lights.paletteGrey'))
+    expect(wrapper.find('.lights__detail .lights__swatch').attributes('style')).toContain(
+      'rgb(0, 255, 0)',
+    )
+  })
+
+  it('the rotation starts at the picture colour, or the theme colour without one', async () => {
+    themeAccent.value = '0, 255, 0'
+    const start = async (state: LightsState) =>
+      (await openDialogWrapper({ ...state, colour_mode: 'rotate' }))
+        .findComponent({ name: 'LightsColourWheel' })
+        .props('start')
+    expect(await start(PAIRED)).toEqual([255, 0, 0])
+    expect(await start({ ...PAIRED, theme_colour: '#00ff00', picture: null })).toEqual([0, 255, 0])
+  })
+
+  it("choosing the theme takes this device's theme colour", async () => {
+    const wrapper = await openDialogWrapper({ ...PAIRED, theme_colour: '#f5a94e' })
+    themeAccent.value = '59, 107, 255'
+    vi.mocked(updateLights).mockClear()
+    const theme = wrapper
+      .findAll('[role="radio"]')
+      .find((b) => b.text() === i18n.global.t('lights.colourModes.theme'))!
+    await theme.trigger('click')
+    expect(updateLights).toHaveBeenLastCalledWith({ colour_mode: 'theme', theme_colour: '#3b6bff' })
+  })
+
+  it('opening the dialog reports this device theme colour where connect has another', async () => {
+    themeAccent.value = '59, 107, 255'
+    await openDialogWrapper({ ...PAIRED, theme_colour: '#f5a94e' })
+    expect(updateLights).toHaveBeenCalledWith({ theme_colour: '#3b6bff' })
+    vi.mocked(updateLights).mockClear()
+    await openDialogWrapper({ ...PAIRED, theme_colour: '#3b6bff' })
+    expect(updateLights).not.toHaveBeenCalled()
   })
 
   it('saves the brightness once it settles, also when set with the keyboard', async () => {
@@ -262,6 +344,22 @@ describe('LightsButton', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.clearAllMocks()
+  })
+
+  it('a theme change here carries over to the lights', async () => {
+    themeAccent.value = DEFAULT_APP_ACCENT
+    vi.mocked(getLights).mockResolvedValue({ ...PAIRED, theme_colour: '#f5a94e' })
+    vi.mocked(updateLights).mockImplementation(async (update) => ({ ...PAIRED, ...update }))
+    const { useAuthStore } = await import('@/stores/auth')
+    useAuthStore().authenticated = true
+    const wrapper = mount(LightsButton, { global })
+    await flushPromises()
+    expect(updateLights).not.toHaveBeenCalled()
+    themeAccent.value = '59, 107, 255'
+    await flushPromises()
+    expect(updateLights).toHaveBeenCalledWith({ theme_colour: '#3b6bff' })
+    wrapper.unmount()
+    themeAccent.value = DEFAULT_APP_ACCENT
   })
 
   it('loads after login and appears once connect finds a bridge', async () => {

@@ -21,7 +21,7 @@ from core.session import SessionState, get_session
 from lights import config as lights_config
 from lights import hue
 from lights.config import MAX_LEAD_MS, MIN_BRIGHTNESS
-from lights.controller import controller, to_hex
+from lights.controller import controller
 
 logger = logging.getLogger("connect.lights")
 router = APIRouter(prefix="/lights", dependencies=[Depends(require_token)])
@@ -95,7 +95,6 @@ async def get_lights():
             logger.info(f"[lights] Bridge not reachable: {e}")
             reachable = False
     found = [] if cfg.paired else await found_bridges()
-    picture = controller.picture_palette
     return {
         "paired": cfg.paired,
         "found": [{"host": b.host, "id": b.bridge_id} for b in found],
@@ -108,8 +107,9 @@ async def get_lights():
         "style": cfg.style,
         "colour_mode": cfg.colour_mode,
         "fixed_colour": cfg.fixed_colour,
+        "theme_colour": cfg.theme_colour,
         "brightness": cfg.brightness,
-        "picture_colours": [to_hex(c) for c in picture] if picture else None,
+        "picture": controller.picture,
         "playing": controller.streaming,
         "start_error": controller.last_error,
     }
@@ -167,8 +167,9 @@ class LightsUpdate(BaseModel):
     enabled: bool | None = None
     lead_ms: int | None = Field(default=None, ge=-MAX_LEAD_MS, le=MAX_LEAD_MS)
     style: Literal["pulse", "calm", "party", "chase"] | None = None
-    colour_mode: Literal["cover", "palette", "rotate", "fixed"] | None = None
+    colour_mode: Literal["theme", "palette", "rotate", "fixed"] | None = None
     fixed_colour: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+    theme_colour: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
     brightness: int | None = Field(default=None, ge=MIN_BRIGHTNESS, le=100)
 
 
@@ -178,8 +179,9 @@ async def update_lights(req: LightsUpdate):
     if not cfg.paired:
         raise HTTPException(status_code=409, detail="not_paired")
     changes = req.model_dump(exclude_none=True)
-    if "fixed_colour" in changes:
-        changes["fixed_colour"] = changes["fixed_colour"].lower()
+    for key in ("fixed_colour", "theme_colour"):
+        if key in changes:
+            changes[key] = changes[key].lower()
     lights_config.update(**changes)
     controller.retry_now()
     return await get_lights()

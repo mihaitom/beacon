@@ -742,18 +742,24 @@ export default {
     },
     colour: 'Couleur',
     colourModes: {
-      cover: 'Image',
+      theme: 'Thème',
       palette: 'Palette',
       rotate: 'Rotation',
       fixed: 'Fixe',
     },
-    coverHint:
-      "La couleur principale de la pochette, ou de la photo de l'artiste quand Lecture en affiche une",
+    themeHint: 'Suit le thème dans Paramètres → Apparence',
+    paletteFrom: {
+      cover: 'De la pochette',
+      artist: 'De l’image de l’artiste',
+    },
+    paletteUnknown: 'Dès que quelque chose joue, les couleurs viennent de l’image de « Lecture ».',
+    paletteGrey:
+      'Pas de couleur dans l’image : en attendant, la palette prend la couleur du thème.',
+    paletteCount:
+      'Une couleur pour toutes les lampes. | {n} couleurs, réparties à tour de rôle sur les lampes.',
     rotateHint:
-      'Chaque lampe a sa propre couleur, toutes tournent lentement sur le cercle chromatique',
-    paletteHint: 'Plusieurs de ses couleurs, réparties sur les lampes',
-    coverUnknown: "Prise sur l'image dès qu'un titre joue",
-    customColour: 'Couleur personnalisée',
+      'Chaque lampe a sa propre couleur, réparties sur le cercle chromatique. Avance d’un cran à chaque temps entendu et s’arrête pendant un break.',
+    hue: 'Teinte',
     brightness: 'Luminosité',
     advanced: 'Avancé',
     lead: 'Avance',

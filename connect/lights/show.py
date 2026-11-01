@@ -112,6 +112,14 @@ def _second_colour(colour: RGB) -> RGB:
     return (colour[2], colour[0], colour[1])
 
 
+def heard_beats_at(song: SongLights | None, t: float) -> int | None:
+    """How many beats of `song` were heard by `t`; None without a beat to
+    count."""
+    if song is None or song.grid is None:
+        return None
+    return song.heard_beats(math.floor((t - song.grid.phase) / song.grid.period))
+
+
 def frame(
     t: float,
     song: SongLights | None,

@@ -124,48 +124,79 @@
 
           <section class="lights__group">
             <h3 class="lights__label">{{ $t('lights.colour') }}</h3>
-            <segmented-control
-              :model-value="state.colour_mode"
-              :options="colourModes"
-              :label="$t('lights.colour')"
-              @update:model-value="saveColourMode"
-            />
-            <div class="lights__colours">
-              <template v-if="state.colour_mode === 'fixed'">
-                <button
-                  v-for="swatch in swatches"
-                  :key="swatch"
-                  type="button"
-                  class="lights__swatch"
-                  :class="{ 'lights__swatch--active': swatch === state.fixed_colour }"
-                  :style="{ background: swatch }"
-                  :aria-label="swatch"
-                  :aria-pressed="swatch === state.fixed_colour"
-                  :disabled="saving"
-                  @click="save({ fixed_colour: swatch })"
-                />
-                <label
-                  class="lights__swatch lights__custom"
-                  :class="{ 'lights__swatch--active': customColour }"
-                  :title="$t('lights.customColour')"
-                >
-                  <input
-                    type="color"
-                    :value="state.fixed_colour"
-                    :aria-label="$t('lights.customColour')"
-                    :disabled="saving"
-                    @change="save({ fixed_colour: ($event.target as HTMLInputElement).value })"
-                  />
-                </label>
+            <!-- Cards like the styles above, each with what it would give
+               - right now as its chip; what it is made of below. -->
+            <div class="lights__styles" role="radiogroup" :aria-label="$t('lights.colour')">
+              <button
+                v-for="mode in colourModes"
+                :key="mode"
+                type="button"
+                role="radio"
+                class="lights__style"
+                :class="{ 'lights__style--active': mode === state.colour_mode }"
+                :aria-checked="mode === state.colour_mode"
+                :disabled="saving"
+                @click="saveColourMode(mode)"
+              >
+                <span class="lights__chip" :style="chipStyle(mode)" />
+                <span>{{ $t(`lights.colourModes.${mode}`) }}</span>
+              </button>
+            </div>
+
+            <div class="lights__detail">
+              <div v-if="state.colour_mode === 'theme'" class="lights__detail-row">
+                <span class="lights__swatch" :style="{ background: state.theme_colour }" />
+                <div>
+                  <div class="text-body-medium">{{ themeName }}</div>
+                  <div class="setting__hint setting__hint--inline">
+                    {{ $t('lights.themeHint') }}
+                  </div>
+                </div>
+              </div>
+
+              <template v-else-if="state.colour_mode === 'palette'">
+                <div class="lights__detail-row">
+                  <img v-if="pictureThumb" :src="pictureThumb" alt="" class="lights__thumb" />
+                  <div>
+                    <div v-if="state.picture" class="text-body-medium">
+                      {{ $t(`lights.paletteFrom.${state.picture.source}`) }}
+                    </div>
+                    <div class="lights__swatches">
+                      <span
+                        v-for="colour in paletteColours"
+                        :key="colour"
+                        class="lights__swatch"
+                        :style="{ background: colour }"
+                      />
+                    </div>
+                  </div>
+                </div>
+                <p class="setting__hint">{{ paletteLine }}</p>
               </template>
-              <template v-else>
-                <span
-                  v-for="colour in coverSwatches"
-                  :key="colour"
-                  class="lights__swatch lights__swatch--static"
-                  :style="{ background: colour }"
+
+              <div v-else-if="state.colour_mode === 'rotate'" class="lights__detail-row">
+                <lights-colour-wheel
+                  v-if="modelValue"
+                  :start="hexToRgb(paletteColours[0]!)"
+                  :lights="lightCount"
                 />
-                <span class="setting__hint setting__hint--inline">{{ coverLine }}</span>
+                <p class="setting__hint setting__hint--inline">{{ $t('lights.rotateHint') }}</p>
+              </div>
+
+              <template v-else>
+                <!-- A native range rather than v-slider, whose drag gets
+                   - lost on real touch screens (see TouchVolumeSlider). Hue
+                   - only: a lamp shows a pale colour as white. -->
+                <input
+                  v-model.number="hue"
+                  type="range"
+                  min="0"
+                  max="359"
+                  step="1"
+                  class="lights__hue"
+                  :style="{ '--hue-colour': hueColour }"
+                  :aria-label="$t('lights.hue')"
+                />
               </template>
             </div>
           </section>
@@ -245,7 +276,6 @@
 </template>
 
 <script lang="ts">
-import SegmentedControl, { type SegmentedOption } from '@/components/SegmentedControl.vue'
 import {
   discoverBridges,
   type LightsArea,
@@ -255,18 +285,24 @@ import {
   type LightsUpdate,
 } from '@/services/connect/lights'
 import { ConnectApiError } from '@/services/connect/http'
-import { hexToRgb, rgbToHex, rotation, type Rgb } from '@/services/lights/stagePreview'
-import { useLightsStore } from '@/stores/lights'
+import { fanartImageUrl } from '@/services/connect/fanart'
+import { fromHue, hexToRgb, hueOf, rgbToHex, type Rgb } from '@/services/lights/stagePreview'
+import { useAppearanceStore } from '@/stores/appearance'
+import { useLibraryStore } from '@/stores/library'
+import { themeColour, useLightsStore } from '@/stores/lights'
+import LightsColourWheel from './LightsColourWheel.vue'
 import LightsStage from './LightsStage.vue'
 
 // connect's own bounds (lights/config.py).
 const MAX_LEAD_MS = 1000
 const MIN_BRIGHTNESS = 20
-// A drag or a held arrow key settles into one save.
-const BRIGHTNESS_SAVE_DELAY_MS = 400
-// Before the lights have followed any song: the warm white connect falls
-// back to for a cover without colour.
-const DEFAULT_COLOUR = '#ff9e52'
+// A drag or a held arrow key settles into one save - the brightness and
+// the hue alike.
+const SAVE_DELAY_MS = 400
+const COLOUR_MODES: LightsColourMode[] = ['theme', 'palette', 'rotate', 'fixed']
+const THUMB_SIZE = 112
+// The rotation's chip: the whole wheel, as its detail shows.
+const WHEEL = 'conic-gradient(#ff3b3b, #ffd23b, #3bff6b, #3bd8ff, #3b5bff, #d43bff, #ff3b3b)'
 
 const STYLES: { value: LightsStyle; icon: string }[] = [
   { value: 'pulse', icon: 'mdi-pulse' },
@@ -275,9 +311,6 @@ const STYLES: { value: LightsStyle; icon: string }[] = [
   { value: 'chase', icon: 'mdi-chevron-triple-right' },
 ]
 
-// Saturated on purpose: a light shows a pale colour as white.
-const SWATCHES = ['#ff7a2f', '#ff3b5c', '#c13bff', '#3b6bff', '#22c3e6', '#2fe08b', '#ffd23b']
-
 /**
  * Hue lights playing along with the music (connect/lights/): pairing the
  * bridge, then where and how. Everything here is connect's, for the whole
@@ -285,7 +318,7 @@ const SWATCHES = ['#ff7a2f', '#ff3b5c', '#c13bff', '#3b6bff', '#22c3e6', '#2fe08
  */
 export default {
   name: 'LightsDialog',
-  components: { LightsStage, SegmentedControl },
+  components: { LightsColourWheel, LightsStage },
   props: {
     modelValue: { type: Boolean, default: false },
   },
@@ -301,8 +334,10 @@ export default {
       leadInput: '' as string | number,
       brightness: 100,
       brightnessTimer: undefined as ReturnType<typeof setTimeout> | undefined,
+      hue: 0,
+      hueTimer: undefined as ReturnType<typeof setTimeout> | undefined,
+      colourModes: COLOUR_MODES,
       styles: STYLES,
-      swatches: SWATCHES,
       MIN_BRIGHTNESS,
     }
   },
@@ -322,37 +357,45 @@ export default {
     foundHosts(): string[] {
       return [...new Set([...(this.state?.found ?? []).map((b) => b.host), ...this.searchedHosts])]
     },
-    colourModes(): SegmentedOption[] {
-      return (['cover', 'palette', 'rotate', 'fixed'] as const).map((value) => ({
-        value,
-        title: this.$t(`lights.colourModes.${value}`),
-      }))
-    },
     lightCount(): number {
       return this.currentArea?.lights ?? 2
     },
-    coverSwatches(): string[] {
-      const cover = this.state?.picture_colours ?? [DEFAULT_COLOUR]
-      const mode = this.state?.colour_mode
-      if (mode === 'palette') return cover
-      if (mode === 'rotate') return rotation(hexToRgb(cover[0]!), this.lightCount, 0).map(rgbToHex)
-      return cover.slice(0, 1)
+    /** The picture's colours, or the theme's in place of none - what
+     * connect lights with in "palette", and where "rotate" starts. */
+    paletteColours(): string[] {
+      const colours = this.state?.picture?.colours
+      return colours?.length ? colours : [this.state?.theme_colour ?? themeColour()]
     },
-    coverLine(): string {
-      const mode = this.state?.colour_mode
-      if (mode === 'rotate') return this.$t('lights.rotateHint')
-      if (!this.state?.picture_colours) return this.$t('lights.coverUnknown')
-      return mode === 'palette' ? this.$t('lights.paletteHint') : this.$t('lights.coverHint')
+    paletteLine(): string {
+      const picture = this.state?.picture
+      if (!picture) return this.$t('lights.paletteUnknown')
+      if (!picture.colours.length) return this.$t('lights.paletteGrey')
+      return this.$t('lights.paletteCount', picture.colours.length)
     },
-    customColour(): boolean {
-      return !!this.state && !SWATCHES.includes(this.state.fixed_colour)
+    pictureThumb(): string | null {
+      const picture = this.state?.picture
+      if (!picture) return null
+      if (picture.url) return fanartImageUrl(picture.url)
+      if (!picture.cover_art_id) return null
+      try {
+        return useLibraryStore().client().coverArtUrl(picture.cover_art_id, THUMB_SIZE)
+      } catch {
+        return null // not signed in to a server here
+      }
+    },
+    themeName(): string {
+      return this.$t(`settings.themes.${useAppearanceStore().theme}.name`)
+    },
+    hueColour(): string {
+      return rgbToHex(fromHue(this.hue / 360))
     },
     previewPalette(): Rgb[] {
       const mode = this.state?.colour_mode
       if (mode === 'fixed') return [hexToRgb(this.state!.fixed_colour)]
+      if (mode === 'theme') return [hexToRgb(this.state!.theme_colour)]
       // The rotation is worked out frame by frame from where it starts.
-      if (mode === 'rotate') return [hexToRgb(this.state?.picture_colours?.[0] ?? DEFAULT_COLOUR)]
-      return this.coverSwatches.map(hexToRgb)
+      if (mode === 'rotate') return [hexToRgb(this.paletteColours[0]!)]
+      return this.paletteColours.map(hexToRgb)
     },
     /** Something to know before choosing anything. */
     warning(): string {
@@ -384,9 +427,26 @@ export default {
   watch: {
     modelValue: {
       immediate: true,
-      handler(open: boolean) {
-        if (open) void this.store.load()
+      async handler(open: boolean) {
+        if (!open) return
+        await this.store.load()
+        // Somebody is setting the lights up here: this device's theme.
+        await this.store.syncTheme()
       },
+    },
+    'state.fixed_colour': {
+      immediate: true,
+      handler(colour: string | undefined) {
+        if (colour) this.hue = Math.round(hueOf(hexToRgb(colour)) * 360) % 360
+      },
+    },
+    hue(value: number) {
+      clearTimeout(this.hueTimer)
+      const colour = rgbToHex(fromHue(value / 360))
+      if (!this.state || colour === this.state.fixed_colour) return
+      // A stored colour's own hue rounds to one a step off it; leave it be.
+      if (Math.round(hueOf(hexToRgb(this.state.fixed_colour)) * 360) % 360 === value) return
+      this.hueTimer = setTimeout(() => void this.save({ fixed_colour: colour }), SAVE_DELAY_MS)
     },
     'state.lead_ms': {
       immediate: true,
@@ -403,10 +463,7 @@ export default {
     brightness(value: number) {
       clearTimeout(this.brightnessTimer)
       if (!this.state || value === this.state.brightness) return
-      this.brightnessTimer = setTimeout(
-        () => void this.save({ brightness: value }),
-        BRIGHTNESS_SAVE_DELAY_MS,
-      )
+      this.brightnessTimer = setTimeout(() => void this.save({ brightness: value }), SAVE_DELAY_MS)
     },
     foundHosts(hosts: string[]) {
       if (!this.host && hosts.length) this.host = hosts[0]!
@@ -414,6 +471,7 @@ export default {
   },
   unmounted() {
     clearTimeout(this.brightnessTimer)
+    clearTimeout(this.hueTimer)
   },
   methods: {
     async search() {
@@ -465,9 +523,26 @@ export default {
         this.saving = false
       }
     },
-    saveColourMode(mode: string) {
-      void this.save({ colour_mode: mode as LightsColourMode })
+    saveColourMode(mode: LightsColourMode) {
+      // Theme: the colour of the theme this is being chosen on.
+      void this.save(
+        mode === 'theme'
+          ? { colour_mode: mode, theme_colour: themeColour() }
+          : { colour_mode: mode },
+      )
     },
+    /** Each mode's card shows what it would light with right now. */
+    chipStyle(mode: LightsColourMode): Record<string, string> {
+      const state = this.state!
+      if (mode === 'theme') return { background: state.theme_colour }
+      if (mode === 'fixed') return { background: state.fixed_colour }
+      if (mode === 'rotate') return { background: WHEEL }
+      const colours = this.paletteColours
+      const share = 100 / colours.length
+      const stops = colours.map((c, i) => `${c} ${i * share}% ${(i + 1) * share}%`)
+      return { background: `conic-gradient(${stops.join(', ')})` }
+    },
+    hexToRgb,
     async saveLead() {
       if (this.leadInvalid || this.leadValue === this.state?.lead_ms) return
       await this.save({ lead_ms: this.leadValue })
@@ -638,45 +713,89 @@ export default {
   min-height: 2.7em;
 }
 
-.lights__colours {
+.lights__chip {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px rgba(var(--v-theme-on-surface), 0.12);
+}
+
+/* What the chosen colour mode is made of, on a surface of its own so it
+ * reads as belonging to the card picked above. */
+.lights__detail {
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 12px;
+  background: rgb(var(--v-theme-surface-bright));
+  min-height: 84px;
+}
+
+.lights__detail-row {
   display: flex;
   align-items: center;
+  gap: 12px;
+}
+
+.lights__thumb {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  object-fit: cover;
+}
+
+.lights__swatches {
+  display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 10px;
-  min-height: 30px;
+  gap: 6px;
+  margin-top: 6px;
 }
 
 .lights__swatch {
   flex: none;
-  width: 26px;
-  height: 26px;
+  width: 28px;
+  height: 28px;
   padding: 0;
   border-radius: 50%;
-  outline: 2px solid transparent;
-  outline-offset: 2px;
-  transition: outline-color 0.15s ease;
+  box-shadow: inset 0 0 0 1px rgba(var(--v-theme-on-surface), 0.12);
 }
 
-.lights__swatch--active {
-  outline-color: rgba(var(--v-theme-on-surface), 0.85);
-}
-
-.lights__swatch--static {
-  cursor: default;
-}
-
-.lights__custom {
-  position: relative;
-  overflow: hidden;
-  background: conic-gradient(red, yellow, lime, cyan, blue, magenta, red);
-}
-
-.lights__custom input {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
+/* The hue band: the whole wheel laid flat, the thumb in the colour it
+ * picks. Its own look in both engines, since neither styles a range's
+ * track like this by default. */
+.lights__hue {
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: 26px;
+  margin: 0;
+  border-radius: 13px;
+  background: linear-gradient(90deg, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000);
   cursor: pointer;
+}
+
+.lights__hue::-webkit-slider-thumb {
+  appearance: none;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  border: 3px solid #fff;
+  background: var(--hue-colour);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+}
+
+.lights__hue::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 3px solid #fff;
+  background: var(--hue-colour);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+}
+
+.lights__hue:focus-visible {
+  outline: 2px solid rgb(var(--v-theme-primary));
+  outline-offset: 2px;
 }
 
 .lights__advanced {

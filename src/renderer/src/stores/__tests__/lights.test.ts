@@ -22,10 +22,11 @@ const BASE: LightsState = {
   enabled: false,
   lead_ms: 80,
   style: 'pulse',
-  colour_mode: 'cover',
+  colour_mode: 'palette',
   fixed_colour: '#3b6bff',
+  theme_colour: '#f5a94e',
   brightness: 100,
-  picture_colours: null,
+  picture: null,
   playing: false,
   start_error: null,
 }

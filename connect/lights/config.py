@@ -27,8 +27,10 @@ DEFAULT_LEAD_MS = 80
 MAX_LEAD_MS = 1000
 
 STYLES = ("pulse", "calm", "party", "chase")
-COLOUR_MODES = ("cover", "palette", "rotate", "fixed")
+COLOUR_MODES = ("theme", "palette", "rotate", "fixed")
 DEFAULT_FIXED_COLOUR = "#3b6bff"
+# Beacon's amber, until an app reports the theme it shows.
+DEFAULT_THEME_COLOUR = "#f5a94e"
 # In percent. Not lower: below this the flashes no longer read as flashes.
 MIN_BRIGHTNESS = 20
 
@@ -44,12 +46,15 @@ class LightsConfig:
     enabled: bool = False
     lead_ms: int = DEFAULT_LEAD_MS
     style: str = "pulse"
-    # "cover": the picture's main colour; "palette": several of its
-    # colours, spread over the lights; "rotate": a colour of its own for
-    # every light, all of them moving round the colour wheel; "fixed":
-    # fixed_colour.
-    colour_mode: str = "cover"
+    # "theme": theme_colour; "palette": the colours of the picture Now
+    # Playing shows, spread over the lights; "rotate": a colour of its own
+    # for every light, turning round the wheel with the beats; "fixed":
+    # fixed_colour. A picture without colour (black and white) gives
+    # theme_colour too.
+    colour_mode: str = "palette"
     fixed_colour: str = DEFAULT_FIXED_COLOUR
+    # The accent of the theme the app shows, as it last reported it.
+    theme_colour: str = DEFAULT_THEME_COLOUR
     brightness: int = 100
 
     @property

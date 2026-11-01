@@ -12,7 +12,20 @@ export interface LightsArea {
  * did not answer just now. `playing` says whether the lights are following
  * something at this moment, `start_error` why the last start failed. */
 export type LightsStyle = 'pulse' | 'calm' | 'party' | 'chase'
-export type LightsColourMode = 'cover' | 'palette' | 'rotate' | 'fixed'
+export type LightsColourMode = 'theme' | 'palette' | 'rotate' | 'fixed'
+
+/** The picture behind the song the lights followed last: the cover, or the
+ * artist picture Now Playing showed instead. `colours` (`#rrggbb`) is empty
+ * for one without colour - black and white - where the lights take the
+ * theme's colour. */
+export interface LightsPicture {
+  source: 'cover' | 'artist'
+  /** The Fanart.tv image, for an artist picture. */
+  url: string | null
+  /** The media server's id, for a cover. */
+  cover_art_id: string | null
+  colours: string[]
+}
 
 export interface LightsState {
   paired: boolean
@@ -28,12 +41,12 @@ export interface LightsState {
   colour_mode: LightsColourMode
   /** `#rrggbb`. */
   fixed_colour: string
+  /** `#rrggbb`: the theme's accent, as an app last reported it. */
+  theme_colour: string
   /** Percent, 20-100. */
   brightness: number
-  /** The colours of the song the lights followed last, as `#rrggbb`: its
-   * artist picture's where Now Playing showed one, else its cover's; null
-   * before they have followed anything. */
-  picture_colours: string[] | null
+  /** Null before the lights have followed anything. */
+  picture: LightsPicture | null
   playing: boolean
   /** Not `error`: fetchConnect reads any reply with that key as a
    * failure (isConnectError). */
@@ -43,7 +56,7 @@ export interface LightsState {
 export type LightsUpdate = Partial<
   Pick<
     LightsState,
-    'enabled' | 'lead_ms' | 'style' | 'colour_mode' | 'fixed_colour' | 'brightness'
+    'enabled' | 'lead_ms' | 'style' | 'colour_mode' | 'fixed_colour' | 'theme_colour' | 'brightness'
   > & { area_id: string }
 >
 
