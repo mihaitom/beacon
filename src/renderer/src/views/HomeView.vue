@@ -132,6 +132,7 @@ import SimilarArtistsShelf from '@/components/library/SimilarArtistsShelf.vue'
 import SongShelf from '@/components/library/SongShelf.vue'
 import { useHomeStore, type HomeAlbumList } from '@/stores/home'
 import { accountScopedKey } from '@/services/accountKey'
+import { normalize } from '@/services/stringMatch'
 import { radioFaviconRequest, type RadioFaviconRequest } from '@/services/connect/radio'
 import type { Album, Artist, Song } from '@/types/library'
 
@@ -156,6 +157,12 @@ const DISCOVER_SHELF_SIZE = 30
 // Below this many owned matches, padding the shelf out with random albums
 // reads better than a visibly sparse "discover" row.
 const MIN_OWNED_MATCHES = 8
+// How many of the listener's recommended artists to ask ListenBrainz for.
+// Its collaborative filtering mostly recommends acts the listener already
+// plays, so the top of the list is nearly all owned - measured on a real
+// profile, 30 left a single new artist. 200 reaches into the long tail
+// (the whole 1000-recording feed held ~600 artists) for about 2 s.
+const PERSONAL_ARTIST_POOL = 200
 
 // Persists pickSeedArtistNames()'s last random pick (see its own comment)
 // — localStorage, not just component state, since the whole point is
@@ -684,12 +691,13 @@ export default {
       albums: Album[]
       discoveries: SimilarArtistDisplay[]
     }> {
+      // normalize(), not toLowerCase(): MusicBrainz spells "Ne‐Yo" with a
+      // Unicode hyphen, which would otherwise pass an owned artist off as new.
+      const library = new Map(this.libraryStore.artists.map((a) => [normalize(a.name), a]))
       const ownedMatches: Artist[] = []
       const notOwned: SimilarArtist[] = []
       for (const artist of artists) {
-        const match = this.libraryStore.artists.find(
-          (a) => a.name.toLowerCase() === artist.name.toLowerCase(),
-        )
+        const match = library.get(normalize(artist.name))
         if (match) ownedMatches.push(match)
         else notOwned.push(artist)
       }
@@ -806,7 +814,7 @@ export default {
         // first. Cached, and created() already started it, so this is
         // usually free.
         await this.libraryStore.fetchArtists()
-        const artists = await getListenbrainzArtists(username, DISCOVER_SHELF_SIZE)
+        const artists = await getListenbrainzArtists(username, PERSONAL_ARTIST_POOL)
         if (!artists.length) {
           await this.rerollDiscover(await seedAlbums)
           return

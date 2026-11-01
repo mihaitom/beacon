@@ -164,7 +164,7 @@ describe('HomeView personalized Discover', () => {
     })
     await flushPromises()
 
-    expect(getListenbrainzArtists).toHaveBeenCalledWith('listener', 30)
+    expect(getListenbrainzArtists).toHaveBeenCalledWith('listener', expect.any(Number))
     // The owned recommendation contributes one of its albums to the
     // albums shelf ...
     expect((wrapper.vm as unknown as { randomAlbums: Album[] }).randomAlbums).toEqual([
@@ -177,6 +177,52 @@ describe('HomeView personalized Discover', () => {
     expect(shelf?.text()).not.toContain('Owned Act')
     // The community lookup never ran for a personalized page.
     expect(getSimilarArtists).not.toHaveBeenCalled()
+  })
+
+  it('reaches past a feed whose top is all already in the library', async () => {
+    // ListenBrainz mostly recommends what the listener already plays, so
+    // the new names sit further down the feed than one shelf's worth.
+    useListenbrainzStore().setUsername('listener')
+    const owned = Array.from({ length: 40 }, (_, i) => `Owned ${i}`)
+    const feed = [...owned, 'Fresh One', 'Fresh Two'].map((name, i) => ({
+      name,
+      mbid: `m${i}`,
+      score: 1,
+    }))
+    vi.mocked(getListenbrainzArtists).mockImplementation(async (_name, limit) =>
+      feed.slice(0, limit),
+    )
+
+    const wrapper = await mountHome((library) => {
+      library.artists = owned.map(ownedArtist)
+      vi.spyOn(library, 'fetchArtist').mockResolvedValue(ownedArtist('Owned 0'))
+    })
+    await flushPromises()
+
+    const shelf = artistsShelf(wrapper)
+    expect(shelf?.text()).toContain('Fresh One')
+    expect(shelf?.text()).toContain('Fresh Two')
+  })
+
+  it('does not offer an owned artist as new because of a spelling variant', async () => {
+    useListenbrainzStore().setUsername('listener')
+    // MusicBrainz's U+2010 hyphen and accents against a library's plain ones.
+    vi.mocked(getListenbrainzArtists).mockResolvedValue([
+      { name: 'Ne\u2010Yo', mbid: 'n', score: 2 },
+      { name: 'Tiësto', mbid: 't', score: 2 },
+      { name: 'New Act', mbid: 'x', score: 1 },
+    ])
+
+    const wrapper = await mountHome((library) => {
+      library.artists = [ownedArtist('Ne-Yo'), ownedArtist('Tiesto')]
+      vi.spyOn(library, 'fetchArtist').mockResolvedValue(ownedArtist('Ne-Yo'))
+    })
+    await flushPromises()
+
+    const shelf = artistsShelf(wrapper)
+    expect(shelf?.text()).toContain('New Act')
+    expect(shelf?.text()).not.toContain('Yo')
+    expect(shelf?.text()).not.toContain('sto')
   })
 
   it('hides the Reroll buttons while the personal recommendations are shown', async () => {

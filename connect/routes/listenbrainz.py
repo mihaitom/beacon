@@ -71,7 +71,7 @@ async def tracks(
 
 
 @router.get("/artists")
-async def artists(username: str, limit: int = Query(default=30, ge=1, le=100)) -> dict:
+async def artists(username: str, limit: int = Query(default=30, ge=1, le=200)) -> dict:
     """The artists behind the listener's recommended recordings — Home's
     personalized shelf. Same shape as routes/recommendations.py's
     similar-artists ({name, mbid, score}), so the frontend reuses its
