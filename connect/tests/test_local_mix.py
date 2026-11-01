@@ -135,7 +135,7 @@ def test_a_deezer_preview_plays_whole_without_asking_the_server(
     r = configured.post(f"/stream/local/preview/{PLAYER}", json=body)
     assert r.status_code == 200
     first = local_mixes.get(default_session.session_id, PLAYER).engine.first
-    assert (first.start, first.end, first.duration) == (0.0, None, 30.0)
+    assert (first.start, first.end, first.duration) == (0.0, 30.0, 30.0)
     waveforms.assert_not_called()
 
 

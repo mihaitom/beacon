@@ -111,11 +111,14 @@ class PreviewSongs:
 
 def external_item(entry: SongEntry) -> MixItem:
     """A Deezer preview as a mix item: already an excerpt, so it plays
-    whole, and its own Track stands in for the media server's - a cast's
-    dispatch reads the title and artist off it."""
+    whole - but bounded like one, so the mixer fades it out instead of
+    cutting off where Deezer's clip does (measured 29.99 s for a nominal
+    30). Its own Track stands in for the media server's - a cast's dispatch
+    reads the title and artist off it."""
     title, artist = entry.title or "", entry.artist or ""
     return replace(
         entry.item(),
+        end=entry.duration or None,
         payload=Track(id=entry.id, title=title, artist=artist, duration=round(entry.duration)),
     )
 

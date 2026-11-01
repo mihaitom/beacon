@@ -726,7 +726,7 @@ def test_a_deezer_preview_plays_whole_on_the_speaker_over_the_queue(
         url = asyncio.run(mix_cast._source_url(default_session, first))
         client.post("/preview/end")
     assert r.json() == {"status": "playing"}
-    assert (first.start, first.end, first.duration) == (0.0, None, 30.0)
+    assert (first.start, first.end, first.duration) == (0.0, 30.0, 30.0)
     assert url == "https://cdn/p.mp3"
     title, artist = play.await_args.args[1:3]
     assert (title, artist) == ("Believe", "Cher")
