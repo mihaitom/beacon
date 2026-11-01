@@ -119,6 +119,7 @@ async function openDialog(state: LightsState) {
 
 async function openDialogWrapper(state: LightsState) {
   vi.mocked(getLights).mockResolvedValue(state)
+  vi.mocked(getPicture).mockResolvedValue(state.picture)
   vi.mocked(updateLights).mockImplementation(async (update) => ({ ...state, ...update }))
   const wrapper = mount(LightsDialog, { props: { modelValue: true }, global })
   await flushPromises()
@@ -354,6 +355,29 @@ describe('LightsDialog', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('shows the picture of the song on screen here, with the lights off too', async () => {
+    usePlaybackStore().$patch({
+      queue: [{ id: 'song-2', title: 'B' } as Song],
+      currentIndex: 0,
+      isPlaying: false,
+    })
+    const shown = {
+      source: 'artist' as const,
+      url: 'https://assets.fanart.tv/new.jpg',
+      cover_art_id: null,
+      colours: ['#0000ff'],
+      accent: '#0000ff',
+    }
+    vi.mocked(getLights).mockResolvedValue({ ...PAIRED, enabled: false })
+    vi.mocked(getPicture).mockResolvedValue(shown)
+    const wrapper = mount(LightsDialog, { props: { modelValue: true }, global })
+    await flushPromises()
+    expect(getPicture).toHaveBeenCalledWith('song-2')
+    expect(wrapper.find('.lights__detail .lights__swatch').attributes('style')).toContain(
+      'rgb(0, 0, 255)',
+    )
   })
 
   it('the help button opens the lights FAQ', async () => {

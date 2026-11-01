@@ -1,7 +1,8 @@
 /** Tells connect which picture Now Playing shows behind the current song -
  * the artist's Fanart.tv background or the cover - so the room lights take
  * their colours from what is in the foreground, the way the visualizer
- * bars do. Only while the lights are set up, and only on a change. */
+ * bars do. Only while a bridge is set up - with the lights off too, so the
+ * dialog shows the right picture - and only on a change. */
 
 import { fanartSource } from '@/services/connect/fanart'
 import { reportPicture } from '@/services/connect/lights'
@@ -15,8 +16,8 @@ export async function reportForegroundPicture(
   songId: string | null,
   shownUrl: string | null,
 ): Promise<void> {
-  if (!useLightsStore().active) {
-    // Forgotten, so switching the lights on reports the current picture.
+  if (!useLightsStore().paired) {
+    // Forgotten, so pairing reports the current picture.
     last = null
     return
   }

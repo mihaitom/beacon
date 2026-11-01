@@ -158,10 +158,21 @@ class LightController:
 
     @property
     def picture(self) -> dict | None:
-        """The picture of the song the lights followed last - which one, and
-        its colours (none for a black-and-white one) and the app's accent
-        for it (None for the theme's) - once looked at."""
-        song_id = self._last_song_id
+        """The picture of the song the lights followed last."""
+        return self.picture_of(self._last_song_id)
+
+    def picture_for(self, session_id: str, song_id: str) -> dict | None:
+        """The picture of a song playing in an app - which the dialog shows
+        whether or not the lights are on - with its colours set going if
+        they are not known yet."""
+        if self._palette_of(song_id) is None:
+            self._prepare(Source(session_id, song_id, 0.0))
+        return self.picture_of(song_id)
+
+    def picture_of(self, song_id: str | None) -> dict | None:
+        """A song's picture - which one, and its colours (none for a
+        black-and-white one) and the app's accent for it (None for the
+        theme's) - once looked at."""
         if song_id is None:
             return None
         colours = self._palette_of(song_id)

@@ -113,10 +113,12 @@ export async function reportLocalPlayback(
   })
 }
 
-/** Only the picture of the song the lights follow - cheap enough to ask
- * for while the dialog is open, where getLights() asks the bridge too. */
-export async function getPicture(): Promise<LightsPicture | null> {
-  return (await fetchConnect<{ picture: LightsPicture | null }>('/lights/picture')).picture
+/** Only the picture of `songId` (playing here, the lights on or off), or
+ * of the song the lights follow - cheap enough to ask for while the dialog
+ * is open, where getLights() asks the bridge too. */
+export async function getPicture(songId: string | null = null): Promise<LightsPicture | null> {
+  const query = songId ? `?song_id=${encodeURIComponent(songId)}` : ''
+  return (await fetchConnect<{ picture: LightsPicture | null }>(`/lights/picture${query}`)).picture
 }
 
 /** What Now Playing shows behind `songId`: a Fanart.tv image URL (as

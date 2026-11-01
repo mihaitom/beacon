@@ -438,6 +438,13 @@ export default {
     themeName(): string {
       return this.$t(`settings.themes.${useAppearanceStore().theme}.name`)
     },
+    /** The song on screen here, playing or paused, radio aside: whose
+     * picture the dialog shows, the lights on or off. */
+    shownSongId(): string | null {
+      const playback = usePlaybackStore()
+      if (playback.radioStation) return null
+      return playback.currentSong?.id ?? null
+    },
     /** The song the preview plays along with: whatever plays here, paused
      * or radio aside. */
     playingSongId(): string | null {
@@ -507,6 +514,8 @@ export default {
         await this.store.load()
         // Somebody is setting the lights up here: this device's theme.
         await this.store.syncTheme()
+        // GET /lights answered with the song the lights followed last.
+        await this.store.refreshPicture(this.shownSongId)
         this.followPicture()
       },
     },
@@ -566,7 +575,7 @@ export default {
       clearTimeout(this.pictureTimer)
       this.pictureTimer = setTimeout(async () => {
         if (!this.modelValue || this.gone) return
-        await this.store.refreshPicture()
+        await this.store.refreshPicture(this.shownSongId)
         // Closed or gone while it was asked for: that is the end of it.
         if (this.modelValue && !this.gone) this.followPicture()
       }, PICTURE_REFRESH_MS)

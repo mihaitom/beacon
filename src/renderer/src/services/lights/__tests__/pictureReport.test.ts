@@ -1,5 +1,6 @@
 // Which picture Now Playing tells connect about, for the lights' colours:
-// only with the lights set up, Fanart.tv's own URL, once per change.
+// only with a bridge set up (the lights on or off), Fanart.tv's own URL,
+// once per change.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { useAuthStore } from '@/stores/auth'
@@ -12,10 +13,10 @@ vi.mock('@/services/connect/lights', () => ({ reportPicture: vi.fn(async () => {
 
 const FANART = 'https://assets.fanart.tv/fanart/music/x/artistbackground/a.jpg'
 
-function lightsActive(active: boolean) {
+function lights(paired: boolean, enabled = true) {
   useLightsStore().lights = {
-    paired: true,
-    enabled: active,
+    paired,
+    enabled,
     area_id: 'area',
   } as ReturnType<typeof useLightsStore>['lights']
 }
@@ -27,7 +28,7 @@ describe('reportForegroundPicture', () => {
     useAuthStore().connectToken = 'secret'
     resetPictureReport()
     vi.mocked(reportPicture).mockReset()
-    lightsActive(true)
+    lights(true)
   })
 
   it("hands connect Fanart.tv's own address, without this app's token", async () => {
@@ -49,19 +50,25 @@ describe('reportForegroundPicture', () => {
     expect(reportPicture).toHaveBeenCalledTimes(2)
   })
 
-  it('stays quiet without lights set up or without a song', async () => {
-    lightsActive(false)
+  it('stays quiet without a bridge set up or without a song', async () => {
+    lights(false)
     await reportForegroundPicture('s1', fanartImageUrl(FANART))
-    lightsActive(true)
+    lights(true)
     await reportForegroundPicture(null, fanartImageUrl(FANART))
     expect(reportPicture).not.toHaveBeenCalled()
   })
 
-  it('reports the same picture again once the lights are back on', async () => {
+  it('reports with the lights switched off, for the dialog to show', async () => {
+    lights(true, false)
     await reportForegroundPicture('s1', fanartImageUrl(FANART))
-    lightsActive(false)
+    expect(reportPicture).toHaveBeenCalledWith('s1', FANART)
+  })
+
+  it('reports the same picture again once paired anew', async () => {
     await reportForegroundPicture('s1', fanartImageUrl(FANART))
-    lightsActive(true)
+    lights(false)
+    await reportForegroundPicture('s1', fanartImageUrl(FANART))
+    lights(true)
     await reportForegroundPicture('s1', fanartImageUrl(FANART))
     expect(reportPicture).toHaveBeenCalledTimes(2)
   })

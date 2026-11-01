@@ -1224,6 +1224,30 @@ async def test_the_dialog_sees_the_picture_of_the_last_song_followed(sessions, f
     await c.stop()
 
 
+def test_the_dialog_sees_the_picture_of_the_song_playing_with_the_lights_off(monkeypatch):
+    c = LightController()
+    c._last_song_id = "followed-before"
+    c._covers["followed-before"] = PictureColours((RED,))
+    c._covers["now"] = PictureColours((BLUE,))
+    c._pictures["now"] = PICTURE
+    c._picture_colours[PICTURE] = PictureColours((GREEN,))
+    picture = c.picture_for("desk", "now")
+    assert picture["url"] == PICTURE
+    assert picture["colours"] == ["#00ff00"]
+
+
+def test_the_dialog_sets_the_colours_of_a_song_not_seen_yet_going(monkeypatch):
+    c = LightController()
+    prepared = []
+    monkeypatch.setattr(c, "_prepare", lambda source: prepared.append(source))
+    assert c.picture_for("desk", "new") is None
+    assert prepared == [Source("desk", "new", 0.0)]
+    # Known: nothing more to set going.
+    c._covers["new"] = PictureColours((RED,))
+    c.picture_for("desk", "new")
+    assert len(prepared) == 1
+
+
 def test_the_dialog_sees_the_artist_picture_and_a_colourless_one():
     c = LightController()
     c._last_song_id = "s"
@@ -1669,6 +1693,17 @@ def test_the_picture_can_be_asked_for_on_its_own(client, monkeypatch):
     shown = {"source": "cover", "url": None, "cover_art_id": "al-1", "colours": ["#ff0000"]}
     monkeypatch.setattr(LightController, "picture", property(lambda self: shown))
     assert client.get("/lights/picture").json() == {"picture": shown}
+
+
+def test_the_picture_of_the_song_playing_in_the_app_can_be_asked_for(client, monkeypatch):
+    from lights.controller import controller
+
+    asked = []
+    shown = {"source": "cover", "url": None, "cover_art_id": "al-2", "colours": []}
+    monkeypatch.setattr(controller, "picture_for", lambda *a: asked.append(a) or shown)
+    body = client.get("/lights/picture", params={"song_id": "s2"}).json()
+    assert body == {"picture": shown}
+    assert asked[0][1] == "s2"
 
 
 def test_a_picture_report_takes_only_fanart_images(client, monkeypatch):

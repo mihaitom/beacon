@@ -207,10 +207,17 @@ class PictureReport(BaseModel):
 
 
 @router.get("/picture")
-async def get_picture():
+async def get_picture(
+    song_id: str | None = Query(default=None, min_length=1, max_length=512),
+    session: SessionState = Depends(get_session),
+):
     """Only the picture: for the open dialog to follow a track change
-    without asking the bridge each time, as GET /lights does."""
-    return {"picture": controller.picture}
+    without asking the bridge each time, as GET /lights does. With
+    `song_id`, that song's - the one playing in the app asking, lights on
+    or off - else the one the lights followed last."""
+    if song_id is None:
+        return {"picture": controller.picture}
+    return {"picture": controller.picture_for(session.session_id, song_id)}
 
 
 @router.put("/picture", status_code=204)

@@ -505,12 +505,12 @@ export default {
     },
     /** The picture behind the current song, for the room lights' colours
      * (pictureReport.ts): the same choice the visualizer bars make. With
-     * the lights' state in it, so switching them on mid-song reports too. */
-    foregroundPicture(): { songId: string | null; url: string | null; lightsOn: boolean } {
+     * the pairing in it, so pairing mid-song reports too. */
+    foregroundPicture(): { songId: string | null; url: string | null; paired: boolean } {
       return {
         songId: this.currentSong?.id ?? null,
         url: this.artistBackground,
-        lightsOn: useLightsStore().active,
+        paired: useLightsStore().paired,
       }
     },
     /** The visualizer bars' colour: the Fanart.tv artist background's own
@@ -556,7 +556,7 @@ export default {
   watch: {
     foregroundPicture: {
       immediate: true,
-      handler(picture: { songId: string | null; url: string | null; lightsOn: boolean }) {
+      handler(picture: { songId: string | null; url: string | null; paired: boolean }) {
         void reportForegroundPicture(picture.songId, picture.url)
       },
     },

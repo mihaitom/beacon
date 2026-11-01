@@ -47,6 +47,11 @@ export const useLightsStore = defineStore('lights', {
       return !!state.lights && (state.lights.paired || state.lights.found.length > 0)
     },
     /** Paired, switched on and an area picked. */
+    /** A bridge is set up, the lights on or off: the dialog shows the
+     * playing song's picture either way. */
+    paired(state): boolean {
+      return !!state.lights?.paired
+    },
     active(state): boolean {
       const lights = state.lights
       return !!lights && lights.paired && lights.enabled && !!lights.area_id
@@ -69,12 +74,13 @@ export const useLightsStore = defineStore('lights', {
     async pair(host: string): Promise<void> {
       this.lights = await pairBridge(host)
     },
-    /** The picture alone, for the open dialog to follow track changes.
+    /** The picture alone, for the open dialog to follow track changes:
+     * `songId`'s, the song on screen here, else the one the lights follow.
      * Quiet on failure: the dialog keeps the picture it has. */
-    async refreshPicture(): Promise<void> {
+    async refreshPicture(songId: string | null = null): Promise<void> {
       if (!this.lights?.paired) return
       try {
-        const picture = await getPicture()
+        const picture = await getPicture(songId)
         if (this.lights) this.lights = { ...this.lights, picture }
       } catch (error) {
         console.error('[lights] Could not refresh the picture:', error)
