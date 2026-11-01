@@ -351,7 +351,7 @@ describe('previewing an album or playlist', () => {
 
     it('plays it over the queue, which waits paused where it was', async () => {
       const playback = await playingQueue()
-      await playback.startTrackPreview(track)
+      await playback.startTracksPreview([track])
 
       expect(previewed()).toEqual([
         expect.objectContaining({ id: 'deezer:42', title: 'Believe', artist: 'Cher' }),
@@ -374,7 +374,7 @@ describe('previewing an album or playlist', () => {
     it('goes to the speakers while casting', async () => {
       const playback = await playingQueue()
       vi.spyOn(useConnectStore(), 'isActive', 'get').mockReturnValue(true)
-      await playback.startTrackPreview(track)
+      await playback.startTracksPreview([track])
 
       expect(mix.startPreview).not.toHaveBeenCalled()
       const [songs, index] = vi.mocked(connectPlayback.startPreview).mock.calls.at(-1)!
@@ -382,11 +382,31 @@ describe('previewing an album or playlist', () => {
       expect(index).toBe(0)
     })
 
+    it('previews several of them whole, every one in its order', async () => {
+      // An artist's top tracks: Deezer's order is already the one that
+      // says most, and each is only 30 seconds.
+      const playback = await playingQueue()
+      const tracks = [1, 2, 3, 4, 5, 6, 7].map((id) =>
+        deezerPreviewSong(id, { title: `T${id}`, artist: 'A' }),
+      )
+      await playback.startTracksPreview(tracks)
+
+      expect(previewed().map((s) => s.id)).toEqual(tracks.map((t) => t.id))
+      expect(playback.preview!.whole).toBe(false)
+    })
+
+    it('starts nothing for no tracks', async () => {
+      const playback = await playingQueue()
+      await playback.startTracksPreview([])
+      expect(playback.preview).toBeNull()
+      expect(mix.startPreview).not.toHaveBeenCalled()
+    })
+
     it('a second track still goes back to where the queue was', async () => {
       const playback = await playingQueue()
-      await playback.startTrackPreview(track)
+      await playback.startTracksPreview([track])
       playback.localPosition = 12
-      await playback.startTrackPreview(deezerPreviewSong(7, { title: 'T', artist: 'A' }))
+      await playback.startTracksPreview([deezerPreviewSong(7, { title: 'T', artist: 'A' })])
       expect(playback.preview!.resumeAt).toBe(50)
     })
   })

@@ -213,16 +213,19 @@ station sits over the queue:
   (`MobileTransportControls.vue`). The waveform is not draggable meanwhile.
 - i18n keys in all five locales.
 
-## One track from Deezer (the playlist builder)
+## Tracks from Deezer (the playlist builder, suggested artists)
 
 Added 2026-11-01. Each row of the playlist builder's result can be
 previewed, library track or not, as Deezer's own 30-second preview - and it
 plays as a preview of one song, so it pauses the queue and casts like any
-other.
+other. A card in Home's "New artists to explore" previews that artist's
+top six Deezer tracks the same way, one after another.
 
-- The app makes the track a `Song` with the id `deezer:<Deezer track id>`
-  (`deezerPreviewSong()` in `services/playback/preview.ts`) and starts it
-  with `startTrackPreview()`: one pick, `whole: false`, no Play from here.
+- The app makes each track a `Song` with the id `deezer:<Deezer track id>`
+  (`deezerPreviewSong()` in `services/playback/preview.ts`) and starts them
+  with `startTracksPreview()`: every one picked, in its order (Deezer's
+  top tracks are already the ones that say most), `whole: false`, no Play
+  from here.
 - connect tells such an id apart (`core/deezer.py`'s `is_preview_id()`):
   its audio is Deezer's preview URL, asked for fresh on every play because
   Deezer signs it for about 15 minutes - in the mix's `url_fn`, the

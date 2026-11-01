@@ -2081,15 +2081,17 @@ export const usePlaybackStore = defineStore('playback', {
       await this.playPreviewAt(0)
     },
 
-    /** Previews one track that need not be in the library - the playlist
-     * builder's, as its 30-second Deezer preview (deezerPreviewSong()).
+    /** Previews tracks that need not be in the library, all of them in
+     * their order - a playlist builder row, or a suggested artist's top
+     * tracks - as their 30-second Deezer previews (deezerPreviewSong()).
      * Everything else is startPreview()'s: the queue pauses and waits,
      * on this device or the speakers, and the end is silence. There is no
      * album or playlist to "Play from here" (`whole`). */
-    async startTrackPreview(song: Song): Promise<void> {
+    async startTracksPreview(songs: Song[]): Promise<void> {
+      if (!songs.length) return
       const resumeAt = this.preview?.resumeAt ?? this.localPosition
       this.leaveRadio()
-      this.preview = { songs: [song], picks: [0], index: 0, resumeAt, whole: false }
+      this.preview = { songs, picks: songs.map((_, i) => i), index: 0, resumeAt, whole: false }
       await this.playPreviewAt(0)
     },
 

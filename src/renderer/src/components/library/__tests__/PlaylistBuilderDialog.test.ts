@@ -996,21 +996,21 @@ describe('PlaylistBuilderDialog', () => {
 
     it('plays it the way an album preview plays, by its Deezer id', async () => {
       const find = vi.spyOn(deezerApi, 'findDeezerPreview').mockResolvedValue(42)
-      const start = vi.spyOn(usePlaybackStore(), 'startTrackPreview').mockResolvedValue()
+      const start = vi.spyOn(usePlaybackStore(), 'startTracksPreview').mockResolvedValue()
       await resultWithMissingTrack()
 
       previewButton().click()
       await flushPromises()
 
       expect(find).toHaveBeenCalledWith({ artist: 'Someone', title: 'Song', id: 42 })
-      expect(start).toHaveBeenCalledWith(
+      expect(start).toHaveBeenCalledWith([
         expect.objectContaining({ id: 'deezer:42', title: 'Song', artist: 'Someone' }),
-      )
+      ])
     })
 
     it('looks a track from another service up by its name', async () => {
       const find = vi.spyOn(deezerApi, 'findDeezerPreview').mockResolvedValue(7)
-      vi.spyOn(usePlaybackStore(), 'startTrackPreview').mockResolvedValue()
+      vi.spyOn(usePlaybackStore(), 'startTracksPreview').mockResolvedValue()
       await resultWithMissingTrack({ deezerId: undefined })
 
       previewButton().click()
@@ -1022,8 +1022,8 @@ describe('PlaylistBuilderDialog', () => {
     it('stops its own preview on a second click', async () => {
       vi.spyOn(deezerApi, 'findDeezerPreview').mockResolvedValue(42)
       const playback = usePlaybackStore()
-      vi.spyOn(playback, 'startTrackPreview').mockImplementation(async (song) => {
-        playback.preview = { songs: [song], picks: [0], index: 0, resumeAt: 0, whole: false }
+      vi.spyOn(playback, 'startTracksPreview').mockImplementation(async (songs) => {
+        playback.preview = { songs, picks: [0], index: 0, resumeAt: 0, whole: false }
       })
       const end = vi.spyOn(playback, 'endPreview').mockImplementation(() => {})
       await resultWithMissingTrack()
@@ -1039,7 +1039,7 @@ describe('PlaylistBuilderDialog', () => {
 
     it('marks a track Deezer has no preview for, without playing anything', async () => {
       vi.spyOn(deezerApi, 'findDeezerPreview').mockResolvedValue(null)
-      const start = vi.spyOn(usePlaybackStore(), 'startTrackPreview').mockResolvedValue()
+      const start = vi.spyOn(usePlaybackStore(), 'startTracksPreview').mockResolvedValue()
       await resultWithMissingTrack()
 
       previewButton().click()

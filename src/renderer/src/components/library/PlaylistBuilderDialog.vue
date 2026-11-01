@@ -1125,7 +1125,7 @@ export default {
     },
 
     /** Plays a row's 30-second Deezer preview the way an album or playlist
-     * preview plays (the store's startTrackPreview()): over the queue,
+     * preview plays (the store's startTracksPreview()): over the queue,
      * which waits paused, here or on the speakers being cast to. A second
      * click on the same row stops it. It goes on after the dialog closes -
      * the player shows it, and stops it, like any preview. */
@@ -1148,7 +1148,7 @@ export default {
         }
         const song = deezerPreviewSong(deezerId, entry.track)
         this.previewSongIds[index] = song.id
-        await playback.startTrackPreview(song)
+        await playback.startTracksPreview([song])
       } catch (error) {
         console.error('[builder] Preview failed:', error)
       } finally {

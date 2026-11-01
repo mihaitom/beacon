@@ -1,8 +1,9 @@
 // The shelf/chevron mechanics (paging, wrap mode) are CardShelf.vue's own
 // responsibility and tested there — this file only covers what's specific
 // to *this* shelf: the artist card markup and its external-service links.
-import { describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+import { createPinia, setActivePinia } from 'pinia'
 import { nextTick } from 'vue'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
@@ -10,6 +11,10 @@ import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { emitter } from '@/emitter'
 import type { ArtworkView } from '@/types/events'
+import * as deezerApi from '@/services/connect/deezer'
+import type { DeezerTrack } from '@/services/connect/deezer'
+import { usePartyStore } from '@/stores/party'
+import { usePlaybackStore } from '@/stores/playback'
 import SimilarArtistsShelf, { type SimilarArtistDisplay } from '../SimilarArtistsShelf.vue'
 
 const vuetify = createVuetify({ components, directives })
@@ -47,6 +52,11 @@ function shown(run: () => void): ArtworkView[] {
 }
 
 describe('SimilarArtistsShelf', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.restoreAllMocks()
+  })
+
   describe('opening the photo full size', () => {
     it('shows the artist photo when the card art is clicked', () => {
       // These cards are the one place in the app with artwork and no other
@@ -195,5 +205,119 @@ describe('SimilarArtistsShelf', () => {
     expect(wrapper.getComponent({ name: 'CardShelf' }).props('title')).toBe(
       'New artists to explore',
     )
+  })
+
+  describe('previewing an artist', () => {
+    function deezerTrack(deezerId: number, title: string): DeezerTrack {
+      return {
+        title,
+        artist: 'The Tide',
+        mbid: '',
+        album: 'Low Water',
+        coverArtUrl: '',
+        duration: 200,
+        deezerId,
+      }
+    }
+
+    function previewButton(wrapper: ReturnType<typeof mountShelf>) {
+      return wrapper.get('.similar-artists-card-preview')
+    }
+
+    it("plays the artist's Deezer top tracks, in their order, as one preview", async () => {
+      const fetch = vi
+        .spyOn(deezerApi, 'getDeezerTracks')
+        .mockResolvedValue([
+          deezerTrack(3, 'Third'),
+          deezerTrack(0, 'No id'),
+          deezerTrack(1, 'First'),
+        ])
+      const start = vi.spyOn(usePlaybackStore(), 'startTracksPreview').mockResolvedValue()
+      const wrapper = mountShelf([makeArtist({ name: 'The Tide' })])
+
+      await previewButton(wrapper).trigger('click')
+      await flushPromises()
+
+      expect(fetch).toHaveBeenCalledWith({ op: 'artist', artist: 'The Tide', limit: 6 })
+      // A track without a Deezer id has no preview to fetch.
+      expect(start.mock.calls[0]![0].map((song) => [song.id, song.title])).toEqual([
+        ['deezer:3', 'Third'],
+        ['deezer:1', 'First'],
+      ])
+    })
+
+    it('stops its own preview on a second click', async () => {
+      vi.spyOn(deezerApi, 'getDeezerTracks').mockResolvedValue([deezerTrack(3, 'Third')])
+      const playback = usePlaybackStore()
+      vi.spyOn(playback, 'startTracksPreview').mockImplementation(async (songs) => {
+        playback.preview = { songs, picks: [0], index: 0, resumeAt: 0, whole: false }
+      })
+      const end = vi.spyOn(playback, 'endPreview').mockImplementation(() => {})
+      const wrapper = mountShelf()
+
+      await previewButton(wrapper).trigger('click')
+      await flushPromises()
+      expect(end).not.toHaveBeenCalled()
+      await previewButton(wrapper).trigger('click')
+      await flushPromises()
+
+      expect(end).toHaveBeenCalledTimes(1)
+    })
+
+    it("a preview of another artist is not this card's to stop", async () => {
+      vi.spyOn(deezerApi, 'getDeezerTracks')
+        .mockResolvedValueOnce([deezerTrack(3, 'Third')])
+        .mockResolvedValueOnce([deezerTrack(4, 'Fourth')])
+      const playback = usePlaybackStore()
+      const start = vi.spyOn(playback, 'startTracksPreview').mockImplementation(async (songs) => {
+        playback.preview = { songs, picks: [0], index: 0, resumeAt: 0, whole: false }
+      })
+      const end = vi.spyOn(playback, 'endPreview').mockImplementation(() => {})
+      const wrapper = mountShelf([
+        makeArtist({ mbid: 'a', name: 'A' }),
+        makeArtist({ mbid: 'b', name: 'B' }),
+      ])
+      const [first, second] = wrapper.findAll('.similar-artists-card-preview')
+
+      await first!.trigger('click')
+      await flushPromises()
+      await second!.trigger('click')
+      await flushPromises()
+
+      expect(end).not.toHaveBeenCalled()
+      expect(start).toHaveBeenCalledTimes(2)
+    })
+
+    it('marks an artist Deezer has no top tracks for, without playing anything', async () => {
+      vi.spyOn(deezerApi, 'getDeezerTracks').mockResolvedValue([])
+      const start = vi.spyOn(usePlaybackStore(), 'startTracksPreview').mockResolvedValue()
+      const wrapper = mountShelf()
+
+      await previewButton(wrapper).trigger('click')
+      await flushPromises()
+
+      expect(start).not.toHaveBeenCalled()
+      expect(previewButton(wrapper).attributes('disabled')).toBeDefined()
+    })
+
+    it('leaves the button to be tried again after a failed lookup', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      vi.spyOn(deezerApi, 'getDeezerTracks').mockRejectedValue(new Error('502'))
+      const wrapper = mountShelf()
+
+      await previewButton(wrapper).trigger('click')
+      await flushPromises()
+
+      expect(previewButton(wrapper).attributes('disabled')).toBeUndefined()
+    })
+
+    it('is not offered while party guests would hear it', () => {
+      const party = usePartyStore()
+      party.enabled = true
+      party.hostedHere = true
+      const wrapper = mountShelf()
+
+      expect(previewButton(wrapper).attributes('disabled')).toBeDefined()
+    })
   })
 })

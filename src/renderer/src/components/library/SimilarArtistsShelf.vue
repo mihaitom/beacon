@@ -42,29 +42,47 @@
          - comment at the top), so the viewer gets it rather than nothing
          - happening. A plain <div> for an artist with no photo at all:
          - there would be nothing to open but the fallback icon. -->
-      <button
-        v-if="artist.imageUrl"
-        type="button"
-        class="similar-artists-card-art-button"
-        :title="$t('library.showArtwork')"
-        @click="showArtwork(artist)"
-      >
+      <div class="similar-artists-card-art-wrap">
+        <button
+          v-if="artist.imageUrl"
+          type="button"
+          class="similar-artists-card-art-button"
+          :title="$t('library.showArtwork')"
+          @click="showArtwork(artist)"
+        >
+          <cover-art
+            :image-url="artist.imageUrl"
+            :size="160"
+            rounded
+            fallback-icon="mdi-account-music"
+            class="similar-artists-card-art"
+          />
+        </button>
         <cover-art
+          v-else
           :image-url="artist.imageUrl"
           :size="160"
           rounded
           fallback-icon="mdi-account-music"
           class="similar-artists-card-art"
         />
-      </button>
-      <cover-art
-        v-else
-        :image-url="artist.imageUrl"
-        :size="160"
-        rounded
-        fallback-icon="mdi-account-music"
-        class="similar-artists-card-art"
-      />
+        <!-- The artist's top tracks as previews, the way an album's
+         - Preview button plays an album. Beside the photo, not on it: the
+         - photo is a button of its own. -->
+        <v-btn
+          :icon="previewIcon(artist)"
+          :color="isPreviewing(artist) ? 'primary' : undefined"
+          :loading="previewLoading === artist.mbid"
+          :disabled="!previewAvailable || noPreview.includes(artist.mbid)"
+          :title="previewLabel(artist)"
+          :aria-label="previewLabel(artist)"
+          size="small"
+          variant="flat"
+          class="similar-artists-card-preview"
+          :class="{ 'similar-artists-card-preview--visible': isPreviewing(artist) }"
+          @click="togglePreview(artist)"
+        />
+      </div>
       <div class="similar-artists-card-name text-body-medium">
         {{ artist.name }}
       </div>
@@ -94,6 +112,10 @@
 import type { PropType } from 'vue'
 import { emitter } from '@/emitter'
 import type { SimilarArtist } from '@/services/connect/recommendations'
+import { getDeezerTracks } from '@/services/connect/deezer'
+import { deezerPreviewSong, PREVIEW_SONGS } from '@/services/playback/preview'
+import { previewHeardByGuests } from '@/services/playback/previewAvailability'
+import { usePlaybackStore } from '@/stores/playback'
 import { toExternalLinkList, type ExternalLinkKey } from '@/components/library/externalArtistLinks'
 import CoverArt from './CoverArt.vue'
 import CardShelf from './CardShelf.vue'
@@ -124,6 +146,13 @@ export default {
       // looked right on a narrow window showed up here first.
       skeletonCount: 15,
       resizeObserver: null as ResizeObserver | null,
+      /** The mbid of the card whose top tracks are being fetched. */
+      previewLoading: '',
+      /** Which song each card's preview started with, so its button can
+       * tell whether the preview playing is its own. */
+      previewSongIds: {} as Record<string, string>,
+      /** Cards Deezer has no top tracks for, so their button says so. */
+      noPreview: [] as string[],
     }
   },
   props: {
@@ -149,10 +178,65 @@ export default {
       this.skeletonCount = skeletonsAcross(width)
     })
   },
+  computed: {
+    /** Not while guests listening along to a party would hear it - the
+     * same rule as an album's Preview button. */
+    previewAvailable(): boolean {
+      return !previewHeardByGuests()
+    },
+  },
   beforeUnmount() {
     this.resizeObserver?.disconnect()
   },
   methods: {
+    isPreviewing(artist: SimilarArtistDisplay): boolean {
+      const playback = usePlaybackStore()
+      const id = this.previewSongIds[artist.mbid]
+      return !!id && playback.preview?.songs[0]?.id === id
+    },
+    previewIcon(artist: SimilarArtistDisplay): string {
+      if (this.noPreview.includes(artist.mbid)) return 'mdi-music-note-off'
+      return this.isPreviewing(artist) ? 'mdi-stop' : 'mdi-headphones'
+    },
+    previewLabel(artist: SimilarArtistDisplay): string {
+      if (this.noPreview.includes(artist.mbid)) return this.$t('builder.noPreview')
+      return this.isPreviewing(artist)
+        ? this.$t('builder.stopPreview')
+        : this.$t('home.previewTopSongs')
+    },
+    /** Plays the artist's top tracks on Deezer, 30 seconds each, as one
+     * preview (the store's startTracksPreview()). A second click stops it.
+     * A failed lookup leaves the button as it was, to be tried again;
+     * only an empty answer marks the card. */
+    async togglePreview(artist: SimilarArtistDisplay): Promise<void> {
+      const playback = usePlaybackStore()
+      if (this.isPreviewing(artist)) {
+        playback.endPreview()
+        return
+      }
+      if (this.previewLoading) return
+      this.previewLoading = artist.mbid
+      try {
+        const tracks = await getDeezerTracks({
+          op: 'artist',
+          artist: artist.name,
+          limit: PREVIEW_SONGS,
+        })
+        const songs = tracks
+          .filter((track) => track.deezerId)
+          .map((track) => deezerPreviewSong(track.deezerId, track))
+        if (!songs.length) {
+          this.noPreview.push(artist.mbid)
+          return
+        }
+        this.previewSongIds[artist.mbid] = songs[0]!.id
+        await playback.startTracksPreview(songs)
+      } catch (error) {
+        console.error('[home] Artist preview failed:', error)
+      } finally {
+        this.previewLoading = ''
+      }
+    },
     externalLinks(urls: Partial<Record<ExternalLinkKey, string>>) {
       return toExternalLinkList(urls)
     },
@@ -227,14 +311,48 @@ export default {
   border-radius: 4px;
 }
 
+/* The lift moves the wrap, so the preview button rises with the photo. */
+.similar-artists-card-art-wrap {
+  position: relative;
+  transition: transform 0.15s ease;
+}
+
+.similar-artists-card:hover .similar-artists-card-art-wrap {
+  transform: translateY(-3px);
+}
+
+/* Like the album card's heart: in the corner, shown on hover, and always
+ * while its own preview plays. */
+.similar-artists-card-preview {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.similar-artists-card-preview:not(.similar-artists-card-preview--visible) {
+  background: rgba(11, 13, 19, 0.75) !important;
+}
+
+.similar-artists-card:hover .similar-artists-card-preview,
+.similar-artists-card-preview:focus-visible,
+.similar-artists-card-preview--visible {
+  opacity: 1;
+}
+
+/* No hover to reveal it with on a touch screen. */
+@media (hover: none) {
+  .similar-artists-card-preview {
+    opacity: 1;
+  }
+}
+
 .similar-artists-card-art {
-  transition:
-    transform 0.15s ease,
-    box-shadow 0.15s ease;
+  transition: box-shadow 0.15s ease;
 }
 
 .similar-artists-card:hover .similar-artists-card-art {
-  transform: translateY(-3px);
   box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
 }
 

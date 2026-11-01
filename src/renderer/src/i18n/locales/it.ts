@@ -121,6 +121,7 @@ export default {
     internetRadio: 'Radio via internet',
     nothingToShow: 'Niente da mostrare.',
     newArtistsTitle: 'Nuovi artisti da scoprire',
+    previewTopSongs: 'Ascolta i brani più famosi',
   },
   library: {
     genresAll: 'Tutti i generi',
@@ -1299,7 +1300,7 @@ export default {
       deezer: {
         name: 'Deezer',
         purpose:
-          "Trova foto e pagina dell'artista per un artista suggerito e per la pagina dell'artista che hai aperto, che i consigli siano attivi o no, e riempie una playlist con le classifiche Deezer, i top brani o il mix di un artista, o una playlist Deezer, e riproduce un'anteprima di 30 secondi di un brano nel generatore di playlist.",
+          "Trova foto e pagina dell'artista per un artista suggerito e per la pagina dell'artista che hai aperto, che i consigli siano attivi o no, e riempie una playlist con le classifiche Deezer, i top brani o il mix di un artista, o una playlist Deezer, e riproduce anteprime di 30 secondi di un brano nel generatore di playlist o dei brani più famosi di un artista suggerito.",
         sends:
           "Il nome dell'artista cercato: uno suggerito, quello di cui hai aperto la pagina, oppure quello chiesto al generatore di playlist, e ciò che scrivi nella sua ricerca di playlist. Per le classifiche solo il genere; Deezer ricava il paese da dove si trova il server di Beacon. Per un'anteprima, artista e titolo del brano; l'anteprima la scarica il server di Beacon e la riproduce come qualsiasi altro brano, quindi Deezer non vede questo dispositivo.",
       },

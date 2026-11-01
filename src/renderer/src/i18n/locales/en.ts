@@ -121,6 +121,7 @@ export default {
     internetRadio: 'Internet radio',
     nothingToShow: 'Nothing to show.',
     newArtistsTitle: 'New artists to explore',
+    previewTopSongs: 'Preview their top songs',
   },
   library: {
     genresAll: 'All genres',
@@ -1290,7 +1291,7 @@ export default {
       deezer: {
         name: 'Deezer',
         purpose:
-          "Finding a photo and an artist page for a suggested artist and for the artist page you have open, whether or not recommendations are on, and filling a playlist from Deezer's charts, an artist's top tracks or mix, or a Deezer playlist, and playing a 30-second preview of a track in the playlist builder.",
+          "Finding a photo and an artist page for a suggested artist and for the artist page you have open, whether or not recommendations are on, and filling a playlist from Deezer's charts, an artist's top tracks or mix, or a Deezer playlist, and playing 30-second previews of a track in the playlist builder or of a suggested artist's top tracks.",
         sends:
           "The name of the artist being looked up: a suggested one, the one whose page you have open, or the one you asked the playlist builder for, and what you type into its playlist search. A chart sends only the genre; Deezer picks the country from where Beacon's server is. For a preview, the artist and title of that track; Beacon's server fetches the preview itself and plays it like any other song, so Deezer does not see this device.",
       },
