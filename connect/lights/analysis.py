@@ -206,6 +206,10 @@ _MIN_HUE_GAP = 50 / 360
 # A bucket with less than this share of the strongest one's weight is a
 # detail of the cover, not one of its colours.
 _MIN_SHARE = 0.08
+# A colour this close to grey is not one: brightened to full value, the
+# faint tint of a white cover would light the room white. The same line the
+# visualizer bars draw before falling back to the theme's accent.
+_MIN_SATURATION = 0.2
 PALETTE_SIZE = 3
 
 
@@ -213,7 +217,8 @@ def cover_palette(image: bytes, size: int = PALETTE_SIZE) -> tuple[RGB, ...]:
     """The cover's most present colours, the strongest first, each
     brightened to full value - the lights carry brightness separately, so
     only the hue matters. Fewer than `size` when the cover has fewer
-    clearly different colours; none for a black-and-white one."""
+    clearly different colours; none for one without colour, black-and-white
+    or nearly white."""
     from PIL import Image
 
     with Image.open(io.BytesIO(image)) as img:
@@ -240,6 +245,8 @@ def cover_palette(image: bytes, size: int = PALETTE_SIZE) -> tuple[RGB, ...]:
         if peak <= 0:
             continue
         colour = rgb / peak
+        if 1 - colour.min() < _MIN_SATURATION:
+            continue
         # Measured on the bucket's own mean colour, not the bucket number:
         # neighbouring buckets can hold hues further apart than their
         # neighbours on the far side, and the wheel wraps at red.

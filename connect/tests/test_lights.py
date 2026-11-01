@@ -385,6 +385,12 @@ def test_a_black_and_white_cover_has_no_colours():
     assert analysis.cover_palette(_png((128, 128, 128))) == ()
 
 
+def test_an_off_white_cover_has_no_colours():
+    # A tint the eye reads as white is not a colour, however far it is
+    # brightened - the theme's accent stands in, as for the visualizer.
+    assert analysis.cover_palette(_png((242, 246, 250))) == ()
+
+
 async def test_cover_colours_without_a_cover():
     assert await analysis.cover_colours(None) == ()
 
