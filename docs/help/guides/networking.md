@@ -22,9 +22,11 @@ every time is almost always the network.
 | Finding Sonos and DLNA speakers            | Beacon → the whole network      | UDP 1900 (SSDP multicast)                                                  |
 | Finding AirPlay and Chromecast devices     | Beacon ↔ the whole network      | UDP 5353 (mDNS multicast)                                                  |
 | Beacon announcing itself to Home Assistant | Beacon → the whole network      | UDP 5353 (mDNS multicast)                                                  |
+| Finding a Hue bridge                       | Beacon ↔ the whole network      | UDP 5353 (mDNS multicast)                                                  |
 | Controlling a Sonos                        | Beacon → speaker                | TCP 1400                                                                   |
 | Controlling a Chromecast                   | Beacon → device                 | TCP 8009                                                                   |
 | Controlling a DLNA renderer                | Beacon → renderer               | whatever port the renderer announces                                       |
+| Room lights (Hue)                          | Beacon → bridge                 | TCP 443 for the setup, UDP 2100 for the light show                         |
 | **The music** (Sonos, Chromecast, DLNA)    | **speaker → Beacon**            | **Beacon's port** (see below)                                              |
 | **State and volume changes** (Sonos, DLNA) | **speaker → Beacon**            | **Beacon's port**                                                          |
 | The music (AirPlay)                        | Beacon → speaker, and back      | the speaker's AirPlay port over TCP, plus UDP both ways for timing         |

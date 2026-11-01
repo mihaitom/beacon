@@ -253,7 +253,7 @@ The browser itself is never the problem: it always talks to Beacon's own Connect
 
 Everything below is also the app's own help (the `?` in the party dialog, Settings > About Beacon > FAQ), with a search across all of it.
 
-- **Frequently asked questions**, one page per topic: [Casting](docs/help/faq/casting.md), [Playback](docs/help/faq/playback.md), [Transitions](docs/help/faq/transitions.md), [Formats and converting](docs/help/faq/formats.md), [What the library shows](docs/help/faq/library.md), [Privacy](docs/help/faq/privacy.md), [Reporting a problem](docs/help/faq/reporting.md)
+- **Frequently asked questions**, one page per topic: [Casting](docs/help/faq/casting.md), [Playback](docs/help/faq/playback.md), [Transitions](docs/help/faq/transitions.md), [Room lights](docs/help/faq/lights.md), [Formats and converting](docs/help/faq/formats.md), [What the library shows](docs/help/faq/library.md), [Privacy](docs/help/faq/privacy.md), [Reporting a problem](docs/help/faq/reporting.md)
 - **Guides**: [Networking](docs/help/guides/networking.md), [Party mode](docs/help/guides/party-mode.md), [Party mode over the internet](docs/help/guides/party-over-the-internet.md), [Home automation](docs/help/guides/home-automation.md)
 - **Background**: [What gets converted, and why](docs/help/reference/transcoding-decisions.md), [Home automation API](docs/help/reference/home-automation-api.md)
 

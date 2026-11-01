@@ -7,7 +7,14 @@
   >
     <v-card class="beacon-dialog">
       <v-card-title class="lights__head">
-        <span>{{ $t('lights.title') }}</span>
+        <span class="lights__grow">{{ $t('lights.title') }}</span>
+        <v-btn
+          icon="mdi-help-circle-outline"
+          variant="text"
+          density="comfortable"
+          :title="$t('help.title')"
+          @click="$emitter.emit('openHelp', 'faq/lights')"
+        />
         <v-switch
           v-if="state?.paired"
           :model-value="state.enabled"

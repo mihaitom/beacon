@@ -20,6 +20,7 @@ import {
   type SongAnalysisReply,
 } from '@/services/connect/lights'
 import { MADE_UP_SONG } from '@/services/lights/stagePreview'
+import { pageFor } from '@/services/help/docs'
 import type { Song } from '@/types/library'
 import { DEFAULT_APP_ACCENT, themeAccent } from '@/services/appAccent'
 import { useAppearanceStore } from '@/stores/appearance'
@@ -347,6 +348,13 @@ describe('LightsDialog', () => {
     } finally {
       vi.useRealTimers()
     }
+  })
+
+  it('the help button opens the lights FAQ', async () => {
+    const wrapper = await openDialogWrapper(PAIRED)
+    await wrapper.find('.lights__head button[title]').trigger('click')
+    const [, target] = emit.mock.calls.find(([name]) => name === 'openHelp')!
+    expect(pageFor(target).id).toBe('faq/lights')
   })
 
   it('saves the brightness once it settles, also when set with the keyboard', async () => {
