@@ -6,8 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- The playlist builder can fill a playlist from Deezer's current charts, overall or by genre, or from an artist's top tracks, with no key or setup
+
 ### Changed
 
+- The Playlists page has one playlist builder button instead of one per service: Deezer, Last.fm or ListenBrainz is picked inside it, and it opens on the one used last
 - Electron, the build tools and the backend's libraries are updated to their latest versions
 
 ### Fixed

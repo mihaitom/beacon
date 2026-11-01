@@ -7,7 +7,6 @@ import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { useLibraryStore } from '@/stores/library'
 import { useAuthStore } from '@/stores/auth'
-import { useLastfmStore } from '@/stores/lastfm'
 import PlaylistsView from '../PlaylistsView.vue'
 import type { Playlist } from '@/types/library'
 
@@ -34,7 +33,6 @@ async function mountView(playlists: Playlist[]) {
   const library = useLibraryStore()
   library.playlists = playlists
   vi.spyOn(library, 'fetchPlaylists').mockResolvedValue()
-  vi.spyOn(useLastfmStore(), 'checkConfigured').mockResolvedValue(false)
   useAuthStore().username = 'me'
   const wrapper = mount(PlaylistsView, {
     global: {
@@ -44,7 +42,7 @@ async function mountView(playlists: Playlist[]) {
         DetailHeader: { template: '<div><slot name="actions" /></div>' },
         StickyFilter: { template: '<div><slot /></div>' },
         PlaylistRow: true,
-        LastfmPlaylistDialog: true,
+        PlaylistBuilderDialog: true,
         PlaylistEditDialog: true,
         PlaylistDeleteDialog: true,
       },

@@ -1,4 +1,4 @@
-// The Last.fm playlist builder's wiring: which query it sends for the
+// The playlist builder's wiring: which service and query it sends for the
 // chosen source, that the result step reports what the library does and
 // doesn't have, and that creating the playlist sends the matched ids. The
 // matching itself has its own test next to it
@@ -13,12 +13,14 @@ import { i18n } from '@/i18n'
 import { emitter } from '@/emitter'
 import { useLibraryStore } from '@/stores/library'
 import { useListenbrainzStore } from '@/stores/listenbrainz'
+import { useLastfmStore } from '@/stores/lastfm'
 import { usePlaybackStore } from '@/stores/playback'
 import { makeSong } from '@/stores/__tests__/fixtures'
 import type { SubsonicClient } from '@/services/subsonic/client'
-import LastfmPlaylistDialog from '../LastfmPlaylistDialog.vue'
+import PlaylistBuilderDialog from '../PlaylistBuilderDialog.vue'
 import * as lastfmApi from '@/services/connect/lastfm'
 import * as listenbrainzApi from '@/services/connect/listenbrainz'
+import * as deezerApi from '@/services/connect/deezer'
 
 const vuetify = createVuetify({ components, directives })
 
@@ -42,9 +44,9 @@ function rowTexts(selector: string): string[] {
  * typed loosely enough to drive the form fields directly — the point of
  * each test is what leaves the dialog, not how a v-select is clicked. */
 async function openDialog() {
-  const wrapper = mount(LastfmPlaylistDialog, { global: globalOptions })
-  const vm = wrapper.vm as unknown as Record<string, unknown> & { open: () => void }
-  vm.open()
+  const wrapper = mount(PlaylistBuilderDialog, { global: globalOptions })
+  const vm = wrapper.vm as unknown as Record<string, unknown> & { open: (s?: string) => void }
+  vm.open('lastfm')
   await flushPromises()
   return { wrapper, vm }
 }
@@ -59,7 +61,7 @@ function stubSearch(songs: ReturnType<typeof makeSong>[]) {
   return { search3, createPlaylist }
 }
 
-describe('LastfmPlaylistDialog', () => {
+describe('PlaylistBuilderDialog', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     // open() loads the playlist names in the background. Stubbed for every
@@ -67,6 +69,10 @@ describe('LastfmPlaylistDialog', () => {
     // reject on the missing getPlaylists(), and the ones that stub no
     // client at all would reach the real one and its localhost URL.
     vi.spyOn(useLibraryStore(), 'fetchPlaylists').mockResolvedValue(undefined)
+    // A key is on file unless a test says otherwise, so a Last.fm test is
+    // not switched over to Deezer by the availability check.
+    useLastfmStore().configured = true
+    vi.spyOn(deezerApi, 'getDeezerGenres').mockResolvedValue([])
     // The recent-countries list lives here and would otherwise leak from
     // one test into the next.
     localStorage.clear()
@@ -339,7 +345,7 @@ describe('LastfmPlaylistDialog', () => {
     await flushPromises()
 
     const head = document.querySelector('.tracks-head')?.textContent ?? ''
-    expect(head).toContain(wrapper.vm.$t('lastfm.columnLastfm'))
+    expect(head).toContain('Last.fm')
     expect(head).toContain(wrapper.vm.$t('lastfm.columnLibrary'))
   })
 
@@ -704,12 +710,149 @@ describe('LastfmPlaylistDialog', () => {
     expect(search3.mock.calls.length).toBeLessThan(30)
   })
 
+  describe('choosing the service', () => {
+    function mountDialog() {
+      const wrapper = mount(PlaylistBuilderDialog, { global: globalOptions })
+      const vm = wrapper.vm as unknown as Record<string, unknown> & {
+        open: (s?: string) => void
+        search: () => Promise<void>
+      }
+      return { wrapper, vm }
+    }
+
+    function providerButtons(): string[] {
+      return rowTexts('[role="radio"]')
+    }
+
+    it('opens on Deezer the first time and asks it for the chart', async () => {
+      const getTracks = vi.spyOn(deezerApi, 'getDeezerTracks').mockResolvedValue([
+        {
+          title: 'Dai Dai',
+          artist: 'Shakira',
+          mbid: '',
+          album: '',
+          coverArtUrl: '',
+          duration: 0,
+        },
+      ])
+      stubSearch([makeSong('s1', { title: 'Dai Dai', artist: 'Shakira' })])
+
+      const { vm } = mountDialog()
+      vm.open()
+      await flushPromises()
+      await vm.search()
+      await flushPromises()
+
+      expect(getTracks).toHaveBeenCalledWith(expect.objectContaining({ op: 'charts', genre: 0 }))
+      expect(document.querySelector('.tracks-head')?.textContent).toContain('Deezer')
+      expect(vm.playlistName).toBe(i18n.global.t('deezer.nameCharts'))
+    })
+
+    it('reopens on the service picked last time', async () => {
+      stubSearch([])
+      const first = mountDialog()
+      first.vm.open()
+      await flushPromises()
+      first.vm.source = 'listenbrainz'
+      await flushPromises()
+      first.wrapper.unmount()
+
+      const second = mountDialog()
+      second.vm.open()
+      await flushPromises()
+      expect(second.vm.source).toBe('listenbrainz')
+    })
+
+    it('leaves Last.fm out, and off a remembered pick, without a key', async () => {
+      useLastfmStore().configured = false
+      localStorage.setItem('beacon.playlist-builder-provider', 'lastfm')
+      stubSearch([])
+
+      const { vm } = mountDialog()
+      vm.open()
+      await flushPromises()
+
+      expect(providerButtons()).toEqual(['Deezer', 'ListenBrainz'])
+      expect(vm.source).toBe('deezer')
+    })
+
+    it('drops a source the new service does not have, and keeps one it has', async () => {
+      stubSearch([])
+      const { vm } = mountDialog()
+      vm.open('lastfm')
+      await flushPromises()
+
+      vm.op = 'artist'
+      vm.source = 'deezer'
+      await flushPromises()
+      expect(vm.op).toBe('artist')
+
+      vm.source = 'lastfm'
+      vm.op = 'similar'
+      await flushPromises()
+      vm.source = 'deezer'
+      await flushPromises()
+      expect(vm.op).toBe('charts')
+    })
+
+    it('brings in the listening-history name of the service switched to', async () => {
+      useListenbrainzStore().setUsername('lb-name')
+      useLastfmStore().username = 'lf-name'
+      stubSearch([])
+      const { vm } = mountDialog()
+      vm.open('lastfm')
+      await flushPromises()
+      expect(vm.username).toBe('lf-name')
+
+      vm.source = 'listenbrainz'
+      await flushPromises()
+      expect(vm.username).toBe('lb-name')
+    })
+
+    it('sends the Deezer genre and names the playlist after it', async () => {
+      vi.mocked(deezerApi.getDeezerGenres).mockResolvedValue([
+        { id: 0, name: 'All' },
+        { id: 116, name: 'Rap/Hip Hop' },
+      ])
+      const getTracks = vi
+        .spyOn(deezerApi, 'getDeezerTracks')
+        .mockResolvedValue([
+          { title: 'Song', artist: 'Someone', mbid: '', album: '', coverArtUrl: '', duration: 0 },
+        ])
+      stubSearch([makeSong('s1', { title: 'Song', artist: 'Someone' })])
+
+      const { vm } = mountDialog()
+      vm.open('deezer')
+      await flushPromises()
+      vm.deezerGenre = 116
+      await vm.search()
+      await flushPromises()
+
+      expect(getTracks).toHaveBeenCalledWith(expect.objectContaining({ genre: 116 }))
+      expect(vm.playlistName).toBe(
+        i18n.global.t('deezer.nameGenreCharts', { genre: 'Rap/Hip Hop' }),
+      )
+    })
+
+    it('names the service in a failure', async () => {
+      vi.spyOn(deezerApi, 'getDeezerTracks').mockRejectedValue(new Error('offline'))
+      stubSearch([])
+      const { vm } = mountDialog()
+      vm.open('deezer')
+      await flushPromises()
+      await vm.search()
+      await flushPromises()
+
+      expect(vm.error).toBe(i18n.global.t('builder.failed', { provider: 'Deezer' }))
+    })
+  })
+
   // The ListenBrainz half shares the matcher, the result step and the
   // playlist creation with Last.fm — these only pin what is genuinely
   // different: which backend is asked, and which sources are offered.
   describe('opened for ListenBrainz', () => {
     async function openWith(source: 'lastfm' | 'listenbrainz') {
-      const wrapper = mount(LastfmPlaylistDialog, { global: globalOptions })
+      const wrapper = mount(PlaylistBuilderDialog, { global: globalOptions })
       const vm = wrapper.vm as unknown as Record<string, unknown> & {
         open: (s?: string) => void
       }
@@ -736,7 +879,7 @@ describe('LastfmPlaylistDialog', () => {
         .mockResolvedValue([lbTrack('Believe', 'Cher')])
       stubSearch([makeSong('s1', { title: 'Believe', artist: 'Cher' })])
 
-      const { wrapper, vm } = await openWith('listenbrainz')
+      const { vm } = await openWith('listenbrainz')
       await (vm as unknown as { search: () => Promise<void> }).search()
       await flushPromises()
 
@@ -744,7 +887,7 @@ describe('LastfmPlaylistDialog', () => {
         expect.objectContaining({ op: 'charts', period: 'month' }),
       )
       const head = document.querySelector('.tracks-head')?.textContent ?? ''
-      expect(head).toContain(wrapper.vm.$t('listenbrainz.columnListenbrainz'))
+      expect(head).toContain('ListenBrainz')
     })
 
     it('has no country picker — ListenBrainz has no per-country charts', async () => {

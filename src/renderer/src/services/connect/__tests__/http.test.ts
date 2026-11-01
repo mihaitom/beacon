@@ -65,7 +65,7 @@ describe('fetchConnect', () => {
 
   it('keeps the parsed error body so callers can read `detail` themselves', async () => {
     // The body used to be the raw response text, which left callers that
-    // read a structured reason (LastfmPlaylistDialog's messageFor) with
+    // read a structured reason (PlaylistBuilderDialog's messageFor) with
     // nothing and made them show a generic "unreachable" instead.
     vi.mocked(fetch).mockResolvedValueOnce(jsonResponse(404, { detail: 'country param invalid' }))
 

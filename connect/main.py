@@ -50,6 +50,7 @@ from routes.api_keys import router as api_keys_router
 from routes.cast_permissions import router as cast_permissions_router
 from routes.coverart import router as coverart_router
 from routes.debug import router as debug_router
+from routes.deezer import router as deezer_router
 from routes.devices import router as devices_router
 from routes.discovery import discover_all
 from routes.discovery import router as discovery_router
@@ -488,6 +489,7 @@ app.include_router(fanart_router)
 app.include_router(lastfm_router)
 app.include_router(navidrome_router)
 app.include_router(listenbrainz_router)
+app.include_router(deezer_router)
 app.include_router(coverart_router)
 app.include_router(upnp_router)
 # Diagnostic-only (routes/debug.py) — registered at Debug log level or

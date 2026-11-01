@@ -8,27 +8,16 @@
         }}
       </template>
       <template v-if="authStore.capabilities.emptyPlaylistCreation" #actions>
-        <!-- Only once connect has confirmed a LASTFM_API_KEY: without one
-         - the dialog could only ever fail, so it isn't offered at all. -->
         <div class="detail-header__actions-row">
+          <!-- Always offered: Deezer and ListenBrainz need no setup, and the
+           - builder only lists Last.fm once connect has a key for it. -->
           <v-btn
-            v-if="lastfmStore.configured"
+            prepend-icon="mdi-playlist-music"
             color="primary"
             rounded="pill"
-            @click="openLastfmDialog"
+            @click="openBuilder"
           >
-            <template #prepend>
-              <img :src="lastfmIcon" alt="" class="builder-icon" />
-            </template>
-            {{ $t('lastfm.title') }}
-          </v-btn>
-          <!-- No key and no setup: ListenBrainz's endpoints are public, so
-           - unlike the Last.fm button this is always offered. -->
-          <v-btn color="primary" rounded="pill" @click="openListenbrainzDialog">
-            <template #prepend>
-              <img :src="listenbrainzIcon" alt="" class="builder-icon" />
-            </template>
-            {{ $t('listenbrainz.title') }}
+            {{ $t('builder.title') }}
           </v-btn>
           <v-btn
             v-if="authStore.capabilities.smartPlaylistEditor"
@@ -121,7 +110,7 @@
       "
     />
 
-    <lastfm-playlist-dialog ref="lastfmDialog" />
+    <playlist-builder-dialog ref="builder" />
     <playlist-edit-dialog ref="editDialog" />
     <playlist-delete-dialog ref="deleteDialog" />
 
@@ -151,14 +140,13 @@
 import { useLibraryStore } from '@/stores/library'
 import EmptyState from '@/components/EmptyState.vue'
 import { useAuthStore } from '@/stores/auth'
-import { useLastfmStore } from '@/stores/lastfm'
 import { usePlaybackStore } from '@/stores/playback'
 import { matchesAllTerms } from '@/services/textSearch'
 import DetailHeader from '@/components/library/DetailHeader.vue'
 import PlaylistRow from '@/components/library/PlaylistRow.vue'
 import RowSkeleton from '@/components/library/RowSkeleton.vue'
 import PlaylistEditDialog from '@/components/library/PlaylistEditDialog.vue'
-import LastfmPlaylistDialog from '@/components/library/LastfmPlaylistDialog.vue'
+import PlaylistBuilderDialog from '@/components/library/PlaylistBuilderDialog.vue'
 import PlaylistDeleteDialog from '@/components/library/PlaylistDeleteDialog.vue'
 import StickyFilter from '@/components/StickyFilter.vue'
 import { isOwnedBy } from '@/services/library/playlistOwnership'
@@ -168,14 +156,6 @@ import type { Playlist } from '@/types/library'
 // No real count to key off yet — the list they stand in for is exactly what
 // hasn't arrived — so this is a plain number.
 const SKELETON_ROWS = 5
-
-// The services' own marks, relative rather than absolute for the reason
-// externalArtistLinks.ts spells out: public/ assets are copied next to
-// index.html, and the packaged desktop build loads that over file://,
-// where a leading '/' resolves against the filesystem root. ListenBrainz's
-// is the colour-stripped variant, so it takes the button's own colour.
-const LASTFM_ICON = './lastfm.svg'
-const LISTENBRAINZ_ICON = './listenbrainz-mono.svg'
 
 let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -187,15 +167,13 @@ export default {
     PlaylistRow,
     RowSkeleton,
     PlaylistEditDialog,
-    LastfmPlaylistDialog,
+    PlaylistBuilderDialog,
     PlaylistDeleteDialog,
     StickyFilter,
   },
   data() {
     return {
       SKELETON_ROWS,
-      lastfmIcon: LASTFM_ICON,
-      listenbrainzIcon: LISTENBRAINZ_ICON,
       createDialog: false,
       newPlaylistName: '',
       filterQuery: '',
@@ -211,9 +189,6 @@ export default {
     },
     authStore() {
       return useAuthStore()
-    },
-    lastfmStore() {
-      return useLastfmStore()
     },
     showSkeletons(): boolean {
       return this.libraryStore.loading && this.libraryStore.playlists.length === 0
@@ -247,18 +222,10 @@ export default {
   },
   created() {
     this.libraryStore.fetchPlaylists()
-    // Answered once per session and cached in the store - this only ever
-    // decides whether the button is there.
-    void this.lastfmStore.checkConfigured()
   },
   methods: {
-    openLastfmDialog(): void {
-      ;(this.$refs.lastfmDialog as { open: (source?: string) => void } | undefined)?.open('lastfm')
-    },
-    openListenbrainzDialog(): void {
-      ;(this.$refs.lastfmDialog as { open: (source?: string) => void } | undefined)?.open(
-        'listenbrainz',
-      )
+    openBuilder(): void {
+      ;(this.$refs.builder as { open: () => void } | undefined)?.open()
     },
     async playPlaylist(playlist: Playlist) {
       // getPlaylists.view (the list this view renders) doesn't include each
@@ -322,12 +289,5 @@ export default {
   align-items: center;
   flex-wrap: wrap;
   gap: 8px;
-}
-
-/* The service's own mark, sized to Vuetify's icon slot rather than the
- * 800px canvas the Last.fm file was exported at. */
-.builder-icon {
-  width: 18px;
-  height: 18px;
 }
 </style>

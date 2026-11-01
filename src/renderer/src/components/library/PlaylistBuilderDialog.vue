@@ -3,8 +3,8 @@
     <v-card class="beacon-dialog">
       <v-card-title class="dialog-head">
         <div class="dialog-head__text">
-          <span class="eyebrow-label">{{ $t('lastfm.eyebrow') }}</span>
-          <h2 class="display-title dialog-head__title">{{ dialogTitle }}</h2>
+          <span class="eyebrow-label">{{ $t('builder.eyebrow') }}</span>
+          <h2 class="display-title dialog-head__title">{{ $t('builder.title') }}</h2>
         </div>
         <v-btn
           icon="mdi-close"
@@ -19,6 +19,11 @@
         <!-- Step 1: what to fetch. Stays mounted behind the result list so
          - going back doesn't lose what was typed. -->
         <div v-if="step === 'form'" class="form">
+          <segmented-control
+            v-model="source"
+            :options="providerOptions"
+            :label="$t('builder.provider')"
+          />
           <v-select
             v-model="op"
             :items="sourceOptions"
@@ -28,7 +33,21 @@
           />
 
           <template v-if="op === 'charts'">
-            <template v-if="source === 'lastfm'">
+            <!-- Deezer's genres are its own fixed list, not free tags, and
+             - its chart has no country to pick: it is the server's. -->
+            <v-select
+              v-if="source === 'deezer'"
+              v-model="deezerGenre"
+              :items="deezerGenreItems"
+              item-title="name"
+              item-value="id"
+              :label="$t('deezer.genre')"
+              :hint="$t('deezer.chartHint')"
+              :loading="deezerGenresLoading"
+              persistent-hint
+              variant="solo-filled"
+            />
+            <template v-else-if="source === 'lastfm'">
               <v-select
                 v-model="chartScope"
                 :items="chartScopeOptions"
@@ -235,7 +254,7 @@
                - phone, where the pair stacks and the arrow says it. -->
               <div class="tracks-head">
                 <span />
-                <span class="column-label">{{ sourceColumnLabel }}</span>
+                <span class="column-label">{{ providerName }}</span>
                 <span class="tracks-head__gap" />
                 <span class="column-label">{{ $t('lastfm.columnLibrary') }}</span>
               </div>
@@ -385,6 +404,14 @@ import CoverArt from './CoverArt.vue'
 import { ConnectApiError } from '@/services/connect/http'
 import { useLastfmStore } from '@/stores/lastfm'
 import { useListenbrainzStore } from '@/stores/listenbrainz'
+import SegmentedControl, { type SegmentedOption } from '@/components/SegmentedControl.vue'
+import {
+  getDeezerGenres,
+  getDeezerTracks,
+  type DeezerGenre,
+  type DeezerOp,
+} from '@/services/connect/deezer'
+import { getLocale } from '@/i18n'
 import { getLastfmTracks, type LastfmOp, type LastfmPeriod } from '@/services/connect/lastfm'
 import {
   getListenbrainzTracks,
@@ -408,10 +435,39 @@ import {
   type CountryDividerItem,
 } from '@/services/recentCountries'
 
-/** Which service the builder reads from. Last.fm is the original and the
- * default; ListenBrainz shares the whole matcher/result/creation half and
- * differs only in which backend query it sends (see search()). */
-type BuilderSource = 'lastfm' | 'listenbrainz'
+/** Which service the builder reads from. All three share the whole
+ * matcher/result/creation half and differ only in which backend query they
+ * send (see search()). */
+type BuilderSource = 'deezer' | 'lastfm' | 'listenbrainz'
+type BuilderOp = LastfmOp | ListenbrainzOp | DeezerOp
+
+// Service names are brands, not copy, so they are not translated.
+const PROVIDER_NAMES: Record<BuilderSource, string> = {
+  deezer: 'Deezer',
+  lastfm: 'Last.fm',
+  listenbrainz: 'ListenBrainz',
+}
+
+// The service picked last, so the builder opens on it again. A per-device
+// convenience, not an account setting.
+const PROVIDER_KEY = 'beacon.playlist-builder-provider'
+
+function loadProvider(): BuilderSource | null {
+  try {
+    const stored = localStorage.getItem(PROVIDER_KEY)
+    return stored && stored in PROVIDER_NAMES ? (stored as BuilderSource) : null
+  } catch {
+    return null
+  }
+}
+
+function saveProvider(source: BuilderSource): void {
+  try {
+    localStorage.setItem(PROVIDER_KEY, source)
+  } catch {
+    // Only costs opening on the default next time.
+  }
+}
 
 // Common Last.fm tags, offered as suggestions rather than as the only
 // choices - the field is a combobox, and anything typed into it is sent
@@ -459,9 +515,10 @@ const GENRE_SUGGESTIONS = [
 ]
 
 /**
- * Filling a new playlist from Last.fm: a chart, a genre's top tracks, one
- * artist's top tracks, or a listening history, matched against what this
- * library actually holds (services/library/lastfmMatcher.ts).
+ * Filling a new playlist from Deezer, Last.fm or ListenBrainz: a chart, a
+ * genre's top tracks, one artist's top tracks, or a listening history,
+ * matched against what this library actually holds
+ * (services/library/lastfmMatcher.ts).
  *
  * Two steps in one dialog rather than a wizard, because the result is only
  * worth showing as something to approve: a chart import is a guess about
@@ -469,8 +526,8 @@ const GENRE_SUGGESTIONS = [
  * point at which that guess is either accepted or thrown away.
  */
 export default {
-  name: 'LastfmPlaylistDialog',
-  components: { CoverArt },
+  name: 'PlaylistBuilderDialog',
+  components: { CoverArt, SegmentedControl },
   data() {
     return {
       GENRE_SUGGESTIONS,
@@ -481,8 +538,11 @@ export default {
       queueing: false,
       error: '',
 
-      source: 'lastfm' as BuilderSource,
-      op: 'charts' as LastfmOp | ListenbrainzOp,
+      source: 'deezer' as BuilderSource,
+      op: 'charts' as BuilderOp,
+      deezerGenre: 0,
+      deezerGenres: [] as DeezerGenre[],
+      deezerGenresLoading: false,
       chartScope: 'country' as 'country' | 'global',
       country: '',
       tag: '',
@@ -552,15 +612,23 @@ export default {
     listenbrainzStore() {
       return useListenbrainzStore()
     },
-    dialogTitle(): string {
-      return this.source === 'listenbrainz'
-        ? this.$t('listenbrainz.title')
-        : this.$t('lastfm.title')
+    providerName(): string {
+      return PROVIDER_NAMES[this.source]
     },
-    sourceColumnLabel(): string {
-      return this.source === 'listenbrainz'
-        ? this.$t('listenbrainz.columnListenbrainz')
-        : this.$t('lastfm.columnLastfm')
+    /** Last.fm only once connect has a key for it - without one every
+     * query could only fail. */
+    providerOptions(): SegmentedOption[] {
+      const sources: BuilderSource[] = this.lastfmStore.configured
+        ? ['deezer', 'lastfm', 'listenbrainz']
+        : ['deezer', 'listenbrainz']
+      return sources.map((value) => ({ title: PROVIDER_NAMES[value], value }))
+    },
+    /** Until the list arrives (or when it cannot), the overall chart is
+     * still there to pick. */
+    deezerGenreItems(): DeezerGenre[] {
+      return this.deezerGenres.length
+        ? this.deezerGenres
+        : [{ id: 0, name: this.$t('deezer.allGenres') }]
     },
     usernameLabel(): string {
       return this.source === 'listenbrainz'
@@ -577,7 +645,13 @@ export default {
         ? this.$t('listenbrainz.period')
         : this.$t('lastfm.period')
     },
-    sourceOptions(): { title: string; value: LastfmOp | ListenbrainzOp }[] {
+    sourceOptions(): { title: string; value: BuilderOp }[] {
+      if (this.source === 'deezer') {
+        return [
+          { title: this.$t('deezer.sourceCharts'), value: 'charts' },
+          { title: this.$t('deezer.sourceArtist'), value: 'artist' },
+        ]
+      }
       if (this.source === 'listenbrainz') {
         return [
           { title: this.$t('listenbrainz.sourceCharts'), value: 'charts' },
@@ -706,11 +780,7 @@ export default {
       return (this.progressDone / this.progressTotal) * 100
     },
     progressLabel(): string {
-      if (!this.progressTotal) {
-        return this.source === 'listenbrainz'
-          ? this.$t('listenbrainz.fetching')
-          : this.$t('lastfm.fetching')
-      }
+      if (!this.progressTotal) return this.$t('builder.fetching', { provider: this.providerName })
       return this.$t('lastfm.matching', {
         done: this.$n(this.progressDone),
         total: this.$n(this.progressTotal),
@@ -718,6 +788,16 @@ export default {
     },
   },
   watch: {
+    /** Switching service keeps what was typed but drops what the new one
+     * cannot do, and brings in that service's own username. */
+    source(source: BuilderSource) {
+      this.error = ''
+      if (!this.sourceOptions.some((option) => option.value === this.op)) this.op = 'charts'
+      if (source === 'listenbrainz') this.username = this.listenbrainzStore.username
+      else if (source === 'lastfm') this.username = this.lastfmStore.username
+      if (source === 'deezer') void this.loadDeezerGenres()
+      saveProvider(source)
+    },
     visible(open: boolean) {
       if (open) {
         this.abortSignal = { aborted: false }
@@ -731,8 +811,9 @@ export default {
     clearTimeout(this.seedSearchTimer)
   },
   methods: {
-    open(source: BuilderSource = 'lastfm'): void {
-      this.source = source
+    /** Opens on `source`, or else the service used last time. */
+    open(source?: BuilderSource): void {
+      this.source = source ?? loadProvider() ?? 'deezer'
       this.step = 'form'
       this.op = 'charts'
       this.error = ''
@@ -742,7 +823,17 @@ export default {
       this.seedOptions = []
       this.updateMode = 'append'
       this.username =
-        source === 'listenbrainz' ? this.listenbrainzStore.username : this.lastfmStore.username
+        this.source === 'listenbrainz'
+          ? this.listenbrainzStore.username
+          : this.source === 'lastfm'
+            ? this.lastfmStore.username
+            : ''
+      if (this.source === 'deezer') void this.loadDeezerGenres()
+      // Cached per session. A remembered Last.fm whose key has since gone
+      // falls back to Deezer rather than opening on a service that fails.
+      void this.lastfmStore.checkConfigured().then((configured) => {
+        if (!configured && this.source === 'lastfm') this.source = 'deezer'
+      })
       this.visible = true
       // The name field matches against these, so they have to be loaded
       // even when the dialog was opened somewhere other than the playlist
@@ -750,6 +841,20 @@ export default {
       // only costs the name suggestions, and the store has already recorded
       // it - without the catch this would surface as an unhandled rejection.
       void this.libraryStore.fetchPlaylists().catch(() => {})
+    },
+
+    /** Once per dialog: the genre list only changes with Deezer itself. A
+     * failure leaves the overall chart as the one choice. */
+    async loadDeezerGenres(): Promise<void> {
+      if (this.deezerGenres.length || this.deezerGenresLoading) return
+      this.deezerGenresLoading = true
+      try {
+        this.deezerGenres = await getDeezerGenres(getLocale())
+      } catch (error) {
+        console.error('[builder] Deezer genres failed:', error)
+      } finally {
+        this.deezerGenresLoading = false
+      }
     },
 
     /** The seed picker's display name - "Artist · Title", the pair a track
@@ -827,6 +932,14 @@ export default {
      * enough that three imports don't sit in the list as "Last.fm",
      * "Last.fm (1)" and "Last.fm (2)". */
     defaultName(): string {
+      if (this.source === 'deezer') {
+        if (this.op === 'artist')
+          return this.$t('deezer.nameArtist', { artist: this.artist.trim() })
+        const genre = this.deezerGenres.find((entry) => entry.id === this.deezerGenre)
+        return this.deezerGenre && genre
+          ? this.$t('deezer.nameGenreCharts', { genre: genre.name })
+          : this.$t('deezer.nameCharts')
+      }
       if (this.source === 'listenbrainz') {
         if (this.op === 'genre') {
           return this.$t('listenbrainz.nameGenre', { tag: this.tag.trim() })
@@ -879,43 +992,49 @@ export default {
         // that field belongs to the "top tracks of an artist" source.
         const seed = this.op === 'similar' ? this.seedSong : null
         const tracks =
-          this.source === 'listenbrainz'
-            ? await getListenbrainzTracks({
-                op: this.op as ListenbrainzOp,
+          this.source === 'deezer'
+            ? await getDeezerTracks({
+                op: this.op as DeezerOp,
                 limit: this.limit,
-                tag: this.tag.trim(),
+                genre: this.deezerGenre,
                 artist: this.artist.trim(),
-                username: this.username.trim(),
-                period: this.lbPeriod,
               })
-            : await getLastfmTracks({
-                op: this.op as LastfmOp,
-                limit: this.limit,
-                country:
-                  this.op === 'charts' && this.chartScope === 'country' ? this.country.trim() : '',
-                tag: this.tag.trim(),
-                artist: seed ? seed.artist : this.artist.trim(),
-                track: seed ? seed.title : '',
-                username: this.username.trim(),
-                period: this.period,
-              })
+            : this.source === 'listenbrainz'
+              ? await getListenbrainzTracks({
+                  op: this.op as ListenbrainzOp,
+                  limit: this.limit,
+                  tag: this.tag.trim(),
+                  artist: this.artist.trim(),
+                  username: this.username.trim(),
+                  period: this.lbPeriod,
+                })
+              : await getLastfmTracks({
+                  op: this.op as LastfmOp,
+                  limit: this.limit,
+                  country:
+                    this.op === 'charts' && this.chartScope === 'country'
+                      ? this.country.trim()
+                      : '',
+                  tag: this.tag.trim(),
+                  artist: seed ? seed.artist : this.artist.trim(),
+                  track: seed ? seed.title : '',
+                  username: this.username.trim(),
+                  period: this.period,
+                })
 
         // ListenBrainz deliberately does not write the name back: its
         // settings value also drives Home's "Recommended for you" shelf,
         // and typing a name here to look at someone else's charts must not
         // silently repoint that shelf. Last.fm has no such second reader,
         // so it keeps remembering what was typed.
-        if (this.source !== 'listenbrainz') {
+        if (this.source === 'lastfm') {
           if (this.op === 'mytop') this.lastfmStore.setUsername(this.username)
           this.rememberCountry()
         }
         if (this.abortSignal.aborted) return
 
         if (tracks.length === 0) {
-          this.error =
-            this.source === 'listenbrainz'
-              ? this.$t('listenbrainz.noTracks')
-              : this.$t('lastfm.noTracks')
+          this.error = this.$t('builder.noTracks', { provider: this.providerName })
           this.step = 'form'
           return
         }
@@ -934,9 +1053,7 @@ export default {
       } catch (error) {
         this.error = this.messageFor(
           error,
-          this.source === 'listenbrainz'
-            ? this.$t('listenbrainz.failed')
-            : this.$t('lastfm.failed'),
+          this.$t('builder.failed', { provider: this.providerName }),
         )
         this.step = 'form'
       } finally {

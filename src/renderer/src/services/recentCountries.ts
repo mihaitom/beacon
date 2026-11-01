@@ -3,7 +3,7 @@
  * in every country picker in the app.
  *
  * Shared by the radio station directory (RadioDiscoverDialog.vue) and the
- * Last.fm playlist builder (LastfmPlaylistDialog.vue), and deliberately one
+ * Last.fm playlist builder (PlaylistBuilderDialog.vue), and deliberately one
  * list rather than one per picker: a household listens to the same two or
  * three countries whichever of the two it is looking at, and having picked
  * "Ireland" for stations is a good reason to offer it for charts too.
