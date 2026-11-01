@@ -995,6 +995,13 @@ export default {
   deezer: {
     sourceCharts: 'Listas de éxitos',
     sourceArtist: 'Top de un artista',
+    sourceRadio: 'Mezcla en torno a un artista',
+    sourcePlaylist: 'Una lista de Deezer',
+    playlist: 'Lista',
+    playlistPlaceholder: 'Busca en Deezer o pega un enlace…',
+    noPlaylists: 'No se han encontrado listas',
+    playlistMeta: '{count} canciones · {owner}',
+    nameRadio: 'Radio de {artist}',
     genre: 'Género',
     allGenres: 'Todos los géneros',
     chartHint: 'Los éxitos del país donde está el servidor de Beacon.',
@@ -1292,9 +1299,9 @@ export default {
       deezer: {
         name: 'Deezer',
         purpose:
-          'Busca una foto y una página de artista para un artista sugerido, y para la página de artista que tengas abierta, estén o no activadas las recomendaciones, y llena una lista con los éxitos de Deezer o el top de un artista.',
+          'Busca una foto y una página de artista para un artista sugerido, y para la página de artista que tengas abierta, estén o no activadas las recomendaciones, y llena una lista con los éxitos de Deezer, el top o la mezcla de un artista, o una lista de Deezer.',
         sends:
-          'El nombre del artista consultado: uno sugerido, aquel cuya página tienes abierta o el que pediste en el generador de listas. Para los éxitos solo el género; Deezer deduce el país de dónde está el servidor de Beacon.',
+          'El nombre del artista consultado: uno sugerido, aquel cuya página tienes abierta o el que pediste en el generador de listas, y lo que escribes en su búsqueda de listas. Para los éxitos solo el género; Deezer deduce el país de dónde está el servidor de Beacon.',
       },
       wikidata: {
         name: 'Wikidata',

@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
-- The playlist builder can fill a playlist from Deezer's current charts, overall or by genre, or from an artist's top tracks, with no key or setup
+- The playlist builder can fill a playlist from Deezer with no key or setup: its current charts, overall or by genre, an artist's top tracks, a mix around an artist, or any public Deezer playlist, found by name, picked from the popular ones or pasted as a link
 
 ### Changed
 

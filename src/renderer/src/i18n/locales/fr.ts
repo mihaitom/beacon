@@ -1000,6 +1000,13 @@ export default {
   deezer: {
     sourceCharts: 'Classements',
     sourceArtist: 'Top titres d’un artiste',
+    sourceRadio: 'Mix autour d’un artiste',
+    sourcePlaylist: 'Une playlist Deezer',
+    playlist: 'Playlist',
+    playlistPlaceholder: 'Chercher sur Deezer ou coller un lien…',
+    noPlaylists: 'Aucune playlist trouvée',
+    playlistMeta: '{count} titres · {owner}',
+    nameRadio: 'Radio {artist}',
     genre: 'Genre',
     allGenres: 'Tous les genres',
     chartHint: 'Le classement du pays où se trouve le serveur de Beacon.',
@@ -1298,9 +1305,9 @@ export default {
       deezer: {
         name: 'Deezer',
         purpose:
-          "Recherche une photo et une page d'artiste pour un artiste suggéré, ainsi que pour la page d'artiste que vous avez ouverte, que les recommandations soient activées ou non, et remplit une playlist avec les classements Deezer ou les top titres d'un artiste.",
+          "Recherche une photo et une page d'artiste pour un artiste suggéré, ainsi que pour la page d'artiste que vous avez ouverte, que les recommandations soient activées ou non, et remplit une playlist avec les classements Deezer, les top titres ou le mix d'un artiste, ou une playlist Deezer.",
         sends:
-          "Le nom de l'artiste recherché : un artiste suggéré, celui dont vous avez ouvert la page, ou celui demandé au générateur de playlists. Pour un classement, seulement le genre ; Deezer déduit le pays de l'emplacement du serveur de Beacon.",
+          "Le nom de l'artiste recherché : un artiste suggéré, celui dont vous avez ouvert la page, ou celui demandé au générateur de playlists, et ce que vous tapez dans sa recherche de playlists. Pour un classement, seulement le genre ; Deezer déduit le pays de l'emplacement du serveur de Beacon.",
       },
       wikidata: {
         name: 'Wikidata',

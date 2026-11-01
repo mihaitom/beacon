@@ -165,3 +165,124 @@ def test_genres_route(client):
     with _patch_get({"data": [{"id": 0, "name": "Alle"}]}):
         resp = client.get("/deezer/genres", params={"lang": "de"})
     assert resp.json() == {"genres": [{"id": 0, "name": "Alle"}]}
+
+
+# ── radio and playlists ──────────────────────────────────────────────────────
+
+
+async def test_radio_resolves_the_artist_and_asks_for_its_radio():
+    search = {"data": [{"id": 27, "name": "Daft Punk", "nb_fan": 1}]}
+    with _patch_get(search, {"data": [_track("Chase", "Giorgio Moroder")]}) as get:
+        tracks = await deezer.get_artist_radio("Daft Punk", 30)
+    assert get.call_args_list[1].args[0].endswith("/artist/27/radio")
+    assert tracks[0]["artist"] == "Giorgio Moroder"
+
+
+async def test_an_unknown_id_is_not_found_rather_than_upstream():
+    no_data = {"error": {"type": "DataException", "message": "no data", "code": 800}}
+    with _patch_get(no_data), pytest.raises(deezer.DeezerError) as e:
+        await deezer.get_playlist_tracks(1)
+    assert e.value.not_found
+
+
+async def test_playlist_is_fetched_whole_not_cut_to_the_track_count():
+    with _patch_get({"data": []}) as get:
+        await deezer.get_playlist_tracks(42)
+    assert get.call_args.args[0].endswith("/playlist/42/tracks")
+    assert get.call_args.kwargs["params"] == {"limit": deezer._MAX_PLAYLIST_TRACKS}
+
+
+def _playlist_entry(playlist_id: int, title: str, owner_key: str = "user") -> dict:
+    return {
+        "id": playlist_id,
+        "title": title,
+        "nb_tracks": 50,
+        "picture_medium": "https://img/p.jpg",
+        owner_key: {"name": "Deezer Editor"},
+    }
+
+
+async def test_empty_query_lists_the_popular_playlists():
+    with _patch_get({"data": [_playlist_entry(1, "Hits"), {"id": 2, "title": ""}]}) as get:
+        found = await deezer.search_playlists("")
+    assert get.call_args.args[0].endswith("/chart/0/playlists")
+    assert found == [
+        {
+            "id": 1,
+            "title": "Hits",
+            "owner": "Deezer Editor",
+            "trackCount": 50,
+            "pictureUrl": "https://img/p.jpg",
+        }
+    ]
+
+
+async def test_a_query_searches_playlists():
+    with _patch_get({"data": [_playlist_entry(3, "Deep House")]}) as get:
+        found = await deezer.search_playlists("deep house")
+    assert get.call_args.args[0].endswith("/search/playlist")
+    assert get.call_args.kwargs["params"]["q"] == "deep house"
+    assert [p["title"] for p in found] == ["Deep House"]
+
+
+async def test_a_pasted_link_finds_that_one_playlist():
+    with _patch_get(_playlist_entry(5648610682, "Chill House", owner_key="creator")) as get:
+        found = await deezer.search_playlists("https://www.deezer.com/de/playlist/5648610682?x=1")
+    assert get.call_args.args[0].endswith("/playlist/5648610682")
+    assert found[0]["owner"] == "Deezer Editor"
+
+
+async def test_a_share_link_is_followed_to_the_playlist():
+    redirect = httpx.Response(
+        302,
+        headers={"location": "https://www.deezer.com/en/playlist/77?utm_source=share"},
+        request=httpx.Request("GET", "https://link.deezer.com/s/abc"),
+    )
+    responses = [redirect, _response(_playlist_entry(77, "Shared"))]
+    with patch.object(deezer._client, "get", AsyncMock(side_effect=responses)) as get:
+        found = await deezer.search_playlists("https://link.deezer.com/s/abc")
+    assert get.call_args_list[0].kwargs == {"follow_redirects": False}
+    assert [p["id"] for p in found] == [77]
+
+
+async def test_a_link_elsewhere_is_never_fetched():
+    with patch.object(deezer._client, "get", AsyncMock()) as get:
+        found = await deezer.search_playlists("http://192.168.1.1/playlist/5")
+    assert found == []
+    get.assert_not_called()
+
+
+async def test_a_share_link_redirecting_off_deezer_is_not_followed_further():
+    redirect = httpx.Response(
+        302,
+        headers={"location": "https://evil.example/playlist/5"},
+        request=httpx.Request("GET", "https://link.deezer.com/s/abc"),
+    )
+    with patch.object(deezer._client, "get", AsyncMock(return_value=redirect)) as get:
+        found = await deezer.search_playlists("https://link.deezer.com/s/abc")
+    assert found == []
+    assert get.call_count == 1
+
+
+async def test_a_deezer_link_that_is_not_a_playlist_says_so():
+    with pytest.raises(deezer.DeezerError) as e:
+        await deezer.search_playlists("https://www.deezer.com/de/album/123")
+    assert e.value.not_found
+
+
+def test_songs_route_radio_and_playlist(client):
+    search = {"data": [{"id": 27, "name": "Daft Punk"}]}
+    with _patch_get(search, {"data": [_track("Chase", "Giorgio Moroder")]}):
+        resp = client.get("/deezer/songs", params={"op": "radio", "artist": "Daft Punk"})
+    assert resp.json()["tracks"][0]["title"] == "Chase"
+
+    assert client.get("/deezer/songs", params={"op": "playlist"}).status_code == 422
+    with _patch_get({"data": [_track("Believe", "Cher")]}):
+        resp = client.get("/deezer/songs", params={"op": "playlist", "playlist": 9})
+    assert resp.json()["tracks"][0]["artist"] == "Cher"
+
+
+def test_playlists_route(client):
+    with _patch_get({"data": [_playlist_entry(1, "Hits")]}):
+        resp = client.get("/deezer/playlists")
+    assert resp.json()["playlists"][0]["title"] == "Hits"

@@ -984,6 +984,13 @@ export default {
   deezer: {
     sourceCharts: 'Charts',
     sourceArtist: 'Top tracks of an artist',
+    sourceRadio: 'Mix around an artist',
+    sourcePlaylist: 'A Deezer playlist',
+    playlist: 'Playlist',
+    playlistPlaceholder: 'Search Deezer or paste a link…',
+    noPlaylists: 'No playlists found',
+    playlistMeta: '{count} tracks · {owner}',
+    nameRadio: '{artist} radio',
     genre: 'Genre',
     allGenres: 'All genres',
     chartHint: "The charts of the country Beacon's server is in.",
@@ -1280,9 +1287,9 @@ export default {
       deezer: {
         name: 'Deezer',
         purpose:
-          "Finding a photo and an artist page for a suggested artist and for the artist page you have open, whether or not recommendations are on, and filling a playlist from Deezer's charts or an artist's top tracks.",
+          "Finding a photo and an artist page for a suggested artist and for the artist page you have open, whether or not recommendations are on, and filling a playlist from Deezer's charts, an artist's top tracks or mix, or a Deezer playlist.",
         sends:
-          "The name of the artist being looked up: a suggested one, the one whose page you have open, or the one you asked the playlist builder for. A chart sends only the genre; Deezer picks the country from where Beacon's server is.",
+          "The name of the artist being looked up: a suggested one, the one whose page you have open, or the one you asked the playlist builder for, and what you type into its playlist search. A chart sends only the genre; Deezer picks the country from where Beacon's server is.",
       },
       wikidata: {
         name: 'Wikidata',

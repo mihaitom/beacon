@@ -847,6 +847,113 @@ describe('PlaylistBuilderDialog', () => {
     })
   })
 
+  describe('Deezer radio and playlists', () => {
+    const playlist = {
+      id: 77,
+      title: 'Deep House',
+      owner: 'Deezer Editor',
+      trackCount: 100,
+      pictureUrl: '',
+    }
+
+    async function openDeezer() {
+      const wrapper = mount(PlaylistBuilderDialog, { global: globalOptions })
+      const vm = wrapper.vm as unknown as Record<string, unknown> & {
+        open: (s?: string) => void
+        search: () => Promise<void>
+        onPlaylistSearch: (value: string) => void
+        searchPlaylists: () => Promise<void>
+      }
+      vm.open('deezer')
+      await flushPromises()
+      return { wrapper, vm }
+    }
+
+    function dzTrack(title: string, artist: string) {
+      return { title, artist, mbid: '', album: '', coverArtUrl: '', duration: 0 }
+    }
+
+    it('asks for an artist radio and names the playlist after it', async () => {
+      const getTracks = vi
+        .spyOn(deezerApi, 'getDeezerTracks')
+        .mockResolvedValue([dzTrack('Chase', 'Giorgio Moroder')])
+      stubSearch([makeSong('s1', { title: 'Chase', artist: 'Giorgio Moroder' })])
+
+      const { vm } = await openDeezer()
+      vm.op = 'radio'
+      vm.artist = 'Daft Punk'
+      await vm.search()
+      await flushPromises()
+
+      expect(getTracks).toHaveBeenCalledWith(
+        expect.objectContaining({ op: 'radio', artist: 'Daft Punk' }),
+      )
+      expect(vm.playlistName).toBe(i18n.global.t('deezer.nameRadio', { artist: 'Daft Punk' }))
+    })
+
+    it('opens the playlist picker on the popular playlists', async () => {
+      const search = vi.spyOn(deezerApi, 'searchDeezerPlaylists').mockResolvedValue([playlist])
+      stubSearch([])
+
+      const { vm } = await openDeezer()
+      vm.op = 'playlist'
+      await flushPromises()
+
+      expect(search).toHaveBeenCalledWith('')
+      expect(vm.playlistOptions).toEqual([playlist])
+      // Nothing picked yet, so there is nothing to search with.
+      expect(vm.canSearch).toBe(false)
+    })
+
+    it('picks the playlist behind a pasted link straight away', async () => {
+      vi.spyOn(deezerApi, 'searchDeezerPlaylists').mockResolvedValue([playlist])
+      stubSearch([])
+
+      const { vm } = await openDeezer()
+      vm.op = 'playlist'
+      await flushPromises()
+      vm.onPlaylistSearch('https://www.deezer.com/playlist/77')
+      await vm.searchPlaylists()
+
+      expect(vm.deezerPlaylist).toEqual(playlist)
+    })
+
+    it('does not pick the only result of a typed search on its own', async () => {
+      vi.spyOn(deezerApi, 'searchDeezerPlaylists').mockResolvedValue([playlist])
+      stubSearch([])
+
+      const { vm } = await openDeezer()
+      vm.op = 'playlist'
+      await flushPromises()
+      vm.onPlaylistSearch('deep house')
+      await vm.searchPlaylists()
+
+      expect(vm.deezerPlaylist).toBeNull()
+    })
+
+    it('fetches the picked playlist whole and names the result after it', async () => {
+      vi.spyOn(deezerApi, 'searchDeezerPlaylists').mockResolvedValue([playlist])
+      const getTracks = vi
+        .spyOn(deezerApi, 'getDeezerTracks')
+        .mockResolvedValue([dzTrack('Song', 'Someone')])
+      stubSearch([makeSong('s1', { title: 'Song', artist: 'Someone' })])
+
+      const { vm } = await openDeezer()
+      vm.op = 'playlist'
+      await flushPromises()
+      // The track count belongs to the other sources - a playlist has none.
+      expect(document.querySelector('.limit')).toBeNull()
+      vm.deezerPlaylist = playlist
+      await vm.search()
+      await flushPromises()
+
+      expect(getTracks).toHaveBeenCalledWith(
+        expect.objectContaining({ op: 'playlist', playlist: 77 }),
+      )
+      expect(vm.playlistName).toBe('Deep House')
+    })
+  })
+
   // The ListenBrainz half shares the matcher, the result step and the
   // playlist creation with Last.fm — these only pin what is genuinely
   // different: which backend is asked, and which sources are offered.

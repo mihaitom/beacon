@@ -1,4 +1,4 @@
-"""routes/deezer.py — GET /deezer/songs and /deezer/genres
+"""routes/deezer.py — GET /deezer/songs, /deezer/playlists and /deezer/genres
 
 Machine-to-machine (CONNECT_TOKEN), like routes/listenbrainz.py: no session,
 no key, nothing to configure. See core/deezer.py.
@@ -20,21 +20,38 @@ router = APIRouter(prefix="/deezer", dependencies=[Depends(require_token)])
 # routes/lastfm.py).
 @router.get("/songs")
 async def songs(
-    op: Literal["charts", "artist"],
+    op: Literal["charts", "artist", "radio", "playlist"],
     limit: int = Query(default=50, ge=1, le=200),
     genre: int = 0,
     artist: str = "",
+    playlist: int = 0,
 ) -> dict:
     try:
         if op == "charts":
             result = await deezer.get_chart(genre, limit)
+        elif op == "playlist":
+            if not playlist:
+                raise HTTPException(status_code=422, detail="playlist needs a playlist id")
+            result = await deezer.get_playlist_tracks(playlist)
         else:
             if not artist.strip():
-                raise HTTPException(status_code=422, detail="artist needs an artist name")
-            result = await deezer.get_artist_top(artist.strip(), limit)
+                raise HTTPException(status_code=422, detail=f"{op} needs an artist name")
+            fetch = deezer.get_artist_top if op == "artist" else deezer.get_artist_radio
+            result = await fetch(artist.strip(), limit)
     except deezer.DeezerError as e:
         raise HTTPException(status_code=404 if e.not_found else 502, detail=str(e)) from e
     return {"tracks": result}
+
+
+@router.get("/playlists")
+async def playlists(q: str = "") -> dict:
+    """The builder's playlist picker: popular playlists, a search, or the
+    playlist behind a pasted Deezer link."""
+    try:
+        result = await deezer.search_playlists(q)
+    except deezer.DeezerError as e:
+        raise HTTPException(status_code=404 if e.not_found else 502, detail=str(e)) from e
+    return {"playlists": result}
 
 
 @router.get("/genres")

@@ -997,6 +997,13 @@ export default {
   deezer: {
     sourceCharts: 'Charts',
     sourceArtist: 'Top-Titel eines Künstlers',
+    sourceRadio: 'Mix rund um einen Künstler',
+    sourcePlaylist: 'Eine Deezer-Playlist',
+    playlist: 'Playlist',
+    playlistPlaceholder: 'Deezer durchsuchen oder Link einfügen…',
+    noPlaylists: 'Keine Playlists gefunden',
+    playlistMeta: '{count} Titel · {owner}',
+    nameRadio: '{artist} Radio',
     genre: 'Genre',
     allGenres: 'Alle Genres',
     chartHint: 'Die Charts des Landes, in dem Beacons Server steht.',
@@ -1293,9 +1300,9 @@ export default {
       deezer: {
         name: 'Deezer',
         purpose:
-          'Findet Foto und Künstlerseite zu einem vorgeschlagenen Künstler sowie zu der Künstlerseite, die du gerade geöffnet hast, unabhängig davon, ob Empfehlungen an sind, und füllt eine Playlist aus den Deezer-Charts oder den Top-Titeln eines Künstlers.',
+          'Findet Foto und Künstlerseite zu einem vorgeschlagenen Künstler sowie zu der Künstlerseite, die du gerade geöffnet hast, unabhängig davon, ob Empfehlungen an sind, und füllt eine Playlist aus den Deezer-Charts, den Top-Titeln oder dem Mix eines Künstlers oder einer Deezer-Playlist.',
         sends:
-          'Den Namen des nachgeschlagenen Künstlers: eines vorgeschlagenen, desjenigen, dessen Seite du geöffnet hast, oder des Künstlers, den du im Playlist-Baukasten angegeben hast. Für Charts nur das Genre; das Land leitet Deezer aus dem Standort von Beacons Server ab.',
+          'Den Namen des nachgeschlagenen Künstlers: eines vorgeschlagenen, desjenigen, dessen Seite du geöffnet hast, oder des Künstlers, den du im Playlist-Baukasten angegeben hast, und was du dort in die Playlist-Suche tippst. Für Charts nur das Genre; das Land leitet Deezer aus dem Standort von Beacons Server ab.',
       },
       wikidata: {
         name: 'Wikidata',

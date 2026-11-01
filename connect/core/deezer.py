@@ -1,5 +1,5 @@
-"""core/deezer.py — Deezer charts and an artist's top tracks, for the
-playlist builder.
+"""core/deezer.py — Deezer charts, an artist's top tracks or radio, and
+public Deezer playlists, for the playlist builder.
 
 Deezer's public API needs no key and no login, and its charts are the most
 current of the builder's sources: they follow what is being streamed right
@@ -14,6 +14,8 @@ that is the listener's own country.
 """
 
 import logging
+import re
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -32,6 +34,22 @@ _MAX_LIMIT = 200
 # "Audiobooks" is one of Deezer's chart genres. Beacon has no audiobooks,
 # so a chart of them could only ever match nothing.
 _EXCLUDED_GENRES = {457}
+
+# A playlist is matched against the library whole rather than cut to the
+# builder's track count - a curated list cut in half is not that list. This
+# only stops a 10,000-track user playlist from turning into 10,000 library
+# searches.
+_MAX_PLAYLIST_TRACKS = 500
+
+# Deezer's "no data" error code: an id that does not exist.
+_NO_DATA = 800
+
+_PLAYLIST_PATH = re.compile(r"/playlist/(\d+)")
+# Share links are short redirects to the real page. Only these hosts are
+# followed - a pasted link is user input, and connect must not fetch
+# whatever address it is handed.
+_SHARE_HOSTS = {"link.deezer.com", "deezer.page.link"}
+_DEEZER_HOSTS = {"deezer.com", "www.deezer.com"}
 
 _client = httpx.AsyncClient(timeout=_TIMEOUT, headers={"User-Agent": USER_AGENT})
 
@@ -66,8 +84,9 @@ async def _get(path: str, *, language: str = "", **params) -> dict:
     error = data.get("error")
     if error:
         message = error.get("message") if isinstance(error, dict) else str(error)
+        code = error.get("code") if isinstance(error, dict) else None
         logger.warning(f"[deezer] {path} -> {message}")
-        raise DeezerError(f"Deezer: {message}")
+        raise DeezerError(f"Deezer: {message}", not_found=code == _NO_DATA)
     return data
 
 
@@ -141,4 +160,80 @@ async def _find_artist(name: str) -> int:
 async def get_artist_top(artist: str, limit: int) -> list[dict]:
     artist_id = await _find_artist(artist)
     data = await _get(f"/artist/{artist_id}/top", limit=_clamp(limit))
+    return _tracks(data)
+
+
+async def get_artist_radio(artist: str, limit: int) -> list[dict]:
+    """Deezer's mix of the artist and acts like them - newly shuffled on
+    every call, so a second run gives a different playlist."""
+    artist_id = await _find_artist(artist)
+    data = await _get(f"/artist/{artist_id}/radio", limit=_clamp(limit))
+    return _tracks(data)
+
+
+def _playlist(entry: dict) -> dict | None:
+    playlist_id = entry.get("id")
+    title = (entry.get("title") or "").strip()
+    if not isinstance(playlist_id, int) or not title:
+        return None
+    # A search result names its owner "user", a playlist fetched by id
+    # "creator".
+    owner = entry.get("user") or entry.get("creator") or {}
+    track_count = entry.get("nb_tracks")
+    return {
+        "id": playlist_id,
+        "title": title,
+        "owner": (owner.get("name") or "").strip(),
+        "trackCount": track_count if isinstance(track_count, int) else 0,
+        "pictureUrl": entry.get("picture_medium") or "",
+    }
+
+
+async def _playlist_id_from_link(text: str) -> int | None:
+    """The playlist id in a pasted Deezer link, following a share link's
+    redirect to find it. None when the text is not a Deezer link at all."""
+    url = text.strip()
+    host = (urlsplit(url).hostname or "").lower()
+    if host in _SHARE_HOSTS:
+        for _ in range(3):
+            try:
+                resp = await _client.get(url, follow_redirects=False)
+            except httpx.HTTPError as e:
+                raise DeezerError(f"Deezer request failed: {e}") from e
+            location = resp.headers.get("location")
+            if not resp.is_redirect or not location:
+                break
+            url = location
+            host = (urlsplit(url).hostname or "").lower()
+            if host not in _SHARE_HOSTS:
+                break
+    if host not in _DEEZER_HOSTS:
+        return None
+    match = _PLAYLIST_PATH.search(urlsplit(url).path)
+    if not match:
+        raise DeezerError("That Deezer link is not a playlist", not_found=True)
+    return int(match.group(1))
+
+
+async def search_playlists(query: str, limit: int = 25) -> list[dict]:
+    """Public Deezer playlists for the builder's picker: the most popular
+    ones for an empty query, a search otherwise, and the one playlist when
+    the query is a pasted Deezer link."""
+    query = query.strip()
+    if query.lower().startswith(("http://", "https://")):
+        playlist_id = await _playlist_id_from_link(query)
+        if playlist_id is None:
+            return []
+        found = _playlist(await _get(f"/playlist/{playlist_id}"))
+        return [found] if found else []
+    if query:
+        data = await _get("/search/playlist", q=query, limit=limit)
+    else:
+        data = await _get("/chart/0/playlists", limit=limit)
+    entries = (_playlist(e) for e in data.get("data") or [] if isinstance(e, dict))
+    return [entry for entry in entries if entry]
+
+
+async def get_playlist_tracks(playlist_id: int) -> list[dict]:
+    data = await _get(f"/playlist/{int(playlist_id)}/tracks", limit=_MAX_PLAYLIST_TRACKS)
     return _tracks(data)

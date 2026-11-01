@@ -99,12 +99,56 @@
           />
 
           <v-text-field
-            v-if="op === 'artist'"
+            v-if="op === 'artist' || op === 'radio'"
             v-model="artist"
             :label="$t('lastfm.artist')"
             variant="solo-filled"
             hide-details
           />
+
+          <!-- A search box that starts out listing Deezer's popular
+           - playlists, and takes a pasted Deezer link as well as a name. -->
+          <v-autocomplete
+            v-if="op === 'playlist'"
+            v-model="deezerPlaylist"
+            :search="playlistQuery"
+            :items="playlistOptions"
+            item-title="title"
+            :loading="playlistSearching"
+            :label="$t('deezer.playlist')"
+            :placeholder="$t('deezer.playlistPlaceholder')"
+            variant="solo-filled"
+            hide-details
+            no-filter
+            return-object
+            clearable
+            @update:search="onPlaylistSearch"
+          >
+            <template #no-data>
+              <v-list-item>
+                <v-list-item-title class="text-medium-emphasis">
+                  {{ playlistSearching ? $t('common.loading') : $t('deezer.noPlaylists') }}
+                </v-list-item-title>
+              </v-list-item>
+            </template>
+            <template #item="{ props: optionProps, item }">
+              <v-list-item
+                v-bind="optionProps"
+                :title="item.title"
+                :subtitle="
+                  $t('deezer.playlistMeta', { count: $n(item.trackCount), owner: item.owner })
+                "
+              >
+                <template #prepend>
+                  <img
+                    :src="item.pictureUrl"
+                    alt=""
+                    class="seed-option__art playlist-option__art"
+                  />
+                </template>
+              </v-list-item>
+            </template>
+          </v-autocomplete>
 
           <!-- Similar to a track of your own. The seed is picked from the
            - library rather than typed as free text, so what Last.fm is
@@ -172,7 +216,9 @@
             />
           </template>
 
-          <div class="limit">
+          <!-- A playlist is matched whole: cutting a curated list short
+           - would not be that list any more. -->
+          <div v-if="op !== 'playlist'" class="limit">
             <div class="limit__head">
               <span class="eyebrow-label">{{ $t('lastfm.limit') }}</span>
               <span class="limit__value">{{ limit }}</span>
@@ -408,8 +454,10 @@ import SegmentedControl, { type SegmentedOption } from '@/components/SegmentedCo
 import {
   getDeezerGenres,
   getDeezerTracks,
+  searchDeezerPlaylists,
   type DeezerGenre,
   type DeezerOp,
+  type DeezerPlaylist,
 } from '@/services/connect/deezer'
 import { getLocale } from '@/i18n'
 import { getLastfmTracks, type LastfmOp, type LastfmPeriod } from '@/services/connect/lastfm'
@@ -555,6 +603,13 @@ export default {
       seedSearching: false,
       seedSeq: 0,
       seedSearchTimer: undefined as ReturnType<typeof setTimeout> | undefined,
+      // The Deezer playlist picker, built the same way as the seed picker.
+      deezerPlaylist: null as DeezerPlaylist | null,
+      playlistQuery: '',
+      playlistOptions: [] as DeezerPlaylist[],
+      playlistSearching: false,
+      playlistSeq: 0,
+      playlistSearchTimer: undefined as ReturnType<typeof setTimeout> | undefined,
       username: '',
       period: '1month' as LastfmPeriod,
       lbPeriod: 'month' as ListenbrainzPeriod,
@@ -650,6 +705,8 @@ export default {
         return [
           { title: this.$t('deezer.sourceCharts'), value: 'charts' },
           { title: this.$t('deezer.sourceArtist'), value: 'artist' },
+          { title: this.$t('deezer.sourceRadio'), value: 'radio' },
+          { title: this.$t('deezer.sourcePlaylist'), value: 'playlist' },
         ]
       }
       if (this.source === 'listenbrainz') {
@@ -710,7 +767,8 @@ export default {
     canSearch(): boolean {
       if (this.busy) return false
       if (this.op === 'genre') return !!this.tag.trim()
-      if (this.op === 'artist') return !!this.artist.trim()
+      if (this.op === 'artist' || this.op === 'radio') return !!this.artist.trim()
+      if (this.op === 'playlist') return !!this.deezerPlaylist
       if (this.op === 'similar') return !!this.seedSong
       if (this.op === 'mytop' || this.op === 'recommended') return !!this.username.trim()
       if (this.op === 'charts' && this.source === 'lastfm' && this.chartScope === 'country') {
@@ -788,6 +846,11 @@ export default {
     },
   },
   watch: {
+    /** The picker is not empty before anything is typed: it opens on
+     * Deezer's popular playlists. */
+    op(op: BuilderOp) {
+      if (op === 'playlist' && !this.playlistOptions.length) void this.searchPlaylists()
+    },
     /** Switching service keeps what was typed but drops what the new one
      * cannot do, and brings in that service's own username. */
     source(source: BuilderSource) {
@@ -809,6 +872,7 @@ export default {
   beforeUnmount() {
     clearTimeout(this.copyResetTimer)
     clearTimeout(this.seedSearchTimer)
+    clearTimeout(this.playlistSearchTimer)
   },
   methods: {
     /** Opens on `source`, or else the service used last time. */
@@ -821,6 +885,8 @@ export default {
       this.seedSong = null
       this.seedQuery = ''
       this.seedOptions = []
+      this.deezerPlaylist = null
+      this.playlistQuery = ''
       this.updateMode = 'append'
       this.username =
         this.source === 'listenbrainz'
@@ -854,6 +920,36 @@ export default {
         console.error('[builder] Deezer genres failed:', error)
       } finally {
         this.deezerGenresLoading = false
+      }
+    },
+
+    /** Same pattern as onSeedSearch(): typing over a picked playlist
+     * clears it, and the lookup waits for a pause in typing. */
+    onPlaylistSearch(value: string | null): void {
+      const query = value ?? ''
+      this.playlistQuery = query
+      if (this.deezerPlaylist && query === this.deezerPlaylist.title) return
+      this.deezerPlaylist = null
+      clearTimeout(this.playlistSearchTimer)
+      this.playlistSearchTimer = setTimeout(() => void this.searchPlaylists(), 300)
+    },
+
+    /** A pasted link names exactly one playlist, so it is picked straight
+     * away rather than offered as a list of one. */
+    async searchPlaylists(): Promise<void> {
+      const query = this.playlistQuery.trim()
+      const seq = ++this.playlistSeq
+      this.playlistSearching = true
+      try {
+        const found = await searchDeezerPlaylists(query)
+        if (seq !== this.playlistSeq) return
+        this.playlistOptions = found
+        if (/^https?:\/\//i.test(query) && found.length === 1) this.deezerPlaylist = found[0]!
+      } catch (error) {
+        console.error('[builder] Deezer playlist search failed:', error)
+        if (seq === this.playlistSeq) this.playlistOptions = []
+      } finally {
+        if (seq === this.playlistSeq) this.playlistSearching = false
       }
     },
 
@@ -935,6 +1031,8 @@ export default {
       if (this.source === 'deezer') {
         if (this.op === 'artist')
           return this.$t('deezer.nameArtist', { artist: this.artist.trim() })
+        if (this.op === 'radio') return this.$t('deezer.nameRadio', { artist: this.artist.trim() })
+        if (this.op === 'playlist') return this.deezerPlaylist?.title ?? ''
         const genre = this.deezerGenres.find((entry) => entry.id === this.deezerGenre)
         return this.deezerGenre && genre
           ? this.$t('deezer.nameGenreCharts', { genre: genre.name })
@@ -998,6 +1096,7 @@ export default {
                 limit: this.limit,
                 genre: this.deezerGenre,
                 artist: this.artist.trim(),
+                playlist: this.deezerPlaylist?.id,
               })
             : this.source === 'listenbrainz'
               ? await getListenbrainzTracks({
@@ -1347,6 +1446,12 @@ export default {
 .seed-option__art {
   border-radius: 4px;
   margin-right: 12px;
+}
+
+.playlist-option__art {
+  width: 36px;
+  height: 36px;
+  object-fit: cover;
 }
 
 .track__title,
