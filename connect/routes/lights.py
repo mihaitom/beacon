@@ -230,7 +230,7 @@ class LocalReport(BaseModel):
 
 @router.post("/local", status_code=204)
 async def report_local(req: LocalReport, session: SessionState = Depends(get_session)):
-    """Local playback in the desktop app, which the lights follow when
+    """Local playback on a computer or a tablet, which the lights follow when
     nothing is being cast."""
     controller.report_local(session.session_id, req.song_id, req.position, req.playing)
 

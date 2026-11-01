@@ -1,7 +1,7 @@
 """lights/controller.py — when the light show runs, and for what.
 
 The lights follow one playback at a time: whatever this connect casts, or
-else the local playback of a device that reports it (the desktop app,
+else the local playback of a device that reports it (a computer or a tablet,
 POST /lights/local). Casts come first: they play in a room, which is what
 the lights are in.
 

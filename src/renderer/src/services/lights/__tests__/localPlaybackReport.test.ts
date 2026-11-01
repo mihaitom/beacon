@@ -58,10 +58,32 @@ describe('which devices report', () => {
     }
   }
 
-  it('the desktop app does, a browser does not', async () => {
+  function screenOf(width: number, height: number) {
+    vi.spyOn(window.screen, 'width', 'get').mockReturnValue(width)
+    vi.spyOn(window.screen, 'height', 'get').mockReturnValue(height)
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('the desktop app does, on any screen', async () => {
     ;(window as { api?: unknown }).api = {}
+    screenOf(390, 844)
     expect(await reportsAfterStart()).toBe(true)
-    delete (window as { api?: unknown }).api
+  })
+
+  it('a browser on a computer or a tablet does, either way round', async () => {
+    screenOf(1920, 1080)
+    expect(await reportsAfterStart()).toBe(true)
+    screenOf(744, 1133) // iPad mini, upright
+    expect(await reportsAfterStart()).toBe(true)
+  })
+
+  it('a browser on a phone does not, upright or sideways', async () => {
+    screenOf(390, 844)
+    expect(await reportsAfterStart()).toBe(false)
+    screenOf(932, 430)
     expect(await reportsAfterStart()).toBe(false)
   })
 })

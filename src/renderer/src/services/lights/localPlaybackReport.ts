@@ -2,10 +2,10 @@
  * can play along with it (connect/lights/controller.py). Casts need none
  * of this - connect plays those itself and knows where they are.
  *
- * Only the desktop app reports, and only while the lights are set up: it
- * is in the house connect runs in more often than not, while a phone in a
- * browser may be listening on the way to work and must not set the lights
- * at home flashing.
+ * Every device but a phone reports, and only while the lights are set up:
+ * a computer or a tablet is at home more often than not, while a phone may
+ * be listening on the way to work and must not set the lights at home
+ * flashing.
  *
  * Reports go out when something changes (a song, play/pause, a seek) and
  * every few seconds while playing; connect carries the position forward
@@ -22,6 +22,16 @@ export const REPORT_INTERVAL_MS = 3_000
 const TICK_MS = 500
 // A position this far from where the last report puts it now is a seek.
 const SEEK_THRESHOLD_SECONDS = 0.75
+// A phone's shorter side stays under ~450 CSS px, the smallest tablet's
+// (iPad mini) is 744 - the line PHONE_LANDSCAPE_QUERY draws too. The
+// screen, not the window: a narrow browser window is still a computer.
+const PHONE_SHORT_SIDE_PX = 500
+
+/** Whether this device's playback may light the room: not a phone's. */
+export function mayLightTheRoom(): boolean {
+  if (window.api) return true
+  return Math.min(window.screen.width, window.screen.height) >= PHONE_SHORT_SIDE_PX
+}
 
 interface Reported {
   songId: string
@@ -75,7 +85,7 @@ async function tick(): Promise<void> {
 }
 
 export function initLightsReport(): void {
-  if (timer || !window.api) return
+  if (timer || !mayLightTheRoom()) return
   timer = setInterval(() => void tick(), TICK_MS)
   const playback = usePlaybackStore()
   const lights = useLightsStore()
