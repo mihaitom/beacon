@@ -11,7 +11,7 @@ export interface LightsArea {
  * are null while there is no pairing; `reachable` false means the bridge
  * did not answer just now. `playing` says whether the lights are following
  * something at this moment, `start_error` why the last start failed. */
-export type LightsStyle = 'pulse' | 'calm' | 'party' | 'wave'
+export type LightsStyle = 'pulse' | 'calm' | 'party' | 'chase'
 export type LightsColourMode = 'cover' | 'palette' | 'rotate' | 'fixed'
 
 export interface LightsState {

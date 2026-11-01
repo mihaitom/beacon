@@ -272,7 +272,7 @@ const STYLES: { value: LightsStyle; icon: string }[] = [
   { value: 'pulse', icon: 'mdi-pulse' },
   { value: 'calm', icon: 'mdi-weather-night' },
   { value: 'party', icon: 'mdi-party-popper' },
-  { value: 'wave', icon: 'mdi-wave' },
+  { value: 'chase', icon: 'mdi-chevron-triple-right' },
 ]
 
 // Saturated on purpose: a light shows a pale colour as white.

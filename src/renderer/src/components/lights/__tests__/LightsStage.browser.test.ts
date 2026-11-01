@@ -73,7 +73,7 @@ describe('LightsStage', () => {
   })
 
   it('every style and a palette light up', async () => {
-    for (const lightStyle of ['pulse', 'calm', 'party', 'wave']) {
+    for (const lightStyle of ['pulse', 'calm', 'party', 'chase']) {
       const wrapper = mountStage({
         lightStyle,
         lights: 4,

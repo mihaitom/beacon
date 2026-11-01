@@ -733,9 +733,9 @@ export default {
         name: 'Fiesta',
         hint: 'Golpes intensos, las luces intercambian colores en cada golpe y un destello blanco en el primero de cada compás.',
       },
-      wave: {
-        name: 'Ola',
-        hint: 'Cada golpe recorre la sala como una ola, de izquierda a derecha.',
+      chase: {
+        name: 'Secuencia',
+        hint: 'Cada golpe pasa a la siguiente luz, de izquierda a derecha. Sin ritmo, se queda quieta.',
       },
     },
     colour: 'Color',

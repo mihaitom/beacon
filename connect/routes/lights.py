@@ -166,7 +166,7 @@ class LightsUpdate(BaseModel):
     area_id: str | None = Field(default=None, pattern=_AREA_ID)
     enabled: bool | None = None
     lead_ms: int | None = Field(default=None, ge=-MAX_LEAD_MS, le=MAX_LEAD_MS)
-    style: Literal["pulse", "calm", "party", "wave"] | None = None
+    style: Literal["pulse", "calm", "party", "chase"] | None = None
     colour_mode: Literal["cover", "palette", "rotate", "fixed"] | None = None
     fixed_colour: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
     brightness: int | None = Field(default=None, ge=MIN_BRIGHTNESS, le=100)

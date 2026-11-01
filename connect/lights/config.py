@@ -26,7 +26,7 @@ _FILENAME = "hue_lights.json"
 DEFAULT_LEAD_MS = 80
 MAX_LEAD_MS = 1000
 
-STYLES = ("pulse", "calm", "party", "wave")
+STYLES = ("pulse", "calm", "party", "chase")
 COLOUR_MODES = ("cover", "palette", "rotate", "fixed")
 DEFAULT_FIXED_COLOUR = "#3b6bff"
 # In percent. Not lower: below this the flashes no longer read as flashes.
@@ -81,6 +81,12 @@ def _read() -> LightsConfig:
     if not isinstance(data, dict):
         return LightsConfig()
     known = {k: v for k, v in data.items() if k in LightsConfig.__dataclass_fields__}
+    # A style or colour mode this version no longer has falls back to the
+    # default rather than leaving the show without one.
+    if known.get("style") not in STYLES:
+        known.pop("style", None)
+    if known.get("colour_mode") not in COLOUR_MODES:
+        known.pop("colour_mode", None)
     try:
         return LightsConfig(**known)
     except TypeError as e:

@@ -13,7 +13,9 @@ breakdown the grid runs on, the flashes do not.
   from light to light.
 - party: hard hits, the lights swap colours on every beat, a white flash
   on the first of a bar.
-- wave: every beat runs across the room from left to right.
+- chase: every beat hands on to the next light, left to right and round
+  again; one lights up at a time while the others glow. It moves only on
+  a beat that is heard, so it stands still through a breakdown.
 
 `palette` is one colour or several; with several, the lights take them in
 turn from left to right.
@@ -27,8 +29,8 @@ from typing import Literal
 from .analysis import RGB, SongLights
 from .hue import Channel
 
-Style = Literal["pulse", "calm", "party", "wave"]
-STYLES: tuple[Style, ...] = ("pulse", "calm", "party", "wave")
+Style = Literal["pulse", "calm", "party", "chase"]
+STYLES: tuple[Style, ...] = ("pulse", "calm", "party", "chase")
 
 # Brightness between beats, at the song's quietest and loudest.
 _FLOOR = 0.12
@@ -57,12 +59,17 @@ _PARTY_DECAY_SECONDS = 0.14
 _PARTY_WHITE = 0.75
 _PARTY_WHITE_DECAY_SECONDS = 0.1
 
-# Time the wave takes from the leftmost light to the rightmost.
-_WAVE_SPAN_SECONDS = 0.22
-_WAVE_FLOOR = 0.8  # of pulse's floor, so the moving hit stands out
-_WAVE_PULSE = 0.45
-_WAVE_PULSE_RANGE = 0.25
-_WAVE_DECAY_SECONDS = 0.16
+# Of pulse's floor, low enough that the one light on stands out.
+_CHASE_FLOOR = 0.6
+_CHASE_PULSE = 0.55
+_CHASE_PULSE_RANGE = 0.3
+# The lit light keeps this share of its hit until the next beat, so it
+# reads as "this one's turn" rather than a flash anywhere; the one before
+# lets go quickly, so the hand-over shows which way it runs.
+_CHASE_HOLD = 0.35
+_CHASE_DECAY_SECONDS = 0.25
+_CHASE_TAIL = 0.35
+_CHASE_TAIL_DECAY_SECONDS = 0.12
 
 # Without a beat to follow: brightness by loudness alone.
 _NO_BEAT_FLOOR = 0.15
@@ -146,11 +153,11 @@ def _levels(
     downbeat = bar_position % 4 == 0
     hit = song.hit(beat_index)
 
-    if style == "party":
+    if style in ("party", "chase"):
         step = song.heard_beats(beat_index)
+        if style == "chase":
+            return _chase(since, step, hit, energy, base, ordered)
         return _party(since, step, downbeat, hit, energy, palette, ordered)
-    if style == "wave":
-        return _wave(since, hit, energy, base, ordered)
     return _pulse(since, beat_index, downbeat, hit, energy, base, ordered)
 
 
@@ -220,15 +227,27 @@ def _party(
     return out
 
 
-def _wave(
-    since: float, hit: float, energy: float, base: dict[int, RGB], ordered: list[Channel]
+def _chase(
+    since: float,
+    step: int,
+    hit: float,
+    energy: float,
+    base: dict[int, RGB],
+    ordered: list[Channel],
 ) -> dict[int, RGB]:
-    floor = (_FLOOR + _FLOOR_RANGE * energy) * _WAVE_FLOOR
-    peak = hit * (_WAVE_PULSE + _WAVE_PULSE_RANGE * energy)
-    last = max(len(ordered) - 1, 1)
+    """`step` counts the beats heard so far; the light whose turn it is
+    lights up as strongly as the beat is heard."""
+    floor = (_FLOOR + _FLOOR_RANGE * energy) * _CHASE_FLOOR
+    peak = hit * (_CHASE_PULSE + _CHASE_PULSE_RANGE * energy)
+    n = len(ordered)
+    lit, before = step % n, (step - 1) % n
     out: dict[int, RGB] = {}
     for i, ch in enumerate(ordered):
-        reached = since - _WAVE_SPAN_SECONDS * i / last
-        pulse = peak * math.exp(-reached / _WAVE_DECAY_SECONDS) if reached >= 0 else 0.0
-        out[ch.channel_id] = scale(base[ch.channel_id], _clamp(floor + pulse))
+        level = floor
+        if i == lit:
+            hold = _CHASE_HOLD + (1 - _CHASE_HOLD) * math.exp(-since / _CHASE_DECAY_SECONDS)
+            level += peak * hold
+        elif i == before and n > 1:
+            level += peak * _CHASE_TAIL * math.exp(-since / _CHASE_TAIL_DECAY_SECONDS)
+        out[ch.channel_id] = scale(base[ch.channel_id], _clamp(level))
     return out

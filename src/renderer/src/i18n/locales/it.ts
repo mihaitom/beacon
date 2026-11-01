@@ -729,9 +729,9 @@ export default {
         name: 'Festa',
         hint: 'Colpi decisi, le luci si scambiano i colori a ogni battito, un lampo bianco sul primo di ogni battuta.',
       },
-      wave: {
-        name: 'Onda',
-        hint: "Ogni battito attraversa la stanza come un'onda, da sinistra a destra.",
+      chase: {
+        name: 'Sequenza',
+        hint: 'Ogni battito passa alla luce successiva, da sinistra a destra. Senza ritmo si ferma.',
       },
     },
     colour: 'Colore',

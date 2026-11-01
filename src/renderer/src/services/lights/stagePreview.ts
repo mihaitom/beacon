@@ -14,7 +14,6 @@ const ENERGY_PERIOD_SECONDS = 16
 const LOOP_BEATS = 32
 const BREAKDOWN_FROM_BEAT = 24
 const CALM_GLIDE_SECONDS = 8
-const WAVE_SPAN_SECONDS = 0.22
 // connect's ROTATION_SECONDS (lights/controller.py).
 const ROTATION_SECONDS = 30
 
@@ -90,10 +89,13 @@ export function previewFrame(
       colour = colours[(i + heard) % colours.length]!
       level = 0.06 + 0.2 * energy + hit * (0.55 + 0.35 * energy) * Math.exp(-since / 0.14)
       if (downbeat) colour = mix(colour, WHITE, hit * 0.75 * Math.exp(-since / 0.1))
-    } else if (style === 'wave') {
-      const reached = since - (lights > 1 ? (WAVE_SPAN_SECONDS * i) / (lights - 1) : 0)
-      const pulse = reached >= 0 ? hit * (0.45 + 0.25 * energy) * Math.exp(-reached / 0.16) : 0
-      level = floor * 0.8 + pulse
+    } else if (style === 'chase') {
+      const peak = hit * (0.55 + 0.3 * energy)
+      level = floor * 0.6
+      if (i === heard % lights) level += peak * (0.35 + 0.65 * Math.exp(-since / 0.25))
+      else if (lights > 1 && i === (heard + lights - 1) % lights) {
+        level += peak * 0.35 * Math.exp(-since / 0.12)
+      }
     } else {
       let pulse = hit * (0.35 + 0.25 * energy) * Math.exp(-since / 0.18) * (downbeat ? 1.3 : 1)
       const side = i < lights / 2 ? 0 : 1

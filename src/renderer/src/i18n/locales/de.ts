@@ -730,9 +730,9 @@ export default {
         name: 'Party',
         hint: 'Kräftige Schläge, die Lampen tauschen bei jedem Schlag die Farben, auf der Eins ein weißer Blitz.',
       },
-      wave: {
-        name: 'Welle',
-        hint: 'Jeder Schlag läuft als Welle von links nach rechts durch den Raum.',
+      chase: {
+        name: 'Lauflicht',
+        hint: 'Jeder Schlag gibt an die nächste Lampe weiter, von links nach rechts. Ohne Beat bleibt es stehen.',
       },
     },
     colour: 'Farbe',

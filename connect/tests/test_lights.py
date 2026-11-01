@@ -507,7 +507,7 @@ def _level(rgb) -> float:
     return max(rgb)
 
 
-@pytest.mark.parametrize("style", ["pulse", "party", "wave"])
+@pytest.mark.parametrize("style", ["pulse", "party", "chase"])
 def test_a_beat_that_is_not_heard_does_not_flash(style):
     silent = SongLights(
         duration=60,
@@ -661,14 +661,36 @@ def test_party_hits_harder_than_pulse():
     assert contrast("party") > contrast("pulse")
 
 
-def test_the_wave_reaches_the_left_light_first():
+def _brightest(levels: dict[int, analysis.RGB]) -> int:
+    return max(levels, key=lambda cid: _level(levels[cid]))
+
+
+def test_the_chase_hands_on_left_to_right_one_light_per_beat():
     song = _song()
     middle = hue.Channel(2, 0.0, 0.0, 0.0)
-    just_after = show.frame(0.51, song, (RED,), (RIGHT, middle, LEFT), "wave")
-    assert _level(just_after[LEFT.channel_id]) > _level(just_after[2])
-    assert _level(just_after[2]) >= _level(just_after[RIGHT.channel_id])
-    later = show.frame(0.5 + 0.23, song, (RED,), (RIGHT, middle, LEFT), "wave")
-    assert _level(later[RIGHT.channel_id]) > _level(later[LEFT.channel_id])
+    channels = (RIGHT, middle, LEFT)
+    lit = [
+        _brightest(show.frame(0.5 * b + 0.05, song, (RED,), channels, "chase")) for b in range(4)
+    ]
+    assert lit == [LEFT.channel_id, 2, RIGHT.channel_id, LEFT.channel_id]
+
+
+def test_the_chase_stands_still_through_a_breakdown():
+    hits = np.ones(120, np.float32)
+    hits[4:12] = 0.0
+    song = SongLights(
+        duration=60,
+        grid=_song().grid,
+        energy=np.full(60 * analysis.ENERGY_RATE, 0.5, np.float32),
+        hits=hits,
+    )
+    middle = hue.Channel(2, 0.0, 0.0, 0.0)
+    channels = (LEFT, middle, RIGHT)
+    order = [ch.channel_id for ch in channels]
+    lit_before = order.index(_brightest(show.frame(1.55, song, (RED,), channels, "chase")))
+    lit_after = order.index(_brightest(show.frame(6.05, song, (RED,), channels, "chase")))
+    # Beats 4-11 were not heard: beat 12 takes the turn after beat 3's.
+    assert lit_after == (lit_before + 1) % 3
 
 
 def test_blend():
@@ -713,10 +735,19 @@ def test_a_malformed_file_reads_as_unpaired():
 def test_unknown_keys_in_the_file_are_ignored():
     os.makedirs(lights_config._DATA_DIR, exist_ok=True)
     with open(os.path.join(lights_config._DATA_DIR, "hue_lights.json"), "w") as f:
-        f.write('{"bridge_host": "h", "from_the_future": 1, "style": "wave"}')
+        f.write('{"bridge_host": "h", "from_the_future": 1, "style": "chase"}')
     cfg = lights_config.get()
     assert cfg.bridge_host == "h"
-    assert cfg.style == "wave"
+    assert cfg.style == "chase"
+
+
+def test_a_style_this_version_no_longer_has_falls_back_to_the_default():
+    os.makedirs(lights_config._DATA_DIR, exist_ok=True)
+    with open(os.path.join(lights_config._DATA_DIR, "hue_lights.json"), "w") as f:
+        f.write('{"bridge_host": "h", "style": "wave", "colour_mode": "disco", "brightness": 40}')
+    cfg = lights_config.get()
+    assert (cfg.style, cfg.colour_mode) == ("pulse", "cover")
+    assert (cfg.bridge_host, cfg.brightness) == ("h", 40)
 
 
 # ── controller: what to follow ───────────────────────────────────────────
@@ -1312,7 +1343,7 @@ def test_get_with_the_bridge_away(client, monkeypatch):
 
 
 def test_pair_stores_a_new_pairing_and_drops_old_choices(client, monkeypatch):
-    _paired(area_id="old-area", style="wave")
+    _paired(area_id="old-area", style="chase")
     attempts = []
 
     async def identify(host):
@@ -1411,11 +1442,11 @@ def test_rotate_is_a_colour_mode(client, monkeypatch):
 
 
 def test_an_update_leaves_what_it_does_not_name(client, monkeypatch):
-    _paired(style="wave", brightness=40)
+    _paired(style="chase", brightness=40)
     monkeypatch.setattr(hue, "list_areas", _no_areas)
     client.put("/lights", json={"enabled": False})
     cfg = lights_config.get()
-    assert (cfg.style, cfg.brightness, cfg.enabled) == ("wave", 40, False)
+    assert (cfg.style, cfg.brightness, cfg.enabled) == ("chase", 40, False)
 
 
 async def _no_areas(bridge, pairing):

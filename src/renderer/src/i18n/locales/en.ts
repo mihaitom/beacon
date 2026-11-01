@@ -724,9 +724,9 @@ export default {
         name: 'Party',
         hint: 'Hard hits, the lights swap colours on every beat, a white flash on the first of each bar.',
       },
-      wave: {
-        name: 'Wave',
-        hint: 'Every beat runs through the room as a wave, from left to right.',
+      chase: {
+        name: 'Chase',
+        hint: 'Every beat hands on to the next light, from left to right. It stands still while there is no beat.',
       },
     },
     colour: 'Colour',

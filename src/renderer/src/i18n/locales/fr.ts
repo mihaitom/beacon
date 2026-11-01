@@ -735,9 +735,9 @@ export default {
         name: 'Fête',
         hint: 'Des temps appuyés, les lampes échangent leurs couleurs à chaque temps, un éclat blanc sur le premier de chaque mesure.',
       },
-      wave: {
-        name: 'Vague',
-        hint: 'Chaque temps traverse la pièce comme une vague, de gauche à droite.',
+      chase: {
+        name: 'Chenillard',
+        hint: 'Chaque temps passe à la lampe suivante, de gauche à droite. Sans rythme, il s’arrête.',
       },
     },
     colour: 'Couleur',

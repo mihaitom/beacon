@@ -17,7 +17,7 @@ import { previewFrame, type Rgb } from '@/services/lights/stagePreview'
 // a room with more lights than this would only shrink every one of them.
 const MAX_LAMPS = 6
 // The still frame shown with reduced motion: just after a beat, so the
-// style's character (a hit, a wave on its way) is still visible.
+// style's character (a hit, the chase's light on) is still visible.
 const STILL_AT_SECONDS = 4.05
 
 export default {
