@@ -211,6 +211,18 @@ def _fold(envelope: np.ndarray, periods: np.ndarray) -> np.ndarray:
     return (hist + np.roll(hist, 1, axis=1) + np.roll(hist, -1, axis=1)) / 3
 
 
+def _halves_drift(envelope: np.ndarray, half: int, period: float) -> float:
+    """How far apart, in seconds, the two halves of `envelope` (split at
+    hop `half`) put the beat."""
+    first = _fold(envelope[:half], np.array([period]))[0]
+    # The second half's phase is in its own time; shift it back.
+    shift = round((half % period) / period * _PHASE_BINS)
+    second = np.roll(_fold(envelope[half:], np.array([period]))[0], shift)
+    drift_bins = abs(int(np.argmax(first)) - int(np.argmax(second)))
+    drift_bins = min(drift_bins, _PHASE_BINS - drift_bins)
+    return drift_bins / _PHASE_BINS * period / _FPS
+
+
 def _peak(hist: np.ndarray) -> float:
     """The histogram's peak, between bins (parabolic, circular)."""
     i = int(np.argmax(hist))
@@ -257,13 +269,13 @@ def grid_from_envelopes(
     # beat against a half with none in it.
     half = int(np.searchsorted(np.cumsum(full), full.sum() / 2))
     half = int(np.clip(half, 4 * period, len(full) - 4 * period))
-    first = _fold(full[:half], np.array([period]))[0]
-    # The second half's phase is in its own time; shift it back.
-    shift = round((half % period) / period * _PHASE_BINS)
-    second = np.roll(_fold(full[half:], np.array([period]))[0], shift)
-    drift_bins = abs(int(np.argmax(first)) - int(np.argmax(second)))
-    drift_bins = min(drift_bins, _PHASE_BINS - drift_bins)
-    drift = drift_bins / _PHASE_BINS * period / _FPS
+    drift = _halves_drift(full, half, period)
+    if drift >= 0.025:
+        # The halves can also disagree because another part leads in each -
+        # a rolling offbeat bassline over a stretch of tech house puts the
+        # full band's peak half a beat off. The kick then still puts the
+        # beat in one place; a tempo that really drifts moves it too.
+        drift = min(drift, _halves_drift(kick, half, period))
     confidence = float(np.clip((peak_ratio - 1.5) / 2.5, 0.0, 1.0)) * (
         1.0 if drift < 0.025 else 0.3
     )

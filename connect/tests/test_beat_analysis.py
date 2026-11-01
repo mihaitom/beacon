@@ -48,6 +48,41 @@ def test_tempo_and_beats_are_found(bpm, phase):
     assert grid.confidence > 0.8
 
 
+def _kick_with_hats(bpm: float, seconds: float, kick_shift: float = 0.0) -> np.ndarray:
+    """A kick on every beat, and over the last third loud offbeat hi-hats
+    that outweigh it across the band - a tech-house section with a rolling
+    offbeat. `kick_shift` moves that third's kick by that many beats."""
+    rng = np.random.default_rng(1)
+    x = np.zeros(int(seconds * SR), dtype=np.float32)
+    n = np.arange(int(0.08 * SR))
+    # A sine alone has hardly any attack across the band; a real kick does.
+    kick = 0.9 * np.sin(2 * np.pi * 55 * n / SR) * np.exp(-n / (0.03 * SR))
+    kick += 0.6 * rng.standard_normal(len(n)) * np.exp(-n / (0.002 * SR))
+    period = 60 / bpm
+    for k in range(int(seconds / period) - 1):
+        last_third = k * period > seconds * 2 / 3
+        t = k * period + (kick_shift * period if last_third else 0.0)
+        i = int(t * SR)
+        x[i : i + len(n)] += kick[: len(x) - i]
+        if last_third:
+            j = int((k + 0.5) * period * SR)
+            hat = 0.9 * rng.standard_normal(len(n)) * np.exp(-n / (0.004 * SR))
+            x[j : j + len(n)] += hat[: len(x) - j]
+    return x + 0.02 * rng.standard_normal(len(x)).astype(np.float32)
+
+
+def test_a_loud_offbeat_in_one_half_is_not_taken_for_drift():
+    grid = beat_grid(_kick_with_hats(128, 60))
+    assert grid.bpm == pytest.approx(128, abs=0.1)
+    assert abs(phase_error(grid, 0.0)) < 0.03  # on the kick, not the hats
+    assert grid.confidence > 0.8
+
+
+def test_a_kick_that_moves_between_the_halves_still_counts_as_drift():
+    grid = beat_grid(_kick_with_hats(128, 60, kick_shift=1 / 3))
+    assert grid is None or grid.confidence < 0.5
+
+
 @pytest.mark.parametrize("downbeat", [0, 1, 3])
 def test_the_downbeat_is_the_beat_with_the_kick(downbeat):
     bpm, phase = 124, 0.2
