@@ -15,6 +15,7 @@ that is the listener's own country.
 
 import logging
 import re
+import unicodedata
 from urllib.parse import urlsplit
 
 import httpx
@@ -92,7 +93,8 @@ async def _get(path: str, *, language: str = "", **params) -> dict:
 
 def _tracks(data: dict) -> list[dict]:
     """Deezer's track objects in the shape every builder source returns.
-    Deezer has no MBIDs, so that field stays empty."""
+    Deezer has no MBIDs, so that field stays empty; `deezerId` is what lets
+    a preview of this exact track be fetched later (get_preview())."""
     tracks = []
     for entry in data.get("data") or []:
         if not isinstance(entry, dict):
@@ -105,6 +107,7 @@ def _tracks(data: dict) -> list[dict]:
             continue
         album = entry.get("album") or {}
         duration = entry.get("duration")
+        track_id = entry.get("id")
         tracks.append(
             {
                 "title": title,
@@ -113,6 +116,7 @@ def _tracks(data: dict) -> list[dict]:
                 "album": (album.get("title") or "").strip(),
                 "coverArtUrl": album.get("cover_medium") or "",
                 "duration": duration if isinstance(duration, int) else 0,
+                "deezerId": track_id if isinstance(track_id, int) else 0,
             }
         )
     return tracks
@@ -237,3 +241,60 @@ async def search_playlists(query: str, limit: int = 25) -> list[dict]:
 async def get_playlist_tracks(playlist_id: int) -> list[dict]:
     data = await _get(f"/playlist/{int(playlist_id)}/tracks", limit=_MAX_PLAYLIST_TRACKS)
     return _tracks(data)
+
+
+# How many search hits to look through for a preview. Deezer ranks remixes
+# and covers above the original often enough (measured: "Massive Attack
+# Teardrop" put three other versions first) that the top few are not enough.
+_PREVIEW_CANDIDATES = 25
+
+
+def _plain(text: str) -> str:
+    """Case, accents and punctuation folded away, for comparing a name the
+    way the renderer's own matcher does (services/stringMatch.ts)."""
+    folded = unicodedata.normalize("NFKD", text.casefold())
+    folded = "".join(c for c in folded if not unicodedata.combining(c))
+    folded = re.sub(r"['’`´]", "", folded)
+    return " ".join(re.sub(r"[^\w]+", " ", folded).split())
+
+
+def _pick_preview(entries: list, artist: str, title: str) -> dict | None:
+    """The hit that really is this artist's song: the artist has to match,
+    and the title in order of preference exactly as asked, then the same
+    title in another version (title_short drops "(Radio Edit)", "(Remix)"),
+    then as the start of a longer title. Deezer ranks a popular remix above
+    the plain version, so the plain one is preferred whatever its rank; the
+    most popular only decides within a tier. No hit rather than a wrong one
+    - a preview of a different song is worse than none."""
+    want_artist, want_title = _plain(artist), _plain(title)
+    as_asked, other_version, prefixed = [], [], []
+    for entry in entries:
+        if not isinstance(entry, dict) or not entry.get("preview"):
+            continue
+        if _plain((entry.get("artist") or {}).get("name") or "") != want_artist:
+            continue
+        full = _plain(entry.get("title") or "")
+        short = _plain(entry.get("title_short") or "") or full
+        if full == want_title:
+            as_asked.append(entry)
+        elif short == want_title:
+            other_version.append(entry)
+        elif short.startswith(want_title + " "):
+            prefixed.append(entry)
+    pool = as_asked or other_version or prefixed
+    return max(pool, key=lambda e: e.get("rank") or 0) if pool else None
+
+
+async def get_preview(artist: str, title: str, track_id: int = 0) -> dict | None:
+    """A 30-second preview for a track from any of the builder's services.
+    A Deezer track is fetched by its id; anything else is looked up by name.
+    Deezer signs the URL with an expiry (about 15 minutes, measured), so it
+    is fetched when it is about to be played and never stored."""
+    if track_id:
+        entry = await _get(f"/track/{int(track_id)}")
+    else:
+        data = await _get("/search", q=f"{artist} {title}", limit=_PREVIEW_CANDIDATES)
+        entry = _pick_preview(data.get("data") or [], artist, title)
+    if not entry or not entry.get("preview"):
+        return None
+    return {"previewUrl": entry["preview"], "link": entry.get("link") or ""}

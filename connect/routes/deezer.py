@@ -1,4 +1,4 @@
-"""routes/deezer.py — GET /deezer/songs, /deezer/playlists and /deezer/genres
+"""routes/deezer.py — GET /deezer/songs, /playlists, /preview and /genres
 
 Machine-to-machine (CONNECT_TOKEN), like routes/listenbrainz.py: no session,
 no key, nothing to configure. See core/deezer.py.
@@ -52,6 +52,22 @@ async def playlists(q: str = "") -> dict:
     except deezer.DeezerError as e:
         raise HTTPException(status_code=404 if e.not_found else 502, detail=str(e)) from e
     return {"playlists": result}
+
+
+@router.get("/preview")
+async def preview(artist: str = "", title: str = "", id: int = 0) -> dict:
+    """A 30-second preview, by Deezer track id or by artist and title. An
+    empty previewUrl when Deezer has none - an ordinary answer for a track
+    it does not carry, not an error."""
+    if not id and not (artist.strip() and title.strip()):
+        raise HTTPException(status_code=422, detail="preview needs an id or artist and title")
+    try:
+        result = await deezer.get_preview(artist.strip(), title.strip(), id)
+    except deezer.DeezerError as e:
+        if not e.not_found:
+            raise HTTPException(status_code=502, detail=str(e)) from e
+        result = None
+    return result or {"previewUrl": "", "link": ""}
 
 
 @router.get("/genres")

@@ -904,6 +904,9 @@ export default {
     fetching: 'Asking {provider}…',
     noTracks: '{provider} returned nothing for that.',
     failed: 'Could not reach {provider}.',
+    preview: 'Play a 30-second preview',
+    stopPreview: 'Stop the preview',
+    noPreview: 'No preview on Deezer',
   },
   lastfm: {
     source: 'Fill it with',
@@ -1287,9 +1290,9 @@ export default {
       deezer: {
         name: 'Deezer',
         purpose:
-          "Finding a photo and an artist page for a suggested artist and for the artist page you have open, whether or not recommendations are on, and filling a playlist from Deezer's charts, an artist's top tracks or mix, or a Deezer playlist.",
+          "Finding a photo and an artist page for a suggested artist and for the artist page you have open, whether or not recommendations are on, and filling a playlist from Deezer's charts, an artist's top tracks or mix, or a Deezer playlist, and playing a 30-second preview of a track in the playlist builder.",
         sends:
-          "The name of the artist being looked up: a suggested one, the one whose page you have open, or the one you asked the playlist builder for, and what you type into its playlist search. A chart sends only the genre; Deezer picks the country from where Beacon's server is.",
+          "The name of the artist being looked up: a suggested one, the one whose page you have open, or the one you asked the playlist builder for, and what you type into its playlist search. A chart sends only the genre; Deezer picks the country from where Beacon's server is. For a preview, the artist and title of that track; the preview itself plays straight from Deezer to this device.",
       },
       wikidata: {
         name: 'Wikidata',

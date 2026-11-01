@@ -917,6 +917,9 @@ export default {
     fetching: '{provider} wird gefragt…',
     noTracks: '{provider} hat dazu nichts geliefert.',
     failed: '{provider} ist nicht erreichbar.',
+    preview: '30-Sekunden-Vorschau abspielen',
+    stopPreview: 'Vorschau stoppen',
+    noPreview: 'Keine Vorschau bei Deezer',
   },
   lastfm: {
     source: 'Füllen mit',
@@ -1300,9 +1303,9 @@ export default {
       deezer: {
         name: 'Deezer',
         purpose:
-          'Findet Foto und Künstlerseite zu einem vorgeschlagenen Künstler sowie zu der Künstlerseite, die du gerade geöffnet hast, unabhängig davon, ob Empfehlungen an sind, und füllt eine Playlist aus den Deezer-Charts, den Top-Titeln oder dem Mix eines Künstlers oder einer Deezer-Playlist.',
+          'Findet Foto und Künstlerseite zu einem vorgeschlagenen Künstler sowie zu der Künstlerseite, die du gerade geöffnet hast, unabhängig davon, ob Empfehlungen an sind, und füllt eine Playlist aus den Deezer-Charts, den Top-Titeln oder dem Mix eines Künstlers oder einer Deezer-Playlist, und spielt im Playlist-Baukasten eine 30-Sekunden-Vorschau eines Titels.',
         sends:
-          'Den Namen des nachgeschlagenen Künstlers: eines vorgeschlagenen, desjenigen, dessen Seite du geöffnet hast, oder des Künstlers, den du im Playlist-Baukasten angegeben hast, und was du dort in die Playlist-Suche tippst. Für Charts nur das Genre; das Land leitet Deezer aus dem Standort von Beacons Server ab.',
+          'Den Namen des nachgeschlagenen Künstlers: eines vorgeschlagenen, desjenigen, dessen Seite du geöffnet hast, oder des Künstlers, den du im Playlist-Baukasten angegeben hast, und was du dort in die Playlist-Suche tippst. Für Charts nur das Genre; das Land leitet Deezer aus dem Standort von Beacons Server ab. Für eine Vorschau Künstler und Titel; die Vorschau selbst kommt direkt von Deezer auf dieses Gerät.',
       },
       wikidata: {
         name: 'Wikidata',

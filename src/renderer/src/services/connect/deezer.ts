@@ -3,7 +3,10 @@ import type { ListenbrainzTrack } from './listenbrainz'
 
 /** Same shape as a ListenBrainz track; Deezer has no MBIDs, so that field
  * is always empty. */
-export type DeezerTrack = ListenbrainzTrack
+export type DeezerTrack = ListenbrainzTrack & {
+  /** Lets getDeezerPreview() fetch this exact track instead of searching. */
+  deezerId: number
+}
 
 export type DeezerOp = 'charts' | 'artist' | 'radio' | 'playlist'
 
@@ -61,4 +64,19 @@ export async function searchDeezerPlaylists(query: string): Promise<DeezerPlayli
     `/deezer/playlists?${params.toString()}`,
   )
   return data.playlists
+}
+
+/** A 30-second Deezer preview for a track from any service, or null when
+ * Deezer has none. `id` is a Deezer track id where the track came from
+ * Deezer; otherwise it is looked up by artist and title. The URL expires
+ * after a few minutes, so it is asked for right before playing. */
+export async function getDeezerPreview(track: {
+  artist: string
+  title: string
+  id?: number
+}): Promise<string | null> {
+  const params = new URLSearchParams({ artist: track.artist, title: track.title })
+  if (track.id) params.set('id', String(track.id))
+  const data = await fetchConnect<{ previewUrl: string }>(`/deezer/preview?${params.toString()}`)
+  return data.previewUrl || null
 }

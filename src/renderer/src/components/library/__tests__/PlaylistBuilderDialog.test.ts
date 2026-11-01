@@ -15,7 +15,8 @@ import { useLibraryStore } from '@/stores/library'
 import { useListenbrainzStore } from '@/stores/listenbrainz'
 import { useLastfmStore } from '@/stores/lastfm'
 import { usePlaybackStore } from '@/stores/playback'
-import { makeSong } from '@/stores/__tests__/fixtures'
+import { makeSong, makeStatus } from '@/stores/__tests__/fixtures'
+import { useConnectStore } from '@/stores/connect'
 import type { SubsonicClient } from '@/services/subsonic/client'
 import PlaylistBuilderDialog from '../PlaylistBuilderDialog.vue'
 import * as lastfmApi from '@/services/connect/lastfm'
@@ -733,6 +734,7 @@ describe('PlaylistBuilderDialog', () => {
           album: '',
           coverArtUrl: '',
           duration: 0,
+          deezerId: 0,
         },
       ])
       stubSearch([makeSong('s1', { title: 'Dai Dai', artist: 'Shakira' })])
@@ -814,11 +816,17 @@ describe('PlaylistBuilderDialog', () => {
         { id: 0, name: 'All' },
         { id: 116, name: 'Rap/Hip Hop' },
       ])
-      const getTracks = vi
-        .spyOn(deezerApi, 'getDeezerTracks')
-        .mockResolvedValue([
-          { title: 'Song', artist: 'Someone', mbid: '', album: '', coverArtUrl: '', duration: 0 },
-        ])
+      const getTracks = vi.spyOn(deezerApi, 'getDeezerTracks').mockResolvedValue([
+        {
+          title: 'Song',
+          artist: 'Someone',
+          mbid: '',
+          album: '',
+          coverArtUrl: '',
+          duration: 0,
+          deezerId: 0,
+        },
+      ])
       stubSearch([makeSong('s1', { title: 'Song', artist: 'Someone' })])
 
       const { vm } = mountDialog()
@@ -870,7 +878,7 @@ describe('PlaylistBuilderDialog', () => {
     }
 
     function dzTrack(title: string, artist: string) {
-      return { title, artist, mbid: '', album: '', coverArtUrl: '', duration: 0 }
+      return { title, artist, mbid: '', album: '', coverArtUrl: '', duration: 0, deezerId: 0 }
     }
 
     it('asks for an artist radio and names the playlist after it', async () => {
@@ -951,6 +959,119 @@ describe('PlaylistBuilderDialog', () => {
         expect.objectContaining({ op: 'playlist', playlist: 77 }),
       )
       expect(vm.playlistName).toBe('Deep House')
+    })
+  })
+
+  describe('previews', () => {
+    let play: ReturnType<typeof vi.spyOn>
+    let pause: ReturnType<typeof vi.spyOn>
+
+    beforeEach(() => {
+      // jsdom has no media playback of its own.
+      play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
+      pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
+    })
+
+    /** A result step with one Deezer track the library does not have. */
+    async function resultWithMissingTrack() {
+      vi.spyOn(deezerApi, 'getDeezerTracks').mockResolvedValue([
+        {
+          title: 'Song',
+          artist: 'Someone',
+          mbid: '',
+          album: '',
+          coverArtUrl: '',
+          duration: 0,
+          deezerId: 42,
+        },
+      ])
+      stubSearch([])
+      const wrapper = mount(PlaylistBuilderDialog, { global: globalOptions })
+      const vm = wrapper.vm as unknown as Record<string, unknown> & {
+        open: (s?: string) => void
+        search: () => Promise<void>
+      }
+      vm.open('deezer')
+      await flushPromises()
+      await vm.search()
+      await flushPromises()
+      return { wrapper, vm }
+    }
+
+    function previewButton(): HTMLButtonElement {
+      return document.querySelector('.track__preview') as HTMLButtonElement
+    }
+
+    it('plays a missing track’s preview, fetched by its Deezer id', async () => {
+      const getPreview = vi
+        .spyOn(deezerApi, 'getDeezerPreview')
+        .mockResolvedValue('https://cdn/p.mp3')
+      await resultWithMissingTrack()
+
+      previewButton().click()
+      await flushPromises()
+
+      expect(getPreview).toHaveBeenCalledWith({ artist: 'Someone', title: 'Song', id: 42 })
+      expect(play).toHaveBeenCalled()
+    })
+
+    it('pauses Beacon’s own playback on this device first', async () => {
+      vi.spyOn(deezerApi, 'getDeezerPreview').mockResolvedValue('https://cdn/p.mp3')
+      const playback = usePlaybackStore()
+      playback.isPlaying = true
+      const toggle = vi.spyOn(playback, 'togglePlay').mockResolvedValue()
+      await resultWithMissingTrack()
+
+      previewButton().click()
+      await flushPromises()
+
+      expect(toggle).toHaveBeenCalledTimes(1)
+    })
+
+    it('leaves a cast to a speaker playing', async () => {
+      vi.spyOn(deezerApi, 'getDeezerPreview').mockResolvedValue('https://cdn/p.mp3')
+      const playback = usePlaybackStore()
+      playback.isPlaying = true
+      useConnectStore().status = makeStatus({ targets: [{ name: 'Room A', type: 'sonos' }] })
+      const toggle = vi.spyOn(playback, 'togglePlay').mockResolvedValue()
+      await resultWithMissingTrack()
+
+      previewButton().click()
+      await flushPromises()
+
+      expect(toggle).not.toHaveBeenCalled()
+      expect(play).toHaveBeenCalled()
+    })
+
+    it('stops on a second click, and when the dialog closes', async () => {
+      vi.spyOn(deezerApi, 'getDeezerPreview').mockResolvedValue('https://cdn/p.mp3')
+      const { vm } = await resultWithMissingTrack()
+
+      previewButton().click()
+      await flushPromises()
+      previewButton().click()
+      await flushPromises()
+      expect(pause).toHaveBeenCalled()
+      expect(vm.previewIndex).toBe(-1)
+
+      previewButton().click()
+      await flushPromises()
+      // Starting a preview stops any other first, so only what follows counts.
+      pause.mockClear()
+      vm.visible = false
+      await flushPromises()
+      expect(pause).toHaveBeenCalled()
+    })
+
+    it('marks a track Deezer has no preview for, without playing anything', async () => {
+      vi.spyOn(deezerApi, 'getDeezerPreview').mockResolvedValue(null)
+      await resultWithMissingTrack()
+
+      previewButton().click()
+      await flushPromises()
+
+      expect(play).not.toHaveBeenCalled()
+      expect(previewButton().disabled).toBe(true)
     })
   })
 

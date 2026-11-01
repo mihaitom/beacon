@@ -319,6 +319,22 @@
                   <span class="track__rank">{{ index + 1 }}</span>
 
                   <div class="track__side track__side--source">
+                    <!-- Every row, found or not: a preview tells a close
+                     - match apart from the wrong song as well as it lets a
+                     - missing one be heard. -->
+                    <v-btn
+                      :icon="previewIcon(index)"
+                      :loading="previewLoading && previewIndex === index"
+                      :disabled="noPreview.includes(index)"
+                      :color="previewIndex === index ? 'primary' : undefined"
+                      variant="text"
+                      size="small"
+                      density="comfortable"
+                      :aria-label="previewLabel(index)"
+                      :title="previewLabel(index)"
+                      class="track__preview"
+                      @click="togglePreview(entry, index)"
+                    />
                     <div class="track__names">
                       <span class="track__title">{{ entry.track.title }}</span>
                       <span class="track__artist text-body-small text-medium-emphasis">{{
@@ -445,6 +461,7 @@
 </template>
 
 <script lang="ts">
+import { markRaw } from 'vue'
 import { useLibraryStore } from '@/stores/library'
 import CoverArt from './CoverArt.vue'
 import { ConnectApiError } from '@/services/connect/http'
@@ -454,6 +471,7 @@ import SegmentedControl, { type SegmentedOption } from '@/components/SegmentedCo
 import {
   getDeezerGenres,
   getDeezerTracks,
+  getDeezerPreview,
   searchDeezerPlaylists,
   type DeezerGenre,
   type DeezerOp,
@@ -610,6 +628,14 @@ export default {
       playlistSearching: false,
       playlistSeq: 0,
       playlistSearchTimer: undefined as ReturnType<typeof setTimeout> | undefined,
+      // One preview at a time, through one <audio> of the dialog's own -
+      // markRaw because a reactive proxy breaks the element's native
+      // methods.
+      previewAudio: null as HTMLAudioElement | null,
+      previewIndex: -1,
+      previewLoading: false,
+      /** Rows Deezer has no preview for, so their button says so. */
+      noPreview: [] as number[],
       username: '',
       period: '1month' as LastfmPeriod,
       lbPeriod: 'month' as ListenbrainzPeriod,
@@ -866,13 +892,18 @@ export default {
         this.abortSignal = { aborted: false }
       } else {
         this.abortSignal.aborted = true
+        this.stopPreview()
       }
+    },
+    step(step: 'form' | 'result') {
+      if (step === 'form') this.stopPreview()
     },
   },
   beforeUnmount() {
     clearTimeout(this.copyResetTimer)
     clearTimeout(this.seedSearchTimer)
     clearTimeout(this.playlistSearchTimer)
+    this.stopPreview()
   },
   methods: {
     /** Opens on `source`, or else the service used last time. */
@@ -1077,11 +1108,70 @@ export default {
       return fallback
     },
 
+    previewIcon(index: number): string {
+      if (this.noPreview.includes(index)) return 'mdi-music-note-off'
+      return this.previewIndex === index ? 'mdi-stop' : 'mdi-play'
+    },
+
+    previewLabel(index: number): string {
+      if (this.noPreview.includes(index)) return this.$t('builder.noPreview')
+      return this.previewIndex === index
+        ? this.$t('builder.stopPreview')
+        : this.$t('builder.preview')
+    },
+
+    /** Plays a row's 30-second Deezer preview, or stops it if it is the one
+     * playing. Beacon's own playback is paused first when it plays on this
+     * device - two songs at once is noise - but not resumed afterwards: it
+     * starts again when the listener says so. A cast to a speaker elsewhere
+     * is left alone. */
+    async togglePreview(entry: ResolvedTrack, index: number): Promise<void> {
+      if (this.previewIndex === index) {
+        this.stopPreview()
+        return
+      }
+      this.stopPreview()
+      this.previewIndex = index
+      this.previewLoading = true
+      try {
+        const url = await getDeezerPreview({
+          artist: entry.track.artist,
+          title: entry.track.title,
+          id: (entry.track as { deezerId?: number }).deezerId,
+        })
+        // Another row was clicked while this one was being looked up.
+        if (this.previewIndex !== index) return
+        if (!url) {
+          this.noPreview.push(index)
+          this.previewIndex = -1
+          return
+        }
+        const playback = usePlaybackStore()
+        if (playback.isPlaying && !playback.isCasting) await playback.togglePlay()
+        this.previewAudio ??= markRaw(new Audio())
+        this.previewAudio.onended = () => this.stopPreview()
+        this.previewAudio.src = url
+        await this.previewAudio.play()
+      } catch (error) {
+        console.error('[builder] Preview failed:', error)
+        if (this.previewIndex === index) this.previewIndex = -1
+      } finally {
+        if (this.previewIndex === index || this.previewIndex === -1) this.previewLoading = false
+      }
+    },
+
+    stopPreview(): void {
+      this.previewAudio?.pause()
+      this.previewIndex = -1
+      this.previewLoading = false
+    },
+
     async search(): Promise<void> {
       this.busy = true
       this.error = ''
       this.step = 'result'
       this.resolved = []
+      this.noPreview = []
       this.progressDone = 0
       this.progressTotal = 0
 
@@ -1466,6 +1556,10 @@ export default {
 }
 
 .track__note {
+  flex-shrink: 0;
+}
+
+.track__preview {
   flex-shrink: 0;
 }
 

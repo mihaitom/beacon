@@ -46,6 +46,7 @@ async def test_chart_tracks_use_the_short_title_and_carry_display_fields():
             "album": "Random Access Memories",
             "coverArtUrl": "https://img/250.jpg",
             "duration": 248,
+            "deezerId": 0,
         }
     ]
 
@@ -286,3 +287,81 @@ def test_playlists_route(client):
     with _patch_get({"data": [_playlist_entry(1, "Hits")]}):
         resp = client.get("/deezer/playlists")
     assert resp.json()["playlists"][0]["title"] == "Hits"
+
+
+# ── previews ─────────────────────────────────────────────────────────────────
+
+
+def _hit(artist: str, title: str, short: str | None = None, rank: int = 0, **extra) -> dict:
+    return {
+        "id": rank,
+        "title": title,
+        "title_short": short or title,
+        "artist": {"name": artist},
+        "rank": rank,
+        "preview": f"https://cdn/preview-{rank}.mp3",
+        "link": f"https://www.deezer.com/track/{rank}",
+        **extra,
+    }
+
+
+def test_deezer_tracks_carry_their_id_for_a_later_preview():
+    assert deezer._tracks({"data": [_hit("Cher", "Believe", rank=5)]})[0]["deezerId"] == 5
+
+
+def test_preview_prefers_the_plain_version_over_a_more_popular_remix():
+    hits = [
+        _hit("Massive Attack", "Teardrop (Dub)", short="Teardrop", rank=900),
+        _hit("Massive Attack", "Teardrop", rank=100),
+    ]
+    assert deezer._pick_preview(hits, "Massive Attack", "Teardrop")["rank"] == 100
+
+
+def test_preview_falls_back_to_another_version_then_a_longer_title():
+    remix = _hit("Cher", "Believe (Club Mix)", short="Believe", rank=2)
+    longer = _hit("Cher", "Believe In Me", rank=9)
+    assert deezer._pick_preview([longer, remix], "Cher", "Believe") is remix
+    assert deezer._pick_preview([longer], "Cher", "Believe") is longer
+
+
+def test_preview_needs_the_same_artist_and_a_preview():
+    hits = [
+        _hit("Sandstorm", "Teardrop", rank=999),
+        _hit("Massive Attack", "Teardrop", rank=5, preview=""),
+    ]
+    assert deezer._pick_preview(hits, "Massive Attack", "Teardrop") is None
+
+
+def test_preview_matching_ignores_case_accents_and_punctuation():
+    hit = _hit("Sigur Rós", "Hoppípolla", rank=1)
+    assert deezer._pick_preview([hit], "sigur ros", "Hoppipolla") is hit
+    hyphen = _hit("Ne‐Yo", "So Sick", rank=1)
+    assert deezer._pick_preview([hyphen], "Ne-Yo", "So Sick") is hyphen
+
+
+async def test_preview_by_id_skips_the_search():
+    with _patch_get(_hit("Daft Punk", "Around the World", rank=3)) as get:
+        found = await deezer.get_preview("", "", 3)
+    assert get.call_args.args[0].endswith("/track/3")
+    assert found == {
+        "previewUrl": "https://cdn/preview-3.mp3",
+        "link": "https://www.deezer.com/track/3",
+    }
+
+
+def test_preview_route(client):
+    with _patch_get({"data": [_hit("Cher", "Believe", rank=7)]}) as get:
+        resp = client.get("/deezer/preview", params={"artist": "Cher", "title": "Believe"})
+    assert resp.json()["previewUrl"] == "https://cdn/preview-7.mp3"
+    assert get.call_args.kwargs["params"]["q"] == "Cher Believe"
+
+    with _patch_get({"data": []}):
+        resp = client.get("/deezer/preview", params={"artist": "Nobody", "title": "Nothing"})
+    assert resp.json() == {"previewUrl": "", "link": ""}
+
+    no_data = {"error": {"type": "DataException", "message": "no data", "code": 800}}
+    with _patch_get(no_data):
+        resp = client.get("/deezer/preview", params={"id": 1})
+    assert resp.json()["previewUrl"] == ""
+
+    assert client.get("/deezer/preview", params={"artist": "Cher"}).status_code == 422

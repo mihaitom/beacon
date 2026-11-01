@@ -919,6 +919,9 @@ export default {
     fetching: 'Interrogation de {provider}…',
     noTracks: '{provider} n’a rien renvoyé.',
     failed: 'Impossible de joindre {provider}.',
+    preview: 'Écouter un extrait de 30 secondes',
+    stopPreview: "Arrêter l'extrait",
+    noPreview: 'Pas d’extrait sur Deezer',
   },
   lastfm: {
     source: 'Remplir avec',
@@ -1305,9 +1308,9 @@ export default {
       deezer: {
         name: 'Deezer',
         purpose:
-          "Recherche une photo et une page d'artiste pour un artiste suggéré, ainsi que pour la page d'artiste que vous avez ouverte, que les recommandations soient activées ou non, et remplit une playlist avec les classements Deezer, les top titres ou le mix d'un artiste, ou une playlist Deezer.",
+          "Recherche une photo et une page d'artiste pour un artiste suggéré, ainsi que pour la page d'artiste que vous avez ouverte, que les recommandations soient activées ou non, et remplit une playlist avec les classements Deezer, les top titres ou le mix d'un artiste, ou une playlist Deezer, et joue un extrait de 30 secondes d'un titre dans le générateur de playlists.",
         sends:
-          "Le nom de l'artiste recherché : un artiste suggéré, celui dont vous avez ouvert la page, ou celui demandé au générateur de playlists, et ce que vous tapez dans sa recherche de playlists. Pour un classement, seulement le genre ; Deezer déduit le pays de l'emplacement du serveur de Beacon.",
+          "Le nom de l'artiste recherché : un artiste suggéré, celui dont vous avez ouvert la page, ou celui demandé au générateur de playlists, et ce que vous tapez dans sa recherche de playlists. Pour un classement, seulement le genre ; Deezer déduit le pays de l'emplacement du serveur de Beacon. Pour un extrait, l'artiste et le titre ; l'extrait lui-même vient directement de Deezer sur cet appareil.",
       },
       wikidata: {
         name: 'Wikidata',
