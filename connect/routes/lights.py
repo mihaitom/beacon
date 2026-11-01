@@ -157,8 +157,13 @@ async def pair_bridge(req: PairRequest):
     return await get_lights()
 
 
+# The bridge's resource ids. Checked because it goes into a bridge URL and
+# into every stream frame's header, which has room for exactly this.
+_AREA_ID = r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+
+
 class LightsUpdate(BaseModel):
-    area_id: str | None = None
+    area_id: str | None = Field(default=None, pattern=_AREA_ID)
     enabled: bool | None = None
     lead_ms: int | None = Field(default=None, ge=-MAX_LEAD_MS, le=MAX_LEAD_MS)
     style: Literal["pulse", "calm", "party", "wave"] | None = None

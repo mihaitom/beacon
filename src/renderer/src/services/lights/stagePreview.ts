@@ -1,6 +1,6 @@
 /** The lights dialog's preview of a style: a made-up song at 120 BPM that
- * gets louder and quieter, lit the way connect/lights/show.py would light
- * it. An approximation for choosing a style, not a copy - the real show
+ * gets louder and quieter and has a short breakdown, lit the way
+ * connect/lights/show.py would light it. An approximation for choosing a style, not a copy - the real show
  * runs in connect, on the song's own beat. */
 
 import type { LightsStyle } from '@/services/connect/lights'
@@ -9,6 +9,10 @@ export type Rgb = [number, number, number]
 
 const BEAT_SECONDS = 0.5
 const ENERGY_PERIOD_SECONDS = 16
+// The last 8 beats of every 32 are a breakdown - no drums, no flashes -
+// landing in the quiet half of the loudness swell.
+const LOOP_BEATS = 32
+const BREAKDOWN_FROM_BEAT = 24
 const CALM_GLIDE_SECONDS = 8
 const WAVE_SPAN_SECONDS = 0.22
 // connect's ROTATION_SECONDS (lights/controller.py).
@@ -66,6 +70,10 @@ export function previewFrame(
   const beat = Math.floor(t / BEAT_SECONDS)
   const since = t - beat * BEAT_SECONDS
   const downbeat = beat % 4 === 0
+  const hit = beat % LOOP_BEATS < BREAKDOWN_FROM_BEAT ? 1 : 0
+  // Beats heard so far, for party's colour swaps: they hold in a breakdown.
+  const loops = Math.floor(beat / LOOP_BEATS)
+  const heard = loops * BREAKDOWN_FROM_BEAT + Math.min(beat % LOOP_BEATS, BREAKDOWN_FROM_BEAT - 1)
   const floor = 0.12 + 0.38 * energy
   const out: { colour: Rgb; level: number }[] = []
 
@@ -79,15 +87,15 @@ export function previewFrame(
       colour = mix(palette[a]!, palette[(a + 1) % palette.length]!, k - a)
     } else if (style === 'party') {
       const colours = palette.length > 1 ? palette : [palette[0]!, secondColour(palette[0]!)]
-      colour = colours[(i + beat) % colours.length]!
-      level = 0.06 + 0.2 * energy + (0.55 + 0.35 * energy) * Math.exp(-since / 0.14)
-      if (downbeat) colour = mix(colour, WHITE, 0.75 * Math.exp(-since / 0.1))
+      colour = colours[(i + heard) % colours.length]!
+      level = 0.06 + 0.2 * energy + hit * (0.55 + 0.35 * energy) * Math.exp(-since / 0.14)
+      if (downbeat) colour = mix(colour, WHITE, hit * 0.75 * Math.exp(-since / 0.1))
     } else if (style === 'wave') {
       const reached = since - (lights > 1 ? (WAVE_SPAN_SECONDS * i) / (lights - 1) : 0)
-      const pulse = reached >= 0 ? (0.45 + 0.25 * energy) * Math.exp(-reached / 0.16) : 0
+      const pulse = reached >= 0 ? hit * (0.45 + 0.25 * energy) * Math.exp(-reached / 0.16) : 0
       level = floor * 0.8 + pulse
     } else {
-      let pulse = (0.35 + 0.25 * energy) * Math.exp(-since / 0.18) * (downbeat ? 1.3 : 1)
+      let pulse = hit * (0.35 + 0.25 * energy) * Math.exp(-since / 0.18) * (downbeat ? 1.3 : 1)
       const side = i < lights / 2 ? 0 : 1
       if (lights > 1 && !downbeat && side !== beat % 2) pulse *= 0.55
       level = floor + pulse

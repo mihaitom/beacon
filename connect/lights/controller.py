@@ -90,6 +90,9 @@ class LightController:
         # Made in start(): an Event belongs to the loop it was first used
         # on, and the app (and every test client) brings its own.
         self._wake: asyncio.Event | None = None
+        # Fire-and-forget lookups: the loop only holds a task weakly, so
+        # one nobody else holds can be collected half-way.
+        self._jobs: set[asyncio.Task] = set()
         self._local: dict[str, LocalReport] = {}
         self._analysis = AnalysisCache()
         self._song_meta: dict[str, tuple[str, str | None]] = {}  # id -> (stream url, cover url)
@@ -125,6 +128,11 @@ class LightController:
         await self._stop_stream()
         self._analysis.cancel_all()
 
+    def _spawn(self, job) -> None:
+        task = asyncio.create_task(job)
+        self._jobs.add(task)
+        task.add_done_callback(self._jobs.discard)
+
     def notify(self) -> None:
         """Something changed (settings, a report) - look again now."""
         if self._wake is not None:
@@ -157,7 +165,7 @@ class LightController:
         if url and url not in self._picture_colours:
             self._picture_colours[url] = None
             _trim(self._picture_colours)
-            asyncio.create_task(self._load_picture(url))
+            self._spawn(self._load_picture(url))
         self.notify()
 
     async def _load_picture(self, url: str) -> None:
@@ -275,7 +283,7 @@ class LightController:
             and time.monotonic() >= self._lookup_retry.get(song_id, 0.0)
         ):
             self._song_meta_pending.add(song_id)
-            asyncio.create_task(self._resolve(source))
+            self._spawn(self._resolve(source))
         if meta is None:
             return
         stream_url, _ = meta
@@ -446,10 +454,9 @@ def palette_for(
 def rotation(start: RGB, lights: int, now: float) -> tuple[RGB, ...]:
     """A colour per light, evenly round the wheel from `start`'s hue, the
     whole wheel turning once every ROTATION_SECONDS."""
-    hue = colorsys.rgb_to_hsv(*start)[0]
-    turn = now / ROTATION_SECONDS
+    first = colorsys.rgb_to_hsv(*start)[0] + now / ROTATION_SECONDS
     n = max(lights, 1)
-    return tuple(colorsys.hsv_to_rgb((hue + turn + i / n) % 1.0, 1.0, 1.0) for i in range(n))
+    return tuple(colorsys.hsv_to_rgb((first + i / n) % 1.0, 1.0, 1.0) for i in range(n))
 
 
 def to_hex(colour: RGB) -> str:

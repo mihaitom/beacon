@@ -176,6 +176,7 @@ describe('LightsDialog', () => {
     const wrapper = await openDialogWrapper({ ...PAIRED, colour_mode: 'fixed' })
     await wrapper.find('button[aria-label="#ff3b5c"]').trigger('click')
     expect(updateLights).toHaveBeenLastCalledWith({ fixed_colour: '#ff3b5c' })
+    await flushPromises() // the picker waits for that save
     const picker = wrapper.find('input[type="color"]')
     ;(picker.element as HTMLInputElement).value = '#123456'
     await picker.trigger('change')

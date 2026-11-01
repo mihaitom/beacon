@@ -261,6 +261,43 @@ def _click_track(bpm: float, seconds: float) -> np.ndarray:
     return out
 
 
+def _beats_heard(song: SongLights, start: float, end: float) -> np.ndarray:
+    grid = song.grid
+    first = int(np.ceil((start - grid.phase) / grid.period))
+    last = int(np.floor((end - grid.phase) / grid.period))
+    return np.array([song.hit(i) for i in range(first, last + 1)])
+
+
+def test_beats_in_a_breakdown_are_not_heard():
+    x = _click_track(120, 40)
+    x[int(16 * ANALYSIS_RATE) : int(26 * ANALYSIS_RATE)] = 0  # the drums stop
+    song = analysis.analyse_samples_for_lights(x)
+    assert song.grid is not None
+    assert _beats_heard(song, 4, 14).min() > 0.9
+    assert _beats_heard(song, 17, 25).max() < 0.1
+    assert _beats_heard(song, 28, 38).min() > 0.9
+
+
+def test_a_bassline_without_drums_keeps_a_gentler_pulse():
+    x = _click_track(120, 40)
+    gap = slice(int(16 * ANALYSIS_RATE), int(26 * ANALYSIS_RATE))
+    x[gap] = 0
+    t = np.arange(gap.stop - gap.start) / ANALYSIS_RATE
+    x[gap] = 0.1 * np.sin(2 * np.pi * 55 * t)
+    song = analysis.analyse_samples_for_lights(x)
+    heard = _beats_heard(song, 17, 25)
+    assert heard.min() >= analysis._BASS_PULSE - 0.05
+    assert heard.max() < 0.9
+
+
+def test_beats_past_the_analysed_part_count_in_full():
+    song = SongLights(
+        duration=10, grid=None, energy=np.zeros(0), hits=np.array([0.0, 1.0]), first_beat=3
+    )
+    assert (song.hit(3), song.hit(4), song.hit(5), song.hit(2)) == (0.0, 1.0, 1.0, 1.0)
+    assert [song.heard_beats(i) for i in (3, 4, 5, 6)] == [0, 1, 2, 3]
+
+
 def test_a_steady_beat_gets_a_grid_at_its_tempo():
     song = analysis.analyse_samples_for_lights(_click_track(120, 30))
     assert song.grid is not None
@@ -468,6 +505,38 @@ def _song(energy: float = 0.5, grid: BeatGrid | None = None) -> SongLights:
 
 def _level(rgb) -> float:
     return max(rgb)
+
+
+@pytest.mark.parametrize("style", ["pulse", "party", "wave"])
+def test_a_beat_that_is_not_heard_does_not_flash(style):
+    silent = SongLights(
+        duration=60,
+        grid=_song().grid,
+        energy=np.full(60 * analysis.ENERGY_RATE, 0.5, np.float32),
+        hits=np.zeros(120, np.float32),
+    )
+    on_beat = show.frame(2.0, silent, (RED, BLUE), (LEFT, RIGHT), style)
+    later = show.frame(2.45, silent, (RED, BLUE), (LEFT, RIGHT), style)
+    for ch in (0, 1):
+        assert _level(on_beat[ch]) == pytest.approx(_level(later[ch]), abs=0.02)
+
+
+def test_party_colours_hold_while_no_beat_is_heard():
+    hits = np.ones(120, np.float32)
+    hits[8:16] = 0.0
+    song = SongLights(
+        duration=60,
+        grid=_song().grid,
+        energy=np.full(60 * analysis.ENERGY_RATE, 0.5, np.float32),
+        hits=hits,
+    )
+
+    def colour_at(t):
+        out = show.frame(t + 0.4, song, (RED, BLUE), (LEFT,), "party")[0]
+        return "red" if out[0] > out[2] else "blue"
+
+    assert colour_at(3.0) != colour_at(3.5)  # beats 6 and 7: heard, swapping
+    assert {colour_at(4.0 + 0.5 * i) for i in range(8)} == {colour_at(3.5)}
 
 
 def test_a_beat_flashes_and_fades_before_the_next():
@@ -1312,7 +1381,7 @@ def test_update_stores_the_choices(client, monkeypatch):
         json={
             "enabled": True,
             "lead_ms": 150,
-            "area_id": "x",
+            "area_id": AREA,
             "style": "calm",
             "colour_mode": "fixed",
             "fixed_colour": "#FF8800",
@@ -1325,7 +1394,14 @@ def test_update_stores_the_choices(client, monkeypatch):
     assert body["fixed_colour"] == "#ff8800"
     assert body["brightness"] == 60
     cfg = lights_config.get()
-    assert (cfg.area_id, cfg.style, cfg.brightness) == ("x", "calm", 60)
+    assert (cfg.area_id, cfg.style, cfg.brightness) == (AREA, "calm", 60)
+
+
+@pytest.mark.parametrize("area_id", ["x", "../light/abc", AREA + "0", AREA.upper()])
+def test_an_area_id_has_to_look_like_the_bridges(client, area_id):
+    _paired()
+    assert client.put("/lights", json={"area_id": area_id}).status_code == 422
+    assert lights_config.get().area_id == AREA
 
 
 def test_rotate_is_a_colour_mode(client, monkeypatch):

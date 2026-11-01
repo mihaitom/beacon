@@ -291,6 +291,10 @@ class DtlsStream:
             return len(key)
 
         self._psk = psk  # cffi frees the callback once nothing holds it
+        # _context is pyOpenSSL's private handle on the OpenSSL context, the
+        # only way in for a PSK callback. A pyOpenSSL upgrade that renames
+        # it fails test_dtls_stream_reaches_a_psk_server_with_hues_cipher,
+        # not a bridge.
         lib.SSL_CTX_set_psk_client_callback(ctx._context, psk)
 
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

@@ -153,6 +153,7 @@
                     type="color"
                     :value="state.fixed_colour"
                     :aria-label="$t('lights.customColour')"
+                    :disabled="saving"
                     @change="save({ fixed_colour: ($event.target as HTMLInputElement).value })"
                   />
                 </label>

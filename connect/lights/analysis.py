@@ -5,9 +5,12 @@ measured 2026-11-01) rather than analysed live: the beat grid then says
 where every beat falls *before* it is heard, which is what lets a colour
 leave early enough to land on it.
 
-Two things come out of it: the beat grid (core/beat_analysis.py, the same
-one beatmixing uses) and a slow loudness curve, so a quiet verse and a
-full chorus do not light the room the same.
+Three things come out of it: the beat grid (core/beat_analysis.py, the
+same one beatmixing uses), how strongly each of its beats is actually
+heard, and a slow loudness curve, so a quiet verse and a full chorus do not
+light the room the same. The grid alone runs on through a breakdown as if
+the drums were still there; the beats' own strength is what lets the
+lights go quiet with them.
 """
 
 from __future__ import annotations
@@ -22,7 +25,15 @@ from dataclasses import dataclass
 import httpx
 import numpy as np
 
-from core.beat_analysis import ANALYSIS_RATE, BeatGrid, analyse_samples
+from core.beat_analysis import (
+    ANALYSIS_RATE,
+    BeatGrid,
+    beat_strengths,
+    grid_from_envelopes,
+    low_passed,
+    onset_envelopes,
+    span_db,
+)
 from core.streamer import pcm_decode_cmd
 from core.transition_planner import MIN_CONFIDENCE
 
@@ -45,6 +56,22 @@ _DECODE_ATTEMPTS = 3
 _DECODE_RETRY_SECONDS = 30.0
 RGB = tuple[float, float, float]
 
+# A beat's own onset, against the song's typical beat (its 75th
+# percentile): below _HIT_FROM it is not heard as a hit, from _HIT_FULL on
+# it is a full one.
+_HIT_FROM = 0.3
+_HIT_FULL = 0.8
+# While the bass plays - within _BASS_FULL_DB of the song's typical level,
+# gone by _BASS_GONE_DB - every beat pulses at least _BASS_PULSE, however
+# faint its onset: a busy bassline buries the kick's onset (a house track
+# measured 2026-11-01 read 0.3-0.7 on beats with the kick plainly there).
+# Where the bass drops out, only what is heard as a hit flashes.
+_BASS_FULL_DB = -6.0
+_BASS_GONE_DB = -18.0
+_BASS_PULSE = 0.6
+# A beat at least this strong counts as one for the colour steps.
+HEARD = 0.5
+
 # Fallback when a cover has no usable colour: a warm white.
 DEFAULT_COLOUR: RGB = (1.0, 0.62, 0.32)
 
@@ -57,12 +84,34 @@ class SongLights:
     grid: BeatGrid | None
     # 0..1, ENERGY_RATE values a second; 1 is the song's own loud part.
     energy: np.ndarray
+    # 0..1 per beat of the grid, from beat number `first_beat` on (the
+    # grid's beat_index, see show.py): how strongly it is heard. None for
+    # every beat a full one.
+    hits: np.ndarray | None = None
+    first_beat: int = 0
 
     def energy_at(self, t: float) -> float:
         if len(self.energy) == 0:
             return 0.5
         i = int(max(0.0, t) * ENERGY_RATE)
         return float(self.energy[min(i, len(self.energy) - 1)])
+
+    def hit(self, beat_index: int) -> float:
+        """Past the analysed part (MAX_ANALYSED_SECONDS) a full beat, as
+        it was before the beats were weighed at all."""
+        i = beat_index - self.first_beat
+        if self.hits is None or not 0 <= i < len(self.hits):
+            return 1.0
+        return float(self.hits[i])
+
+    def heard_beats(self, beat_index: int) -> int:
+        """How many beats up to `beat_index` were heard as one: a count
+        that stands still through a breakdown."""
+        i = beat_index - self.first_beat
+        if self.hits is None or i < 0:
+            return beat_index
+        heard = int(np.count_nonzero(self.hits[: i + 1] >= HEARD))
+        return heard + max(0, i + 1 - len(self.hits))
 
 
 def energy_curve(samples: np.ndarray, rate: int = ANALYSIS_RATE) -> np.ndarray:
@@ -81,13 +130,48 @@ def energy_curve(samples: np.ndarray, rate: int = ANALYSIS_RATE) -> np.ndarray:
     return np.clip(smooth / top, 0.0, 1.0).astype(np.float32)
 
 
+def _ramp(value: np.ndarray, low: float, high: float) -> np.ndarray:
+    return np.clip((value - low) / (high - low), 0.0, 1.0)
+
+
+def _against_typical(strength: np.ndarray) -> np.ndarray:
+    typical = float(np.percentile(strength, 75))
+    return strength / typical if typical > 0 else np.zeros_like(strength)
+
+
+def beat_hits(
+    samples: np.ndarray, full: np.ndarray, kick: np.ndarray, grid: BeatGrid
+) -> tuple[int, np.ndarray]:
+    """(the grid's index of the first beat, how strongly each is heard).
+
+    A beat's onset counts in the bass or across the band, whichever is
+    stronger - a clap in a breakdown is as much a hit as a kick."""
+    beats = grid.beats(0.0, len(samples) / ANALYSIS_RATE - grid.period)
+    if len(beats) == 0:
+        return 0, np.zeros(0, dtype=np.float32)
+    first = round((beats[0] - grid.phase) / grid.period)
+    onset = np.maximum(
+        _against_typical(beat_strengths(kick, beats)),
+        _against_typical(beat_strengths(full, beats)),
+    )
+    bass = span_db(low_passed(samples), beats, grid.period)
+    bass_on = _ramp(bass - np.percentile(bass, 75), _BASS_GONE_DB, _BASS_FULL_DB)
+    hits = np.maximum(_ramp(onset, _HIT_FROM, _HIT_FULL), _BASS_PULSE * bass_on)
+    return first, hits.astype(np.float32)
+
+
 def analyse_samples_for_lights(samples: np.ndarray) -> SongLights:
-    region = analyse_samples(samples, 0.0)
-    grid = region.grid
+    full, kick = onset_envelopes(samples)
+    grid = grid_from_envelopes(full, kick)
     if grid is not None and grid.confidence < MIN_CONFIDENCE:
         grid = None
+    first, hits = beat_hits(samples, full, kick, grid) if grid else (0, None)
     return SongLights(
-        duration=len(samples) / ANALYSIS_RATE, grid=grid, energy=energy_curve(samples)
+        duration=len(samples) / ANALYSIS_RATE,
+        grid=grid,
+        energy=energy_curve(samples),
+        hits=hits,
+        first_beat=first,
     )
 
 

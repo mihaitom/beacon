@@ -6,6 +6,9 @@ tested and tuned without a bridge. Four styles:
 - pulse: dim between beats and brighter the louder the section, a short
   flash on every beat (the first of a bar stronger, with a touch of
   white); lights on the left and right take turns.
+
+Every flash is as strong as its beat is heard (SongLights.hit): through a
+breakdown the grid runs on, the flashes do not.
 - calm: no flashes; brightness follows the loudness, the colours glide
   from light to light.
 - party: hard hits, the lights swap colours on every beat, a white flash
@@ -141,23 +144,26 @@ def _levels(
     since = t - (grid.phase + beat_index * grid.period)
     bar_position = round((grid.phase + beat_index * grid.period - grid.downbeat) / grid.period)
     downbeat = bar_position % 4 == 0
+    hit = song.hit(beat_index)
 
     if style == "party":
-        return _party(since, beat_index, downbeat, energy, palette, ordered)
+        step = song.heard_beats(beat_index)
+        return _party(since, step, downbeat, hit, energy, palette, ordered)
     if style == "wave":
-        return _wave(since, energy, base, ordered)
-    return _pulse(since, beat_index, downbeat, energy, base, ordered)
+        return _wave(since, hit, energy, base, ordered)
+    return _pulse(since, beat_index, downbeat, hit, energy, base, ordered)
 
 
 def _pulse(
     since: float,
     beat_index: int,
     downbeat: bool,
+    hit: float,
     energy: float,
     base: dict[int, RGB],
     ordered: list[Channel],
 ) -> dict[int, RGB]:
-    pulse = (_PULSE + _PULSE_RANGE * energy) * math.exp(-since / _PULSE_DECAY_SECONDS)
+    pulse = hit * (_PULSE + _PULSE_RANGE * energy) * math.exp(-since / _PULSE_DECAY_SECONDS)
     if downbeat:
         pulse *= _DOWNBEAT_BOOST
     floor = _FLOOR + _FLOOR_RANGE * energy
@@ -190,31 +196,35 @@ def _calm(
 
 def _party(
     since: float,
-    beat_index: int,
+    step: int,
     downbeat: bool,
+    hit: float,
     energy: float,
     palette: tuple[RGB, ...],
     ordered: list[Channel],
 ) -> dict[int, RGB]:
+    """`step` counts the beats heard so far: the colours swap on a beat,
+    and hold while there is none."""
     colours = list(palette)
     if len(colours) < 2:
         colours.append(_second_colour(colours[0]))
-    pulse = (_PARTY_PULSE + _PARTY_PULSE_RANGE * energy) * math.exp(-since / _PARTY_DECAY_SECONDS)
+    decay = math.exp(-since / _PARTY_DECAY_SECONDS)
+    pulse = hit * (_PARTY_PULSE + _PARTY_PULSE_RANGE * energy) * decay
     level = _clamp(_PARTY_FLOOR + _PARTY_FLOOR_RANGE * energy + pulse)
-    white = _PARTY_WHITE * math.exp(-since / _PARTY_WHITE_DECAY_SECONDS) if downbeat else 0.0
+    white = hit * _PARTY_WHITE * math.exp(-since / _PARTY_WHITE_DECAY_SECONDS) if downbeat else 0.0
 
     out: dict[int, RGB] = {}
     for i, ch in enumerate(ordered):
-        colour = colours[(i + beat_index) % len(colours)]
+        colour = colours[(i + step) % len(colours)]
         out[ch.channel_id] = scale(_towards_white(colour, white), level)
     return out
 
 
 def _wave(
-    since: float, energy: float, base: dict[int, RGB], ordered: list[Channel]
+    since: float, hit: float, energy: float, base: dict[int, RGB], ordered: list[Channel]
 ) -> dict[int, RGB]:
     floor = (_FLOOR + _FLOOR_RANGE * energy) * _WAVE_FLOOR
-    peak = _WAVE_PULSE + _WAVE_PULSE_RANGE * energy
+    peak = hit * (_WAVE_PULSE + _WAVE_PULSE_RANGE * energy)
     last = max(len(ordered) - 1, 1)
     out: dict[int, RGB] = {}
     for i, ch in enumerate(ordered):

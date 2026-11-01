@@ -228,10 +228,12 @@ def _sharpness(hist: np.ndarray) -> np.ndarray:
 def beat_grid(samples: np.ndarray, bpm_hint: float | None = None) -> BeatGrid | None:
     """The beat grid of `samples` (mono float, ANALYSIS_RATE), in seconds
     from its own start; None where there is nothing beat-like at all."""
-    return _grid_from(*onset_envelopes(samples), bpm_hint)
+    return grid_from_envelopes(*onset_envelopes(samples), bpm_hint)
 
 
-def _grid_from(full: np.ndarray, kick: np.ndarray, bpm_hint: float | None) -> BeatGrid | None:
+def grid_from_envelopes(
+    full: np.ndarray, kick: np.ndarray, bpm_hint: float | None = None
+) -> BeatGrid | None:
     if len(full) < _FPS * 8 or not full.any():
         return None
     coarse = _tempo_period(full, bpm_hint)
@@ -305,10 +307,8 @@ def beat_bounds(
     if len(starts) == 0:
         return None, None
     beats = starts[:, None] + np.arange(4) * grid.period
-    hops = np.round((beats - _ENVELOPE_OFFSET) * _FPS).astype(int)
-    window = hops[..., None] + np.arange(-2, 3)
-    strength = full[np.clip(window, 0, len(full) - 1)].max(axis=-1).sum(axis=-1)
-    bass = _bar_db(_low_passed(samples), starts, bar)
+    strength = beat_strengths(full, beats.ravel()).reshape(beats.shape).sum(axis=-1)
+    bass = span_db(low_passed(samples), starts, bar)
     typical = np.percentile(strength, 75)
     if typical <= 0:
         return None, None
@@ -318,7 +318,7 @@ def beat_bounds(
     if not carried.any():
         return None, None
     end = float(starts[np.flatnonzero(carried)[-1]] + bar)
-    fade = _fade_start(starts, _bar_db(samples, starts, bar))
+    fade = _fade_start(starts, span_db(samples, starts, bar))
     if fade is not None:
         end = min(end, fade)
     runs = np.convolve(carried, np.ones(_BEAT_START_BARS), mode="valid")
@@ -326,16 +326,25 @@ def beat_bounds(
     return (float(starts[first[0]]) if len(first) else None), end
 
 
-def _low_passed(samples: np.ndarray) -> np.ndarray:
+def beat_strengths(envelope: np.ndarray, beats: np.ndarray) -> np.ndarray:
+    """`envelope`'s onset strength on each of `beats` (seconds into the
+    stretch): its peak within two hops either side, for a beat that lands
+    a few milliseconds off the grid."""
+    hops = np.round((beats - _ENVELOPE_OFFSET) * _FPS).astype(int)
+    window = hops[:, None] + np.arange(-2, 3)
+    return envelope[np.clip(window, 0, len(envelope) - 1)].max(axis=-1)
+
+
+def low_passed(samples: np.ndarray) -> np.ndarray:
     """`samples` below _BASS_HZ."""
     spectrum = np.fft.rfft(samples)
     spectrum[np.fft.rfftfreq(len(samples), 1 / ANALYSIS_RATE) > _BASS_HZ] = 0
     return np.fft.irfft(spectrum, len(samples))
 
 
-def _bar_db(signal: np.ndarray, starts: np.ndarray, bar: float) -> np.ndarray:
-    """The level of each bar from `starts`, in dB."""
-    edges = np.round(np.add.outer(starts, [0.0, bar]) * ANALYSIS_RATE).astype(int)
+def span_db(signal: np.ndarray, starts: np.ndarray, length: float) -> np.ndarray:
+    """The level of `signal` over `length` seconds from each of `starts`, in dB."""
+    edges = np.round(np.add.outer(starts, [0.0, length]) * ANALYSIS_RATE).astype(int)
     power = np.array([np.mean(signal[a:b] ** 2) if b > a else 0.0 for a, b in edges])
     return 10 * np.log10(power + 1e-12)
 
@@ -383,7 +392,7 @@ def analyse_samples(
         (start, end) if bounds is None else (start + bounds[0], start + bounds[1])
     )
     full, kick = onset_envelopes(samples)
-    grid = _grid_from(full, kick, bpm_hint)
+    grid = grid_from_envelopes(full, kick, bpm_hint)
     beat_start = beat_end = None
     if grid is not None:
         bounds = beat_bounds(samples, full, grid)
