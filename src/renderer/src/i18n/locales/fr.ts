@@ -742,12 +742,15 @@ export default {
     },
     colour: 'Couleur',
     colourModes: {
-      cover: "De l'image",
-      palette: "Palette de l'image",
-      fixed: 'Couleur fixe',
+      cover: 'Image',
+      palette: 'Palette',
+      rotate: 'Rotation',
+      fixed: 'Fixe',
     },
     coverHint:
       "La couleur principale de la pochette, ou de la photo de l'artiste quand Lecture en affiche une",
+    rotateHint:
+      'Chaque lampe a sa propre couleur, toutes tournent lentement sur le cercle chromatique',
     paletteHint: 'Plusieurs de ses couleurs, réparties sur les lampes',
     coverUnknown: "Prise sur l'image dès qu'un titre joue",
     customColour: 'Couleur personnalisée',

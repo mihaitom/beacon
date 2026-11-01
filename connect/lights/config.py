@@ -27,7 +27,7 @@ DEFAULT_LEAD_MS = 80
 MAX_LEAD_MS = 1000
 
 STYLES = ("pulse", "calm", "party", "wave")
-COLOUR_MODES = ("cover", "palette", "fixed")
+COLOUR_MODES = ("cover", "palette", "rotate", "fixed")
 DEFAULT_FIXED_COLOUR = "#3b6bff"
 # In percent. Not lower: below this the flashes no longer read as flashes.
 MIN_BRIGHTNESS = 20
@@ -44,8 +44,10 @@ class LightsConfig:
     enabled: bool = False
     lead_ms: int = DEFAULT_LEAD_MS
     style: str = "pulse"
-    # "cover": the cover's main colour; "palette": several of its colours,
-    # spread over the lights; "fixed": fixed_colour.
+    # "cover": the picture's main colour; "palette": several of its
+    # colours, spread over the lights; "rotate": a colour of its own for
+    # every light, all of them moving round the colour wheel; "fixed":
+    # fixed_colour.
     colour_mode: str = "cover"
     fixed_colour: str = DEFAULT_FIXED_COLOUR
     brightness: int = 100

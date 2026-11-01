@@ -1,7 +1,8 @@
 <template>
   <!-- The lights of the picked area, playing a made-up song in the chosen
      - style (stagePreview.ts). Decorative: the choices next to it say
-     - everything in words. -->
+     - everything in words. Dimmed, not dark, while the lights are switched
+     - off - it is there to choose a style by, which is often done first. -->
   <div class="lights-stage" :class="{ 'lights-stage--off': !on }" aria-hidden="true">
     <div v-for="n in count" :key="n" ref="lamp" class="lights-stage__lamp" />
   </div>
@@ -27,6 +28,9 @@ export default {
     palette: { type: Array as PropType<Rgb[]>, required: true },
     /** 0-1. */
     brightness: { type: Number, default: 1 },
+    /** Every light its own colour, turning round the wheel from the
+     * palette's first. */
+    rotate: { type: Boolean, default: false },
     on: { type: Boolean, default: true },
   },
   data() {
@@ -42,6 +46,7 @@ export default {
     lightStyle: 'drawStill',
     palette: 'drawStill',
     brightness: 'drawStill',
+    rotate: 'drawStill',
     count() {
       void this.$nextTick(() => this.drawStill())
     },
@@ -59,16 +64,27 @@ export default {
       return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
     },
     loop(now: number) {
-      this.draw((now - this.startedAt) / 1000)
+      // Asked for first, so one frame that fails to draw does not end the
+      // animation for good.
       this.frameId = requestAnimationFrame(this.loop)
+      this.draw((now - this.startedAt) / 1000)
     },
     drawStill() {
       if (this.reducedMotion()) this.draw(STILL_AT_SECONDS)
     },
     draw(t: number) {
-      const lamps = (this.$refs.lamp as HTMLElement[] | undefined) ?? []
-      if (!this.palette.length) return
-      const frame = previewFrame(t, this.lightStyle, this.palette, lamps.length, this.brightness)
+      const lamps = ((this.$refs.lamp as (HTMLElement | null)[] | undefined) ?? []).filter(
+        (lamp): lamp is HTMLElement => !!lamp,
+      )
+      if (!this.palette.length || !lamps.length) return
+      const frame = previewFrame(
+        t,
+        this.lightStyle,
+        this.palette,
+        lamps.length,
+        this.brightness,
+        this.rotate,
+      )
       lamps.forEach((lamp, i) => {
         const { colour, level } = frame[i]!
         const lit = colour.map((c) => Math.round(c * level)).join(', ')
@@ -112,10 +128,6 @@ export default {
 }
 
 .lights-stage--off .lights-stage__lamp {
-  background: #1c1c1f;
-}
-
-.lights-stage--off .lights-stage__lamp::after {
-  display: none;
+  opacity: 0.35;
 }
 </style>

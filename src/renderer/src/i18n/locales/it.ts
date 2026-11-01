@@ -736,12 +736,14 @@ export default {
     },
     colour: 'Colore',
     colourModes: {
-      cover: "Dall'immagine",
-      palette: "Tavolozza dell'immagine",
-      fixed: 'Colore fisso',
+      cover: 'Immagine',
+      palette: 'Tavolozza',
+      rotate: 'Rotazione',
+      fixed: 'Fisso',
     },
     coverHint:
       "Il colore principale della copertina, o della foto dell'artista quando Riproduzione ne mostra una",
+    rotateHint: 'Ogni luce con un colore suo, tutti girano lentamente sulla ruota dei colori',
     paletteHint: 'Diversi suoi colori, distribuiti sulle luci',
     coverUnknown: "Preso dall'immagine appena qualcosa suona",
     customColour: 'Colore personalizzato',

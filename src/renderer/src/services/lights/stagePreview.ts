@@ -11,11 +11,39 @@ const BEAT_SECONDS = 0.5
 const ENERGY_PERIOD_SECONDS = 16
 const CALM_GLIDE_SECONDS = 8
 const WAVE_SPAN_SECONDS = 0.22
+// connect's ROTATION_SECONDS (lights/controller.py).
+const ROTATION_SECONDS = 30
 
 const WHITE: Rgb = [255, 255, 255]
 
 function mix(a: Rgb, b: Rgb, t: number): Rgb {
   return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]
+}
+
+function hue([r, g, b]: Rgb): number {
+  const max = Math.max(r, g, b)
+  const span = max - Math.min(r, g, b)
+  if (!span) return 0
+  const h = max === r ? ((g - b) / span) % 6 : max === g ? (b - r) / span + 2 : (r - g) / span + 4
+  return (((h / 6) % 1) + 1) % 1
+}
+
+function fromHue(h: number): Rgb {
+  const k = (n: number) => (n + h * 6) % 6
+  const f = (n: number) => 255 * (1 - Math.max(0, Math.min(k(n), 4 - k(n), 1)))
+  return [f(5), f(3), f(1)]
+}
+
+/** A colour per light, evenly round the wheel from `start`'s hue, turning
+ * once every ROTATION_SECONDS - connect's rotation(). */
+export function rotation(start: Rgb, lights: number, t: number): Rgb[] {
+  const n = Math.max(lights, 1)
+  const from = hue(start) + t / ROTATION_SECONDS
+  return Array.from({ length: n }, (_, i) => fromHue((from + i / n) % 1))
+}
+
+export function rgbToHex(rgb: Rgb): string {
+  return '#' + rgb.map((c) => Math.round(c).toString(16).padStart(2, '0')).join('')
 }
 
 export function hexToRgb(hex: string): Rgb {
@@ -31,7 +59,9 @@ export function previewFrame(
   palette: Rgb[],
   lights: number,
   brightness: number,
+  rotate = false,
 ): { colour: Rgb; level: number }[] {
+  if (rotate) palette = rotation(palette[0]!, lights, t)
   const energy = 0.55 + 0.45 * Math.sin((t / ENERGY_PERIOD_SECONDS) * 2 * Math.PI)
   const beat = Math.floor(t / BEAT_SECONDS)
   const since = t - beat * BEAT_SECONDS
@@ -48,7 +78,7 @@ export function previewFrame(
       const a = Math.floor(k)
       colour = mix(palette[a]!, palette[(a + 1) % palette.length]!, k - a)
     } else if (style === 'party') {
-      const colours = palette.length > 1 ? palette : [palette[0]!, rotate(palette[0]!)]
+      const colours = palette.length > 1 ? palette : [palette[0]!, secondColour(palette[0]!)]
       colour = colours[(i + beat) % colours.length]!
       level = 0.06 + 0.2 * energy + (0.55 + 0.35 * energy) * Math.exp(-since / 0.14)
       if (downbeat) colour = mix(colour, WHITE, 0.75 * Math.exp(-since / 0.1))
@@ -70,6 +100,6 @@ export function previewFrame(
 }
 
 /** connect's stand-in second colour for a one-colour party. */
-function rotate(c: Rgb): Rgb {
+function secondColour(c: Rgb): Rgb {
   return [c[2], c[0], c[1]]
 }

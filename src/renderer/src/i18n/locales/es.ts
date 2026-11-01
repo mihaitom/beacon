@@ -740,12 +740,14 @@ export default {
     },
     colour: 'Color',
     colourModes: {
-      cover: 'De la imagen',
-      palette: 'Paleta de la imagen',
-      fixed: 'Color fijo',
+      cover: 'Imagen',
+      palette: 'Paleta',
+      rotate: 'Rotación',
+      fixed: 'Fijo',
     },
     coverHint:
       'El color principal de la portada, o de la foto del artista cuando Reproducción muestra una',
+    rotateHint: 'Cada luz con su propio color, todos girando despacio por la rueda de color',
     paletteHint: 'Varios de sus colores, repartidos entre las luces',
     coverUnknown: 'Se toma de la imagen en cuanto suene algo',
     customColour: 'Color propio',

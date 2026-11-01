@@ -189,6 +189,11 @@ describe('LightsDialog', () => {
     expect(swatches(await openDialogWrapper({ ...PAIRED, colour_mode: 'palette' }))).toBe(3)
   })
 
+  it('the rotation shows a colour for every light of the area', async () => {
+    const wrapper = await openDialogWrapper({ ...PAIRED, colour_mode: 'rotate', area_id: 'area-2' })
+    expect(wrapper.findAll('.lights__swatch--static')).toHaveLength(5)
+  })
+
   it('a failed brightness save goes back to what connect has', async () => {
     vi.mocked(updateLights).mockRejectedValue(new Error('down'))
     const vm = await openDialog({ ...PAIRED, brightness: 70 })

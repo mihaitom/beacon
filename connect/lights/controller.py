@@ -15,6 +15,7 @@ gives: every one of those paths would otherwise have to remember this too.
 from __future__ import annotations
 
 import asyncio
+import colorsys
 import contextlib
 import logging
 import time
@@ -45,6 +46,9 @@ LOCAL_REPORT_TTL = 8.0
 _RETRY_SECONDS = 15.0
 # How long a song's new colour takes to replace the last one's.
 _COLOUR_FADE_SECONDS = 1.5
+# One full turn of the colour wheel in the "rotate" colours. Slow enough to
+# read as drifting rather than cycling; the beat is the styles' job.
+ROTATION_SECONDS = 30.0
 
 
 async def _cancel(task: asyncio.Task | None) -> None:
@@ -341,7 +345,7 @@ class LightController:
         if source is None:
             # The grace period between songs: hold the colours, dimmed.
             return show.frame(0.0, None, self._palette, self._channels, brightness=brightness * 0.5)
-        wanted = palette_for(cfg, self._palette_of(source.song_id))
+        wanted = palette_for(cfg, self._palette_of(source.song_id), len(self._channels), now)
         self._palette = _fade(self._palette, wanted, (1 / SEND_HZ) / _COLOUR_FADE_SECONDS)
         position = source.position + (now - self._source_at) + cfg.lead_ms / 1000
         song = self._analysis.get(source.song_id)
@@ -377,13 +381,30 @@ def _trim(cache: dict, keep: int = 32) -> None:
         cache.pop(next(iter(cache)))
 
 
-def palette_for(cfg: lights_config.LightsConfig, cover: tuple[RGB, ...] | None) -> tuple[RGB, ...]:
+def palette_for(
+    cfg: lights_config.LightsConfig,
+    cover: tuple[RGB, ...] | None,
+    lights: int = 1,
+    now: float = 0.0,
+) -> tuple[RGB, ...]:
     """The colours the settings ask for. `cover` is the song's picture's
-    (see _palette_of), None while it is still being looked at."""
+    (see _palette_of), None while it is still being looked at; `lights`
+    and `now` are for the rotation."""
     if cfg.colour_mode == "fixed":
         return (hex_colour(cfg.fixed_colour),)
     cover = cover or (DEFAULT_COLOUR,)
+    if cfg.colour_mode == "rotate":
+        return rotation(cover[0], lights, now)
     return cover if cfg.colour_mode == "palette" else cover[:1]
+
+
+def rotation(start: RGB, lights: int, now: float) -> tuple[RGB, ...]:
+    """A colour per light, evenly round the wheel from `start`'s hue, the
+    whole wheel turning once every ROTATION_SECONDS."""
+    hue = colorsys.rgb_to_hsv(*start)[0]
+    turn = now / ROTATION_SECONDS
+    n = max(lights, 1)
+    return tuple(colorsys.hsv_to_rgb((hue + turn + i / n) % 1.0, 1.0, 1.0) for i in range(n))
 
 
 def to_hex(colour: RGB) -> str:

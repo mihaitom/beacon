@@ -60,10 +60,12 @@
 
         <template v-else-if="state">
           <lights-stage
-            :lights="currentArea?.lights ?? 2"
+            v-if="modelValue"
+            :lights="lightCount"
             :light-style="state.style"
             :palette="previewPalette"
             :brightness="brightness / 100"
+            :rotate="state.colour_mode === 'rotate'"
             :on="state.enabled"
           />
           <p class="lights__caption">{{ $t('lights.follows') }}</p>
@@ -250,7 +252,7 @@ import {
   type LightsUpdate,
 } from '@/services/connect/lights'
 import { ConnectApiError } from '@/services/connect/http'
-import { hexToRgb, type Rgb } from '@/services/lights/stagePreview'
+import { hexToRgb, rgbToHex, rotation, type Rgb } from '@/services/lights/stagePreview'
 import { useLightsStore } from '@/stores/lights'
 import LightsStage from './LightsStage.vue'
 
@@ -315,28 +317,36 @@ export default {
       return [...new Set([...(this.state?.found ?? []).map((b) => b.host), ...this.searchedHosts])]
     },
     colourModes(): SegmentedOption[] {
-      return (['cover', 'palette', 'fixed'] as const).map((value) => ({
+      return (['cover', 'palette', 'rotate', 'fixed'] as const).map((value) => ({
         value,
         title: this.$t(`lights.colourModes.${value}`),
       }))
     },
+    lightCount(): number {
+      return this.currentArea?.lights ?? 2
+    },
     coverSwatches(): string[] {
       const cover = this.state?.picture_colours ?? [DEFAULT_COLOUR]
-      return this.state?.colour_mode === 'palette' ? cover : cover.slice(0, 1)
+      const mode = this.state?.colour_mode
+      if (mode === 'palette') return cover
+      if (mode === 'rotate') return rotation(hexToRgb(cover[0]!), this.lightCount, 0).map(rgbToHex)
+      return cover.slice(0, 1)
     },
     coverLine(): string {
+      const mode = this.state?.colour_mode
+      if (mode === 'rotate') return this.$t('lights.rotateHint')
       if (!this.state?.picture_colours) return this.$t('lights.coverUnknown')
-      return this.state.colour_mode === 'palette'
-        ? this.$t('lights.paletteHint')
-        : this.$t('lights.coverHint')
+      return mode === 'palette' ? this.$t('lights.paletteHint') : this.$t('lights.coverHint')
     },
     customColour(): boolean {
       return !!this.state && !SWATCHES.includes(this.state.fixed_colour)
     },
     previewPalette(): Rgb[] {
-      const hexes =
-        this.state?.colour_mode === 'fixed' ? [this.state.fixed_colour] : this.coverSwatches
-      return hexes.map(hexToRgb)
+      const mode = this.state?.colour_mode
+      if (mode === 'fixed') return [hexToRgb(this.state!.fixed_colour)]
+      // The rotation is worked out frame by frame from where it starts.
+      if (mode === 'rotate') return [hexToRgb(this.state?.picture_colours?.[0] ?? DEFAULT_COLOUR)]
+      return this.coverSwatches.map(hexToRgb)
     },
     /** Something to know before choosing anything. */
     warning(): string {

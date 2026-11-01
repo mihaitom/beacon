@@ -24,6 +24,7 @@ from lights import config as lights_config
 from lights.analysis import SongLights
 from lights.controller import (
     LOCAL_REPORT_TTL,
+    ROTATION_SECONDS,
     LightController,
     Source,
     hex_colour,
@@ -956,6 +957,37 @@ def test_the_settings_pick_the_colours():
     assert palette_for(_paired(colour_mode="palette"), None) == (analysis.DEFAULT_COLOUR,)
 
 
+def test_rotation_gives_every_light_its_own_colour_and_turns():
+    cfg = _paired(colour_mode="rotate")
+    three = palette_for(cfg, (RED,), 3, 0.0)
+    assert len(three) == 3
+    # Starts at the picture's colour, the others a third of the wheel on.
+    assert three[0] == pytest.approx(RED)
+    assert three[1] == pytest.approx(GREEN)
+    assert three[2] == pytest.approx(BLUE)
+    # A third of the way round later, each light has the next one's colour.
+    later = palette_for(cfg, (RED,), 3, ROTATION_SECONDS / 3)
+    assert later[0] == pytest.approx(GREEN)
+    assert later[2] == pytest.approx(RED)
+
+
+def test_the_show_turns_the_rotation_over_time(sessions):
+    _paired(colour_mode="rotate")
+    c = LightController()
+    c._channels = (LEFT, RIGHT)
+    c._covers["s"] = (RED,)
+    now = time.monotonic()
+    c._source, c._source_at = Source("x", "s", 0.0), now
+    start = (RED, BLUE)
+    c._palette = start
+    c._frame(now)
+    soon = c._palette
+    c._palette = start
+    c._frame(now + ROTATION_SECONDS / 2)
+    # The same step from the same colours heads somewhere else half a turn on.
+    assert c._palette != soon
+
+
 def test_a_new_palette_fades_in(sessions):
     _paired(colour_mode="palette")
     c = LightController()
@@ -1089,6 +1121,12 @@ def test_update_stores_the_choices(client, monkeypatch):
     assert body["brightness"] == 60
     cfg = lights_config.get()
     assert (cfg.area_id, cfg.style, cfg.brightness) == ("x", "calm", 60)
+
+
+def test_rotate_is_a_colour_mode(client, monkeypatch):
+    _paired()
+    monkeypatch.setattr(hue, "list_areas", _no_areas)
+    assert client.put("/lights", json={"colour_mode": "rotate"}).json()["colour_mode"] == "rotate"
 
 
 def test_an_update_leaves_what_it_does_not_name(client, monkeypatch):

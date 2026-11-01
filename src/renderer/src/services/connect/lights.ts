@@ -12,7 +12,7 @@ export interface LightsArea {
  * did not answer just now. `playing` says whether the lights are following
  * something at this moment, `start_error` why the last start failed. */
 export type LightsStyle = 'pulse' | 'calm' | 'party' | 'wave'
-export type LightsColourMode = 'cover' | 'palette' | 'fixed'
+export type LightsColourMode = 'cover' | 'palette' | 'rotate' | 'fixed'
 
 export interface LightsState {
   paired: boolean
