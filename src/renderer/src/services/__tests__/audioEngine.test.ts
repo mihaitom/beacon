@@ -307,6 +307,55 @@ describe('AudioEngine', () => {
     })
   })
 
+  describe('a pause the browser made on its own', () => {
+    function playThenSystemPause(): ReturnType<typeof vi.fn> {
+      const onExternalPause = vi.fn()
+      engine.onExternalPause = onExternalPause
+      engine.play('song.mp3')
+      audio.paused = true
+      audio.dispatchEvent(new Event('pause'))
+      return onExternalPause
+    }
+
+    it('is reported, so the app stops showing the song as playing', () => {
+      expect(playThenSystemPause()).toHaveBeenCalledOnce()
+    })
+
+    it('is not reported for a pause the app asked for', () => {
+      const onExternalPause = vi.fn()
+      engine.onExternalPause = onExternalPause
+      engine.play('song.mp3')
+      engine.pause()
+      audio.paused = true
+      audio.dispatchEvent(new Event('pause'))
+      expect(onExternalPause).not.toHaveBeenCalled()
+    })
+
+    it('is not reported when the track simply ended', () => {
+      const onExternalPause = vi.fn()
+      engine.onExternalPause = onExternalPause
+      engine.play('song.mp3')
+      audio.paused = true
+      audio.ended = true
+      audio.dispatchEvent(new Event('pause'))
+      expect(onExternalPause).not.toHaveBeenCalled()
+    })
+
+    it('leaves a later drop for the next play rather than reconnecting into sound', () => {
+      vi.useFakeTimers()
+      try {
+        playThenSystemPause()
+        audio.play.mockClear()
+        audio.error = { message: 'network', code: 2 }
+        audio.dispatchEvent(new Event('error'))
+        vi.advanceTimersByTime(60_000)
+        expect(audio.play).not.toHaveBeenCalled()
+      } finally {
+        vi.useRealTimers()
+      }
+    })
+  })
+
   describe('preload', () => {
     it('hints the browser to buffer ahead rather than the bare minimum', () => {
       // Left to some browsers' own default (mobile Chrome on cellular in

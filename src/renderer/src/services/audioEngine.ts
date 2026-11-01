@@ -339,6 +339,10 @@ export class AudioEngine {
   /** Fires each time the element actually starts producing sound - a
    * start, a resume, the next track, a reconnect landing. */
   onPlaying: (() => void) | null = null
+  /** Fires when the browser paused the element on its own - Bluetooth or
+   * headphones disconnecting, an incoming call - rather than through
+   * pause() below. */
+  onExternalPause: (() => void) | null = null
 
   constructor() {
     this.audio = new Audio()
@@ -451,6 +455,15 @@ export class AudioEngine {
       this.reconnecting = false
       this.onReconnectStateChange?.(false)
       this.onPlaying?.()
+    })
+    // Without this the app kept showing a song as playing after a phone
+    // dropped its Bluetooth speaker, and play did nothing until pause was
+    // pressed first. A pause asked for here clears playWanted before the
+    // event arrives; one that ends the track arrives with `ended` set.
+    this.audio.addEventListener('pause', () => {
+      if (!this.playWanted || !this.audio.paused || this.audio.ended) return
+      this.pause()
+      this.onExternalPause?.()
     })
     this.audio.addEventListener('error', () => {
       const code = (this.audio.error as { code?: number } | null)?.code

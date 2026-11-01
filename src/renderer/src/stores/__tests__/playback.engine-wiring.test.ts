@@ -53,6 +53,7 @@ interface WiredEngine {
   onConnectionLost: (() => void) | null
   onSilence: ((seconds: number) => void) | null
   onPlaying: (() => void) | null
+  onExternalPause: (() => void) | null
 }
 
 let engine: WiredEngine
@@ -103,6 +104,7 @@ describe('the store wiring the audio engine', () => {
       onConnectionLost: null,
       onSilence: null,
       onPlaying: null,
+      onExternalPause: null,
     }
     vi.mocked(getAudioEngine).mockReturnValue(
       engine as unknown as ReturnType<typeof getAudioEngine>,
@@ -111,6 +113,27 @@ describe('the store wiring the audio engine', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+  it('shows playback as paused once the browser paused it on its own', () => {
+    const playback = usePlaybackStore()
+    playback.init()
+    playback.isPlaying = true
+
+    engine.onExternalPause?.()
+
+    expect(playback.isPlaying).toBe(false)
+  })
+
+  it('leaves a cast alone when the local element is paused underneath it', () => {
+    const playback = usePlaybackStore()
+    playback.init()
+    castTo()
+    playback.isPlaying = true
+
+    engine.onExternalPause?.()
+
+    expect(playback.isPlaying).toBe(true)
   })
 
   it('registers the lock-screen controls again once sound starts', () => {

@@ -691,6 +691,11 @@ export const usePlaybackStore = defineStore('playback', {
       // The lock screen's previous/next only appear once registered after
       // playback has begun - see reassertActionHandlers().
       engine.onPlaying = () => reassertActionHandlers()
+      engine.onExternalPause = () => {
+        if (this.isCasting) return
+        getLocalMix().pause()
+        this.isPlaying = false
+      }
       engine.onError = (message) => {
         console.error('[playback]', message)
         this.isPlaying = false

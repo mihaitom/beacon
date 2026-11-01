@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- When the phone or browser pauses the music on its own, for example because a Bluetooth speaker or headphones disconnected, Beacon now shows it as paused, and play starts it again right away instead of needing pause first
 - The songs in a smart playlist's preview have a right-click menu like songs everywhere else
 
 ## [1.10.0] - 2026-10-25
