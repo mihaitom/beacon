@@ -1,7 +1,7 @@
 // The lights dialog: it loads afresh when opened, pairs, says which way a
 // pairing failed, and saves each choice. Not the copy or the layout.
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
@@ -12,16 +12,20 @@ import {
   discoverBridges,
   forgetBridge,
   getLights,
+  getPicture,
   pairBridge,
   updateLights,
   type LightsState,
 } from '@/services/connect/lights'
 import { DEFAULT_APP_ACCENT, themeAccent } from '@/services/appAccent'
+import { useAppearanceStore } from '@/stores/appearance'
+import { themeColour } from '@/stores/lights'
 import LightsDialog from '../LightsDialog.vue'
 import LightsButton from '../LightsButton.vue'
 
 vi.mock('@/services/connect/lights', () => ({
   getLights: vi.fn(),
+  getPicture: vi.fn(),
   discoverBridges: vi.fn(),
   pairBridge: vi.fn(),
   updateLights: vi.fn(),
@@ -29,6 +33,9 @@ vi.mock('@/services/connect/lights', () => ({
   reportLocalPlayback: vi.fn(),
   stopLocalReport: vi.fn(),
 }))
+
+// A dialog left open keeps asking for the picture - in the next test's store.
+enableAutoUnmount(afterEach)
 
 const vuetify = createVuetify({ components, directives })
 const emit = vi.fn()
@@ -46,6 +53,7 @@ const UNPAIRED: LightsState = {
   colour_mode: 'palette',
   fixed_colour: '#3b6bff',
   theme_colour: '#f5a94e',
+  theme_follows_picture: true,
   brightness: 100,
   picture: null,
   playing: false,
@@ -265,16 +273,74 @@ describe('LightsDialog', () => {
       .findAll('[role="radio"]')
       .find((b) => b.text() === i18n.global.t('lights.colourModes.theme'))!
     await theme.trigger('click')
-    expect(updateLights).toHaveBeenLastCalledWith({ colour_mode: 'theme', theme_colour: '#3b6bff' })
+    expect(updateLights).toHaveBeenLastCalledWith({
+      colour_mode: 'theme',
+      theme_colour: '#3b6bff',
+      theme_follows_picture: true,
+    })
   })
 
   it('opening the dialog reports this device theme colour where connect has another', async () => {
     themeAccent.value = '59, 107, 255'
     await openDialogWrapper({ ...PAIRED, theme_colour: '#f5a94e' })
-    expect(updateLights).toHaveBeenCalledWith({ theme_colour: '#3b6bff' })
+    expect(updateLights).toHaveBeenCalledWith({
+      theme_colour: '#3b6bff',
+      theme_follows_picture: true,
+    })
     vi.mocked(updateLights).mockClear()
     await openDialogWrapper({ ...PAIRED, theme_colour: '#3b6bff' })
     expect(updateLights).not.toHaveBeenCalled()
+  })
+
+  it('the theme takes the picture colour where the app accent follows the picture', async () => {
+    const swatch = async (follows: boolean) =>
+      (
+        await openDialogWrapper({
+          ...PAIRED,
+          colour_mode: 'theme',
+          theme_colour: themeColour(),
+          theme_follows_picture: follows,
+        })
+      )
+        .find('.lights__detail .lights__swatch')
+        .attributes('style')
+    useAppearanceStore().adaptiveAccent = true
+    expect(await swatch(true)).toContain('rgb(255, 0, 0)')
+    useAppearanceStore().adaptiveAccent = false
+    expect(await swatch(false)).toContain('rgb(245, 169, 78)')
+  })
+
+  it('switching the picture-following accent off here carries over', async () => {
+    useAppearanceStore().adaptiveAccent = false
+    await openDialogWrapper({ ...PAIRED, theme_colour: themeColour() })
+    expect(updateLights).toHaveBeenCalledWith({
+      theme_colour: themeColour(),
+      theme_follows_picture: false,
+    })
+  })
+
+  it('follows the picture while open, so a track change shows the new one', async () => {
+    vi.useFakeTimers()
+    try {
+      const wrapper = await openDialogWrapper(PAIRED)
+      const next = {
+        source: 'cover' as const,
+        url: null,
+        cover_art_id: 'al-2',
+        colours: ['#00ff00'],
+      }
+      vi.mocked(getPicture).mockResolvedValue(next)
+      await vi.advanceTimersByTimeAsync(2_500)
+      expect(wrapper.find('.lights__detail .lights__swatch').attributes('style')).toContain(
+        'rgb(0, 255, 0)',
+      )
+      await wrapper.setProps({ modelValue: false })
+      vi.mocked(getPicture).mockClear()
+      await vi.advanceTimersByTimeAsync(10_000)
+      expect(getPicture).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it('saves the brightness once it settles, also when set with the keyboard', async () => {
@@ -357,9 +423,30 @@ describe('LightsButton', () => {
     expect(updateLights).not.toHaveBeenCalled()
     themeAccent.value = '59, 107, 255'
     await flushPromises()
-    expect(updateLights).toHaveBeenCalledWith({ theme_colour: '#3b6bff' })
+    expect(updateLights).toHaveBeenCalledWith({
+      theme_colour: '#3b6bff',
+      theme_follows_picture: true,
+    })
     wrapper.unmount()
     themeAccent.value = DEFAULT_APP_ACCENT
+  })
+
+  it('switching the picture-following accent carries over to the lights', async () => {
+    useAppearanceStore().adaptiveAccent = true
+    vi.mocked(getLights).mockResolvedValue({ ...PAIRED, theme_colour: themeColour() })
+    vi.mocked(updateLights).mockImplementation(async (update) => ({ ...PAIRED, ...update }))
+    const { useAuthStore } = await import('@/stores/auth')
+    useAuthStore().authenticated = true
+    const wrapper = mount(LightsButton, { global })
+    await flushPromises()
+    expect(updateLights).not.toHaveBeenCalled()
+    useAppearanceStore().adaptiveAccent = false
+    await flushPromises()
+    expect(updateLights).toHaveBeenCalledWith({
+      theme_colour: themeColour(),
+      theme_follows_picture: false,
+    })
+    wrapper.unmount()
   })
 
   it('loads after login and appears once connect finds a bridge', async () => {

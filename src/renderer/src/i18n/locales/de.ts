@@ -743,6 +743,7 @@ export default {
       fixed: 'Fest',
     },
     themeHint: 'Folgt dem Theme unter Einstellungen → Darstellung',
+    themeFollowsPicture: 'Folgt dem Bild wie „Läuft gerade“, ohne Farbe im Bild dem Theme',
     paletteFrom: {
       cover: 'Aus dem Cover',
       artist: 'Aus dem Künstlerbild',

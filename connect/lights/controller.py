@@ -480,6 +480,9 @@ def palette_for(
     and `turn` (0..1 round the wheel) are for the rotation."""
     theme = hex_colour(cfg.theme_colour)
     if cfg.colour_mode == "theme":
+        # The app's accent follows the picture: its strongest colour.
+        if cfg.theme_follows_picture and picture:
+            return (picture[0],)
         return (theme,)
     if cfg.colour_mode == "fixed":
         return (hex_colour(cfg.fixed_colour),)

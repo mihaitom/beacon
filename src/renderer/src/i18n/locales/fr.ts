@@ -748,6 +748,7 @@ export default {
       fixed: 'Fixe',
     },
     themeHint: 'Suit le thème dans Paramètres → Apparence',
+    themeFollowsPicture: 'Suit l’image comme « Lecture », et le thème pour une image sans couleur',
     paletteFrom: {
       cover: 'De la pochette',
       artist: 'De l’image de l’artiste',

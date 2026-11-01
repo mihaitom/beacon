@@ -19,6 +19,7 @@
 
 <script lang="ts">
 import { themeAccent } from '@/services/appAccent'
+import { useAppearanceStore } from '@/stores/appearance'
 import { useAuthStore } from '@/stores/auth'
 import { useLightsStore } from '@/stores/lights'
 import LightsDialog from './LightsDialog.vue'
@@ -48,13 +49,14 @@ export default {
     authStore() {
       return useAuthStore()
     },
-    themeAccent(): string {
-      return themeAccent.value
+    /** This device's theme, as far as the lights' "theme" mode goes. */
+    theme(): string {
+      return `${themeAccent.value}|${useAppearanceStore().adaptiveAccent}`
     },
   },
   watch: {
-    // The theme changed here: the lights' theme colour follows.
-    themeAccent() {
+    // The theme changed here: the lights' theme follows.
+    theme() {
       void this.lightsStore.syncTheme()
     },
     // Not before: until then the app does not know where connect is.

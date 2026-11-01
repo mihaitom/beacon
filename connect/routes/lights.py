@@ -108,6 +108,7 @@ async def get_lights():
         "colour_mode": cfg.colour_mode,
         "fixed_colour": cfg.fixed_colour,
         "theme_colour": cfg.theme_colour,
+        "theme_follows_picture": cfg.theme_follows_picture,
         "brightness": cfg.brightness,
         "picture": controller.picture,
         "playing": controller.streaming,
@@ -170,6 +171,7 @@ class LightsUpdate(BaseModel):
     colour_mode: Literal["theme", "palette", "rotate", "fixed"] | None = None
     fixed_colour: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
     theme_colour: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+    theme_follows_picture: bool | None = None
     brightness: int | None = Field(default=None, ge=MIN_BRIGHTNESS, le=100)
 
 
@@ -201,6 +203,13 @@ class PictureReport(BaseModel):
     song_id: str = Field(min_length=1, max_length=512)
     # A Fanart.tv image URL, or None for the cover.
     url: str | None = Field(default=None, max_length=2048)
+
+
+@router.get("/picture")
+async def get_picture():
+    """Only the picture: for the open dialog to follow a track change
+    without asking the bridge each time, as GET /lights does."""
+    return {"picture": controller.picture}
 
 
 @router.put("/picture", status_code=204)

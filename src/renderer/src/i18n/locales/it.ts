@@ -742,6 +742,8 @@ export default {
       fixed: 'Fisso',
     },
     themeHint: 'Segue il tema in Impostazioni → Aspetto',
+    themeFollowsPicture:
+      'Segue l’immagine come «Riproduzione», e il tema con un’immagine senza colore',
     paletteFrom: {
       cover: 'Dalla copertina',
       artist: "Dall'immagine dell'artista",

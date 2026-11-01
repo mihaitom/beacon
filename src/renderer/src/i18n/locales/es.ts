@@ -746,6 +746,7 @@ export default {
       fixed: 'Fijo',
     },
     themeHint: 'Sigue el tema de Ajustes → Apariencia',
+    themeFollowsPicture: 'Sigue la imagen como «Reproducción», y el tema con una imagen sin color',
     paletteFrom: {
       cover: 'De la portada',
       artist: 'De la imagen del artista',

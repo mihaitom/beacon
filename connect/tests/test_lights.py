@@ -1275,13 +1275,21 @@ def test_the_settings_pick_the_colours():
     picture = (RED, BLUE)
     assert palette_for(_paired(colour_mode="palette"), picture) == (RED, BLUE)
     assert palette_for(_paired(colour_mode="fixed", fixed_colour="#0000ff"), picture) == (BLUE,)
-    assert palette_for(_paired(colour_mode="theme", theme_colour="#00ff00"), picture) == (GREEN,)
+    theme = _paired(colour_mode="theme", theme_colour="#00ff00", theme_follows_picture=False)
+    assert palette_for(theme, picture) == (GREEN,)
+
+
+def test_a_theme_that_follows_the_picture_takes_its_strongest_colour():
+    cfg = _paired(colour_mode="theme", theme_colour="#00ff00", theme_follows_picture=True)
+    assert palette_for(cfg, (BLUE, RED)) == (BLUE,)
 
 
 @pytest.mark.parametrize("picture", [None, ()], ids=["not looked at yet", "black and white"])
 def test_a_picture_without_colours_gives_the_theme_colour(picture):
     cfg = _paired(colour_mode="palette", theme_colour="#00ff00")
     assert palette_for(cfg, picture) == (GREEN,)
+    following = _paired(colour_mode="theme", theme_colour="#00ff00", theme_follows_picture=True)
+    assert palette_for(following, picture) == (GREEN,)
     rotate = _paired(colour_mode="rotate", theme_colour="#00ff00")
     assert palette_for(rotate, picture, 3)[0] == pytest.approx(GREEN)
 
@@ -1505,6 +1513,10 @@ def test_an_app_reports_its_theme_colour(client, monkeypatch):
     body = client.put("/lights", json={"theme_colour": "#2FE08B"}).json()
     assert body["theme_colour"] == "#2fe08b"
     assert client.put("/lights", json={"theme_colour": "teal"}).status_code == 422
+    assert (
+        client.put("/lights", json={"theme_follows_picture": False}).json()["theme_follows_picture"]
+        is False
+    )
 
 
 def test_rotate_is_a_colour_mode(client, monkeypatch):
@@ -1570,6 +1582,14 @@ def test_picture_reports_reach_the_controller(client, monkeypatch):
     assert client.put("/lights/picture", json={"song_id": "s", "url": PICTURE}).status_code == 204
     assert client.put("/lights/picture", json={"song_id": "s", "url": None}).status_code == 204
     assert seen == [("s", PICTURE), ("s", None)]
+
+
+def test_the_picture_can_be_asked_for_on_its_own(client, monkeypatch):
+    from lights.controller import LightController
+
+    shown = {"source": "cover", "url": None, "cover_art_id": "al-1", "colours": ["#ff0000"]}
+    monkeypatch.setattr(LightController, "picture", property(lambda self: shown))
+    assert client.get("/lights/picture").json() == {"picture": shown}
 
 
 def test_a_picture_report_takes_only_fanart_images(client, monkeypatch):

@@ -43,6 +43,9 @@ export interface LightsState {
   fixed_colour: string
   /** `#rrggbb`: the theme's accent, as an app last reported it. */
   theme_colour: string
+  /** The app's accent follows the picture: "theme" takes its strongest
+   * colour. */
+  theme_follows_picture: boolean
   /** Percent, 20-100. */
   brightness: number
   /** Null before the lights have followed anything. */
@@ -56,7 +59,14 @@ export interface LightsState {
 export type LightsUpdate = Partial<
   Pick<
     LightsState,
-    'enabled' | 'lead_ms' | 'style' | 'colour_mode' | 'fixed_colour' | 'theme_colour' | 'brightness'
+    | 'enabled'
+    | 'lead_ms'
+    | 'style'
+    | 'colour_mode'
+    | 'fixed_colour'
+    | 'theme_colour'
+    | 'theme_follows_picture'
+    | 'brightness'
   > & { area_id: string }
 >
 
@@ -98,6 +108,12 @@ export async function reportLocalPlayback(
     method: 'POST',
     body: { song_id: songId, position, playing },
   })
+}
+
+/** Only the picture of the song the lights follow - cheap enough to ask
+ * for while the dialog is open, where getLights() asks the bridge too. */
+export async function getPicture(): Promise<LightsPicture | null> {
+  return (await fetchConnect<{ picture: LightsPicture | null }>('/lights/picture')).picture
 }
 
 /** What Now Playing shows behind `songId`: a Fanart.tv image URL (as

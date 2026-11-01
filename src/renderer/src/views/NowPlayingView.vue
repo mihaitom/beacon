@@ -503,12 +503,6 @@ export default {
     colorTriplet(): string {
       return this.extractedColor ?? themeAccent.value
     },
-    /** The visualizer bars' colour: the Fanart.tv artist background's own
-     * dominant colour while one is shown, the cover's without one - the
-     * theme's accent where following the picture is switched off (Settings
-     * -> Appearance). Lifted for visibility by visualizerBarColor(), which
-     * also falls back to the theme's accent for a grey or dark picture the
-     * bars would vanish into. */
     /** The picture behind the current song, for the room lights' colours
      * (pictureReport.ts): the same choice the visualizer bars make. With
      * the lights' state in it, so switching them on mid-song reports too. */
@@ -519,6 +513,12 @@ export default {
         lightsOn: useLightsStore().active,
       }
     },
+    /** The visualizer bars' colour: the Fanart.tv artist background's own
+     * dominant colour while one is shown, the cover's without one - the
+     * theme's accent where following the picture is switched off (Settings
+     * -> Appearance). Lifted for visibility by visualizerBarColor(), which
+     * also falls back to the theme's accent for a grey or dark picture the
+     * bars would vanish into. */
     visualizerColor(): string {
       if (!useAppearanceStore().adaptiveAccent) return visualizerBarColor(null)
       return visualizerBarColor(this.artistBackground ? this.artistColor : this.extractedColor)

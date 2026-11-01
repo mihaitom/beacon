@@ -737,6 +737,8 @@ export default {
       fixed: 'Fixed',
     },
     themeHint: 'Follows the theme in Settings → Appearance',
+    themeFollowsPicture:
+      'Follows the picture like Now playing does, the theme for a picture without colour',
     paletteFrom: {
       cover: 'From the cover',
       artist: 'From the artist picture',

@@ -25,6 +25,7 @@ const BASE: LightsState = {
   colour_mode: 'palette',
   fixed_colour: '#3b6bff',
   theme_colour: '#f5a94e',
+  theme_follows_picture: true,
   brightness: 100,
   picture: null,
   playing: false,

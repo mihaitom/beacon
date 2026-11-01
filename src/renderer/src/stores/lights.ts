@@ -1,8 +1,10 @@
 import { defineStore } from 'pinia'
 import { themeAccent } from '@/services/appAccent'
+import { useAppearanceStore } from '@/stores/appearance'
 import {
   forgetBridge,
   getLights,
+  getPicture,
   pairBridge,
   updateLights,
   type LightsState,
@@ -19,6 +21,14 @@ export function themeColour(): string {
       .map((part) => Number(part.trim()).toString(16).padStart(2, '0'))
       .join('')
   )
+}
+
+/** This device's theme as the lights take it in "theme" mode. */
+export function themeSettings(): { theme_colour: string; theme_follows_picture: boolean } {
+  return {
+    theme_colour: themeColour(),
+    theme_follows_picture: useAppearanceStore().adaptiveAccent,
+  }
 }
 
 /** connect's Hue setup, for the toolbar's lights button and its dialog.
@@ -59,19 +69,36 @@ export const useLightsStore = defineStore('lights', {
     async pair(host: string): Promise<void> {
       this.lights = await pairBridge(host)
     },
+    /** The picture alone, for the open dialog to follow track changes.
+     * Quiet on failure: the dialog keeps the picture it has. */
+    async refreshPicture(): Promise<void> {
+      if (!this.lights?.paired) return
+      try {
+        const picture = await getPicture()
+        if (this.lights) this.lights = { ...this.lights, picture }
+      } catch (error) {
+        console.error('[lights] Could not refresh the picture:', error)
+      }
+    },
     async update(update: LightsUpdate): Promise<void> {
       this.lights = await updateLights(update)
     },
-    /** Tells connect this device's theme accent where it has another one.
-     * Called where somebody is looking at the lights here - the dialog
-     * opening, the theme changing - not at every app start, or two devices
-     * on different themes would keep taking it from each other. */
+    /** Tells connect this device's theme - its accent, and whether that
+     * follows the picture - where connect has another one. Called where
+     * somebody is looking at the lights here - the dialog opening, the
+     * theme changing - not at every app start, or two devices on different
+     * themes would keep taking it from each other. */
     async syncTheme(): Promise<void> {
       if (!this.lights?.paired) return
-      const colour = themeColour()
-      if (colour === this.lights.theme_colour) return
+      const theme = themeSettings()
+      if (
+        theme.theme_colour === this.lights.theme_colour &&
+        theme.theme_follows_picture === this.lights.theme_follows_picture
+      ) {
+        return
+      }
       try {
-        await this.update({ theme_colour: colour })
+        await this.update(theme)
       } catch (error) {
         console.error('[lights] Could not report the theme colour:', error)
       }

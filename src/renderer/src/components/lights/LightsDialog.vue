@@ -145,11 +145,11 @@
 
             <div class="lights__detail">
               <div v-if="state.colour_mode === 'theme'" class="lights__detail-row">
-                <span class="lights__swatch" :style="{ background: state.theme_colour }" />
+                <span class="lights__swatch" :style="{ background: themeLight }" />
                 <div>
                   <div class="text-body-medium">{{ themeName }}</div>
                   <div class="setting__hint setting__hint--inline">
-                    {{ $t('lights.themeHint') }}
+                    {{ themeLine }}
                   </div>
                 </div>
               </div>
@@ -289,7 +289,7 @@ import { fanartImageUrl } from '@/services/connect/fanart'
 import { fromHue, hexToRgb, hueOf, rgbToHex, type Rgb } from '@/services/lights/stagePreview'
 import { useAppearanceStore } from '@/stores/appearance'
 import { useLibraryStore } from '@/stores/library'
-import { themeColour, useLightsStore } from '@/stores/lights'
+import { themeColour, themeSettings, useLightsStore } from '@/stores/lights'
 import LightsColourWheel from './LightsColourWheel.vue'
 import LightsStage from './LightsStage.vue'
 
@@ -301,6 +301,9 @@ const MIN_BRIGHTNESS = 20
 const SAVE_DELAY_MS = 400
 const COLOUR_MODES: LightsColourMode[] = ['theme', 'palette', 'rotate', 'fixed']
 const THUMB_SIZE = 112
+// While open, how often the picture is asked for again: a track change
+// shows its picture within this.
+const PICTURE_REFRESH_MS = 2000
 // The rotation's chip: the whole wheel, as its detail shows.
 const WHEEL = 'conic-gradient(#ff3b3b, #ffd23b, #3bff6b, #3bd8ff, #3b5bff, #d43bff, #ff3b3b)'
 
@@ -336,6 +339,8 @@ export default {
       brightnessTimer: undefined as ReturnType<typeof setTimeout> | undefined,
       hue: 0,
       hueTimer: undefined as ReturnType<typeof setTimeout> | undefined,
+      pictureTimer: undefined as ReturnType<typeof setTimeout> | undefined,
+      gone: false,
       colourModes: COLOUR_MODES,
       styles: STYLES,
       MIN_BRIGHTNESS,
@@ -383,6 +388,20 @@ export default {
         return null // not signed in to a server here
       }
     },
+    /** What "theme" lights with: the picture's strongest colour where the
+     * app's accent follows the picture (Settings -> Appearance), else the
+     * theme's accent. */
+    themeLight(): string {
+      const state = this.state!
+      const colours = state.picture?.colours
+      if (state.theme_follows_picture && colours?.length) return colours[0]!
+      return state.theme_colour
+    },
+    themeLine(): string {
+      return this.$t(
+        this.state?.theme_follows_picture ? 'lights.themeFollowsPicture' : 'lights.themeHint',
+      )
+    },
     themeName(): string {
       return this.$t(`settings.themes.${useAppearanceStore().theme}.name`)
     },
@@ -392,7 +411,7 @@ export default {
     previewPalette(): Rgb[] {
       const mode = this.state?.colour_mode
       if (mode === 'fixed') return [hexToRgb(this.state!.fixed_colour)]
-      if (mode === 'theme') return [hexToRgb(this.state!.theme_colour)]
+      if (mode === 'theme') return [hexToRgb(this.themeLight)]
       // The rotation is worked out frame by frame from where it starts.
       if (mode === 'rotate') return [hexToRgb(this.paletteColours[0]!)]
       return this.paletteColours.map(hexToRgb)
@@ -428,10 +447,12 @@ export default {
     modelValue: {
       immediate: true,
       async handler(open: boolean) {
+        clearTimeout(this.pictureTimer)
         if (!open) return
         await this.store.load()
         // Somebody is setting the lights up here: this device's theme.
         await this.store.syncTheme()
+        this.followPicture()
       },
     },
     'state.fixed_colour': {
@@ -472,8 +493,21 @@ export default {
   unmounted() {
     clearTimeout(this.brightnessTimer)
     clearTimeout(this.hueTimer)
+    clearTimeout(this.pictureTimer)
+    this.gone = true
   },
   methods: {
+    /** Keeps the picture current while open: the track may change under
+     * the dialog. */
+    followPicture() {
+      clearTimeout(this.pictureTimer)
+      this.pictureTimer = setTimeout(async () => {
+        if (!this.modelValue || this.gone) return
+        await this.store.refreshPicture()
+        // Closed or gone while it was asked for: that is the end of it.
+        if (this.modelValue && !this.gone) this.followPicture()
+      }, PICTURE_REFRESH_MS)
+    },
     async search() {
       this.searching = true
       try {
@@ -524,17 +558,15 @@ export default {
       }
     },
     saveColourMode(mode: LightsColourMode) {
-      // Theme: the colour of the theme this is being chosen on.
+      // Theme: the theme this is being chosen on.
       void this.save(
-        mode === 'theme'
-          ? { colour_mode: mode, theme_colour: themeColour() }
-          : { colour_mode: mode },
+        mode === 'theme' ? { colour_mode: mode, ...themeSettings() } : { colour_mode: mode },
       )
     },
     /** Each mode's card shows what it would light with right now. */
     chipStyle(mode: LightsColourMode): Record<string, string> {
       const state = this.state!
-      if (mode === 'theme') return { background: state.theme_colour }
+      if (mode === 'theme') return { background: this.themeLight }
       if (mode === 'fixed') return { background: state.fixed_colour }
       if (mode === 'rotate') return { background: WHEEL }
       const colours = this.paletteColours
