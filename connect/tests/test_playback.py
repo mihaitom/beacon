@@ -689,12 +689,35 @@ def test_update_queue_ignores_duplicate_autoplay_topup(client, default_session):
     with patch.object(default_session.media, "get_track", return_value=track):
         client.post("/play", json={"song_ids": ["1", "2"]})
 
-    r1 = client.post("/queue", json={"song_ids": ["1", "2", "3"], "queue_index": 0})
-    r2 = client.post("/queue", json={"song_ids": ["1", "2", "4"], "queue_index": 0})
+    r1 = client.post(
+        "/queue", json={"song_ids": ["1", "2", "3"], "queue_index": 0, "autoplay_topup": True}
+    )
+    r2 = client.post(
+        "/queue", json={"song_ids": ["1", "2", "4"], "queue_index": 0, "autoplay_topup": True}
+    )
 
     assert r1.json()["status"] == "ok"
     assert r2.json()["status"] == "duplicate"
     assert default_session.state.queue == ["1", "2", "3"]
+
+
+def test_update_queue_applies_play_next_right_after_a_topup(client, default_session):
+    """ "Play next" right after an Autoplay top-up inserts behind the current
+    song, so it extends the pre-top-up queue exactly like a racing second
+    top-up would. It is not one, and must not be dropped as one."""
+    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
+    track = Track(id="1", title="Song", artist="Artist", duration=180, cover_art_id="c")
+
+    with patch.object(default_session.media, "get_track", return_value=track):
+        client.post("/play", json={"song_ids": ["1"]})
+
+    client.post(
+        "/queue", json={"song_ids": ["1", "2", "3"], "queue_index": 0, "autoplay_topup": True}
+    )
+    r = client.post("/queue", json={"song_ids": ["1", "9", "2", "3"], "queue_index": 0})
+
+    assert r.json()["status"] == "ok"
+    assert default_session.state.queue == ["1", "9", "2", "3"]
 
 
 def test_update_queue_still_applies_a_real_edit_right_after_a_topup(client, default_session):
@@ -731,11 +754,12 @@ def test_update_queue_stops_suppressing_a_late_racer_once_the_window_passes(
     with patch.object(default_session.media, "get_track", return_value=track):
         client.post("/play", json={"song_ids": ["1", "2"]})
 
+    topup = {"queue_index": 0, "autoplay_topup": True}
     with patch("routes.playback.time.time", return_value=1000.0):
-        client.post("/queue", json={"song_ids": ["1", "2", "3"], "queue_index": 0})
+        client.post("/queue", json={"song_ids": ["1", "2", "3"], **topup})
 
     with patch("routes.playback.time.time", return_value=1000.0 + QUEUE_TOPUP_DEDUP_WINDOW + 1):
-        r = client.post("/queue", json={"song_ids": ["1", "2", "4"], "queue_index": 0})
+        r = client.post("/queue", json={"song_ids": ["1", "2", "4"], **topup})
 
     assert r.json()["status"] == "ok"
     assert default_session.state.queue == ["1", "2", "4"]

@@ -422,6 +422,37 @@ describe('Autoplay while casting', () => {
     )
   })
 
+  // connect drops a second top-up racing the first, and a "Play next" right
+  // after a top-up is shaped exactly like one - so only the top-up may say
+  // it is one, or the inserted song vanishes again.
+  it('marks its own top-up for connect, and a "Play next" after it not', async () => {
+    vi.useFakeTimers() // the queue peek arms a real close timer
+    const playback = usePlaybackStore()
+    vi.spyOn(useLibraryStore(), 'client').mockReturnValue({
+      getSimilarSongs2: vi
+        .fn()
+        .mockResolvedValue({ songs: [makeSong('x')], plexPassRequired: false }),
+    } as unknown as SubsonicClient)
+    playback.setQueue([makeSong('a')], 0)
+    castTo()
+    useAutoplayStore().enabled = true
+
+    await playback.maybeAutoplay()
+    expect(connectPlayback.updateQueue).toHaveBeenLastCalledWith(
+      ['a', 'x'],
+      0,
+      expect.objectContaining({ autoplayTopUp: true }),
+    )
+
+    playback.queueNext([makeSong('n')])
+    expect(connectPlayback.updateQueue).toHaveBeenLastCalledWith(
+      ['a', 'n', 'x'],
+      0,
+      expect.objectContaining({ autoplayTopUp: false }),
+    )
+    vi.useRealTimers()
+  })
+
   it('keeps it to this device when nothing is being cast to', () => {
     const playback = usePlaybackStore()
     playback.setQueue([makeSong('a')], 0)

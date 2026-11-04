@@ -114,10 +114,12 @@ def _is_duplicate_queue_topup(st: AppState, prev_queue: list[str], song_ids: lis
 
     A tail-extension of the *current* `prev_queue` — a genuinely new top-up,
     or the very first one — is never a duplicate: it's recorded as the new
-    pre-top-up base and applied normally. Anything that isn't shaped like a
-    top-up at all (a reorder, an insert in the middle, a removal, shuffle
-    toggling the order) always returns False too and is applied exactly as
-    before — this only ever suppresses a second top-up racing the first."""
+    pre-top-up base and applied normally.
+
+    Only asked for requests the frontend marks as an Autoplay top-up
+    (QueueRequest.autoplay_topup): by shape alone, a "Play next" inserted
+    right after the current song extends the pre-top-up base too, and a
+    removal of a just-added song can as well."""
 
     def extends(base: list[str]) -> bool:
         return len(song_ids) > len(base) and song_ids[: len(base)] == base
@@ -1868,6 +1870,12 @@ class QueueRequest(BaseModel):
     autoplay_batch_size: int = 10
     # See PlayRequest.song_hints.
     song_hints: dict[str, SongHint] = {}
+    # Set by the frontend's own Autoplay top-up only. Only these are checked
+    # against a racing second top-up (see _is_duplicate_queue_topup()): a
+    # user's "Play next" right after a top-up is shaped exactly like such a
+    # racer - the pre-top-up queue extended by something else - and was
+    # being dropped as one.
+    autoplay_topup: bool = False
     # See PlayRequest.seq — shares session.play_seq's ordering with /play and
     # /play-url, since all three write session.state.queue/queue_index and
     # a stale queue edit must not be able to stomp a more recent song switch
@@ -1904,7 +1912,7 @@ async def update_queue(
 
         st = session.state
         if st.queue:
-            if _is_duplicate_queue_topup(st, st.queue, req.song_ids):
+            if req.autoplay_topup and _is_duplicate_queue_topup(st, st.queue, req.song_ids):
                 logger.info("[queue] Ignoring duplicate autoplay top-up (a second client raced it)")
                 return {"status": "duplicate"}
             queue_index = req.queue_index if 0 <= req.queue_index < len(req.song_ids) else 0

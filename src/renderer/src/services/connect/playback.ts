@@ -251,6 +251,7 @@ export async function updateQueue(
     repeatMode?: 'off' | 'all' | 'one'
     autoplayEnabled?: boolean
     autoplayBatchSize?: number
+    autoplayTopUp?: boolean
   } = {},
 ): Promise<QueueResponse> {
   return fetchConnect<QueueResponse>('/queue', {
@@ -263,6 +264,7 @@ export async function updateQueue(
       repeat_mode: options.repeatMode ?? 'off',
       autoplay_enabled: options.autoplayEnabled ?? false,
       autoplay_batch_size: options.autoplayBatchSize ?? 10,
+      autoplay_topup: options.autoplayTopUp ?? false,
       seq: nextSeq(),
       ...(options.song_hints ? { song_hints: options.song_hints } : {}),
     },

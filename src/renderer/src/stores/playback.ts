@@ -2382,11 +2382,11 @@ export const usePlaybackStore = defineStore('playback', {
     // own context menu, the mobile action sheet, remote-control commands
     // from a phone, and maybeAutoplay()'s own top-up below) with a single
     // peekQueueDrawer() rather than needing one at each call site.
-    addToQueue(songs: Song[]): void {
+    addToQueue(songs: Song[], { autoplayTopUp = false } = {}): void {
       const toAdd = dedupeForQueue(songs, this.queue)
       this.originalQueue.push(...toAdd)
       this.queue.push(...toAdd)
-      this.syncCastQueue()
+      this.syncCastQueue({ autoplayTopUp })
       useDrawersStore().peekQueueDrawer(toAdd)
     },
 
@@ -2465,7 +2465,7 @@ export const usePlaybackStore = defineStore('playback', {
           const existingIds = new Set(this.queue.map((t) => t.id))
           const fresh = similar.filter((t) => !existingIds.has(t.id)).slice(0, AUTOPLAY_BATCH_SIZE)
           if (fresh.length) {
-            this.addToQueue(fresh)
+            this.addToQueue(fresh, { autoplayTopUp: true })
             return
           }
           // Only on a successful round trip: a lookup that threw (below) is
@@ -2478,7 +2478,7 @@ export const usePlaybackStore = defineStore('playback', {
         // Every seed drew a blank — carry on from the local catalog rather
         // than letting the queue run out (see localFollowUp).
         const local = localFollowUp(this.queue, seeds[0], AUTOPLAY_BATCH_SIZE)
-        if (local.length) this.addToQueue(local)
+        if (local.length) this.addToQueue(local, { autoplayTopUp: true })
       } catch (error) {
         console.error('[playback] Autoplay top-up failed:', error)
       } finally {
@@ -2598,8 +2598,13 @@ export const usePlaybackStore = defineStore('playback', {
      * action here: the next real SSE status tick already carries whichever
      * queue actually won, and adoptCastQueue() picks it up from there. No-op
      * once nothing's actually playing yet (currentIndex < 0) —
-     * startCurrent() sends the initial queue itself. */
-    syncCastQueue(): void {
+     * startCurrent() sends the initial queue itself.
+     *
+     * `autoplayTopUp` marks a push as maybeAutoplay()'s own: only those are
+     * checked by connect for two clients racing to top up (see
+     * _is_duplicate_queue_topup() in routes/playback.py). A user's "Play
+     * next" right after a top-up looks just like such a racer to it. */
+    syncCastQueue({ autoplayTopUp = false } = {}): void {
       if (!this.isCasting) this.syncLocalMixQueue()
       if (!this.isCasting || this.currentIndex < 0) return
       // The backend is dispatching a station, not this queue — pushing the
@@ -2626,6 +2631,7 @@ export const usePlaybackStore = defineStore('playback', {
           repeatMode,
           autoplayEnabled,
           autoplayBatchSize,
+          autoplayTopUp,
         })
         .catch((error) => {
           console.error('[playback] Failed to sync queue to connect:', error)
