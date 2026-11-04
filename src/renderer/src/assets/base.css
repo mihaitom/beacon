@@ -8,9 +8,12 @@
  * left edge, and vertical rhythm collapsing wherever a component relies
  * on its own margin.
  *
- * Declaring the layer order here restores the old relationship. This
- * file is imported before `vuetify/styles` (see main.ts), which is what
- * makes this declaration the authoritative one. Only the reset goes in a
+ * Declaring the layer order restores the old relationship - but only the
+ * first stylesheet to name a layer decides its place, and the production
+ * build (Vite 8) links shared chunks of Vuetify component CSS ahead of
+ * this file, which put `base` last again. So the authoritative copy is an
+ * inline <style> at the top of both index.html files; this one keeps dev
+ * and the tests in the same order. Only the reset goes in a
  * layer — everything below stays unlayered on purpose, so the app's own
  * chrome keeps overriding Vuetify as it always did. */
 @layer base, vuetify-core, vuetify-components, vuetify-overrides, vuetify-utilities,

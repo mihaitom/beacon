@@ -2,6 +2,13 @@
 <html lang="">
   <head>
     <meta charset="UTF-8" />
+    <!-- Cascade-layer order, before any stylesheet: the first stylesheet to
+         name a layer fixes its place, and the build links shared chunks of
+         Vuetify CSS ahead of the app's own. See the top of base.css. -->
+    <style>
+      @layer base, vuetify-core, vuetify-components, vuetify-overrides, vuetify-utilities,
+        vuetify-final;
+    </style>
     <link rel="icon" href="/favicon.ico" />
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />

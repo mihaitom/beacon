@@ -7,6 +7,12 @@
     <meta name="theme-color" content="#0b0d13" />
     <!-- Replaced by connect for every response (routes/party.py). -->
     <meta name="csp-nonce" content="__CSP_NONCE__" />
+    <!-- Cascade-layer order, before any stylesheet - see the top of
+         base.css and src/renderer/index.html. -->
+    <style nonce="__CSP_NONCE__">
+      @layer base, vuetify-core, vuetify-components, vuetify-overrides, vuetify-utilities,
+        vuetify-final;
+    </style>
     <link rel="icon" href="/party/icon-192.png" />
     <link rel="apple-touch-icon" href="/party/apple-touch-icon.png" />
     <title>Beacon Party</title>
