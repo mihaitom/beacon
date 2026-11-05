@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - The Playlists page has one playlist builder button instead of one per service: Deezer, Last.fm or ListenBrainz is picked inside it, and it opens on the one used last
 - Electron, the build tools and the backend's libraries are updated to their latest versions
+- The "What's new" dialog opens once per version for each account, not once per browser: after it has been seen on one device it no longer opens on another, and it no longer reopens at every login in a browser that clears its storage on exit
 
 ### Fixed
 

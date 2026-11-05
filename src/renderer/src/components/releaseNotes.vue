@@ -70,6 +70,7 @@ import MarkdownIt from 'markdown-it'
 import { emitter } from '@/emitter'
 import { useAuthStore } from '@/stores/auth'
 import { accountScopedKey } from '@/services/accountKey'
+import { fetchAccountSettings, pushAccountSettings } from '@/services/connect/accountSettings'
 import changelogRaw from '../../../../CHANGELOG.md?raw'
 import packageJson from '../../../../package.json'
 import {
@@ -209,11 +210,32 @@ export default defineComponent({
     }
   },
   methods: {
-    showAutoIfNeeded() {
-      const seenVersion = window.localStorage.getItem(this.storageKey)
-      if (seenVersion !== this.appVersion) {
+    /** The server's record of what this account has seen wins; the local key
+     * is the fallback for when the account settings cannot be read. A local
+     * record the server does not have yet (first run after this change) is
+     * pushed up, so existing users are not shown the dialog again. */
+    async showAutoIfNeeded() {
+      const seenLocally = window.localStorage.getItem(this.storageKey) === this.appVersion
+      let seenRemotely = false
+      let fetched = false
+      try {
+        const settings = await fetchAccountSettings()
+        seenRemotely = settings.releaseNotesSeen === this.appVersion
+        fetched = true
+      } catch (error) {
+        console.error('[release-notes] Failed to load the seen version:', error)
+      }
+      if (seenLocally && fetched && !seenRemotely) {
+        this.pushSeen()
+      }
+      if (!seenLocally && !seenRemotely) {
         this.openDialog(true)
       }
+    },
+    pushSeen() {
+      pushAccountSettings({ releaseNotesSeen: this.appVersion }).catch((error) => {
+        console.error('[release-notes] Failed to save the seen version:', error)
+      })
     },
     async loadUpcoming() {
       if (this.upcomingRequested) return
@@ -234,12 +256,16 @@ export default defineComponent({
       this.visible = true
       void this.loadUpcoming()
       if (autoOpen) {
-        window.localStorage.setItem(this.storageKey, this.appVersion)
+        this.markSeen()
       }
     },
     closeDialog() {
       this.visible = false
+      this.markSeen()
+    },
+    markSeen() {
       window.localStorage.setItem(this.storageKey, this.appVersion)
+      this.pushSeen()
     },
   },
 })
