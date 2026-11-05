@@ -52,7 +52,7 @@ describe('HelpDialog layout', () => {
 
   it('is 70vh tall in a window, however long the page', async () => {
     const card = await open(1280, 900)
-    expect(card.getBoundingClientRect().height).toBeCloseTo(900 * 0.7, 0)
+    expect(card.getBoundingClientRect().height).toBeCloseTo(window.innerHeight * 0.7, 0)
   })
 
   it('scrolls the page and the contents inside it, not the card', async () => {
