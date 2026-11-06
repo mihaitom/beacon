@@ -38,3 +38,4 @@ on a device, what is decided and what is not.
 
 - [Dependency majors: Vite 8 and TypeScript 7](packaging/dependency-majors.md) - Vite 8 unblocked, TypeScript 7 to check again
 - [The Windows arm64 installer carries x64 binaries](packaging/windows-arm64-installer-x64-binaries.md) - drop the target or build natively
+- [A Windows or Mac build made on Linux ships Linux binaries](packaging/cross-build-ships-host-binaries.md) - exits 0 and reports nothing; the build should refuse

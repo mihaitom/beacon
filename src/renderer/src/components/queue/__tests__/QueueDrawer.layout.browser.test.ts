@@ -183,6 +183,25 @@ function revealRow(index: number) {
   ) as HTMLElement
 }
 
+/** The delay each row's opacity transition started with, read every frame
+ * until all of them are running: the rows are not even rendered at first, and
+ * Vue only starts their transitions a couple of frames in. */
+async function enterDelays(indexes: number[]): Promise<number[]> {
+  const deadline = performance.now() + 5000
+  while (performance.now() < deadline) {
+    const running = indexes.map((index) =>
+      revealRow(index)
+        ?.getAnimations()
+        .find((animation) => (animation as CSSTransition).transitionProperty === 'opacity'),
+    )
+    if (running.every(Boolean)) {
+      return running.map((animation) => Number(animation!.effect!.getTiming().delay))
+    }
+    await new Promise((resolve) => requestAnimationFrame(resolve))
+  }
+  throw new Error('the rows never started an opacity transition')
+}
+
 describe('QueueDrawer reveal animation layout', () => {
   it('slides a genuinely new row in from the right, not just fading it', async () => {
     // The already-open case (Play Next while the drawer is open and being
@@ -336,22 +355,20 @@ describe('QueueDrawer reveal animation layout', () => {
     playback.setQueue([makeSong('x'), makeSong('y'), makeSong('z')], 0)
     drawers.peekQueueDrawer(playback.queue)
 
-    // Well into the first row's own entrance (no base delay to wait out for
-    // an already-open drawer) but still short of ROW_ENTER_TRANSITION_MS
-    // even for it, so all three are mid-flight and their ROW_STAGGER_MS
-    // offsets are readable as a gradient.
-    await new Promise((resolve) => setTimeout(resolve, 100))
-    const rows = [0, 1, 2].map(revealRow)
-    const opacities = rows.map((row) => Number(getComputedStyle(row).opacity))
     // The regression this pins: with the peek arriving an await after the
     // mutation, the rows had no delays yet when Vue rendered them, so all
-    // three entered together and this read a flat 1/1/1.
-    expect(opacities[0]).toBeGreaterThan(0)
-    expect(opacities[0]).toBeGreaterThan(opacities[1]!)
-    expect(opacities[1]).toBeGreaterThan(opacities[2]!)
+    // three entered together. Read from the running transitions, whose delay
+    // is fixed when they start: a row's style would show the late delay too,
+    // and sampling opacity mid-flight depends on when the timer gets to run.
+    const delays = await enterDelays([0, 1, 2])
+    expect(delays[1]).toBeGreaterThan(delays[0]!)
+    expect(delays[2]).toBeGreaterThan(delays[1]!)
 
-    await new Promise((resolve) => setTimeout(resolve, 800))
-    expect(rows.map((row) => getComputedStyle(row).opacity)).toEqual(['1', '1', '1'])
+    await expect
+      .poll(() => [0, 1, 2].map((index) => getComputedStyle(revealRow(index)).opacity), {
+        timeout: 5000,
+      })
+      .toEqual(['1', '1', '1'])
   })
 })
 

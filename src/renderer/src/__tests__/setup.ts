@@ -60,3 +60,12 @@ document.elementsFromPoint ??= function elementsFromPoint(): Element[] {
 // that care about *where* things end up run in a real browser instead (see
 // vitest.browser.config.ts).
 Element.prototype.scrollIntoView ??= function scrollIntoView(): void {}
+
+// A test that mounts something fetching on its own and has no mock for it would
+// otherwise reach for the real localhost:7071. Refused, that fails whenever the
+// socket gets to it, up to seconds later on a busy machine: past the end of the
+// file, where the component's catch logs into a worker that is closing, and the
+// run goes red with every test passing. With a Beacon running on that port it
+// would be talking to a real backend instead. Same error as a refused connection,
+// just right away. Tests that care about fetch replace this with their own.
+globalThis.fetch = () => Promise.reject(new TypeError('fetch failed'))

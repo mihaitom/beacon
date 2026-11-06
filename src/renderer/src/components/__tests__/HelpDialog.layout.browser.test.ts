@@ -38,8 +38,19 @@ async function open(width: number, height: number, compact = false) {
   // The longest page, so a card that grows with its content would show it.
   const longest = HELP_PAGES.reduce((a, b) => (b.body.length > a.body.length ? b : a))
   emitter.emit('openHelp', longest.id)
-  // v-dialog's enter transition, measured any earlier mid-scale.
-  await new Promise((resolve) => setTimeout(resolve, 450))
+  // v-dialog's enter transition, measured any earlier mid-scale. Waited for
+  // rather than timed, a fixed wait comes up short on a busy machine: the
+  // bounding box includes the transform and offsetHeight does not, so they
+  // agree once it is over, at whatever height the card really has.
+  await expect
+    .poll(
+      () => {
+        const card = document.querySelector<HTMLElement>('.help-dialog')
+        return !!card && Math.abs(card.getBoundingClientRect().height - card.offsetHeight) <= 0.5
+      },
+      { timeout: 5000 },
+    )
+    .toBe(true)
   return document.querySelector('.help-dialog') as HTMLElement
 }
 

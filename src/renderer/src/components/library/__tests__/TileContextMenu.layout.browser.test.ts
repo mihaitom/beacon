@@ -141,9 +141,10 @@ describe('a tile context menu on a scrolled page', () => {
     expect(openMenus()).toHaveLength(1)
 
     window.scrollTo(0, TILE_HEIGHT * 10)
-    await settle()
 
-    expect(openMenus()).toHaveLength(0)
+    // The scroll event only fires with the next frame, which on a busy machine
+    // can be later than any short fixed wait.
+    await expect.poll(() => openMenus().length, { timeout: 5000 }).toBe(0)
   })
 
   it('leaves the page where it was', async () => {
