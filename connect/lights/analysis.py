@@ -29,12 +29,10 @@ import numpy as np
 from core.beat_analysis import (
     ANALYSIS_RATE,
     beat_strengths,
-    low_passed,
     onset_envelopes,
-    span_db,
 )
 from core.streamer import pcm_decode_cmd
-from lights.beats import Beats, find_beats
+from lights.beats import Beats, find_beats, punch_envelope, snap_envelope
 
 logger = logging.getLogger("connect.lights")
 
@@ -55,19 +53,15 @@ _DECODE_ATTEMPTS = 3
 _DECODE_RETRY_SECONDS = 30.0
 RGB = tuple[float, float, float]
 
-# A beat's own onset, against the song's typical beat (its 75th
-# percentile): below _HIT_FROM it is not heard as a hit, from _HIT_FULL on
-# it is a full one.
-_HIT_FROM = 0.3
-_HIT_FULL = 0.8
-# While the bass plays - within _BASS_FULL_DB of the song's typical level,
-# gone by _BASS_GONE_DB - every beat pulses at least _BASS_PULSE, however
-# faint its onset: a busy bassline buries the kick's onset (a house track
-# measured 2026-11-01 read 0.3-0.7 on beats with the kick plainly there).
-# Where the bass drops out, only what is heard as a hit flashes.
-_BASS_FULL_DB = -6.0
-_BASS_GONE_DB = -18.0
-_BASS_PULSE = 0.6
+# How strongly a beat is heard, against the song's strong beats (their 90th
+# percentile, since a kick may play on only every other beat). A kick is a
+# full flash from _KICK_FULL on and none below _KICK_FROM. A snare or clap
+# without a kick flashes too, up to _SNAP_HIT: still a hit, not the hit.
+_KICK_FROM = 0.15
+_KICK_FULL = 0.6
+_SNAP_FROM = 0.3
+_SNAP_FULL = 0.8
+_SNAP_HIT = 0.6
 # A beat at least this strong counts as one for the colour steps.
 HEARD = 0.5
 
@@ -146,35 +140,37 @@ def _ramp(value: np.ndarray, low: float, high: float) -> np.ndarray:
     return np.clip((value - low) / (high - low), 0.0, 1.0)
 
 
-def _against_typical(strength: np.ndarray) -> np.ndarray:
-    typical = float(np.percentile(strength, 75))
-    return strength / typical if typical > 0 else np.zeros_like(strength)
+def _against_strong_beats(strength: np.ndarray) -> np.ndarray:
+    strong = float(np.percentile(strength, 90))
+    return strength / strong if strong > 0 else np.zeros_like(strength)
 
 
-def beat_hits(samples: np.ndarray, full: np.ndarray, kick: np.ndarray, beats: Beats) -> np.ndarray:
-    """How strongly each of `beats` is heard.
-
-    A beat's onset counts in the bass or across the band, whichever is
-    stronger - a clap in a breakdown is as much a hit as a kick."""
-    times = beats.times
-    onset = np.maximum(
-        _against_typical(beat_strengths(kick, times)),
-        _against_typical(beat_strengths(full, times)),
+def beat_hits(punch: np.ndarray, snap: np.ndarray, beats: Beats) -> np.ndarray:
+    """How strongly each of `beats` is heard: by its kick, or more faintly
+    by its snare or clap. Bass notes and pads between the drums stay dark -
+    a note only counts as far as it is as loud as the song's kick."""
+    kick = _against_strong_beats(beat_strengths(punch, beats.times))
+    crack = _against_strong_beats(beat_strengths(snap, beats.times))
+    hits = np.maximum(
+        _ramp(kick, _KICK_FROM, _KICK_FULL), _SNAP_HIT * _ramp(crack, _SNAP_FROM, _SNAP_FULL)
     )
-    bass = span_db(low_passed(samples), times, beats.period)
-    bass_on = _ramp(bass - np.percentile(bass, 75), _BASS_GONE_DB, _BASS_FULL_DB)
-    hits = np.maximum(_ramp(onset, _HIT_FROM, _HIT_FULL), _BASS_PULSE * bass_on)
     return hits.astype(np.float32)
 
 
 def analyse_samples_for_lights(samples: np.ndarray) -> SongLights:
     full, kick = onset_envelopes(samples)
-    beats = find_beats(full, kick) if len(full) else None
+    beats = None
+    hits = None
+    if len(full):
+        punch = punch_envelope(samples, len(full))
+        beats = find_beats(full, kick, punch)
+        if beats:
+            hits = beat_hits(punch, snap_envelope(samples, len(full)), beats)
     return SongLights(
         duration=len(samples) / ANALYSIS_RATE,
         beats=beats,
         energy=energy_curve(samples),
-        hits=beat_hits(samples, full, kick, beats) if beats else None,
+        hits=hits,
     )
 
 

@@ -277,16 +277,44 @@ def test_beats_in_a_breakdown_are_not_heard():
     assert _beats_heard(song, 28, 38).min() > 0.9
 
 
-def test_a_bassline_without_drums_keeps_a_gentler_pulse():
+def _with_gap(put_in_gap) -> SongLights:
+    """A kick on every beat, with `put_in_gap` in place of it from 16 to 26 s."""
     x = _click_track(120, 40)
     gap = slice(int(16 * ANALYSIS_RATE), int(26 * ANALYSIS_RATE))
     x[gap] = 0
     t = np.arange(gap.stop - gap.start) / ANALYSIS_RATE
-    x[gap] = 0.1 * np.sin(2 * np.pi * 55 * t)
-    song = analysis.analyse_samples_for_lights(x)
+    x[gap] = put_in_gap(t)
+    return analysis.analyse_samples_for_lights(x)
+
+
+def test_a_bass_drone_without_drums_does_not_flash():
+    song = _with_gap(lambda t: 0.1 * np.sin(2 * np.pi * 55 * t))
+    assert song.beats is not None
+    assert _beats_heard(song, 17, 25).max() < 0.1
+
+
+def test_quiet_bass_notes_are_not_heard_like_kicks():
+    def notes(t: np.ndarray) -> np.ndarray:
+        into_beat = t % 0.5
+        return 0.08 * np.sin(2 * np.pi * 55 * t) * np.exp(-into_beat / 0.2)
+
+    song = _with_gap(notes)
+    assert _beats_heard(song, 4, 14).min() > 0.9
+    assert _beats_heard(song, 17, 25).max() < 0.5
+
+
+def test_a_clap_without_a_kick_flashes_but_less_than_a_kick():
+    rng = np.random.default_rng(1)
+
+    def claps(t: np.ndarray) -> np.ndarray:
+        into_beat = t % 0.5
+        return 0.5 * rng.standard_normal(len(t)) * np.exp(-into_beat / 0.03)
+
+    song = _with_gap(claps)
     heard = _beats_heard(song, 17, 25)
-    assert heard.min() >= analysis._BASS_PULSE - 0.05
-    assert heard.max() < 0.9
+    assert heard.min() >= analysis.HEARD
+    assert heard.max() < 0.7
+    assert _beats_heard(song, 4, 14).min() > 0.9
 
 
 def test_beats_past_the_analysed_part_count_in_full():

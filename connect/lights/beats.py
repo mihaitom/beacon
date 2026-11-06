@@ -10,10 +10,16 @@ and for 16 of those 90 it sat half a beat off the kick, on the hi-hats.
 
 So the lights take the grid's tempo and then place each beat on its own
 (dynamic programming over the onsets, the textbook beat tracker): the best
-chain of onsets about one beat apart, the kick weighted over the rest of
-the band. It follows a tempo that wanders and a section that leans
-elsewhere, and lands on the kick. 119 of the 120 songs get beats this way;
-the one left out is a ballad without drums.
+chain of kicks about one beat apart. It follows a tempo that wanders and
+lands on the kick. 119 of the 120 songs get beats this way; the one left
+out is a ballad without drums.
+
+The chain runs mostly on how far the bass band's level jumps
+(punch_envelope), not on the onset envelopes alone: those work on a log
+spectrum, where a quiet bass note rises about as far as a loud kick, so a
+chain on them moved onto the bassline for whole sections. In the bass band
+the kick is usually the loudest thing
+(docs/investigations/lights/lights-switch-between-kick-and-bass.md).
 """
 
 from __future__ import annotations
@@ -25,18 +31,40 @@ import numpy as np
 from core.beat_analysis import (
     _ENVELOPE_OFFSET,
     _FPS,
+    _HOP,
+    ANALYSIS_RATE,
     _fold,
     beat_strengths,
     grid_from_envelopes,
+    low_passed,
 )
 from core.transition_planner import MIN_CONFIDENCE
 
-# The kick's share of the envelope the beats are placed on: house puts its
-# hi-hats between the beats, and the full band alone lands on them.
+# The kick's share of the envelope that checks a song's tempo and whether it
+# has a beat at all: house puts its hi-hats between the beats, and the full
+# band alone folds on them.
 _KICK_SHARE = 0.6
-# The grid's one tempo mistake that matters is 4/3 or 3/4 of the true
-# tempo (double or half still lights on the beat). The other is taken
-# when its fold is clearly sharper: on the 120 songs every
+# Level windows: 25 ms holds a whole period of a 40 Hz kick, and its attack
+# is over within 30. A snare or clap is shorter and needs no more than this.
+_PUNCH_WINDOW_SECONDS, _PUNCH_RISE_SECONDS = 0.025, 0.03
+_SNAP_WINDOW_SECONDS, _SNAP_RISE_SECONDS = 0.012, 0.015
+_SNAP_HZ = (300.0, 3000.0)
+# A kick's level rises steepest this long after its start, so the chain would
+# land that much late: measured on 19 songs against their separated kicks.
+_PUNCH_LAG_SECONDS = 0.015
+# The punch's share of what the chain follows. Where the kick is not the
+# loudest thing in the bass, the onsets keep it on the beat: on 59 songs a
+# share of 1 left one at 35 % of its beats on the kick and 0.7 at 69 %, while
+# the bassline only took a section over again at 0.5.
+_PUNCH_SHARE = 0.7
+# As much punch halfway between the beats as on them means the tempo found is
+# half the real one: the four such songs (60-68 BPM) measured 0.74 to 0.98,
+# the next slow one 0.56. Only up to _MAX_DOUBLED_BPM, since a song at 110
+# with kicks on the eighths measures the same and is at the right tempo.
+_KICKS_BETWEEN_BEATS = 0.65
+_MAX_DOUBLED_BPM = 160.0
+# The grid's tempo can be 4/3 or 3/4 of the true one (half of it is
+# _kicks_between's). The other is taken when its fold is clearly sharper: on the 120 songs every
 # margin from 1.1 to 1.2 got all tempos right, none outside it did.
 _TEMPO_ALTERNATIVES = (4 / 3, 3 / 4)
 _TEMPO_SWITCH_MARGIN = 1.15
@@ -69,9 +97,41 @@ class Beats:
         return 60.0 / self.period
 
 
-def find_beats(full: np.ndarray, kick: np.ndarray) -> Beats | None:
-    """The beats of a song from its onset envelopes (onset_envelopes()),
-    or None where it has no beat worth following."""
+def _level_rise(
+    signal: np.ndarray, frames: int, window: float, rise: float, lag: float = 0.0
+) -> np.ndarray:
+    """How far `signal`'s level jumps, one value per onset envelope frame and
+    in the same time (frame t is t / _FPS + _ENVELOPE_OFFSET into the song)."""
+    w, r = int(window * ANALYSIS_RATE), int(rise * ANALYSIS_RATE)
+    power = np.concatenate([[0.0], np.cumsum(signal.astype(np.float64) ** 2)])
+    level = np.sqrt(np.maximum(power[w:] - power[:-w], 0.0) / w)
+    rising = np.concatenate([[0.0], np.cumsum(np.maximum(level[r:] - level[:-r], 0.0))])
+    seconds = np.arange(frames) / _FPS + _ENVELOPE_OFFSET + lag
+    centres = seconds * ANALYSIS_RATE - (w + r) / 2
+    start = np.clip((centres - _HOP / 2).astype(int), 0, len(rising) - 1)
+    end = np.clip(start + _HOP, 0, len(rising) - 1)
+    return (rising[end] - rising[start]) / _HOP
+
+
+def punch_envelope(samples: np.ndarray, frames: int) -> np.ndarray:
+    """The kick: how far the level below 150 Hz jumps."""
+    return _level_rise(
+        low_passed(samples), frames, _PUNCH_WINDOW_SECONDS, _PUNCH_RISE_SECONDS, _PUNCH_LAG_SECONDS
+    )
+
+
+def snap_envelope(samples: np.ndarray, frames: int) -> np.ndarray:
+    """A snare or clap: how far the level of the band it cracks in jumps."""
+    spectrum = np.fft.rfft(samples)
+    hz = np.fft.rfftfreq(len(samples), 1 / ANALYSIS_RATE)
+    spectrum[(hz < _SNAP_HZ[0]) | (hz > _SNAP_HZ[1])] = 0
+    band = np.fft.irfft(spectrum, len(samples))
+    return _level_rise(band, frames, _SNAP_WINDOW_SECONDS, _SNAP_RISE_SECONDS)
+
+
+def find_beats(full: np.ndarray, kick: np.ndarray, punch: np.ndarray) -> Beats | None:
+    """The beats of a song from its onset envelopes (onset_envelopes()) and
+    punch_envelope(), or None where it has no beat worth following."""
     grid = grid_from_envelopes(full, kick)
     if grid is None:
         return None
@@ -79,9 +139,12 @@ def find_beats(full: np.ndarray, kick: np.ndarray) -> Beats | None:
     period = _tempo(envelope, grid.period * _FPS)
     if grid.confidence < MIN_CONFIDENCE and _repeats(envelope, period) < _MIN_PERIODICITY:
         return None
-    frames = _track(envelope, period)
+    chain = _PUNCH_SHARE * _standardised(punch) + (1 - _PUNCH_SHARE) * envelope
+    frames = _track(chain, period)
     if len(frames) < 8:
         return None
+    if period / 2 >= _FPS * 60 / _MAX_DOUBLED_BPM and _kicks_between(punch, frames):
+        frames = _track(chain, period / 2)
     times = frames / _FPS + _ENVELOPE_OFFSET
     return Beats(
         times=times,
@@ -153,6 +216,16 @@ def _track(envelope: np.ndarray, period: float) -> np.ndarray:
         chain.append(t)
         t = int(previous[t])
     return np.array(chain[::-1], dtype=float)
+
+
+def _kicks_between(punch: np.ndarray, frames: np.ndarray) -> bool:
+    """Whether as much punch falls halfway between the beats as on them. The
+    louder half of each only: a song's kick may leave out every other beat."""
+    times = frames / _FPS + _ENVELOPE_OFFSET
+    on = np.sort(beat_strengths(punch, times))
+    between = np.sort(beat_strengths(punch, (times[:-1] + times[1:]) / 2))
+    on_top = on[len(on) // 2 :].mean()
+    return on_top > 0 and between[len(between) // 2 :].mean() >= _KICKS_BETWEEN_BEATS * on_top
 
 
 def _downbeat(kick: np.ndarray, times: np.ndarray) -> int:

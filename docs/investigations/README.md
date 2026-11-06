@@ -120,6 +120,7 @@ Navidrome, Jellyfin and Plex, and the bridges in front of the last two.
 
 The room lights playing along (connect/lights/).
 
+- **FIXED** [The lights switch between the kick and the bass](lights/lights-switch-between-kick-and-bass.md) (2026-11-06, unreleased) - on a log spectrum a quiet bass note reads like a loud kick, so the beats moved onto the bassline for whole sections, and every beat flashed whatever was on it. Beats and flashes now follow the level in the bass band. Has the 88-song measurement against separated stems, what got worse, and why the kick alone does not work
 - **FIXED** [The lights are not in time with the song](lights/lights-not-in-time-with-the-song.md) (2026-11-01, unreleased) - the beatmix grid turned a quarter of songs down (a played tempo, sections leaning on different parts) and sat half a beat off the kick for 16 of the rest. The lights place their own beats now. Has the 120-song measurement against BPM tags, four tests for "has a beat" that did not work, and the same half-beat fault still open in the beatmix grid
 
 ## Tools and method
