@@ -10,6 +10,10 @@ A Hue bridge plays along with music in one entertainment area at a time - that i
 
 To light several rooms together, make one entertainment area in the Hue app that holds the lights of all of them, and pick that one in Beacon. The Hue app tells you how many lights an area can take, and lights far from the bridge and from each other can follow fast changes less evenly.
 
+## Why does one of my lights not play along?
+
+Only lights that can show colours can join an entertainment area - that is Hue's rule, and it also leaves out White ambiance lights, which change only between warmer and cooler white. Beacon plays on the lights in the area, so the others are not part of the show: they stay as they are while the rest play along, even in the same room. A colour light that is missing may just not be in the area yet: add it in the Hue app, and Beacon takes it along the next time the lights start.
+
 ## Why do the lights not play along when I listen on my phone?
 
 The lights follow what Beacon casts to a speaker, started from any device, and what a computer or a tablet plays itself - in the desktop app or in a browser. Music playing on a phone itself is left out on purpose: a phone may be listening on the way to work, and that should not set the lights at home flashing. To light the room from your phone, cast to a speaker in that room.
