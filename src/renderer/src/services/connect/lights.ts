@@ -144,6 +144,12 @@ export interface SongAnalysis {
   hits: number[] | null
   /** A hit at least this strong counts as a beat heard. */
   heard_from: number
+  /** Values a second of `lull` and `swell`. */
+  rest_rate: number
+  /** 0-1: how far into a breakdown. Null for no breakdowns. */
+  lull: number[] | null
+  /** 0-1: how much of what plays in a breakdown is moving. */
+  swell: number[] | null
 }
 
 /** "pending" while connect is still decoding the song - ask again. */

@@ -317,6 +317,76 @@ def test_a_clap_without_a_kick_flashes_but_less_than_a_kick():
     assert _beats_heard(song, 4, 14).min() > 0.9
 
 
+def _lull_of(hits: list[float], period: float = 0.5) -> np.ndarray:
+    times = 0.5 + np.arange(len(hits)) * period
+    beats = analysis.Beats(times=times, downbeat=0, period=period)
+    return analysis.lull_curve(beats, np.array(hits), float(times[-1] + period))
+
+
+def _at(curve: np.ndarray, seconds: float) -> float:
+    return float(curve[int(seconds * analysis.REST_RATE)])
+
+
+def test_a_gap_of_a_few_beats_is_no_breakdown():
+    assert not _lull_of([1.0] * 8 + [0.0] * 7 + [1.0] * 8).any()
+
+
+def test_a_breakdown_is_risen_into_and_let_go_of_on_the_first_beat_heard():
+    curve = _lull_of([1.0] * 8 + [0.0] * 16 + [1.0] * 8)
+    start, kick_back = 0.5 + 8 * 0.5, 0.5 + 24 * 0.5
+    assert _at(curve, start - 0.1) == 0.0
+    assert 0.0 < _at(curve, start + 0.5) < 1.0
+    assert _at(curve, kick_back - 0.1) == 1.0
+    assert _at(curve, kick_back + 0.01) == 0.0
+
+
+def test_a_swell_rises_on_an_onset_fades_and_stays_out_of_the_rest_of_the_song():
+    rate = analysis.REST_RATE
+    lull = np.zeros(20 * rate, np.float32)
+    lull[5 * rate : 15 * rate] = 1.0
+    full = np.zeros(int(20 * analysis._FPS))
+    for seconds in (2.0, 8.0, 12.0, 17.0):
+        full[int((seconds - analysis._ENVELOPE_OFFSET) * analysis._FPS)] = 1.0
+    swell = analysis.swell_curve(full, lull)
+    assert _at(swell, 8.0) > 0.9
+    assert 0.1 < _at(swell, 8.5) < _at(swell, 8.0)
+    assert _at(swell, 11.0) < 0.01
+    assert _at(swell, 2.0) == 0.0
+    assert _at(swell, 17.0) == 0.0
+
+
+def test_faint_onsets_of_a_held_pad_do_not_breathe():
+    lull = np.ones(20 * analysis.REST_RATE, np.float32)
+    full = np.full(int(20 * analysis._FPS), 0.05)
+    # Clear onsets for the first half, only the pad's faint ones after.
+    full[: int(10 * analysis._FPS) : 40] = 1.0
+    swell = analysis.swell_curve(full, lull)
+    assert _at(swell, 5.0) > 0.5
+    assert _at(swell, 19.0) < 0.01
+
+
+def test_what_plays_in_a_breakdown_moves_the_light():
+    def stabs(t: np.ndarray) -> np.ndarray:
+        # Off the beat, so they do not end the breakdown.
+        return 0.05 * np.sin(2 * np.pi * 440 * t) * np.exp(-((t + 0.25) % 1.5) / 0.1)
+
+    song = _with_gap(stabs)
+    rest = [song.rest_at(t) for t in np.arange(19, 25, 0.05)]
+    assert min(lull for lull, _ in rest) == 1.0
+    moving = [swell for _, swell in rest]
+    assert max(moving) > 0.5
+    assert min(moving) < 0.3
+    assert song.rest_at(10) == (0.0, 0.0)
+
+
+def test_a_breakdown_without_its_bass_is_not_read_as_quiet():
+    t = np.arange(40 * ANALYSIS_RATE) / ANALYSIS_RATE
+    pad = 0.1 * np.sin(2 * np.pi * 600 * t)
+    bass = 0.8 * np.sin(2 * np.pi * 55 * t) * ((t < 15) | (t >= 25))
+    song = analysis.analyse_samples_for_lights((pad + bass).astype(np.float32))
+    assert song.energy_at(20) > 0.9
+
+
 def test_beats_past_the_analysed_part_count_in_full():
     song = SongLights(duration=10, beats=None, energy=np.zeros(0), hits=np.array([0.0, 1.0]))
     assert (song.hit(0), song.hit(1), song.hit(2), song.hit(-1)) == (0.0, 1.0, 1.0, 1.0)
@@ -348,6 +418,51 @@ def test_noise_gets_no_beats():
         (rng.standard_normal(ANALYSIS_RATE * 20) * 0.2).astype(np.float32)
     )
     assert song.beats is None
+
+
+def _resting(lull: float, swell: float = 0.0) -> SongLights:
+    beats = analysis.Beats(times=np.arange(0.5, 60, 0.5), downbeat=0, period=0.5)
+    n = 60 * analysis.REST_RATE
+    return SongLights(
+        duration=60,
+        beats=beats,
+        energy=np.full(60 * analysis.ENERGY_RATE, 0.5, np.float32),
+        hits=np.zeros(len(beats.times), np.float32),
+        lull=np.full(n, lull, np.float32),
+        swell=np.full(n, swell, np.float32),
+    )
+
+
+@pytest.mark.parametrize("style", ["pulse", "party", "chase"])
+def test_a_breakdown_stays_lit_and_breathes_with_what_plays(style):
+    def level(song: SongLights) -> float:
+        return max(show.frame(10.2, song, (RED,), (LEFT,), style)[0])
+
+    dark, lit, breathing = level(_resting(0.0)), level(_resting(1.0)), level(_resting(1.0, 1.0))
+    assert lit > dark
+    assert breathing == pytest.approx(lit + show._BREATH, abs=0.01)
+
+
+def test_faint_beats_do_not_flash_on_top_of_a_breakdown():
+    faint = _resting(1.0, 1.0)
+    faint = SongLights(
+        duration=faint.duration,
+        beats=faint.beats,
+        energy=faint.energy,
+        hits=np.full(len(faint.beats.times), 0.45, np.float32),
+        lull=faint.lull,
+        swell=faint.swell,
+    )
+    at = 10.02
+    assert show.frame(at, faint, (RED,), (LEFT,)) == show.frame(
+        at, _resting(1.0, 1.0), (RED,), (LEFT,)
+    )
+
+
+def test_breathing_needs_a_breakdown():
+    assert show.frame(10.2, _resting(0.0, 1.0), (RED,), (LEFT,)) == show.frame(
+        10.2, _resting(0.0, 0.0), (RED,), (LEFT,)
+    )
 
 
 def test_energy_curve_follows_the_loud_section():
@@ -1764,6 +1879,9 @@ def test_the_preview_gets_the_songs_beats_and_loudness(client, monkeypatch):
     assert body["hits"] == [1.0, 0.2, 0.9]
     assert body["energy_rate"] == analysis.ENERGY_RATE
     assert body["heard_from"] == analysis.HEARD
+    assert body["rest_rate"] == analysis.REST_RATE
+    assert body["lull"] is None
+    assert body["swell"] is None
 
     monkeypatch.setattr(controller, "preview_song", lambda *a: ("pending", None))
     assert client.get("/lights/analysis", params={"song_id": "s"}).json() == {"status": "pending"}

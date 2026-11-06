@@ -120,12 +120,16 @@ def punch_envelope(samples: np.ndarray, frames: int) -> np.ndarray:
     )
 
 
-def snap_envelope(samples: np.ndarray, frames: int) -> np.ndarray:
-    """A snare or clap: how far the level of the band it cracks in jumps."""
+def band_passed(samples: np.ndarray, low: float, high: float) -> np.ndarray:
     spectrum = np.fft.rfft(samples)
     hz = np.fft.rfftfreq(len(samples), 1 / ANALYSIS_RATE)
-    spectrum[(hz < _SNAP_HZ[0]) | (hz > _SNAP_HZ[1])] = 0
-    band = np.fft.irfft(spectrum, len(samples))
+    spectrum[(hz < low) | (hz > high)] = 0
+    return np.fft.irfft(spectrum, len(samples))
+
+
+def snap_envelope(samples: np.ndarray, frames: int) -> np.ndarray:
+    """A snare or clap: how far the level of the band it cracks in jumps."""
+    band = band_passed(samples, *_SNAP_HZ)
     return _level_rise(band, frames, _SNAP_WINDOW_SECONDS, _SNAP_RISE_SECONDS)
 
 

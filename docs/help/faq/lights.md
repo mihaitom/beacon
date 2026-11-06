@@ -28,7 +28,7 @@ Light takes a moment to get from Beacon to the lamps, and how long depends on th
 
 ## Why do the lights not flash at the start of a song, or not at all in some songs?
 
-For the first second or two of a song, while Beacon works out its beats, the lights stay on steadily. After that they flash only where a beat is actually heard: through a breakdown without drums they go quiet with the music, and a song without a steady beat, such as a ballad without drums or spoken word, gets no flashes at all - the brightness then only follows how loud the song is. The Calm style never flashes.
+For the first second or two of a song, while Beacon works out its beats, the lights stay on steadily. After that they flash only where a beat is actually heard: through a breakdown without drums they stop flashing and breathe gently with what still plays, and a song without a steady beat, such as a ballad without drums or spoken word, gets no flashes at all - the brightness then only follows how loud the song is. The Calm style never flashes.
 
 ## Beacon does not find my Hue bridge
 

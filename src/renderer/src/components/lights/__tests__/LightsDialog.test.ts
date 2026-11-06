@@ -458,6 +458,9 @@ describe('LightsDialog preview', () => {
     beats: { times: [0.5, 1], downbeat: 0, period: 0.5 },
     hits: null,
     heard_from: 0.5,
+    rest_rate: 20,
+    lull: null,
+    swell: null,
   }
 
   beforeEach(() => {

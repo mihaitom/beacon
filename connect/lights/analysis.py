@@ -9,7 +9,9 @@ Three things come out of it: the beats (beats.py), how strongly each of
 them is actually heard, and a slow loudness curve, so a quiet verse and a
 full chorus do not light the room the same. A beat is placed where the
 tempo says one belongs even through a breakdown; its own strength is what
-lets the lights go quiet with the drums.
+lets the lights go quiet with the drums. A breakdown then gets a light of
+its own (lull_curve, swell_curve): the music goes on without its kick, so
+the room stays lit and breathes with what still plays.
 """
 
 from __future__ import annotations
@@ -27,17 +29,23 @@ import httpx
 import numpy as np
 
 from core.beat_analysis import (
+    _ENVELOPE_OFFSET,
+    _FPS,
     ANALYSIS_RATE,
     beat_strengths,
     onset_envelopes,
 )
 from core.streamer import pcm_decode_cmd
-from lights.beats import Beats, find_beats, punch_envelope, snap_envelope
+from lights.beats import Beats, band_passed, find_beats, punch_envelope, snap_envelope
 
 logger = logging.getLogger("connect.lights")
 
 # Values per second of the loudness curve.
 ENERGY_RATE = 4
+# The band loudness is measured in. With the bass in, it is mostly kick and
+# bass, and a breakdown read far quieter than it sounds: over 99 breakdowns a
+# median of 0.48 with them and 0.70 without, one house track 0.30 and 0.70.
+_LOUDNESS_HZ = (200.0, 5000.0)
 # Averaged over this long, so the curve follows sections, not single hits.
 _ENERGY_WINDOW_SECONDS = 2.0
 _DECODE_TIMEOUT_SECONDS = 60.0
@@ -65,6 +73,19 @@ _SNAP_HIT = 0.6
 # A beat at least this strong counts as one for the colour steps.
 HEARD = 0.5
 
+# Values per second of the lull and swell curves.
+REST_RATE = 20
+# This many beats in a row not heard are a breakdown, not a gap in a pattern.
+# The light rises into it over _LULL_FADE_BEATS and lets go on the first beat
+# heard again, so the kick comes back as a hit.
+_LULL_BEATS = 8
+_LULL_FADE_BEATS = 4
+# What still plays in a breakdown: an onset this strong against the
+# breakdowns' strong ones (95th percentile) moves the light, a weaker one is
+# the noise of a held pad. It fades over this long: a breath, not a flash.
+_SWELL_FROM = 0.3
+_SWELL_DECAY_SECONDS = 0.5
+
 
 @dataclass(frozen=True)
 class SongLights:
@@ -77,6 +98,20 @@ class SongLights:
     # 0..1 per beat of `beats`: how strongly it is heard. None for every
     # beat a full one.
     hits: np.ndarray | None = None
+    # 0..1, REST_RATE values a second: how far into a breakdown (lull_curve)
+    # and how much of what plays in it is moving (swell_curve). None for no
+    # breakdowns.
+    lull: np.ndarray | None = None
+    swell: np.ndarray | None = None
+
+    def rest_at(self, t: float) -> tuple[float, float]:
+        """(lull, swell) at `t`."""
+        if self.lull is None or self.swell is None:
+            return 0.0, 0.0
+        i = int(max(0.0, t) * REST_RATE)
+        if i >= len(self.lull):
+            return 0.0, 0.0
+        return float(self.lull[i]), float(self.swell[i])
 
     def energy_at(self, t: float) -> float:
         if len(self.energy) == 0:
@@ -157,20 +192,68 @@ def beat_hits(punch: np.ndarray, snap: np.ndarray, beats: Beats) -> np.ndarray:
     return hits.astype(np.float32)
 
 
+def lull_curve(beats: Beats, hits: np.ndarray, duration: float) -> np.ndarray:
+    """How far into a breakdown each moment is, 0..1."""
+    curve = np.zeros(int(duration * REST_RATE) + 1, dtype=np.float32)
+    times = beats.times
+    unheard = hits < HEARD
+    i = 0
+    while i < len(times):
+        if not unheard[i]:
+            i += 1
+            continue
+        end = i
+        while end + 1 < len(times) and unheard[end + 1]:
+            end += 1
+        if end - i + 1 >= _LULL_BEATS:
+            until = times[end + 1] if end + 1 < len(times) else duration
+            a, b = int(times[i] * REST_RATE), int(until * REST_RATE)
+            rising = (np.arange(a, b) / REST_RATE - times[i]) / (_LULL_FADE_BEATS * beats.period)
+            curve[a:b] = np.clip(rising, 0.0, 1.0)
+        i = end + 1
+    return curve
+
+
+def swell_curve(full: np.ndarray, lull: np.ndarray) -> np.ndarray:
+    """How much is moving in a breakdown, 0..1: its onsets of any kind, each
+    fading out slowly. Zero outside the breakdowns."""
+    swell = np.zeros(len(lull), dtype=np.float32)
+    bins = ((np.arange(len(full)) / _FPS + _ENVELOPE_OFFSET) * REST_RATE).astype(int)
+    inside = bins < len(lull)
+    onsets = np.zeros(len(lull))
+    np.maximum.at(onsets, bins[inside], full[inside])
+    resting = lull > 0
+    heard = onsets[resting & (onsets > 0)]
+    if len(heard) == 0:
+        return swell
+    strong = float(np.percentile(heard, 95))
+    moved = np.where(onsets / strong >= _SWELL_FROM, np.minimum(onsets / strong, 1.0), 0.0)
+    decay = math.exp(-1 / (REST_RATE * _SWELL_DECAY_SECONDS))
+    level = 0.0
+    for i in np.flatnonzero(resting | np.roll(resting, 1)):
+        level = max(float(moved[i]), level * decay) if resting[i] else 0.0
+        swell[i] = level
+    return swell
+
+
 def analyse_samples_for_lights(samples: np.ndarray) -> SongLights:
     full, kick = onset_envelopes(samples)
-    beats = None
-    hits = None
+    duration = len(samples) / ANALYSIS_RATE
+    beats = hits = lull = swell = None
     if len(full):
         punch = punch_envelope(samples, len(full))
         beats = find_beats(full, kick, punch)
         if beats:
             hits = beat_hits(punch, snap_envelope(samples, len(full)), beats)
+            lull = lull_curve(beats, hits, duration)
+            swell = swell_curve(full, lull)
     return SongLights(
-        duration=len(samples) / ANALYSIS_RATE,
+        duration=duration,
         beats=beats,
-        energy=energy_curve(samples),
+        energy=energy_curve(band_passed(samples, *_LOUDNESS_HZ)),
         hits=hits,
+        lull=lull,
+        swell=swell,
     )
 
 

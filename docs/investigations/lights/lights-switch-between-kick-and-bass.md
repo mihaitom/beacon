@@ -65,6 +65,23 @@ as heard, which is the point, but also what a rock song will show most.
 Why the suite did not catch it: its songs had kicks and hats but no bass. One
 test even pinned the bass floor as wanted behaviour.
 
+## Breakdowns went dark
+
+Seen on the lamps right after: without the flashes on vocals and synths a
+breakdown stayed dark for a while. Partly a fault of its own: loudness was
+mostly kick and bass, so a breakdown read far quieter than it sounds (99
+breakdowns: median 0.48, 0.70 without the bass; one house track 0.30 and 0.70).
+Measuring loudness from 200 Hz up was not enough, since party's floor only went
+from 0.16 to 0.20.
+
+So 8 beats or more without one heard now count as a breakdown: the light rises
+to four fifths of calm's brightness (calm's own looked too bright) over 4 beats, breathes with the onsets of what still plays,
+and lets go on the first beat heard. Faint beats do not flash in it: on top of
+the breathing they reached 0.95, nearly a kick.
+
+The first suspicion, that a loud bass in a drop hides the kick from the level,
+did not hold: of 1347 stretches with a kick in the stems, 4 flashed under 0.5.
+
 ## Worse than before
 
 Six songs lose on at least one measure, mostly where the kick is quiet against
@@ -96,8 +113,6 @@ from 39 % to 74 %), "Stepdad" (98 % to 92 %) and "Do You Speak English"
 - **Kicks off the beat get no flash of their own.** Hip-hop plays them
   syncopated: "Candy Shop" flashes on 62 % of its kicks, "Just a Lil Bit" on 50 %.
   That would take flashes on kicks instead of on beats, which changes the look.
-- **Not judged by eye yet.** All of this is measured; the lamps have not been
-  looked at. The lead may want another look: beats land about 8 ms earlier than
-  before.
+- The lead may want another look: beats land about 8 ms earlier than before.
 - `core/beat_analysis.py`'s own grid keeps its log-spectrum kick. Beatmixing was
   not looked at.

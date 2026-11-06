@@ -17,6 +17,10 @@ breakdown the beats count on, the flashes do not.
   again; one lights up at a time while the others glow. It moves only on
   a beat that is heard, so it stands still through a breakdown.
 
+A breakdown has no beats to flash on, so every style but calm rises to a
+steady brightness through it and breathes with what still plays
+(SongLights.rest_at), until the first kick lets go of it again.
+
 `palette` is one colour or several; with several, the lights take them in
 turn from left to right.
 """
@@ -71,6 +75,14 @@ _CHASE_DECAY_SECONDS = 0.25
 _CHASE_TAIL = 0.35
 _CHASE_TAIL_DECAY_SECONDS = 0.12
 
+# Brightness a breakdown rises to. Four fifths of calm's: at calm's own it
+# looked too bright on the lamps.
+_REST_FLOOR = 0.16
+_REST_RANGE = 0.44
+# How far what still plays in a breakdown lifts the light: well short of a
+# flash, so the kick coming back stays the event.
+_BREATH = 0.2
+
 # Without a beat to follow: brightness by loudness alone.
 _NO_BEAT_FLOOR = 0.15
 _NO_BEAT_RANGE = 0.6
@@ -80,6 +92,12 @@ _WAITING = 0.4
 
 def _clamp(v: float) -> float:
     return max(0.0, min(1.0, v))
+
+
+def _rested(floor: float, energy: float, rest: tuple[float, float]) -> float:
+    """`floor`, lifted as far as a breakdown has come (SongLights.rest_at)."""
+    lull, swell = rest
+    return floor + lull * (max(0.0, _REST_FLOOR + _REST_RANGE * energy - floor) + _BREATH * swell)
 
 
 def scale(colour: RGB, level: float) -> RGB:
@@ -158,14 +176,17 @@ def _levels(
 
     beat_index, since = beat
     downbeat = song.is_downbeat(beat_index)
-    hit = song.hit(beat_index)
+    rest = song.rest_at(t)
+    # In a breakdown the light breathes instead: on top of that, even a faint
+    # beat would come near the flash the kick is about to bring back.
+    hit = song.hit(beat_index) * (1 - rest[0])
 
     if style in ("party", "chase"):
         step = song.heard_beats(beat_index)
         if style == "chase":
-            return _chase(since, step, hit, energy, base, ordered)
-        return _party(since, step, downbeat, hit, energy, palette, ordered)
-    return _pulse(since, beat_index, downbeat, hit, energy, base, ordered)
+            return _chase(since, step, hit, energy, rest, base, ordered)
+        return _party(since, step, downbeat, hit, energy, rest, palette, ordered)
+    return _pulse(since, beat_index, downbeat, hit, energy, rest, base, ordered)
 
 
 def _pulse(
@@ -174,13 +195,14 @@ def _pulse(
     downbeat: bool,
     hit: float,
     energy: float,
+    rest: tuple[float, float],
     base: dict[int, RGB],
     ordered: list[Channel],
 ) -> dict[int, RGB]:
     pulse = hit * (_PULSE + _PULSE_RANGE * energy) * math.exp(-since / _PULSE_DECAY_SECONDS)
     if downbeat:
         pulse *= _DOWNBEAT_BOOST
-    floor = _FLOOR + _FLOOR_RANGE * energy
+    floor = _rested(_FLOOR + _FLOOR_RANGE * energy, energy, rest)
     two_sided = len({side(ch) for ch in ordered}) > 1
 
     out: dict[int, RGB] = {}
@@ -214,6 +236,7 @@ def _party(
     downbeat: bool,
     hit: float,
     energy: float,
+    rest: tuple[float, float],
     palette: tuple[RGB, ...],
     ordered: list[Channel],
 ) -> dict[int, RGB]:
@@ -224,7 +247,7 @@ def _party(
         colours.append(_second_colour(colours[0]))
     decay = math.exp(-since / _PARTY_DECAY_SECONDS)
     pulse = hit * (_PARTY_PULSE + _PARTY_PULSE_RANGE * energy) * decay
-    level = _clamp(_PARTY_FLOOR + _PARTY_FLOOR_RANGE * energy + pulse)
+    level = _clamp(_rested(_PARTY_FLOOR + _PARTY_FLOOR_RANGE * energy, energy, rest) + pulse)
     white = hit * _PARTY_WHITE * math.exp(-since / _PARTY_WHITE_DECAY_SECONDS) if downbeat else 0.0
 
     out: dict[int, RGB] = {}
@@ -239,12 +262,13 @@ def _chase(
     step: int,
     hit: float,
     energy: float,
+    rest: tuple[float, float],
     base: dict[int, RGB],
     ordered: list[Channel],
 ) -> dict[int, RGB]:
     """`step` counts the beats heard so far; the light whose turn it is
     lights up as strongly as the beat is heard."""
-    floor = (_FLOOR + _FLOOR_RANGE * energy) * _CHASE_FLOOR
+    floor = _rested((_FLOOR + _FLOOR_RANGE * energy) * _CHASE_FLOOR, energy, rest)
     peak = hit * (_CHASE_PULSE + _CHASE_PULSE_RANGE * energy)
     n = len(ordered)
     lit, before = step % n, (step - 1) % n

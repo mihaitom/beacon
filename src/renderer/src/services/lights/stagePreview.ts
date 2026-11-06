@@ -22,6 +22,9 @@ export interface PreviewSong {
   /** Beats heard as one up to `beat`: a count that stands still through a
    * breakdown. */
   heardBeats(beat: number): number
+  /** How far into a breakdown `t` is and how much of what plays in it is
+   * moving, each 0-1. */
+  restAt(t: number): [number, number]
 }
 
 const BEAT_SECONDS = 0.5
@@ -30,6 +33,11 @@ const ENERGY_PERIOD_SECONDS = 16
 // landing in the quiet half of the loudness swell.
 const LOOP_BEATS = 32
 const BREAKDOWN_FROM_BEAT = 24
+// Something in the breakdown moves every this many beats, and fades out.
+const BREAKDOWN_MOVES_EVERY_BEATS = 2
+const SWELL_DECAY_SECONDS = 0.5
+// connect's _BREATH (lights/show.py).
+const BREATH = 0.2
 const CALM_GLIDE_SECONDS = 8
 // connect's ROTATION_BEATS (lights/controller.py).
 const ROTATION_BEATS = 64
@@ -57,6 +65,13 @@ export const MADE_UP_SONG: PreviewSong = {
   heardBeats(beat) {
     const loops = Math.floor(beat / LOOP_BEATS)
     return loops * BREAKDOWN_FROM_BEAT + Math.min(wrap(beat, LOOP_BEATS), BREAKDOWN_FROM_BEAT - 1)
+  },
+  restAt(t) {
+    const beats = t / BEAT_SECONDS
+    const into = wrap(beats, LOOP_BEATS) - BREAKDOWN_FROM_BEAT
+    if (into < 0) return [0, 0]
+    const sinceMove = wrap(beats, BREAKDOWN_MOVES_EVERY_BEATS) * BEAT_SECONDS
+    return [Math.min(1, into / 4), Math.exp(-sinceMove / SWELL_DECAY_SECONDS)]
   },
 }
 
@@ -102,6 +117,10 @@ export function analysedSong(analysis: SongAnalysis): PreviewSong {
       if (!hits || beat < 0) return beat
       if (beat < hits.length) return heardUpTo[beat]!
       return (heardUpTo[hits.length - 1] ?? 0) + beat + 1 - hits.length
+    },
+    restAt(t) {
+      const i = Math.floor(Math.max(0, t) * analysis.rest_rate)
+      return [analysis.lull?.[i] ?? 0, analysis.swell?.[i] ?? 0]
     },
   }
 }
@@ -171,6 +190,11 @@ export function hexToRgb(hex: string): Rgb {
   return [(n >> 16) & 255, (n >> 8) & 255, n & 255]
 }
 
+/** `floor`, lifted as far as a breakdown has come - connect's _rested(). */
+function rested(floor: number, energy: number, [lull, swell]: [number, number]): number {
+  return floor + lull * (Math.max(0, 0.16 + 0.44 * energy - floor) + BREATH * swell)
+}
+
 /** One colour per light, 0-255 at the brightness it would have at `t`;
  * the second value is that brightness, 0-1, for the glow around it. */
 export function previewFrame(
@@ -201,18 +225,21 @@ export function previewFrame(
     } else {
       const [index, since] = beat
       const downbeat = song.isDownbeat(index)
-      const hit = song.hit(index)
+      const rest = song.restAt(t)
+      const hit = song.hit(index) * (1 - rest[0])
       // For party's colour swaps and the chase: they hold in a breakdown.
       const heard = song.heardBeats(index)
       const floor = 0.12 + 0.38 * energy
       if (style === 'party') {
         const colours = palette.length > 1 ? palette : [palette[0]!, secondColour(palette[0]!)]
         colour = colours[wrap(i + heard, colours.length)]!
-        level = 0.06 + 0.2 * energy + hit * (0.55 + 0.35 * energy) * Math.exp(-since / 0.14)
+        level =
+          rested(0.06 + 0.2 * energy, energy, rest) +
+          hit * (0.55 + 0.35 * energy) * Math.exp(-since / 0.14)
         if (downbeat) colour = mix(colour, WHITE, hit * 0.75 * Math.exp(-since / 0.1))
       } else if (style === 'chase') {
         const peak = hit * (0.55 + 0.3 * energy)
-        level = floor * 0.6
+        level = rested(floor * 0.6, energy, rest)
         if (i === wrap(heard, lights)) level += peak * (0.35 + 0.65 * Math.exp(-since / 0.25))
         else if (lights > 1 && i === wrap(heard - 1, lights)) {
           level += peak * 0.35 * Math.exp(-since / 0.12)
@@ -221,7 +248,7 @@ export function previewFrame(
         let pulse = hit * (0.35 + 0.25 * energy) * Math.exp(-since / 0.18) * (downbeat ? 1.3 : 1)
         const side = i < lights / 2 ? 0 : 1
         if (lights > 1 && !downbeat && side !== wrap(index, 2)) pulse *= 0.55
-        level = floor + pulse
+        level = rested(floor, energy, rest) + pulse
         if (downbeat) colour = mix(colour, WHITE, 0.35 * Math.min(1, pulse))
       }
     }

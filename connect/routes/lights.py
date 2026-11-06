@@ -20,7 +20,7 @@ from core.auth import require_token
 from core.session import SessionState, get_session
 from lights import config as lights_config
 from lights import hue
-from lights.analysis import ENERGY_RATE, HEARD, SongLights
+from lights.analysis import ENERGY_RATE, HEARD, REST_RATE, SongLights
 from lights.config import MAX_LEAD_MS, MIN_BRIGHTNESS
 from lights.controller import controller
 
@@ -261,6 +261,9 @@ def _song_dict(song: SongLights) -> dict:
         },
         "hits": None if song.hits is None else [round(float(h), 3) for h in song.hits],
         "heard_from": HEARD,
+        "rest_rate": REST_RATE,
+        "lull": None if song.lull is None else [round(float(v), 2) for v in song.lull],
+        "swell": None if song.swell is None else [round(float(v), 2) for v in song.swell],
     }
 
 

@@ -46,6 +46,9 @@ const ANALYSIS: SongAnalysis = {
   beats: { times: [1, 1.5, 2, 2.5], downbeat: 1, period: 0.5 },
   hits: [1, 0.1, 0.9, 1],
   heard_from: 0.5,
+  rest_rate: 20,
+  lull: null,
+  swell: null,
 }
 
 describe('analysedSong', () => {
@@ -92,6 +95,24 @@ describe('analysedSong', () => {
       return level(beat) - level(beat + 0.45)
     }
     expect(flash(2.5)).toBeGreaterThan(5 * flash(1.5))
+  })
+
+  it('a breakdown stays lit, breathes and does not flash', () => {
+    const resting = (lull: number, swell: number) =>
+      analysedSong({
+        ...ANALYSIS,
+        energy: [0.5],
+        hits: [0.4, 0.4, 0.4, 0.4],
+        lull: Array(100).fill(lull),
+        swell: Array(100).fill(swell),
+      })
+    const level = (lull: number, swell: number) =>
+      previewFrame(1.02, resting(lull, swell), 'party', [[255, 0, 0]], 1, 1)[0]!.level
+    expect(level(1, 0)).toBeCloseTo(0.16 + 0.44 * 0.5)
+    expect(level(1, 1)).toBeCloseTo(0.16 + 0.44 * 0.5 + 0.2)
+    // Outside a breakdown a faint beat flashes as before, and nothing breathes.
+    expect(level(0, 1)).toBeGreaterThan(0.06 + 0.2 * 0.5)
+    expect(level(0, 1)).toBe(level(0, 0))
   })
 
   it('a chase before the first beat counts round from the last lamp', () => {
