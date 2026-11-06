@@ -25,6 +25,10 @@ export default defineConfig({
         // real).
         exclude: ['**/node_modules/**', '**/*.browser.test.ts'],
         setupFiles: ['src/renderer/src/__tests__/setup.ts'],
+        // From Node 25 on, Node has a localStorage of its own, and without a
+        // storage file it reads as undefined. It then stands in for jsdom's,
+        // and every test touching localStorage fails.
+        execArgv: ['--no-experimental-webstorage'],
         coverage: {
             provider: 'v8',
             // Reported over every renderer source file, not just the ones a
