@@ -14,6 +14,8 @@ To change a band, drag its point up or down - anywhere in its column works, it d
 
 Yes. In the preset list, "Import headphone profile…" reads a ParametricEQ.txt in the Equalizer APO format: AutoEq has one for thousands of headphones, and REW writes the same format for a room measured yourself. The profile is kept with your own presets under the headphones' name and plays exactly as measured - its own filters at their own frequencies, often more precise than ten bands could follow. That is also why it has no points to drag: picking a preset, or Reset, goes back to the ten bands.
 
+On [autoeq.app](https://autoeq.app), pick your headphones, choose "Equalizer APO ParametricEQ" as the equalizer app, and download the file - leave the other options as they are. The "10-band graphic EQ" choice fits the correction onto ten fixed frequencies and loses its fine detail, so the parametric one is the better pick.
+
 The file's preamp line is left out on purpose. Beacon lowers the curve by its highest point anyway (see below), and taking the preamp as well would make it quieter twice. A GraphicEQ file, or a profile with different filters per ear, cannot be imported; take the ParametricEQ.txt of the same headphones.
 
 ## Why does my phone have no equalizer of its own?
