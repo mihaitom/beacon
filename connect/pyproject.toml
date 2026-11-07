@@ -95,7 +95,7 @@ testpaths = ["tests"]
 timeout = 60
 addopts = "-m 'not live'"
 markers = [
-    "live: hits real third-party lyrics provider APIs over the network; excluded by default, run with `-m live`",
+    "live: hits real third-party APIs and media servers over the network; excluded by default, run with `-m live`",
 ]
 
 [tool.coverage.run]
