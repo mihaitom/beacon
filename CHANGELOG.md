@@ -21,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - With a ListenBrainz name set, the shuffle buttons on Home's two Discover shelves are there too: they swap your personal recommendations for suggestions around other artists you play often, and the next start brings the personal ones back
 - The Playlists page has one playlist builder button instead of one per service: Deezer, Last.fm or ListenBrainz is picked inside it, and it opens on the one used last
+- When the player bar is too narrow for the volume slider, turning the mouse wheel shows the new level on the volume button for a moment
 - Electron, the build tools and the backend's libraries are updated to their latest versions
 - The "What's new" dialog opens once per version for each account, so a browser that clears its storage on exit no longer shows it at every login, and other browsers using the same Beacon server skip it too (contributed by [@b-r-y](https://github.com/b-r-y), [#80](https://github.com/mihaitom/beacon/issues/80))
 

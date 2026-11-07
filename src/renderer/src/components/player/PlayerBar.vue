@@ -22,13 +22,20 @@ import PlayerToolbar from './PlayerToolbar.vue'
 // the same pixels means whichever is "on top" steals the other's
 // clicks/drags — this avoids that outright rather than trying to manage it.
 //
-// Set comfortably above 1200px (.player-bar__row's own min-width while
-// *not* collapsed, see its own comment) — the collapse needs to have
-// already happened by the time the row would otherwise be forced that
-// narrow, or there'd be a dead zone where the row's still-uncollapsed
-// 434px flanks (see flankWidthPx) can't fit but nothing has told it to
-// shrink them yet.
-const VOLUME_COLLAPSE_BREAKPOINT_PX = 1250
+// Measured in a real browser: PlayerToolbar.vue's natural width in the
+// widest case (Electron, a song loaded, Autoplay, Hue lights found, casting
+// to one device), with and without the volume slider, plus a few px of
+// slack. Every new toolbar button raises both - PlayerBar.layout.browser.test.ts
+// fails when the toolbar outgrows its flank, which shows up as icons
+// running into the waveform.
+const FLANK_WIDTH_EXPANDED_PX = 512
+const FLANK_WIDTH_COLLAPSED_PX = 320
+
+// Comfortably above the row's uncollapsed floor (2 x 512 + 2 x 16 gap +
+// 220 center + 32 padding = 1308px): the collapse has to happen before the
+// row would be forced that narrow, or the uncollapsed flanks can't fit and
+// nothing has told them to shrink yet.
+const VOLUME_COLLAPSE_BREAKPOINT_PX = 1400
 
 export default {
   name: 'PlayerBar',
@@ -44,23 +51,12 @@ export default {
     }
   },
   computed: {
-    // Both song-info's and toolbar's own grid track (see .player-bar__row's
-    // own comment on why they're forced identical, not each sized to its
-    // own content) — the shared value is whichever of the two ever needs
-    // more room in the *current* state: 434px is PlayerToolbar.vue's own natural
-    // width in the widest case with the volume slider still shown
-    // (Electron, a song loaded, casting to one device); 300px is what's
-    // left needing accommodating once VOLUME_COLLAPSE_BREAKPOINT_PX has
-    // already dropped the slider/label. That 300 is a floor for the track,
-    // not song-info's own width: it fills whatever track it is given (see
-    // its own rule in SongInfo.vue), so the wider state is more room for
-    // the title and artist rather than empty space beside them. A single static number across both
-    // states (434px always) would keep exact centering too, but would also
-    // silently defeat the collapse's entire reason to exist — the
-    // reclaimed space would just sit unused to the left of a now-smaller
-    // icon row inside a track that never actually shrank.
+    // Both song-info's and toolbar's grid track (see .player-bar__row's
+    // comment on why they're forced identical): whichever of the two needs
+    // more room in the current state. Collapsed, the space the slider gave
+    // back goes to the seek bar instead of sitting unused beside the icons.
     flankWidthPx(): number {
-      return this.volumeCollapsed ? 300 : 434
+      return this.volumeCollapsed ? FLANK_WIDTH_COLLAPSED_PX : FLANK_WIDTH_EXPANDED_PX
     },
   },
   mounted() {
@@ -110,11 +106,9 @@ export default {
  * *different*-content columns to occupy *identical* track widths, which is
  * what the classic "equal flanks center the middle track by construction"
  * trick actually depends on — flankWidthPx is whichever of the two
- * genuinely needs more room in the *current* state (434px normally,
- * toolbar's own natural width in the widest case with the volume slider
- * still shown; 300px, the floor kept for song-info, once
- * VOLUME_COLLAPSE_BREAKPOINT_PX has already dropped the slider and toolbar
- * no longer needs as much). A single static value across both states would
+ * genuinely needs more room in the *current* state (the toolbar's
+ * measured widest width, with or without the volume slider - see
+ * FLANK_WIDTH_EXPANDED_PX / FLANK_WIDTH_COLLAPSED_PX). A single static value across both states would
  * keep exact centering too, but would also silently defeat the collapse's
  * entire reason to exist — the reclaimed space would just sit unused to
  * the left of a now-smaller icon row inside a track that never actually
@@ -154,15 +148,15 @@ export default {
  * (now-capped) box.
  *
  * min-width is the exact floor where every track is already at its own
- * minimum, in the *collapsed* state — 300 (flank) + 16 gap + 220 (center)
- * + 16 gap + 300 (flank) = 852px (.player-bar's own px-4 padding is
+ * minimum, in the *collapsed* state — 320 (flank) + 16 gap + 220 (center)
+ * + 16 gap + 320 (flank) = 892px (.player-bar's own px-4 padding is
  * separate, added on top of *this* element's box, not part of it; no
  * extra rounding buffer either — this value has to stay exact, a few
  * spare px here is exactly what let the row overflow its own already-
  * this-narrow parent once during testing). Below this, the window itself
  * needs to scroll rather than any piece here visually breaking — the
  * not-collapsed state has its own, larger natural floor
- * (434 + 16 + 220 + 16 + 434 = 1120px), but VOLUME_COLLAPSE_BREAKPOINT_PX
+ * (512 + 16 + 220 + 16 + 512 = 1276px), but VOLUME_COLLAPSE_BREAKPOINT_PX
  * is set comfortably above that specifically so collapse has already
  * happened by the time it would otherwise matter. Deliberately on this
  * element, not .player-bar itself — .player-bar is what this component's
@@ -183,7 +177,7 @@ export default {
   align-items: center;
   gap: 16px;
   width: 100%;
-  min-width: 852px;
+  min-width: 892px;
   /* CenterControls.vue is a fixed set of five buttons that never changes
    * at runtime, unlike PlayerToolbar.vue's own varying content (see
    * flankWidthPx) — a real ResizeObserver measurement would be pure

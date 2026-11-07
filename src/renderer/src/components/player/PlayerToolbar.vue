@@ -111,13 +111,25 @@
       content-class="beacon-player-popover"
     >
       <template #activator="{ props: menuProps }">
+        <!-- With no slider in sight, a wheel change shows its level on the
+         - button itself for a moment, over the dimmed icon. -->
         <v-btn
-          :icon="volumeIcon"
+          icon
           variant="text"
           density="comfortable"
+          class="volume-activator"
+          :class="{ 'volume-activator--flash': wheelFlashVisible }"
           :title="$t('player.volume')"
           v-bind="menuProps"
-        />
+        >
+          <v-icon :icon="volumeIcon" class="volume-activator__icon" />
+          <span
+            v-if="wheelFlashVisible"
+            class="text-body-small volume-activator__percent"
+            aria-hidden="true"
+            >{{ volumePercentLabel }}</span
+          >
+        </v-btn>
       </template>
       <v-card min-width="220" class="volume-popover">
         <v-card-text class="toolbar__popover-row">
@@ -216,6 +228,11 @@ import {
 } from '@/services/volumeControl'
 import type { ConnectDeviceRef } from '@/services/connect/types'
 
+// How long the level stays on the collapsed volume button after the last
+// wheel step - long enough to read, short enough to be gone once scrolling
+// stops.
+const WHEEL_FLASH_MS = 1200
+
 export default {
   name: 'PlayerToolbar',
   components: {
@@ -250,6 +267,8 @@ export default {
       // Scroll that hasn't added up to a whole volume step yet — see
       // volumeAfterWheel().
       volumeWheelCarry: 0,
+      wheelFlashVisible: false,
+      wheelFlashTimer: null as ReturnType<typeof setTimeout> | null,
       // A tablet in landscape gets this bar, and VSlider loses a real
       // finger's drag - see TouchVolumeSlider.vue.
       coarsePointer: isCoarsePointer(),
@@ -396,6 +415,7 @@ export default {
   },
   beforeUnmount() {
     clearInterval(this.volumePollTimer ?? undefined)
+    clearTimeout(this.wheelFlashTimer ?? undefined)
   },
   methods: {
     endCancelledSliderTouch,
@@ -458,6 +478,14 @@ export default {
       if (volume == null) return
       if (target) void this.onDeviceVolumeChange(volume)
       else this.playbackStore.setVolume(volume)
+      this.flashWheelVolume()
+    },
+    flashWheelVolume() {
+      this.wheelFlashVisible = true
+      clearTimeout(this.wheelFlashTimer ?? undefined)
+      this.wheelFlashTimer = setTimeout(() => {
+        this.wheelFlashVisible = false
+      }, WHEEL_FLASH_MS)
     },
     // Shared with the M shortcut rather than implemented here (see
     // volumeControl.ts): the pre-mute volume has to be one value, or
@@ -505,6 +533,31 @@ export default {
 .volume-value {
   width: 32px;
   text-align: right;
+}
+
+/* The level sits on top of the icon instead of beside it, so the toolbar
+ * doesn't change width while it shows. */
+.volume-activator {
+  position: relative;
+}
+
+.volume-activator__icon {
+  transition: opacity 150ms ease;
+}
+
+.volume-activator--flash .volume-activator__icon {
+  opacity: 0.25;
+}
+
+.volume-activator__percent {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
 }
 
 /* Same dark-chrome popover treatment as ConnectDevicePicker.vue's own

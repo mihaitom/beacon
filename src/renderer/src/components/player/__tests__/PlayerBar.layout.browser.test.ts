@@ -58,8 +58,13 @@ import { useConnectStore } from '@/stores/connect'
 import PlayerBar from '../PlayerBar.vue'
 import { makeSong, makeStatus } from '@/stores/__tests__/fixtures'
 import { useRadioMetadataStore } from '@/stores/radioMetadata'
+import { useLightsStore } from '@/stores/lights'
 
 const vuetify = createVuetify({ components, directives })
+
+// PlayerBar.vue's FLANK_WIDTH_EXPANDED_PX / FLANK_WIDTH_COLLAPSED_PX.
+const FLANK_EXPANDED = 512
+const FLANK_COLLAPSED = 320
 
 // Unmounted at the start of every mountBar() call, not just in afterEach —
 // several tests below deliberately mount twice (once per viewport) to
@@ -108,6 +113,11 @@ async function mountBar(castingElectron = false) {
   if (castingElectron) {
     window.api = {} as typeof window.api
     useConnectStore().status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
+    // A paired bridge adds the lights button - every button the toolbar
+    // can show is there.
+    useLightsStore().lights = { paired: true, found: [] } as unknown as ReturnType<
+      typeof useLightsStore
+    >['lights']
   }
   // Same reasoning as NowPlayingView.layout.browser.test.ts's own mount
   // helper — PlayerBar's <v-footer app> needs a real <v-app> layout
@@ -156,7 +166,7 @@ describe('PlayerBar layout', () => {
     // toolbar's 434px, and the room goes to the title/artist instead of
     // being left empty. What has to stay true is that both flanks are
     // identical, which is what centers the middle track by construction.
-    expect(Math.round(rect('.song-info').width)).toBe(434)
+    expect(Math.round(rect('.song-info').width)).toBe(FLANK_EXPANDED)
     expect(
       Math.abs(barRect.left + barRect.width / 2 - (centerRect.left + centerRect.width / 2)),
     ).toBeLessThan(1)
@@ -178,7 +188,7 @@ describe('PlayerBar layout', () => {
     const text = rect('.song-info .song-info__labels')
     const title = document.querySelector('.song-info .song-info__labels > div') as HTMLElement
 
-    expect(Math.round(info.width)).toBe(434)
+    expect(Math.round(info.width)).toBe(FLANK_EXPANDED)
     // Everything the cover and its margin leave — well past the ~240px the
     // same text had inside the old fixed 300px box.
     expect(text.width).toBeGreaterThan(360)
@@ -189,8 +199,8 @@ describe('PlayerBar layout', () => {
 
   it('stays exactly centered in the collapsed state too, where song-info (not the toolbar) is the wider flank', async () => {
     // Comfortably collapsed (well below VOLUME_COLLAPSE_BREAKPOINT_PX) but
-    // still above .player-bar__row's own 852px collapsed floor + 32px
-    // px-4 padding — right at/under that combined 884px is expected to
+    // still above .player-bar__row's own 892px collapsed floor + 32px
+    // px-4 padding — right at/under that combined 924px is expected to
     // genuinely overflow instead of staying centered, see the dedicated
     // "refuses to shrink past its own floor" test below for that case.
     await page.viewport(1000, 400)
@@ -212,19 +222,36 @@ describe('PlayerBar layout', () => {
     await mountBar(false)
     const narrowerWidth = rect('.control-container').width
 
-    await page.viewport(1300, 400) // still comfortably above the row's own floor, but narrower
+    await page.viewport(1450, 400) // still above the collapse breakpoint, but narrower
     await mountBar(false)
 
     expect(rect('.control-container').width).toBeLessThan(narrowerWidth)
     // Fills exactly what's left of the row after both (identical) flanks
     // and the two 16px gaps — not some other, unrelated number.
     const rowRect = rect('.player-bar__row')
-    expect(rect('.control-container').width).toBeCloseTo(rowRect.width - 2 * 434 - 2 * 16, 0)
+    expect(rect('.control-container').width).toBeCloseTo(
+      rowRect.width - 2 * FLANK_EXPANDED - 2 * 16,
+      0,
+    )
+  })
+
+  // The flank widths are measured constants, and every new toolbar button
+  // outgrows them: the toolbar then spills left into the seek bar and its
+  // waveform instead of anything failing visibly elsewhere.
+  it('fits the widest toolbar inside its flank, with and without the volume slider', async () => {
+    for (const width of [1500, 1000]) {
+      await page.viewport(width, 400)
+      await mountBar(true)
+
+      const toolbar = document.querySelector('.toolbar') as HTMLElement
+      expect(toolbar.scrollWidth).toBeLessThanOrEqual(Math.round(rect('.song-info').width))
+      expect(rect('.toolbar').left).toBeGreaterThanOrEqual(rect('.control-container').right)
+    }
   })
 
   describe('volume slider collapse', () => {
     it('stays inline above the collapse breakpoint', async () => {
-      await page.viewport(1300, 400)
+      await page.viewport(1500, 400)
       await mountBar(false)
 
       expect(document.querySelector('.toolbar > .volume-slider')).not.toBeNull()
@@ -236,7 +263,10 @@ describe('PlayerBar layout', () => {
 
       expect(document.querySelector('.toolbar > .volume-slider')).toBeNull()
       const rowRect = rect('.player-bar__row')
-      expect(rect('.control-container').width).toBeCloseTo(rowRect.width - 2 * 300 - 2 * 16, 0)
+      expect(rect('.control-container').width).toBeCloseTo(
+        rowRect.width - 2 * FLANK_COLLAPSED - 2 * 16,
+        0,
+      )
     })
 
     it('the collapsed activator opens a popover with a working, functionally identical slider', async () => {
@@ -261,7 +291,7 @@ describe('PlayerBar layout', () => {
 
     const rowRect = rect('.player-bar__row')
     expect(rowRect.width).toBeGreaterThan(700)
-    expect(Math.round(rect('.song-info').width)).toBe(300)
+    expect(Math.round(rect('.song-info').width)).toBe(FLANK_COLLAPSED)
     expect(rect('.control-container').width).toBeGreaterThanOrEqual(220)
   })
 

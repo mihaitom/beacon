@@ -120,6 +120,23 @@ describe('PlayerToolbar', () => {
       expect(setVolumeSpy).toHaveBeenLastCalledWith(0.5)
     })
 
+    it('shows the level on the collapsed volume button while the wheel changes it, then goes back to the icon', async () => {
+      vi.useFakeTimers()
+      const wrapper = mountToolbar({ volumeCollapsed: true })
+      const playback = usePlaybackStore()
+      playback.volume = 0.5
+      await wrapper.vm.$nextTick()
+      expect(wrapper.find('.volume-activator__percent').exists()).toBe(false)
+
+      scroll(wrapper, -120)
+      await wrapper.vm.$nextTick()
+      expect(wrapper.get('.volume-activator__percent').text()).toBe('55%')
+
+      vi.advanceTimersByTime(5000)
+      await wrapper.vm.$nextTick()
+      expect(wrapper.find('.volume-activator__percent').exists()).toBe(false)
+    })
+
     it('leaves sideways scrolling and ctrl+wheel zoom alone', async () => {
       const wrapper = mountToolbar()
       const playback = usePlaybackStore()
