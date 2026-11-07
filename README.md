@@ -43,39 +43,32 @@
 
 ---
 
+## Features
+
+**Casting is the point.** Beacon grew around a backend that talks to real speakers on its own, and the rest of the app is built on top of that.
+
+- **Cast to Sonos, AirPlay, Chromecast and DLNA**, to several speakers at once, each with its own volume. Playback carries on with the app closed or the phone locked
+- **Gapless playback and crossfades the way a DJ mixes:** tempo matched, beats lined up, the basses swapped on the downbeat, mixed on the server so every speaker hears the same
+- **An equalizer for each speaker**, with presets of your own or a headphone profile from AutoEq, so the speaker without bass gets some and the others stay as they are
+- **Room lights that play along:** Philips Hue lights flash on the beat and take their colours from the cover or artist picture
+- **Party mode:** guests join with a QR code, wish for songs and vote to skip. As an online party, everyone hears the music in their own browser
+- **Your phone as a remote** for the desktop app, or as the player itself in the web build
+- **Discovery from what you actually play:** Rediscover and Discover shelves, Song and Artist Radio, Autoplay, a playlist builder fed by Deezer, Last.fm or ListenBrainz, and two-minute previews of an album or playlist
+- **Internet radio** with a directory to find stations in and a running list of what each one played
+- **Navidrome, Subsonic, Jellyfin and Plex** in the same app, plus smart playlists for Navidrome
+- **Home Assistant** finds the desktop app on its own and gets playback, speakers and your library
+
+Everything you would expect is here too: a full library with filtering and search, a home page built from your own listening, a Stats page, synced lyrics, a fullscreen Now Playing with a visualizer, themes of your own, keyboard shortcuts (press `?` in the app for the list) and a UI in German, English, Spanish, French and Italian.
+
+Each of these in detail, and what works differently on Jellyfin and Plex, is in [What Beacon can do](docs/help/features.md), which the app's help shows too.
+
+---
+
 ## Why Beacon?
 
 Beacon grew out of [Feishin Connect](https://github.com/mihaitom/feishin-connect), my own fork of [jeffvli/feishin](https://github.com/jeffvli/feishin) - a general-purpose Electron/React music player - that added a Python casting backend (`connect/`) as a feature bolted onto it (a button in the player bar). That backend, a real self-contained FastAPI service discovering cast devices, streaming to them, and tracking playback state on its own, turned out to be the part worth building on. But building on top of it meant building _around_ Feishin: every change had to fit inside an app and a codebase designed for a different purpose, and that got harder, not easier, the more `connect` grew into its own thing.
 
 Beacon is `connect` as the actual foundation instead of an add-on - a frontend built specifically for it, not retrofitted onto one. Every playback action (local _and_ cast) goes through the same session, the same clock, the same auth token, instead of two loosely-connected halves of an app. The frontend is a from-scratch Vue 3 rebuild rather than carrying along Feishin's inherited React codebase and its full general-purpose feature surface. What that's bought so far: multi-user sessions where independent logins on the same deployment get independent playback to independent devices at the same time, a lyrics/visualizer sync calibrated against each cast device's own real position rather than a fixed guess, a login/session model that treats Jellyfin and Plex as first-class server types instead of an afterthought, and a phone that can either pair up as a dedicated remote for the desktop app or simply _be_ the player itself on the web build.
-
----
-
-## Features
-
-**Casting is the point.** Beacon grew around a backend that talks to real speakers on its own, and the rest of the app is built on top of that. Everything you would expect is here too - a full library (albums, artists, tracks, genres, playlists, favorites, with local filtering and search), a home page built from your own listening, top tracks, artists, albums and formats on a Stats page, multiselect and bulk queue/playlist actions, starring and rating, synced or unsynced lyrics, light and dark themes or one of your own, and a UI in German, English, Spanish, French and Italian.
-
-What makes Beacon worth running, from casting to several speakers at once to party mode, Hue room lights and the Jellyfin and Plex details, is in [docs/help/features.md](docs/help/features.md). The app's help shows the same page under "What Beacon can do".
-
-### Keyboard shortcuts
-
-| Key                | Action                                 |
-| ------------------ | -------------------------------------- |
-| `Space` / `K`      | Play / pause                           |
-| `←` / `→`          | Back / forward 5 seconds               |
-| `Ctrl` + `←` / `→` | Previous / next track (`Cmd` on macOS) |
-| `Alt` + `←` / `→`  | Back / forward through pages           |
-| `Ctrl` + `K`       | Jump to the search (`Cmd` on macOS)    |
-| `↑` / `↓`          | Volume up / down                       |
-| `M`                | Mute                                   |
-| `S`                | Toggle shuffle                         |
-| `R`                | Cycle repeat mode                      |
-| `F`                | Favorite the current track             |
-| `Q`                | Show / hide the queue                  |
-| `0` - `9`          | Jump to 0-90% of the track             |
-| `?`                | Show this list in the app              |
-
-They do nothing while you are typing in a field or a dialog is open, and leave a focused button or slider its own keys. The volume keys change the speaker's volume while casting to a single device, the same as the volume slider in the player bar does.
 
 ---
 
@@ -253,7 +246,7 @@ The browser itself is never the problem: it always talks to Beacon's own Connect
 
 Everything below is also the app's own help (the `?` in the party dialog, Settings > About Beacon > FAQ), with a search across all of it.
 
-- **Frequently asked questions**, one page per topic: [Casting](docs/help/faq/casting.md), [Playback](docs/help/faq/playback.md), [Transitions](docs/help/faq/transitions.md), [Room lights](docs/help/faq/lights.md), [Formats and converting](docs/help/faq/formats.md), [What the library shows](docs/help/faq/library.md), [Privacy](docs/help/faq/privacy.md), [Reporting a problem](docs/help/faq/reporting.md)
+- **Frequently asked questions**, one page per topic: [Casting](docs/help/faq/casting.md), [Playback](docs/help/faq/playback.md), [Transitions](docs/help/faq/transitions.md), [Room lights](docs/help/faq/lights.md), [Equalizer](docs/help/faq/equalizer.md), [Formats and converting](docs/help/faq/formats.md), [What the library shows](docs/help/faq/library.md), [Privacy](docs/help/faq/privacy.md), [Reporting a problem](docs/help/faq/reporting.md)
 - **Guides**: [Networking](docs/help/guides/networking.md), [Party mode](docs/help/guides/party-mode.md), [Party mode over the internet](docs/help/guides/party-over-the-internet.md), [Home automation](docs/help/guides/home-automation.md)
 - **Background**: [What gets converted, and why](docs/help/reference/transcoding-decisions.md), [Home automation API](docs/help/reference/home-automation-api.md)
 

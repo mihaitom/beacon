@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Highlights
+
+- **An equalizer for each speaker:** ten bands set by dragging the curve, your own presets or a headphone profile from AutoEq, so the speaker without bass gets some while the others stay as they are. Behind the new button in the player
+- **Room lights that play along:** Philips Hue lights flash on the beat and take their colours from the music, whether Beacon casts it or a computer plays it. Pair the bridge with the lightbulb button in the player
+- **More from Deezer, no setup needed:** see which songs of an album your library is missing, fill a playlist from the charts or an artist's top tracks, and hear 30 seconds of anything before you get it
+
 ### Added
 
 - Philips Hue lights can play along with the music, whether Beacon casts it or a computer or tablet plays it: a lightbulb button in the player pairs the bridge and sets the room, style, colours and brightness, with a live preview that plays along with the song playing (or a 120 BPM example when nothing plays)
