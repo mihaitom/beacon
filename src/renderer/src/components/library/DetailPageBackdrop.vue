@@ -11,7 +11,10 @@
        - held back (null) until the lookup answers, so the page never shows
        - the fallback and then swaps to a photo. Two layers so a change
        - fades rather than cuts (see services/crossfadeBackdrop.ts). -->
-      <template v-if="show">
+      <!-- One wrapper so a light theme fades the layers out together: faded
+       - one by one, the dark night showed through the half-faded photo and
+       - darkened the fade below both of them. -->
+      <div v-if="show" class="detail-page__layers">
         <!-- On a light theme the header stays dark (see DetailHero.vue), so
            - the band gets the night's background under the artwork, down to
            - where the header ends. -->
@@ -36,7 +39,7 @@
           </template>
         </div>
         <div class="detail-page__scrim" :class="nightClass" />
-      </template>
+      </div>
       <div ref="content" class="detail-page__content">
         <slot />
       </div>
@@ -253,6 +256,12 @@ export default {
   );
 }
 
+.detail-page__layers {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
 .detail-page__backdrop,
 .detail-page__scrim {
   position: absolute;
@@ -455,9 +464,9 @@ export default {
 
 /* A light theme: the artwork, its scrim and the night under them end with
  * the header and fade into the page over --night-fade, instead of running
- * on behind the light content below it. The album page's band is the
- * header alone, so there they run its full height and only soften the
- * edge onto the track list. */
+ * on behind the light content below it - as one, on their wrapper. The
+ * album page's band is the header alone, so there they run its full height
+ * and only soften the edge onto the track list. */
 .detail-page__night {
   position: absolute;
   top: 0;
@@ -467,12 +476,20 @@ export default {
   background: rgb(var(--v-theme-background));
 }
 
-.detail-page__band--on-light .detail-page__night,
-.detail-page__band--on-light .detail-page__backdrop,
-.detail-page__band--on-light .detail-page__scrim {
+.detail-page__band--on-light .detail-page__layers {
+  bottom: auto;
   height: calc(var(--hero-end, 0px) + var(--night-fade));
   -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--night-fade)), transparent);
   mask-image: linear-gradient(to bottom, #000 calc(100% - var(--night-fade)), transparent);
+}
+
+.detail-page__band--on-light .detail-page__night,
+.detail-page__band--on-light .detail-page__backdrop,
+.detail-page__band--on-light .detail-page__scrim {
+  height: auto;
+  bottom: 0;
+  -webkit-mask-image: none;
+  mask-image: none;
 }
 
 /* The fade runs below the header, so whatever follows it starts only once
@@ -483,9 +500,7 @@ export default {
   margin-bottom: var(--night-fade);
 }
 
-.detail-page--banded .detail-page__band--on-light .detail-page__night,
-.detail-page--banded .detail-page__band--on-light .detail-page__backdrop,
-.detail-page--banded .detail-page__band--on-light .detail-page__scrim {
+.detail-page--banded .detail-page__band--on-light .detail-page__layers {
   height: auto;
   bottom: 0;
   -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent);
