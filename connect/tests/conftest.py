@@ -1,5 +1,13 @@
 """Shared fixtures for Connect API tests."""
 
+import os
+import tempfile
+
+# Before anything imports a module that resolves its data path at import
+# time: a test run must never read or write the developer's real data
+# directory (core/paths.py), whatever their environment or .env says.
+os.environ["CONNECT_DATA_DIR"] = tempfile.mkdtemp(prefix="connect-tests-")
+
 import ipaddress
 import socket
 from typing import ClassVar
@@ -171,7 +179,7 @@ def _clear_sonos_device_cache():
 def _isolated_client_ids(monkeypatch, tmp_path):
     """media/client_id.py caches the Jellyfin/Plex ids process-wide and saves
     them to disk — point both at this test's own directory so no test writes
-    next to the code or sees another test's id."""
+    to the real data directory or sees another test's id."""
     from core import client_id
 
     monkeypatch.setattr(client_id, "_DATA_DIR", str(tmp_path / "data"))
@@ -183,7 +191,7 @@ def _isolated_client_ids(monkeypatch, tmp_path):
 
 @pytest.fixture(autouse=True)
 def _isolated_integration_key(monkeypatch, tmp_path):
-    """No integration key unless a test makes one, and never next to the code."""
+    """No integration key unless a test makes one, and never in the real data directory."""
     from core import integration_key
 
     monkeypatch.setattr(integration_key, "_DATA_DIR", str(tmp_path / "data"))
@@ -194,7 +202,7 @@ def _isolated_integration_key(monkeypatch, tmp_path):
 
 @pytest.fixture(autouse=True)
 def _isolated_lights_config(monkeypatch, tmp_path):
-    """No Hue pairing unless a test makes one, never next to the code, and
+    """No Hue pairing unless a test makes one, never in the real data directory, and
     no bridge search on the real network - a developer's own bridge must
     not light up during a test run."""
     from lights import config as lights_config
@@ -364,15 +372,13 @@ def _isolate_device_reports(monkeypatch):
 @pytest.fixture(autouse=True)
 def _isolate_radio_favicon_disk_cache(tmp_path, monkeypatch):
     """routes/radio.py keeps resolved station logos in a directory under
-    CONNECT_DATA_DIR so they survive a restart (see its _disk_store()). In
-    a test run that directory is the developer's own checkout, and the
-    module resolved its path at import time, before any test could point it
-    somewhere else.
+    CONNECT_DATA_DIR so they survive a restart (see its _disk_store()). The
+    module resolved its path at import time, so the whole run would share
+    one directory.
 
     So every test gets its own empty one. Same reasoning as
     _block_real_sonos_discovery above: a test that forgets to isolate this
-    would otherwise write real files into the working tree and hand the
-    *next* test a populated cache, which is exactly the kind of pass that
+    would otherwise hand the *next* test a populated cache, which is exactly the kind of pass that
     means nothing."""
     monkeypatch.setattr("routes.radio._DISK_DIR", str(tmp_path / "radio-favicons"))
     monkeypatch.setattr("routes.radio._disk_loaded", False)

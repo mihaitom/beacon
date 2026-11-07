@@ -24,14 +24,14 @@ import logging
 import os
 import threading
 
+from core.paths import data_dir
+
 logger = logging.getLogger("connect.api_keys")
 
 # Every service a key may be stored for. The route only accepts these.
 SERVICES = ("lastfm", "fanart")
 
-_DATA_DIR = os.environ.get("CONNECT_DATA_DIR") or os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__))
-)
+_DATA_DIR = data_dir()
 
 # Never read at import time: Settings can change a key while the process
 # runs, and an import-time constant would keep serving the old one until a

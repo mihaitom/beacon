@@ -20,8 +20,10 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-ROOT = HERE.parent.parent
-DATA_DIR = Path(os.environ.get("CONNECT_DATA_DIR") or ROOT / "connect")
+sys.path.insert(0, str(HERE.parent.parent / "connect"))
+from core.paths import data_dir
+
+DATA_DIR = Path(data_dir())
 SAMPLES = HERE / ".cache" / "samples.json"
 LABELS_FILE = HERE / ".cache" / "labels.json"
 PORT = int(os.environ.get("PORT", "9199"))

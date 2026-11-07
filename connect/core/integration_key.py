@@ -17,11 +17,11 @@ import os
 import secrets
 import threading
 
+from core.paths import data_dir
+
 logger = logging.getLogger("connect.integration_key")
 
-_DATA_DIR = os.environ.get("CONNECT_DATA_DIR") or os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__))
-)
+_DATA_DIR = data_dir()
 _FILENAME = "integration_key.txt"
 
 # None = not read from disk yet, '' = no key.

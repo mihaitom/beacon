@@ -42,8 +42,7 @@ Wikipedia from the release *group* (every edition of an album), so a
 release id from the media server is first walked up to its group.
 
 All six are cached to disk (see _load_cache()/_save_cache(), persisted
-the same CONNECT_DATA_DIR way as delivery/credentials.py/
-core/radio_stations.py) — an artist's MBID never changes, and neither
+in the data directory, see core/paths.py) — an artist's MBID never changes, and neither
 similarity, a Deezer artist photo, nor these streaming links shift
 meaningfully faster than _SIMILAR_TTL_SECONDS would matter for (they aren't
 even time-checked — cached once, kept until the cache file itself is
@@ -68,13 +67,12 @@ from urllib.parse import quote, unquote, urlparse
 
 import httpx
 
+from core.paths import data_dir
 from lyrics.shared import USER_AGENT
 
 logger = logging.getLogger("connect.recommendations")
 
-_DATA_DIR = os.environ.get("CONNECT_DATA_DIR") or os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__))
-)
+_DATA_DIR = data_dir()
 _PATH = os.path.join(_DATA_DIR, "recommendations_cache.json")
 
 _MB_SEARCH_URL = "https://musicbrainz.org/ws/2/artist/"

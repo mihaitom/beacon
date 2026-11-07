@@ -13,11 +13,11 @@ import os
 import threading
 from dataclasses import asdict, dataclass, replace
 
+from core.paths import data_dir
+
 logger = logging.getLogger("connect.lights")
 
-_DATA_DIR = os.environ.get("CONNECT_DATA_DIR") or os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__))
-)
+_DATA_DIR = data_dir()
 _FILENAME = "hue_lights.json"
 
 # How far ahead of the music a colour is sent, so it lights when the beat

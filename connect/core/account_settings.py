@@ -25,11 +25,11 @@ import logging
 import os
 import threading
 
+from core.paths import data_dir
+
 logger = logging.getLogger("connect.account_settings")
 
-_DATA_DIR = os.environ.get("CONNECT_DATA_DIR") or os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__))
-)
+_DATA_DIR = data_dir()
 _PATH = os.path.join(_DATA_DIR, "account_settings.json")
 
 # save() is read-modify-write over a file shared by every account, and two

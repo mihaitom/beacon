@@ -3,9 +3,9 @@
 The Jellyfin and Plex client ids, and the id this Beacon announces itself
 with over mDNS (core/mdns.py). Jellyfin and Plex register a new
 device/session for every client id they have not seen before, so an id has
-to be the same on every request and across restarts. It lives under
-CONNECT_DATA_DIR (see delivery/credentials.py) — next to the code is
-read-only in a Windows install under Program Files.
+to be the same on every request and across restarts. It lives in the
+data directory (see core/paths.py) — next to the code is read-only in a
+Windows install under Program Files.
 """
 
 import logging
@@ -13,11 +13,13 @@ import os
 import secrets
 import threading
 
+from core.paths import data_dir
+
 logger = logging.getLogger("connect.client_id")
 
 _CODE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-_DATA_DIR = os.environ.get("CONNECT_DATA_DIR") or _CODE_DIR
-# Where the id was kept before CONNECT_DATA_DIR was used for it.
+_DATA_DIR = data_dir()
+# Where the id was kept before it moved to the data directory.
 _LEGACY_DIR = _CODE_DIR
 
 _cache: dict[str, str] = {}

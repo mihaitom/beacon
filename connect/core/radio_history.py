@@ -44,11 +44,11 @@ import logging
 import os
 import time
 
+from core.paths import data_dir
+
 logger = logging.getLogger("connect.radio_history")
 
-_DATA_DIR = os.environ.get("CONNECT_DATA_DIR") or os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__))
-)
+_DATA_DIR = data_dir()
 _DIR = os.path.join(_DATA_DIR, "radio-history")
 
 # How long a session's stored log is kept after the last time anything was

@@ -27,13 +27,12 @@ import os
 import time
 
 from core import radio_ads, radio_browser, radio_history
+from core.paths import data_dir
 from core.playlist_url import _is_playlist_url, resolve_stream_url
 
 logger = logging.getLogger("connect.radio_station_info")
 
-_DATA_DIR = os.environ.get("CONNECT_DATA_DIR") or os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__))
-)
+_DATA_DIR = data_dir()
 _PATH = os.path.join(_DATA_DIR, "radio_station_info_cache.json")
 
 _FOUND_TTL = 14 * 24 * 3600.0

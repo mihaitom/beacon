@@ -31,6 +31,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - When the player bar is too narrow for the volume slider, turning the mouse wheel shows the new level on the volume button for a moment
 - Electron, the build tools and the backend's libraries are updated to their latest versions
 - The "What's new" dialog opens once per version for each account, so a browser that clears its storage on exit no longer shows it at every login, and other browsers using the same Beacon server skip it too (contributed by [@b-r-y](https://github.com/b-r-y), [#80](https://github.com/mihaitom/beacon/issues/80))
+- Running the backend from source keeps its pairings, API keys and settings in your user data folder (`~/.local/share/beacon-connect` on Linux) instead of the `connect` folder
 
 ### Fixed
 

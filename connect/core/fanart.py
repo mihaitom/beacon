@@ -45,6 +45,7 @@ import time
 import httpx
 
 from core import api_keys
+from core.paths import data_dir
 from core.recommendations import cached_mbids, first_artist, names_by_mbid, resolve_mbid
 from lyrics.shared import USER_AGENT
 
@@ -63,9 +64,7 @@ _client = httpx.AsyncClient(timeout=_TIMEOUT, headers={"User-Agent": USER_AGENT}
 # Fanart.tv's dashboard and update this constant.
 _PROJECT_KEY = "eb67b9a1286ff6d2f5598f3b2c63889c"
 
-_DATA_DIR = os.environ.get("CONNECT_DATA_DIR") or os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__))
-)
+_DATA_DIR = data_dir()
 _CACHE_PATH = os.path.join(_DATA_DIR, "fanart_cache.json")
 _IMAGE_DIR = os.path.join(_DATA_DIR, "fanart_images")
 

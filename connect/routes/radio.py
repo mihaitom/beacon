@@ -65,6 +65,7 @@ from PIL import Image, UnidentifiedImageError
 from pydantic import BaseModel, Field
 
 from core.auth import require_token
+from core.paths import data_dir
 from core.playlist_url import resolve_stream_url
 from core.radio_browser import (
     list_countries,
@@ -913,11 +914,7 @@ def _cache_put(key: _ResultKey, value: _Fetched | None, expires: float | None = 
 # only its own file, so a batch resolving fifty stations doesn't rewrite a
 # growing file fifty times, and a file that ends up corrupt (a power cut
 # mid-write) costs exactly one station's logo rather than all of them.
-_DISK_DIR = os.path.join(
-    os.environ.get("CONNECT_DATA_DIR")
-    or os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "radio-favicons",
-)
+_DISK_DIR = os.path.join(data_dir(), "radio-favicons")
 
 # Far below the in-memory budget on purpose. This holds what a real station
 # list actually needs (a handful of KB per station per size), not a slice of

@@ -38,11 +38,11 @@ import os
 import re
 import threading
 
+from core.paths import data_dir
+
 logger = logging.getLogger("connect.cast_permissions")
 
-_DATA_DIR = os.environ.get("CONNECT_DATA_DIR") or os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__))
-)
+_DATA_DIR = data_dir()
 _PATH = os.path.join(_DATA_DIR, "cast_permissions.json")
 
 # Same read-modify-write shape as core/account_settings.py, and the same

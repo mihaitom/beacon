@@ -9,8 +9,7 @@ RadioView.vue), connect hosts its own small station list itself — used only
 by media/jellyfin_bridge.py's bridged getInternetRadioStations.view et al,
 never consulted for a Subsonic session.
 
-Persisted the same way as AirPlay pairing credentials (see
-delivery/credentials.py) — CONNECT_DATA_DIR survives Electron app updates
+Persisted in the data directory (see core/paths.py) — CONNECT_DATA_DIR survives Electron app updates
 (the packaged binary's own folder gets replaced wholesale) and Docker
 container recreation (mounted volume).
 """
@@ -20,11 +19,11 @@ import logging
 import os
 import uuid
 
+from core.paths import data_dir
+
 logger = logging.getLogger("connect.radio_stations")
 
-_DATA_DIR = os.environ.get("CONNECT_DATA_DIR") or os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__))
-)
+_DATA_DIR = data_dir()
 _PATH = os.path.join(_DATA_DIR, "radio_stations.json")
 
 

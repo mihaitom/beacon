@@ -1,7 +1,6 @@
 """core/log_level.py — runtime-adjustable backend log verbosity.
 
-Persisted the same way as AirPlay pairing credentials/radio stations (see
-delivery/credentials.py) — CONNECT_DATA_DIR survives Electron app updates
+Persisted in the data directory (see core/paths.py) — CONNECT_DATA_DIR survives Electron app updates
 (the packaged binary's own folder gets replaced wholesale) and Docker
 container recreation (mounted volume). routes/log_level.py's GET/POST
 /log-level (driven by SettingsView.vue's log-level dropdown) reads/writes
@@ -20,6 +19,8 @@ much gets logged.
 
 import logging
 import os
+
+from core.paths import data_dir
 
 logger = logging.getLogger("connect.log_level")
 
@@ -54,9 +55,7 @@ _NUMERIC = {
     "ERROR": logging.ERROR,
 }
 
-_DATA_DIR = os.environ.get("CONNECT_DATA_DIR") or os.path.dirname(
-    os.path.dirname(os.path.abspath(__file__))
-)
+_DATA_DIR = data_dir()
 _PATH = os.path.join(_DATA_DIR, "log_level.txt")
 
 # Our own logger tree only (connect covers its children connect.streamer/

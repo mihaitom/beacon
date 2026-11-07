@@ -5,10 +5,11 @@
 //
 //   pnpm exec electron scripts/edge-fill/sample.mjs
 //
-// Reads connect's fanart cache (connect/, or CONNECT_DATA_DIR) and writes
+// Reads connect's fanart cache (see connect/core/paths.py) and writes
 // scripts/edge-fill/.cache/samples.json for review.py.
 import { createHash } from 'node:crypto'
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { app, BrowserWindow } from 'electron'
@@ -16,7 +17,19 @@ import ts from 'typescript'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = join(here, '..', '..')
-const dataDir = process.env.CONNECT_DATA_DIR || join(root, 'connect')
+const dataDir = process.env.CONNECT_DATA_DIR || defaultDataDir()
+
+// Same rule as connect/core/paths.py.
+function defaultDataDir() {
+  const home = homedir()
+  if (process.platform === 'win32') {
+    return join(process.env.LOCALAPPDATA || join(home, 'AppData', 'Local'), 'beacon-connect')
+  }
+  if (process.platform === 'darwin') {
+    return join(home, 'Library', 'Application Support', 'beacon-connect')
+  }
+  return join(process.env.XDG_DATA_HOME || join(home, '.local', 'share'), 'beacon-connect')
+}
 const out = join(here, '.cache', 'samples.json')
 
 function backgrounds() {
