@@ -6,6 +6,12 @@ on:
         branches: [main, development]
         paths:
             - src/renderer/**
+            # The type-check covers the Electron main process and preload
+            # as well.
+            - src/main/**
+            - src/preload/**
+            - tsconfig*.json
+            - env.d.ts
             - vitest.config.ts
             - vitest.browser.config.ts
             - package.json
@@ -13,6 +19,10 @@ on:
     pull_request:
         paths:
             - src/renderer/**
+            - src/main/**
+            - src/preload/**
+            - tsconfig*.json
+            - env.d.ts
             - vitest.config.ts
             - vitest.browser.config.ts
             - package.json
@@ -37,6 +47,11 @@ jobs:
             # files nobody has opened in a while.
             - name: Check formatting
               run: pnpm format:check
+
+            # Also in the pre-push hook, but a push made with --no-verify,
+            # from another machine or by Dependabot skips that.
+            - name: Type-check
+              run: pnpm type-check
 
             # With coverage, so the same run that gates the PR also feeds
             # the badge — a second, uncovered run would only be slower and

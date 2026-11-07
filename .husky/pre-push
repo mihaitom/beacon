@@ -1,9 +1,9 @@
 . .husky/lib.sh
 
-# The test suites, moved here from pre-commit, where they held every commit
-# up for minutes. Measured 2026-09-13: pytest ~150s, test:unit ~35s,
-# test:layout ~15s. CI runs them again, but only after the branch has left
-# this machine.
+# The test suites and the type-check, moved here from pre-commit, where they
+# held every commit up. Measured 2026-11-07: pytest ~125s, test:unit ~75s,
+# vue-tsc ~22s, test:layout ~15s. CI runs them again, but only after the
+# branch has left this machine.
 
 # Everything the pushed commits change, across every ref in this push. git
 # hands each one over on stdin as
@@ -12,6 +12,13 @@ changed=""
 while read -r _local_ref local_sha _remote_ref remote_sha; do
   # An all-zero local sha is a branch being deleted: nothing to test.
   case $local_sha in *[!0]*) ;; *) continue ;; esac
+  # Every commit already on some remote branch went through this hook when
+  # it got there. Fast-forwarding main to a development that was pushed
+  # (and tested) a minute ago is the case this is for: without it, the
+  # same commits ran every suite a second time.
+  if [ -z "$(git rev-list -n1 "$local_sha" --not --remotes 2>/dev/null || true)" ]; then
+    continue
+  fi
   case $remote_sha in
     *[!0]*) base=$remote_sha ;;
     # A branch new to the remote: everything since it left main.
@@ -25,11 +32,41 @@ while read -r _local_ref local_sha _remote_ref remote_sha; do
 $files"
 done
 
-if printf '%s\n' "$changed" | grep -qE '^(src/renderer/|vitest\.config\.ts|vitest\.browser\.config\.ts)'; then
-  run "Vue unit tests" "pnpm test:unit"
-  run "browser layout tests" "pnpm test:layout"
+has_changes() {
+  printf '%s\n' "$changed" | grep -qE "$1"
+}
+
+# Frontend and backend run side by side: they share nothing, and the
+# machine has the cores. The push then takes as long as the slower half
+# (pytest) instead of both added up. Each half is a subshell, so run()'s
+# exit on a failure ends only that half; the other still finishes and
+# reports its own verdict.
+pids=""
+
+if has_changes '^(src/|tsconfig.*\.json|env\.d\.ts|vitest\.config\.ts|vitest\.browser\.config\.ts)'; then
+  (
+    # All of src/, main and preload included - CI's type-check follows the
+    # same paths.
+    if has_changes '^(src/|tsconfig.*\.json|env\.d\.ts)'; then
+      run "type-check" "pnpm type-check"
+    fi
+    if has_changes '^(src/renderer/|vitest\.config\.ts|vitest\.browser\.config\.ts)'; then
+      run "Vue unit tests" "pnpm test:unit"
+      run "browser layout tests" "pnpm test:layout"
+    fi
+  ) &
+  pids="$pids $!"
 fi
 
-if printf '%s\n' "$changed" | grep -q '^connect/'; then
-  run "Python tests" "cd connect && uv run --group dev pytest"
+if has_changes '^connect/'; then
+  run "Python tests" "cd connect && uv run --group dev pytest" &
+  pids="$pids $!"
 fi
+
+# husky runs this with `sh -e`: a bare failing `wait` would end the hook
+# before the other half has been waited for.
+status=0
+for pid in $pids; do
+  wait "$pid" || status=1
+done
+exit $status

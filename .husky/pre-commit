@@ -1,8 +1,9 @@
 . .husky/lib.sh
 
-# Only what answers in seconds runs here. The test suites live in pre-push:
-# here they held every commit up for about six minutes, and a commit is
-# made far more often than a push.
+# Only what answers in seconds runs here. The test suites and the type-check
+# live in pre-push: here they held every commit up (the suites for about six
+# minutes, vue-tsc alone for half a minute), and a commit is made far more
+# often than a push.
 
 # Through run(): without it a failing lint-staged printed its eslint error
 # and the hook went on to exit 0 anyway.
@@ -16,9 +17,6 @@ if git diff --cached --name-only | grep -qE '^(src/|tsconfig.*\.json)'; then
   # the connect/ block below: a hook that rewrites files mid-commit would
   # stage something the user never saw.
   run "src/ formatting" "pnpm format:check" "pnpm format"
-  # Stays here rather than moving to pre-push: CI does not type-check, so
-  # this is the only place it happens at all.
-  run "type-check" "pnpm type-check"
 fi
 
 if git diff --cached --name-only | grep -q '^connect/'; then
