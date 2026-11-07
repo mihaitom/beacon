@@ -18,6 +18,8 @@ import '@/assets/main.css'
 import 'vuetify/styles'
 import { i18n } from '@/i18n'
 import MobileLayout from '../MobileLayout.vue'
+import { useConnectStore } from '@/stores/connect'
+import { makeStatus } from '@/stores/__tests__/fixtures'
 
 const vuetify = createVuetify({ components, directives })
 const wrappers: VueWrapper[] = []
@@ -65,5 +67,35 @@ describe('mobile app bar', () => {
     const logo = wrapper.get('.mobile-app-bar__logo').element.getBoundingClientRect()
     const icon = wrapper.get('.mobile-app-bar .v-btn .v-icon').element.getBoundingClientRect()
     expect(logo.width).toBeCloseTo(icon.width, 0)
+  })
+
+  // Now Playing hangs up to three buttons of its own in here (lyrics,
+  // visualizer, artwork), and the app's own buttons sit beside them. Each
+  // of those as an icon of its own cut the name down to "B..." on a phone.
+  it("keeps the app's name whole on a narrow phone, casting, with Now Playing's buttons in", async () => {
+    await page.viewport(360, 740)
+    setActivePinia(createPinia())
+    useConnectStore().status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
+    const wrapper = mount(MobileLayout, {
+      attachTo: document.body,
+      global: {
+        plugins: [vuetify, i18n],
+        mocks: { $route: { name: 'm-now-playing' }, $router: { push: () => {} } },
+        stubs: { RouterView: true, MobileTabBar: true, CastTakeoverConfirmDialog: true },
+      },
+    })
+    wrappers.push(wrapper)
+    const slot = wrapper.get('#mobile-app-bar-actions').element
+    for (let i = 0; i < 3; i++) {
+      const button = document.createElement('button')
+      button.style.cssText = 'width: 40px; flex: none; margin-right: 4px'
+      slot.appendChild(button)
+    }
+    await new Promise((resolve) => setTimeout(resolve, 60))
+
+    const title = wrapper.get('.mobile-app-bar__title .v-toolbar-title__placeholder')
+      .element as HTMLElement
+    expect(title.textContent).toBe('Beacon')
+    expect(title.scrollWidth).toBeLessThanOrEqual(title.clientWidth)
   })
 })

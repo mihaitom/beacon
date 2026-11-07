@@ -2,10 +2,11 @@
   <v-dialog
     :model-value="modelValue"
     max-width="600"
+    :fullscreen="compact"
     scrollable
     @update:model-value="$emit('update:modelValue', $event)"
   >
-    <v-card class="beacon-dialog">
+    <v-card :class="compact ? 'eq--fullscreen' : 'beacon-dialog'">
       <v-card-title class="eq__head">
         <div class="eq__grow">
           <div class="eyebrow-label">{{ subject }}</div>
@@ -27,6 +28,17 @@
           hide-details
           class="eq__switch"
           @update:model-value="change({ enabled: !!$event })"
+        />
+        <!-- Fullscreen on a phone, the title is where an app bar goes and
+           - carries the close button, as in RadioDiscoverDialog.vue - which
+           - also leaves the bottom row room for its two buttons. -->
+        <v-btn
+          v-if="compact"
+          icon="mdi-close"
+          variant="text"
+          density="comfortable"
+          :title="$t('common.close')"
+          @click="$emit('update:modelValue', false)"
         />
       </v-card-title>
 
@@ -181,10 +193,12 @@
         <v-btn v-if="canApplyNow" variant="text" color="primary" @click="applyNow">
           {{ $t(live ? 'equalizer.listenNow' : 'equalizer.applyNow') }}
         </v-btn>
-        <v-spacer />
-        <v-btn variant="text" @click="$emit('update:modelValue', false)">
-          {{ $t('common.close') }}
-        </v-btn>
+        <template v-if="!compact">
+          <v-spacer />
+          <v-btn variant="text" @click="$emit('update:modelValue', false)">
+            {{ $t('common.close') }}
+          </v-btn>
+        </template>
       </v-card-actions>
     </v-card>
   </v-dialog>
@@ -235,6 +249,8 @@ export default {
   components: { EqualizerGraph, EqualizerMiniCurve, SegmentedControl },
   props: {
     modelValue: { type: Boolean, default: false },
+    /** Opened from the phone shell: fullscreen, closed from the title. */
+    compact: { type: Boolean, default: false },
   },
   emits: ['update:modelValue'],
   data() {
@@ -513,6 +529,12 @@ export default {
 
 .eq__switch {
   flex: none;
+}
+
+/* The phone's chrome colour: fullscreen, the dialog is the screen rather
+ * than a window over it (see RadioDiscoverDialog.vue). */
+.eq--fullscreen {
+  background: var(--beacon-chrome);
 }
 
 .eq__targets,

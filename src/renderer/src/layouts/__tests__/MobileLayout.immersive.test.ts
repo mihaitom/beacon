@@ -45,7 +45,7 @@ function mountLayout(routeName: string) {
         MobileTabBar: true,
         MobilePlayerBar: true,
         CastTakeoverConfirmDialog: true,
-        PartyModeButton: true,
+        PartyModeDialog: true,
       },
     },
   })

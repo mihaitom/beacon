@@ -32,30 +32,62 @@
          - sit in the top-right corner of the artwork, which only worked
          - while the artwork was small enough to leave a corner free. -->
       <span id="mobile-app-bar-actions" class="mobile-app-bar__actions" />
-      <!-- On every route like the settings button beside it: the party is
-         - this window's, whatever the phone happens to be showing. -->
-      <party-mode-button class="mobile-app-bar__action" />
-      <!-- Only while casting: a phone plays without a Web Audio graph, so
-         - the speaker's curve is the only one there is to set. -->
-      <equalizer-button v-if="casting" class="mobile-app-bar__action" />
-      <!-- The dot: see DefaultLayout.vue's settings entry. -->
-      <v-btn
-        icon
-        variant="text"
-        density="comfortable"
-        class="mobile-app-bar__action"
-        :aria-label="$t('nav.settings')"
-        @click="$router.push('/settings')"
-      >
-        <v-badge
-          dot
-          color="primary"
-          :model-value="updateStore.unseen"
-          :label="$t('settings.updateBadge')"
-        >
-          <v-icon icon="mdi-cog-outline" />
-        </v-badge>
-      </v-btn>
+      <!-- Party, equalizer and settings share one menu: next to the
+         - buttons Now Playing hangs in above, each as its own icon pushed the
+         - app's name down to "B...". The dot is the settings one (see
+         - DefaultLayout.vue's settings entry), shown where it can be seen. -->
+      <v-menu location="bottom end">
+        <template #activator="{ props: menuProps }">
+          <v-btn
+            icon
+            variant="text"
+            density="comfortable"
+            class="mobile-app-bar__action"
+            :aria-label="$t('common.moreActions')"
+            v-bind="menuProps"
+          >
+            <v-badge
+              dot
+              color="primary"
+              :model-value="updateStore.unseen"
+              :label="$t('settings.updateBadge')"
+            >
+              <v-icon icon="mdi-dots-vertical" />
+            </v-badge>
+          </v-btn>
+        </template>
+        <v-list density="compact">
+          <!-- On every route: the party is this window's, whatever the
+             - phone happens to be showing. -->
+          <v-list-item
+            prepend-icon="mdi-party-popper"
+            :base-color="partyStore.enabled ? 'primary' : undefined"
+            :title="$t('party.title')"
+            @click="showPartyDialog = true"
+          >
+            <template v-if="partyGuests > 0" #append>
+              <v-badge inline :content="partyGuests" color="primary" />
+            </template>
+          </v-list-item>
+          <!-- Only while casting: a phone plays without a Web Audio graph,
+             - so the speaker's curve is the only one there is to set. -->
+          <v-list-item
+            v-if="casting"
+            prepend-icon="mdi-tune-vertical"
+            :title="$t('equalizer.title')"
+            @click="showEqualizerDialog = true"
+          />
+          <v-list-item
+            prepend-icon="mdi-cog-outline"
+            :title="$t('nav.settings')"
+            @click="$router.push('/settings')"
+          >
+            <template v-if="updateStore.unseen" #append>
+              <v-badge dot inline color="primary" :label="$t('settings.updateBadge')" />
+            </template>
+          </v-list-item>
+        </v-list>
+      </v-menu>
     </v-app-bar>
 
     <v-main>
@@ -74,6 +106,8 @@
     <mobile-tab-bar :active="!immersive" />
     <mobile-player-bar v-if="!onNowPlaying" />
     <cast-takeover-confirm-dialog />
+    <party-mode-dialog v-model="showPartyDialog" />
+    <equalizer-dialog v-if="casting" v-model="showEqualizerDialog" compact />
   </v-app>
 </template>
 
@@ -81,11 +115,12 @@
 import MobileTabBar from '@/components/mobile/MobileTabBar.vue'
 import MobilePlayerBar from '@/components/mobile/MobilePlayerBar.vue'
 import CastTakeoverConfirmDialog from '@/components/connect/CastTakeoverConfirmDialog.vue'
-import PartyModeButton from '@/components/party/PartyModeButton.vue'
-import EqualizerButton from '@/components/equalizer/EqualizerButton.vue'
+import PartyModeDialog from '@/components/party/PartyModeDialog.vue'
+import EqualizerDialog from '@/components/equalizer/EqualizerDialog.vue'
 import { phoneLandscapeMixin } from '@/composables/phoneLandscape'
 import { useUpdateStore } from '@/stores/update'
 import { useConnectStore } from '@/stores/connect'
+import { usePartyStore } from '@/stores/party'
 
 /** Roughly how long iOS takes to animate a rotation; the reset is repeated
  * after it in case the offset is only applied at its end. */
@@ -97,18 +132,28 @@ export default {
     MobileTabBar,
     MobilePlayerBar,
     CastTakeoverConfirmDialog,
-    EqualizerButton,
-    PartyModeButton,
+    EqualizerDialog,
+    PartyModeDialog,
   },
   mixins: [phoneLandscapeMixin],
   data() {
     return {
       scrollResetTimer: null as ReturnType<typeof setTimeout> | null,
+      showPartyDialog: false,
+      showEqualizerDialog: false,
     }
   },
   computed: {
     updateStore() {
       return useUpdateStore()
+    },
+    partyStore() {
+      return usePartyStore()
+    },
+    /** Guests with the party page open right now, as PartyModeButton.vue
+     * counts them. */
+    partyGuests(): number {
+      return this.partyStore.hostedHere ? this.partyStore.connectedGuests : 0
     },
     casting(): boolean {
       return useConnectStore().isActive

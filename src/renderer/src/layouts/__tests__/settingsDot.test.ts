@@ -45,12 +45,13 @@ function mountMobile() {
         MobileTabBar: true,
         MobilePlayerBar: true,
         CastTakeoverConfirmDialog: true,
-        PartyModeButton: true,
+        PartyModeDialog: true,
       },
     },
   })
   wrappers.push(wrapper)
-  return wrapper.get(`button[aria-label="${i18n.global.t('nav.settings')}"]`)
+  // Settings sits in the app bar's menu there; the dot is on what opens it.
+  return wrapper.get(`button[aria-label="${i18n.global.t('common.moreActions')}"]`)
 }
 
 /** A newer release shows as a dot on the settings button - on the desktop's
