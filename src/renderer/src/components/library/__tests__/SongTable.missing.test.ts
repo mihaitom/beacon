@@ -1,8 +1,9 @@
 // An album's tracks the library does not hold (missingTracks), drawn among
 // its songs: where they land, that they never shift which song a row
-// plays, and that a click previews them from Deezer.
+// plays, that they preview from Deezer and that their menu copies
+// "Artist - Title".
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
@@ -134,7 +135,41 @@ describe('missing tracks in a song table', () => {
     const wrapper = mountTable([missing('Two', 1, { deezerId: 0 })])
 
     await wrapper.find('.missing-row').trigger('dblclick')
+    await openMenu(wrapper)
+    await menuItem(wrapper, i18n.global.t('builder.noPreview')).trigger('click')
     expect(start).not.toHaveBeenCalled()
-    expect(wrapper.find('.missing-row button').attributes('disabled')).toBeDefined()
+  })
+
+  it('previews from its menu', async () => {
+    const start = vi.spyOn(usePlaybackStore(), 'startTracksPreview').mockResolvedValue()
+    const wrapper = mountTable([missing('Two', 1)])
+
+    await openMenu(wrapper)
+    await menuItem(wrapper, i18n.global.t('builder.preview')).trigger('click')
+
+    expect(start.mock.calls[0]![0].map((song) => song.id)).toEqual(['deezer:77'])
+  })
+
+  it('copies "Artist - Title" from its menu, to look the song up', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    const wrapper = mountTable([missing('Two', 1)])
+
+    await openMenu(wrapper)
+    await menuItem(wrapper, i18n.global.t('library.copyArtistTitle')).trigger('click')
+    await flushPromises()
+
+    expect(writeText).toHaveBeenCalledWith('Artist - Two')
   })
 })
+
+async function openMenu(wrapper: ReturnType<typeof mountTable>) {
+  await wrapper.get('.missing-row button').trigger('click')
+  await flushPromises()
+}
+
+function menuItem(wrapper: ReturnType<typeof mountTable>, label: string) {
+  return wrapper
+    .findAllComponents({ name: 'VListItem' })
+    .find((item) => item.text().includes(label))!
+}

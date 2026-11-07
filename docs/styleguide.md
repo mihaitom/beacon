@@ -407,8 +407,9 @@ their place on the album, in the same columns, dimmed to 55% and back to
 full on hover or while their preview plays - the dimming is what says they
 are missing, no label. The songs the library holds take the edition's
 numbering meanwhile, so the numbers run through. The actions cell holds
-only the preview button - there is nothing to star, rate or queue. Under a
-column sort they are sorted in with the rest.
+only the "..." menu (also on right-click): the preview, and "Artist - Title"
+to copy - there is nothing to star, rate or queue. A double-click previews.
+Under a column sort they are sorted in with the rest.
 
 Both are preloaded (`services/preloadImage.ts`) before the layer swaps: a
 background-image set and activated in the same tick is blank until the bytes

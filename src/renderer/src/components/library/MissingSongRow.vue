@@ -2,12 +2,14 @@
   <!-- A track of the album the library does not hold (SongTable.vue's
    - edition), in the same columns as the songs around it, dimmed - which
    - is what says it is missing. Only the number, the title, the running
-   - time and a preview of it: there is nothing to star, rate or queue. -->
+   - time and a menu with its preview and "Artist - Title" to copy: there
+   - is nothing to star, rate or queue. -->
   <div
     class="missing-row"
     :class="{ 'missing-row--previewing': previewing }"
     :title="$t('library.notInLibrary')"
     @dblclick="togglePreview"
+    @contextmenu.prevent="openMenu($event)"
   >
     <template v-for="column in columns" :key="column.key">
       <div
@@ -44,21 +46,32 @@
         :style="{ flex: column.flex, minWidth: column.minWidth }"
       >
         <v-btn
-          :icon="previewIcon"
-          :color="previewing ? 'primary' : undefined"
+          icon="mdi-dots-vertical"
           variant="text"
           density="comfortable"
           size="small"
           :loading="starting"
-          :disabled="!canPreview"
-          :title="previewLabel"
-          :aria-label="previewLabel"
-          @click.stop="togglePreview"
+          :title="$t('common.moreActions')"
+          :aria-label="$t('common.moreActions')"
+          @click.stop="openMenu($event)"
         />
       </div>
 
       <div v-else class="missing-col" :style="{ flex: column.flex, minWidth: column.minWidth }" />
     </template>
+
+    <tile-context-menu ref="menu">
+      <context-menu-section :label="$t('library.menuPlayback')" />
+      <v-list-item :disabled="!canPreview" @click="togglePreview">
+        <template #prepend><v-icon :icon="previewIcon" size="small" /></template>
+        <v-list-item-title>{{ previewLabel }}</v-list-item-title>
+      </v-list-item>
+      <context-menu-section :label="$t('library.menuDetails')" />
+      <v-list-item @click="copyArtistTitle">
+        <template #prepend><v-icon icon="mdi-content-copy" size="small" /></template>
+        <v-list-item-title>{{ $t('library.copyArtistTitle') }}</v-list-item-title>
+      </v-list-item>
+    </tile-context-menu>
   </div>
 </template>
 
@@ -70,9 +83,13 @@ import { previewHeardByGuests } from '@/services/playback/previewAvailability'
 import { formatDuration } from '@/services/library/songFormat'
 import type { SongColumn } from '@/services/library/songColumns'
 import type { DeezerAlbumTrack } from '@/services/connect/deezer'
+import { emitter } from '@/emitter'
+import TileContextMenu from './TileContextMenu.vue'
+import ContextMenuSection from './ContextMenuSection.vue'
 
 export default {
   name: 'MissingSongRow',
+  components: { TileContextMenu, ContextMenuSection },
   props: {
     track: { type: Object as PropType<DeezerAlbumTrack>, required: true },
     columns: { type: Array as PropType<SongColumn[]>, required: true },
@@ -104,8 +121,26 @@ export default {
     },
   },
   methods: {
+    openMenu(event: MouseEvent) {
+      ;(this.$refs.menu as { open: (event: MouseEvent) => void } | undefined)?.open(event)
+    },
+    /** "Artist - Title", the shape a web search expects - what finding a
+     * song the library lacks starts with. */
+    async copyArtistTitle() {
+      const text = `${this.track.artist} - ${this.track.title}`
+      try {
+        await navigator.clipboard.writeText(text)
+        emitter.emit('toast', {
+          level: 'success',
+          title: this.$t('library.copyArtistTitle'),
+          message: text,
+        })
+      } catch (error) {
+        console.error('[missing-songs] Failed to copy artist and title:', error)
+      }
+    },
     /** Over the queue, which waits paused, like the playlist builder's
-     * previews (the store's startTracksPreview()); a second click stops it. */
+     * previews (the store's startTracksPreview()); a second one stops it. */
     async togglePreview() {
       const playback = usePlaybackStore()
       if (this.previewing) {
