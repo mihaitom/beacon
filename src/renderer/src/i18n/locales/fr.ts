@@ -1314,6 +1314,13 @@ export default {
           'Montrer ce qui arrive dans la prochaine version, quand vous choisissez « À venir » dans les notes de version.',
         sends: 'Rien vous concernant. Le fichier des changements du projet est lu.',
       },
+      contributorAvatars: {
+        name: 'GitHub',
+        purpose:
+          'Afficher les photos de profil des personnes remerciées dans les notes de version.',
+        sends:
+          'Rien vous concernant. La photo de profil GitHub publique de chaque personne affichée est chargée.',
+      },
       radioStream: {
         name: 'La station de radio elle-même',
         purpose: 'Diffuser le son quand vous écoutez la radio sur cet appareil.',
@@ -1516,6 +1523,7 @@ export default {
     current: 'Actuelle : v{version}',
     empty: 'Aucune entrée de journal des modifications pour le moment.',
     upcoming: 'À venir',
+    thanks: 'Merci à',
     upcomingNote:
       'Pas encore publié : ce sur quoi on travaille pour la prochaine version, lu depuis GitHub. Cela peut encore changer avant la sortie.',
   },

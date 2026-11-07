@@ -1308,6 +1308,12 @@ export default {
           'Zeigen, was in der nächsten Version kommt, wenn du in den Release Notes "Demnächst" auswählst.',
         sends: 'Nichts über dich. Ein Abruf der Changelog-Datei des Projekts.',
       },
+      contributorAvatars: {
+        name: 'GitHub',
+        purpose: 'Die Profilbilder der Leute anzeigen, denen in den Release Notes gedankt wird.',
+        sends:
+          'Nichts über dich. Es lädt das öffentliche GitHub-Profilbild jeder gezeigten Person.',
+      },
       radioStream: {
         name: 'Der Radiosender selbst',
         purpose: 'Den Ton abspielen, wenn du auf diesem Gerät Radio hörst.',
@@ -1509,6 +1515,7 @@ export default {
     current: 'Aktuell: v{version}',
     empty: 'Keine Changelog-Einträge vorhanden.',
     upcoming: 'Demnächst',
+    thanks: 'Danke an',
     upcomingNote:
       'Noch nicht veröffentlicht: woran gerade für die nächste Version gearbeitet wird, abgerufen von GitHub. Bis zum Release kann sich noch etwas ändern.',
   },

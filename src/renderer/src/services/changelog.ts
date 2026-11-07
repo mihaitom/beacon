@@ -65,6 +65,13 @@ export function hasEntries(section: string): boolean {
   return /^\s*[-*]\s+\S/m.test(section)
 }
 
+/** The GitHub logins a section credits - who reported, asked for or
+ * contributed something - each once, in the order they first appear. */
+export function creditedLogins(section: string): string[] {
+  const logins = [...section.matchAll(/(?<![\w/.])@([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)/g)]
+  return [...new Set(logins.map((match) => match[1]!))]
+}
+
 export function upcomingFrom(markdown: string, currentVersion: string): UpcomingChanges {
   const unreleased = unreleasedSection(markdown)
   return {

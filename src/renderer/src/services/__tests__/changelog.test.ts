@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { fetchUpcoming, parseChangelog, unreleasedSection, upcomingFrom } from '../changelog'
+import {
+  creditedLogins,
+  fetchUpcoming,
+  parseChangelog,
+  unreleasedSection,
+  upcomingFrom,
+} from '../changelog'
 
 const CHANGELOG = `# Changelog
 
@@ -65,6 +71,27 @@ describe('upcomingFrom', () => {
     const justReleased =
       '## [Unreleased]\n\n### Added\n\n### Fixed\n\n## [1.9.0] - 2026-10-20\n\n- Shipped\n'
     expect(upcomingFrom(justReleased, '1.9.0').unreleased).toBe('')
+  })
+})
+
+describe('creditedLogins', () => {
+  it('lists each credited login once, in order of first mention', () => {
+    const section = [
+      '- A fix (reported by [@first-one](https://github.com/first-one), [#5](https://github.com/o/r/issues/5))',
+      '- A feature (requested by @second, #6)',
+      '- Another fix (reported by [@first-one](https://github.com/first-one), #7)',
+    ].join('\n')
+    expect(creditedLogins(section)).toEqual(['first-one', 'second'])
+  })
+
+  it('takes no e-mail address for a login', () => {
+    expect(creditedLogins('- Write to someone@example.com (reported by @reporter)')).toEqual([
+      'reporter',
+    ])
+  })
+
+  it('is empty when nobody is credited', () => {
+    expect(creditedLogins('- A fix (#5)')).toEqual([])
   })
 })
 

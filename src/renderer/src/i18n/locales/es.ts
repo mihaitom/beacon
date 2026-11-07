@@ -1307,6 +1307,12 @@ export default {
           'Mostrar lo que llega en la próxima versión, cuando eliges "Próximamente" en las notas de la versión.',
         sends: 'Nada sobre ti. Lee el archivo de cambios del proyecto.',
       },
+      contributorAvatars: {
+        name: 'GitHub',
+        purpose:
+          'Mostrar las fotos de perfil de las personas a las que se agradece en las notas de la versión.',
+        sends: 'Nada sobre ti. Carga la foto de perfil pública de GitHub de cada persona mostrada.',
+      },
       radioStream: {
         name: 'La propia emisora de radio',
         purpose: 'Reproducir el sonido cuando escuchas radio en este dispositivo.',
@@ -1510,6 +1516,7 @@ export default {
     current: 'Actual: v{version}',
     empty: 'Todavía no hay entradas en el registro de cambios.',
     upcoming: 'Próximamente',
+    thanks: 'Gracias a',
     upcomingNote:
       'Aún no publicado: en lo que se está trabajando para la próxima versión, leído de GitHub. Puede cambiar antes del lanzamiento.',
   },

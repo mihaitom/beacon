@@ -39,6 +39,32 @@
           }}</v-chip>
         </div>
 
+        <section v-if="contributors.length" class="contributors">
+          <div class="eyebrow-label">{{ $t('releaseNotes.thanks') }}</div>
+          <div class="contributors__list">
+            <a
+              v-for="login in contributors"
+              :key="login"
+              class="contributor"
+              :href="`https://github.com/${login}`"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <span class="contributor__avatar">
+                <img
+                  v-if="!failedAvatars.includes(login)"
+                  :src="`https://github.com/${login}.png?size=64`"
+                  alt=""
+                  loading="lazy"
+                  @error="failedAvatars.push(login)"
+                />
+                <template v-else>{{ login.charAt(0).toUpperCase() }}</template>
+              </span>
+              <span class="text-body-small">@{{ login }}</span>
+            </a>
+          </div>
+        </section>
+
         <template v-if="showingUpcoming">
           <v-alert type="info" variant="tonal" density="compact" class="upcoming-note">
             {{ $t('releaseNotes.upcomingNote') }}
@@ -74,6 +100,7 @@ import { fetchAccountSettings, pushAccountSettings } from '@/services/connect/ac
 import changelogRaw from '../../../../CHANGELOG.md?raw'
 import packageJson from '../../../../package.json'
 import {
+  creditedLogins,
   fetchUpcoming,
   parseChangelog,
   type ChangelogEntry,
@@ -131,6 +158,8 @@ export default defineComponent({
       // if it failed: the picker simply has no extra entries.
       upcomingRequested: false,
       iconAnimation: false,
+      // Offline, or a login GitHub no longer knows: those show an initial.
+      failedAvatars: [] as string[],
       listener: null as (() => void) | null,
     }
   },
@@ -169,6 +198,11 @@ export default defineComponent({
         this.changelogEntries.find((entry) => entry.version === this.selectedVersion) ??
         null
       )
+    },
+    /** Everyone the shown version credits, from its own changelog text. */
+    contributors(): string[] {
+      if (this.showingUpcoming) return creditedLogins(this.upcoming?.unreleased ?? '')
+      return creditedLogins(this.selectedEntry?.body ?? '')
     },
     selectedHtml(): string {
       return this.selectedEntry ? renderNotes(this.selectedEntry.body) : ''
@@ -359,6 +393,54 @@ export default defineComponent({
 
 .changelog-content :deep(h3:first-child) {
   margin-top: 0;
+}
+
+.contributors {
+  display: grid;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.contributors__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.contributor {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 3px 12px 3px 3px;
+  border-radius: 999px;
+  color: inherit;
+  text-decoration: none;
+  background: color-mix(in srgb, rgb(var(--v-theme-primary)) 10%, transparent);
+  transition: background 0.15s ease;
+}
+
+.contributor:hover,
+.contributor:focus-visible {
+  background: color-mix(in srgb, rgb(var(--v-theme-primary)) 20%, transparent);
+}
+
+.contributor__avatar {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  overflow: hidden;
+  border-radius: 50%;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: rgb(var(--v-theme-on-primary));
+  background: rgb(var(--v-theme-primary));
+}
+
+.contributor__avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .upcoming-note {

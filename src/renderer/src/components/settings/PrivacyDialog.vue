@@ -105,6 +105,12 @@ const SERVICES = {
       host: 'raw.githubusercontent.com',
       url: 'https://github.com/mihaitom/beacon/blob/development/CHANGELOG.md',
     },
+    {
+      key: 'contributorAvatars',
+      // github.com/<login>.png answers with a redirect to the picture itself.
+      host: 'github.com, avatars.githubusercontent.com',
+      url: 'https://github.com/mihaitom/beacon/graphs/contributors',
+    },
     { key: 'radioStream', host: '', url: '' },
   ],
   viaServer: [

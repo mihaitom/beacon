@@ -1297,6 +1297,12 @@ export default {
           'Showing what is coming in the next version, when you pick "Coming up" in the release notes.',
         sends: "Nothing about you. It reads the project's changelog file.",
       },
+      contributorAvatars: {
+        name: 'GitHub',
+        purpose: 'Showing the profile pictures of the people thanked in the release notes.',
+        sends:
+          'Nothing about you. It loads the public GitHub profile picture of each person shown.',
+      },
       radioStream: {
         name: 'The radio station itself',
         purpose: 'Playing the sound, when you listen to radio on this device.',
@@ -1497,6 +1503,7 @@ export default {
     current: 'Current: v{version}',
     empty: 'No changelog entries yet.',
     upcoming: 'Coming up',
+    thanks: 'Thanks to',
     upcomingNote:
       'Not released yet: what is being worked on for the next version, read from GitHub. It may still change before the release.',
   },
