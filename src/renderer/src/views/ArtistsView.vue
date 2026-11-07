@@ -54,7 +54,7 @@
         >
           <template #append-inner><exact-match-switch /></template>
         </v-text-field>
-        <div class="artists-controls">
+        <div class="library-controls">
           <v-btn-toggle
             :model-value="listView ? 'list' : 'grid'"
             mandatory
@@ -645,14 +645,6 @@ export default {
  * long as "Recently added". */
 .view-error {
   margin-bottom: 12px;
-}
-
-.artists-controls {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 16px;
-  margin-left: auto;
 }
 
 /* See AlbumsView.vue's identical rule. */
