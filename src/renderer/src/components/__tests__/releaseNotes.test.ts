@@ -1,11 +1,17 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
+import { fetchAccountSettings, pushAccountSettings } from '@/services/connect/accountSettings'
 import ReleaseNotes, { renderNotes } from '../releaseNotes.vue'
+
+vi.mock('@/services/connect/accountSettings', () => ({
+  fetchAccountSettings: vi.fn(),
+  pushAccountSettings: vi.fn().mockResolvedValue({}),
+}))
 
 describe('release notes', () => {
   it('opens a link in a window of its own, not in place of the app', () => {
@@ -39,7 +45,7 @@ describe('upcoming changes', () => {
   type NotesVm = {
     selectedVersion: string
     readonly versionOptions: { title: string; value: string }[]
-    openDialog(autoOpen?: boolean): void
+    openDialog(): void
   }
 
   async function openWith(changelog: string) {
@@ -103,6 +109,112 @@ describe('upcoming changes', () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(values(vm)).toContain('upcoming')
+    wrapper.unmount()
+  })
+})
+
+describe('what is new on login', () => {
+  const vuetify = createVuetify({ components, directives })
+  const fetchSettings = vi.mocked(fetchAccountSettings)
+  const pushSettings = vi.mocked(pushAccountSettings)
+
+  beforeEach(() => {
+    window.localStorage.clear()
+    fetchSettings.mockReset()
+    pushSettings.mockReset().mockResolvedValue({})
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+  })
+
+  afterEach(() => {
+    document.body.innerHTML = ''
+  })
+
+  function mountNotes() {
+    return mount(ReleaseNotes, {
+      global: { plugins: [vuetify, i18n, createPinia()] },
+      attachTo: document.body,
+    })
+  }
+
+  type LoginVm = {
+    visible: boolean
+    readonly storageKey: string
+    readonly appVersion: string
+    readonly authStore: { authenticated: boolean }
+  }
+
+  // The dialog is mounted with the app, before anyone has logged in, and
+  // decides when the login lands - so the tests log in the same way.
+  async function logIn(vm: LoginVm) {
+    vm.authStore.authenticated = true
+    await flushPromises()
+  }
+
+  it('opens once for a version the account has not seen anywhere', async () => {
+    fetchSettings.mockResolvedValue({})
+    const wrapper = mountNotes()
+    const vm = wrapper.vm as unknown as LoginVm
+
+    await logIn(vm)
+
+    expect(vm.visible).toBe(true)
+    expect(window.localStorage.getItem(vm.storageKey)).toBe(vm.appVersion)
+    expect(pushSettings).toHaveBeenCalledWith({ releaseNotesSeen: vm.appVersion })
+    wrapper.unmount()
+  })
+
+  it('stays closed when the server already has this version, even on a fresh browser', async () => {
+    const wrapper = mountNotes()
+    const vm = wrapper.vm as unknown as LoginVm
+    fetchSettings.mockResolvedValue({ releaseNotesSeen: vm.appVersion })
+
+    await logIn(vm)
+
+    expect(vm.visible).toBe(false)
+    expect(pushSettings).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('carries a local record the server lacks up to the server, without reopening', async () => {
+    const wrapper = mountNotes()
+    const vm = wrapper.vm as unknown as LoginVm
+    window.localStorage.setItem(vm.storageKey, vm.appVersion)
+    fetchSettings.mockResolvedValue({})
+
+    await logIn(vm)
+
+    expect(vm.visible).toBe(false)
+    expect(pushSettings).toHaveBeenCalledWith({ releaseNotesSeen: vm.appVersion })
+    wrapper.unmount()
+  })
+
+  it('falls back to the local record when the account settings cannot be read', async () => {
+    const wrapper = mountNotes()
+    const vm = wrapper.vm as unknown as LoginVm
+    window.localStorage.setItem(vm.storageKey, vm.appVersion)
+    fetchSettings.mockRejectedValue(new TypeError('offline'))
+
+    await logIn(vm)
+
+    expect(vm.visible).toBe(false)
+    expect(pushSettings).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('stays closed when the account logs out while its settings are on their way', async () => {
+    let answer: (settings: object) => void = () => {}
+    fetchSettings.mockReturnValue(new Promise((resolve) => (answer = resolve)))
+    const wrapper = mountNotes()
+    const vm = wrapper.vm as unknown as LoginVm
+    vm.authStore.authenticated = true
+    await flushPromises()
+
+    vm.authStore.authenticated = false
+    answer({})
+    await flushPromises()
+
+    expect(vm.visible).toBe(false)
+    expect(pushSettings).not.toHaveBeenCalled()
     wrapper.unmount()
   })
 })

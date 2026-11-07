@@ -35,6 +35,10 @@ export interface AccountSettingsPayload {
   fanartEnabled?: boolean
   // Gapless and crossfade - see stores/transitions.ts.
   transitions?: { mode: string; crossfadeSeconds: number; beatmixBars: number }
+  // The last app version whose "what's new" dialog this account has seen -
+  // see components/releaseNotes.vue. Follows the account, so it is not shown
+  // again on another browser or device after it was closed once.
+  releaseNotesSeen?: string
 }
 
 function identity(): { server_type: string; server_url: string; username: string } {
