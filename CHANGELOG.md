@@ -39,7 +39,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - With a ListenBrainz name set, "New artists to explore" on Home fills up again instead of showing only one or two artists, and no longer suggests artists you already have under a slightly different spelling
 - When the phone or browser pauses the music on its own, for example because a Bluetooth speaker or headphones disconnected, Beacon now shows it as paused, and play starts it again right away instead of needing pause first
 - The songs in a smart playlist's preview and the library matches in the playlist builder have a right-click menu like songs everywhere else
-- With a light theme, the artist photo on artist and album pages fades straight into the page instead of through a dark stripe
+- With a light theme, the artist photo on an artist page is as large as with a dark one, and on artist and album pages it fades straight into the page instead of through a dark stripe
 
 ## [1.10.0] - 2026-10-25
 

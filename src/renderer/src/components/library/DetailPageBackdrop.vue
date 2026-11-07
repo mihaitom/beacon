@@ -483,13 +483,23 @@ export default {
   mask-image: linear-gradient(to bottom, #000 calc(100% - var(--night-fade)), transparent);
 }
 
-.detail-page__band--on-light .detail-page__night,
+.detail-page__band--on-light .detail-page__night {
+  bottom: 0;
+}
+
 .detail-page__band--on-light .detail-page__backdrop,
 .detail-page__band--on-light .detail-page__scrim {
-  height: auto;
-  bottom: 0;
   -webkit-mask-image: none;
   mask-image: none;
+}
+
+/* The photo keeps the size it has on a dark theme and is cut off by the
+ * wrapper rather than shrunk to the header: the photo is sized by its
+ * layer's height, and a header-high layer made it a third smaller. Taller
+ * than that only where the header itself is. */
+.detail-page:not(.detail-page--banded) .detail-page__band--on-light .detail-page__backdrop,
+.detail-page:not(.detail-page--banded) .detail-page__band--on-light .detail-page__scrim {
+  height: max(min(78vh, 680px), 100%);
 }
 
 /* The fade runs below the header, so whatever follows it starts only once
