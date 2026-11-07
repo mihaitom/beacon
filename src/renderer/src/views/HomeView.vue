@@ -78,7 +78,7 @@
       play-on-click
       @play-all="playAllAlbums(randomAlbums, 'random')"
     >
-      <template v-if="!usingPersonalRecommendations" #action>
+      <template #action>
         <v-btn
           icon="mdi-shuffle-variant"
           variant="text"
@@ -95,7 +95,7 @@
       :artists="newArtistDiscoveries"
       :loading="discoverArtistsLoading"
     >
-      <template v-if="!usingPersonalRecommendations" #action>
+      <template #action>
         <v-btn
           icon="mdi-shuffle-variant"
           variant="text"
@@ -320,19 +320,6 @@ export default {
         this.homeStore.discoverArtists = artists
       },
     },
-    // True only once the personal recommendations actually filled the
-    // shelves — false both without a ListenBrainz name and when the feed
-    // came back empty (see loadPersonalShelves()'s fallback). Drives the
-    // Reroll buttons, which are pointless over a fixed personal set but
-    // still useful over the community one.
-    usingPersonalRecommendations: {
-      get(): boolean {
-        return this.homeStore.discoverPersonal
-      },
-      set(personal: boolean) {
-        this.homeStore.discoverPersonal = personal
-      },
-    },
     // Which kind of lookup the Discover shelves would come from right now.
     // Shelves kept from an earlier visit are only shown again while this
     // still matches: switching recommendations off, or setting another
@@ -453,9 +440,7 @@ export default {
     // Both Discover shelves come from the listener's own ListenBrainz
     // recommendations instead of the community similar-artist lookup
     // whenever there's a name to ask for and recommendations are on. Only
-    // says whether to *try* the personal path — whether it actually filled
-    // the shelves (and so whether the Reroll buttons are pointless) is
-    // usingPersonalRecommendations, since an empty feed falls back.
+    // says whether to *try* the personal path: an empty feed falls back.
     personalized() {
       return this.recommendationsStore.enabled && !!this.listenbrainzStore.username.trim()
     },
@@ -483,15 +468,14 @@ export default {
     // What an earlier visit found is shown again as it was - see
     // stores/home.ts for why Discover is the one thing not redone.
     if (this.homeStore.discoverSource !== this.discoverSource) {
-      // Nothing from another source carries over, the personal flag least
-      // of all: it would hide the Reroll buttons over community results.
+      // Nothing from another source carries over.
       this.randomAlbums = []
       this.newArtistDiscoveries = []
-      this.usingPersonalRecommendations = false
-      // A ListenBrainz name with recommendations on switches both Discover
-      // shelves over to the listener's own recommendations, which are fixed
-      // per listener — nothing to seed from the library's play history, and
-      // nothing for the Reroll buttons to reroll (see `personalized`).
+      // A ListenBrainz name with recommendations on fills both Discover
+      // shelves from the listener's own recommendations at first. Those are
+      // fixed per listener, so Reroll goes to the community lookup with
+      // fresh seeds instead - something else to look at, until the next
+      // start brings the personal set back.
       if (this.personalized) {
         // Passed through so an empty personal set (a brand-new ListenBrainz
         // account has no recommendations yet) can fall back to the same seed
@@ -822,7 +806,6 @@ export default {
         const { albums, discoveries } = await this.discoverHalves(artists)
         this.randomAlbums = albums
         this.newArtistDiscoveries = discoveries
-        this.usingPersonalRecommendations = true
         this.rememberDiscover()
       } catch (error) {
         console.error('[home] Personalized recommendations failed:', error)

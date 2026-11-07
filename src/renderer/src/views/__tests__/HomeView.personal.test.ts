@@ -4,7 +4,7 @@
 // one of its albums to "Discover in your library", the rest fill "New
 // artists to explore". Without a name the community similar-artist lookup
 // stays in charge — and since the personal recommendations are fixed per
-// listener, the Reroll buttons are hidden while they are.
+// listener, Reroll goes to that community lookup with fresh seeds.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -144,8 +144,7 @@ describe('HomeView personalized Discover', () => {
 
     expect(getListenbrainzArtists).not.toHaveBeenCalled()
     expect(getSimilarArtists).toHaveBeenCalled()
-    // The community set is rerollable, so the control stays.
-    expect(rerollButton(wrapper)?.exists()).toBe(true)
+    expect(artistsShelf(wrapper)?.text()).toContain('Community Act')
   })
 
   it('fills both shelves from the listener’s own recommendations', async () => {
@@ -225,23 +224,28 @@ describe('HomeView personalized Discover', () => {
     expect(shelf?.text()).not.toContain('sto')
   })
 
-  it('hides the Reroll buttons while the personal recommendations are shown', async () => {
+  it('rerolls the personal recommendations into the community lookup from fresh seeds', async () => {
     useListenbrainzStore().setUsername('listener')
     vi.mocked(getListenbrainzArtists).mockResolvedValue([{ name: 'New Act', mbid: 'n', score: 3 }])
+    vi.mocked(getSimilarArtists).mockResolvedValue([{ name: 'Community Act', mbid: 'c', score: 1 }])
 
-    const wrapper = await mountHome()
+    const wrapper = await mountHome((library) => {
+      vi.spyOn(library, 'fetchFrequentAlbums').mockResolvedValue(seedAlbums())
+    })
+    await flushPromises()
+    expect(artistsShelf(wrapper)?.text()).toContain('New Act')
+    expect(getSimilarArtists).not.toHaveBeenCalled()
+
+    await rerollButton(wrapper)!.trigger('click')
     await flushPromises()
 
-    // The shelf itself is there — it is the Reroll control that is gone,
-    // because there is nothing to reroll.
-    expect(artistsShelf(wrapper)?.text()).toContain('New Act')
-    expect(rerollButton(wrapper)?.exists()).toBe(false)
+    expect(getSimilarArtists).toHaveBeenCalled()
+    expect(artistsShelf(wrapper)?.text()).toContain('Community Act')
   })
 
   it('falls back to the community lookup when the personal feed is empty', async () => {
     // A brand-new ListenBrainz account has no recommendations yet — the
-    // shelves should still fill the way they do without a name, Reroll
-    // button included.
+    // shelves should still fill the way they do without a name.
     useListenbrainzStore().setUsername('listener')
     vi.mocked(getListenbrainzArtists).mockResolvedValue([])
     vi.mocked(getSimilarArtists).mockResolvedValue([{ name: 'Community Act', mbid: 'c', score: 1 }])
@@ -254,7 +258,6 @@ describe('HomeView personalized Discover', () => {
     expect(getListenbrainzArtists).toHaveBeenCalled()
     expect(getSimilarArtists).toHaveBeenCalled()
     expect(artistsShelf(wrapper)?.text()).toContain('Community Act')
-    expect(rerollButton(wrapper)?.exists()).toBe(true)
   })
 
   it('leaves both shelves empty when the lookup fails, rather than breaking Home', async () => {
@@ -271,7 +274,7 @@ describe('HomeView personalized Discover', () => {
     ).toEqual([])
   })
 
-  it('offers Reroll again on the next visit once the name has been removed', async () => {
+  it('goes back to the community lookup on the next visit once the name has been removed', async () => {
     useListenbrainzStore().setUsername('listener')
     vi.mocked(getListenbrainzArtists).mockResolvedValue([{ name: 'New Act', mbid: 'n', score: 3 }])
     ;(await mountHome()).unmount()
@@ -285,6 +288,5 @@ describe('HomeView personalized Discover', () => {
     await flushPromises()
 
     expect(artistsShelf(wrapper)?.text()).toContain('Community Act')
-    expect(rerollButton(wrapper)?.exists()).toBe(true)
   })
 })

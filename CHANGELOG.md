@@ -17,6 +17,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- With a ListenBrainz name set, the shuffle buttons on Home's two Discover shelves are there too: they swap your personal recommendations for suggestions around other artists you play often, and the next start brings the personal ones back
 - The Playlists page has one playlist builder button instead of one per service: Deezer, Last.fm or ListenBrainz is picked inside it, and it opens on the one used last
 - Electron, the build tools and the backend's libraries are updated to their latest versions
 

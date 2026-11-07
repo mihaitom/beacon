@@ -24,7 +24,6 @@ export const useHomeStore = defineStore('home', {
     albums: { frequent: null, newest: null, recent: null } as Record<HomeAlbumList, Album[] | null>,
     discoverAlbums: [] as Album[],
     discoverArtists: [] as SimilarArtistDisplay[],
-    discoverPersonal: false,
     // Which kind of lookup filled the Discover shelves (see HomeView's
     // discoverSource), or null while they hold nothing worth keeping.
     discoverSource: null as string | null,
