@@ -70,6 +70,16 @@ describe('accountScopedStores — pull on account change', () => {
     )
   })
 
+  it('takes the equalizer presets another device saved', async () => {
+    const presets = [{ name: 'Kitchen radio', gains: [1, 2, 3, 0, 0, 0, 0, 0, 0, 0] }]
+    vi.mocked(fetchAccountSettings).mockResolvedValue({ equalizerPresets: presets })
+    initAccountScopedStores()
+
+    signIn()
+    await nextTick()
+    await vi.waitFor(() => expect(useEqualizerStore().presets).toEqual(presets))
+  })
+
   it('ignores a non-boolean castRadioDirectly flag', async () => {
     vi.mocked(fetchAccountSettings).mockResolvedValue({
       castRadioDirectly: 'true' as unknown as boolean,

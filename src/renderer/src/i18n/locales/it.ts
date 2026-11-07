@@ -782,13 +782,15 @@ export default {
     title: 'Equalizzatore',
     thisDevice: 'Questo dispositivo',
     enabled: 'Equalizzatore attivo',
-    open: "Regola l'equalizzatore",
-    settingsHint:
-      'Per la riproduzione su questo dispositivo. Ogni altoparlante ha il suo, nella scelta dei dispositivi.',
     unavailableHint:
-      "Su telefoni e tablet qui non c'è un equalizzatore: la riproduzione passa direttamente dal browser per continuare a schermo bloccato. Gli equalizzatori degli altoparlanti funzionano comunque.",
+      "Su telefoni e tablet qui non c'è un equalizzatore proprio: la riproduzione passa direttamente dal browser per continuare a schermo bloccato. Durante il cast, l'equalizzatore dell'altoparlante funziona come sempre.",
     speakerHint:
-      'Vale dal brano successivo. "Applica ora" riavvia il brano in corso dallo stesso punto, con una breve pausa. Le stazioni radio restano invariate.',
+      'Vale dal brano successivo. "Applica ora" riavvia il brano in corso dallo stesso punto, con una breve pausa. Con riproduzione senza pause o dissolvenza attive, le modifiche si sentono mentre il brano suona. Le stazioni radio restano invariate.',
+    liveHint:
+      "Si sente mentre il brano suona, dopo i pochi secondi che l'altoparlante tiene in riserva. Le stazioni radio restano invariate.",
+    savePreset: 'Salva come preset',
+    presetName: 'Nome del preset',
+    deletePreset: 'Elimina il preset "{name}"',
     applyNow: 'Applica ora',
     reset: 'Reimposta',
     custom: 'Personalizzato',

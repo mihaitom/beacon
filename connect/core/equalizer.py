@@ -1,4 +1,4 @@
-"""core/equalizer.py — a speaker's equalizer curve, as ffmpeg filters.
+"""core/equalizer.py — a speaker's equalizer curve, as ffmpeg filters or live.
 
 The curve is the listener's (stores/equalizer.ts in the renderer): a list of
 peaking bands, each a centre frequency, a gain and a Q. The renderer plays
@@ -10,12 +10,21 @@ The bands travel as numbers rather than being defined twice.
 Curves are kept per speaker, keyed `type:name` like the device volumes
 (SessionState.device_volumes), because the point is mostly the speaker: a
 kitchen box without bass should not hand its bass boost to the living room.
+
+A single song's stream takes the curve as ffmpeg filters, fixed for that
+song. The mix (transitions on) runs one encoder for as long as the mix
+lasts, so there LiveEqualizer filters the PCM on its way in, and a changed
+curve is heard without restarting anything.
 """
 
+import functools
 import math
 from typing import Any
 
 import numpy as np
+
+from .mix_dsp import Dither, pcm_to_float, soft_limit
+from .mix_timeline import SAMPLE_RATE
 
 # What one band may ask for. The renderer offers ±12 dB; the bounds here
 # only keep a hand-made request from reaching ffmpeg as nonsense.
@@ -64,15 +73,15 @@ def sanitize(bands: object) -> list[Band]:
     return clean
 
 
-def _peaking_response_db(band: Band, freqs: np.ndarray) -> np.ndarray:
+def _peaking_response_db(band: Band, freqs: np.ndarray, rate: int = _RESPONSE_RATE) -> np.ndarray:
     """One RBJ peaking band's magnitude response in dB at `freqs`."""
     a = 10 ** (band["gain"] / 40)
-    w0 = 2 * math.pi * band["frequency"] / _RESPONSE_RATE
+    w0 = 2 * math.pi * band["frequency"] / rate
     alpha = math.sin(w0) / (2 * band["q"])
     cos_w0 = math.cos(w0)
     b = np.array([1 + alpha * a, -2 * cos_w0, 1 - alpha * a])
     den = np.array([1 + alpha / a, -2 * cos_w0, 1 - alpha / a])
-    z = np.exp(-1j * 2 * np.pi * freqs / _RESPONSE_RATE)
+    z = np.exp(-1j * 2 * np.pi * freqs / rate)
     h = (b[0] + b[1] * z + b[2] * z**2) / (den[0] + den[1] * z + den[2] * z**2)
     return 20 * np.log10(np.abs(h))
 
@@ -100,6 +109,104 @@ def audio_filter(gain: float, bands: list[Band]) -> str | None:
         f"equalizer=f={b['frequency']:.6g}:t=q:w={b['q']:.6g}:g={b['gain']:.6g}" for b in bands
     ]
     return ",".join(parts) or None
+
+
+# ── Live, in the mix ──────────────────────────────────────────────────────
+
+# The live filter's length. A +12 dB band at 31 Hz rings for longer than
+# 2048 taps (46 ms) hold, which cost it almost 2 dB of its peak; at 4096
+# every curve the dialog can make is within 0.4 dB of the biquads'.
+LIVE_TAPS = 4096
+# The grid the filter is designed on: fine enough that the cepstrum below
+# does not wrap around (and so smear the 31 Hz band).
+_DESIGN_GRID = 1 << 15
+
+BandsKey = tuple[tuple[float, float, float], ...]
+
+
+def _bands_key(bands: list[Band]) -> BandsKey:
+    return tuple((b["frequency"], b["gain"], b["q"]) for b in bands)
+
+
+@functools.lru_cache(maxsize=32)
+def live_taps(key: BandsKey) -> np.ndarray:
+    """The curve, headroom included, as a minimum-phase FIR filter.
+
+    Minimum phase because a linear-phase one would delay everything by half
+    its length (46 ms) - switching it in or out would then be heard as a
+    jump. The biquads are minimum phase as well, so this is also the closest
+    match to what ffmpeg and Web Audio do. Designed from the magnitude alone
+    through the real cepstrum, since IIR filters cannot be run vectorised in
+    numpy (see core/mix_dsp.py)."""
+    bands = [{"frequency": f, "gain": g, "q": q} for f, g, q in key]
+    freqs = np.fft.rfftfreq(_DESIGN_GRID, 1 / SAMPLE_RATE)
+    db = sum(_peaking_response_db(b, freqs, SAMPLE_RATE) for b in bands) - headroom_db(bands)
+    log_magnitude = np.log(10.0 ** (db / 20))
+    cepstrum = np.fft.irfft(log_magnitude, _DESIGN_GRID)
+    folded = np.zeros(_DESIGN_GRID)
+    half = _DESIGN_GRID // 2
+    folded[0] = cepstrum[0]
+    folded[1:half] = 2 * cepstrum[1:half]
+    folded[half] = cepstrum[half]
+    # Cut off where it has rung out: fading the tail as well was measured
+    # to change nothing.
+    return np.fft.irfft(np.exp(np.fft.rfft(folded)), _DESIGN_GRID)[:LIVE_TAPS]
+
+
+@functools.lru_cache(maxsize=64)
+def _taps_spectrum(key: BandsKey, size: int) -> np.ndarray:
+    return np.fft.rfft(live_taps(key), size)[:, None]
+
+
+class LiveEqualizer:
+    """A curve on the mix's s16le stereo PCM, block by block, that can be
+    changed between any two blocks. A change is crossfaded over the block it
+    lands in - the old and the new curve's output, both from the same input
+    - so moving a slider never clicks. With no curve, the PCM is handed back
+    untouched."""
+
+    def __init__(self) -> None:
+        # The last LIVE_TAPS - 1 input frames: what the next block's filter
+        # still reaches back into. Kept while bypassed, too, so a curve
+        # switched on starts from the real signal rather than from silence.
+        self._history = np.zeros((LIVE_TAPS - 1, 2), dtype=np.float64)
+        # None until the first block: a listener starts with its curve
+        # rather than fading into it.
+        self._key: BandsKey | None = None
+        self._dither = Dither()
+
+    def process(self, pcm: bytes, bands: list[Band]) -> bytes:
+        key = _bands_key(bands)
+        if self._key is None:
+            self._key = key
+        x = pcm_to_float(pcm).astype(np.float64)
+        frames = len(x)
+        full = np.concatenate([self._history, x])
+        self._history = full[-(LIVE_TAPS - 1) :]
+        if key == self._key:
+            if not key or frames == 0:
+                return pcm
+            y = self._filter(full, frames, key)
+        else:
+            old = self._filter(full, frames, self._key) if self._key else x
+            new = self._filter(full, frames, key) if key else x
+            self._key = key
+            # Linear rather than equal power: the two are the same signal,
+            # and correlated signals keep their level under a linear fade.
+            ramp = (np.arange(1, frames + 1) / max(1, frames))[:, None]
+            y = old * (1 - ramp) + new * ramp
+        # The headroom keeps the curve at or under 0 dB, but a filter can
+        # still put a peak over the input's - the mix is limited close to
+        # full scale already.
+        return self._dither.to_int16(soft_limit(y.astype(np.float32)))
+
+    @staticmethod
+    def _filter(full: np.ndarray, frames: int, key: BandsKey) -> np.ndarray:
+        """Overlap-save: the input with its history, filtered by FFT, the
+        history's part of the result dropped."""
+        size = 1 << int(np.ceil(np.log2(len(full))))
+        spectrum = np.fft.rfft(full, size, axis=0) * _taps_spectrum(key, size)
+        return np.fft.irfft(spectrum, size, axis=0)[LIVE_TAPS - 1 : LIVE_TAPS - 1 + frames]
 
 
 # Deliveries are typed loosely on purpose: core/streamer.py imports this

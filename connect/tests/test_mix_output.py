@@ -3,11 +3,14 @@ encode of it."""
 
 import asyncio
 import shutil
+from unittest.mock import AsyncMock, patch
 
+import numpy as np
 import pytest
 
 import core.mix_output as mo
-from core.mix_output import MixConnection, PcmRing
+from core.mix_engine import MixEngine, MixItem
+from core.mix_output import FRAME_BYTES, MixConnection, PcmRing
 
 SR = mo.SAMPLE_RATE
 
@@ -83,6 +86,58 @@ async def test_a_connection_left_behind_by_a_trim_skips_ahead_without_repeating(
     await connection._feed()
     assert bytes(stdin.written) == b"".join(_frames(1, v) for v in range(10, 20))
     assert connection.fed_frame == 20
+
+
+async def test_a_listeners_curve_is_asked_for_every_block_it_is_fed():
+    """A curve changed while the mix plays reaches the next block - the
+    encoder itself is never restarted for it."""
+    ring = PcmRing()
+    ring.append(bytes(mo._WRITE_FRAMES * FRAME_BYTES * 3))
+    ring.close()
+    asked = []
+
+    def curve():
+        asked.append(len(asked))
+        return []
+
+    connection = MixConnection(ring, 0, [], curve)
+    stdin = _Stdin()
+    connection._proc = type("Proc", (), {"stdin": stdin})()
+    with patch.object(mo.LiveEqualizer, "process", side_effect=lambda pcm, bands: pcm) as process:
+        await connection._feed()
+    assert asked == [0, 1, 2]
+    assert process.call_count == 3
+    assert len(stdin.written) == mo._WRITE_FRAMES * FRAME_BYTES * 3
+
+
+async def test_a_listener_with_a_curve_is_fed_the_filtered_mix():
+    t = np.arange(mo._WRITE_FRAMES) / SR
+    tone = np.repeat((0.5 * np.sin(2 * np.pi * 1000 * t) * 32767).astype("<i2"), 2)
+    ring = PcmRing()
+    ring.append(tone.tobytes())
+    ring.close()
+    connection = MixConnection(ring, 0, [], lambda: [{"frequency": 1000, "gain": -12, "q": 1.41}])
+    stdin = _Stdin()
+    connection._proc = type("Proc", (), {"stdin": stdin})()
+    await connection._feed()
+    fed = np.frombuffer(bytes(stdin.written), dtype="<i2").astype(np.float64)
+    assert len(fed) == len(tone)
+    # Well past the filter's settling: about a quarter of the level.
+    tail = slice(len(fed) // 2, None)
+    assert np.std(fed[tail]) / np.std(tone[tail].astype(np.float64)) < 0.3
+    assert connection.fed_frame == mo._WRITE_FRAMES
+
+
+async def test_the_mix_hands_a_listener_its_curve():
+    engine = MixEngine(MixItem("1", 0), 10.0, AsyncMock(), AsyncMock())
+
+    def curve():
+        return []
+
+    with patch.object(MixConnection, "open", new=AsyncMock()):
+        connection = await engine.connect(0.0, [], curve=curve)
+    assert connection._curve is curve
+    engine.stop()
 
 
 def test_the_encoder_reads_pcm_and_writes_what_it_is_told():

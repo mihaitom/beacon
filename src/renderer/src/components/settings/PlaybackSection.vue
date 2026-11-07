@@ -59,17 +59,6 @@
       </div>
 
       <div class="setting">
-        <p class="setting__label">{{ $t('equalizer.title') }}</p>
-        <div class="setting__control-row">
-          <v-btn variant="tonal" prepend-icon="mdi-tune-vertical" @click="equalizerOpen = true">
-            {{ $t('equalizer.open') }}
-          </v-btn>
-        </div>
-        <p class="setting__hint">{{ $t('equalizer.settingsHint') }}</p>
-        <equalizer-dialog v-model="equalizerOpen" />
-      </div>
-
-      <div class="setting">
         <!-- The label with the recommendations beside it. Which format
          - and which number to pick is not something a listener can read
          - off the two dropdowns, and the hint under them explains what
@@ -185,19 +174,15 @@ import {
 } from '@/services/streamQuality'
 import SegmentedControl from '@/components/SegmentedControl.vue'
 import QualityTips from './QualityTips.vue'
-import EqualizerDialog from '@/components/equalizer/EqualizerDialog.vue'
 
 /**
- * How audio is played and cast: ReplayGain, transitions between songs, this
- * device's equalizer, the quality ceiling for this device and for cast targets, and whether radio
+ * How audio is played and cast: ReplayGain, transitions between songs, the
+ * quality ceiling for this device and for cast targets, and whether radio
  * goes straight from the station or through Beacon's own relay.
  */
 export default {
   name: 'PlaybackSection',
-  components: { EqualizerDialog, QualityTips, SegmentedControl },
-  data() {
-    return { equalizerOpen: false }
-  },
+  components: { QualityTips, SegmentedControl },
   computed: {
     playbackStore() {
       return usePlaybackStore()

@@ -106,6 +106,10 @@ async function pullAccountSettings(): Promise<void> {
       useEqualizerStore().setSpeakers(remote.speakerEqualizers)
     }
 
+    if (Array.isArray(remote.equalizerPresets)) {
+      useEqualizerStore().setPresets(remote.equalizerPresets)
+    }
+
     if (typeof remote.lastfmUsername === 'string') {
       useLastfmStore().setUsername(remote.lastfmUsername)
     }

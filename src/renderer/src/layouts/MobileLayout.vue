@@ -35,6 +35,9 @@
       <!-- On every route like the settings button beside it: the party is
          - this window's, whatever the phone happens to be showing. -->
       <party-mode-button class="mobile-app-bar__action" />
+      <!-- Only while casting: a phone plays without a Web Audio graph, so
+         - the speaker's curve is the only one there is to set. -->
+      <equalizer-button v-if="casting" class="mobile-app-bar__action" />
       <!-- The dot: see DefaultLayout.vue's settings entry. -->
       <v-btn
         icon
@@ -79,8 +82,10 @@ import MobileTabBar from '@/components/mobile/MobileTabBar.vue'
 import MobilePlayerBar from '@/components/mobile/MobilePlayerBar.vue'
 import CastTakeoverConfirmDialog from '@/components/connect/CastTakeoverConfirmDialog.vue'
 import PartyModeButton from '@/components/party/PartyModeButton.vue'
+import EqualizerButton from '@/components/equalizer/EqualizerButton.vue'
 import { phoneLandscapeMixin } from '@/composables/phoneLandscape'
 import { useUpdateStore } from '@/stores/update'
+import { useConnectStore } from '@/stores/connect'
 
 /** Roughly how long iOS takes to animate a rotation; the reset is repeated
  * after it in case the offset is only applied at its end. */
@@ -92,6 +97,7 @@ export default {
     MobileTabBar,
     MobilePlayerBar,
     CastTakeoverConfirmDialog,
+    EqualizerButton,
     PartyModeButton,
   },
   mixins: [phoneLandscapeMixin],
@@ -103,6 +109,9 @@ export default {
   computed: {
     updateStore() {
       return useUpdateStore()
+    },
+    casting(): boolean {
+      return useConnectStore().isActive
     },
     onNowPlaying() {
       return this.$route.name === 'm-now-playing'

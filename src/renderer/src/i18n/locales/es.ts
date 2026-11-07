@@ -787,13 +787,15 @@ export default {
     title: 'Ecualizador',
     thisDevice: 'Este dispositivo',
     enabled: 'Ecualizador activado',
-    open: 'Ajustar ecualizador',
-    settingsHint:
-      'Para la reproducción en este dispositivo. Cada altavoz tiene el suyo, en el selector de dispositivos.',
     unavailableHint:
-      'En móviles y tabletas no hay ecualizador aquí: la reproducción pasa directamente por el navegador para que siga sonando con la pantalla bloqueada. Los ecualizadores de los altavoces siguen funcionando.',
+      'En móviles y tabletas no hay ecualizador propio aquí: la reproducción pasa directamente por el navegador para que siga sonando con la pantalla bloqueada. Al transmitir, el ecualizador del altavoz funciona como siempre.',
     speakerHint:
-      'Se aplica a partir de la siguiente canción. "Aplicar ahora" reinicia la canción actual en el mismo punto, con una breve pausa. Las emisoras de radio no cambian.',
+      'Se aplica a partir de la siguiente canción. "Aplicar ahora" reinicia la canción actual en el mismo punto, con una breve pausa. Con reproducción sin pausas o fundido activados, los cambios se oyen mientras suena la canción. Las emisoras de radio no cambian.',
+    liveHint:
+      'Se oye mientras suena la canción, tras los pocos segundos que el altavoz tiene en reserva. Las emisoras de radio no cambian.',
+    savePreset: 'Guardar como preajuste',
+    presetName: 'Nombre del preajuste',
+    deletePreset: 'Eliminar el preajuste "{name}"',
     applyNow: 'Aplicar ahora',
     reset: 'Restablecer',
     custom: 'Personalizado',

@@ -48,6 +48,7 @@ from typing import Any, Protocol
 import numpy as np
 
 from .beat_analysis import RegionAnalysis, analyse_region
+from .equalizer import Band
 from .mix_dsp import DELAY_FRAMES, BandSplitter, Dither, pcm_to_float, soft_limit
 from .mix_output import FRAME_BYTES, MixConnection, PcmRing
 from .mix_timeline import SAMPLE_RATE, Timeline
@@ -661,10 +662,15 @@ class MixEngine:
         self._plan = None
 
     async def connect(
-        self, start_time: float, output_args: list[str], counted: bool = True
+        self,
+        start_time: float,
+        output_args: list[str],
+        counted: bool = True,
+        curve: Callable[[], list[Band]] | None = None,
     ) -> MixConnection:
-        """A listener's encode from `start_time` (stream seconds) on."""
-        connection = MixConnection(self.ring, round(start_time * SAMPLE_RATE), output_args)
+        """A listener's encode from `start_time` (stream seconds) on, through
+        its equalizer `curve` if it has one (see MixConnection)."""
+        connection = MixConnection(self.ring, round(start_time * SAMPLE_RATE), output_args, curve)
         connection.counted = counted
         # Counted before the encoder spawns: _trim() keeps what an open
         # connection has yet to read, and a render tick during the spawn

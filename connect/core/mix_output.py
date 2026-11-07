@@ -16,8 +16,9 @@ track's -readrate_initial_burst gives (core/streamer.py).
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 
+from .equalizer import Band, LiveEqualizer
 from .ffmpeg import FFMPEG_BIN
 from .mix_timeline import SAMPLE_RATE
 
@@ -109,10 +110,22 @@ def encoder_cmd(output_args: list[str]) -> list[str]:
 class MixConnection:
     """One listener's encode of the ring from `start_frame` on. Iterate it
     for the encoded bytes; it ends when the mix has ended and everything
-    was encoded, or when closed."""
+    was encoded, or when closed.
 
-    def __init__(self, ring: PcmRing, start_frame: int, output_args: list[str]) -> None:
+    `curve` answers this listener's equalizer curve, asked again for every
+    block it is fed, so a curve changed mid-mix is heard from the next
+    block on (core/equalizer.py's LiveEqualizer)."""
+
+    def __init__(
+        self,
+        ring: PcmRing,
+        start_frame: int,
+        output_args: list[str],
+        curve: Callable[[], list[Band]] | None = None,
+    ) -> None:
         self._ring = ring
+        self._curve = curve
+        self._equalizer = LiveEqualizer() if curve is not None else None
         self.start_frame = ring.clamp(start_frame)
         self.fed_frame = self.start_frame
         self._output_args = output_args
@@ -142,9 +155,12 @@ class MixConnection:
                 frame = self._ring.clamp(self.fed_frame)
                 pcm = self._ring.read(frame, _WRITE_FRAMES)
                 if pcm:
+                    fed = frame + len(pcm) // FRAME_BYTES
+                    if self._equalizer is not None and self._curve is not None:
+                        pcm = self._equalizer.process(pcm, self._curve())
                     stdin.write(pcm)
                     await stdin.drain()
-                    self.fed_frame = frame + len(pcm) // FRAME_BYTES
+                    self.fed_frame = fed
                     continue
                 if self._ring.closed:
                     break

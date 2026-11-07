@@ -789,13 +789,15 @@ export default {
     title: 'Égaliseur',
     thisDevice: 'Cet appareil',
     enabled: 'Égaliseur activé',
-    open: "Régler l'égaliseur",
-    settingsHint:
-      "Pour la lecture sur cet appareil. Chaque enceinte a le sien, dans le sélecteur d'appareils.",
     unavailableHint:
-      "Les téléphones et tablettes n'ont pas d'égaliseur ici : la lecture passe directement par le navigateur afin de continuer lorsque l'écran est verrouillé. Les égaliseurs des enceintes fonctionnent toujours.",
+      "Les téléphones et tablettes n'ont pas d'égaliseur propre ici : la lecture passe directement par le navigateur afin de continuer lorsque l'écran est verrouillé. Pendant la diffusion, l'égaliseur de l'enceinte fonctionne normalement.",
     speakerHint:
-      "S'applique à partir du morceau suivant. « Appliquer maintenant » relance le morceau en cours au même endroit, avec une courte pause. Les stations de radio restent inchangées.",
+      "S'applique à partir du morceau suivant. « Appliquer maintenant » relance le morceau en cours au même endroit, avec une courte pause. Avec la lecture sans blanc ou le fondu enchaîné, les changements s'entendent pendant le morceau. Les stations de radio restent inchangées.",
+    liveHint:
+      "S'entend pendant le morceau, après les quelques secondes que l'enceinte garde en réserve. Les stations de radio restent inchangées.",
+    savePreset: 'Enregistrer comme préréglage',
+    presetName: 'Nom du préréglage',
+    deletePreset: 'Supprimer le préréglage « {name} »',
     applyNow: 'Appliquer maintenant',
     reset: 'Réinitialiser',
     custom: 'Personnalisé',

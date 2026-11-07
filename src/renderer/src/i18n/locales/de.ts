@@ -783,13 +783,15 @@ export default {
     title: 'Equalizer',
     thisDevice: 'Dieses Gerät',
     enabled: 'Equalizer an',
-    open: 'Equalizer einstellen',
-    settingsHint:
-      'Für die Wiedergabe auf diesem Gerät. Lautsprecher haben jeweils ihren eigenen, in der Geräteauswahl.',
     unavailableHint:
-      'Auf Handys und Tablets gibt es hier keinen Equalizer: Die Wiedergabe läuft direkt über den Browser, damit sie bei gesperrtem Bildschirm weiterspielt. Die Equalizer der Lautsprecher funktionieren trotzdem.',
+      'Auf Handys und Tablets gibt es hier keinen eigenen Equalizer: Die Wiedergabe läuft direkt über den Browser, damit sie bei gesperrtem Bildschirm weiterspielt. Beim Casten funktioniert der Equalizer des Lautsprechers wie gewohnt.',
     speakerHint:
-      'Gilt ab dem nächsten Titel. Mit "Jetzt anwenden" startet der laufende Titel an derselben Stelle neu, mit einer kurzen Pause. Radiosender bleiben unverändert.',
+      'Gilt ab dem nächsten Titel. Mit "Jetzt anwenden" startet der laufende Titel an derselben Stelle neu, mit einer kurzen Pause. Mit Lückenlos oder Überblenden ist jede Änderung schon während des Titels zu hören. Radiosender bleiben unverändert.',
+    liveHint:
+      'Zu hören, während der Titel läuft, nach den paar Sekunden, die der Lautsprecher vorrätig hat. Radiosender bleiben unverändert.',
+    savePreset: 'Als Preset speichern',
+    presetName: 'Name des Presets',
+    deletePreset: 'Preset "{name}" löschen',
     applyNow: 'Jetzt anwenden',
     reset: 'Zurücksetzen',
     custom: 'Eigene',

@@ -85,7 +85,36 @@ export function isActive(setting: EqualizerSetting): boolean {
 
 /** The preset these gains are, or null for a curve of one's own. */
 export function presetOf(gains: readonly number[]): EqualizerPreset | null {
-  return EQ_PRESET_NAMES.find((name) => EQ_PRESETS[name].every((g, i) => g === gains[i])) ?? null
+  return EQ_PRESET_NAMES.find((name) => sameGains(EQ_PRESETS[name], gains)) ?? null
+}
+
+export function sameGains(a: readonly number[], b: readonly number[]): boolean {
+  return a.length === b.length && a.every((g, i) => g === b[i])
+}
+
+/** A curve the listener saved under a name of their own. */
+export interface CustomPreset {
+  name: string
+  gains: number[]
+}
+
+export const PRESET_NAME_MAX_LENGTH = 40
+
+/** Saved presets read back from storage or the account: named, one entry
+ * per name (the later one wins, as a save under the same name does). */
+export function sanitizePresets(value: unknown): CustomPreset[] {
+  if (!Array.isArray(value)) return []
+  const byName = new Map<string, CustomPreset>()
+  for (const entry of value) {
+    if (!entry || typeof entry !== 'object') continue
+    const name = String((entry as { name?: unknown }).name ?? '')
+      .trim()
+      .slice(0, PRESET_NAME_MAX_LENGTH)
+    if (!name) continue
+    const { gains } = sanitizeSetting({ gains: (entry as { gains?: unknown }).gains })
+    byName.set(name, { name, gains })
+  }
+  return [...byName.values()]
 }
 
 /** The bands connect is sent, flat ones left out. Empty when the setting

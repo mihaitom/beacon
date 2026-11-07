@@ -7,6 +7,7 @@ import {
   isActive,
   presetOf,
   responseDb,
+  sanitizePresets,
   sanitizeSetting,
   toBands,
 } from '../equalizer'
@@ -71,6 +72,31 @@ describe('equalizer', () => {
     it('agrees with connect on the curve between the bands', () => {
       const bands = toBands({ enabled: true, gains: [...EQ_PRESETS.smallSpeaker] })
       expect(responseDb(bands, 700)).toBeCloseTo(0.8119, 3)
+    })
+  })
+
+  describe('sanitizePresets', () => {
+    it('keeps named presets with whole-step gains inside the range', () => {
+      expect(sanitizePresets([{ name: ' Mine ', gains: [20, 1.4, 'x'] }])).toEqual([
+        { name: 'Mine', gains: [12, 1, 0, 0, 0, 0, 0, 0, 0, 0] },
+      ])
+    })
+
+    it('drops what has no name, and keeps the later of two with the same one', () => {
+      expect(
+        sanitizePresets([
+          { name: 'A', gains: [1] },
+          { name: '', gains: [2] },
+          null,
+          { gains: [3] },
+          { name: 'A', gains: [4] },
+        ]).map((p) => [p.name, p.gains[0]]),
+      ).toEqual([['A', 4]])
+    })
+
+    it('reads anything that is not a list as none', () => {
+      expect(sanitizePresets({ name: 'A' })).toEqual([])
+      expect(sanitizePresets(null)).toEqual([])
     })
   })
 })

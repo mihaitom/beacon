@@ -1350,9 +1350,15 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
         )
         session.state.open_streams.append(conn)
         session.state.recent_streams.append(conn)
-        curve = equalizer.curve_for_connection(
-            session.state.equalizers, session.state.active_delivery, conn.peer, conn.sender
-        )
+
+        def curve() -> list[equalizer.Band]:
+            """This connection's curve as it stands: a mix asks again as it
+            goes, a single song takes it once."""
+            state = session.state
+            return equalizer.curve_for_connection(
+                state.equalizers, state.active_delivery, conn.peer, conn.sender
+            )
+
         # Set by every way out of the body that knows why it ended; left
         # as is, the generator was closed from outside.
         outcome = "closed"
@@ -1374,7 +1380,7 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
                         output_format=output_format,
                         on_track_end=on_track_end,
                         on_progress=conn.on_progress,
-                        equalizer=curve,
+                        equalizer=curve(),
                     )
                 )
                 async for chunk in audio:

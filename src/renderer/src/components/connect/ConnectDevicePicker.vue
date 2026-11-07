@@ -84,7 +84,6 @@
           @take-over="takeOver(entry)"
           @pair="openPairing(entry.device.name)"
           @volume-change="onVolumeChange"
-          @equalizer="openEqualizer"
         />
       </template>
 
@@ -125,7 +124,6 @@
     </v-card-actions>
 
     <airplay-pairing-dialog v-model="pairingOpen" :device-name="pairingDeviceName" />
-    <equalizer-dialog v-model="equalizerOpen" :device="equalizerDevice" />
   </v-card>
 </template>
 
@@ -138,9 +136,8 @@ import { usePlaybackStore } from '@/stores/playback'
 import ConnectErrorBanner from './ConnectErrorBanner.vue'
 import DeviceListItem from './DeviceListItem.vue'
 import AirplayPairingDialog from './AirplayPairingDialog.vue'
-import EqualizerDialog from '@/components/equalizer/EqualizerDialog.vue'
 import StreamInfoSection, { hasStreamInfo } from './StreamInfoSection.vue'
-import type { ConnectDeviceRef, DeviceType, DiscoveredDevice } from '@/services/connect/types'
+import type { DeviceType, DiscoveredDevice } from '@/services/connect/types'
 
 interface DeviceEntry {
   device: DiscoveredDevice
@@ -165,13 +162,7 @@ const TYPE_LABELS: Record<DeviceType, string> = {
 
 export default {
   name: 'ConnectDevicePicker',
-  components: {
-    ConnectErrorBanner,
-    DeviceListItem,
-    AirplayPairingDialog,
-    EqualizerDialog,
-    StreamInfoSection,
-  },
+  components: { ConnectErrorBanner, DeviceListItem, AirplayPairingDialog, StreamInfoSection },
   data() {
     return {
       selectedKeys: new Set<string>(),
@@ -186,8 +177,6 @@ export default {
       appliedKeys: new Set<string>(),
       pairingOpen: false,
       pairingDeviceName: '',
-      equalizerOpen: false,
-      equalizerDevice: null as ConnectDeviceRef | null,
       devicesPollTimer: null as ReturnType<typeof setInterval> | null,
     }
   },
@@ -377,10 +366,6 @@ export default {
     openPairing(name: string) {
       this.pairingDeviceName = name
       this.pairingOpen = true
-    },
-    openEqualizer(device: ConnectDeviceRef) {
-      this.equalizerDevice = device
-      this.equalizerOpen = true
     },
     onVolumeChange({
       type,

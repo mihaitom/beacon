@@ -100,4 +100,51 @@ describe('equalizer store', () => {
       gains: [...EQ_PRESETS.flat],
     })
   })
+
+  describe('presets of their own', () => {
+    it('saves one, follows the account with it, and reads it back after a reload', async () => {
+      const store = useEqualizerStore()
+      store.savePreset('Kitchen radio', [1, 2, 3, 0, 0, 0, 0, 0, 0, 0])
+      await vi.waitFor(() =>
+        expect(pushAccountSettings).toHaveBeenLastCalledWith({
+          equalizerPresets: [{ name: 'Kitchen radio', gains: [1, 2, 3, 0, 0, 0, 0, 0, 0, 0] }],
+        }),
+      )
+      setActivePinia(createPinia())
+      expect(useEqualizerStore().presets).toEqual([
+        { name: 'Kitchen radio', gains: [1, 2, 3, 0, 0, 0, 0, 0, 0, 0] },
+      ])
+    })
+
+    it('saving under a name that exists replaces that preset where it stands', () => {
+      const store = useEqualizerStore()
+      store.savePreset('A', [1, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+      store.savePreset('B', [2, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+      store.savePreset('A', [3, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+      expect(store.presets.map((p) => [p.name, p.gains[0]])).toEqual([
+        ['A', 3],
+        ['B', 2],
+      ])
+    })
+
+    it('deletes one', async () => {
+      const store = useEqualizerStore()
+      store.savePreset('A', [1, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+      store.savePreset('B', [2, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+      store.deletePreset('A')
+      expect(store.presets.map((p) => p.name)).toEqual(['B'])
+      await vi.waitFor(() =>
+        expect(pushAccountSettings).toHaveBeenLastCalledWith({
+          equalizerPresets: [{ name: 'B', gains: [2, 0, 0, 0, 0, 0, 0, 0, 0, 0] }],
+        }),
+      )
+    })
+
+    it('saves nothing without a name', () => {
+      const store = useEqualizerStore()
+      store.savePreset('   ', [1, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+      expect(store.presets).toEqual([])
+      expect(pushAccountSettings).not.toHaveBeenCalled()
+    })
+  })
 })

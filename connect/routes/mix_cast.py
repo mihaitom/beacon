@@ -41,7 +41,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from core import deezer, preview
-from core.equalizer import audio_filter
+from core.equalizer import Band
 from core.local_mixes import SongEntry
 from core.mix_engine import MixEngine, MixItem, song_label
 from core.mix_timeline import SAMPLE_RATE
@@ -204,15 +204,13 @@ async def mix_audio(
     mix: MixEngine,
     start_time: float,
     fmt: OutputFormat,
-    curve: list[dict[str, float]] | None = None,
+    curve: Callable[[], list[Band]] | None = None,
 ) -> AsyncIterator[bytes]:
     """One device's stream of the mix from `start_time` on - what
     routes/stream.py's audio_stream() serves instead of a single song.
-    `curve` is that device's equalizer, in its own encoder: ReplayGain is
-    already in the mix, so only the curve's filters go there."""
-    chain = audio_filter(1.0, curve or [])
-    args = ["-af", chain, *fmt.ffmpeg_args] if chain else fmt.ffmpeg_args
-    connection = await mix.connect(start_time, args)
+    `curve` answers that device's equalizer curve, asked anew as the mix is
+    fed to its encoder, so a change is heard without a restart."""
+    connection = await mix.connect(start_time, fmt.ffmpeg_args, curve=curve)
     try:
         async for chunk in connection.chunks():
             yield chunk

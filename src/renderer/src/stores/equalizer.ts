@@ -4,8 +4,10 @@ import { getAudioEngine } from '@/services/audioEngine'
 import {
   isActive,
   flatSetting,
+  sanitizePresets,
   sanitizeSetting,
   toBands,
+  type CustomPreset,
   type EqualizerBand,
   type EqualizerSetting,
 } from '@/services/equalizer'
@@ -22,6 +24,7 @@ import type { ConnectDeviceRef } from '@/services/connect/types'
 
 const LOCAL_KEY = 'beacon.equalizer.local'
 const SPEAKERS_KEY = 'beacon.equalizer.speakers'
+const PRESETS_KEY = 'beacon.equalizer.presets'
 
 export function speakerKey(device: ConnectDeviceRef): string {
   return `${device.type}:${device.name}`
@@ -57,10 +60,17 @@ function write(key: string, value: unknown): void {
 interface EqualizerState {
   local: EqualizerSetting
   speakers: Record<string, EqualizerSetting>
+  /** The listener's own presets, in the order they were first saved. They
+   * follow the account like the speakers' curves. */
+  presets: CustomPreset[]
 }
 
 function load(): EqualizerState {
-  return { local: read(LOCAL_KEY, sanitizeSetting), speakers: read(SPEAKERS_KEY, sanitizeSpeakers) }
+  return {
+    local: read(LOCAL_KEY, sanitizeSetting),
+    speakers: read(SPEAKERS_KEY, sanitizeSpeakers),
+    presets: read(PRESETS_KEY, sanitizePresets),
+  }
 }
 
 export const useEqualizerStore = defineStore('equalizer', {
@@ -96,23 +106,50 @@ export const useEqualizerStore = defineStore('equalizer', {
     },
 
     /** Also what a pull from another device lands in. Pushes the curves to
-     * the account and, while casting, to the session: connect then uses
-     * them from the next song on (see applyToSpeakerNow() for sooner). */
+     * the account and, while casting, to the session: with transitions on
+     * connect hears them straight away (the mix filters live), otherwise
+     * from the next song on. */
     setSpeakers(speakers: Record<string, EqualizerSetting>): void {
       this.speakers = sanitizeSpeakers(speakers)
       write(SPEAKERS_KEY, this.speakers)
-      const speakerEqualizers = this.speakers
-      const castPayload = this.castPayload
-      // Dynamic imports: both modules reach back into the stores.
+      // Dynamic imports: both modules reach back into the stores. What is
+      // sent is read once they are there, not now: the first import can
+      // land after a later one, and would otherwise send an older state.
       void import('@/services/connect/accountSettings').then(({ pushAccountSettings }) =>
-        pushAccountSettings({ speakerEqualizers }).catch(() => {}),
+        pushAccountSettings({ speakerEqualizers: this.speakers }).catch(() => {}),
       )
       void import('@/stores/connect').then(({ useConnectStore }) => {
         if (!useConnectStore().isActive) return
         void import('@/services/connect/playback').then(({ updateEqualizers }) =>
-          updateEqualizers(castPayload).catch(() => {}),
+          updateEqualizers(this.castPayload).catch(() => {}),
         )
       })
+    },
+
+    /** Saves `gains` under `name`, over a preset of that name if there is
+     * one - where it was, so saving again does not reorder the chips. */
+    savePreset(name: string, gains: number[]): void {
+      const preset = sanitizePresets([{ name, gains }])[0]
+      if (!preset) return
+      const index = this.presets.findIndex((p) => p.name === preset.name)
+      const presets = [...this.presets]
+      if (index >= 0) presets[index] = preset
+      else presets.push(preset)
+      this.setPresets(presets)
+    },
+
+    deletePreset(name: string): void {
+      this.setPresets(this.presets.filter((p) => p.name !== name))
+    },
+
+    /** Also what a pull from another device lands in. */
+    setPresets(presets: CustomPreset[]): void {
+      this.presets = sanitizePresets(presets)
+      write(PRESETS_KEY, this.presets)
+      // Read when sent, as in setSpeakers().
+      void import('@/services/connect/accountSettings').then(({ pushAccountSettings }) =>
+        pushAccountSettings({ equalizerPresets: this.presets }).catch(() => {}),
+      )
     },
 
     /** See services/accountScopedStores.ts. */
@@ -120,6 +157,7 @@ export const useEqualizerStore = defineStore('equalizer', {
       const next = load()
       this.local = next.local
       this.speakers = next.speakers
+      this.presets = next.presets
       this.applyLocal()
     },
   },

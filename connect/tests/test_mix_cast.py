@@ -304,6 +304,26 @@ def test_a_device_connecting_is_served_the_mix(client, default_session, media):
     single_song.assert_not_called()
 
 
+def test_a_device_in_the_mix_hears_a_curve_changed_afterwards(client, default_session, media):
+    """The equalizer in a mix is live: what the stream is handed answers the
+    curve as it stands, not as it stood when the device connected."""
+    with patch.object(ChromecastDelivery, "play", new=AsyncMock()):
+        _play(client)
+    curves = []
+
+    async def fake_mix_audio(mix, start_time, fmt, curve=None):
+        curves.append(curve)
+        yield b"mixed"
+
+    with patch.object(mix_cast, "mix_audio", side_effect=fake_mix_audio):
+        client.get(f"/stream/{default_session.session_id}")
+    assert curves[0]() == []
+    bass = [{"frequency": 62.0, "gain": 6.0, "q": 1.41}]
+    client.post("/equalizers", json={"equalizers": {"chromecast:TV": bass}})
+    assert curves[0]() == bass
+    default_session.stop_mix()
+
+
 def test_the_position_is_mapped_through_the_timeline(default_session):
     st = default_session.state
     mix = MixEngine(MixItem("1", 0), 50.0, AsyncMock(), AsyncMock())

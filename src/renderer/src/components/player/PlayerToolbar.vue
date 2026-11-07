@@ -32,6 +32,7 @@
     <remote-control-button v-if="isElectron" />
     <party-mode-button />
     <lights-button />
+    <equalizer-button />
     <connect-button />
     <!-- Left out where this device's own level cannot be changed from the
      - page at all - see volumeControlAvailable. -->
@@ -203,6 +204,7 @@ import ConnectButton from '@/components/connect/ConnectButton.vue'
 import RemoteControlButton from '@/components/settings/RemoteControlButton.vue'
 import PartyModeButton from '@/components/party/PartyModeButton.vue'
 import LightsButton from '@/components/lights/LightsButton.vue'
+import EqualizerButton from '@/components/equalizer/EqualizerButton.vue'
 import TouchVolumeSlider from '@/components/mobile/TouchVolumeSlider.vue'
 import { isCoarsePointer } from '@/services/coarsePointer'
 import { getAudioEngine } from '@/services/audioEngine'
@@ -218,6 +220,7 @@ export default {
   name: 'PlayerToolbar',
   components: {
     ConnectButton,
+    EqualizerButton,
     LightsButton,
     PartyModeButton,
     RemoteControlButton,

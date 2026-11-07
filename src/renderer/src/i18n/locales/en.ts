@@ -778,12 +778,15 @@ export default {
     title: 'Equalizer',
     thisDevice: 'This device',
     enabled: 'Equalizer on',
-    open: 'Adjust equalizer',
-    settingsHint: 'For playback on this device. Each speaker has its own, in the device picker.',
     unavailableHint:
-      "Phones and tablets have no equalizer here: playback goes straight through the browser so that it keeps running while the screen is locked. The speakers' equalizers still work.",
+      "Phones and tablets have no equalizer of their own here: playback goes straight through the browser so that it keeps running while the screen is locked. While casting, the speaker's equalizer works as usual.",
     speakerHint:
-      'Takes effect from the next song. "Apply now" restarts the current song where it is, with a short pause. Radio stations are left as they are.',
+      'Takes effect from the next song. "Apply now" restarts the current song where it is, with a short pause. With gapless or crossfade on, changes are heard while the song plays. Radio stations are left as they are.',
+    liveHint:
+      'Heard while the song plays, after the few seconds the speaker holds in reserve. Radio stations are left as they are.',
+    savePreset: 'Save as preset',
+    presetName: 'Preset name',
+    deletePreset: 'Delete preset "{name}"',
     applyNow: 'Apply now',
     reset: 'Reset',
     custom: 'Custom',

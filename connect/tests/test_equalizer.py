@@ -13,12 +13,15 @@ import pytest
 
 from core import equalizer
 from core.equalizer import (
+    LIVE_TAPS,
     MAX_BANDS,
     MAX_GAIN_DB,
+    LiveEqualizer,
     any_active,
     audio_filter,
     curve_for_connection,
     headroom_db,
+    live_taps,
     sanitize,
 )
 from core.ffmpeg import FFMPEG_BIN
@@ -294,29 +297,32 @@ def test_a_device_is_streamed_with_its_own_curve(client, default_session):
     assert stream.call_args_list[1].kwargs["equalizer"] == []
 
 
-def test_a_mix_listener_gets_its_curve_in_its_encoder(default_session):
+def test_a_mix_listener_is_handed_its_curve_rather_than_an_encoder_filter():
+    """The mix's encoder lives as long as the mix: a filter in it would be
+    fixed for all of that, so the curve goes in as something to ask."""
     connected = []
 
     class _Connection:
         async def chunks(self):
             yield b"mixed"
 
-        async def close(self):
+        def close(self):
             pass
 
     class _Mix:
-        async def connect(self, start_time, args):
-            connected.append(args)
+        async def connect(self, start_time, args, curve=None):
+            connected.append((args, curve))
             return _Connection()
 
-    async def _drain(curve):
+    def curve():
+        return BASS
+
+    async def _drain():
         fmt = OutputFormat(ffmpeg_args=["-acodec", "aac", "-f", "adts"])
         return [c async for c in mix_cast.mix_audio(_Mix(), 0.0, fmt, curve)]
 
-    asyncio.run(_drain(BASS))
-    asyncio.run(_drain([]))
-    assert connected[0] == ["-af", audio_filter(1.0, BASS), "-acodec", "aac", "-f", "adts"]
-    assert connected[1] == ["-acodec", "aac", "-f", "adts"]
+    assert asyncio.run(_drain()) == [b"mixed"]
+    assert connected == [(["-acodec", "aac", "-f", "adts"], curve)]
 
 
 # ── a device joining ─────────────────────────────────────────────────────────
@@ -397,3 +403,112 @@ def test_a_boosted_curve_never_comes_out_louder_than_it_went_in():
     bands = [_band(1000, 6), _band(2000, 6)]
     for frequency in (1000, 1414, 2000):
         assert _level_through(audio_filter(1.0, bands), frequency) <= 0.1
+
+
+# ── live, in the mix ─────────────────────────────────────────────────────────
+
+SMALL_SPEAKER = [
+    _band(f, g)
+    for f, g in zip(
+        [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000],
+        [-6, -2, 3, 3, 1, 0, 0, 1, 2, 1],
+        strict=True,
+    )
+    if g
+]
+
+
+def _tone(frequency: float, seconds: float = 2.0, amplitude: float = 0.25) -> bytes:
+    t = np.arange(int(_RATE * seconds)) / _RATE
+    tone = (amplitude * np.sin(2 * np.pi * frequency * t) * 32767).astype("<i2")
+    return np.repeat(tone, 2).tobytes()
+
+
+def _live(pcm: bytes, curves, block: int = _RATE // 10) -> bytes:
+    """`pcm` through one LiveEqualizer in mix-sized blocks; `curves(i)` is
+    the curve for block i."""
+    eq = LiveEqualizer()
+    step = block * 4
+    return b"".join(
+        eq.process(pcm[i : i + step], curves(i // step)) for i in range(0, len(pcm), step)
+    )
+
+
+def _rms_db(pcm: bytes, start: float = 0.25, end: float = 0.75) -> float:
+    left = np.frombuffer(pcm, dtype="<i2")[::2].astype(np.float64)
+    middle = left[int(len(left) * start) : int(len(left) * end)]
+    return 20 * math.log10(math.sqrt(float(np.mean(middle**2))))
+
+
+@pytest.mark.parametrize(
+    "bands",
+    [[_band(31, 12)], [_band(31, -12)], [_band(16000, 12)], SMALL_SPEAKER, [_band(1000, 6)]],
+)
+def test_the_live_filter_is_the_curve_the_biquads_make(bands):
+    """Within 0.5 dB of the RBJ response, headroom included, across the
+    audible range - the ffmpeg path and the renderer hear the biquads."""
+    freqs = np.geomspace(20, 20000, 400)
+    expected = sum(equalizer._peaking_response_db(b, freqs, _RATE) for b in bands) - headroom_db(
+        bands
+    )
+    response = np.fft.rfft(live_taps(equalizer._bands_key(bands)), 1 << 16)
+    grid = np.fft.rfftfreq(1 << 16, 1 / _RATE)
+    actual = np.interp(freqs, grid, 20 * np.log10(np.abs(response)))
+    assert np.max(np.abs(actual - expected)) < 0.5
+
+
+def test_the_live_filter_is_short_enough_to_follow_a_slider():
+    assert len(live_taps(equalizer._bands_key(BASS))) == LIVE_TAPS
+
+
+def test_without_a_curve_the_mix_goes_through_untouched():
+    pcm = _tone(440, 0.5)
+    assert _live(pcm, lambda _i: []) == pcm
+
+
+@pytest.mark.skipif(shutil.which(FFMPEG_BIN) is None, reason="needs a real ffmpeg")
+@pytest.mark.parametrize("frequency", [40, 125, 1000, 8000])
+def test_the_mix_sounds_like_a_single_songs_stream(frequency):
+    """A curve sounds the same on a speaker whether transitions are on (live
+    filter) or off (ffmpeg's equalizer)."""
+    pcm = _tone(frequency)
+    live = _rms_db(_live(pcm, lambda _i: SMALL_SPEAKER)) - _rms_db(pcm)
+    assert live == pytest.approx(
+        _level_through(audio_filter(1.0, SMALL_SPEAKER), frequency), abs=0.5
+    )
+
+
+def test_a_curve_changed_mid_mix_is_heard_from_then_on():
+    pcm = _tone(62, 4.0)
+    out = _live(pcm, lambda i: [] if i < 20 else BASS)
+    before = _rms_db(out, 0.1, 0.45) - _rms_db(pcm, 0.1, 0.45)
+    after = _rms_db(out, 0.6, 0.95) - _rms_db(pcm, 0.6, 0.95)
+    assert before == pytest.approx(0.0, abs=0.05)
+    expected = float(equalizer._peaking_response_db(BASS[0], np.array([62.0]), _RATE)[0])
+    assert after == pytest.approx(expected - headroom_db(BASS), abs=0.3)
+
+
+@pytest.mark.parametrize(
+    ("first", "then"),
+    [([], [_band(1000, 12)]), ([_band(1000, 12)], [_band(1000, -12)]), ([_band(1000, 12)], [])],
+)
+def test_a_changed_curve_does_not_click(first, then):
+    """The step between two samples never jumps further than the tone's own
+    steepest one could, plus dither - a hard switch between two filters
+    would."""
+    # Not a round 1000 Hz: blocks are a tenth of a second, so every block
+    # would start on a zero crossing, where even a hard switch is silent.
+    frequency = 1000.5
+    pcm = _tone(frequency, 1.0, amplitude=0.5)
+    out = np.frombuffer(_live(pcm, lambda i: first if i < 5 else then), dtype="<i2")[::2]
+    steepest = 0.5 * 32767 * 2 * math.pi * frequency / _RATE
+    assert np.max(np.abs(np.diff(out.astype(np.int64)))) < steepest * 1.05 + 4
+
+
+def test_switching_the_curve_off_returns_the_mix_untouched():
+    block = _RATE // 10
+    pcm = _tone(440, 1.0)
+    out = _live(pcm, lambda i: BASS if i < 3 else [], block)
+    # The block the change lands in is the crossfade; everything after is
+    # the input again, byte for byte.
+    assert out[4 * block * 4 :] == pcm[4 * block * 4 :]

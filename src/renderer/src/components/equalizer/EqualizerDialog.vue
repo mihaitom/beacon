@@ -24,12 +24,34 @@
       </v-card-title>
 
       <v-card-text>
+        <!-- Casting to several speakers: each keeps its own curve, so which
+           - one is being set has to be picked. -->
+        <v-chip-group
+          v-if="targets.length > 1"
+          :model-value="deviceKey"
+          selected-class="text-primary"
+          mandatory
+          column
+          class="eq__targets"
+          @update:model-value="selectTarget"
+        >
+          <v-chip
+            v-for="target in targets"
+            :key="keyOf(target)"
+            :value="keyOf(target)"
+            variant="outlined"
+            prepend-icon="mdi-speaker"
+          >
+            {{ target.name }}
+          </v-chip>
+        </v-chip-group>
+
         <p v-if="unavailable" class="setting__hint eq__hint">
           {{ $t('equalizer.unavailableHint') }}
         </p>
 
         <v-chip-group
-          :model-value="preset ?? 'custom'"
+          :model-value="selectedPreset"
           selected-class="text-primary"
           column
           :disabled="unavailable"
@@ -39,10 +61,38 @@
           <v-chip v-for="name in presetNames" :key="name" :value="name" variant="outlined">
             {{ $t(`equalizer.presets.${name}`) }}
           </v-chip>
-          <v-chip v-if="preset === null" value="custom" variant="outlined" disabled>
+          <v-chip
+            v-for="custom in customPresets"
+            :key="`custom:${custom.name}`"
+            :value="`custom:${custom.name}`"
+            variant="outlined"
+            closable
+            :close-label="$t('equalizer.deletePreset', { name: custom.name })"
+            @click:close="store.deletePreset(custom.name)"
+          >
+            {{ custom.name }}
+          </v-chip>
+          <v-chip v-if="selectedPreset === 'custom'" value="custom" variant="outlined" disabled>
             {{ $t('equalizer.custom') }}
           </v-chip>
         </v-chip-group>
+
+        <form v-if="naming" class="eq__save" @submit.prevent="savePreset">
+          <v-text-field
+            v-model="presetName"
+            :label="$t('equalizer.presetName')"
+            :maxlength="presetNameMax"
+            density="compact"
+            variant="outlined"
+            hide-details
+            autofocus
+            class="eq__grow"
+            @keydown.esc.stop="naming = false"
+          />
+          <v-btn type="submit" variant="tonal" color="primary" :disabled="!presetName.trim()">
+            {{ $t('common.save') }}
+          </v-btn>
+        </form>
 
         <!-- The curve the bands add up to, headroom included: what is
            - actually heard, not ten separate bumps. -->
@@ -99,12 +149,22 @@
           </div>
         </div>
 
-        <p v-if="device" class="setting__hint">{{ $t('equalizer.speakerHint') }}</p>
+        <p v-if="device" class="setting__hint">
+          {{ $t(live ? 'equalizer.liveHint' : 'equalizer.speakerHint') }}
+        </p>
       </v-card-text>
 
-      <v-card-actions>
+      <v-card-actions class="eq__actions">
         <v-btn variant="text" :disabled="unavailable || isFlatCurve" @click="pickPreset('flat')">
           {{ $t('equalizer.reset') }}
+        </v-btn>
+        <v-btn
+          v-if="!naming"
+          variant="text"
+          :disabled="unavailable || selectedPreset !== 'custom'"
+          @click="startNaming"
+        >
+          {{ $t('equalizer.savePreset') }}
         </v-btn>
         <v-btn v-if="canApplyNow" variant="text" color="primary" @click="applyNow">
           {{ $t('equalizer.applyNow') }}
@@ -119,10 +179,10 @@
 </template>
 
 <script lang="ts">
-import type { PropType } from 'vue'
-import { useEqualizerStore } from '@/stores/equalizer'
+import { useEqualizerStore, speakerKey } from '@/stores/equalizer'
 import { useConnectStore } from '@/stores/connect'
 import { usePlaybackStore } from '@/stores/playback'
+import { useTransitionsStore } from '@/stores/transitions'
 import { getAudioEngine } from '@/services/audioEngine'
 import { isCoarsePointer } from '@/services/coarsePointer'
 import {
@@ -131,12 +191,15 @@ import {
   EQ_PRESETS,
   EQ_PRESET_NAMES,
   EQ_STEP_DB,
+  PRESET_NAME_MAX_LENGTH,
   headroomDb,
   isFlat,
   logFrequencies,
   presetOf,
   responseDb,
+  sameGains,
   toBands,
+  type CustomPreset,
   type EqualizerPreset,
   type EqualizerSetting,
 } from '@/services/equalizer'
@@ -144,27 +207,37 @@ import type { ConnectDeviceRef } from '@/services/connect/types'
 
 // How long a speaker's curve waits after the last slider movement before it
 // is saved and sent: every save goes to the account and, while casting, to
-// connect, and a drag would otherwise send one per step.
-const SPEAKER_SAVE_DELAY_MS = 400
+// connect, and a drag would otherwise send one per step. Short, since with
+// transitions on the speaker hears it as soon as it arrives.
+const SPEAKER_SAVE_DELAY_MS = 200
 const CURVE_POINTS = 120
 // The drawing's vertical range: one band's whole range either way, plus a
 // little, so a single full boost or cut does not touch the edge.
 const CURVE_RANGE_DB = 15
 
-/** The equalizer for this device's own playback (no `device`) or for one
- * speaker. This device's curve is heard while it is moved; a speaker's is
- * taken over from the next song on, or straight away with "Apply now". */
+/** The equalizer for whatever is playing: the speaker being cast to (one
+ * of them, picked here, when there are several), otherwise this device.
+ * This device's curve is heard while it is moved. A speaker's is too with
+ * transitions on, once the speaker has played what it holds buffered -
+ * connect filters the mix live; otherwise from the next song on, or
+ * straight away with "Apply now". */
 export default {
   name: 'EqualizerDialog',
   props: {
     modelValue: { type: Boolean, default: false },
-    device: { type: Object as PropType<ConnectDeviceRef | null>, default: null },
   },
   emits: ['update:modelValue'],
   data() {
     return {
       draft: { enabled: false, gains: [] as number[] } as EqualizerSetting,
+      // Which speaker the draft belongs to (null: this device). Kept apart
+      // from `device`, which can change under a pending save - another
+      // speaker picked, or the cast ending.
+      draftDevice: null as ConnectDeviceRef | null,
+      pickedKey: null as string | null,
       saveTimer: null as ReturnType<typeof setTimeout> | null,
+      naming: false,
+      presetName: '',
       coarsePointer: isCoarsePointer(),
     }
   },
@@ -178,11 +251,27 @@ export default {
     presetNames(): EqualizerPreset[] {
       return EQ_PRESET_NAMES
     },
+    customPresets(): CustomPreset[] {
+      return this.store.presets
+    },
+    presetNameMax(): number {
+      return PRESET_NAME_MAX_LENGTH
+    },
     maxGain(): number {
       return EQ_MAX_GAIN_DB
     },
     step(): number {
       return EQ_STEP_DB
+    },
+    targets(): ConnectDeviceRef[] {
+      return useConnectStore().activeTargets.map(({ type, name }) => ({ type, name }))
+    },
+    /** The speaker being set, or null for this device. */
+    device(): ConnectDeviceRef | null {
+      return this.targets.find((t) => this.keyOf(t) === this.pickedKey) ?? this.targets[0] ?? null
+    },
+    deviceKey(): string | null {
+      return this.device ? this.keyOf(this.device) : null
     },
     subject(): string {
       return this.device ? this.device.name : this.$t('equalizer.thisDevice')
@@ -192,8 +281,18 @@ export default {
     unavailable(): boolean {
       return !this.device && !getAudioEngine().hasAnalyser
     },
-    preset(): EqualizerPreset | null {
-      return presetOf(this.draft.gains)
+    /** Whether a speaker hears a change while the song plays: with
+     * transitions on, the mix is filtered as it is fed to the speaker. */
+    live(): boolean {
+      return useTransitionsStore().mode !== 'off'
+    },
+    /** The chip that is lit: a preset, one of the listener's own, or
+     * "Custom" for a curve that is neither. */
+    selectedPreset(): string {
+      const builtIn = presetOf(this.draft.gains)
+      if (builtIn) return builtIn
+      const own = this.customPresets.find((p) => sameGains(p.gains, this.draft.gains))
+      return own ? `custom:${own.name}` : 'custom'
     },
     isFlatCurve(): boolean {
       return isFlat(this.draft.gains)
@@ -211,21 +310,18 @@ export default {
         })
         .join(' ')
     },
-    /** A speaker that is playing a song for this session right now can be
-     * restarted where it is, with the new curve. Not a station: those are
-     * never equalized (the relay serves every speaker one stream). */
+    /** A speaker playing a song for this session can be restarted where it
+     * is, with the new curve - only needed without transitions. Not a
+     * station: those are never equalized (the relay serves every speaker
+     * one stream). */
     canApplyNow(): boolean {
-      if (!this.device) return false
+      if (!this.device || this.live) return false
       const playback = usePlaybackStore()
-      const device = this.device
       return (
         playback.isPlaying &&
         playback.currentSong !== null &&
         playback.radioStation === null &&
-        playback.preview === null &&
-        useConnectStore().activeTargets.some(
-          (t) => t.type === device.type && t.name === device.name,
-        )
+        playback.preview === null
       )
     },
   },
@@ -233,22 +329,37 @@ export default {
     modelValue: {
       immediate: true,
       handler(open: boolean) {
-        if (open) this.draft = this.stored()
-        else this.flush()
+        if (open) {
+          this.pickedKey = null
+          this.naming = false
+          this.load()
+        } else this.flush()
       },
+    },
+    deviceKey() {
+      if (!this.modelValue) return
+      this.flush()
+      this.load()
     },
   },
   beforeUnmount() {
     this.flush()
   },
   methods: {
-    stored(): EqualizerSetting {
+    keyOf(device: ConnectDeviceRef): string {
+      return speakerKey(device)
+    },
+    load(): void {
+      this.draftDevice = this.device
       const setting = this.device ? this.store.speaker(this.device) : this.store.local
-      return { enabled: setting.enabled, gains: [...setting.gains] }
+      this.draft = { enabled: setting.enabled, gains: [...setting.gains] }
+    },
+    selectTarget(key: string | null | undefined): void {
+      if (key) this.pickedKey = key
     },
     change(patch: Partial<EqualizerSetting>): void {
       this.draft = { ...this.draft, ...patch }
-      if (!this.device) {
+      if (!this.draftDevice) {
         // Heard as it moves - the whole point of trying a curve out.
         this.store.setLocal(this.draft)
         return
@@ -259,10 +370,10 @@ export default {
     /** Saves a speaker's pending change now rather than when its timer
      * runs out. */
     flush(): void {
-      if (!this.saveTimer || !this.device) return
+      if (!this.saveTimer) return
       clearTimeout(this.saveTimer)
       this.saveTimer = null
-      this.store.setSpeaker(this.device, this.draft)
+      if (this.draftDevice) this.store.setSpeaker(this.draftDevice, this.draft)
     },
     setGain(index: number, gain: number): void {
       const gains = [...this.draft.gains]
@@ -270,18 +381,36 @@ export default {
       // Moving a band is wanting to hear it.
       this.change({ gains, enabled: true })
     },
-    /** A chip's value - a preset, or the "Custom" one, which only ever
-     * shows what the curve is and is not something to pick. */
-    pickPreset(name: string | null | undefined): void {
-      if (!name || !(name in EQ_PRESETS)) return
-      const gains = [...EQ_PRESETS[name as EqualizerPreset]]
-      this.change({ gains, enabled: name !== 'flat' || this.draft.enabled })
+    /** A chip's value: a preset, one of the listener's own, or the
+     * "Custom" one, which only ever shows what the curve is. */
+    pickPreset(value: string | null | undefined): void {
+      if (!value) return
+      const own = value.startsWith('custom:')
+        ? this.customPresets.find((p) => `custom:${p.name}` === value)
+        : undefined
+      if (own) {
+        this.change({ gains: [...own.gains], enabled: true })
+        return
+      }
+      if (!(value in EQ_PRESETS)) return
+      const gains = [...EQ_PRESETS[value as EqualizerPreset]]
+      this.change({ gains, enabled: value !== 'flat' || this.draft.enabled })
+    },
+    startNaming(): void {
+      this.presetName = ''
+      this.naming = true
+    },
+    savePreset(): void {
+      const name = this.presetName.trim()
+      if (!name) return
+      this.store.savePreset(name, this.draft.gains)
+      this.naming = false
     },
     async applyNow(): Promise<void> {
-      if (!this.device) return
+      if (!this.draftDevice) return
       if (this.saveTimer) clearTimeout(this.saveTimer)
       this.saveTimer = null
-      this.store.setSpeaker(this.device, this.draft)
+      this.store.setSpeaker(this.draftDevice, this.draft)
       const playback = usePlaybackStore()
       await playback.startCurrent(playback.localPosition)
     },
@@ -316,6 +445,21 @@ export default {
 
 .eq__hint {
   margin-bottom: 12px;
+}
+
+.eq__targets {
+  margin-bottom: 4px;
+}
+
+.eq__save {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.eq__actions {
+  flex-wrap: wrap;
 }
 
 .eq__presets {
