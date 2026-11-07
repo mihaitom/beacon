@@ -2,6 +2,7 @@
  * Deezer edition of it (connect/core/deezer.py's get_album()). */
 
 import { normalize } from '@/services/stringMatch'
+import { deezerPreviewSong } from '@/services/playback/preview'
 import type { DeezerAlbumTrack } from '@/services/connect/deezer'
 import type { Song } from '@/types/library'
 
@@ -76,4 +77,24 @@ export function compareWithEdition(
     if (track.trackNumber) trackNumbers[songs[s]!.id] = track.trackNumber
   })
   return { missing, trackNumbers }
+}
+
+/** The album's songs with its missing tracks among them, each where the
+ * album page shows it - what a preview of the whole edition plays. A
+ * missing track without a Deezer preview has nothing to play. */
+export function songsWithMissing(songs: readonly Song[], comparison: EditionComparison): Song[] {
+  const result: Song[] = []
+  const missingAt = (position: number) => {
+    for (const { track, position: at } of comparison.missing) {
+      if (at === position && track.deezerId > 0) {
+        result.push(deezerPreviewSong(track.deezerId, track))
+      }
+    }
+  }
+  songs.forEach((song, index) => {
+    missingAt(index)
+    result.push(song)
+  })
+  missingAt(songs.length)
+  return result
 }

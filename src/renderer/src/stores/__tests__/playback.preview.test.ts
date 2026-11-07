@@ -191,6 +191,28 @@ describe('previewing an album or playlist', () => {
     expect(engine.play.mock.calls.at(-1)![0]).toContain('s4')
   })
 
+  it("plays only the library's songs from the previewed one", async () => {
+    const playback = await playingQueue()
+    const missing = deezerPreviewSong(7, { title: 'Bonus', artist: 'Artist' })
+    await playback.startTracksPreview([album[0]!, missing, album[1]!])
+    playback.preview!.whole = true
+    playback.preview!.index = 2 // s1
+    await playback.playFromPreview()
+    expect(playback.queue.map((s) => s.id)).toEqual(['s0', 's1'])
+    expect(playback.currentSong?.id).toBe('s1')
+  })
+
+  it('has nothing to play from while a missing track is previewed', async () => {
+    const playback = await playingQueue()
+    const missing = deezerPreviewSong(7, { title: 'Bonus', artist: 'Artist' })
+    await playback.startTracksPreview([album[0]!, missing])
+    playback.preview!.whole = true
+    playback.preview!.index = 1
+    await playback.playFromPreview()
+    expect(playback.preview).not.toBeNull()
+    expect(playback.queue.map((s) => s.id)).not.toContain('deezer:7')
+  })
+
   it('anything played from the queue replaces it', async () => {
     const playback = await playingQueue()
     await playback.startPreview(album)

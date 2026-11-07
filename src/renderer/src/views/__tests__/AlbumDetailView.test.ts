@@ -52,6 +52,7 @@ interface AlbumVm {
   loadAlbum(): Promise<void>
   playAll(): Promise<void>
   toggleMissing(): Promise<void>
+  readonly previewSongs: { id: string }[]
 }
 
 function makeAlbum(overrides: Partial<Album> = {}): Album {
@@ -384,6 +385,21 @@ describe('AlbumDetailView missing tracks', () => {
       expect.objectContaining({ artist: 'Artist One', name: 'Album One' }),
     )
     expect(tableMissing(wrapper)).toEqual(['Two', 'Bonus'])
+  })
+
+  it('previews the missing tracks too while they are shown', async () => {
+    vi.mocked(getDeezerAlbum).mockResolvedValue(deezerAlbum('One', 'Two', 'Three'))
+    const { vm } = await mountAlbum(album())
+    const previewed = () => vm.previewSongs.map((song) => song.id)
+    expect(previewed()).toEqual(['s1', 's2'])
+
+    await vm.toggleMissing()
+    await flushPromises()
+    expect(previewed()).toEqual(['s1', 'deezer:1', 's2'])
+
+    await vm.toggleMissing()
+    await flushPromises()
+    expect(previewed()).toEqual(['s1', 's2'])
   })
 
   it('hides them again on the next click and shows them without asking twice', async () => {

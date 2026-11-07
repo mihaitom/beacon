@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { compareWithEdition } from '../missingTracks'
+import { compareWithEdition, songsWithMissing } from '../missingTracks'
 import type { DeezerAlbumTrack } from '@/services/connect/deezer'
 import { makeSong } from '@/stores/__tests__/fixtures'
 
@@ -82,5 +82,23 @@ describe('compareWithEdition', () => {
     ]
     const library = [makeSong('look', { title: 'Look', trackNumber: 1 })]
     expect(compareWithEdition(library, album).trackNumbers).toEqual({ look: 6 })
+  })
+})
+
+describe('songsWithMissing', () => {
+  it('puts each missing track where the album page shows it', () => {
+    const album = [track('Intro'), track('One'), track('Two'), track('Three'), track('Bonus')]
+    album.forEach((t, i) => (t.deezerId = i + 1))
+    const library = songs('One', 'Three')
+    const ids = songsWithMissing(library, compareWithEdition(library, album)).map((s) => s.id)
+    expect(ids).toEqual(['deezer:1', 's0', 'deezer:3', 's1', 'deezer:5'])
+  })
+
+  it('leaves out a missing track Deezer has no preview of', () => {
+    const album = [track('One'), track('Two')]
+    album[1]!.deezerId = 0
+    const library = songs('One')
+    const ids = songsWithMissing(library, compareWithEdition(library, album)).map((s) => s.id)
+    expect(ids).toEqual(['s0'])
   })
 })

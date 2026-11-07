@@ -2138,12 +2138,15 @@ export const usePlaybackStore = defineStore('playback', {
     },
 
     /** "Play from here": the album or playlist, from the song previewed
-     * now, as an ordinary play from its start. */
+     * now, as an ordinary play from its start - the library's songs of it
+     * only, so not while a missing track's Deezer preview plays. */
     async playFromPreview(): Promise<void> {
       const preview = this.preview
-      if (!preview) return
+      const current = this.currentSong
+      if (!preview || !current || isExternalSong(current)) return
       this.preview = null
-      await this.playSongList(preview.songs, preview.picks[preview.index]!)
+      const songs = preview.songs.filter((song) => !isExternalSong(song))
+      await this.playSongList(songs, songs.indexOf(current))
     },
 
     /** Takes up a preview on the speakers from connect's status - one this

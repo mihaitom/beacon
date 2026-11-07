@@ -1,12 +1,13 @@
 <template>
   <!-- Says that what plays is a preview rather than the queue, and offers
-   - to play the album or playlist from the song it has reached. -->
+   - to play the album or playlist from the song it has reached - one the
+   - library holds. -->
   <div v-if="preview" class="preview-status">
     <span class="eyebrow-label">{{
       $t('player.preview', { index: preview.index + 1, count: preview.picks.length })
     }}</span>
     <v-btn
-      v-if="preview.whole"
+      v-if="preview.whole && playbackStore.currentSongInLibrary"
       size="x-small"
       variant="tonal"
       rounded="pill"

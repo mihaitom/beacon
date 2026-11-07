@@ -12,14 +12,17 @@ const MIN_SECONDS = 45
  * `count` equal stretches of the list, in its own order - so a preview
  * covers an album from start to end, and the next one plays other songs of
  * it. Songs shorter than MIN_SECONDS only when nothing else is left; a song
- * of unknown length counts as long enough. */
+ * of unknown length counts as long enough, and so does a Deezer preview,
+ * whose length is the clip's, not the song's. */
 export function pickPreviewSongs(
   songs: readonly Song[],
   count = PREVIEW_SONGS,
   random: () => number = Math.random,
 ): number[] {
   const all = songs.map((_, i) => i)
-  const long = all.filter((i) => !(songs[i]!.duration > 0 && songs[i]!.duration < MIN_SECONDS))
+  const short = (song: Song) =>
+    !isExternalSong(song) && song.duration > 0 && song.duration < MIN_SECONDS
+  const long = all.filter((i) => !short(songs[i]!))
   const pool = long.length ? long : all
   if (pool.length <= count) return pool
   return Array.from({ length: count }, (_, k) => {

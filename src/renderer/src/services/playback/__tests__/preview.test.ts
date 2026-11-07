@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { makeSong } from '@/stores/__tests__/fixtures'
-import { pickPreviewSongs } from '../preview'
+import { deezerPreviewSong, pickPreviewSongs } from '../preview'
 
 const songs = (...durations: number[]) =>
   durations.map((d, i) => makeSong(`s${i}`, { duration: d }))
@@ -28,5 +28,10 @@ describe('pickPreviewSongs', () => {
     expect(pickPreviewSongs(songs(30, 20))).toEqual([0, 1])
     // A length the server does not know is no reason to leave a song out.
     expect(pickPreviewSongs(songs(0, 30))).toEqual([0])
+  })
+
+  it("does not take a Deezer preview's 30 seconds for an interlude", () => {
+    const missing = deezerPreviewSong(7, { title: 'Bonus', artist: 'Artist' })
+    expect(pickPreviewSongs([...songs(20, 200), missing])).toEqual([1, 2])
   })
 })

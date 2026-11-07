@@ -8,6 +8,7 @@ import { i18n } from '@/i18n'
 import { usePlaybackStore } from '@/stores/playback'
 import { makeSong } from '@/stores/__tests__/fixtures'
 import PreviewStatus from '../PreviewStatus.vue'
+import { deezerPreviewSong } from '@/services/playback/preview'
 
 const vuetify = createVuetify({ components, directives })
 
@@ -38,6 +39,17 @@ describe('PreviewStatus', () => {
     expect(wrapper.text()).toContain('2/2')
     await wrapper.get('button').trigger('click')
     expect(play).toHaveBeenCalled()
+  })
+
+  it('has nothing to play from while a missing track is previewed', () => {
+    usePlaybackStore().preview = {
+      songs: [makeSong('a'), deezerPreviewSong(7, { title: 'Bonus', artist: 'Artist' })],
+      picks: [0, 1],
+      index: 1,
+      resumeAt: 0,
+      whole: true,
+    }
+    expect(mountStatus().find('button').exists()).toBe(false)
   })
 
   it('has nothing to play from for a preview another client started', () => {

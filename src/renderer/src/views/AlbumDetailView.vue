@@ -66,7 +66,7 @@
             >
               {{ $t('library.play') }}
             </v-btn>
-            <preview-button :songs="album.songs" size="large" />
+            <preview-button :songs="previewSongs" size="large" />
             <v-btn
               variant="tonal"
               rounded="pill"
@@ -106,7 +106,7 @@
 <script lang="ts">
 import { formatTotalDuration } from '@/services/totalDuration'
 import { useLibraryStore } from '@/stores/library'
-import type { Album } from '@/types/library'
+import type { Album, Song } from '@/types/library'
 import { useAuthStore } from '@/stores/auth'
 import { usePlaybackStore } from '@/stores/playback'
 import DetailHero from '@/components/library/DetailHero.vue'
@@ -124,7 +124,11 @@ import ArtistBio from '@/components/library/ArtistBio.vue'
 import PreviewButton from '@/components/library/PreviewButton.vue'
 import { preloadImage } from '@/services/preloadImage'
 import { getDeezerAlbum } from '@/services/connect/deezer'
-import { compareWithEdition, type EditionComparison } from '@/services/library/missingTracks'
+import {
+  compareWithEdition,
+  songsWithMissing,
+  type EditionComparison,
+} from '@/services/library/missingTracks'
 import { useFanartStore } from '@/stores/fanart'
 
 // Beyond this many the meta line stops being one line; the first ones are
@@ -201,6 +205,11 @@ export default {
           return this.$te(key) ? this.$t(key) : type.charAt(0).toUpperCase() + type.slice(1)
         })
         .join(' · ')
+    },
+    /** With the missing tracks shown, a preview takes them in too. */
+    previewSongs(): Song[] {
+      const songs = this.album?.songs ?? []
+      return this.showMissing && this.edition ? songsWithMissing(songs, this.edition) : songs
     },
     /** Label, edition and reissue year - the facts that are not part of
      * the meta sentence. */
