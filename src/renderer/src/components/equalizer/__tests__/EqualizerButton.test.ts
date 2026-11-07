@@ -1,7 +1,7 @@
 // The toolbar's equalizer button is lit while a curve is changing what is
 // heard - the speaker's while casting, this device's otherwise.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { enableAutoUnmount, mount } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
@@ -23,8 +23,6 @@ vi.mock('@/services/connect/accountSettings', () => ({
 vi.mock('@/services/connect/playback', () => ({
   updateEqualizers: vi.fn().mockResolvedValue(undefined),
 }))
-
-enableAutoUnmount(afterEach)
 
 const vuetify = createVuetify({ components, directives })
 const KITCHEN = { type: 'sonos' as const, name: 'Kitchen' }

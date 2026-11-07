@@ -6,7 +6,7 @@
 // imported and played in place of the bands, and a phone says why it has
 // no equalizer of its own. Not the copy or the layout.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { enableAutoUnmount, mount } from '@vue/test-utils'
+import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
@@ -39,8 +39,6 @@ vi.mock('@/services/connect/visualizer', () => ({
 vi.mock('@/services/connect/accountSettings', () => ({
   pushAccountSettings: vi.fn().mockResolvedValue({}),
 }))
-
-enableAutoUnmount(afterEach)
 
 const vuetify = createVuetify({ components, directives })
 const global = {

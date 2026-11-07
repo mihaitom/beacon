@@ -1,7 +1,7 @@
 // The lights dialog: it loads afresh when opened, pairs, says which way a
 // pairing failed, and saves each choice. Not the copy or the layout.
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
@@ -40,9 +40,6 @@ vi.mock('@/services/connect/lights', () => ({
   reportLocalPlayback: vi.fn(),
   stopLocalReport: vi.fn(),
 }))
-
-// A dialog left open keeps asking for the picture - in the next test's store.
-enableAutoUnmount(afterEach)
 
 const vuetify = createVuetify({ components, directives })
 const emit = vi.fn()

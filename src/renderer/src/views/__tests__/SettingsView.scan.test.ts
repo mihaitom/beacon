@@ -2,8 +2,8 @@
 // are tested where they live (components/settings/__tests__/); what this
 // page owns is the order and the gating — which section a toggle ends up
 // in, and which one disappears for an account that may not see it.
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { enableAutoUnmount, mount } from '@vue/test-utils'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
+import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
@@ -29,8 +29,6 @@ beforeAll(() => {
 afterAll(() => {
   vi.unstubAllGlobals()
 })
-
-enableAutoUnmount(afterEach)
 
 /** The recommendations toggle lives in the Library section, because its
  * seed artists come out of the library. That section also carries the

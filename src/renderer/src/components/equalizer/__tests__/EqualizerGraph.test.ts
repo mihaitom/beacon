@@ -1,12 +1,10 @@
 // The curve graph: dragging, the keyboard and a double click change one
 // band, and a band's point stays put while its neighbours move. Not the
 // drawing.
-import { afterEach, describe, expect, it } from 'vitest'
-import { enableAutoUnmount, mount } from '@vue/test-utils'
+import { describe, expect, it } from 'vitest'
+import { mount } from '@vue/test-utils'
 import { i18n } from '@/i18n'
 import EqualizerGraph from '../EqualizerGraph.vue'
-
-enableAutoUnmount(afterEach)
 
 const FLAT = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 

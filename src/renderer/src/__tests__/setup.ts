@@ -1,3 +1,6 @@
+import { afterEach } from 'vitest'
+import { enableAutoUnmount } from '@vue/test-utils'
+
 // Global jsdom polyfills for component tests that mount real Vuetify
 // components (see vitest.config.ts's `setupFiles`). jsdom implements
 // neither of these — Vuetify's layout/display composables (VFooter's
@@ -69,3 +72,10 @@ Element.prototype.scrollIntoView ??= function scrollIntoView(): void {}
 // would be talking to a real backend instead. Same error as a refused connection,
 // just right away. Tests that care about fetch replace this with their own.
 globalThis.fetch = () => Promise.reject(new TypeError('fetch failed'))
+
+// Every mounted component is unmounted after its test. Left mounted, its
+// timers keep running past the end of the file - VImg polls a loading
+// image's size every 100 ms until unmounted - and fire once jsdom is torn
+// down: "window is not defined", the run red with every test passing. Only
+// on a machine slow enough for the file to end before the timer does, so CI.
+enableAutoUnmount(afterEach)
