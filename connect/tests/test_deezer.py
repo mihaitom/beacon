@@ -413,3 +413,129 @@ def test_the_waveform_of_a_preview_is_drawn_from_deezer_not_the_server(client, d
     assert resp.json() == {"peaks": [0.5]}
     get.assert_awaited_once_with("deezer:42", "https://cdn/p.mp3")
     server.assert_not_called()
+
+
+# ── album (the album page's missing tracks) ──────────────────────────────────
+
+
+def _album(album_id: int, title: str, artist: str, tracks: int) -> dict:
+    return {
+        "id": album_id,
+        "title": title,
+        "artist": {"name": artist},
+        "nb_tracks": tracks,
+        "link": f"https://www.deezer.com/album/{album_id}",
+    }
+
+
+def _album_track(track_id: int, title: str, position: int, disc: int = 1, **extra) -> dict:
+    return {
+        "id": track_id,
+        "title": title,
+        "artist": {"name": "Daft Punk"},
+        "duration": 200,
+        "track_position": position,
+        "disk_number": disc,
+        "preview": "https://cdn/p.mp3",
+        **extra,
+    }
+
+
+@pytest.mark.parametrize(
+    ("title", "base"),
+    [
+        ("Random Access Memories (10th Anniversary Edition)", "random access memories"),
+        ("1989 (Deluxe)", "1989"),
+        ("Abbey Road [Remastered]", "abbey road"),
+        ("Rumours - Super Deluxe", "rumours"),
+        ("1989 (Taylor's Version) (Deluxe)", "1989 taylors version"),
+        ("1989 (Big Machine Radio Release Special)", "1989 big machine radio release special"),
+        ("Live (at Wembley)", "live at wembley"),
+    ],
+)
+def test_album_base_drops_edition_suffixes_and_nothing_else(title, base):
+    assert deezer._album_base(title) == base
+
+
+async def test_album_takes_the_largest_edition_of_this_artists_album():
+    search = {
+        "data": [
+            _album(1, "Random Access Memories", "Daft Punk", 13),
+            _album(2, "Random Access Memories (10th Anniversary Edition)", "Daft Punk", 22),
+            _album(3, "Random Access Memories", "Vitamin String Quartet", 30),
+            _album(4, "Random Access Memories Reimagined", "Daft Punk", 40),
+        ]
+    }
+    with _patch_get(search, {"data": [_album_track(10, "Horizon", 14)]}) as get:
+        album = await deezer.get_album("Daft Punk", "Random Access Memories")
+
+    assert album["id"] == 2
+    assert get.call_args.args[0].endswith("/album/2/tracks")
+    assert album["tracks"] == [
+        {
+            "title": "Horizon",
+            "titleShort": "Horizon",
+            "artist": "Daft Punk",
+            "duration": 200,
+            "discNumber": 1,
+            "trackNumber": 14,
+            "deezerId": 10,
+            "album": "Random Access Memories (10th Anniversary Edition)",
+        }
+    ]
+
+
+async def test_album_prefers_the_exact_title_between_editions_of_one_size():
+    search = {
+        "data": [
+            _album(5, "Random Access Memories (Drumless Edition)", "Daft Punk", 13),
+            _album(6, "Random Access Memories", "Daft Punk", 13),
+        ]
+    }
+    with _patch_get(search, {"data": []}):
+        album = await deezer.get_album("Daft Punk", "Random Access Memories")
+    assert album["id"] == 6
+
+
+async def test_album_never_settles_for_a_different_album():
+    search = {"data": [_album(7, "1989 (Taylor's Version)", "Taylor Swift", 21)]}
+    with _patch_get(search) as get:
+        assert await deezer.get_album("Taylor Swift", "1989") is None
+    get.assert_called_once()
+
+
+async def test_album_tracks_keep_the_version_and_mark_tracks_without_a_preview():
+    tracks = {
+        "data": [
+            _album_track(1, "Song (Reprise)", 2, disc=2, title_short="Song"),
+            _album_track(2, "Locked", 3, preview=""),
+            {"id": 3, "title": ""},
+            "not a dict",
+        ]
+    }
+    with _patch_get({"data": [_album(1, "X", "Daft Punk", 2)]}, tracks):
+        album = await deezer.get_album("Daft Punk", "X")
+    first, second = album["tracks"]
+    assert (first["title"], first["titleShort"], first["discNumber"]) == (
+        "Song (Reprise)",
+        "Song",
+        2,
+    )
+    assert second["deezerId"] == 0
+
+
+def test_album_route(client):
+    search = {"data": [_album(1, "Discovery", "Daft Punk", 1)]}
+    with _patch_get(search, {"data": [_album_track(9, "Aerodynamic", 2)]}):
+        resp = client.get("/deezer/album", params={"artist": "Daft Punk", "title": "Discovery"})
+    assert resp.json()["album"]["tracks"][0]["deezerId"] == 9
+
+    with _patch_get({"data": []}):
+        resp = client.get("/deezer/album", params={"artist": "Nobody", "title": "Nothing"})
+    assert resp.json() == {"album": None}
+
+    with patch.object(deezer._client, "get", AsyncMock(side_effect=httpx.ConnectError("x"))):
+        resp = client.get("/deezer/album", params={"artist": "Daft Punk", "title": "Discovery"})
+    assert resp.status_code == 502
+
+    assert client.get("/deezer/album", params={"artist": "Daft Punk"}).status_code == 422

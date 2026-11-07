@@ -237,6 +237,13 @@ export default {
     lastPlayed: 'Last played',
     play: 'Play',
     preview: 'Preview',
+    showMissingTracks: 'Missing songs',
+    hideMissingTracks: 'Hide missing',
+    notInLibrary: 'Not in your library',
+    missingTracksNone: 'Your library has every song of this album.',
+    missingTracksNotFound:
+      "Deezer doesn't carry this album, so there is nothing to compare it with.",
+    missingTracksError: 'Could not look the album up on Deezer.',
     // MusicBrainz's release types, as the server sends them (lower-case;
     // 'dj-mix' looked up as djmix).
     releaseTypes: {
@@ -1368,9 +1375,9 @@ export default {
       deezer: {
         name: 'Deezer',
         purpose:
-          "Finding a photo and an artist page for a suggested artist and for the artist page you have open, whether or not recommendations are on, and filling a playlist from Deezer's charts, an artist's top tracks or mix, or a Deezer playlist, and playing 30-second previews of a track in the playlist builder or of a suggested artist's top tracks.",
+          "Finding a photo and an artist page for a suggested artist and for the artist page you have open, whether or not recommendations are on, and filling a playlist from Deezer's charts, an artist's top tracks or mix, or a Deezer playlist, and playing 30-second previews of a track in the playlist builder or of a suggested artist's top tracks. On an album page, it finds the album's Deezer edition to show which of its songs your library is missing, with their previews.",
         sends:
-          "The name of the artist being looked up: a suggested one, the one whose page you have open, or the one you asked the playlist builder for, and what you type into its playlist search. A chart sends only the genre; Deezer picks the country from where Beacon's server is. For a preview, the artist and title of that track; Beacon's server fetches the preview itself and plays it like any other song, so Deezer does not see this device.",
+          "The name of the artist being looked up: a suggested one, the one whose page you have open, or the one you asked the playlist builder for, and what you type into its playlist search. A chart sends only the genre; Deezer picks the country from where Beacon's server is. For a preview, the artist and title of that track; Beacon's server fetches the preview itself and plays it like any other song, so Deezer does not see this device. For an album's missing songs, the album artist and title.",
       },
       wikidata: {
         name: 'Wikidata',

@@ -241,6 +241,12 @@ export default {
     lastPlayed: 'Última vez',
     play: 'Reproducir',
     preview: 'Escuchar un avance',
+    showMissingTracks: 'Canciones que faltan',
+    hideMissingTracks: 'Ocultar las que faltan',
+    notInLibrary: 'No está en tu biblioteca',
+    missingTracksNone: 'Tu biblioteca tiene todas las canciones de este álbum.',
+    missingTracksNotFound: 'Deezer no tiene este álbum, así que no hay con qué compararlo.',
+    missingTracksError: 'No se pudo buscar el álbum en Deezer.',
     // MusicBrainz's release types, as the server sends them (lower-case;
     // 'dj-mix' looked up as djmix).
     releaseTypes: {
@@ -1380,9 +1386,9 @@ export default {
       deezer: {
         name: 'Deezer',
         purpose:
-          'Busca una foto y una página de artista para un artista sugerido, y para la página de artista que tengas abierta, estén o no activadas las recomendaciones, y llena una lista con los éxitos de Deezer, el top o la mezcla de un artista, o una lista de Deezer, y reproduce 30 segundos de una canción en el generador de listas o de los éxitos de un artista sugerido.',
+          'Busca una foto y una página de artista para un artista sugerido, y para la página de artista que tengas abierta, estén o no activadas las recomendaciones, y llena una lista con los éxitos de Deezer, el top o la mezcla de un artista, o una lista de Deezer, y reproduce 30 segundos de una canción en el generador de listas o de los éxitos de un artista sugerido. En la página de un álbum, busca su edición en Deezer para mostrar qué canciones faltan en tu biblioteca, con sus fragmentos.',
         sends:
-          'El nombre del artista consultado: uno sugerido, aquel cuya página tienes abierta o el que pediste en el generador de listas, y lo que escribes en su búsqueda de listas. Para los éxitos solo el género; Deezer deduce el país de dónde está el servidor de Beacon. Para escuchar un fragmento, el artista y el título; el propio servidor de Beacon descarga el fragmento y lo reproduce como cualquier otra canción, así que Deezer no ve este dispositivo.',
+          'El nombre del artista consultado: uno sugerido, aquel cuya página tienes abierta o el que pediste en el generador de listas, y lo que escribes en su búsqueda de listas. Para los éxitos solo el género; Deezer deduce el país de dónde está el servidor de Beacon. Para escuchar un fragmento, el artista y el título; el propio servidor de Beacon descarga el fragmento y lo reproduce como cualquier otra canción, así que Deezer no ve este dispositivo. Para las canciones que faltan de un álbum, el artista y el título del álbum.',
       },
       wikidata: {
         name: 'Wikidata',

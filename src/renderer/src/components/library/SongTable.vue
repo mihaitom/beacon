@@ -56,36 +56,42 @@
         <div class="disc-header text-body-small text-medium-emphasis">
           {{ $t('library.disc', { number: group.discNumber }) }}
         </div>
-        <song-row
-          v-for="row in group.rows"
-          :key="`${row.song.id}-${row.index}`"
-          :song="row.song"
-          :index="row.index"
-          :display-number="row.song.trackNumber ?? row.index + 1"
-          :columns="fittedColumns"
-          :selection-mode="selectionMode"
-          :reorderable="canReorder"
-          :removable="removable"
-          :drag-over-position="dragOverPosition(row.index)"
-          :dragging="dragIndex === row.index"
-          :selected="selectedRowKeys.has(row.index)"
-          :selected-count="selectedRowKeys.size"
-          @play="playSong"
-          @play-next="playNextSong"
-          @song-radio="startSongRadio"
-          @toggle-star="toggleStar"
-          @set-rating="setRating"
-          @add-to-queue="addToQueue"
-          @add-to-playlist="addToPlaylist"
-          @create-playlist="openCreatePlaylistDialog"
-          @remove="onRemoveRequested"
-          @toggle-select="toggleSelect"
-          @dragstart="onRowDragStart"
-          @dragover="onRowDragOver"
-          @dragleave="onRowDragLeave"
-          @drop="onRowDrop"
-          @dragend="onRowDragEnd"
-        />
+        <template v-for="row in group.rows" :key="rowKey(row)">
+          <missing-song-row
+            v-if="row.kind === 'missing'"
+            :track="row.track"
+            :columns="fittedColumns"
+          />
+          <song-row
+            v-else
+            :song="row.song"
+            :index="row.index"
+            :display-number="row.song.trackNumber ?? row.index + 1"
+            :columns="fittedColumns"
+            :selection-mode="selectionMode"
+            :reorderable="canReorder"
+            :removable="removable"
+            :drag-over-position="dragOverPosition(row.index)"
+            :dragging="dragIndex === row.index"
+            :selected="selectedRowKeys.has(row.index)"
+            :selected-count="selectedRowKeys.size"
+            @play="playSong"
+            @play-next="playNextSong"
+            @song-radio="startSongRadio"
+            @toggle-star="toggleStar"
+            @set-rating="setRating"
+            @add-to-queue="addToQueue"
+            @add-to-playlist="addToPlaylist"
+            @create-playlist="openCreatePlaylistDialog"
+            @remove="onRemoveRequested"
+            @toggle-select="toggleSelect"
+            @dragstart="onRowDragStart"
+            @dragover="onRowDragOver"
+            @dragleave="onRowDragLeave"
+            @drop="onRowDrop"
+            @dragend="onRowDragEnd"
+          />
+        </template>
       </template>
     </template>
     <!-- Past SONG_VIRTUALIZE_THRESHOLD (any list here — every SongTable
@@ -184,6 +190,12 @@
     </v-virtual-scroll>
     <template v-else>
       <template v-for="(song, index) in visibleSongs" :key="`${song.id}-${index}`">
+        <missing-song-row
+          v-for="missing in missingBefore(index)"
+          :key="missingKey(missing.track)"
+          :track="missing.track"
+          :columns="fittedColumns"
+        />
         <div v-if="startsSection(index)" class="song-section letter-divider">
           <span class="letter-divider__label">{{ sectionLabel(sectionAt(index)) }}</span>
         </div>
@@ -216,6 +228,12 @@
           @dragend="onRowDragEnd"
         />
       </template>
+      <missing-song-row
+        v-for="missing in missingAtEnd"
+        :key="missingKey(missing.track)"
+        :track="missing.track"
+        :columns="fittedColumns"
+      />
     </template>
     <infinite-scroll-trigger
       v-if="!virtualizeSongs && visibleCount < sortedSongs.length"
@@ -248,6 +266,7 @@ import { useLibraryStore } from '@/stores/library'
 import { firstIndexByLetter, letterForName } from '@/services/alphabetIndex'
 import { observeActiveLetter, type ActiveLetterHandle } from '@/services/activeLetter'
 import SongRow from './SongRow.vue'
+import MissingSongRow from './MissingSongRow.vue'
 import SongTableHeader from './SongTableHeader.vue'
 import CreatePlaylistDialog from './CreatePlaylistDialog.vue'
 import AlphabetIndexBar from './AlphabetIndexBar.vue'
@@ -276,6 +295,8 @@ import {
   type FilterField,
 } from '@/services/library/libraryFilter'
 import { ratingSectionLabel } from '@/services/ratingSort'
+import type { MissingTrack } from '@/services/library/missingTracks'
+import type { DeezerAlbumTrack } from '@/services/connect/deezer'
 import type { Song } from '@/types/library'
 
 // Anything with a sortValue in the column registry, which is every column
@@ -283,6 +304,9 @@ import type { Song } from '@/types/library'
 type SortKey = SongSortKey
 
 type VirtualItem = { kind: 'section'; section: string } | { kind: 'row'; song: Song; index: number }
+
+type DiscRow =
+  { kind: 'song'; song: Song; index: number } | { kind: 'missing'; track: DeezerAlbumTrack }
 
 const PAGE_SIZE = 100
 // See the v-virtual-scroll template comment (above the v-else-if="virtualizeSongs"
@@ -313,6 +337,7 @@ export default {
   components: {
     SongCard,
     SongRow,
+    MissingSongRow,
     SongTableHeader,
     AlphabetIndexBar,
     CreatePlaylistDialog,
@@ -397,6 +422,10 @@ export default {
     // songs — a playlist/search/queue list can mix songs from many
     // different albums, where "disc number" isn't a meaningful grouping.
     groupByDisc: { type: Boolean, default: false },
+    // Album detail's tracks the library does not hold, drawn dimmed among
+    // the songs at their place on the album - in the list's own order only,
+    // where "their place" means something.
+    missingTracks: { type: Array as PropType<MissingTrack[]>, default: () => [] },
     // Playlist detail's own opt-in — rows become draggable and a drop
     // emits `reorder`. Only ever honoured while the list is in its natural
     // order (see canReorder): with a column sort active, a row's position
@@ -597,14 +626,32 @@ export default {
     showDiscGroups(): boolean {
       return this.groupByDisc && !this.sortKey && this.discGroups.length > 1
     },
-    discGroups(): { discNumber: number; rows: { song: Song; index: number }[] }[] {
-      const groups = new Map<number, { song: Song; index: number }[]>()
+    /** missingTracks by how many songs come before each, while the list
+     * is in its own order. */
+    missingByPosition(): Map<number, MissingTrack[]> {
+      const byPosition = new Map<number, MissingTrack[]>()
+      if (this.sortKey || this.grid || this.virtualizeSongs) return byPosition
+      for (const missing of this.missingTracks) {
+        byPosition.set(missing.position, [...(byPosition.get(missing.position) ?? []), missing])
+      }
+      return byPosition
+    },
+    /** The ones after the last song, once it is on screen. */
+    missingAtEnd(): MissingTrack[] {
+      if (this.visibleSongs.length < this.sortedSongs.length) return []
+      return this.missingBefore(this.sortedSongs.length)
+    },
+    discGroups(): { discNumber: number; rows: DiscRow[] }[] {
+      const groups = new Map<number, DiscRow[]>()
+      const add = (disc: number, row: DiscRow) =>
+        groups.set(disc, [...(groups.get(disc) ?? []), row])
+      const addMissing = (missing: MissingTrack[]) =>
+        missing.forEach(({ track }) => add(track.discNumber, { kind: 'missing', track }))
       this.visibleSongs.forEach((song, index) => {
-        const disc = song.discNumber ?? 1
-        const rows = groups.get(disc) ?? []
-        rows.push({ song, index })
-        groups.set(disc, rows)
+        addMissing(this.missingBefore(index))
+        add(song.discNumber ?? 1, { kind: 'song', song, index })
       })
+      addMissing(this.missingAtEnd)
       return [...groups.entries()]
         .sort(([a], [b]) => a - b)
         .map(([discNumber, rows]) => ({ discNumber, rows }))
@@ -722,6 +769,15 @@ export default {
         event.preventDefault()
         this.selectAll()
       }
+    },
+    missingBefore(position: number): MissingTrack[] {
+      return this.missingByPosition.get(position) ?? []
+    },
+    missingKey(track: DeezerAlbumTrack): string {
+      return `missing-${track.discNumber}-${track.trackNumber}-${track.title}`
+    },
+    rowKey(row: DiscRow): string {
+      return row.kind === 'missing' ? this.missingKey(row.track) : `${row.song.id}-${row.index}`
     },
     loadMoreVisible() {
       this.visibleCount += PAGE_SIZE

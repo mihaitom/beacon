@@ -16,6 +16,7 @@ import { useFanartStore } from '@/stores/fanart'
 import { getAlbumBio } from '@/services/connect/recommendations'
 import { usePlaybackStore } from '@/stores/playback'
 import { makeSong } from '@/stores/__tests__/fixtures'
+import { getDeezerAlbum, type DeezerAlbumTrack } from '@/services/connect/deezer'
 import AlbumDetailView from '../AlbumDetailView.vue'
 
 vi.mock('@/services/connect/fanart', async (importOriginal) => ({
@@ -23,6 +24,8 @@ vi.mock('@/services/connect/fanart', async (importOriginal) => ({
   getArtistArt: vi.fn().mockResolvedValue(null),
   rememberBackground: vi.fn(),
 }))
+
+vi.mock('@/services/connect/deezer', () => ({ getDeezerAlbum: vi.fn() }))
 
 vi.mock('@/services/connect/recommendations', () => ({
   getAlbumBio: vi.fn().mockResolvedValue(null),
@@ -33,6 +36,7 @@ vi.mock('@/services/connect/recommendations', () => ({
 vi.mock('@/services/preloadImage', () => ({ preloadImage: vi.fn().mockResolvedValue(undefined) }))
 
 const vuetify = createVuetify({ components, directives })
+const toasts = { emit: vi.fn(), on: vi.fn(), off: vi.fn() }
 
 interface AlbumVm {
   album: Album | null
@@ -47,6 +51,7 @@ interface AlbumVm {
   bio: { text: string } | null
   loadAlbum(): Promise<void>
   playAll(): Promise<void>
+  toggleMissing(): Promise<void>
 }
 
 function makeAlbum(overrides: Partial<Album> = {}): Album {
@@ -92,6 +97,7 @@ async function mountAlbum(album: Album | null) {
     global: {
       plugins: [vuetify, i18n, router],
       stubs: { DetailHero: true, SongTable: true, PageLoader: true },
+      mocks: { $emitter: toasts },
     },
   })
   await flushPromises()
@@ -337,5 +343,91 @@ describe('AlbumDetailView header', () => {
     const { vm } = await mountAlbum(makeAlbum())
 
     expect(vm.bio).toBeNull()
+  })
+})
+
+describe('AlbumDetailView missing tracks', () => {
+  const track = (title: string): DeezerAlbumTrack => ({
+    title,
+    titleShort: title,
+    artist: 'Artist One',
+    duration: 200,
+    discNumber: 1,
+    trackNumber: 0,
+    deezerId: 1,
+    album: 'Album One (Deluxe)',
+  })
+  const deezerAlbum = (...titles: string[]) => ({
+    id: 1,
+    title: 'Album One (Deluxe)',
+    link: '',
+    tracks: titles.map(track),
+  })
+  const album = () =>
+    makeAlbum({ songs: [makeSong('s1', { title: 'One' }), makeSong('s2', { title: 'Three' })] })
+  const tableMissing = (wrapper: Awaited<ReturnType<typeof mountAlbum>>['wrapper']) =>
+    (
+      wrapper.findComponent({ name: 'SongTable' }).props('missingTracks') as {
+        track: { title: string }
+      }[]
+    ).map((missing) => missing.track.title)
+
+  it('looks the album up on the first click and shows what the library is missing', async () => {
+    vi.mocked(getDeezerAlbum).mockResolvedValue(deezerAlbum('One', 'Two', 'Three', 'Bonus'))
+    const { wrapper, vm } = await mountAlbum(album())
+    expect(getDeezerAlbum).not.toHaveBeenCalled()
+
+    await vm.toggleMissing()
+    await flushPromises()
+
+    expect(getDeezerAlbum).toHaveBeenCalledWith(
+      expect.objectContaining({ artist: 'Artist One', name: 'Album One' }),
+    )
+    expect(tableMissing(wrapper)).toEqual(['Two', 'Bonus'])
+  })
+
+  it('hides them again on the next click and shows them without asking twice', async () => {
+    vi.mocked(getDeezerAlbum).mockResolvedValue(deezerAlbum('One', 'Two', 'Three'))
+    const { wrapper, vm } = await mountAlbum(album())
+
+    await vm.toggleMissing()
+    await vm.toggleMissing()
+    await flushPromises()
+    expect(tableMissing(wrapper)).toEqual([])
+
+    await vm.toggleMissing()
+    await flushPromises()
+    expect(tableMissing(wrapper)).toEqual(['Two'])
+    expect(getDeezerAlbum).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    ['the album is complete', () => Promise.resolve(deezerAlbum('One', 'Three')), 'information'],
+    ['Deezer does not carry it', () => Promise.resolve(null), 'information'],
+    ['the lookup fails', () => Promise.reject(new Error('502')), 'error'],
+  ])('says so and shows nothing when %s', async (_case, answer, level) => {
+    vi.mocked(getDeezerAlbum).mockImplementation(answer)
+    const { wrapper, vm } = await mountAlbum(album())
+
+    await vm.toggleMissing()
+    await flushPromises()
+
+    expect(tableMissing(wrapper)).toEqual([])
+    expect(toasts.emit).toHaveBeenCalledWith('toast', expect.objectContaining({ level }))
+  })
+
+  it('drops an answer for an album the page has since left', async () => {
+    let answer!: (value: ReturnType<typeof deezerAlbum>) => void
+    vi.mocked(getDeezerAlbum).mockReturnValue(new Promise((resolve) => (answer = resolve)))
+    const { wrapper, vm, store } = await mountAlbum(album())
+
+    const pending = vm.toggleMissing()
+    store.fetchAlbum = vi.fn().mockResolvedValue(makeAlbum({ id: 'al2', songs: [] }))
+    await vm.loadAlbum()
+    answer(deezerAlbum('One', 'Two', 'Three'))
+    await pending
+    await flushPromises()
+
+    expect(tableMissing(wrapper)).toEqual([])
   })
 })

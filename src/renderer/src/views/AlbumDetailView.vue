@@ -67,6 +67,16 @@
               {{ $t('library.play') }}
             </v-btn>
             <preview-button :songs="album.songs" size="large" />
+            <v-btn
+              variant="tonal"
+              rounded="pill"
+              size="large"
+              :prepend-icon="showMissing ? 'mdi-eye-off-outline' : 'mdi-music-note-plus'"
+              :loading="missingLoading"
+              @click="toggleMissing"
+            >
+              {{ $t(showMissing ? 'library.hideMissingTracks' : 'library.showMissingTracks') }}
+            </v-btn>
           </div>
         </template>
       </detail-hero>
@@ -86,6 +96,7 @@
           group-by-disc
           sticky-header
           :exclude-columns="['cover', 'album']"
+          :missing-tracks="(showMissing && missingTracks) || []"
         />
       </v-container>
     </template>
@@ -112,6 +123,8 @@ import { getAlbumBio, type ArtistBio as ArtistBioData } from '@/services/connect
 import ArtistBio from '@/components/library/ArtistBio.vue'
 import PreviewButton from '@/components/library/PreviewButton.vue'
 import { preloadImage } from '@/services/preloadImage'
+import { getDeezerAlbum } from '@/services/connect/deezer'
+import { findMissingTracks, type MissingTrack } from '@/services/library/missingTracks'
 import { useFanartStore } from '@/stores/fanart'
 
 // Beyond this many the meta line stops being one line; the first ones are
@@ -134,6 +147,11 @@ export default {
       // is held back until it has, so it appears once - the answer or the
       // cover - instead of showing the cover and then swapping.
       artResolved: false,
+      // The album's tracks the library does not hold, against its largest
+      // Deezer edition - looked up on the first click, not with the page.
+      missingTracks: null as MissingTrack[] | null,
+      missingLoading: false,
+      showMissing: false,
     }
   },
   computed: {
@@ -227,6 +245,9 @@ export default {
       this.artistArt = null
       this.artResolved = false
       this.bio = null
+      this.missingTracks = null
+      this.missingLoading = false
+      this.showMissing = false
       try {
         const album = await this.libraryStore.fetchAlbum(id)
         // A newer navigation may have already resolved and moved the route
@@ -293,6 +314,48 @@ export default {
       if (this.artistArt !== art) return
       this.artistArt = { ...art, background: next }
       rememberBackground(album.artist, next)
+    },
+    async toggleMissing() {
+      if (this.showMissing) {
+        this.showMissing = false
+        return
+      }
+      const album = this.album
+      if (!album || this.missingLoading) return
+      if (!this.missingTracks) {
+        this.missingLoading = true
+        try {
+          const deezerAlbum = await getDeezerAlbum(album)
+          if (this.album !== album) return
+          if (!deezerAlbum) {
+            this.missingToast('library.missingTracksNotFound')
+            return
+          }
+          this.missingTracks = findMissingTracks(album.songs, deezerAlbum.tracks)
+        } catch (error) {
+          console.error('[album-detail] Missing tracks lookup failed:', error)
+          this.$emitter.emit('toast', {
+            level: 'error',
+            title: this.$t('library.showMissingTracks'),
+            message: this.$t('library.missingTracksError'),
+          })
+          return
+        } finally {
+          this.missingLoading = false
+        }
+      }
+      if (!this.missingTracks.length) {
+        this.missingToast('library.missingTracksNone')
+        return
+      }
+      this.showMissing = true
+    },
+    missingToast(key: string) {
+      this.$emitter.emit('toast', {
+        level: 'information',
+        title: this.$t('library.showMissingTracks'),
+        message: this.$t(key),
+      })
     },
     // pinFirst false: the whole album rather than a pick of one track, so
     // shuffle may reorder the first one too. peek: it replaces the queue

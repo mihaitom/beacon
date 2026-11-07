@@ -1,5 +1,6 @@
 """core/deezer.py — Deezer charts, an artist's top tracks or radio, and
-public Deezer playlists, for the playlist builder.
+public Deezer playlists, for the playlist builder; an album's tracklist, for
+the album page's missing tracks; and 30-second previews of either.
 
 Deezer's public API needs no key and no login, and its charts are the most
 current of the builder's sources: they follow what is being streamed right
@@ -331,3 +332,100 @@ async def preview_stream_url(song_id: str) -> str | None:
         logger.warning(f"[deezer] No preview audio for {song_id}: {e}")
         return None
     return entry.get("preview") or None
+
+
+# An album's tracklist, for the album page's "missing tracks": the songs of
+# it the library does not hold. Deezer usually carries a standard and a
+# deluxe edition side by side; the largest edition of the same album is the
+# one compared against, so bonus tracks count as missing too.
+
+_ALBUM_CANDIDATES = 25
+# Deezer's ceiling for one page of an album's tracks is far above any album.
+_MAX_ALBUM_TRACKS = 500
+# A trailing "(...)", "[...]" or " - ..." that names an edition of the same
+# album rather than a different one. "Version" is not on the list on
+# purpose: "1989 (Taylor's Version)" is a re-recording, not a bigger 1989,
+# and neither is "Special" alone - "1989 (Big Machine Radio Release
+# Special)" is a radio promo full of interviews.
+_EDITION_SUFFIX = re.compile(
+    r"\s*(?:\(([^()]*)\)|\[([^\[\]]*)\]|\s-\s([^-]*))\s*$",
+)
+_EDITION_WORDS = re.compile(
+    r"\b(deluxe|expanded|edition|remaster(ed)?|anniversary|bonus)\b", re.IGNORECASE
+)
+
+
+def _album_base(title: str) -> str:
+    """The album's name with its edition suffixes taken off, folded the way
+    _plain() folds: "Random Access Memories (10th Anniversary Edition)" and
+    "Random Access Memories" are the same album."""
+    while True:
+        match = _EDITION_SUFFIX.search(title)
+        if not match or not _EDITION_WORDS.search(next(g for g in match.groups() if g)):
+            break
+        title = title[: match.start()]
+    return _plain(title)
+
+
+def _pick_album(entries: list, artist: str, title: str) -> dict | None:
+    """The edition with the most tracks among the hits that are this
+    artist's album, the exact title winning a tie. None rather than a
+    different album: everything on it would show up as missing."""
+    want_artist, want_base, want_exact = _plain(artist), _album_base(title), _plain(title)
+    pool = [
+        entry
+        for entry in entries
+        if isinstance(entry, dict)
+        and isinstance(entry.get("id"), int)
+        and _plain((entry.get("artist") or {}).get("name") or "") == want_artist
+        and _album_base(entry.get("title") or "") == want_base
+    ]
+    if not pool:
+        return None
+    return max(
+        pool,
+        key=lambda e: (e.get("nb_tracks") or 0, _plain(e.get("title") or "") == want_exact),
+    )
+
+
+def _album_tracks(data: dict) -> list[dict]:
+    """The full title, not title_short as elsewhere: on an album's own
+    tracklist "Song" and "Song (Reprise)" are two tracks. `deezerId` is 0
+    where Deezer has no preview of the track."""
+    tracks = []
+    for entry in data.get("data") or []:
+        if not isinstance(entry, dict):
+            continue
+        title = (entry.get("title") or "").strip()
+        if not title:
+            continue
+        track_id = entry.get("id")
+        duration = entry.get("duration")
+        disc = entry.get("disk_number")
+        position = entry.get("track_position")
+        tracks.append(
+            {
+                "title": title,
+                "titleShort": (entry.get("title_short") or title).strip(),
+                "artist": ((entry.get("artist") or {}).get("name") or "").strip(),
+                "duration": duration if isinstance(duration, int) else 0,
+                "discNumber": disc if isinstance(disc, int) and disc > 0 else 1,
+                "trackNumber": position if isinstance(position, int) else 0,
+                "deezerId": track_id if isinstance(track_id, int) and entry.get("preview") else 0,
+            }
+        )
+    return tracks
+
+
+async def get_album(artist: str, title: str) -> dict | None:
+    """The largest Deezer edition of an album and its tracklist:
+    {id, title, link, tracks}, or None when Deezer does not carry it."""
+    data = await _get("/search/album", q=f"{artist} {title}", limit=_ALBUM_CANDIDATES)
+    album = _pick_album(data.get("data") or [], artist, title)
+    if not album:
+        return None
+    title = (album.get("title") or "").strip()
+    data = await _get(f"/album/{album['id']}/tracks", limit=_MAX_ALBUM_TRACKS)
+    # The edition's own title, which the player shows while a preview plays.
+    tracks = [{**track, "album": title} for track in _album_tracks(data)]
+    return {"id": album["id"], "title": title, "link": album.get("link") or "", "tracks": tracks}

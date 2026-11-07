@@ -80,3 +80,39 @@ export async function findDeezerPreview(track: {
   const data = await fetchConnect<{ id: number }>(`/deezer/preview?${params.toString()}`)
   return data.id || null
 }
+
+/** One track of an album's Deezer edition (getDeezerAlbum()). */
+export interface DeezerAlbumTrack {
+  /** With its version ("Song (Reprise)"), as the album lists it. */
+  title: string
+  /** Deezer's title without the version. */
+  titleShort: string
+  artist: string
+  duration: number
+  discNumber: number
+  trackNumber: number
+  /** 0 where Deezer has no preview of it. */
+  deezerId: number
+  /** The edition's title. */
+  album: string
+}
+
+export interface DeezerAlbum {
+  id: number
+  title: string
+  link: string
+  tracks: DeezerAlbumTrack[]
+}
+
+/** The largest Deezer edition of an album - the deluxe one where there is
+ * one - or null when Deezer does not carry the album. */
+export async function getDeezerAlbum(album: {
+  artist: string
+  name: string
+}): Promise<DeezerAlbum | null> {
+  const params = new URLSearchParams({ artist: album.artist, title: album.name })
+  const data = await fetchConnect<{ album: DeezerAlbum | null }>(
+    `/deezer/album?${params.toString()}`,
+  )
+  return data.album
+}

@@ -237,6 +237,12 @@ export default {
     lastPlayed: 'Zuletzt',
     play: 'Abspielen',
     preview: 'Reinhören',
+    showMissingTracks: 'Fehlende Titel',
+    hideMissingTracks: 'Fehlende ausblenden',
+    notInLibrary: 'Nicht in deiner Bibliothek',
+    missingTracksNone: 'Deine Bibliothek hat jeden Titel dieses Albums.',
+    missingTracksNotFound: 'Deezer führt dieses Album nicht, es gibt also nichts zum Vergleichen.',
+    missingTracksError: 'Das Album ließ sich bei Deezer nicht nachschlagen.',
     // MusicBrainz's release types, as the server sends them (lower-case;
     // 'dj-mix' looked up as djmix).
     releaseTypes: {
@@ -1380,9 +1386,9 @@ export default {
       deezer: {
         name: 'Deezer',
         purpose:
-          'Findet Foto und Künstlerseite zu einem vorgeschlagenen Künstler sowie zu der Künstlerseite, die du gerade geöffnet hast, unabhängig davon, ob Empfehlungen an sind, und füllt eine Playlist aus den Deezer-Charts, den Top-Titeln oder dem Mix eines Künstlers oder einer Deezer-Playlist, und spielt 30-Sekunden-Vorschauen eines Titels im Playlist-Baukasten oder der Top-Titel eines vorgeschlagenen Künstlers.',
+          'Findet Foto und Künstlerseite zu einem vorgeschlagenen Künstler sowie zu der Künstlerseite, die du gerade geöffnet hast, unabhängig davon, ob Empfehlungen an sind, und füllt eine Playlist aus den Deezer-Charts, den Top-Titeln oder dem Mix eines Künstlers oder einer Deezer-Playlist, und spielt 30-Sekunden-Vorschauen eines Titels im Playlist-Baukasten oder der Top-Titel eines vorgeschlagenen Künstlers. Auf einer Albumseite findet es die Deezer-Ausgabe des Albums, um zu zeigen, welche seiner Titel deiner Bibliothek fehlen, samt Vorschau.',
         sends:
-          'Den Namen des nachgeschlagenen Künstlers: eines vorgeschlagenen, desjenigen, dessen Seite du geöffnet hast, oder des Künstlers, den du im Playlist-Baukasten angegeben hast, und was du dort in die Playlist-Suche tippst. Für Charts nur das Genre; das Land leitet Deezer aus dem Standort von Beacons Server ab. Für eine Vorschau Künstler und Titel; die Vorschau holt Beacons Server selbst und spielt sie wie jeden anderen Song ab, Deezer sieht dieses Gerät also nicht.',
+          'Den Namen des nachgeschlagenen Künstlers: eines vorgeschlagenen, desjenigen, dessen Seite du geöffnet hast, oder des Künstlers, den du im Playlist-Baukasten angegeben hast, und was du dort in die Playlist-Suche tippst. Für Charts nur das Genre; das Land leitet Deezer aus dem Standort von Beacons Server ab. Für eine Vorschau Künstler und Titel; die Vorschau holt Beacons Server selbst und spielt sie wie jeden anderen Song ab, Deezer sieht dieses Gerät also nicht. Für die fehlenden Titel eines Albums Albumkünstler und Albumtitel.',
       },
       wikidata: {
         name: 'Wikidata',

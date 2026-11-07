@@ -239,6 +239,12 @@ export default {
     lastPlayed: 'Dernière',
     play: 'Lire',
     preview: 'Aperçu',
+    showMissingTracks: 'Titres manquants',
+    hideMissingTracks: 'Masquer les manquants',
+    notInLibrary: 'Pas dans votre bibliothèque',
+    missingTracksNone: 'Votre bibliothèque contient tous les titres de cet album.',
+    missingTracksNotFound: "Deezer ne propose pas cet album, il n'y a donc rien à comparer.",
+    missingTracksError: "Impossible de trouver l'album sur Deezer.",
     // MusicBrainz's release types, as the server sends them (lower-case;
     // 'dj-mix' looked up as djmix).
     releaseTypes: {
@@ -1387,9 +1393,9 @@ export default {
       deezer: {
         name: 'Deezer',
         purpose:
-          "Recherche une photo et une page d'artiste pour un artiste suggéré, ainsi que pour la page d'artiste que vous avez ouverte, que les recommandations soient activées ou non, et remplit une playlist avec les classements Deezer, les top titres ou le mix d'un artiste, ou une playlist Deezer, et joue des extraits de 30 secondes d'un titre dans le générateur de playlists ou des meilleurs titres d'un artiste suggéré.",
+          "Recherche une photo et une page d'artiste pour un artiste suggéré, ainsi que pour la page d'artiste que vous avez ouverte, que les recommandations soient activées ou non, et remplit une playlist avec les classements Deezer, les top titres ou le mix d'un artiste, ou une playlist Deezer, et joue des extraits de 30 secondes d'un titre dans le générateur de playlists ou des meilleurs titres d'un artiste suggéré. Sur la page d'un album, trouve son édition Deezer pour montrer les titres qui manquent à votre bibliothèque, avec leurs extraits.",
         sends:
-          "Le nom de l'artiste recherché : un artiste suggéré, celui dont vous avez ouvert la page, ou celui demandé au générateur de playlists, et ce que vous tapez dans sa recherche de playlists. Pour un classement, seulement le genre ; Deezer déduit le pays de l'emplacement du serveur de Beacon. Pour un extrait, l'artiste et le titre ; le serveur de Beacon récupère lui-même l'extrait et le lit comme n'importe quel titre, Deezer ne voit donc pas cet appareil.",
+          "Le nom de l'artiste recherché : un artiste suggéré, celui dont vous avez ouvert la page, ou celui demandé au générateur de playlists, et ce que vous tapez dans sa recherche de playlists. Pour un classement, seulement le genre ; Deezer déduit le pays de l'emplacement du serveur de Beacon. Pour un extrait, l'artiste et le titre ; le serveur de Beacon récupère lui-même l'extrait et le lit comme n'importe quel titre, Deezer ne voit donc pas cet appareil. Pour les titres manquants d'un album, l'artiste et le titre de l'album.",
       },
       wikidata: {
         name: 'Wikidata',
