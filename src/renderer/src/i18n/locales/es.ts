@@ -792,7 +792,12 @@ export default {
     speakerHint:
       'Se aplica a partir de la siguiente canción. "Aplicar ahora" reinicia la canción actual en el mismo punto, con una breve pausa. Con reproducción sin pausas o fundido activados, los cambios se oyen mientras suena la canción. Las emisoras de radio no cambian.',
     liveHint:
-      'Se oye mientras suena la canción, tras los pocos segundos que el altavoz tiene en reserva. Las emisoras de radio no cambian.',
+      'Los cambios llegan al altavoz sin cortes, pero tras unos 15 segundos: es la música que guarda en reserva para que un corte del wifi no se oiga. "Escuchar ya" reinicia la canción en el mismo punto, con una breve pausa. Las emisoras de radio no cambian.',
+    listenNow: 'Escuchar ya',
+    speaker: 'Altavoz',
+    preset: 'Preajuste',
+    presetsHeading: 'Preajustes',
+    ownHeading: 'Tus preajustes',
     savePreset: 'Guardar como preajuste',
     presetName: 'Nombre del preajuste',
     deletePreset: 'Eliminar el preajuste "{name}"',

@@ -783,7 +783,12 @@ export default {
     speakerHint:
       'Takes effect from the next song. "Apply now" restarts the current song where it is, with a short pause. With gapless or crossfade on, changes are heard while the song plays. Radio stations are left as they are.',
     liveHint:
-      'Heard while the song plays, after the few seconds the speaker holds in reserve. Radio stations are left as they are.',
+      'Changes reach the speaker without a break, but only after about 15 seconds: that is how much music it holds in reserve, so that a Wi-Fi hiccup is not heard. "Hear it now" restarts the song where it is, with a short pause. Radio stations are left as they are.',
+    listenNow: 'Hear it now',
+    speaker: 'Speaker',
+    preset: 'Preset',
+    presetsHeading: 'Presets',
+    ownHeading: 'Your presets',
     savePreset: 'Save as preset',
     presetName: 'Preset name',
     deletePreset: 'Delete preset "{name}"',

@@ -52,9 +52,20 @@ everything - a bass boost for the kitchen must not reach the living room.
   had this device's curve under Settings and each speaker's in the device
   picker; trying it, the curve being changed was not the one being heard.
   The toolbar button now opens the curve of the current output: the speaker
-  being cast to (a switcher when there are several), otherwise this device.
-  On a phone it sits in the app bar and only while casting, since the phone
-  itself has no curve.
+  being cast to (a segmented switcher when there are several), otherwise
+  this device. On a phone it sits in the app bar and only while casting,
+  since the phone itself has no curve.
+- **The curve is the control** (`EqualizerGraph.vue`): each band is a point
+  dragged up and down, presets are a menu with each one's shape drawn
+  beside its name. Chosen from a preview against console-style faders; the
+  first version's chips and plain sliders were what it replaced. A point
+  sits at its own band's gain, not on the summed curve - octave-wide bands
+  overlap, so on the curve a point moved whenever a neighbour did. The curve
+  is drawn without the headroom: it shows the shape, and the headroom only
+  lowers the whole of it. Behind it, a faint spectrum of the music, for this
+  device's own playback only: a cast's frames come from one queue in
+  connect, and a second reader would take every other frame from Now
+  Playing's bars.
 - **Presets of one's own** are saved by name, follow the account
   (`equalizerPresets`) like the speakers' curves, and are shared by every
   output: a curve is a curve, whichever speaker it was made for.
@@ -80,9 +91,20 @@ everything - a bass boost for the kitchen must not reach the living room.
   in or out. Within 0.4 dB of the biquads everywhere; 2048 taps lost almost
   2 dB of a +12 dB band at 31 Hz. A test plays sines through both paths
   and checks they agree. "Live" still means after the speaker's buffer -
-  the mix is rendered ahead, and the speaker plays what it holds first.
+  the mix is rendered ahead, and the speaker plays what it holds first,
+  about 15 seconds. Shrinking that head start was ruled out: it is what
+  keeps a Wi-Fi hiccup from being heard, and several casting
+  investigations rest on it. Instead "Hear it now" restarts the song where
+  it is, with a short pause, for whoever wants to compare straight away.
   ffmpeg's own live control (zmq/sendcmd) was not worth a second build
   dependency.
+- **Headroom stays at the curve's highest point**, even though that makes
+  "More bass" 7 dB quieter everywhere else while the music only sounds
+  about 2.6 dB louder for it. Lowering only by the change in loudness and
+  catching the peaks with a limiter was considered and turned down
+  (2026-11-07): it needs a look-ahead limiter in all three paths, and a
+  limiter at work on loud masters can be heard. The FAQ explains the
+  quieter sound instead.
 
 ## Left out on purpose
 

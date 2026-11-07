@@ -29,3 +29,31 @@ export function resampleBands(bands: number[] | null | undefined): number[] | nu
   }
   return heights
 }
+
+/** BAR_COUNT bar heights (0..1) from a Web Audio analyser, each bar the
+ * average of its own logarithmic slice of the bins - the same slicing
+ * connect/core/audio_analysis.py does for a cast. `data` is reused between
+ * frames; a fresh one is made when the analyser's size does not fit it. */
+export function analyserBands(
+  analyser: AnalyserNode,
+  data: Uint8Array<ArrayBuffer> | null,
+): { heights: number[]; data: Uint8Array<ArrayBuffer> } {
+  const bins =
+    data && data.length === analyser.frequencyBinCount
+      ? data
+      : new Uint8Array(analyser.frequencyBinCount)
+  analyser.getByteFrequencyData(bins)
+  const binHz = analyser.context.sampleRate / analyser.fftSize
+  const ratio = MAX_FREQ_HZ / MIN_FREQ_HZ
+  const heights = Array.from<number>({ length: BAR_COUNT })
+  for (let i = 0; i < BAR_COUNT; i++) {
+    const loFreq = MIN_FREQ_HZ * ratio ** (i / BAR_COUNT)
+    const hiFreq = MIN_FREQ_HZ * ratio ** ((i + 1) / BAR_COUNT)
+    const loBin = Math.max(0, Math.floor(loFreq / binHz))
+    const hiBin = Math.min(bins.length, Math.max(loBin + 1, Math.ceil(hiFreq / binHz)))
+    let sum = 0
+    for (let bin = loBin; bin < hiBin; bin++) sum += bins[bin] ?? 0
+    heights[i] = sum / (hiBin - loBin) / 255
+  }
+  return { heights, data: bins }
+}

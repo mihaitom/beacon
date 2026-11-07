@@ -32,7 +32,7 @@ import { useAuthStore } from '@/stores/auth'
 import { getAudioEngine } from '@/services/audioEngine'
 import { VisualizerEventSource } from '@/services/connect/visualizer'
 import type { VisualizerFrame } from '@/services/connect/types'
-import { BAR_COUNT, MAX_FREQ_HZ, MIN_FREQ_HZ, resampleBands } from '@/services/visualizerBands'
+import { analyserBands, resampleBands } from '@/services/visualizerBands'
 import { extractDominantColor } from '@/services/colorExtractor'
 import { visualizerBarColor } from '@/services/visualizerColor'
 import { accountScopedKey } from '@/services/accountKey'
@@ -770,11 +770,8 @@ export default {
         ? this.sampleFrequencies()
         : resampleBands(this.castBands)
     },
-    // Raw FFT bins are linearly spaced in frequency, but pitch/perceived
-    // "spread" of musical content is logarithmic — each bar instead covers
-    // its own logarithmically-spaced slice (MIN_FREQ_HZ..MAX_FREQ_HZ),
-    // matching connect/core/audio_analysis.py's analyze_pcm() for 'cast'
-    // mode so both read the same.
+    // Logarithmic bars from the linear FFT bins, matching what a cast's
+    // frames carry - see analyserBands().
     sampleFrequencies(): number[] | null {
       let analyser: AnalyserNode
       try {
@@ -783,23 +780,8 @@ export default {
         console.error('[now-playing] Web Audio analyser unavailable:', error)
         return null
       }
-      if (!this.frequencyData || this.frequencyData.length !== analyser.frequencyBinCount) {
-        this.frequencyData = new Uint8Array(analyser.frequencyBinCount)
-      }
-      analyser.getByteFrequencyData(this.frequencyData)
-      const binHz = analyser.context.sampleRate / analyser.fftSize
-      const bins = this.frequencyData
-      const ratio = MAX_FREQ_HZ / MIN_FREQ_HZ
-      const heights = Array.from<number>({ length: BAR_COUNT })
-      for (let i = 0; i < BAR_COUNT; i++) {
-        const loFreq = MIN_FREQ_HZ * ratio ** (i / BAR_COUNT)
-        const hiFreq = MIN_FREQ_HZ * ratio ** ((i + 1) / BAR_COUNT)
-        const loBin = Math.max(0, Math.floor(loFreq / binHz))
-        const hiBin = Math.min(bins.length, Math.max(loBin + 1, Math.ceil(hiFreq / binHz)))
-        let sum = 0
-        for (let bin = loBin; bin < hiBin; bin++) sum += bins[bin] ?? 0
-        heights[i] = sum / (hiBin - loBin) / 255
-      }
+      const { heights, data } = analyserBands(analyser, this.frequencyData)
+      this.frequencyData = data
       return heights
     },
     async loadColor(url: string) {

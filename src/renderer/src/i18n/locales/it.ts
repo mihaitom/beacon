@@ -787,7 +787,12 @@ export default {
     speakerHint:
       'Vale dal brano successivo. "Applica ora" riavvia il brano in corso dallo stesso punto, con una breve pausa. Con riproduzione senza pause o dissolvenza attive, le modifiche si sentono mentre il brano suona. Le stazioni radio restano invariate.',
     liveHint:
-      "Si sente mentre il brano suona, dopo i pochi secondi che l'altoparlante tiene in riserva. Le stazioni radio restano invariate.",
+      'Le modifiche arrivano all\'altoparlante senza interruzioni, ma dopo circa 15 secondi: è la musica che tiene di riserva, perché un\'interruzione del Wi-Fi non si senta. "Ascolta subito" riavvia il brano dallo stesso punto, con una breve pausa. Le stazioni radio restano invariate.',
+    listenNow: 'Ascolta subito',
+    speaker: 'Altoparlante',
+    preset: 'Preset',
+    presetsHeading: 'Preset',
+    ownHeading: 'I tuoi preset',
     savePreset: 'Salva come preset',
     presetName: 'Nome del preset',
     deletePreset: 'Elimina il preset "{name}"',

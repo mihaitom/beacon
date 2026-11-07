@@ -794,7 +794,12 @@ export default {
     speakerHint:
       "S'applique à partir du morceau suivant. « Appliquer maintenant » relance le morceau en cours au même endroit, avec une courte pause. Avec la lecture sans blanc ou le fondu enchaîné, les changements s'entendent pendant le morceau. Les stations de radio restent inchangées.",
     liveHint:
-      "S'entend pendant le morceau, après les quelques secondes que l'enceinte garde en réserve. Les stations de radio restent inchangées.",
+      "Les changements arrivent sur l'enceinte sans interruption, mais après environ 15 secondes : c'est la musique qu'elle garde en réserve pour qu'une coupure du Wi-Fi ne s'entende pas. « Écouter tout de suite » relance le morceau au même endroit, avec une courte pause. Les stations de radio restent inchangées.",
+    listenNow: 'Écouter tout de suite',
+    speaker: 'Enceinte',
+    preset: 'Préréglage',
+    presetsHeading: 'Préréglages',
+    ownHeading: 'Vos préréglages',
     savePreset: 'Enregistrer comme préréglage',
     presetName: 'Nom du préréglage',
     deletePreset: 'Supprimer le préréglage « {name} »',

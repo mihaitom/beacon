@@ -788,13 +788,18 @@ export default {
     speakerHint:
       'Gilt ab dem nächsten Titel. Mit "Jetzt anwenden" startet der laufende Titel an derselben Stelle neu, mit einer kurzen Pause. Mit Lückenlos oder Überblenden ist jede Änderung schon während des Titels zu hören. Radiosender bleiben unverändert.',
     liveHint:
-      'Zu hören, während der Titel läuft, nach den paar Sekunden, die der Lautsprecher vorrätig hat. Radiosender bleiben unverändert.',
+      'Änderungen kommen ohne Unterbrechung am Lautsprecher an, aber erst nach etwa 15 Sekunden: So viel Musik hält er vorrätig, damit ein WLAN-Aussetzer nicht zu hören ist. "Sofort anhören" startet den Titel an derselben Stelle neu, mit einer kurzen Pause. Radiosender bleiben unverändert.',
+    listenNow: 'Sofort anhören',
+    speaker: 'Lautsprecher',
+    preset: 'Preset',
+    presetsHeading: 'Presets',
+    ownHeading: 'Eigene Presets',
     savePreset: 'Als Preset speichern',
     presetName: 'Name des Presets',
     deletePreset: 'Preset "{name}" löschen',
     applyNow: 'Jetzt anwenden',
     reset: 'Zurücksetzen',
-    custom: 'Eigene',
+    custom: 'Eigene Kurve',
     band: '{frequency} Hz',
     presets: {
       flat: 'Neutral',

@@ -156,6 +156,12 @@ const RESPONSE_MIN_HZ = 20
 const RESPONSE_MAX_HZ = 20000
 const RESPONSE_POINTS = 400
 
+/** Where `frequency` sits on a log scale over the audible range, 0 to 1 -
+ * how the curve is laid out left to right. */
+export function logPosition(frequency: number): number {
+  return Math.log(frequency / RESPONSE_MIN_HZ) / Math.log(RESPONSE_MAX_HZ / RESPONSE_MIN_HZ)
+}
+
 /** `count` frequencies spread evenly on a log scale over the audible range. */
 export function logFrequencies(count: number): number[] {
   const ratio = RESPONSE_MAX_HZ / RESPONSE_MIN_HZ
@@ -171,4 +177,20 @@ export function logFrequencies(count: number): number[] {
 export function headroomDb(bands: readonly EqualizerBand[]): number {
   if (bands.length === 0) return 0
   return Math.max(0, ...logFrequencies(RESPONSE_POINTS).map((f) => responseDb(bands, f)))
+}
+
+/** The shape `gains` give the sound, at `count` points across the audible
+ * range: dB per frequency, before headroom - the headroom lowers the whole
+ * curve and does not change its shape. */
+export function responseCurve(
+  gains: readonly number[],
+  count: number,
+  low = RESPONSE_MIN_HZ,
+  high = RESPONSE_MAX_HZ,
+): { frequency: number; db: number }[] {
+  const bands = toBands({ enabled: true, gains: [...gains] })
+  return Array.from({ length: count }, (_, i) => {
+    const frequency = low * (high / low) ** (i / Math.max(1, count - 1))
+    return { frequency, db: responseDb(bands, frequency) }
+  })
 }

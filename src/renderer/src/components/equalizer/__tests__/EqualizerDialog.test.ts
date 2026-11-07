@@ -139,14 +139,14 @@ describe('EqualizerDialog', () => {
     expect(vm.canApplyNow).toBe(false)
   })
 
-  it('needs no "Apply now" with transitions on, where the speaker hears it live', () => {
+  it('offers to hear it now with transitions on too, where a change otherwise waits for the buffer', () => {
     const playback = usePlaybackStore()
     playback.setQueue([{ id: 'a', title: 'A' } as never], 0)
     playback.isPlaying = true
     useTransitionsStore().set({ mode: 'gapless' })
     const { vm } = openFor(KITCHEN)
     expect(vm.live).toBe(true)
-    expect(vm.canApplyNow).toBe(false)
+    expect(vm.canApplyNow).toBe(true)
   })
 
   it('sets the speaker being cast to, and this device when nothing is', async () => {
