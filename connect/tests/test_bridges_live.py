@@ -899,6 +899,8 @@ async def test_subsonic_serves_the_files_own_lyrics(subsonic):
         pytest.skip("SUBSONIC_TEST_LYRICS_SONG_ID not set")
 
     result = await subsonic.call("getLyricsBySongId.view", id=song_id)
+    # A rescan can renumber songs, and then the configured id is simply gone.
+    assert result["status"] == "ok", f"{song_id}: {result.get('error')}"
     entry = result["lyricsList"]["structuredLyrics"][0]
 
     assert entry["line"], "no lyric lines came back"
@@ -1056,9 +1058,11 @@ def _assert_streams_audio(response, body: bytes) -> None:
         f"not audio: {content_type!r}"
     )
     assert body, "no audio bytes came back"
-    # Same uvicorn hazard as the cover-art path: a forwarded length that
-    # doesn't match what is actually streamed crashes the response.
-    assert "content-length" not in {k.lower() for k in response.headers}
+    # Unlike cover art, a track keeps its length: Safari only plays a media
+    # response through when it knows it (see _stream_binary's keep_length).
+    assert response.headers.get("content-length") == "1024", (
+        "the ranged slice lost its Content-Length - Safari stops playing it"
+    )
 
 
 def _ranged_request(track_id: str) -> Request:
