@@ -58,6 +58,7 @@ function fakeEngine() {
     seek: vi.fn(),
     setVolume: vi.fn(),
     setReplayGain: vi.fn(),
+    setEqualizer: vi.fn(),
     hasEnded: false,
     failed: false,
   }

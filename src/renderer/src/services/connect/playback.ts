@@ -4,6 +4,7 @@ import type { ConnectDeviceRef, PlayResponse, QueueResponse } from './types'
 import type { TranscodeFormat } from '@/services/streamQuality'
 import type { SongHint } from '@/services/playback/castPayload'
 import type { TransitionsPayload } from '@/stores/transitions'
+import type { EqualizerBand } from '@/services/equalizer'
 
 /** Transitions and song hints for a mix - see buildCastMixPayload().
  * Absent means one song at a time, as before transitions existed. */
@@ -71,6 +72,10 @@ interface PlayOptions extends MixOptions {
    * body verbatim, unlike the camelCase options above. */
   max_lossy_format?: TranscodeFormat
   max_lossy_bitrate_kbps?: number
+  /** Each speaker's equalizer, keyed `type:name` - see
+   * stores/equalizer.ts's castPayload. Left out, connect keeps what the
+   * session already has. */
+  equalizers?: Record<string, EqualizerBand[]>
 }
 
 // Shared, strictly-increasing dispatch counter for /play and /play-url (both
@@ -143,6 +148,7 @@ export async function play(songId: string, options: PlayOptions = {}): Promise<P
           }
         : {}),
       ...mixBody(options),
+      ...(options.equalizers ? { equalizers: options.equalizers } : {}),
     },
   })
 }
@@ -226,6 +232,12 @@ export async function startPreview(songs: LocalMixSong[], index: number): Promis
 /** Ends a preview: the queue's song back where it was, paused. */
 export async function endPreview(): Promise<void> {
   await fetchConnect('/preview/end', { method: 'POST' })
+}
+
+/** Each speaker's equalizer, for whatever this session starts from here on
+ * - see connect/routes/playback.py's /equalizers. */
+export async function updateEqualizers(equalizers: Record<string, EqualizerBand[]>): Promise<void> {
+  await fetchConnect('/equalizers', { method: 'POST', body: { equalizers } })
 }
 
 export async function stop(): Promise<void> {

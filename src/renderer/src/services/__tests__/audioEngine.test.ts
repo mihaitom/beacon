@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AudioEngine, getAudioEngine } from '@/services/audioEngine'
+import { EQ_FREQUENCIES, EQ_Q, headroomDb } from '@/services/equalizer'
 
 /** Stands in for the real TimeRanges a browser reports on `audio.buffered`
  * — enough of the interface for reportBuffered() to walk. */
@@ -113,6 +114,14 @@ class FakeGain {
   connect = vi.fn()
 }
 
+class FakeBiquad {
+  type = ''
+  frequency = { value: 0 }
+  Q = { value: 0 }
+  gain = { value: 0, setTargetAtTime: vi.fn() }
+  connect = vi.fn()
+}
+
 class FakeAudioContext {
   static last: FakeAudioContext
 
@@ -121,14 +130,23 @@ class FakeAudioContext {
   destination = {}
   analyser = new FakeAnalyser()
   /** setupAnalyser() builds these in order: ReplayGain first, the
-   * listener's volume second. */
+   * listener's volume second, the equalizer's headroom third. */
   gain = new FakeGain()
   volume = new FakeGain()
+  headroom = new FakeGain()
+  bands: FakeBiquad[] = []
   source = { connect: vi.fn() }
 
   createMediaElementSource = vi.fn(() => this.source)
   createAnalyser = vi.fn(() => this.analyser)
-  createGain = vi.fn(() => (this.createGain.mock.calls.length === 1 ? this.gain : this.volume))
+  createGain = vi.fn(
+    () => [this.gain, this.volume, this.headroom][this.createGain.mock.calls.length - 1],
+  )
+  createBiquadFilter = vi.fn(() => {
+    const band = new FakeBiquad()
+    this.bands.push(band)
+    return band
+  })
   // Both track the state the way a real context does, so a test can play,
   // pause and play again and have each call see the right one.
   resume = vi.fn(() => {
@@ -190,7 +208,12 @@ describe('AudioEngine', () => {
       // graph and never reach the output at all.
       expect(context.source.connect).toHaveBeenCalledWith(context.analyser)
       expect(context.analyser.connect).toHaveBeenCalledWith(context.gain)
-      expect(context.gain.connect).toHaveBeenCalledWith(context.volume)
+      expect(context.gain.connect).toHaveBeenCalledWith(context.headroom)
+      expect(context.headroom.connect).toHaveBeenCalledWith(context.bands[0])
+      for (let i = 1; i < context.bands.length; i++) {
+        expect(context.bands[i - 1]!.connect).toHaveBeenCalledWith(context.bands[i])
+      }
+      expect(context.bands.at(-1)!.connect).toHaveBeenCalledWith(context.volume)
       expect(context.volume.connect).toHaveBeenCalledWith(context.destination)
     })
 
@@ -298,12 +321,48 @@ describe('AudioEngine', () => {
       // Only the visualizer and ReplayGain are lost — the element still plays.
       expect(() => degraded.getAnalyser()).toThrow(/unavailable/)
       expect(() => degraded.setReplayGain(0.5)).not.toThrow()
+      expect(() => degraded.setEqualizer([{ frequency: 62, gain: 6, q: 1.41 }])).not.toThrow()
       expect(() => degraded.play('song.mp3')).not.toThrow()
       // And volume falls back to the element, rather than being lost too.
       degraded.setVolume(0.25)
       expect(FakeAudio.last.volume).toBe(0.25)
       expect(() => degraded.pause()).not.toThrow()
       expect(() => degraded.stop()).not.toThrow()
+    })
+  })
+
+  describe('the equalizer', () => {
+    function targetOf(param: { setTargetAtTime: ReturnType<typeof vi.fn> }): number {
+      return param.setTargetAtTime.mock.calls.at(-1)![0] as number
+    }
+
+    it('has a peaking band at every frequency, flat until told otherwise', () => {
+      expect(context.bands.map((b) => [b.type, b.frequency.value, b.gain.value])).toEqual(
+        EQ_FREQUENCIES.map((f) => ['peaking', f, 0]),
+      )
+    })
+
+    it('sets each band and lowers the whole curve by its headroom', () => {
+      const bands = [
+        { frequency: 62, gain: 6, q: EQ_Q },
+        { frequency: 8000, gain: -3, q: EQ_Q },
+      ]
+      engine.setEqualizer(bands)
+
+      const byFrequency = Object.fromEntries(
+        context.bands.map((b) => [b.frequency.value, targetOf(b.gain)]),
+      )
+      expect(byFrequency[62]).toBe(6)
+      expect(byFrequency[8000]).toBe(-3)
+      expect(byFrequency[1000]).toBe(0)
+      expect(targetOf(context.headroom.gain)).toBeCloseTo(10 ** (-headroomDb(bands) / 20), 6)
+    })
+
+    it('goes back to flat and unity for no curve', () => {
+      engine.setEqualizer([{ frequency: 62, gain: 6, q: EQ_Q }])
+      engine.setEqualizer([])
+      expect(context.bands.every((b) => targetOf(b.gain) === 0)).toBe(true)
+      expect(targetOf(context.headroom.gain)).toBe(1)
     })
   })
 

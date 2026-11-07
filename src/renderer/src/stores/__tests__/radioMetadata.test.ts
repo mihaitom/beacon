@@ -32,6 +32,7 @@ vi.mock('@/services/connect/radioMetadata', () => ({
 let engine: {
   bufferedAhead: number
   setVolume: ReturnType<typeof vi.fn>
+  setEqualizer: ReturnType<typeof vi.fn>
   stop: ReturnType<typeof vi.fn>
 }
 
@@ -46,7 +47,7 @@ describe('the radio metadata store', () => {
     localStorage.clear()
     sessionStorage.clear()
     vi.clearAllMocks()
-    engine = { bufferedAhead: 0, setVolume: vi.fn(), stop: vi.fn() }
+    engine = { bufferedAhead: 0, setVolume: vi.fn(), setEqualizer: vi.fn(), stop: vi.fn() }
     vi.mocked(getAudioEngine).mockReturnValue(
       engine as unknown as ReturnType<typeof getAudioEngine>,
     )

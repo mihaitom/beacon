@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import Response, StreamingResponse
 
+from core import equalizer
 from core.auth import require_token
 from core.icy_metadata import (
     DEVICE_METAINT,
@@ -83,6 +84,7 @@ async def _dispatch_queued_track(session: SessionState, target, track, gain: flo
     output_format = await resolve_output_format(
         track_url,
         gain=gain,
+        equalized=equalizer.any_active(st.equalizers, target),
         max_sample_rate=max_rate,
         max_bit_depth=max_depth,
         max_channels=max_channels,
@@ -1348,6 +1350,9 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
         )
         session.state.open_streams.append(conn)
         session.state.recent_streams.append(conn)
+        curve = equalizer.curve_for_connection(
+            session.state.equalizers, session.state.active_delivery, conn.peer, conn.sender
+        )
         # Set by every way out of the body that knows why it ended; left
         # as is, the generator was closed from outside.
         outcome = "closed"
@@ -1359,7 +1364,7 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
         try:
             try:
                 audio = (
-                    mix_cast.mix_audio(mix, offset, output_format)
+                    mix_cast.mix_audio(mix, offset, output_format, curve)
                     if mix is not None
                     else stream_tracks(
                         [track_url],
@@ -1369,6 +1374,7 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
                         output_format=output_format,
                         on_track_end=on_track_end,
                         on_progress=conn.on_progress,
+                        equalizer=curve,
                     )
                 )
                 async for chunk in audio:

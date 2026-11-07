@@ -55,6 +55,22 @@
         {{ $t('connect.takeOver') }}
       </v-btn>
 
+      <!-- Lit while this speaker has a curve, so it is visible without
+         - hovering that something is changing its sound. -->
+      <v-btn
+        v-if="!claimedByOther"
+        icon="mdi-tune-vertical"
+        size="small"
+        variant="text"
+        density="comfortable"
+        :color="hasEqualizer ? 'primary' : undefined"
+        class="device-row__hover-btn"
+        :class="{ 'device-row__hover-btn--visible': hasEqualizer }"
+        :title="$t('equalizer.title')"
+        :aria-label="$t('equalizer.title')"
+        @click.stop="$emit('equalizer', deviceRef)"
+      />
+
       <v-btn
         v-if="showPairButton"
         size="x-small"
@@ -128,6 +144,8 @@ import {
   startVolumeDrag,
 } from '@/services/connect/volumeGuard'
 import { useAuthStore } from '@/stores/auth'
+import { useEqualizerStore } from '@/stores/equalizer'
+import { isActive } from '@/services/equalizer'
 import AirplayIcon from './AirplayIcon.vue'
 import TouchVolumeSlider from '@/components/mobile/TouchVolumeSlider.vue'
 import { isCoarsePointer } from '@/services/coarsePointer'
@@ -159,7 +177,7 @@ export default {
       default: false,
     },
   },
-  emits: ['update:selected', 'take-over', 'pair', 'volume-change'],
+  emits: ['update:selected', 'take-over', 'pair', 'volume-change', 'equalizer'],
   data() {
     return {
       // null while unfetched/unsupported — the slider stays hidden rather
@@ -226,6 +244,9 @@ export default {
     },
     showVolumeSlider() {
       return this.canShowVolume && this.connectStore.activeTargets.length === 1
+    },
+    hasEqualizer(): boolean {
+      return isActive(useEqualizerStore().speaker(this.deviceRef))
     },
     showPairButton() {
       return this.type === 'airplay' && this.device.needs_pairing

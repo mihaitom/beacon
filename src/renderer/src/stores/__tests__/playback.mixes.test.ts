@@ -59,6 +59,7 @@ describe('server-picked mixes', () => {
       seek: vi.fn(),
       setVolume: vi.fn(),
       setReplayGain: vi.fn(),
+      setEqualizer: vi.fn(),
     } as unknown as ReturnType<typeof getAudioEngine>)
     toasts = []
     emitter.on('toast', (toast) => toasts.push(toast as Toast))

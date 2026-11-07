@@ -259,6 +259,10 @@ class AppState:
         # (ReplayGain, album order), keyed by song id - sent with /play and
         # /queue for the mix's next songs (see routes/playback.py's SongHint).
         self.song_hints: dict[str, dict] = {}
+        # Each speaker's equalizer curve, keyed "type:name" like
+        # device_volumes below - see core/equalizer.py. Set by /play and
+        # /equalizers; a speaker missing here plays without one.
+        self.equalizers: dict[str, list[dict[str, float]]] = {}
         # Last-known (volume, muted) per claimed device, keyed like
         # core/claims.py's own "type:name" — pushed by routes/upnp.py's
         # RenderingControl NOTIFY handler (Sonos only for now) and by

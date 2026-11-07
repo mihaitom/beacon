@@ -24,6 +24,7 @@ import pytest
 from core import (
     audio_analysis,
     beat_analysis,
+    equalizer,
     hls,
     mix_engine,
     mix_output,
@@ -124,6 +125,10 @@ def _every_command() -> list[list[str]]:
             )
         ),
         list(mix_output.encoder_cmd(list(lossy_encode_args("mp3", 192)[0]))),
+        # A speaker's equalizer chain, which stream_tracks() and a mix
+        # listener's encoder (routes/mix_cast.py's mix_audio()) both put
+        # after -af.
+        ["-af", equalizer.audio_filter(0.7, [{"frequency": 62.0, "gain": 6.0, "q": 1.41}])],
         # Listening along: a song decoded to PCM, and the encoder reading it.
         list(party_broadcast.decoder_cmd("http://nav/stream", 12.0, 0.7)),
         *[list(party_broadcast.encoder_cmd(kbps)) for kbps in party_broadcast.BITRATES_KBPS],
@@ -174,6 +179,7 @@ def test_every_filter_the_backend_names_is_in_the_contract():
     for command in _every_command():
         named |= _components_named_in(command)[2]
     assert "volume" in named, "the ReplayGain filter is no longer reachable from these commands"
+    assert "equalizer" in named, "the equalizer filter is no longer reachable from these commands"
     assert named <= required, f"not in required-components: {sorted(named - required)}"
 
 

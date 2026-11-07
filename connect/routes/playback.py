@@ -6,12 +6,12 @@ import logging
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import replace
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
-from core import cast_permissions
+from core import cast_permissions, equalizer
 from core.auth import require_token
 from core.claims import claims
 from core.local_mixes import SongEntry
@@ -865,6 +865,10 @@ class PlayRequest(BaseModel):
     transitions: TransitionSettings | None = None
     # ReplayGain and album order of the songs coming up, for the mix.
     song_hints: dict[str, SongHint] = {}
+    # Each speaker's equalizer curve, keyed "type:name" (core/equalizer.py).
+    # A standing preference like the quality ceiling, so it is remembered on
+    # the session for auto-advance. None leaves what the session has.
+    equalizers: dict[str, list[Any]] | None = None
 
 
 def playback_error_reporter(session: SessionState) -> Callable[[PlaybackFailure], Awaitable[None]]:
@@ -979,9 +983,12 @@ async def play_tracks(
         # /seek paths below all see the same ceiling this dispatch used.
         session.state.max_lossy_format = req.max_lossy_format
         session.state.max_lossy_bitrate_kbps = req.max_lossy_bitrate_kbps
+        if req.equalizers is not None:
+            session.state.equalizers = sanitize_curves(req.equalizers)
         output_format = await resolve_output_format(
             track_url,
             gain=req.gain,
+            equalized=equalizer.any_active(session.state.equalizers, target),
             max_sample_rate=max_rate,
             max_bit_depth=max_depth,
             max_channels=max_channels,
@@ -1928,6 +1935,32 @@ async def update_queue(
             mix_cast.queue_changed(session)
             await session.event_bus.broadcast(build_status_dict(session))
         return {"status": "ok"}
+
+
+def sanitize_curves(curves: dict[str, list[Any]]) -> dict[str, list[dict[str, float]]]:
+    """Every speaker's curve through core/equalizer.py's sanitize(), and the
+    ones that end up flat left out."""
+    clean = {key: equalizer.sanitize(bands) for key, bands in curves.items()}
+    return {key: bands for key, bands in clean.items() if bands}
+
+
+class EqualizersRequest(BaseModel):
+    equalizers: dict[str, list[Any]]
+
+
+@router.post("/equalizers")
+async def update_equalizers(
+    req: EqualizersRequest, session: SessionState = Depends(require_authenticated_session)
+):
+    """A curve changed in the equalizer dialog while this session casts.
+    Taken over for whatever starts from here on - the next song, a seek, a
+    device reconnecting - rather than cutting into the song that is playing:
+    a running ffmpeg's filters are fixed, so applying it now means starting
+    the stream again, which the renderer does with an ordinary /play when
+    asked to (see stores/equalizer.ts)."""
+    async with session.play_lock:
+        session.state.equalizers = sanitize_curves(req.equalizers)
+    return {"status": "ok"}
 
 
 @router.post("/stop")

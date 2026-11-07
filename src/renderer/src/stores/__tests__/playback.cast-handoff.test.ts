@@ -4,6 +4,8 @@ import { useConnectStore } from '../connect'
 import { useLibraryStore } from '../library'
 import { usePlaybackStore } from '../playback'
 import { useRadioSettingsStore } from '../radioSettings'
+import { useEqualizerStore } from '../equalizer'
+import { EQ_PRESETS } from '@/services/equalizer'
 import { getAudioEngine } from '@/services/audioEngine'
 import * as connectPlayback from '@/services/connect/playback'
 import type { SubsonicClient } from '@/services/subsonic/client'
@@ -99,6 +101,21 @@ describe('castTo', () => {
       'a',
       expect.objectContaining({ max_lossy_format: 'aac', max_lossy_bitrate_kbps: 192 }),
     )
+  })
+
+  it("takes each speaker's equalizer with it", async () => {
+    const playback = usePlaybackStore()
+    playback.setQueue([makeSong('a')], 0)
+    playback.isPlaying = true
+    useEqualizerStore().setSpeaker(kitchen, { enabled: true, gains: [...EQ_PRESETS.bass] })
+
+    await playback.castTo([kitchen])
+
+    expect(connectPlayback.play).toHaveBeenCalledWith(
+      'a',
+      expect.objectContaining({ equalizers: useEqualizerStore().castPayload }),
+    )
+    expect(useEqualizerStore().castPayload['sonos:Kitchen']).toHaveLength(4)
   })
 
   it('silences this device, so the song is not audible in two places at once', async () => {
@@ -253,6 +270,7 @@ describe('a cast started by another client in the session', () => {
     engine = {
       setVolume: vi.fn(),
       setReplayGain: vi.fn(),
+      setEqualizer: vi.fn(),
       play: vi.fn(),
       playFrom: vi.fn(),
       playLive: vi.fn(),

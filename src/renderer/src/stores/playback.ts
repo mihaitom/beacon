@@ -18,6 +18,7 @@ import { useAuthStore } from './auth'
 import { AUTOPLAY_BATCH_SIZE, autoplayCandidateCount, useAutoplayStore } from './autoplay'
 import { useRadioSettingsStore } from './radioSettings'
 import { useTransitionsStore } from './transitions'
+import { useEqualizerStore } from './equalizer'
 import { useDrawersStore } from './drawers'
 import { useRadioMetadataStore } from './radioMetadata'
 import * as connectPlayback from '@/services/connect/playback'
@@ -663,6 +664,7 @@ export const usePlaybackStore = defineStore('playback', {
 
       const engine = getAudioEngine()
       engine.setVolume(this.volume)
+      useEqualizerStore().applyLocal()
       engine.onTimeUpdate = (position) => {
         if (!this.isCasting) {
           if (getLocalMix().active) this.followLocalMix(position)
@@ -1588,6 +1590,7 @@ export const usePlaybackStore = defineStore('playback', {
             gain: this.replayGainMultiplier,
             ...this.castQualityPayload,
             ...this.castMixPayload,
+            equalizers: useEqualizerStore().castPayload,
             fullQueue,
             queueIndex,
             originalQueue,
@@ -2859,6 +2862,7 @@ export const usePlaybackStore = defineStore('playback', {
             // through startCurrent(). Reported live 2026-09-06.
             ...this.castQualityPayload,
             ...this.castMixPayload,
+            equalizers: useEqualizerStore().castPayload,
             fullQueue,
             queueIndex,
             originalQueue,

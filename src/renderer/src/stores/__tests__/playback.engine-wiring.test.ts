@@ -4,6 +4,7 @@ import { flushPromises } from '@vue/test-utils'
 import { useConnectStore } from '../connect'
 import { useLibraryStore } from '../library'
 import { usePlaybackStore } from '../playback'
+import { useEqualizerStore } from '../equalizer'
 import { useDrawersStore } from '../drawers'
 import { getAudioEngine } from '@/services/audioEngine'
 import * as radioMetadata from '@/services/connect/radioMetadata'
@@ -45,6 +46,7 @@ interface WiredEngine {
   stop: ReturnType<typeof vi.fn>
   setVolume: ReturnType<typeof vi.fn>
   setReplayGain: ReturnType<typeof vi.fn>
+  setEqualizer: ReturnType<typeof vi.fn>
   onTimeUpdate: ((position: number) => void) | null
   onEnded: (() => void) | null
   onError: ((message: string) => void) | null
@@ -96,6 +98,7 @@ describe('the store wiring the audio engine', () => {
       stop: vi.fn(),
       setVolume: vi.fn(),
       setReplayGain: vi.fn(),
+      setEqualizer: vi.fn(),
       onTimeUpdate: null,
       onEnded: null,
       onError: null,
@@ -113,6 +116,14 @@ describe('the store wiring the audio engine', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+  it("puts this device's stored equalizer into the graph at start", () => {
+    useEqualizerStore().local = { enabled: true, gains: [0, 4, 0, 0, 0, 0, 0, 0, 0, 0] }
+    usePlaybackStore().init()
+    expect(engine.setEqualizer).toHaveBeenCalledWith([
+      expect.objectContaining({ frequency: 62, gain: 4 }),
+    ])
   })
 
   it('shows playback as paused once the browser paused it on its own', () => {

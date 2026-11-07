@@ -479,6 +479,7 @@ export default {
         codec_unknown: 'Codec inconnu',
         probe_failed: 'Format inconnu',
         replay_gain: 'ReplayGain',
+        equalizer: 'Égaliseur',
         quality_limit: 'Limite de qualité',
         browser_unsupported: 'Format navigateur',
         device_rejected_stream: 'Refusé',
@@ -492,6 +493,7 @@ export default {
         codec_unknown: "Le codec source n'a pas été reconnu",
         probe_failed: "Le format source n'a pas pu être détecté",
         replay_gain: "ReplayGain est actif, ce qui empêche d'envoyer le fichier tel quel",
+        equalizer: "Une enceinte a un égaliseur, ce qui empêche d'envoyer le fichier tel quel",
         quality_limit: 'La source dépasse la limite de qualité définie dans les réglages',
         browser_unsupported: 'Le navigateur ne peut pas lire le format source',
         device_rejected_stream:
@@ -782,6 +784,30 @@ export default {
     noBridge: 'Aucun Hue Bridge ne répond à {host}.',
     pairFailed: "L'association avec le bridge a échoué.",
     saveFailed: "Impossible d'enregistrer les réglages des lumières.",
+  },
+  equalizer: {
+    title: 'Égaliseur',
+    thisDevice: 'Cet appareil',
+    enabled: 'Égaliseur activé',
+    open: "Régler l'égaliseur",
+    settingsHint:
+      "Pour la lecture sur cet appareil. Chaque enceinte a le sien, dans le sélecteur d'appareils.",
+    unavailableHint:
+      "Les téléphones et tablettes n'ont pas d'égaliseur ici : la lecture passe directement par le navigateur afin de continuer lorsque l'écran est verrouillé. Les égaliseurs des enceintes fonctionnent toujours.",
+    speakerHint:
+      "S'applique à partir du morceau suivant. « Appliquer maintenant » relance le morceau en cours au même endroit, avec une courte pause. Les stations de radio restent inchangées.",
+    applyNow: 'Appliquer maintenant',
+    reset: 'Réinitialiser',
+    custom: 'Personnalisé',
+    band: '{frequency} Hz',
+    presets: {
+      flat: 'Neutre',
+      bass: 'Plus de basses',
+      treble: "Plus d'aigus",
+      vocal: 'Voix',
+      loudness: 'Loudness',
+      smallSpeaker: 'Petite enceinte',
+    },
   },
   settings: {
     title: 'Paramètres',

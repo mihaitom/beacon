@@ -5,6 +5,8 @@ import { useConnectStore } from '../connect'
 import { useLibraryStore } from '../library'
 import { usePlaybackStore } from '../playback'
 import { useRadioSettingsStore } from '../radioSettings'
+import { useEqualizerStore } from '../equalizer'
+import { EQ_PRESETS, toBands } from '@/services/equalizer'
 import { getAudioEngine } from '@/services/audioEngine'
 import * as connectPlayback from '@/services/connect/playback'
 import { ConnectApiError } from '@/services/connect/http'
@@ -70,6 +72,7 @@ function fakeEngine(): {
   seek: ReturnType<typeof vi.fn>
   setVolume: ReturnType<typeof vi.fn>
   setReplayGain: ReturnType<typeof vi.fn>
+  setEqualizer: ReturnType<typeof vi.fn>
   hasEnded: boolean
   failed: boolean
   isPaused: boolean
@@ -86,6 +89,7 @@ function fakeEngine(): {
     seek: vi.fn(),
     setVolume: vi.fn(),
     setReplayGain: vi.fn(),
+    setEqualizer: vi.fn(),
     hasEnded: false,
     failed: false,
     isPaused: true,
@@ -308,6 +312,27 @@ describe('playback transport', () => {
 
       expect(useConnectStore().errors.message).not.toBeNull()
       expect(useConnectStore().errors.detail).toBe('no route')
+    })
+
+    it("starts a song on the speakers with each one's equalizer", async () => {
+      const playback = usePlaybackStore()
+      stubLibraryClient()
+      castTo()
+      useEqualizerStore().setSpeakers({
+        'sonos:Kitchen': { enabled: true, gains: [...EQ_PRESETS.treble] },
+      })
+      playback.setQueue([makeSong('a')], 0)
+
+      await playback.startCurrent()
+
+      expect(connectPlayback.play).toHaveBeenCalledWith(
+        'a',
+        expect.objectContaining({
+          equalizers: {
+            'sonos:Kitchen': toBands({ enabled: true, gains: [...EQ_PRESETS.treble] }),
+          },
+        }),
+      )
     })
 
     it('restarts a session whose stream already ran out, which resume() cannot', async () => {

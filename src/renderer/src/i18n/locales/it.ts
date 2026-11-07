@@ -477,6 +477,7 @@ export default {
         codec_unknown: 'Codec sconosciuto',
         probe_failed: 'Formato sconosciuto',
         replay_gain: 'ReplayGain',
+        equalizer: 'Equalizzatore',
         quality_limit: 'Limite di qualità',
         browser_unsupported: 'Formato browser',
         device_rejected_stream: 'Rifiutato',
@@ -490,6 +491,8 @@ export default {
         codec_unknown: 'Codec di origine non riconosciuto',
         probe_failed: 'Impossibile rilevare il formato di origine',
         replay_gain: 'ReplayGain è attivo, quindi il file non può essere inviato così com’è',
+        equalizer:
+          'Un altoparlante ha un equalizzatore, quindi il file non può essere inviato così com’è',
         quality_limit: 'La sorgente supera il limite di qualità impostato nelle impostazioni',
         browser_unsupported: 'Il browser non può riprodurre il formato di origine',
         device_rejected_stream:
@@ -774,6 +777,30 @@ export default {
     noBridge: 'Nessun Hue Bridge risponde su {host}.',
     pairFailed: "L'associazione con il bridge non è riuscita.",
     saveFailed: 'Impossibile salvare le impostazioni delle luci.',
+  },
+  equalizer: {
+    title: 'Equalizzatore',
+    thisDevice: 'Questo dispositivo',
+    enabled: 'Equalizzatore attivo',
+    open: "Regola l'equalizzatore",
+    settingsHint:
+      'Per la riproduzione su questo dispositivo. Ogni altoparlante ha il suo, nella scelta dei dispositivi.',
+    unavailableHint:
+      "Su telefoni e tablet qui non c'è un equalizzatore: la riproduzione passa direttamente dal browser per continuare a schermo bloccato. Gli equalizzatori degli altoparlanti funzionano comunque.",
+    speakerHint:
+      'Vale dal brano successivo. "Applica ora" riavvia il brano in corso dallo stesso punto, con una breve pausa. Le stazioni radio restano invariate.',
+    applyNow: 'Applica ora',
+    reset: 'Reimposta',
+    custom: 'Personalizzato',
+    band: '{frequency} Hz',
+    presets: {
+      flat: 'Neutro',
+      bass: 'Più bassi',
+      treble: 'Più alti',
+      vocal: 'Voce',
+      loudness: 'Loudness',
+      smallSpeaker: 'Altoparlante piccolo',
+    },
   },
   settings: {
     title: 'Impostazioni',

@@ -53,6 +53,7 @@ describe('the connect status subscription', () => {
       pause: vi.fn(),
       stop: vi.fn(),
       setReplayGain: vi.fn(),
+      setEqualizer: vi.fn(),
     } as unknown as ReturnType<typeof getAudioEngine>)
   })
 

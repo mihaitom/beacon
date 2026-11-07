@@ -8,6 +8,7 @@ import time
 from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass, field
 
+from .equalizer import audio_filter
 from .ffmpeg import FFMPEG_BIN
 
 logger = logging.getLogger("connect.streamer")
@@ -761,6 +762,7 @@ REASON_PROBE_FAILED = "probe_failed"  # ffmpeg couldn't tell us what the source 
 REASON_DEVICE_LIMIT = "device_limit"  # source exceeds the target's sample rate/bit depth
 REASON_QUALITY_LIMIT = "quality_limit"  # source exceeds the quality ceiling the user set
 REASON_REPLAY_GAIN = "replay_gain"  # copying rules out the volume filter ReplayGain needs
+REASON_EQUALIZER = "equalizer"  # copying rules out the filters a speaker's equalizer needs
 REASON_LOSSLESS_CONTAINER = "lossless_container"  # lossless, but not in a castable container
 REASON_CODEC_NOT_CASTABLE = "codec_not_castable"  # decodable, but this target cannot play it
 REASON_CODEC_UNKNOWN = "codec_unknown"  # nothing recognized it
@@ -1097,6 +1099,7 @@ def _lossy_ceiling_format(
 async def resolve_output_format(
     url: str,
     gain: float = 1.0,
+    equalized: bool = False,
     max_sample_rate: int | None = None,
     max_bit_depth: int | None = None,
     max_channels: int | None = None,
@@ -1145,6 +1148,12 @@ async def resolve_output_format(
     all. Every FLAC re-encode tier below is unaffected either way — it
     already decodes+re-encodes, so stream_tracks() fits a volume filter
     into that same pipeline for free (see its own handling of `gain`).
+
+    `equalized` (a target with an equalizer curve, see core/equalizer.py)
+    rules it out for the same reason. Unlike ReplayGain it keeps a FLAC
+    source lossless where the device plays FLAC: an equalizer is turned on
+    to make a speaker sound better, and losing the source's quality to it
+    would work against that.
 
     `max_lossy_format`/`max_lossy_bitrate_kbps` are the *listener's* ceiling
     rather than the device's — the quality setting in the frontend, carried
@@ -1239,7 +1248,7 @@ async def resolve_output_format(
             target_channels=fit.target_channels,
             transcode_reason=REASON_DEVICE_LIMIT,
         )
-    if muxer and gain == 1.0:
+    if muxer and gain == 1.0 and not equalized:
         return OutputFormat(
             ffmpeg_args=["-acodec", "copy", "-f", muxer],
             content_type=_CONTENT_TYPE_FOR_MUXER[muxer],
@@ -1251,6 +1260,26 @@ async def resolve_output_format(
             source_duration=info.duration,
             source_channels=info.channels,
         )
+    if muxer and equalized and codec == "flac" and _plays_flac(device_codecs):
+        flac_args, flac_type = lossless_encode_args()
+        return OutputFormat(
+            ffmpeg_args=flac_args,
+            content_type=flac_type,
+            label="flac → flac (equalizer)",
+            source_codec=info.codec,
+            source_sample_rate=info.sample_rate,
+            source_bit_depth=info.bit_depth,
+            source_bitrate_kbps=info.bitrate_kbps,
+            source_duration=info.duration,
+            source_channels=info.channels,
+            transcode_reason=REASON_EQUALIZER,
+        )
+    if muxer and equalized:
+        logger.info(
+            f"[ffmpeg] format probe: '{codec}' would copy, but a target has an equalizer "
+            "— using mp3 fallback instead, since streamcopy and a filter can't be combined"
+        )
+        return _fallback(REASON_EQUALIZER, info.duration)
     if muxer:
         logger.info(
             f"[ffmpeg] format probe: '{codec}' would copy, but ReplayGain is active "
@@ -1305,6 +1334,7 @@ async def stream_tracks(
     output_format: OutputFormat | None = None,
     on_track_end: Callable[[int, float], None] | None = None,
     on_progress: Callable[[float, int], None] | None = None,
+    equalizer: list[dict[str, float]] | None = None,
 ) -> AsyncGenerator[bytes]:
     """Yield continuous audio bytes for all tracks in sequence, encoded per
     `output_format` (defaults to the MP3 192k fallback — see resolve_output_format()).
@@ -1317,6 +1347,8 @@ async def stream_tracks(
     start_offset seeks the first track to that many seconds in (e.g. after pause/resume).
     gain is a linear amplitude multiplier (ReplayGain), applied via ffmpeg's
     `volume` filter — 1.0 (the default) leaves the audio unchanged.
+    equalizer is this connection's speaker's curve (core/equalizer.py),
+    applied in the same filter chain.
 
     Paced to at most LOOKAHEAD_SECONDS ahead of real playback by ffmpeg
     itself — see _READRATE_ARGS, which every tier's command carries.
@@ -1360,9 +1392,10 @@ async def stream_tracks(
             # Insert -ss before -i for fast input-side seeking on the resumed track
             i_pos = cmd.index("-i")
             cmd = cmd[:i_pos] + ["-ss", f"{seek:.3f}"] + cmd[i_pos:]
-        if gain != 1.0:
+        chain = audio_filter(gain, equalizer or [])
+        if chain:
             i_pos = cmd.index("-vn")
-            cmd = cmd[:i_pos] + ["-af", f"volume={gain}"] + cmd[i_pos:]
+            cmd = cmd[:i_pos] + ["-af", chain] + cmd[i_pos:]
         logger.debug(f"[ffmpeg] Track {i + 1}/{len(track_urls)} ({fmt.label}): {url[:80]}")
         logger.debug(f"[ffmpeg] Command: {' '.join(cmd)}")
 

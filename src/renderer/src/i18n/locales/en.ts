@@ -475,6 +475,7 @@ export default {
         codec_unknown: 'Codec unknown',
         probe_failed: 'Format unknown',
         replay_gain: 'ReplayGain',
+        equalizer: 'Equalizer',
         quality_limit: 'Quality limit',
         browser_unsupported: 'Browser format',
         device_rejected_stream: 'Device refused',
@@ -488,6 +489,7 @@ export default {
         codec_unknown: 'Source codec was not recognized',
         probe_failed: 'Source format could not be detected',
         replay_gain: 'ReplayGain is applied, which rules out sending the file as-is',
+        equalizer: 'A speaker has an equalizer, which rules out sending the file as-is',
         quality_limit: 'Source is above the quality limit set in Settings',
         browser_unsupported: 'Source format cannot be played by the browser',
         device_rejected_stream:
@@ -771,6 +773,29 @@ export default {
     noBridge: 'No Hue Bridge answers at {host}.',
     pairFailed: 'Pairing with the bridge failed.',
     saveFailed: 'The light settings could not be saved.',
+  },
+  equalizer: {
+    title: 'Equalizer',
+    thisDevice: 'This device',
+    enabled: 'Equalizer on',
+    open: 'Adjust equalizer',
+    settingsHint: 'For playback on this device. Each speaker has its own, in the device picker.',
+    unavailableHint:
+      "Phones and tablets have no equalizer here: playback goes straight through the browser so that it keeps running while the screen is locked. The speakers' equalizers still work.",
+    speakerHint:
+      'Takes effect from the next song. "Apply now" restarts the current song where it is, with a short pause. Radio stations are left as they are.',
+    applyNow: 'Apply now',
+    reset: 'Reset',
+    custom: 'Custom',
+    band: '{frequency} Hz',
+    presets: {
+      flat: 'Flat',
+      bass: 'More bass',
+      treble: 'More treble',
+      vocal: 'Voice',
+      loudness: 'Loudness',
+      smallSpeaker: 'Small speaker',
+    },
   },
   settings: {
     title: 'Settings',

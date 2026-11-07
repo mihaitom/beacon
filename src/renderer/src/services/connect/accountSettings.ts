@@ -35,6 +35,9 @@ export interface AccountSettingsPayload {
   fanartEnabled?: boolean
   // Gapless and crossfade - see stores/transitions.ts.
   transitions?: { mode: string; crossfadeSeconds: number; beatmixBars: number }
+  // Each speaker's equalizer, keyed "type:name" - see stores/equalizer.ts.
+  // This device's own curve is not here: it belongs to the device.
+  speakerEqualizers?: Record<string, { enabled: boolean; gains: number[] }>
   // The last app version whose "what's new" dialog this account has seen -
   // see components/releaseNotes.vue. Follows the account, so it is not shown
   // again on another browser or device after it was closed once.

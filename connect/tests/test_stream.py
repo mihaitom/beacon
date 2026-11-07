@@ -755,6 +755,28 @@ async def test_dispatch_queued_track_passes_its_gain_to_resolve_output_format(de
     assert resolve_mock.call_args.kwargs["gain"] == 0.8
 
 
+async def test_dispatch_queued_track_judges_the_format_by_the_speakers_equalizer(
+    default_session,
+):
+    """The next song is resolved here, not by /play - a speaker with an
+    equalizer must not get it handed over untouched, where the filters
+    cannot go."""
+    target = ChromecastDelivery("TV")
+    _playing_session(default_session, ["1", "2"], target=target)
+    default_session.state.equalizers = {"chromecast:TV": [{"frequency": 62, "gain": 6, "q": 1}]}
+    next_track = Track(id="2", title="Next", artist="Artist", duration=200, cover_art_id="c")
+
+    with (
+        patch(
+            "routes.stream.resolve_output_format", AsyncMock(return_value=FALLBACK_FORMAT)
+        ) as resolve_mock,
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()),
+    ):
+        await _dispatch_queued_track(default_session, target, next_track, gain=1.0)
+
+    assert resolve_mock.call_args.kwargs["equalized"] is True
+
+
 # ── stream_with_completion()'s failure handling ──────────────────────────────
 # ffmpeg crashing mid-stream and a device simply disconnecting must be told
 # apart: an ffmpeg failure gets caught and reported (is_streaming=False,

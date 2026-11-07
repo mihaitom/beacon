@@ -48,6 +48,7 @@ describe('scrobbling', () => {
       seek: vi.fn(),
       setVolume: vi.fn(),
       setReplayGain: vi.fn(),
+      setEqualizer: vi.fn(),
     } as unknown as ReturnType<typeof getAudioEngine>)
   })
 

@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from core.equalizer import audio_filter
 from core.streamer import (
     _CONTENT_TYPE_FOR_MUXER,
     _DSD_CODECS,
@@ -1224,6 +1225,13 @@ def test_stream_tracks_applies_a_gain_filter_when_not_unity():
 def test_stream_tracks_omits_the_gain_filter_at_unity():
     cmd = asyncio.run(_drain_kwargs("http://nav/stream", gain=1.0))
     assert "-af" not in cmd
+
+
+def test_stream_tracks_applies_the_speakers_equalizer():
+    bands = [{"frequency": 62.0, "gain": -3.0, "q": 1.41}]
+    cmd = asyncio.run(_drain_kwargs("http://nav/stream", gain=0.5, equalizer=bands))
+    assert cmd[cmd.index("-af") + 1] == audio_filter(0.5, bands)
+    assert cmd.index("-af") < cmd.index("-vn")
 
 
 # ── stream_tracks() process I/O and failure handling ─────────────────────────

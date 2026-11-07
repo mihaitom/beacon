@@ -9,6 +9,7 @@ import { useRadioSettingsStore } from '@/stores/radioSettings'
 import { useLyricsProvidersStore, LYRIC_PROVIDERS } from '@/stores/lyricsProviders'
 import { useAutoplayStore } from '@/stores/autoplay'
 import { useHomeStore } from '@/stores/home'
+import { useEqualizerStore } from '@/stores/equalizer'
 import type { Album } from '@/types/library'
 import { browserLocale, getLocale } from '@/i18n'
 import { setLocale } from '@/services/localeSetting'
@@ -53,6 +54,20 @@ describe('accountScopedStores — pull on account change', () => {
     expect(useRecommendationsStore().enabled).toBe(false)
     expect(useLyricsProvidersStore().enabled).toEqual(['lrclib.net'])
     expect(useRadioSettingsStore().castDirectly).toBe(true)
+  })
+
+  it("takes the speakers' equalizers another device saved", async () => {
+    const kitchen = { enabled: true, gains: [6, 5, 4, 2, 0, 0, 0, 0, 0, 0] }
+    vi.mocked(fetchAccountSettings).mockResolvedValue({
+      speakerEqualizers: { 'sonos:Kitchen': kitchen },
+    })
+    initAccountScopedStores()
+
+    signIn()
+    await nextTick()
+    await vi.waitFor(() =>
+      expect(useEqualizerStore().speaker({ type: 'sonos', name: 'Kitchen' })).toEqual(kitchen),
+    )
   })
 
   it('ignores a non-boolean castRadioDirectly flag', async () => {

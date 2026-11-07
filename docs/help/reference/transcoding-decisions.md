@@ -59,16 +59,17 @@ as playable in Chrome and not in Safari.
 
 ## B. A library track, cast to a device
 
-| Situation                                         | Result                       | Told as              |
-| ------------------------------------------------- | ---------------------------- | -------------------- |
-| the probe could not say what the source is        | MP3 fallback                 | `probe_failed`       |
-| above the quality ceiling that was set            | re-encoded to the chosen one | `quality_limit`      |
-| the device does not list the source's codec       | MP3/AAC fallback             | `codec_not_castable` |
-| source past the device's sample rate or bit depth | resampled FLAC, or fallback  | `device_limit`       |
-| ReplayGain is on and the source would be copied   | re-encoded                   | `replay_gain`        |
-| lossless in a container no device takes           | re-encoded to FLAC           | `lossless_container` |
-| nothing recognised it                             | MP3 fallback                 | `codec_unknown`      |
-| none of the above                                 | copied untouched             | -                    |
+| Situation                                                 | Result                            | Told as              |
+| --------------------------------------------------------- | --------------------------------- | -------------------- |
+| the probe could not say what the source is                | MP3 fallback                      | `probe_failed`       |
+| above the quality ceiling that was set                    | re-encoded to the chosen one      | `quality_limit`      |
+| the device does not list the source's codec               | MP3/AAC fallback                  | `codec_not_castable` |
+| source past the device's sample rate or bit depth         | resampled FLAC, or fallback       | `device_limit`       |
+| a speaker has an equalizer and the source would be copied | FLAC re-encoded as FLAC, else MP3 | `equalizer`          |
+| ReplayGain is on and the source would be copied           | re-encoded                        | `replay_gain`        |
+| lossless in a container no device takes                   | re-encoded to FLAC                | `lossless_container` |
+| nothing recognised it                                     | MP3 fallback                      | `codec_unknown`      |
+| none of the above                                         | copied untouched                  | -                    |
 
 The chosen format is narrowed to what the device declares
 (`PLAYABLE_CODECS` per delivery class): Opus asks for AAC on anything but a

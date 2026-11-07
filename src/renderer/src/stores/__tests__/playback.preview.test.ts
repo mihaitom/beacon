@@ -67,6 +67,7 @@ function fakeEngine() {
     seek: vi.fn(),
     setVolume: vi.fn(),
     setReplayGain: vi.fn(),
+    setEqualizer: vi.fn(),
     hasEnded: false,
     onTimeUpdate: null as ((position: number) => void) | null,
     onEnded: null as (() => void) | null,

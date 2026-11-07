@@ -291,7 +291,7 @@ def test_a_device_connecting_is_served_the_mix(client, default_session, media):
         _play(client)
     default_session.state.clock.resume_offset = 3.0
 
-    async def fake_mix_audio(mix, start_time, fmt):
+    async def fake_mix_audio(mix, start_time, fmt, curve=None):
         assert start_time == 3.0
         yield b"mixed"
 

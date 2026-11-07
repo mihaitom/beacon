@@ -32,6 +32,7 @@ import { reloadLyricsCacheForAccount } from '@/stores/lyrics'
 import { useRecommendationsStore } from '@/stores/recommendations'
 import { useRadioSettingsStore } from '@/stores/radioSettings'
 import { useTransitionsStore, type TransitionSettings } from '@/stores/transitions'
+import { useEqualizerStore } from '@/stores/equalizer'
 import { useLastfmStore } from '@/stores/lastfm'
 import { useListenbrainzStore } from '@/stores/listenbrainz'
 import { useFanartStore } from '@/stores/fanart'
@@ -101,6 +102,10 @@ async function pullAccountSettings(): Promise<void> {
       useTransitionsStore().set(remote.transitions as Partial<TransitionSettings>)
     }
 
+    if (remote.speakerEqualizers && typeof remote.speakerEqualizers === 'object') {
+      useEqualizerStore().setSpeakers(remote.speakerEqualizers)
+    }
+
     if (typeof remote.lastfmUsername === 'string') {
       useLastfmStore().setUsername(remote.lastfmUsername)
     }
@@ -162,6 +167,7 @@ export function initAccountScopedStores(): void {
     useAutoplayStore().reloadForAccount()
     useRadioSettingsStore().reloadForAccount()
     useTransitionsStore().reloadForAccount()
+    useEqualizerStore().reloadForAccount()
     useDrawersStore().reloadForAccount()
     useSongColumnsStore().reloadForAccount()
     useLibraryColumnsStore().reloadForAccount()

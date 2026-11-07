@@ -480,6 +480,7 @@ export default {
         codec_unknown: 'Códec desconocido',
         probe_failed: 'Formato desconocido',
         replay_gain: 'ReplayGain',
+        equalizer: 'Ecualizador',
         quality_limit: 'Límite de calidad',
         browser_unsupported: 'Formato del navegador',
         device_rejected_stream: 'Rechazado',
@@ -493,6 +494,8 @@ export default {
         codec_unknown: 'No se reconoció el códec de origen',
         probe_failed: 'No se pudo detectar el formato de origen',
         replay_gain: 'ReplayGain está activo, por lo que no se puede enviar el archivo tal cual',
+        equalizer:
+          'Un altavoz tiene un ecualizador, por lo que no se puede enviar el archivo tal cual',
         quality_limit: 'La fuente supera el límite de calidad fijado en los ajustes',
         browser_unsupported: 'El navegador no puede reproducir el formato de origen',
         device_rejected_stream:
@@ -779,6 +782,30 @@ export default {
     noBridge: 'Ningún Hue Bridge responde en {host}.',
     pairFailed: 'No se pudo vincular el bridge.',
     saveFailed: 'No se pudieron guardar los ajustes de las luces.',
+  },
+  equalizer: {
+    title: 'Ecualizador',
+    thisDevice: 'Este dispositivo',
+    enabled: 'Ecualizador activado',
+    open: 'Ajustar ecualizador',
+    settingsHint:
+      'Para la reproducción en este dispositivo. Cada altavoz tiene el suyo, en el selector de dispositivos.',
+    unavailableHint:
+      'En móviles y tabletas no hay ecualizador aquí: la reproducción pasa directamente por el navegador para que siga sonando con la pantalla bloqueada. Los ecualizadores de los altavoces siguen funcionando.',
+    speakerHint:
+      'Se aplica a partir de la siguiente canción. "Aplicar ahora" reinicia la canción actual en el mismo punto, con una breve pausa. Las emisoras de radio no cambian.',
+    applyNow: 'Aplicar ahora',
+    reset: 'Restablecer',
+    custom: 'Personalizado',
+    band: '{frequency} Hz',
+    presets: {
+      flat: 'Plano',
+      bass: 'Más graves',
+      treble: 'Más agudos',
+      vocal: 'Voz',
+      loudness: 'Loudness',
+      smallSpeaker: 'Altavoz pequeño',
+    },
   },
   settings: {
     title: 'Ajustes',

@@ -6,7 +6,7 @@ import logging
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from core import cast_permissions
+from core import cast_permissions, equalizer
 from core.auth import require_token
 from core.session import (
     SessionState,
@@ -88,11 +88,17 @@ def _prospective_deliveries(st, new_d: BaseDelivery) -> list[BaseDelivery]:
     return [*current, new_d]
 
 
-def _encode_capabilities(delivery) -> tuple:
+def _encode_capabilities(delivery, curves: dict) -> tuple:
     """Everything about a delivery set that resolve_output_format() reads.
     Two sets with the same signature cannot resolve to different formats,
-    which is what lets the common join skip re-probing the source."""
-    return (audio_capability_limits(delivery), playable_codecs(delivery))
+    which is what lets the common join skip re-probing the source. Whether
+    one of them has an equalizer counts too: a joiner with one turns a copy
+    into a re-encode."""
+    return (
+        audio_capability_limits(delivery),
+        playable_codecs(delivery),
+        equalizer.any_active(curves, delivery),
+    )
 
 
 async def _refit_output_format(session: SessionState, new_d: BaseDelivery) -> bool:
@@ -116,7 +122,9 @@ async def _refit_output_format(session: SessionState, new_d: BaseDelivery) -> bo
     if st.current_track is None:
         return False
     prospective = DeliveryManager.from_deliveries(_prospective_deliveries(st, new_d))
-    if _encode_capabilities(prospective) == _encode_capabilities(st.active_delivery):
+    if _encode_capabilities(prospective, st.equalizers) == _encode_capabilities(
+        st.active_delivery, st.equalizers
+    ):
         return False
 
     if st.mix is not None:
@@ -132,6 +140,7 @@ async def _refit_output_format(session: SessionState, new_d: BaseDelivery) -> bo
     fmt = await resolve_output_format(
         track_url,
         gain=st.current_track_gain,
+        equalized=equalizer.any_active(st.equalizers, prospective),
         max_sample_rate=max_rate,
         max_bit_depth=max_depth,
         max_channels=max_channels,

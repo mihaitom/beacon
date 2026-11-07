@@ -4,6 +4,12 @@
  * mirrors what this reports via the callbacks below.
  */
 
+import { EQ_FREQUENCIES, EQ_Q, headroomDb, type EqualizerBand } from './equalizer'
+
+// How quickly an equalizer change settles: short enough to follow a slider
+// without lag, long enough that a jump of several dB does not click.
+const EQ_RAMP_SECONDS = 0.03
+
 // How far the element's own currentTime may sit from the position load()
 // below asked for before the retry considers the early write to have been
 // dropped. Not an exact comparison: a browser is free to land a seek on a
@@ -192,6 +198,12 @@ export class AudioEngine {
   private audioContext: AudioContext | null = null
   private analyserNode: AnalyserNode | null = null
   private gainNode: GainNode | null = null
+  // The equalizer: one fixed peaking band per EQ_FREQUENCIES entry, always
+  // in the chain (a band at 0 dB is exactly unity), so a change only ever
+  // moves gains and never rewires a graph that is playing. eqHeadroomNode
+  // lowers the whole curve by its loudest point - see setEqualizer().
+  private eqHeadroomNode: GainNode | null = null
+  private eqBands: BiquadFilterNode[] = []
   private volumeNode: GainNode | null = null
   // Undoes the pending 'loadedmetadata' retry armed by load() below, so a
   // newer load()/seek() is never overwritten by the previous one's
@@ -1351,10 +1363,40 @@ export class AudioEngine {
     // you set" relationship the two had when volume was still the
     // element's own (see setVolume()).
     this.volumeNode = this.audioContext.createGain()
+    // Between ReplayGain and volume: after the analyser, like ReplayGain,
+    // so the visualizer and the lights follow the music, not the curve.
+    this.eqHeadroomNode = this.audioContext.createGain()
+    this.eqBands = EQ_FREQUENCIES.map((frequency) => {
+      const band = this.audioContext!.createBiquadFilter()
+      band.type = 'peaking'
+      band.frequency.value = frequency
+      band.Q.value = EQ_Q
+      band.gain.value = 0
+      return band
+    })
     source.connect(this.analyserNode)
     this.analyserNode.connect(this.gainNode)
-    this.gainNode.connect(this.volumeNode)
+    this.gainNode.connect(this.eqHeadroomNode)
+    const lastBand = this.eqBands.reduce<AudioNode>((from, band) => {
+      from.connect(band)
+      return band
+    }, this.eqHeadroomNode)
+    lastBand.connect(this.volumeNode)
     this.volumeNode.connect(this.audioContext.destination)
+  }
+
+  /** This device's equalizer curve (services/equalizer.ts's toBands());
+   * empty for none. Eased rather than set, since it moves while a slider
+   * is dragged with music playing. A no-op without a graph, like
+   * ReplayGain. */
+  setEqualizer(bands: readonly EqualizerBand[]): void {
+    if (!this.audioContext || !this.eqHeadroomNode) return
+    const now = this.audioContext.currentTime
+    for (const node of this.eqBands) {
+      const band = bands.find((b) => b.frequency === node.frequency.value)
+      node.gain.setTargetAtTime(band?.gain ?? 0, now, EQ_RAMP_SECONDS)
+    }
+    this.eqHeadroomNode.gain.setTargetAtTime(10 ** (-headroomDb(bands) / 20), now, EQ_RAMP_SECONDS)
   }
 
   /** Whether this device's own playback volume can be changed at all. The
