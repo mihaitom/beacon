@@ -179,18 +179,32 @@ export function headroomDb(bands: readonly EqualizerBand[]): number {
   return Math.max(0, ...logFrequencies(RESPONSE_POINTS).map((f) => responseDb(bands, f)))
 }
 
-/** The shape `gains` give the sound, at `count` points across the audible
- * range: dB per frequency, before headroom - the headroom lowers the whole
- * curve and does not change its shape. */
-export function responseCurve(
-  gains: readonly number[],
-  count: number,
-  low = RESPONSE_MIN_HZ,
-  high = RESPONSE_MAX_HZ,
-): { frequency: number; db: number }[] {
-  const bands = toBands({ enabled: true, gains: [...gains] })
-  return Array.from({ length: count }, (_, i) => {
-    const frequency = low * (high / low) ** (i / Math.max(1, count - 1))
-    return { frequency, db: responseDb(bands, frequency) }
+/** An SVG path through `points` (sorted left to right) that runs flat out
+ * to `0` and `width` at either end and joins the points with a monotone
+ * cubic: smooth through each point, yet never above or below the two it
+ * runs between, so two equal neighbours are joined by a straight line
+ * rather than a dip. Fritsch-Carlson slopes, drawn as Bezier segments. */
+export function smoothPath(points: readonly [number, number][], width: number): string {
+  if (points.length === 0) return ''
+  const n = points.length
+  const widths = points.slice(1).map(([x], i) => x - points[i]![0])
+  const secants = points.slice(1).map(([, y], i) => (y - points[i]![1]) / widths[i]!)
+  const slopes = points.map((_, i) => {
+    if (i === 0 || i === n - 1) return 0
+    const [d0, d1] = [secants[i - 1]!, secants[i]!]
+    // A peak, a trough or a flat stretch: level there, or it overshoots.
+    if (d0 * d1 <= 0) return 0
+    // PCHIP's weighted harmonic mean of the two secants.
+    const [h0, h1] = [widths[i - 1]!, widths[i]!]
+    return (3 * (h0 + h1)) / ((2 * h1 + h0) / d0 + (h1 + 2 * h0) / d1)
   })
+  const f = (v: number) => v.toFixed(1)
+  let d = `M0,${f(points[0]![1])}L${f(points[0]![0])},${f(points[0]![1])}`
+  for (let i = 0; i < n - 1; i++) {
+    const [x0, y0] = points[i]!
+    const [x1, y1] = points[i + 1]!
+    const third = (x1 - x0) / 3
+    d += `C${f(x0 + third)},${f(y0 + slopes[i]! * third)} ${f(x1 - third)},${f(y1 - slopes[i + 1]! * third)} ${f(x1)},${f(y1)}`
+  }
+  return `${d}L${f(width)},${f(points[n - 1]![1])}`
 }

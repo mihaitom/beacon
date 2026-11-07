@@ -8,6 +8,7 @@ import {
   presetOf,
   responseDb,
   sanitizePresets,
+  smoothPath,
   sanitizeSetting,
   toBands,
 } from '../equalizer'
@@ -97,6 +98,62 @@ describe('equalizer', () => {
     it('reads anything that is not a list as none', () => {
       expect(sanitizePresets({ name: 'A' })).toEqual([])
       expect(sanitizePresets(null)).toEqual([])
+    })
+  })
+
+  describe('smoothPath', () => {
+    /** [start, control 1, control 2, end] y values of each curve segment. */
+    function segments(path: string): number[][] {
+      const numbers = (part: string) => part.match(/-?[\d.]+/g)!.map(Number)
+      const [head, ...curves] = path.split('C')
+      let previous = numbers(head!).at(-1)!
+      return curves.map((curve) => {
+        const [, c1, , c2, , end] = numbers(curve)
+        const segment = [previous, c1!, c2!, end!]
+        previous = end!
+        return segment
+      })
+    }
+
+    const points: [number, number][] = [
+      [10, 50],
+      [20, 20],
+      [30, 20],
+      [40, 80],
+      [50, 60],
+    ]
+
+    it('goes through every point, flat out to both edges', () => {
+      const path = smoothPath(points, 100)
+      expect(path.startsWith('M0,50.0L10.0,50.0')).toBe(true)
+      expect(path.endsWith('L100.0,60.0')).toBe(true)
+      expect(segments(path).map((s) => s[3])).toEqual([20, 20, 80, 60])
+    })
+
+    it('never swings past the two points it joins', () => {
+      // A Bezier stays inside its control points, so controls between the
+      // two ends mean no dip and no bulge in between.
+      // The second set falls all the way, so its slopes are not just the
+      // level ones at each turn.
+      const falling: [number, number][] = [
+        [10, 80],
+        [20, 60],
+        [30, 50],
+        [40, 10],
+        [50, 0],
+      ]
+      const all = [...segments(smoothPath(points, 100)), ...segments(smoothPath(falling, 100))]
+      for (const [start, c1, c2, end] of all) {
+        const [low, high] = [Math.min(start!, end!), Math.max(start!, end!)]
+        for (const c of [c1!, c2!]) {
+          expect(c).toBeGreaterThanOrEqual(low)
+          expect(c).toBeLessThanOrEqual(high)
+        }
+      }
+    })
+
+    it('joins two equal points with a straight line', () => {
+      expect(segments(smoothPath(points, 100))[1]).toEqual([20, 20, 20, 20])
     })
   })
 })

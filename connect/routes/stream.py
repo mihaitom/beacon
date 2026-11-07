@@ -1546,6 +1546,11 @@ async def status_events(session: SessionState = Depends(get_session)):
     )
 
 
+# Frames one /visualizer connection holds back for a slow reader at most;
+# older ones are dropped, since only the freshest is worth drawing.
+_VISUALIZER_QUEUE_FRAMES = 8
+
+
 @router.get("/visualizer", dependencies=[Depends(require_token)])
 async def visualizer_events(session: SessionState = Depends(get_session)):
     """Frequency-band frames for the fullscreen visualizer's 'cast' mode
@@ -1562,18 +1567,40 @@ async def visualizer_events(session: SessionState = Depends(get_session)):
     producing nothing is the frontend's own signal to render nothing rather
     than a fake idle animation."""
     feed = session.visualizer
+    # This connection's own frames: every connection gets every frame, so
+    # Now Playing's bars and the equalizer's backdrop can watch together.
+    frames: asyncio.Queue[list[float]] = asyncio.Queue(maxsize=_VISUALIZER_QUEUE_FRAMES)
+
+    def on_frame(bands: list[float]) -> None:
+        if frames.full():
+            frames.get_nowait()  # drop oldest — always show freshest
+        frames.put_nowait(bands)
+
+    def detach(analyzer) -> None:
+        if analyzer is not None and on_frame in analyzer.listeners:
+            analyzer.listeners.remove(on_frame)
 
     async def generator():
         feed.subscribe()
+        attached = None
         try:
             while True:
                 analyzer = feed.analyzer
+                if analyzer is not attached:
+                    detach(attached)
+                    # The last analyzer's frames are for a song or a
+                    # position that is no longer playing.
+                    while not frames.empty():
+                        frames.get_nowait()
+                    if analyzer is not None:
+                        analyzer.listeners.append(on_frame)
+                    attached = analyzer
                 if analyzer is None:
                     await asyncio.sleep(0.5)
                     yield ": idle\n\n"
                     continue
                 try:
-                    bands = await asyncio.wait_for(analyzer.frames.get(), timeout=1.0)
+                    bands = await asyncio.wait_for(frames.get(), timeout=1.0)
                     payload: dict = {"bands": bands}
                     # (visualizer_position, cast_position) as of the most
                     # recently *released* frame — see AudioAnalyzer.
@@ -1605,6 +1632,7 @@ async def visualizer_events(session: SessionState = Depends(get_session)):
         except asyncio.CancelledError:
             pass
         finally:
+            detach(attached)
             feed.unsubscribe()
 
     return StreamingResponse(

@@ -167,7 +167,10 @@ import { useConnectStore } from '@/stores/connect'
 import { usePlaybackStore } from '@/stores/playback'
 import { useTransitionsStore } from '@/stores/transitions'
 import { getAudioEngine } from '@/services/audioEngine'
-import { analyserBands } from '@/services/visualizerBands'
+import { analyserBands, resampleBands } from '@/services/visualizerBands'
+import { VisualizerEventSource } from '@/services/connect/visualizer'
+import type { VisualizerFrame } from '@/services/connect/types'
+import { useAuthStore } from '@/stores/auth'
 import {
   EQ_PRESETS,
   EQ_PRESET_NAMES,
@@ -216,6 +219,8 @@ export default {
       naming: false,
       presetName: '',
       frequencyData: null as Uint8Array<ArrayBuffer> | null,
+      castBands: null as number[] | null,
+      castEvents: null as VisualizerEventSource | null,
     }
   },
   computed: {
@@ -274,10 +279,15 @@ export default {
     isFlatCurve(): boolean {
       return isFlat(this.draft.gains)
     },
-    /** The music behind the curve, for this device's own playback. Not
-     * while casting: a cast's frames come from one queue in connect, and a
-     * second reader would take every other frame from Now Playing's bars. */
+    /** Whether the music behind the curve comes from connect: casting,
+     * with the dialog open and something playing. */
+    castSpectrum(): boolean {
+      return this.modelValue && this.device !== null && usePlaybackStore().isPlaying
+    },
+    /** The music behind the curve: this device's own analyser, or while
+     * casting the frames connect analyses for Now Playing's bars. */
     spectrum(): (() => number[] | null) | null {
+      if (this.castSpectrum) return () => resampleBands(this.castBands)
       if (this.device || this.unavailable || !usePlaybackStore().isPlaying) return null
       return () => {
         const { heights, data } = analyserBands(getAudioEngine().getAnalyser(), this.frequencyData)
@@ -316,11 +326,35 @@ export default {
       this.flush()
       this.load()
     },
+    castSpectrum: {
+      immediate: true,
+      handler(wanted: boolean) {
+        if (wanted) this.startCastEvents()
+        else this.stopCastEvents()
+      },
+    },
   },
   beforeUnmount() {
     this.flush()
+    this.stopCastEvents()
   },
   methods: {
+    /** Opened only while the dialog shows a cast: an open connection is
+     * what keeps connect analysing at all. */
+    startCastEvents(): void {
+      if (this.castEvents) return
+      const auth = useAuthStore()
+      this.castEvents = new VisualizerEventSource(auth.apiUrl, auth.connectToken, auth.sessionId)
+      this.castEvents.onFrame = (frame: VisualizerFrame) => {
+        this.castBands = frame.bands
+      }
+      this.castEvents.start()
+    },
+    stopCastEvents(): void {
+      this.castEvents?.stop()
+      this.castEvents = null
+      this.castBands = null
+    },
     keyOf(device: ConnectDeviceRef): string {
       return speakerKey(device)
     },

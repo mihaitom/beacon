@@ -60,12 +60,15 @@ everything - a bass boost for the kitchen must not reach the living room.
   beside its name. Chosen from a preview against console-style faders; the
   first version's chips and plain sliders were what it replaced. A point
   sits at its own band's gain, not on the summed curve - octave-wide bands
-  overlap, so on the curve a point moved whenever a neighbour did. The curve
-  is drawn without the headroom: it shows the shape, and the headroom only
-  lowers the whole of it. Behind it, a faint spectrum of the music, for this
-  device's own playback only: a cast's frames come from one queue in
-  connect, and a second reader would take every other frame from Now
-  Playing's bars.
+  overlap, so on the curve a point moved whenever a neighbour did. The line
+  is drawn through the points (a monotone cubic, so it never dips or bulges
+  between two of them), not as the filters' exact response, which bulged
+  between the bands and read as the line not following the points; it
+  leaves out the headroom too, which only lowers the whole curve. Behind
+  it, a faint spectrum of the music: this device's analyser, or while
+  casting the frames connect analyses for Now Playing's bars. Those used to
+  come from one shared queue, which would have dealt the frames out
+  between two readers; every `/visualizer` connection now has its own.
 - **Presets of one's own** are saved by name, follow the account
   (`equalizerPresets`) like the speakers' curves, and are shared by every
   output: a curve is a curve, whichever speaker it was made for.

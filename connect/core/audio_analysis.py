@@ -376,9 +376,10 @@ class AudioAnalyzer:
     CPU-bound, not real-time, so it would otherwise race through the rest of
     the track in seconds. Pacing happens at the very end instead
     (_release_frames): finished band frames sit in `_pending` until their own
-    moment actually arrives, then get drip-fed to `frames` (what GET
-    /visualizer reads) one at a time, so a burst of quickly-computed frames
-    doesn't also arrive at the frontend in a burst.
+    moment actually arrives, then get drip-fed to every one of `listeners`
+    (each GET /visualizer connection, party guests) one at a time, so a burst
+    of quickly-computed frames doesn't also arrive at the frontend in a
+    burst.
 
     `elapsed_fn` should be the session's calibrated PlaybackClock.elapsed()
     for a track (track-relative seconds, corrected for the device's real
@@ -453,11 +454,10 @@ class AudioAnalyzer:
         debug_cast_elapsed_fn: Callable[[], float] | None = None,
         debug_lead_fn: Callable[[], tuple[float, bool]] | None = None,
     ) -> None:
-        self.frames: asyncio.Queue[list[float]] = asyncio.Queue(maxsize=8)
-        # Called with every released frame, alongside `frames`. GET
-        # /visualizer is the queue's one reader; anything else watching the
-        # same cast (party guests, core/party.py) listens here instead, so
-        # it doesn't take frames away from that reader.
+        # Called with every released frame: one per GET /visualizer
+        # connection (Now Playing and the equalizer can both be watching)
+        # and party guests (core/party.py). A callback each rather than one
+        # shared queue, which would deal the frames out between readers.
         self.listeners: list[Callable[[list[float]], None]] = []
         # (content_position, bands) pairs already computed but not yet
         # released — see _release_frames(). A handful of KB even for a
@@ -877,9 +877,6 @@ class AudioAnalyzer:
                 if self._debug_lead_fn is not None:
                     lead, measured = self._debug_lead_fn()
                     self.last_release_lead = (round(lead, 2), measured)
-                if self.frames.full():
-                    self.frames.get_nowait()  # drop oldest — always show freshest
-                self.frames.put_nowait(bands)
                 for listener in list(self.listeners):
                     listener(bands)
         except asyncio.CancelledError:

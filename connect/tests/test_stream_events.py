@@ -112,6 +112,69 @@ async def test_events_resends_status_on_timeout_while_actively_streaming(default
 # ── GET /visualizer ───────────────────────────────────────────────────────
 
 
+class _Listeners(list):
+    """An analyzer's listener list that hands every new listener the frames
+    a running analyzer would release to it."""
+
+    def __init__(self, frames):
+        super().__init__()
+        self._frames = frames
+
+    def append(self, listener):
+        super().append(listener)
+        for frame in self._frames:
+            listener(frame)
+
+
+class _Analyzer:
+    def __init__(self, *frames):
+        self.listeners = _Listeners(frames)
+        self.last_release_debug = None
+        self.last_release_lead = None
+
+
+async def test_two_connections_each_get_every_frame(default_session):
+    """Now Playing's bars and the equalizer's backdrop watch at once: a
+    shared queue would deal the frames out between them."""
+    default_session.visualizer.analyzer = _Analyzer([1.0], [2.0])
+    gens = [(await visualizer_events(session=default_session)).body_iterator for _ in range(2)]
+    try:
+        received = [[await gen.__anext__(), await gen.__anext__()] for gen in gens]
+    finally:
+        for gen in gens:
+            await gen.aclose()
+    assert (
+        received[0]
+        == received[1]
+        == [
+            f"data: {json.dumps({'bands': [1.0]})}\n\n",
+            f"data: {json.dumps({'bands': [2.0]})}\n\n",
+        ]
+    )
+
+
+async def test_a_closed_connection_stops_listening(default_session):
+    analyzer = _Analyzer([1.0])
+    default_session.visualizer.analyzer = analyzer
+    gen = (await visualizer_events(session=default_session)).body_iterator
+    await gen.__anext__()
+    assert len(analyzer.listeners) == 1
+    await gen.aclose()
+    assert list(analyzer.listeners) == []
+
+
+async def test_a_slow_reader_gets_the_freshest_frames(default_session):
+    """A stalled tab fills its connection's queue: the oldest frames go,
+    since only what is playing now is worth drawing."""
+    default_session.visualizer.analyzer = _Analyzer(*([float(i)] for i in range(10)))
+    gen = (await visualizer_events(session=default_session)).body_iterator
+    try:
+        first = await gen.__anext__()
+    finally:
+        await gen.aclose()
+    assert first == f"data: {json.dumps({'bands': [2.0]})}\n\n"
+
+
 async def test_visualizer_idles_when_no_analyzer_is_active(default_session):
     default_session.visualizer.analyzer = None
     resp = await visualizer_events(session=default_session)
@@ -126,9 +189,7 @@ async def test_visualizer_idles_when_no_analyzer_is_active(default_session):
 
 
 async def test_visualizer_forwards_a_frame_from_the_active_analyzer(default_session):
-    analyzer = MagicMock()
-    analyzer.frames = asyncio.Queue()
-    analyzer.frames.put_nowait([1.0, 2.0, 3.0])
+    analyzer = _Analyzer([1.0, 2.0, 3.0])
     # Not what this test is about — see the "debug" section below for
     # last_release_debug coverage. A bare MagicMock's attribute is
     # truthy/non-None by default, which json.dumps() can't serialize.
@@ -149,9 +210,7 @@ async def test_visualizer_includes_debug_when_the_analyzer_has_one(default_sessi
     """core/audio_analysis.py's AudioAnalyzer.last_release_debug — the
     debug overlay's own data, radio only (see that attribute's own
     docstring for why a track never sets it)."""
-    analyzer = MagicMock()
-    analyzer.frames = asyncio.Queue()
-    analyzer.frames.put_nowait([1.0])
+    analyzer = _Analyzer([1.0])
     analyzer.last_release_debug = (12.34, 12.1)
     # Not what this test is about — see the lead-specific test below. Same
     # MagicMock-attribute pitfall as last_release_debug above.
@@ -175,9 +234,7 @@ async def test_visualizer_includes_lead_when_the_analyzer_has_one(default_sessio
     """Radio-relayed-Sonos only — see AudioAnalyzer.last_release_lead's own
     comment for why the delta above can't tell "still the fixed guess"
     apart from "a real measurement landed" without this."""
-    analyzer = MagicMock()
-    analyzer.frames = asyncio.Queue()
-    analyzer.frames.put_nowait([1.0])
+    analyzer = _Analyzer([1.0])
     analyzer.last_release_debug = (12.34, 12.1)
     analyzer.last_release_lead = (4.7, False)
     default_session.visualizer.analyzer = analyzer
@@ -198,9 +255,7 @@ async def test_visualizer_omits_lead_when_the_analyzer_has_none(default_session)
     device position, nothing fixed/measured to report) — omitted from the
     payload entirely rather than sent as null, same convention as `debug`
     itself for a track."""
-    analyzer = MagicMock()
-    analyzer.frames = asyncio.Queue()
-    analyzer.frames.put_nowait([1.0])
+    analyzer = _Analyzer([1.0])
     analyzer.last_release_debug = (12.34, 12.1)
     analyzer.last_release_lead = None
     default_session.visualizer.analyzer = analyzer
@@ -217,9 +272,7 @@ async def test_visualizer_omits_lead_when_the_analyzer_has_none(default_session)
 
 
 async def test_visualizer_omits_debug_for_a_track(default_session):
-    analyzer = MagicMock()
-    analyzer.frames = asyncio.Queue()
-    analyzer.frames.put_nowait([1.0])
+    analyzer = _Analyzer([1.0])
     analyzer.last_release_debug = None
     default_session.visualizer.analyzer = analyzer
 
@@ -234,8 +287,7 @@ async def test_visualizer_omits_debug_for_a_track(default_session):
 
 
 async def test_visualizer_heartbeats_while_the_active_analyzer_has_no_frame_yet(default_session):
-    analyzer = MagicMock()
-    analyzer.frames = asyncio.Queue()  # never fed — nothing to get()
+    analyzer = _Analyzer()  # never releases anything
     default_session.visualizer.analyzer = analyzer
 
     resp = await visualizer_events(session=default_session)
@@ -264,9 +316,7 @@ async def test_visualizer_switches_from_idle_to_forwarding_once_a_track_starts_a
         with patch("routes.stream.asyncio.sleep", AsyncMock()):
             idle_tick = await gen.__anext__()
 
-        analyzer = MagicMock()
-        analyzer.frames = asyncio.Queue()
-        analyzer.frames.put_nowait([4.0])
+        analyzer = _Analyzer([4.0])
         analyzer.last_release_debug = None  # see the other test's identical note
         default_session.visualizer.analyzer = analyzer
 

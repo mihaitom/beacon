@@ -8,13 +8,12 @@
 
 <script lang="ts">
 import type { PropType } from 'vue'
-import { logPosition, responseCurve } from '@/services/equalizer'
+import { EQ_FREQUENCIES, logPosition, smoothPath } from '@/services/equalizer'
 
 const WIDTH = 56
 const HEIGHT = 22
-const POINTS = 48
-// Smaller than the graph's range: the presets stay within about ±8 dB, and
-// at this size a full ±15 would leave them all looking flat.
+// Smaller than the graph's range: the presets stay within ±6 dB, and at
+// this size a full ±15 would leave them all looking flat.
 const RANGE_DB = 9
 
 export default {
@@ -25,13 +24,14 @@ export default {
   computed: {
     path(): string {
       const half = HEIGHT / 2 - 2
-      return responseCurve(this.gains, POINTS)
-        .map(({ frequency, db }, i) => {
-          const x = logPosition(frequency) * WIDTH
-          const y = HEIGHT / 2 - (Math.max(-RANGE_DB, Math.min(RANGE_DB, db)) / RANGE_DB) * half
-          return `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`
-        })
-        .join('')
+      const points = EQ_FREQUENCIES.map((frequency, i) => {
+        const db = Math.max(-RANGE_DB, Math.min(RANGE_DB, this.gains[i] ?? 0))
+        return [logPosition(frequency) * WIDTH, HEIGHT / 2 - (db / RANGE_DB) * half] as [
+          number,
+          number,
+        ]
+      })
+      return smoothPath(points, WIDTH)
     },
   },
 }

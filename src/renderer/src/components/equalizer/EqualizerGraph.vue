@@ -89,10 +89,9 @@
 
 <script lang="ts">
 import type { PropType } from 'vue'
-import { EQ_FREQUENCIES, EQ_MAX_GAIN_DB, EQ_STEP_DB, responseCurve } from '@/services/equalizer'
+import { EQ_FREQUENCIES, EQ_MAX_GAIN_DB, EQ_STEP_DB, smoothPath } from '@/services/equalizer'
 import { BAR_COUNT, MAX_FREQ_HZ, MIN_FREQ_HZ } from '@/services/visualizerBands'
 
-const CURVE_POINTS = 160
 // The graph runs a little past the audible range on both sides, so the
 // 31 Hz and 16 kHz points sit clear of the dB labels and of the edge.
 const LOW_HZ = 12
@@ -157,16 +156,15 @@ export default {
       const every = this.bandX(1) - this.bandX(0) < LABEL_SPACING_PX ? 2 : 1
       return EQ_FREQUENCIES.map((_, i) => i % every === 0)
     },
-    points(): [number, number][] {
-      return responseCurve(this.gains, CURVE_POINTS, LOW_HZ, HIGH_HZ).map(({ frequency, db }) => [
-        this.xOf(frequency),
-        this.gainY(db),
-      ])
-    },
+    /** Drawn through the points themselves rather than as the filters'
+     * exact response: octave-wide bands overlap, and the exact curve bulged
+     * and dipped between them, which read as the line not following the
+     * points. What is heard has this shape, slightly rounder. */
     curvePath(): string {
-      return this.points
-        .map(([x, y], i) => `${i ? 'L' : 'M'}${x.toFixed(1)},${y.toFixed(1)}`)
-        .join('')
+      const points = EQ_FREQUENCIES.map(
+        (_, i) => [this.bandX(i), this.gainY(this.gains[i] ?? 0)] as [number, number],
+      )
+      return smoothPath(points, this.width)
     },
     areaPath(): string {
       const zero = this.gainY(0)

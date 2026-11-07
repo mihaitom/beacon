@@ -23,6 +23,18 @@ vi.mock('@/services/audioEngine', () => {
   const engine = { hasAnalyser: true, setEqualizer: vi.fn() }
   return { getAudioEngine: () => engine }
 })
+const castEvents = vi.hoisted(() => ({ started: 0, stopped: 0 }))
+vi.mock('@/services/connect/visualizer', () => ({
+  VisualizerEventSource: class {
+    onFrame = null
+    start() {
+      castEvents.started++
+    }
+    stop() {
+      castEvents.stopped++
+    }
+  },
+}))
 vi.mock('@/services/connect/accountSettings', () => ({
   pushAccountSettings: vi.fn().mockResolvedValue({}),
 }))
@@ -77,6 +89,7 @@ describe('EqualizerDialog', () => {
     localStorage.clear()
     vi.clearAllMocks()
     vi.useFakeTimers()
+    castEvents.started = castEvents.stopped = 0
     ;(getAudioEngine() as unknown as { hasAnalyser: boolean }).hasAnalyser = true
   })
 
@@ -214,5 +227,29 @@ describe('EqualizerDialog', () => {
     expect(open().vm.unavailable).toBe(true)
     // A speaker's curve is applied by connect, not here.
     expect(openFor(KITCHEN).vm.unavailable).toBe(false)
+  })
+
+  it("watches the speaker's music while casting, and lets go when closed", async () => {
+    const playback = usePlaybackStore()
+    playback.setQueue([{ id: 'a', title: 'A' } as never], 0)
+    playback.isPlaying = true
+    const { wrapper } = openFor(KITCHEN)
+    expect(castEvents.started).toBe(1)
+    await wrapper.setProps({ modelValue: false })
+    expect(castEvents.stopped).toBe(1)
+  })
+
+  it("lets go of the speaker's music when it goes away while open", () => {
+    const playback = usePlaybackStore()
+    playback.setQueue([{ id: 'a', title: 'A' } as never], 0)
+    playback.isPlaying = true
+    const { wrapper } = openFor(KITCHEN)
+    wrapper.unmount()
+    expect(castEvents.stopped).toBe(1)
+  })
+
+  it('does not watch a speaker that is not playing', () => {
+    openFor(KITCHEN)
+    expect(castEvents.started).toBe(0)
   })
 })

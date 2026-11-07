@@ -227,12 +227,21 @@ def test_live_analysis_target_types_includes_airplay():
 # ── AudioAnalyzer._release_frames — this is where pacing actually happens ────
 
 
+def _collect(analyzer: AudioAnalyzer) -> list[list[float]]:
+    """Every frame the analyzer releases, as a /visualizer connection
+    receives them."""
+    released: list[list[float]] = []
+    analyzer.listeners.append(released.append)
+    return released
+
+
 def _some_bands() -> list[float]:
     return [0.5] * _BAND_COUNT
 
 
 async def test_release_frames_sends_first_pending_frame_immediately():
     analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, source_url="http://media/track.flac")
+    released = _collect(analyzer)
     analyzer._pending.append((0.0, _some_bands()))
     # Prebuffering (see test_release_frames_waits_for_prebuffer_*  below) is
     # a separate concern from the pacing this test covers — mark decoding
@@ -241,7 +250,7 @@ async def test_release_frames_sends_first_pending_frame_immediately():
     task = asyncio.create_task(analyzer._release_frames())
     try:
         await asyncio.sleep(0.05)
-        assert analyzer.frames.qsize() == 1
+        assert len(released) == 1
     finally:
         task.cancel()
 
@@ -448,6 +457,7 @@ async def test_release_frames_holds_back_frames_ahead_of_playback():
     # regardless of how early a frame was actually computed.
     elapsed = 0.0
     analyzer = AudioAnalyzer(elapsed_fn=lambda: elapsed, source_url="http://media/track.flac")
+    released = _collect(analyzer)
     analyzer._pending.append((0.0, _some_bands()))
     analyzer._pending.append((1.0, _some_bands()))
     analyzer._reading_done = True  # bypass prebuffering — not this test's concern
@@ -456,7 +466,7 @@ async def test_release_frames_holds_back_frames_ahead_of_playback():
         await asyncio.sleep(0.05)
         # First frame (position 0) released immediately; second (position
         # 1) must wait for elapsed_fn to actually reach it.
-        assert analyzer.frames.qsize() == 1
+        assert len(released) == 1
     finally:
         task.cancel()
 
@@ -464,29 +474,31 @@ async def test_release_frames_holds_back_frames_ahead_of_playback():
 async def test_release_frames_releases_once_playback_catches_up():
     elapsed = 0.0
     analyzer = AudioAnalyzer(elapsed_fn=lambda: elapsed, source_url="http://media/track.flac")
+    released = _collect(analyzer)
     analyzer._pending.append((0.0, _some_bands()))
     analyzer._pending.append((1.0, _some_bands()))
     analyzer._reading_done = True  # bypass prebuffering — not this test's concern
     task = asyncio.create_task(analyzer._release_frames())
     try:
         await asyncio.sleep(0.05)
-        assert analyzer.frames.qsize() == 1
+        assert len(released) == 1
 
         elapsed = 1.0
         await asyncio.sleep(0.6)  # release loop polls in <=0.5s steps
-        assert analyzer.frames.qsize() == 2
+        assert len(released) == 2
     finally:
         task.cancel()
 
 
 async def test_release_frames_exits_once_drained_and_reading_done():
     analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, source_url="http://media/track.flac")
+    released = _collect(analyzer)
     analyzer._pending.append((0.0, _some_bands()))
     analyzer._reading_done = True  # decoding already finished
     task = asyncio.create_task(analyzer._release_frames())
     try:
         await asyncio.wait_for(task, timeout=1.0)
-        assert analyzer.frames.qsize() == 1
+        assert len(released) == 1
     finally:
         if not task.done():
             task.cancel()
@@ -497,11 +509,12 @@ async def test_release_frames_withholds_everything_until_prebuffer_fills():
     # exactly the "just started, decode hasn't built a lead yet" case
     # _PREBUFFER_SECONDS exists for — nothing should go out yet.
     analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, source_url="http://media/track.flac")
+    released = _collect(analyzer)
     analyzer._pending.append((0.0, _some_bands()))
     task = asyncio.create_task(analyzer._release_frames())
     try:
         await asyncio.sleep(0.1)
-        assert analyzer.frames.qsize() == 0
+        assert len(released) == 0
     finally:
         task.cancel()
 
@@ -510,24 +523,26 @@ async def test_release_frames_releases_once_prebuffer_fills():
     # Once _pending's own span reaches _PREBUFFER_SECONDS, the earliest
     # frame(s) should start going out even though decoding is still ongoing.
     analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, source_url="http://media/track.flac")
+    released = _collect(analyzer)
     analyzer._pending.append((0.0, _some_bands()))
     analyzer._pending.append((_PREBUFFER_SECONDS, _some_bands()))
     task = asyncio.create_task(analyzer._release_frames())
     try:
         await asyncio.sleep(0.1)
-        assert analyzer.frames.qsize() == 1
+        assert len(released) == 1
     finally:
         task.cancel()
 
 
 async def test_release_frames_waits_for_more_pending_if_not_reading_done():
     analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, source_url="http://media/track.flac")
+    released = _collect(analyzer)
     # Nothing pending yet, decoding still in progress — must not exit.
     task = asyncio.create_task(analyzer._release_frames())
     try:
         await asyncio.sleep(0.1)
         assert not task.done()
-        assert analyzer.frames.qsize() == 0
+        assert len(released) == 0
     finally:
         task.cancel()
 
@@ -542,44 +557,24 @@ async def test_release_frames_keeps_polling_after_pending_drains_mid_stream():
     # exactly when this says so.
     position = [0.0]
     analyzer = AudioAnalyzer(elapsed_fn=lambda: position[0], source_url="http://media/track.flac")
+    released = _collect(analyzer)
     analyzer._pending.append((0.0, _some_bands()))
     analyzer._pending.append((_PREBUFFER_SECONDS, _some_bands()))
     task = asyncio.create_task(analyzer._release_frames())
     try:
         await asyncio.sleep(0.1)
-        assert analyzer.frames.qsize() == 1  # the second frame isn't due yet
+        assert len(released) == 1  # the second frame isn't due yet
 
         position[0] = _PREBUFFER_SECONDS
         await asyncio.sleep(_PREBUFFER_SECONDS + 0.1)
-        assert analyzer.frames.qsize() == 2  # pending has now drained fully
+        assert len(released) == 2  # pending has now drained fully
 
         analyzer._pending.append((_PREBUFFER_SECONDS, _some_bands()))
         await asyncio.sleep(0.1)
-        assert analyzer.frames.qsize() == 3
+        assert len(released) == 3
         assert not task.done()  # still polling, not exited
     finally:
         task.cancel()
-
-
-async def test_release_frames_drops_the_oldest_frame_once_the_output_queue_is_full():
-    """A client that stops reading its SSE connection (a stalled browser
-    tab, say) is what fills this up — every frame here is due at the same
-    moment, so pacing holds none of them back."""
-    analyzer = AudioAnalyzer(elapsed_fn=lambda: 10.0, source_url="http://media/track.flac")
-    for i in range(10):
-        analyzer._pending.append((10.0, [float(i)] * _BAND_COUNT))
-    analyzer._reading_done = True
-    task = asyncio.create_task(analyzer._release_frames())
-    try:
-        await asyncio.wait_for(task, timeout=1.0)
-        assert analyzer.frames.qsize() == 8  # capped at maxsize
-        released_markers = [analyzer.frames.get_nowait()[0] for _ in range(8)]
-        # The two oldest (i=0, i=1) were dropped to make room for the rest —
-        # always show the freshest data, not stale history.
-        assert released_markers == [2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0]
-    finally:
-        if not task.done():
-            task.cancel()
 
 
 async def test_release_frames_drops_frames_playback_has_already_passed():
@@ -589,6 +584,7 @@ async def test_release_frames_drops_frames_playback_has_already_passed():
     a visible stutter — before finally landing in sync. See
     _MAX_LATENESS_SECONDS."""
     analyzer = AudioAnalyzer(elapsed_fn=lambda: 30.0, source_url="http://media/track.flac")
+    released = _collect(analyzer)
     analyzer._pending.append((29.0, [1.0] * _BAND_COUNT))  # a second late
     analyzer._pending.append((30.0 - _MAX_LATENESS_SECONDS / 2, [2.0] * _BAND_COUNT))
     analyzer._reading_done = True
@@ -597,7 +593,7 @@ async def test_release_frames_drops_frames_playback_has_already_passed():
         await asyncio.wait_for(task, timeout=1.0)
         # Only the barely-late one — still current enough to be worth
         # showing — actually goes out.
-        assert [f[0] for f in list(analyzer.frames._queue)] == [2.0]
+        assert [f[0] for f in released] == [2.0]
     finally:
         if not task.done():
             task.cancel()
@@ -616,6 +612,7 @@ async def test_release_frames_yields_between_consecutive_drops():
     against that class of bug recurring, not a fix for a specific one —
     see that fix's own comment."""
     analyzer = AudioAnalyzer(elapsed_fn=lambda: 100.0, source_url="http://media/track.flac")
+    released = _collect(analyzer)
     for i in range(5):
         analyzer._pending.append((float(i), [1.0] * _BAND_COUNT))  # all ~100s late
     analyzer._reading_done = True
@@ -624,7 +621,7 @@ async def test_release_frames_yields_between_consecutive_drops():
 
     assert sleep_mock.await_count >= 5
     assert all(call.args[0] == 0 for call in sleep_mock.await_args_list)
-    assert list(analyzer.frames._queue) == []
+    assert released == []
 
 
 # ── AudioAnalyzer.start() ────────────────────────────────────────────────────
