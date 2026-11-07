@@ -118,4 +118,80 @@ describe('WaveformBars', () => {
       .filter((_, i, all) => i === 0 || i === all.length - 1)
     expect(loud!.h).toBeGreaterThan(quiet!.h)
   })
+
+  describe('playhead between position updates', () => {
+    const DURATION = 30
+
+    /** x of the playhead marker in the latest paint, in canvas pixels. */
+    function trackPlayhead(): () => number {
+      stubCanvas()
+      const ctx = HTMLCanvasElement.prototype.getContext('2d') as unknown as {
+        fillRect: (x: number, y: number, w: number, h: number) => void
+      }
+      let markerX = NaN
+      ctx.fillRect = (x, y, _w, h) => {
+        if (y === 0 && h === CANVAS_HEIGHT) markerX = x
+      }
+      return () => markerX
+    }
+
+    function mountPlaying(modelValue: number, playing: boolean) {
+      appAccent.value = DEFAULT_APP_ACCENT
+      return mount(WaveformBars, {
+        props: { peaks: [0.5, 0.5], modelValue, duration: DURATION, playing },
+      })
+    }
+
+    const xAt = (seconds: number) => (seconds / DURATION) * CANVAS_WIDTH
+
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('runs on in real time while playing', () => {
+      vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame', 'performance'] })
+      const playhead = trackPlayhead()
+      mountPlaying(10, true)
+
+      vi.advanceTimersByTime(200)
+
+      expect(playhead()).toBeCloseTo(xAt(10.2), 0)
+    })
+
+    it('stops running on half a second after the last update', () => {
+      vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame', 'performance'] })
+      const playhead = trackPlayhead()
+      mountPlaying(10, true)
+
+      vi.advanceTimersByTime(3000)
+
+      expect(playhead()).toBeCloseTo(xAt(10.5), 0)
+    })
+
+    it('stays on the reported position while paused', () => {
+      vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame', 'performance'] })
+      const playhead = trackPlayhead()
+      mountPlaying(10, false)
+
+      vi.advanceTimersByTime(1000)
+
+      expect(playhead()).toBeCloseTo(xAt(10), 5)
+    })
+
+    it('does not step back for an update just behind it, but does for a seek', async () => {
+      vi.useFakeTimers({ toFake: ['requestAnimationFrame', 'cancelAnimationFrame', 'performance'] })
+      const playhead = trackPlayhead()
+      const wrapper = mountPlaying(10, true)
+      vi.advanceTimersByTime(300)
+      const ahead = playhead()
+
+      await wrapper.setProps({ modelValue: 10.2 })
+      vi.advanceTimersByTime(20)
+      expect(playhead()).toBeGreaterThanOrEqual(ahead)
+
+      await wrapper.setProps({ modelValue: 2 })
+      vi.advanceTimersByTime(20)
+      expect(playhead()).toBeLessThan(xAt(3))
+    })
+  })
 })

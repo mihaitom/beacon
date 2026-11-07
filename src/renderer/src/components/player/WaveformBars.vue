@@ -43,6 +43,16 @@ const LOAD_BAR_GAP = 1
 // hairlines with no gap on a narrow bar and slabs on a wide one.
 const BAR_WIDTH = 2
 const BAR_GAP = 1
+// While playing, the playhead runs on from the last reported position at
+// real-time speed between reports (every 200-250ms, which on a 30s preview
+// is a jump of several pixels). Capped so a stall stops it within half a
+// second instead of letting it run on. The same span is how far a report
+// may land behind what is shown without the playhead stepping back: a
+// report that far behind is the extrapolation having been a little early,
+// not a seek.
+const MAX_LEAD_SECONDS = 0.5
+// Below this many device pixels of movement a frame isn't repainted.
+const MIN_REPAINT_PX = 0.25
 
 /** Fits the peaks to `count` bars, each the loudest peak it covers, so a
  * single loud hit isn't averaged away when there are fewer bars than peaks.
@@ -87,14 +97,24 @@ export default {
     // something to show (see paint()'s no-peaks branch): how long it's
     // been playing, against the last library track's length.
     dimmed: { type: Boolean, default: false },
+    // Lets the playhead move smoothly between modelValue updates (see
+    // MAX_LEAD_SECONDS). Off, it sits exactly on modelValue.
+    playing: { type: Boolean, default: false },
   },
   emits: ['update:modelValue', 'end'],
   data() {
     return {
       resizeObserver: null as ResizeObserver | null,
       dragging: false,
+      // The playhead's frame-by-frame state; nothing reads it reactively.
+      anchorValue: this.modelValue,
+      anchorTime: performance.now(),
+      shownPosition: this.modelValue,
+      paintedX: -1,
+      frameId: 0,
     }
   },
+
   computed: {
     /** The app's current accent, as "r, g, b" - Now Playing borrows the
      * theme's primary for the track's artwork colour (see appAccent), so the
@@ -114,6 +134,12 @@ export default {
       this.paint()
     },
     modelValue() {
+      this.setAnchor()
+      if (!this.animating()) this.paint()
+    },
+    playing() {
+      this.setAnchor()
+      this.updateAnimation()
       this.paint()
     },
     duration() {
@@ -127,11 +153,44 @@ export default {
     this.resizeObserver = new ResizeObserver(() => this.resizeCanvas())
     this.resizeObserver.observe(this.$el)
     this.resizeCanvas()
+    this.updateAnimation()
   },
   beforeUnmount() {
     this.resizeObserver?.disconnect()
+    cancelAnimationFrame(this.frameId)
   },
   methods: {
+    animating(): boolean {
+      return this.playing && !this.dragging && this.duration > 0
+    },
+    setAnchor() {
+      this.anchorValue = this.modelValue
+      this.anchorTime = performance.now()
+    },
+    /** Where the playhead is drawn: modelValue, or while playing, run on
+     * from it in real time - never back by less than MAX_LEAD_SECONDS, so
+     * a report landing just behind the extrapolation doesn't jerk it
+     * backwards. */
+    playheadPosition(now: number): number {
+      if (!this.animating()) return this.modelValue
+      const lead = Math.min(MAX_LEAD_SECONDS, Math.max(0, (now - this.anchorTime) / 1000))
+      let position = Math.min(this.duration, this.anchorValue + lead)
+      const behind = this.shownPosition - position
+      if (behind > 0 && behind < MAX_LEAD_SECONDS) position = this.shownPosition
+      return position
+    },
+    updateAnimation() {
+      cancelAnimationFrame(this.frameId)
+      this.frameId = 0
+      if (this.animating()) this.frameId = requestAnimationFrame(this.onFrame)
+    },
+    onFrame(now: number) {
+      this.frameId = requestAnimationFrame(this.onFrame)
+      const canvas = this.$refs.canvasEl as HTMLCanvasElement | undefined
+      if (!canvas) return
+      const x = (this.playheadPosition(now) / this.duration) * canvas.width
+      if (Math.abs(x - this.paintedX) >= MIN_REPAINT_PX) this.paint(now)
+    },
     resizeCanvas() {
       const canvas = this.$refs.canvasEl as HTMLCanvasElement | undefined
       if (!canvas) return
@@ -152,6 +211,7 @@ export default {
     onPointerDown(e: PointerEvent) {
       if (this.disabled) return
       this.dragging = true
+      this.updateAnimation()
       ;(this.$refs.canvasEl as HTMLCanvasElement).setPointerCapture(e.pointerId)
       this.$emit('update:modelValue', this.positionFromEvent(e))
     },
@@ -162,6 +222,7 @@ export default {
     onPointerUp(e: PointerEvent) {
       if (!this.dragging) return
       this.dragging = false
+      this.updateAnimation()
       // Never calls seek() itself — committing once here (not on every
       // drag tick above) is what avoids overlapping seek round-trips while
       // casting, same reasoning as PlayerBar.vue's seekPreviewPosition.
@@ -197,7 +258,7 @@ export default {
       ctx.fillStyle = fillColor
       ctx.fillRect(0, y, bufferedX, height)
     },
-    paint() {
+    paint(now = performance.now()) {
       const canvas = this.$refs.canvasEl as HTMLCanvasElement | undefined
       const ctx = canvas?.getContext('2d')
       if (!canvas || !ctx) return
@@ -214,8 +275,10 @@ export default {
       // Clamped to the canvas width so a position that ever lands past
       // duration (rounding, mostly) reads as fully played instead of
       // drawing a marker off the visible edge.
-      const playedRatio = this.duration > 0 ? this.modelValue / this.duration : 0
+      this.shownPosition = this.playheadPosition(now)
+      const playedRatio = this.duration > 0 ? this.shownPosition / this.duration : 0
       const playedX = Math.min(width, playedRatio * width)
+      this.paintedX = playedX
       const bufferedRatio = this.duration > 0 ? this.buffered / this.duration : 0
       const bufferedX = Math.min(width, bufferedRatio * width)
 

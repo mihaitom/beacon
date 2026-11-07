@@ -32,6 +32,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Electron, the build tools and the backend's libraries are updated to their latest versions
 - The "What's new" dialog opens once per version for each account, so a browser that clears its storage on exit no longer shows it at every login, and other browsers using the same Beacon server skip it too (contributed by [@b-r-y](https://github.com/b-r-y), [#80](https://github.com/mihaitom/beacon/issues/80))
 - Running the backend from source keeps its pairings, API keys and settings in your user data folder (`~/.local/share/beacon-connect` on Linux) instead of the `connect` folder
+- The playhead on the waveform glides along while a song plays instead of moving in small jumps, most noticeable on 30-second previews
 
 ### Fixed
 

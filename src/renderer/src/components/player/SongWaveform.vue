@@ -6,6 +6,7 @@
     :disabled="disabled"
     :buffered="buffered"
     :dimmed="dimmed"
+    :playing="playbackStore.isPlaying"
     @update:model-value="$emit('update:modelValue', $event)"
     @end="$emit('end', $event)"
   />

@@ -50,6 +50,7 @@
             :duration="store.displayDuration"
             disabled
             :dimmed="!store.displaySong"
+            :playing="store.displayPlaying"
           />
           <span class="text-body-small text-medium-emphasis guest-player-bar__time">
             {{ formatTime(store.displayDuration) }}
