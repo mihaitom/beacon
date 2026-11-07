@@ -682,6 +682,7 @@ async def test_closing_a_deck_stops_its_decoder(tmp_path, monkeypatch):
         assert await proc.wait() != 0
         while not deck.decoder_done:
             await asyncio.sleep(0.01)
+    assert proc.stdout.at_eof()  # the pipe is closed, not left paused
 
 
 @pytest.mark.parametrize("failure", ["no url", "lookup fails"])

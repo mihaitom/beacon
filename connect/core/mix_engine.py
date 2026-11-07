@@ -280,12 +280,23 @@ class Deck:
         except Exception as e:
             logger.info(f"[mix] decoding {self.item.song_id} failed: {e}")
         finally:
+            if self._proc is not None:
+                await self._stop_decoder(self._proc)
             self.decoder_done = True
-            if self._proc is not None and self._proc.returncode is None:
-                try:
-                    self._proc.kill()
-                except ProcessLookupError:
-                    pass
+
+    @staticmethod
+    async def _stop_decoder(proc: asyncio.subprocess.Process) -> None:
+        if proc.returncode is None:
+            try:
+                proc.kill()
+            except ProcessLookupError:
+                pass
+        # A full buffer pauses the pipe, and a paused pipe never sees EOF:
+        # its fd stays open, and on Pythons without gh-119710 wait()
+        # never returns either. Draining what is left lets it close.
+        assert proc.stdout is not None
+        while await proc.stdout.read(65536):
+            pass
 
 
 def apply_gain(pcm: bytes, gain: float) -> bytes:
