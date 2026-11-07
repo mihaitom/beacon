@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { findMissingTracks } from '../missingTracks'
+import { compareWithEdition } from '../missingTracks'
 import type { DeezerAlbumTrack } from '@/services/connect/deezer'
 import { makeSong } from '@/stores/__tests__/fixtures'
 
-function track(title: string, titleShort = title): DeezerAlbumTrack {
+function track(title: string, titleShort = title, trackNumber = 0): DeezerAlbumTrack {
   return {
     title,
     titleShort,
     artist: 'Artist',
     duration: 200,
     discNumber: 1,
-    trackNumber: 0,
+    trackNumber,
     deezerId: 1,
     album: 'Album',
   }
@@ -19,9 +19,9 @@ function track(title: string, titleShort = title): DeezerAlbumTrack {
 const songs = (...titles: string[]) => titles.map((title, i) => makeSong(`s${i}`, { title }))
 
 const missingTitles = (library: string[], album: DeezerAlbumTrack[]) =>
-  findMissingTracks(songs(...library), album).map((m) => m.track.title)
+  compareWithEdition(songs(...library), album).missing.map((m) => m.track.title)
 
-describe('findMissingTracks', () => {
+describe('compareWithEdition', () => {
   it('finds nothing missing on a complete album, spelling aside', () => {
     const album = [track("Don't Stop"), track('Bohème'), track('Song A')]
     expect(missingTitles(['Dont Stop', 'Boheme', 'song a'], album)).toEqual([])
@@ -59,7 +59,7 @@ describe('findMissingTracks', () => {
 
   it('places a missing track after the song before it on the album', () => {
     const album = [track('Intro'), track('One'), track('Two'), track('Three'), track('Outro')]
-    const missing = findMissingTracks(songs('One', 'Three'), album)
+    const { missing } = compareWithEdition(songs('One', 'Three'), album)
     expect(missing.map((m) => [m.track.title, m.position])).toEqual([
       ['Intro', 0],
       ['Two', 1],
@@ -69,7 +69,18 @@ describe('findMissingTracks', () => {
 
   it('places by the matched song, whatever order the library holds the songs in', () => {
     const album = [track('One'), track('Two'), track('Three')]
-    const missing = findMissingTracks(songs('Three', 'One'), album)
+    const { missing } = compareWithEdition(songs('Three', 'One'), album)
     expect(missing.map((m) => m.position)).toEqual([2])
+  })
+
+  it("numbers the songs it holds by the edition's own numbering", () => {
+    // A single's file tagged as track 1, which is track 6 of the album.
+    const album = [
+      track('Ready', 'Ready', 1),
+      track('Look', 'Look', 6),
+      track('So It Goes', 'So It Goes', 7),
+    ]
+    const library = [makeSong('look', { title: 'Look', trackNumber: 1 })]
+    expect(compareWithEdition(library, album).trackNumbers).toEqual({ look: 6 })
   })
 })

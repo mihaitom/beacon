@@ -11,7 +11,7 @@ import { i18n } from '@/i18n'
 import { emitter } from '@/emitter'
 import { usePlaybackStore } from '@/stores/playback'
 import type { DeezerAlbumTrack } from '@/services/connect/deezer'
-import type { MissingTrack } from '@/services/library/missingTracks'
+import type { EditionComparison, MissingTrack } from '@/services/library/missingTracks'
 import SongTable from '../SongTable.vue'
 import { makeSong } from '@/stores/__tests__/fixtures'
 
@@ -39,9 +39,14 @@ const songs = [
   makeSong('b', { title: 'Three', trackNumber: 3 }),
 ]
 
-function mountTable(missingTracks: MissingTrack[], props: Record<string, unknown> = {}) {
+function mountTable(
+  missing: MissingTrack[],
+  props: Record<string, unknown> = {},
+  trackNumbers: Record<string, number> = {},
+) {
+  const edition: EditionComparison = { missing, trackNumbers }
   return mount(SongTable, {
-    props: { songs, defaultSortKey: null, groupByDisc: true, missingTracks, ...props },
+    props: { songs, defaultSortKey: null, groupByDisc: true, edition, ...props },
     global: { plugins: [vuetify, i18n], mocks: { $emitter: emitter } },
   })
 }
@@ -64,9 +69,27 @@ describe('missing tracks in a song table', () => {
     expect(rowTitles(wrapper)).toEqual(['(Intro)', 'One', '(Two)', 'Three', '(Bonus)'])
   })
 
-  it('leaves them out under a column sort, where they have no place', () => {
-    const wrapper = mountTable([missing('Two', 1)], { defaultSortKey: 'title' })
-    expect(rowTitles(wrapper)).not.toContain('(Two)')
+  it('sorts them in with the songs under a column sort', () => {
+    const wrapper = mountTable([missing('Two', 1), missing('Bonus', 2)], {
+      defaultSortKey: 'title',
+    })
+    expect(rowTitles(wrapper)).toEqual(['(Bonus)', 'One', 'Three', '(Two)'])
+  })
+
+  it("numbers the songs by the edition's numbering, sorted by number too", () => {
+    // "Three" is tagged as track 3 but is track 6 on the edition.
+    const tracks = [missing('Four', 1, { trackNumber: 4 }), missing('Two', 1, { trackNumber: 2 })]
+    const wrapper = mountTable(tracks, { groupByDisc: false }, { a: 1, b: 6 })
+    const numbers = () =>
+      wrapper.findAll('.song-row, .missing-row').map((row) => row.find('div').text())
+    expect(numbers()).toEqual(['1', '4', '2', '6'])
+
+    const sorted = mountTable(
+      tracks,
+      { groupByDisc: false, defaultSortKey: 'track' },
+      { a: 1, b: 6 },
+    )
+    expect(rowTitles(sorted)).toEqual(['One', '(Two)', '(Four)', 'Three'])
   })
 
   it('groups a missing second disc under its own heading', () => {

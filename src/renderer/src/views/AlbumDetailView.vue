@@ -96,7 +96,7 @@
           group-by-disc
           sticky-header
           :exclude-columns="['cover', 'album']"
-          :missing-tracks="(showMissing && missingTracks) || []"
+          :edition="showMissing ? edition : null"
         />
       </v-container>
     </template>
@@ -124,7 +124,7 @@ import ArtistBio from '@/components/library/ArtistBio.vue'
 import PreviewButton from '@/components/library/PreviewButton.vue'
 import { preloadImage } from '@/services/preloadImage'
 import { getDeezerAlbum } from '@/services/connect/deezer'
-import { findMissingTracks, type MissingTrack } from '@/services/library/missingTracks'
+import { compareWithEdition, type EditionComparison } from '@/services/library/missingTracks'
 import { useFanartStore } from '@/stores/fanart'
 
 // Beyond this many the meta line stops being one line; the first ones are
@@ -149,7 +149,7 @@ export default {
       artResolved: false,
       // The album's tracks the library does not hold, against its largest
       // Deezer edition - looked up on the first click, not with the page.
-      missingTracks: null as MissingTrack[] | null,
+      edition: null as EditionComparison | null,
       missingLoading: false,
       showMissing: false,
     }
@@ -245,7 +245,7 @@ export default {
       this.artistArt = null
       this.artResolved = false
       this.bio = null
-      this.missingTracks = null
+      this.edition = null
       this.missingLoading = false
       this.showMissing = false
       try {
@@ -322,7 +322,7 @@ export default {
       }
       const album = this.album
       if (!album || this.missingLoading) return
-      if (!this.missingTracks) {
+      if (!this.edition) {
         this.missingLoading = true
         try {
           const deezerAlbum = await getDeezerAlbum(album)
@@ -331,7 +331,7 @@ export default {
             this.missingToast('library.missingTracksNotFound')
             return
           }
-          this.missingTracks = findMissingTracks(album.songs, deezerAlbum.tracks)
+          this.edition = compareWithEdition(album.songs, deezerAlbum.tracks)
         } catch (error) {
           console.error('[album-detail] Missing tracks lookup failed:', error)
           this.$emitter.emit('toast', {
@@ -344,7 +344,7 @@ export default {
           this.missingLoading = false
         }
       }
-      if (!this.missingTracks.length) {
+      if (!this.edition.missing.length) {
         this.missingToast('library.missingTracksNone')
         return
       }

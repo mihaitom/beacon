@@ -404,11 +404,11 @@ expanded paragraph grows it rather than spilling out.
 
 The missing songs it shows (`MissingSongRow.vue`) sit in the track list at
 their place on the album, in the same columns, dimmed to 55% and back to
-full on hover or while their preview plays. Their second line says "Not in
-your library" instead of an artist, and the actions cell holds only the
-preview button - there is nothing to star, rate or queue. Under a column
-sort they are left out, since they have no place in any order but the
-album's.
+full on hover or while their preview plays - the dimming is what says they
+are missing, no label. The songs the library holds take the edition's
+numbering meanwhile, so the numbers run through. The actions cell holds
+only the preview button - there is nothing to star, rate or queue. Under a
+column sort they are sorted in with the rest.
 
 Both are preloaded (`services/preloadImage.ts`) before the layer swaps: a
 background-image set and activated in the same tick is blank until the bytes

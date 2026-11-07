@@ -1,8 +1,8 @@
 <template>
   <!-- A track of the album the library does not hold (SongTable.vue's
-   - missingTracks), in the same columns as the songs around it. Only the
-   - number, the title, the running time and a preview of it - there is
-   - nothing to star, rate or queue. -->
+   - edition), in the same columns as the songs around it, dimmed - which
+   - is what says it is missing. Only the number, the title, the running
+   - time and a preview of it: there is nothing to star, rate or queue. -->
   <div
     class="missing-row"
     :class="{ 'missing-row--previewing': previewing }"
@@ -27,9 +27,7 @@
         <div class="text-body-medium" :class="{ 'text-primary': previewing }">
           {{ track.title }}
         </div>
-        <div class="text-body-small text-medium-emphasis">
-          {{ $t('library.notInLibrary') }}
-        </div>
+        <div class="text-body-small text-medium-emphasis">{{ track.artist }}</div>
       </div>
 
       <div

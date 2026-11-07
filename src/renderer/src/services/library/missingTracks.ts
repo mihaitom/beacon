@@ -5,6 +5,14 @@ import { normalize } from '@/services/stringMatch'
 import type { DeezerAlbumTrack } from '@/services/connect/deezer'
 import type { Song } from '@/types/library'
 
+/** An album held against its Deezer edition (compareWithEdition()). */
+export interface EditionComparison {
+  missing: MissingTrack[]
+  /** Each song's number on the edition, by song id, for the songs that are
+   * on it - so the album's numbering runs through the missing ones too. */
+  trackNumbers: Record<string, number>
+}
+
 export interface MissingTrack {
   track: DeezerAlbumTrack
   /** How many of the album's songs, in their given order, come before it -
@@ -34,13 +42,13 @@ const TIERS: [(song: Song) => string, (track: DeezerAlbumTrack) => string][] = [
 ]
 
 /** The Deezer tracks no song of `songs` is, each placed after the song
- * that holds the track before it on Deezer's tracklist. A song matches one
- * track at most, so an album holding a song once still misses its second
- * version. */
-export function findMissingTracks(
+ * that holds the track before it on Deezer's tracklist, and the edition's
+ * number of every song that is on it. A song matches one track at most, so
+ * an album holding a song once still misses its second version. */
+export function compareWithEdition(
   songs: readonly Song[],
   tracks: readonly DeezerAlbumTrack[],
-): MissingTrack[] {
+): EditionComparison {
   const songFor = new Map<number, number>()
   const claimed = new Set<number>()
   for (const [libraryKey, deezerKey] of TIERS) {
@@ -56,11 +64,16 @@ export function findMissingTracks(
   }
 
   const missing: MissingTrack[] = []
+  const trackNumbers: Record<string, number> = {}
   let position = 0
   tracks.forEach((track, t) => {
     const s = songFor.get(t)
-    if (s === undefined) missing.push({ track, position })
-    else position = s + 1
+    if (s === undefined) {
+      missing.push({ track, position })
+      return
+    }
+    position = s + 1
+    if (track.trackNumber) trackNumbers[songs[s]!.id] = track.trackNumber
   })
-  return missing
+  return { missing, trackNumbers }
 }

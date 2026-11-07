@@ -365,12 +365,12 @@ describe('AlbumDetailView missing tracks', () => {
   })
   const album = () =>
     makeAlbum({ songs: [makeSong('s1', { title: 'One' }), makeSong('s2', { title: 'Three' })] })
-  const tableMissing = (wrapper: Awaited<ReturnType<typeof mountAlbum>>['wrapper']) =>
-    (
-      wrapper.findComponent({ name: 'SongTable' }).props('missingTracks') as {
-        track: { title: string }
-      }[]
-    ).map((missing) => missing.track.title)
+  const tableMissing = (wrapper: Awaited<ReturnType<typeof mountAlbum>>['wrapper']) => {
+    const edition = wrapper.findComponent({ name: 'SongTable' }).props('edition') as {
+      missing: { track: { title: string } }[]
+    } | null
+    return (edition?.missing ?? []).map((missing) => missing.track.title)
+  }
 
   it('looks the album up on the first click and shows what the library is missing', async () => {
     vi.mocked(getDeezerAlbum).mockResolvedValue(deezerAlbum('One', 'Two', 'Three', 'Bonus'))
