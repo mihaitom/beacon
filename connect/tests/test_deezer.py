@@ -114,6 +114,24 @@ async def test_artist_falls_back_to_the_top_hit_without_an_exact_match():
     assert get.call_args_list[1].args[0].endswith("/artist/7/top")
 
 
+async def test_artist_top_keeps_one_version_of_each_song_and_still_fills_the_limit():
+    search = {"data": [{"id": 3, "name": "Martin Garrix"}]}
+    top = {
+        "data": [
+            _track("Animals", "Martin Garrix", id=1),
+            _track("Scared to Be Lonely", "Martin Garrix", id=2),
+            _track("Animals (Extended Mix)", "Martin Garrix", title_short="Animals", id=3),
+            _track("Scared To Be Lonely", "Martin Garrix", id=4),
+            _track("Tremor", "Martin Garrix", id=5),
+            _track("Bouncybob", "Martin Garrix", id=6),
+        ]
+    }
+    with _patch_get(search, top) as get:
+        tracks = await deezer.get_artist_top("Martin Garrix", 3)
+    assert get.call_args_list[1].kwargs["params"]["limit"] == 6
+    assert [t["deezerId"] for t in tracks] == [1, 2, 5]
+
+
 async def test_unknown_artist_is_a_not_found_error():
     with _patch_get({"data": [], "total": 0}), pytest.raises(deezer.DeezerError) as e:
         await deezer.get_artist_top("nobody at all", 10)

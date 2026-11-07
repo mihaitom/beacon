@@ -56,10 +56,10 @@
       </div>
       <div v-else class="text-body-small text-medium-emphasis" />
     </div>
-    <!-- Not for a Deezer preview: the server has nothing to star or add. -->
-    <div v-if="currentSong && playbackStore.currentSongInLibrary" class="song-info__actions">
+    <div v-if="currentSong" class="song-info__actions">
+      <!-- Not for a Deezer preview: the server has nothing to star. -->
       <v-btn
-        v-if="authStore.capabilities.favorites"
+        v-if="playbackStore.currentSongInLibrary && authStore.capabilities.favorites"
         :icon="currentSong.starred ? 'mdi-heart' : 'mdi-heart-outline'"
         :color="currentSong.starred ? 'primary' : undefined"
         :disabled="starringInFlight"
@@ -84,34 +84,43 @@
     </div>
     <!-- SongCard.vue's menu, minus the queue entries: this song is the one
      - already playing. The stars live here rather than in the bar, which
-     - has no room for five more targets beside the heart (#55). -->
-    <tile-context-menu v-if="currentSong && playbackStore.currentSongInLibrary" ref="menu">
-      <context-menu-section
-        v-if="authStore.capabilities.songRadio"
-        :label="$t('library.menuPlayback')"
-      />
-      <v-list-item v-if="authStore.capabilities.songRadio" @click="startSongRadio">
-        <template #prepend><v-icon icon="mdi-radio-tower" size="small" /></template>
-        <v-list-item-title>{{ $t('library.songRadio') }}</v-list-item-title>
-      </v-list-item>
-      <context-menu-section :label="$t('library.menuLibrary')" />
-      <rating-item :item="currentSong" />
-      <add-to-playlist-submenu @create="createPlaylist" @select="addToPlaylist" />
-      <context-menu-section :label="$t('library.menuNavigation')" />
-      <v-list-item v-if="currentSong.albumId" :to="`/albums/${currentSong.albumId}`">
-        <template #prepend><v-icon icon="mdi-album" size="small" /></template>
-        <v-list-item-title>{{ $t('library.goToAlbum') }}</v-list-item-title>
-      </v-list-item>
-      <go-to-artist-items :credit="currentSong.artist" :artist-id="currentSong.artistId" />
+     - has no room for five more targets beside the heart (#55). A Deezer
+     - preview gets only what needs no library: the copy entry. -->
+    <tile-context-menu v-if="currentSong" ref="menu">
+      <template v-if="playbackStore.currentSongInLibrary">
+        <context-menu-section
+          v-if="authStore.capabilities.songRadio"
+          :label="$t('library.menuPlayback')"
+        />
+        <v-list-item v-if="authStore.capabilities.songRadio" @click="startSongRadio">
+          <template #prepend><v-icon icon="mdi-radio-tower" size="small" /></template>
+          <v-list-item-title>{{ $t('library.songRadio') }}</v-list-item-title>
+        </v-list-item>
+        <context-menu-section :label="$t('library.menuLibrary')" />
+        <rating-item :item="currentSong" />
+        <add-to-playlist-submenu @create="createPlaylist" @select="addToPlaylist" />
+        <context-menu-section :label="$t('library.menuNavigation')" />
+        <v-list-item v-if="currentSong.albumId" :to="`/albums/${currentSong.albumId}`">
+          <template #prepend><v-icon icon="mdi-album" size="small" /></template>
+          <v-list-item-title>{{ $t('library.goToAlbum') }}</v-list-item-title>
+        </v-list-item>
+        <go-to-artist-items :credit="currentSong.artist" :artist-id="currentSong.artistId" />
+      </template>
       <context-menu-section :label="$t('library.menuDetails')" />
-      <v-list-item v-if="currentSong.coverArtId" @click="showArtwork">
-        <template #prepend><v-icon icon="mdi-image-outline" size="small" /></template>
-        <v-list-item-title>{{ $t('library.showArtwork') }}</v-list-item-title>
+      <v-list-item @click="copyArtistTitle">
+        <template #prepend><v-icon icon="mdi-content-copy" size="small" /></template>
+        <v-list-item-title>{{ $t('library.copyArtistTitle') }}</v-list-item-title>
       </v-list-item>
-      <v-list-item @click="showInfo">
-        <template #prepend><v-icon icon="mdi-information-outline" size="small" /></template>
-        <v-list-item-title>{{ $t('library.songInfo') }}</v-list-item-title>
-      </v-list-item>
+      <template v-if="playbackStore.currentSongInLibrary">
+        <v-list-item v-if="currentSong.coverArtId" @click="showArtwork">
+          <template #prepend><v-icon icon="mdi-image-outline" size="small" /></template>
+          <v-list-item-title>{{ $t('library.showArtwork') }}</v-list-item-title>
+        </v-list-item>
+        <v-list-item @click="showInfo">
+          <template #prepend><v-icon icon="mdi-information-outline" size="small" /></template>
+          <v-list-item-title>{{ $t('library.songInfo') }}</v-list-item-title>
+        </v-list-item>
+      </template>
     </tile-context-menu>
     <create-playlist-dialog ref="createDialog" />
   </div>
@@ -193,16 +202,32 @@ export default {
     /** Radio and the idle bar keep the browser's own menu: there is no
      * song to act on. */
     onContextMenu(event: MouseEvent) {
-      if (!this.playbackStore.currentSongInLibrary) return
+      if (!this.currentSong) return
       event.preventDefault()
       this.openMenu(event)
     },
     openMenu(event: MouseEvent) {
       const menu = this.$refs.menu as { open: (event: MouseEvent) => void } | undefined
       menu?.open(event)
-      // Same eager warm-up as SongRow.vue's openMenu().
-      if (useLibraryStore().playlists.length === 0) {
+      // Same eager warm-up as SongRow.vue's openMenu(), for the library
+      // song's playlist submenu.
+      if (this.playbackStore.currentSongInLibrary && useLibraryStore().playlists.length === 0) {
         void useLibraryStore().fetchPlaylists()
+      }
+    },
+    /** "Artist - Title", the shape a web search expects. */
+    async copyArtistTitle() {
+      if (!this.currentSong) return
+      const text = `${this.currentSong.artist} - ${this.currentSong.title}`
+      try {
+        await navigator.clipboard.writeText(text)
+        emitter.emit('toast', {
+          level: 'success',
+          title: this.$t('library.copyArtistTitle'),
+          message: text,
+        })
+      } catch (error) {
+        console.error('[player] Failed to copy artist and title:', error)
       }
     },
     async startSongRadio() {

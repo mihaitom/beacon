@@ -265,6 +265,7 @@ export default {
     removeFromPlaylist: 'Quitar de la lista',
     showArtwork: 'Ver imagen',
     songInfo: 'Información',
+    copyArtistTitle: 'Copiar artista - título',
     goToAlbum: 'Ir al álbum',
     goToArtist: 'Ir al artista',
     menuPlayback: 'Reproducción',

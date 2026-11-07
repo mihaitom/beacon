@@ -263,6 +263,7 @@ export default {
     removeFromPlaylist: 'Retirer de la playlist',
     showArtwork: "Afficher l'image",
     songInfo: 'Informations',
+    copyArtistTitle: 'Copier artiste - titre',
     goToAlbum: "Aller à l'album",
     goToArtist: "Aller à l'artiste",
     menuPlayback: 'Lecture',

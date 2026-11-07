@@ -138,8 +138,8 @@ describe('SongInfo', () => {
   })
 
   describe('a Deezer preview is playing', () => {
-    it('shows the track but offers nothing the server would have to know', async () => {
-      const { wrapper } = await mountInfo()
+    async function mountPreview() {
+      const mounted = await mountInfo()
       const song = deezerPreviewSong(42, { title: 'Believe', artist: 'Cher' })
       usePlaybackStore().preview = {
         songs: [song],
@@ -148,13 +148,36 @@ describe('SongInfo', () => {
         resumeAt: 0,
         whole: false,
       }
-      await wrapper.vm.$nextTick()
-      const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true })
-      wrapper.get('.song-info').element.dispatchEvent(event)
+      await mounted.wrapper.vm.$nextTick()
+      return mounted
+    }
+
+    it('shows the track but offers nothing the server would have to know', async () => {
+      const { wrapper } = await mountPreview()
+      await wrapper.get('.song-info__more').trigger('click')
+      await flushPromises()
 
       expect(wrapper.text()).toContain('Believe')
-      expect(wrapper.find('.song-info__actions').exists()).toBe(false)
-      expect(event.defaultPrevented).toBe(false)
+      expect(wrapper.find('.mdi-heart-outline').exists()).toBe(false)
+      expect(wrapper.findComponent({ name: 'VRating' }).exists()).toBe(false)
+    })
+
+    it('copies "Artist - Title" from its menu, for a web search', async () => {
+      const { wrapper } = await mountPreview()
+      const writeText = vi.fn().mockResolvedValue(undefined)
+      Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+      const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true })
+      wrapper.get('.song-info').element.dispatchEvent(event)
+      await flushPromises()
+
+      const copy = wrapper
+        .findAllComponents({ name: 'VListItem' })
+        .find((item) => item.text().includes(i18n.global.t('library.copyArtistTitle')))!
+      await copy.trigger('click')
+      await flushPromises()
+
+      expect(event.defaultPrevented).toBe(true)
+      expect(writeText).toHaveBeenCalledWith('Cher - Believe')
     })
   })
 

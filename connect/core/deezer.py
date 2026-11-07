@@ -162,9 +162,19 @@ async def _find_artist(name: str) -> int:
 
 
 async def get_artist_top(artist: str, limit: int) -> list[dict]:
+    """Each song once: Deezer ranks a song's other versions as tracks of
+    their own ("Animals" and "Animals (Radio Edit)"), which title_short has
+    already folded to the same title. The better-ranked one stays; twice
+    the limit is asked for so the list still fills up."""
     artist_id = await _find_artist(artist)
-    data = await _get(f"/artist/{artist_id}/top", limit=_clamp(limit))
-    return _tracks(data)
+    data = await _get(f"/artist/{artist_id}/top", limit=_clamp(limit * 2))
+    unique, seen = [], set()
+    for track in _tracks(data):
+        key = _plain(track["title"])
+        if key not in seen:
+            seen.add(key)
+            unique.append(track)
+    return unique[:limit]
 
 
 async def get_artist_radio(artist: str, limit: int) -> list[dict]:

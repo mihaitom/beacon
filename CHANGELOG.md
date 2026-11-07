@@ -11,7 +11,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Philips Hue lights can play along with the music, whether Beacon casts it or a computer or tablet plays it: a lightbulb button in the player pairs the bridge and sets the room, style, colours and brightness, with a live preview that plays along with the song playing (or a 120 BPM example when nothing plays)
 - The playlist builder can fill a playlist from Deezer with no key or setup: its current charts, overall or by genre, an artist's top tracks, a mix around an artist, or any public Deezer playlist, found by name, picked from the popular ones or pasted as a link
 - Every track in the playlist builder's result can be heard as a 30-second Deezer preview, whichever service the list came from, including the ones your library does not have. It plays like an album's preview: the queue waits paused, and it works while casting too
-- Each artist in "New artists to explore" on Home can be heard before you get their music: a button on the photo plays 30 seconds of each of their six top tracks on Deezer, one after another, like an album's preview
+- Each artist in "New artists to explore" on Home can be heard before you get their music: a button on the photo plays 30 seconds of each of their six top tracks on Deezer, one after another, like an album's preview. A song Deezer lists in several versions (radio edit, extended mix) plays only once
+- The playing song's menu in the player bar can copy "Artist - Title", for a web search; it is there for a Deezer preview too
 
 ### Changed
 
