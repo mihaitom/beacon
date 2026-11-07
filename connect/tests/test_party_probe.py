@@ -265,3 +265,56 @@ async def test_a_name_unknown_here_is_still_tried_through_public_dns(resolves):
     assert steps["dns"] == ("fail", "unresolvable")
     assert steps["reach-public"] == ("ok", "")
     assert "reach" not in steps
+
+
+async def test_a_timeout_is_unclear_through_a_public_address_and_a_fail_at_home(resolves):
+    def slow(request):
+        raise httpx.ReadTimeout("timed out", request=request)
+
+    result = await probe("https://beacon.example.com", _client(slow))
+    assert _steps(result)["reach"] == ("unclear", "timeout")
+    resolves["addresses"] = ["192.168.1.10"]
+    result = await probe("https://beacon.example.com", _client(slow))
+    assert _steps(result)["reach"] == ("fail", "timeout")
+
+
+async def test_a_broken_answer_is_no_way_in(resolves):
+    def broken(request):
+        raise httpx.RemoteProtocolError("peer closed the connection", request=request)
+
+    result = await probe("https://beacon.example.com", _client(broken))
+    assert _steps(result)["reach"] == ("fail", "unreachable")
+
+
+async def test_a_page_that_is_not_json_is_not_this_beacon(resolves):
+    def html(request):
+        return httpx.Response(200, text="<html>hello</html>")
+
+    result = await probe("https://beacon.example.com", _client(html))
+    assert _steps(result)["reach"] == ("fail", "not-beacon")
+
+
+async def test_a_public_resolver_that_fails_says_nothing_about_the_name():
+    def failing(request):
+        return httpx.Response(200, json={"Status": 2})  # SERVFAIL
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(failing))
+    assert await probe_mod.public_lookup(client, "beacon.example.com") is None
+
+
+async def test_a_probe_without_a_client_brings_and_closes_its_own(resolves, monkeypatch):
+    own = _client(_beacon)
+    monkeypatch.setattr(probe_mod.httpx, "AsyncClient", lambda **kwargs: own)
+    result = await probe("https://beacon.example.com")
+    assert _steps(result)["reach"] == ("ok", "")
+    assert own.is_closed
+
+
+def test_expired_nonces_are_forgotten(monkeypatch):
+    now = [1000.0]
+    monkeypatch.setattr(probe_mod.time, "monotonic", lambda: now[0])
+    old = probe_mod.issue_nonce()
+    now[0] += 10_000
+    probe_mod.issue_nonce()
+    assert old not in probe_mod._nonces
+    assert not probe_mod.nonce_valid(old)

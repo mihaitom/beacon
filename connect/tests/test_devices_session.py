@@ -533,3 +533,105 @@ def test_device_stop_keeps_the_relay_while_another_device_is_still_casting(clien
 
     assert relay.stopped is False
     assert default_session.radio_relay is relay
+
+
+def _radio_on(default_session, deliveries):
+    from core.radio_position import RadioPositionTracker
+
+    st = default_session.state
+    st.is_streaming = True
+    st.radio_info = {"url": "https://radio.example/stream", "title": "Jazz FM"}
+    st.active_delivery = DeliveryManager.from_deliveries(deliveries)
+    tracker = RadioPositionTracker(
+        default_session, deliveries[0], st.clock.play_generation, started_at=123.0
+    )
+    default_session.radio_position_tracker = tracker
+    return tracker
+
+
+def test_device_stop_hands_radio_tracking_to_a_device_playing_all_along(client, default_session):
+    """The remaining device was dispatched with the stopped one, not now:
+    its tracker keeps the original dispatch time, or the buffer lag reads
+    negative and the visualizer loses its lag correction."""
+    tv, bedroom = ChromecastDelivery("TV"), DlnaDelivery("Bedroom")
+    _radio_on(default_session, [tv, bedroom])
+    with (
+        patch.object(ChromecastDelivery, "stop", new=AsyncMock()),
+        patch("core.radio_position.RadioPositionTracker.start") as start,
+        patch("routes.devices._resync_position_periodically", new=MagicMock()),
+    ):
+        client.post("/device-stop?device_type=chromecast&name=TV")
+
+    tracker = default_session.radio_position_tracker
+    assert tracker.delivery is bedroom
+    assert tracker.started_at == 123.0
+    start.assert_called_once()
+
+
+def test_device_stop_drops_radio_tracking_when_no_trackable_device_is_left(client, default_session):
+    tv, airplay = ChromecastDelivery("TV"), AirPlayDelivery("Kitchen")
+    _radio_on(default_session, [tv, airplay])
+    with (
+        patch.object(ChromecastDelivery, "stop", new=AsyncMock()),
+        patch("routes.devices._resync_position_periodically", new=MagicMock()),
+    ):
+        client.post("/device-stop?device_type=chromecast&name=TV")
+
+    assert default_session.state.active_delivery is airplay
+    assert default_session.radio_position_tracker is None
+
+
+def test_device_stop_leaves_radio_tracking_alone_for_an_untracked_device(client, default_session):
+    tv, bedroom = ChromecastDelivery("TV"), DlnaDelivery("Bedroom")
+    tracker = _radio_on(default_session, [tv, bedroom])
+    with patch.object(DlnaDelivery, "stop", new=AsyncMock()):
+        client.post("/device-stop?device_type=dlna&name=Bedroom")
+
+    assert default_session.radio_position_tracker is tracker
+
+
+def _stop_coordinator_of(client, default_session, others, zones):
+    coordinator_delivery = SonosDelivery("Küche")
+    for other in others:
+        other.play = AsyncMock()
+    default_session.state.is_streaming = True
+    default_session.state.active_delivery = DeliveryManager.from_deliveries(
+        [coordinator_delivery, *others]
+    )
+    with (
+        patch("delivery.sonos_discovery.discover_zones", return_value=zones),
+        patch("asyncio.sleep", new=AsyncMock()),
+    ):
+        return client.post("/device-stop?device_type=sonos&name=Küche")
+
+
+def test_device_stop_restarts_a_sonos_whose_group_cannot_be_read(client, default_session):
+    """A redundant restart is a stutter; a missed one is a speaker that
+    stays quiet - so an unreadable group counts as following."""
+    raw_coordinator = _fake_soco_device("Küche", is_coordinator=True)
+    raw_unclear = _fake_soco_device("Wohnzimmer", is_coordinator=False)
+    type(raw_unclear).group = property(lambda self: (_ for _ in ()).throw(OSError("timeout")))
+    unclear = SonosDelivery("Wohnzimmer")
+    _stop_coordinator_of(client, default_session, [unclear], [raw_coordinator, raw_unclear])
+    raw_unclear.unjoin.assert_called_once()
+    unclear.play.assert_awaited_once()
+
+
+def test_device_stop_leaves_a_sonos_without_a_group_alone(client, default_session):
+    raw_coordinator = _fake_soco_device("Küche", is_coordinator=True)
+    raw_alone = _fake_soco_device("Wohnzimmer")
+    raw_alone.group = None
+    alone = SonosDelivery("Wohnzimmer")
+    _stop_coordinator_of(client, default_session, [alone], [raw_coordinator, raw_alone])
+    raw_alone.unjoin.assert_not_called()
+    alone.play.assert_not_awaited()
+
+
+def test_device_stop_skips_a_sonos_that_is_gone_and_devices_of_other_kinds(client, default_session):
+    raw_coordinator = _fake_soco_device("Küche", is_coordinator=True)
+    gone, tv = SonosDelivery("Bad"), ChromecastDelivery("TV")
+    r = _stop_coordinator_of(client, default_session, [gone, tv], [raw_coordinator])
+    assert r.json()["status"] == "stopped"
+    raw_coordinator.stop.assert_called_once()
+    gone.play.assert_not_awaited()
+    tv.play.assert_not_awaited()

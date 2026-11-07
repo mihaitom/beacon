@@ -1643,6 +1643,99 @@ def test_chromecast_get_device_disconnects_a_device_that_never_answers():
     assert _chromecast_mod._chromecast_cache == {}
 
 
+def _discovered(cast):
+    info = MagicMock()
+    info.friendly_name = "TV"
+    browser = MagicMock()
+    browser.devices = {"uuid-1": info}
+    return (
+        patch("delivery.chromecast._ensure_cast_browser", return_value=(browser, MagicMock())),
+        patch("delivery.chromecast._wait_for_discovery"),
+        patch("pychromecast.get_chromecast_from_cast_info", return_value=cast),
+    )
+
+
+def _fresh_cast():
+    """A just-connected device: no listeners of Beacon's on it yet."""
+    cast = MagicMock()
+    cast._beacon_volume_listener = None
+    cast._beacon_media_listener = None
+    return cast
+
+
+def test_a_newly_connected_chromecast_pushes_its_volume_and_reports(monkeypatch):
+    from core import device_volume
+
+    monkeypatch.setattr(device_volume, "_pushing", set())
+    cast = _fresh_cast()
+    with contextlib.ExitStack() as stack:
+        for p in _discovered(cast):
+            stack.enter_context(p)
+        ChromecastDelivery("TV")._get_device()
+    volume = cast.register_status_listener.call_args.args[0]
+    media = cast.media_controller.register_status_listener.call_args.args[0]
+    assert isinstance(volume, _chromecast_mod._VolumeListener)
+    assert isinstance(media, _chromecast_mod._MediaReportListener)
+    assert device_volume.pushes_volume("chromecast", "TV")
+
+
+def test_a_chromecast_refusing_listeners_still_plays_and_stays_on_the_poll(monkeypatch):
+    from core import device_volume
+
+    monkeypatch.setattr(device_volume, "_pushing", set())
+    cast = _fresh_cast()
+    cast.register_status_listener.side_effect = RuntimeError("not supported")
+    cast.media_controller.register_status_listener.side_effect = RuntimeError("not supported")
+    with contextlib.ExitStack() as stack:
+        for p in _discovered(cast):
+            stack.enter_context(p)
+        assert ChromecastDelivery("TV")._get_device() is cast
+    assert not device_volume.pushes_volume("chromecast", "TV")
+
+
+_real_ensure_cast_browser = _chromecast_mod._ensure_cast_browser
+_real_wait_for_discovery = _chromecast_mod._wait_for_discovery
+
+
+def test_one_cast_browser_is_started_and_shared(monkeypatch):
+    import pychromecast
+    import zeroconf
+
+    started = []
+    browser = MagicMock()
+    browser.start_discovery.side_effect = lambda: started.append(1)
+    monkeypatch.setattr(pychromecast.discovery, "CastBrowser", lambda *a: browser)
+    monkeypatch.setattr(zeroconf, "Zeroconf", MagicMock)
+    monkeypatch.setattr(_chromecast_mod, "_cast_browser", None)
+    monkeypatch.setattr(_chromecast_mod, "_zconf", None)
+    first = _real_ensure_cast_browser()
+    second = _real_ensure_cast_browser()
+    assert first[0] is browser and second[0] is browser
+    assert started == [1]
+
+
+@pytest.mark.parametrize(("since_start", "slept"), [(0.5, 2.5), (5.0, None)])
+def test_discovery_waits_only_until_the_browser_has_had_its_time(monkeypatch, since_start, slept):
+    sleeps = []
+    monkeypatch.setattr(_chromecast_mod.time, "time", lambda: 1000.0)
+    monkeypatch.setattr(_chromecast_mod.time, "sleep", sleeps.append)
+    monkeypatch.setattr(_chromecast_mod, "_browser_started_at", 1000.0 - since_start)
+    _real_wait_for_discovery(min_seconds=3.0)
+    assert sleeps == ([] if slept is None else [pytest.approx(slept)])
+
+
+@pytest.mark.parametrize(
+    ("state", "expected"),
+    [("PLAYING", "http://beacon/stream"), ("PAUSED", "http://beacon/stream"), ("IDLE", None)],
+)
+async def test_chromecast_current_uri_is_what_it_plays(state, expected):
+    cast = MagicMock()
+    cast.media_controller.status.player_state = state
+    cast.media_controller.status.content_id = "http://beacon/stream"
+    with patch.object(ChromecastDelivery, "_get_device", return_value=cast):
+        assert await ChromecastDelivery("TV").current_uri() == expected
+
+
 # ── ChromecastDelivery playback ───────────────────────────────────────────────
 
 

@@ -80,12 +80,6 @@ def set_api_key(key: str) -> None:
     api_keys.set("lastfm", key)
 
 
-def stored_key() -> str:
-    """Only what Settings persisted, ignoring the environment - what the
-    status needs to tell the two sources apart."""
-    return api_keys.stored("lastfm")
-
-
 def is_configured() -> bool:
     return api_keys.is_configured("lastfm")
 

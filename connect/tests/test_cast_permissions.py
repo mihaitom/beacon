@@ -209,15 +209,14 @@ def test_an_unreadable_store_is_kept_aside_not_overwritten():
         assert f.read() == "{not json"
 
 
-def test_an_interrupted_write_leaves_the_previous_file_intact(monkeypatch):
+def test_an_interrupted_write_leaves_the_previous_file_intact():
     _allow(["alice"])
 
     def boom(*args, **kwargs):
         raise OSError("No space left on device")
 
-    monkeypatch.setattr(cast_permissions.json, "dump", boom)
-    _allow(["bob"])
-    monkeypatch.undo()
+    with patch.object(cast_permissions.json, "dump", boom):
+        _allow(["bob"])
 
     assert allowed_accounts("subsonic", URL) == ["alice"]
     assert not os.path.exists(f"{cast_permissions._PATH}.tmp")
@@ -648,3 +647,58 @@ def test_discover_keeps_a_device_the_restricted_session_still_holds(
 
     body = client.get("/discover").json()
     assert [d["name"] for d in body["chromecast"]] == ["TV"]
+
+
+# ── A store that is valid JSON but not what it should be ────────────────────
+
+
+def _write_store(content: str) -> None:
+    os.makedirs(os.path.dirname(cast_permissions._PATH), exist_ok=True)
+    with open(cast_permissions._PATH, "w", encoding="utf-8") as f:
+        f.write(content)
+
+
+def test_a_store_that_is_not_an_object_is_kept_aside_like_an_unreadable_one():
+    _write_store("[1, 2]")
+    assert policy("subsonic", URL) is None
+    assert known_accounts("subsonic", URL) == []
+    record_account("subsonic", URL, "alice")
+    cast_permissions.remember_plex_account("server-token", "plex://x", "alice")
+    with open(cast_permissions._PATH, encoding="utf-8") as f:
+        assert f.read() == "[1, 2]"  # observation never overwrites it
+
+    _allow(["bob"])
+    assert allowed_accounts("subsonic", URL) == ["bob"]
+    with open(f"{cast_permissions._PATH}.corrupt", encoding="utf-8") as f:
+        assert f.read() == "[1, 2]"
+
+
+def test_a_store_that_cannot_be_moved_aside_is_still_replaced(monkeypatch):
+    _write_store("{not json")
+    real_replace = os.replace
+
+    def refuse_corrupt(src, dst):
+        if str(dst).endswith(".corrupt"):
+            raise PermissionError("read-only directory")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(cast_permissions.os, "replace", refuse_corrupt)
+    _allow(["bob"])
+    assert allowed_accounts("subsonic", URL) == ["bob"]
+
+
+def test_a_hand_edited_entry_falls_back_to_safe_values():
+    key = cast_permissions._server_key("subsonic", URL)
+    _write_store(json.dumps({"servers": {key: {"mode": "everyone", "accounts": "alice"}}}))
+    assert policy("subsonic", URL) == ("allowlist", False)
+    assert allowed_accounts("subsonic", URL) == []
+
+
+def test_blank_names_and_tokens_are_not_remembered():
+    record_account("subsonic", URL, "   ")
+    cast_permissions.remember_plex_account("", "plex://x", "alice")
+    cast_permissions.remember_plex_account("server-token", "plex://x", "")
+    assert known_accounts("subsonic", URL) == []
+    assert cast_permissions.known_plex_account("server-token", "plex://x") == ""
+    assert cast_permissions.known_plex_account("", "plex://x") == ""
+    assert not os.path.exists(cast_permissions._PATH)

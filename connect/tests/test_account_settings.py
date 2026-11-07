@@ -174,7 +174,7 @@ def test_post_a_single_field_does_not_clobber_previously_synced_ones(client):
 # ── Durability: this one file holds *every* account's settings ───────────
 
 
-def test_an_interrupted_write_leaves_the_previous_file_intact(monkeypatch):
+def test_an_interrupted_write_leaves_the_previous_file_intact():
     """The real durability property, exercised the way it actually breaks:
     a write that dies partway (crash, full disk). Written into a temp file
     and moved into place with os.replace(), so the live file is either the
@@ -185,9 +185,8 @@ def test_an_interrupted_write_leaves_the_previous_file_intact(monkeypatch):
     def boom(*args, **kwargs):
         raise OSError("No space left on device")
 
-    monkeypatch.setattr(account_settings.json, "dump", boom)
-    account_settings.save("subsonic", "https://music.example.com", "bob", {"locale": "en"})
-    monkeypatch.undo()
+    with patch.object(account_settings.json, "dump", boom):
+        account_settings.save("subsonic", "https://music.example.com", "bob", {"locale": "en"})
 
     assert account_settings.load("subsonic", "https://music.example.com", "alice") == {
         "locale": "de"
@@ -237,3 +236,31 @@ def test_concurrent_saves_do_not_lose_each_other():
 
     stored = account_settings.load("subsonic", "https://music.example.com", "alice")
     assert sorted(stored) == sorted(fields)
+
+
+def test_a_store_that_is_not_an_object_is_kept_aside_like_an_unreadable_one():
+    os.makedirs(os.path.dirname(account_settings._PATH), exist_ok=True)
+    with open(account_settings._PATH, "w", encoding="utf-8") as f:
+        f.write("[1, 2]")
+    assert account_settings.load("subsonic", "http://nav", "alice") == {}
+    assert account_settings.save("subsonic", "http://nav", "alice", {"lang": "de"}) == {
+        "lang": "de"
+    }
+    with open(f"{account_settings._PATH}.corrupt", encoding="utf-8") as f:
+        assert f.read() == "[1, 2]"
+
+
+def test_a_store_that_cannot_be_moved_aside_is_still_saved_over(monkeypatch):
+    os.makedirs(os.path.dirname(account_settings._PATH), exist_ok=True)
+    with open(account_settings._PATH, "w", encoding="utf-8") as f:
+        f.write("{not json")
+    real_replace = os.replace
+
+    def refuse_corrupt(src, dst):
+        if str(dst).endswith(".corrupt"):
+            raise PermissionError("read-only directory")
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(account_settings.os, "replace", refuse_corrupt)
+    account_settings.save("subsonic", "http://nav", "alice", {"lang": "de"})
+    assert account_settings.load("subsonic", "http://nav", "alice") == {"lang": "de"}

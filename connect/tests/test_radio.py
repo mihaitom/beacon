@@ -2507,3 +2507,99 @@ async def test_favicon_batch_and_the_single_icon_route_share_one_lookup():
 
     assert response.status_code == 200
     assert calls == 1
+
+
+def test_a_station_log_that_cannot_be_read_starts_empty(default_session):
+    path = Path(radio_history._station_path(default_session.session_id, "http://station-a"))
+    path.mkdir(parents=True)  # a directory where the file should be
+    assert radio_history.load_station(default_session.session_id, "http://station-a", 10) == []
+
+
+def test_a_log_that_cannot_be_trimmed_keeps_its_titles(default_session, monkeypatch):
+    def refuse(src, dst):
+        raise PermissionError("read-only")
+
+    monkeypatch.setattr(radio_history.os, "replace", refuse)
+    for i in range(radio_history._TRIM_FACTOR * 2 + 2):
+        entry = {"title": f"T{i}", "at": float(i)}
+        radio_history.append(default_session.session_id, "http://s", entry, 2)
+    log = radio_history.load_station(default_session.session_id, "http://s", 100)
+    assert len(log) == radio_history._TRIM_FACTOR * 2 + 2
+
+
+def test_pruning_skips_what_is_not_a_session_directory_or_cannot_be_removed(monkeypatch):
+    root = Path(radio_history._DIR)
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "stray-file").write_text("x")
+    stale = root / "stale-session"
+    stale.mkdir()
+    (stale / "a.jsonl").write_text("{}\n")
+    os.utime(stale / "a.jsonl", (0, 0))
+
+    def refuse(path):
+        raise PermissionError("read-only")
+
+    monkeypatch.setattr(radio_history.os, "remove", refuse)
+    radio_history.prune()  # no exception
+    assert (root / "stray-file").exists() and stale.exists()
+
+
+@pytest.mark.parametrize(
+    "manifest",
+    [
+        {"icons": "not a list"},
+        {
+            "icons": [
+                1,
+                {"src": ""},
+                {"sizes": "512x512"},
+                {"src": "http://[broken/x.png", "sizes": "512x512"},
+                {"src": "/ok.png", "sizes": "512x512", "type": 7},
+            ]
+        },
+    ],
+)
+async def test_odd_manifest_entries_are_skipped_one_by_one(manifest):
+    with patch.object(radio_mod._client, "get", AsyncMock(return_value=_json_response(manifest))):
+        found = await radio_mod._manifest_candidates("https://example.com/site.webmanifest")
+    urls = [c.url for c in found]
+    assert urls == ([] if manifest["icons"] == "not a list" else ["https://example.com/ok.png"])
+
+
+def test_a_logo_is_served_even_when_the_disk_cache_cannot_be_written(client, monkeypatch):
+    real_open = open
+
+    def refuse_tmp(path, *args, **kwargs):
+        if str(path).endswith(".tmp"):
+            raise PermissionError("read-only")
+        return real_open(path, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", refuse_tmp)
+    r = _resolve_once(client)
+    assert r.status_code == 200 and r.content == b"real-icon-bytes"
+    assert not Path(radio_mod._DISK_DIR).exists() or not any(Path(radio_mod._DISK_DIR).iterdir())
+
+
+def test_an_unreadable_disk_cache_directory_is_a_cold_start(client):
+    assert _resolve_once(client).status_code == 200
+    _restart()
+    with patch.object(radio_mod.os, "listdir", side_effect=PermissionError("no access")):
+        radio_mod._disk_load()  # no exception
+    assert not radio_mod._result_cache
+
+
+def test_a_failing_eviction_leaves_the_cache_working(monkeypatch):
+    icon = radio_mod._Fetched(b"x" * 4096, "image/png", 48, transparent=False)
+    monkeypatch.setattr(radio_mod, "_DISK_CACHE_MAX_BYTES", 8 * 1024)  # one entry fits
+    monkeypatch.setattr(radio_mod, "_disk_bytes", 0)
+    real_listdir = os.listdir
+
+    def refuse(path):
+        if str(path) == radio_mod._DISK_DIR:
+            raise PermissionError("no access")
+        return real_listdir(path)
+
+    radio_mod._disk_store(("https://a.example/", "", 48), icon)
+    with patch.object(radio_mod.os, "listdir", refuse):
+        radio_mod._disk_store(("https://b.example/", "", 48), icon)  # no exception
+    assert len(os.listdir(radio_mod._DISK_DIR)) == 2

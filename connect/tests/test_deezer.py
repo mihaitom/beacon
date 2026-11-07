@@ -539,3 +539,59 @@ def test_album_route(client):
     assert resp.status_code == 502
 
     assert client.get("/deezer/album", params={"artist": "Daft Punk"}).status_code == 422
+
+
+# ── Deezer failing ──────────────────────────────────────────────────────────
+
+
+def _deezer_down():
+    return patch.object(deezer._client, "get", AsyncMock(side_effect=httpx.ConnectError("x")))
+
+
+@pytest.mark.parametrize(
+    ("path", "params"),
+    [
+        ("/deezer/playlists", {"q": "jazz"}),
+        ("/deezer/preview", {"artist": "Cher", "title": "Believe"}),
+        ("/deezer/album", {"artist": "Cher", "title": "Believe"}),
+        ("/deezer/genres", {"lang": "de"}),
+    ],
+)
+def test_deezer_being_unreachable_is_a_502_not_an_empty_answer(client, path, params):
+    with _deezer_down():
+        assert client.get(path, params=params).status_code == 502
+
+
+def test_an_album_deezer_does_not_carry_is_null(client):
+    with _patch_get({"data": []}):
+        resp = client.get("/deezer/album", params={"artist": "Nobody", "title": "Nothing"})
+    assert resp.status_code == 200 and resp.json() == {"album": None}
+
+
+async def test_an_answer_that_is_not_an_object_is_an_error():
+    with _patch_get(["not", "an", "object"]):
+        with pytest.raises(deezer.DeezerError):
+            await deezer.get_genres("de")
+
+
+async def test_genres_skip_entries_that_are_not_genres():
+    with _patch_get({"data": ["junk", {"id": 0, "name": "Alle"}]}):
+        assert await deezer.get_genres("de") == [{"id": 0, "name": "Alle"}]
+
+
+async def test_an_artist_without_an_id_is_no_artist():
+    with _patch_get({"data": [{"name": "Cher", "id": "not-an-int"}]}):
+        with pytest.raises(deezer.DeezerError) as e:
+            await deezer.get_artist_top("Cher", 5)
+    assert e.value.not_found
+
+
+async def test_a_share_link_that_cannot_be_followed_is_an_error():
+    with _deezer_down(), pytest.raises(deezer.DeezerError):
+        await deezer.search_playlists("https://link.deezer.com/s/abc")
+
+
+async def test_a_share_link_that_does_not_redirect_is_no_playlist():
+    page = httpx.Response(200, request=httpx.Request("GET", "https://link.deezer.com/s/abc"))
+    with patch.object(deezer._client, "get", AsyncMock(return_value=page)):
+        assert await deezer._playlist_id_from_link("https://link.deezer.com/s/abc") is None

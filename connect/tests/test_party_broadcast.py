@@ -597,3 +597,159 @@ def test_a_song_change_in_a_stretch_the_mix_had_not_rendered_yet_is_still_marked
     entry = rig.b.timeline[-1]
     assert (entry.song_id, entry.playing) == ("b", True)
     assert entry.stream_time == pytest.approx((TICK // 2 + 5) / SR, abs=1 / SR)
+
+
+# ── Lifecycle ───────────────────────────────────────────────────────────────
+
+
+class FakeEncoder:
+    """The AAC encoder: takes PCM on stdin, hands out what the test feeds
+    to stdout, and ends when told to."""
+
+    def __init__(self, fail_writes: bool = False):
+        self.stdin = self
+        self.stdout = self
+        self.written = 0
+        self.fail_writes = fail_writes
+        self.out: asyncio.Queue[bytes] = asyncio.Queue()
+        self.killed = False
+
+    def write(self, data: bytes) -> None:
+        if self.fail_writes:
+            raise BrokenPipeError("encoder gone")
+        self.written += len(data)
+
+    async def drain(self) -> None:
+        pass
+
+    async def read(self, n: int) -> bytes:
+        return await self.out.get()
+
+    def kill(self) -> None:
+        self.killed = True
+        self.out.put_nowait(b"")
+
+
+@pytest.fixture
+def encoder(monkeypatch):
+    enc = FakeEncoder()
+
+    async def fake_exec(*cmd, **kwargs):
+        return enc
+
+    monkeypatch.setattr(pb.asyncio, "create_subprocess_exec", fake_exec)
+    return enc
+
+
+async def _until(condition, timeout=2.0):
+    async with asyncio.timeout(timeout):
+        while not condition():
+            await asyncio.sleep(0.01)
+
+
+async def test_an_encoder_that_ends_ends_the_broadcast_for_everyone(encoder):
+    stopped = []
+    b = Broadcaster(128, Host(), lambda song_id: None, on_stopped=stopped.append)
+    await b.start()
+    q = b.subscribe()
+    bands = b.watch_bands()
+    encoder.out.put_nowait(b"")  # the encoder exits
+    await _until(lambda: b.stopped)
+    assert stopped == [b]
+    assert await q.get() is None
+    told = [bands.get_nowait() for _ in range(bands.qsize())]
+    assert told[-1] is None
+
+
+async def test_an_encoder_that_takes_no_more_input_ends_the_broadcast(encoder):
+    encoder.fail_writes = True
+    b = Broadcaster(128, Host(), lambda song_id: None)
+    await b.start()
+    await _until(lambda: b.stopped)
+    assert encoder.killed
+
+
+async def test_a_broadcast_nobody_listens_to_any_more_stops(encoder, monkeypatch):
+    monkeypatch.setattr(pb, "ORPHAN_TIMEOUT_SECONDS", 0.1)
+    monkeypatch.setattr(pb, "_ORPHAN_CHECK_SECONDS", 0.01)
+    b = Broadcaster(128, Host(), lambda song_id: None)
+    q = b.subscribe()
+    await b.start()
+    await asyncio.sleep(0.2)
+    assert not b.stopped and b.listeners == 1
+    b.unsubscribe(q)
+    await _until(lambda: b.stopped)
+
+
+async def test_after_a_stall_the_stream_does_not_rush_to_catch_up(encoder):
+    now = [100.0]
+    b = Broadcaster(128, Host(), lambda song_id: None, clock=lambda: now[0])
+    b.subscribe()
+    await b.start()
+    await _until(lambda: b._written > 0)
+    before = b._written
+    now[0] += 60.0  # the event loop was held up for a minute
+    await _until(lambda: b._written > before)
+    caught_up = b._written - before
+    assert caught_up <= (pb._MAX_CATCH_UP_SECONDS + pb._LEAD_SECONDS) * SR
+    b.stop()
+
+
+async def test_stopping_twice_tells_listeners_once(encoder):
+    stopped = []
+    b = Broadcaster(128, Host(), lambda song_id: None, on_stopped=stopped.append)
+    await b.start()
+    b.stop()
+    b.stop()
+    assert stopped == [b]
+
+
+async def test_a_band_watcher_that_fell_behind_still_hears_the_end():
+    rig = Rig(Host())
+    q = rig.b.watch_bands()
+    while not q.full():
+        q.put_nowait([(0.0, [0.0])])
+    rig.b.stop()
+    assert rig.b.band_watchers == 0
+    items = [q.get_nowait() for _ in range(q.qsize())]
+    assert items[-1] is None
+
+
+@pytest.mark.parametrize("failure", ["no url", "lookup fails"])
+async def test_a_source_without_audio_ends_empty(failure):
+    async def url():
+        if failure == "lookup fails":
+            raise RuntimeError("server gone")
+
+    source = Source("a", 0.0, url, 1.0)
+    source.open()
+    await _until(lambda: source.finished)
+    assert source.take(SR) == b""
+
+
+def test_switching_back_to_a_station_that_just_dropped_is_silence(monkeypatch):
+    monkeypatch.setattr(Source, "open", lambda self: None)
+    host = Host(song_id=None, position=0.0, playing=True, radio_url="http://station/live")
+    rig = Rig(host)
+    rig.produce(0)
+    feed(rig.source, b"", eof=True)
+    rig.produce()  # the station dropped
+    host.set(song_id="a", position=3.0, playing=True)
+    rig.produce(0)
+    assert rig.source.song_id == "a"
+    host.set(song_id=None, position=0.0, playing=True, radio_url="http://station/live")
+    rig.produce(0)
+    assert rig.source is None
+    assert rig.b.timeline[-1] == pb.TimelineEntry(rig.now(), None, 0.0, False)
+
+
+def test_a_mix_that_ends_while_it_is_being_read_turns_to_silence():
+    mix = FakeMix(30)
+    host = Host(song_id="a", position=110.0, playing=True, mix=mix, mix_time=10.0)
+    rig = Rig(host)
+    rig.produce()
+    mix.timeline.mark_end(30 * SR)
+    host.set(song_id="a", position=130.0, playing=True, mix=mix, mix_time=29.8)
+    assert rig.produce() == bytes(TICK * 4)
+    assert rig.source is None
+    assert rig.b.timeline[-1].song_id is None and not rig.b.timeline[-1].playing

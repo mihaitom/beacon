@@ -613,3 +613,73 @@ def test_artists_route_returns_the_ranking(client):
 
 def test_artists_route_needs_a_username(client):
     assert client.get("/listenbrainz/artists").status_code == 422
+
+
+# ── Answers of the wrong shape ──────────────────────────────────────────────
+
+
+async def test_a_body_that_is_not_json_is_an_error():
+    garbage = httpx.Response(
+        200, content=b"<html>", request=httpx.Request("GET", listenbrainz._BASE_URL)
+    )
+    with patch.object(listenbrainz._client, "request", AsyncMock(return_value=garbage)):
+        with pytest.raises(listenbrainz.ListenbrainzError):
+            await listenbrainz.get_sitewide_top_recordings("week", 10)
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda: listenbrainz.get_tag_recordings("jazz", 10),
+        lambda: listenbrainz.get_recommendation_mbids("someone", 10),
+        lambda: listenbrainz.resolve_recordings(["a"]),
+    ],
+)
+@pytest.mark.parametrize("payload", ["a string", {"payload": {"mbids": "nope"}}])
+async def test_an_answer_of_the_wrong_shape_is_nothing(call, payload):
+    with _patch_request(200, payload):
+        assert await call() == []
+
+
+async def test_recommended_artists_skip_what_is_not_an_artist():
+    feed = {"payload": {"mbids": [{"recording_mbid": m} for m in "abcd"]}}
+    metadata = {
+        "a": "not a recording",
+        "b": {"artist": {"artists": ["not a credit", {"name": "  "}]}},
+        "c": {"artist": {"name": "Portishead", "artists": [{"name": "Portishead"}]}},
+    }
+    answers = iter([_response(200, feed), _response(200, metadata)])
+    with patch.object(
+        listenbrainz._client, "request", AsyncMock(side_effect=lambda *a, **k: next(answers))
+    ):
+        artists = await listenbrainz.get_recommended_artists("someone", 10)
+    assert artists == [{"name": "Portishead", "mbid": "", "score": 1}]
+
+
+@pytest.mark.parametrize("metadata", [["not", "a", "dict"], None])
+async def test_recommended_artists_are_nothing_without_usable_metadata(metadata):
+    feed = {"payload": {"mbids": [{"recording_mbid": "a"}]}}
+    answers = iter([_response(200, feed), _response(200, metadata if metadata else [])])
+    with patch.object(
+        listenbrainz._client, "request", AsyncMock(side_effect=lambda *a, **k: next(answers))
+    ):
+        assert await listenbrainz.get_recommended_artists("someone", 10) == []
+
+
+async def test_recommended_artists_without_recommendations_ask_no_further():
+    with _patch_request(200, {"payload": {"mbids": []}}) as request:
+        assert await listenbrainz.get_recommended_artists("someone", 10) == []
+    assert request.await_count == 1
+
+
+async def test_calls_are_spaced_out(monkeypatch):
+    slept = []
+
+    async def fake_sleep(seconds):
+        slept.append(seconds)
+
+    monkeypatch.setattr(listenbrainz, "_MIN_INTERVAL", 1.0)
+    monkeypatch.setattr(listenbrainz.asyncio, "sleep", fake_sleep)
+    monkeypatch.setattr(listenbrainz, "_last_call", listenbrainz.time.monotonic())
+    await listenbrainz._throttle()
+    assert len(slept) == 1 and 0 < slept[0] <= 1.0

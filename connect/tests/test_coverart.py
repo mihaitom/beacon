@@ -590,3 +590,61 @@ def test_cover_cache_budget_survives_whatever_is_in_the_environment(monkeypatch,
         monkeypatch.setenv("COVER_CACHE_MB", raw)
 
     assert coverart_module._cache_budget_mb() == expected
+
+
+@pytest.mark.parametrize("resolved", [["10.0.0.5"], ["93.0.0.1", "127.0.0.1"], ["fe80::1"]])
+def test_batch_refuses_a_hostname_that_resolves_into_our_own_network(
+    client, default_session, monkeypatch, resolved
+):
+    """A name is no way around the address check: any one internal address
+    among what it resolves to is enough to refuse it."""
+    default_session.media = SubsonicClient("http://navidrome.example", credential="u=t&t=a&s=b")
+    fake_client, _ = _fake_client()
+    monkeypatch.setattr(coverart_module, "_image_client", fake_client)
+    monkeypatch.setattr(coverart_module, "_resolve_addresses", AsyncMock(return_value=resolved))
+
+    url = "https://innocent.example/artist.jpg"
+    response = client.post("/cover-art/batch", json={"image_urls": [url]})
+
+    assert response.json()["image_results"] == {url: None}
+    fake_client.get.assert_not_awaited()
+
+
+def test_batch_gives_up_on_endless_redirects(client, default_session, monkeypatch):
+    import httpx
+
+    default_session.media = SubsonicClient("http://navidrome.example", credential="u=t&t=a&s=b")
+    seen = []
+
+    async def get(url, **kwargs):
+        seen.append(url)
+        redirect = MagicMock(is_redirect=True, status_code=302, url=httpx.URL(url))
+        redirect.headers = {"location": f"/hop{len(seen)}.jpg"}
+        return redirect
+
+    monkeypatch.setattr(coverart_module, "_image_client", MagicMock(get=AsyncMock(side_effect=get)))
+    url = "https://cdn.example/artist.jpg"
+    response = client.post("/cover-art/batch", json={"image_urls": [url]})
+
+    assert response.json()["image_results"] == {url: None}
+    assert len(seen) == coverart_module._MAX_IMAGE_REDIRECTS + 1
+
+
+def test_batch_treats_a_redirect_to_nowhere_as_no_image(client, default_session, monkeypatch):
+    fake_client, seen = _redirecting_client("")
+    monkeypatch.setattr(coverart_module, "_image_client", fake_client)
+    url = "https://cdn.example/artist.jpg"
+    response = client.post("/cover-art/batch", json={"image_urls": [url]})
+    assert response.json()["image_results"] == {url: None}
+    assert seen == [url]
+
+
+def test_batch_retries_an_image_host_that_could_not_be_reached(
+    client, default_session, monkeypatch
+):
+    failing = MagicMock(get=AsyncMock(side_effect=ConnectionResetError("reset")))
+    monkeypatch.setattr(coverart_module, "_image_client", failing)
+    url = "https://cdn.example/artist.jpg"
+    response = client.post("/cover-art/batch", json={"image_urls": [url]})
+    assert response.json()["image_results"] == {}
+    assert coverart_module._cache == {}

@@ -717,3 +717,67 @@ def test_the_stored_images_route_refuses_an_unknown_kind(client, key):
     resp = client.post("/fanart/stored-images", json={"kind": "logo"})
 
     assert resp.status_code == 422
+
+
+# ── Damaged or unwritable caches ────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("content", ["{not json", "[1, 2]"])
+async def test_a_damaged_metadata_cache_is_fetched_again(key, tmp_path, content):
+    (tmp_path / "fanart_cache.json").write_text(content)
+    payload = {"artistbackground": [{"url": "bg", "likes": "1"}]}
+    with _with_mbid(), _with_get(_response(200, payload)) as get:
+        art = await fanart.get_artist_art("Cher")
+    assert art["background"] == "bg"
+    get.assert_awaited()
+
+
+async def test_an_unwritable_metadata_cache_still_answers(key, tmp_path, monkeypatch):
+    blocker = tmp_path / "file"
+    blocker.write_text("")
+    monkeypatch.setattr(fanart, "_CACHE_PATH", str(blocker / "fanart_cache.json"))
+    payload = {"artistbackground": [{"url": "bg", "likes": "1"}]}
+    with _with_mbid(), _with_get(_response(200, payload)):
+        art = await fanart.get_artist_art("Cher")
+    assert art["background"] == "bg"
+
+
+def test_an_image_cache_that_cannot_be_pruned_is_left_alone(tmp_path, monkeypatch):
+    image_dir = tmp_path / "fanart_images"
+    image_dir.mkdir()
+    (image_dir / "stray.jpg").write_bytes(b"x")
+
+    def refuse(path):
+        raise PermissionError("read-only")
+
+    monkeypatch.setattr(fanart.os, "unlink", refuse)
+    fanart._save_cache({})
+    assert (image_dir / "stray.jpg").exists()
+    assert json.loads((tmp_path / "fanart_cache.json").read_text()) == {}
+
+
+def test_an_unreadable_or_unwritable_image_is_no_image(tmp_path):
+    url = "https://assets.fanart.tv/fanart/music/x/bg.jpg"
+    (tmp_path / "fanart_images").write_text("not a directory")
+    fanart.store_image(url, b"jpeg")  # no exception
+    assert fanart.get_cached_image(url) is None
+
+
+async def test_a_failed_image_download_is_none():
+    url = "https://assets.fanart.tv/fanart/music/x/bg.jpg"
+    failing = AsyncMock(side_effect=httpx.ConnectError("down"))
+    with patch.object(fanart._client, "get", failing):
+        assert await fanart.fetch_image(url) is None
+
+
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [("bg.png", "image/png"), ("bg.WEBP", "image/webp"), ("bg.jpg", "image/jpeg")],
+)
+def test_images_are_served_as_their_type(path, expected):
+    url = f"https://assets.fanart.tv/fanart/music/x/{path}"
+    assert fanart.content_type_for(url) == expected
+
+
+def test_a_url_that_does_not_parse_is_not_fetched():
+    assert not fanart.is_allowed_image_url("https://assets.fanart.tv:abc/x.jpg")

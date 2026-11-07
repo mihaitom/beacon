@@ -796,3 +796,86 @@ async def test_follow_moves_the_preview_on_and_ends_it_back_in_the_queue(default
     assert st.preview is None and st.mix is None
     assert st.current_track is TRACKS["2"] and st.clock.is_paused
     assert st.clock.resume_offset == 30.0
+
+
+@pytest.fixture
+def no_lookup_retries(monkeypatch):
+    from routes import stream
+
+    monkeypatch.setattr(stream, "_TRACK_LOOKUP_ATTEMPTS", 1)
+
+
+def test_a_preview_of_a_song_the_server_does_not_have_is_refused(
+    client, default_session, media, no_waveforms, no_lookup_retries
+):
+    _casting_a_queue(client, default_session)
+    queue_mix = default_session.state.mix
+    with patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play:
+        r = _preview(client, "404")
+    assert "404" in r.json()["error"]
+    play.assert_not_awaited()
+    st = default_session.state
+    assert st.preview is None and st.mix is queue_mix and not queue_mix.stopped
+
+
+def test_a_preview_from_past_its_list_is_refused(client, default_session, media, no_waveforms):
+    _casting_a_queue(client, default_session)
+    with patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play:
+        r = _preview(client, "3", index=5)
+    assert "error" in r.json()
+    play.assert_not_awaited()
+
+
+def test_a_preview_over_a_station_stops_the_station(client, default_session, media, no_waveforms):
+    _casting_a_queue(client, default_session)
+    st = default_session.state
+    st.radio_info = {"name": "Station", "url": "http://station/live"}
+    with (
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()),
+        patch.object(default_session, "stop_radio_relay", new=AsyncMock()) as stop_relay,
+        patch.object(default_session, "stop_radio_metadata_watch") as stop_watch,
+    ):
+        assert _preview(client, "3").json() == {"status": "playing"}
+    stop_relay.assert_awaited_once()
+    stop_watch.assert_called_once()
+    assert st.radio_info is None
+
+
+def test_a_preview_ends_back_in_the_queue_even_if_the_speaker_will_not_pause(
+    client, default_session, media, no_waveforms
+):
+    _casting_a_queue(client, default_session)
+    with (
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()),
+        patch.object(ChromecastDelivery, "pause", new=AsyncMock(side_effect=OSError("gone"))),
+    ):
+        _preview(client, "3")
+        client.post("/preview/end")
+    st = default_session.state
+    assert st.preview is None and st.current_track is TRACKS["1"] and st.clock.is_paused
+
+
+def test_ending_a_preview_when_none_plays_changes_nothing(client, default_session, media):
+    _casting_a_queue(client, default_session)
+    mix = default_session.state.mix
+    with patch.object(ChromecastDelivery, "pause", new=AsyncMock()) as pause:
+        client.post("/preview/end")
+    pause.assert_not_awaited()
+    assert default_session.state.mix is mix and not mix.stopped
+
+
+async def test_a_party_skip_to_a_song_the_server_lost_does_nothing(
+    default_session, no_lookup_retries
+):
+    st = default_session.state
+    st.queue, st.queue_index, st.is_streaming = ["1", "404"], 0, True
+    st.active_delivery = ChromecastDelivery("TV")
+    st.mix = MixEngine(MixItem("1", 0, payload=TRACKS["1"]), 0.0, AsyncMock(), AsyncMock())
+    with (
+        patch.object(default_session.media, "get_track", side_effect=lambda i: TRACKS[i]),
+        patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play,
+    ):
+        assert await mix_cast.skip_to(default_session, 1) is False
+    play.assert_not_awaited()
+    assert st.mix.first.song_id == "1" and st.queue_index == 0
+    default_session.stop_mix()

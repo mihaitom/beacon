@@ -1990,3 +1990,339 @@ async def test_guests_asking_at_once_share_one_decode(fake_broadcaster, monkeypa
     release.set()
     await party_routes.guest_waveform(id="a", guest=guest)
     assert decodes == 2
+
+
+# ── Leaving, joining, host controls ─────────────────────────────────────────
+
+
+def test_leaving_removes_the_guest_and_their_cookie(client, guest_client):
+    token = _start(client)
+    _join(guest_client, token)
+    resp = guest_client.post("/party/api/leave")
+    assert resp.status_code == 200
+    assert 'beacon_party=""' in resp.headers["set-cookie"]
+    assert party.sessions == {}
+    assert guest_client.get("/party/api/state").status_code == 401
+
+
+def test_leaving_without_being_a_guest_is_harmless(client, guest_client):
+    _start(client)
+    assert guest_client.post("/party/api/leave").status_code == 200
+
+
+def test_a_full_party_turns_new_guests_away(client, guest_client, monkeypatch):
+    import core.party as party_module
+
+    token = _start(client)
+    monkeypatch.setattr(party_module, "MAX_GUESTS", 0)
+    resp = _join(guest_client, token)
+    assert resp.status_code == 503
+    assert "set-cookie" not in resp.headers
+
+
+def test_a_write_without_any_origin_is_let_through(client, guest_client):
+    """Only a browser sends Origin, and it always does on a POST - curl and
+    the like are no cross-site risk."""
+    token = _start(client)
+    del guest_client.headers["Origin"]
+    assert _join(guest_client, token).status_code == 200
+
+
+@pytest.mark.parametrize(
+    ("method", "path", "body"),
+    [
+        ("post", "/party-host/rotate", None),
+        ("post", "/party-host/probe", {"origin": "https://party.example"}),
+    ],
+)
+def test_host_actions_on_no_party_are_not_found(client, method, path, body):
+    assert getattr(client, method)(path, json=body).status_code == 404
+
+
+def test_kicking_a_guest_who_is_not_there_is_not_found(client):
+    _start(client)
+    assert client.delete("/party-host/guests/nobody").status_code == 404
+
+
+def test_the_setup_test_runs_against_the_origin_alone(client, monkeypatch):
+    from core import party_probe
+
+    probed = []
+
+    class Result:
+        steps = ()
+
+        def as_dict(self):
+            return {"steps": []}
+
+    async def fake_probe(origin):
+        probed.append(origin)
+        return Result()
+
+    monkeypatch.setattr(party_probe, "probe", fake_probe)
+    _start(client)
+    resp = client.post("/party-host/probe", json={"origin": "https://party.example:8443/"})
+    assert resp.status_code == 200
+    assert probed == ["https://party.example:8443"]
+
+
+def test_the_probe_answer_is_rate_limited_per_address(client, guest_client, monkeypatch):
+    _start(client)
+    monkeypatch.setattr(party_routes, "PROBES_PER_IP", (2, 600))
+    codes = [guest_client.get("/party/api/probe?n=made-up").status_code for _ in range(3)]
+    assert codes == [404, 404, 429]
+
+
+# ── Guest API leftovers ─────────────────────────────────────────────────────
+
+
+def test_an_album_the_host_does_not_have_is_not_found(client, guest_client, relay):
+    token = _start(client)
+    _join(guest_client, token)
+    relay["answers"]["album-request"] = {"album": None, "songs": []}
+    assert guest_client.get("/party/api/albums/al-1").status_code == 404
+
+
+def test_a_renderer_error_that_is_no_refusal_stays_an_error(client, guest_client, relay):
+    token = _start(client)
+    _join(guest_client, token)
+    party.update_snapshot(_snapshot(["a"]))
+    relay["answers"]["party-wish"] = "renderer exploded"
+    resp = guest_client.post("/party/api/wishes", json={"song_id": "b"})
+    assert resp.status_code == 502
+
+
+def test_cover_without_the_hosts_session_is_not_found(client, guest_client):
+    token = _start(client)
+    party.update_snapshot(_snapshot(["a"], session_id="gone"))
+    _join(guest_client, token)
+    guest_client.get("/party/api/state")
+    assert "cov-a" in party.covers
+    assert guest_client.get("/party/api/cover?id=cov-a").status_code == 404
+
+
+def _with_backdrop(client, guest_client):
+    token = _start(client)
+    snapshot = _snapshot(["a"])
+    snapshot["party_backdrop"] = "https://assets.fanart.tv/fanart/music/x/bg.jpg"
+    party.update_snapshot(snapshot)
+    _join(guest_client, token)
+
+
+def test_a_backdrop_not_cached_yet_is_fetched_and_kept(client, guest_client, monkeypatch):
+    _with_backdrop(client, guest_client)
+    stored = {}
+    monkeypatch.setattr("core.fanart.get_cached_image", lambda url: None)
+
+    async def fetch(url):
+        return b"jpeg", "image/jpeg"
+
+    monkeypatch.setattr("core.fanart.fetch_image", fetch)
+    monkeypatch.setattr("core.fanart.store_image", lambda url, data: stored.update({url: data}))
+    resp = guest_client.get("/party/api/backdrop")
+    assert resp.status_code == 200 and resp.content == b"jpeg"
+    assert stored == {"https://assets.fanart.tv/fanart/music/x/bg.jpg": b"jpeg"}
+
+
+def test_a_backdrop_that_cannot_be_fetched_is_not_found(client, guest_client, monkeypatch):
+    _with_backdrop(client, guest_client)
+    monkeypatch.setattr("core.fanart.get_cached_image", lambda url: None)
+
+    async def fetch(url):
+        return None
+
+    monkeypatch.setattr("core.fanart.fetch_image", fetch)
+    assert guest_client.get("/party/api/backdrop").status_code == 404
+
+
+async def test_events_tell_the_guest_of_every_change():
+    _, gen, _ = await _open_stream()
+    try:
+        party.update_snapshot(_snapshot(["a", "b"], index=1))
+        await party.broadcast()
+        update = await gen.__anext__()
+        assert update.startswith("data: ") and '"title": "Title b"' in update
+    finally:
+        await gen.aclose()
+
+
+# ── Visualizer stream ───────────────────────────────────────────────────────
+
+
+async def test_the_visualizer_stream_sends_bars_and_idles_between_them():
+    from unittest.mock import patch
+
+    party.enable()
+    _, guest = party.join("Anna", "203.0.113.5")
+    resp = await party_routes.visualizer(guest=guest)
+    gen = resp.body_iterator
+    try:
+        assert await gen.__anext__() == "retry: 3000\n\n"
+        party._on_frame([0.12345, 0.5])
+        assert await gen.__anext__() == 'data: {"bands": [0.123, 0.5]}\n\n'
+        with patch("routes.party.asyncio.wait_for", _time_out):
+            assert await gen.__anext__() == ": idle\n\n"
+        assert len(party.visualizer_queues) == 1
+    finally:
+        await gen.aclose()
+    assert party.visualizer_queues == []
+
+
+async def test_the_visualizer_stream_ends_with_the_guest():
+    party.enable()
+    _, guest = party.join("Anna", "203.0.113.5")
+    resp = await party_routes.visualizer(guest=guest)
+    gen = resp.body_iterator
+    await gen.__anext__()
+    party.kick(guest.guest_id)
+    with pytest.raises(StopAsyncIteration):
+        await gen.__anext__()
+    assert party.visualizer_queues == []
+
+
+async def test_visualizer_streams_are_capped(monkeypatch):
+    monkeypatch.setattr(party_routes, "MAX_VISUALIZER_STREAMS", 0)
+    party.enable()
+    _, guest = party.join("Anna", "203.0.113.5")
+    for open_stream in (party_routes.visualizer, party_routes.listen_visualizer):
+        with pytest.raises(party_routes.HTTPException) as e:
+            await open_stream(guest=guest)
+        assert e.value.status_code == 429
+
+
+async def test_listening_streams_are_capped_in_total(fake_broadcaster, monkeypatch):
+    monkeypatch.setattr(party_routes, "MAX_LISTEN_STREAMS", 0)
+    _sid, guest = _listening_party()
+    with pytest.raises(party_routes.HTTPException) as e:
+        await party_routes.listen(_listen_request(), c="conn1", guest=guest)
+    assert e.value.status_code == 429
+
+
+# ── Page ────────────────────────────────────────────────────────────────────
+
+
+def test_the_bare_prefix_redirects_to_the_page(client, guest_client):
+    _start(client)
+    resp = guest_client.get("/party", follow_redirects=False)
+    assert resp.status_code == 308 and resp.headers["location"] == "/party/"
+
+
+def test_without_a_built_page_there_is_nothing_to_serve(client, guest_client, built_page):
+    _start(client)
+    (built_page / "index.html").unlink()
+    assert guest_client.get("/party/").status_code == 404
+
+
+# ── Housekeeping ────────────────────────────────────────────────────────────
+
+
+def test_the_rate_limit_window_slides(monkeypatch):
+    import core.party as party_module
+
+    now = [1000.0]
+    monkeypatch.setattr(party_module.time, "monotonic", lambda: now[0])
+    limiter = party_module.RateLimiter()
+    assert limiter.hit("k", 2, 60) and limiter.hit("k", 2, 60)
+    assert not limiter.hit("k", 2, 60)
+    now[0] += 61
+    assert limiter.hit("k", 2, 60)
+
+
+def test_pruning_forgets_keys_with_nothing_left_in_their_window(monkeypatch):
+    import core.party as party_module
+
+    now = [1000.0]
+    monkeypatch.setattr(party_module.time, "monotonic", lambda: now[0])
+    limiter = party_module.RateLimiter()
+    limiter.hit("old", 5, 60)
+    now[0] += 3601
+    limiter.hit("recent", 5, 60)
+    limiter.prune(3600)
+    assert list(limiter._hits) == ["recent"]
+
+
+def test_artwork_and_song_memory_stay_bounded(monkeypatch):
+    import core.party as party_module
+
+    monkeypatch.setattr(party_module, "COVER_MEMORY", 3)
+    monkeypatch.setattr(party_module, "SONG_MEMORY", 3)
+    party.enable()
+    for n in range(5):
+        party.remember_cover(f"cov-{n}")
+        party.remember_song({"id": f"s{n}", "title": "t"})
+    assert list(party.covers) == ["cov-2", "cov-3", "cov-4"]
+    assert list(party.songs) == ["s2", "s3", "s4"]
+
+
+async def test_the_reaper_ends_a_stale_party_and_tells_the_guests(monkeypatch):
+    import core.party as party_module
+
+    party.enable()
+    _, guest = party.join("Anna", "203.0.113.5")
+    stale = [False]
+    monkeypatch.setattr(party_module, "REAP_INTERVAL", 0.01)
+    monkeypatch.setattr(party, "is_stale", lambda: stale[0])
+    pruned = []
+    monkeypatch.setattr(party.limiter, "prune", pruned.append)
+    task = asyncio.create_task(party_module.reap_stale_party())
+    try:
+        await asyncio.sleep(0.05)
+        assert party.enabled and pruned
+        stale[0] = True
+        await asyncio.sleep(0.05)
+        assert not party.enabled
+        assert party.guest_alive(guest) is False
+    finally:
+        task.cancel()
+
+
+async def test_a_failing_lyrics_lookup_is_not_retried_for_the_song(
+    client, guest_client, default_session, monkeypatch
+):
+    token = _start(client)
+    party.update_snapshot(_snapshot(["a", "b"], session_id=default_session.session_id))
+    _cast(default_session, ["a", "b"], index=1)
+    _join(guest_client, token)
+    asked = []
+
+    async def broken(song):
+        asked.append(song["id"])
+        raise RuntimeError("lrclib down")
+
+    monkeypatch.setattr(lyrics_routes, "auto_for_party", broken)
+    party.rebuild()
+    await asyncio.sleep(0.05)
+    party.rebuild()
+    await asyncio.sleep(0.05)
+    assert asked == ["b"]
+    assert guest_client.get("/party/api/lyrics").json()["lines"] == []
+
+
+async def test_a_failing_background_lookup_leaves_no_backdrop(
+    client, guest_client, default_session, monkeypatch
+):
+    token = _start(client)
+    party.update_snapshot(_snapshot(["a", "b"], session_id=default_session.session_id))
+    _cast(default_session, ["a", "b"], index=1)
+    _join(guest_client, token)
+
+    async def broken(artist):
+        raise RuntimeError("fanart down")
+
+    monkeypatch.setattr(fanart_module, "get_artist_art", broken)
+    party.rebuild()
+    await asyncio.sleep(0.05)
+    assert guest_client.get("/party/api/state").json()["backdrop"] is False
+
+
+async def test_an_encoder_that_will_not_start_means_no_listening_along(monkeypatch):
+    import core.party as party_module
+
+    class Unstartable(_FakeBroadcaster):
+        async def start(self):
+            raise FileNotFoundError("ffmpeg")
+
+    monkeypatch.setattr(party_module, "Broadcaster", Unstartable)
+    _listening_party()
+    assert await party.listen() is None
+    assert party.broadcaster is None

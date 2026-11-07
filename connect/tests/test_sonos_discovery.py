@@ -144,3 +144,36 @@ def test_discover_zones_asks_the_next_speaker_when_one_does_not_answer(monkeypat
     )
     with patch("soco.config.SOCO_CLASS", new=soco_class):
         assert sonos_discovery.discover_zones() == [kitchen]
+
+
+def test_an_interface_that_cannot_send_is_dropped_and_the_rest_still_search(network, monkeypatch):
+    sock = network([(0.1, _response("Sonos_S2"), "10.0.0.7")])
+    broken = _FakeSocket()
+
+    def refuse(data, addr):
+        raise OSError("network unreachable")
+
+    broken.sendto = refuse
+    monkeypatch.setattr(sonos_discovery, "_open_sockets", lambda: [broken, sock])
+    assert sonos_discovery._collect_responders() == {"Sonos_S2": ["10.0.0.7"]}
+    assert broken.closed
+
+
+def test_one_multicast_socket_per_interface_that_takes_one(monkeypatch):
+    made = []
+
+    class Sock:
+        def __init__(self, *args):
+            made.append(self)
+
+        def setsockopt(self, level, option, value):
+            if value == sonos_discovery.socket.inet_aton("10.0.0.99"):
+                raise OSError("no such interface")
+
+    monkeypatch.setattr(sonos_discovery.socket, "socket", Sock)
+    monkeypatch.setattr(
+        "soco.discovery._find_ipv4_addresses", lambda: ["10.0.0.2", "10.0.0.99", "192.168.1.2"]
+    )
+    sockets = sonos_discovery._open_sockets()
+    assert len(made) == 3 and len(sockets) == 2
+    assert made[1] not in sockets

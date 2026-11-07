@@ -442,6 +442,72 @@ async def test_stopping_closes_the_decks_and_the_ring():
     assert rig.engine.ring.closed
 
 
+async def test_a_failing_lookup_of_the_next_song_ends_the_mix_after_this_one():
+    a = _pcm(SR)
+    rig = Rig({"a": a, "b": _pcm(SR, start=3)}, ["a", "b"])
+
+    async def broken(current):
+        raise RuntimeError("server gone")
+
+    rig.engine._next_fn = broken
+    rig.engine.start()
+    await rig.run()
+    assert rig.engine.ended and rig.rendered() == a
+
+
+async def test_a_queue_change_whose_lookup_fails_drops_the_opened_next_song():
+    a, b = _pcm(2 * SR), _pcm(SR, start=3)
+    rig = Rig({"a": a, "b": b}, ["a", "b"], lead=1.0)
+    rig.engine.start()
+    await rig.run(steps=2)
+    assert len(rig.decks) == 2
+
+    async def broken(current):
+        raise RuntimeError("server gone")
+
+    rig.engine._next_fn = broken
+    rig.engine.queue_changed()
+    await rig.run(advance=0.5)
+    assert rig.decks[1].closed
+    assert rig.engine.ended and rig.rendered() == a
+
+
+async def test_a_queue_change_at_the_end_of_the_queue_leaves_it_ending():
+    a = _pcm(2 * SR)
+    rig = Rig({"a": a}, ["a"], lead=1.0)
+    rig.engine.start()
+    await rig.run(steps=2)
+    rig.engine.queue_changed()
+    await rig.run(advance=0.5)
+    assert rig.engine.ended and rig.rendered() == a
+
+
+async def test_a_failing_change_listener_does_not_stop_the_mix():
+    a, b = _pcm(SR), _pcm(SR, start=3)
+
+    def broken(engine):
+        raise RuntimeError("listener gone")
+
+    rig = Rig({"a": a, "b": b}, ["a", "b"], on_change=broken)
+    rig.engine.start()
+    await rig.run(advance=0.5)
+    assert rig.engine.ended and rig.rendered() == a + b
+
+
+async def test_a_render_that_fails_stops_the_mix_and_closes_its_stream():
+    rig = Rig({"a": _pcm(SR)}, ["a"])
+
+    def broken(frames):
+        raise RuntimeError("decoder state lost")
+
+    rig.engine.start()
+    rig.decks[0].take = broken
+    async with asyncio.timeout(2):
+        while not rig.engine.stopped:
+            await asyncio.sleep(0.01)
+    assert rig.engine.ring.closed and rig.decks[0].closed
+
+
 # ── Real decoders ───────────────────────────────────────────────────────────
 
 
@@ -550,3 +616,83 @@ async def test_the_last_song_ending_inside_a_block_keeps_its_last_audio():
     await rig.run(steps=3)
     assert rig.engine.ended and rig.engine.ring.closed
     assert rig.rendered() == a
+
+
+def _deck_on(path: str, start: float = 0.0) -> me.Deck:
+    async def url(item):
+        return path
+
+    return me.Deck(MixItem("a", 0, duration=10.0), start, url)
+
+
+async def _drain(deck: me.Deck) -> bytes:
+    out = bytearray()
+    async with asyncio.timeout(10):
+        while not deck.finished:
+            out += deck.take(SR)
+            await asyncio.sleep(0.005)
+    return bytes(out)
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="needs a real ffmpeg")
+async def test_a_deck_holds_its_decoder_back_once_its_buffer_is_full(tmp_path, monkeypatch):
+    monkeypatch.setattr(streamer, "FFMPEG_BIN", "ffmpeg")
+    monkeypatch.setattr(me, "_DECK_BUFFER_SECONDS", 0.1)
+    whole = _sine(2 * SR)
+    _write_wav(tmp_path / "a.wav", whole)
+    deck = _deck_on(str(tmp_path / "a.wav"))
+    deck.open()
+    async with asyncio.timeout(10):
+        while deck.available < SR // 10:
+            await asyncio.sleep(0.01)
+    await asyncio.sleep(0.2)
+    # A pipe read is up to 64 KiB past the limit, not the whole song.
+    assert deck.available < SR // 2 and not deck.decoder_done
+    out = await _drain(deck)
+    assert np.array_equal(np.frombuffer(out, dtype="<i2"), whole)
+    assert deck.position == pytest.approx(2.0)
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="needs a real ffmpeg")
+async def test_a_deck_skips_ahead_also_through_audio_not_decoded_yet(tmp_path, monkeypatch):
+    monkeypatch.setattr(streamer, "FFMPEG_BIN", "ffmpeg")
+    whole = _sine(2 * SR)
+    _write_wav(tmp_path / "a.wav", whole)
+    deck = _deck_on(str(tmp_path / "a.wav"))
+    deck.open()
+    deck.discard(SR // 2)  # before anything has arrived
+    assert deck.position == pytest.approx(0.5)
+    out = await _drain(deck)
+    assert np.array_equal(np.frombuffer(out, dtype="<i2"), whole[SR:])
+
+
+@pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="needs a real ffmpeg")
+async def test_closing_a_deck_stops_its_decoder(tmp_path, monkeypatch):
+    monkeypatch.setattr(streamer, "FFMPEG_BIN", "ffmpeg")
+    monkeypatch.setattr(me, "_DECK_BUFFER_SECONDS", 0.1)
+    _write_wav(tmp_path / "a.wav", _sine(5 * SR))
+    deck = _deck_on(str(tmp_path / "a.wav"))
+    deck.open()
+    async with asyncio.timeout(10):
+        while deck.available == 0:
+            await asyncio.sleep(0.01)
+    proc = deck._proc
+    deck.close()
+    async with asyncio.timeout(5):
+        assert await proc.wait() != 0
+        while not deck.decoder_done:
+            await asyncio.sleep(0.01)
+
+
+@pytest.mark.parametrize("failure", ["no url", "lookup fails"])
+async def test_a_deck_without_a_source_ends_with_nothing(failure):
+    async def url(item):
+        if failure == "lookup fails":
+            raise RuntimeError("server gone")
+
+    deck = me.Deck(MixItem("a", 0, duration=10.0), 0.0, url)
+    deck.open()
+    async with asyncio.timeout(2):
+        while not deck.finished:
+            await asyncio.sleep(0.01)
+    assert not deck.produced and deck.available == 0

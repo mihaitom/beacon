@@ -151,7 +151,7 @@ def test_connect_data_dir_env_var_overrides_default_path():
 # ── Durability: this one file holds *every* paired device's credential ───
 
 
-def test_an_interrupted_write_leaves_the_previous_file_intact(monkeypatch):
+def test_an_interrupted_write_leaves_the_previous_file_intact():
     """The real durability property, exercised the way it actually breaks:
     a write that dies partway (crash, full disk). Written into a temp file
     and moved into place with os.replace(), so the live file is either the
@@ -164,9 +164,8 @@ def test_an_interrupted_write_leaves_the_previous_file_intact(monkeypatch):
             def boom(*args, **kwargs):
                 raise OSError("No space left on device")
 
-            monkeypatch.setattr(credentials.json, "dump", boom)
-            credentials.save("Apple TV", "creds-b")  # must not raise
-            monkeypatch.undo()
+            with patch.object(credentials.json, "dump", boom):
+                credentials.save("Apple TV", "creds-b")  # must not raise
 
             assert credentials.get("HomePod") == "creds-a"
             assert not os.path.exists(f"{credentials._PATH}.tmp")

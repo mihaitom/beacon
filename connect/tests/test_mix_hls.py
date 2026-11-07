@@ -182,3 +182,69 @@ async def test_a_segment_let_go_is_none_and_one_still_held_is_served():
     assert await stream.segment(0) is None
     assert await stream.segment(95) == b"s95"
     stream.close()
+
+
+async def test_a_request_ahead_of_the_encode_waits_for_its_segment():
+    stream = MixHls(_Listener(), "aac", lossy_codec_args("aac", 128))
+    init = asyncio.create_task(stream.init_segment())
+    second = asyncio.create_task(stream.segment(1))
+    waited = asyncio.create_task(stream.wait_for_segments(2, timeout=5.0))
+    await asyncio.sleep(0.01)
+    assert not (init.done() or second.done() or waited.done())
+    stream._take(b"init", [b"s0"])
+    assert await init == b"init"
+    await asyncio.sleep(0.01)
+    assert not second.done()
+    stream._take(None, [b"s1"])
+    assert await second == b"s1"
+    await waited
+    stream.close()
+
+
+async def test_waiting_for_segments_gives_up_after_its_timeout():
+    stream = MixHls(_Listener(), "aac", lossy_codec_args("aac", 128))
+    async with asyncio.timeout(1.0):
+        await stream.wait_for_segments(1, timeout=0.05)
+    assert stream.segments == 0
+    stream.close()
+
+
+async def test_closing_releases_everyone_waiting_with_nothing():
+    stream = MixHls(_Listener(), "aac", lossy_codec_args("aac", 128))
+    init = asyncio.create_task(stream.init_segment())
+    segment = asyncio.create_task(stream.segment(0))
+    await asyncio.sleep(0.01)
+    stream.close()
+    assert await init is None and await segment is None
+
+
+class _BrokenEngine(_Listener):
+    async def connect(self, *args, **kwargs):
+        raise OSError("encoder would not start")
+
+
+class _CutShortEngine(_Listener):
+    """An encode whose output ends while the mix is still going."""
+
+    async def connect(self, *args, **kwargs):
+        class Connection:
+            async def chunks(self):
+                return
+                yield
+
+            def close(self):
+                pass
+
+        return Connection()
+
+
+@pytest.mark.parametrize("engine", [_BrokenEngine, _CutShortEngine])
+async def test_an_encode_that_fails_or_stops_early_fails_the_stream(engine):
+    stream = MixHls(engine(), "aac", lossy_codec_args("aac", 128))
+    waiting = asyncio.create_task(stream.segment(0))
+    stream.start()
+    async with asyncio.timeout(2.0):
+        assert await waiting is None
+    assert stream.failed and not stream.finished
+    assert "#EXT-X-ENDLIST" not in stream.playlist("")
+    stream.close()

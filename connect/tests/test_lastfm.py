@@ -368,3 +368,23 @@ def test_a_successful_query_returns_the_track_list(client):
 
     assert resp.status_code == 200
     assert resp.json() == {"tracks": [{"title": "Believe", "artist": "Cher", "mbid": ""}]}
+
+
+async def test_a_body_that_is_not_json_is_an_error():
+    garbage = httpx.Response(200, content=b"<html>", request=httpx.Request("GET", lastfm._BASE_URL))
+    with patch.object(lastfm._client, "get", AsyncMock(return_value=garbage)):
+        with pytest.raises(lastfm.LastfmError):
+            await lastfm._get("track.search", track="x")
+
+
+async def test_the_fallback_match_skips_entries_it_cannot_read():
+    matches = [
+        "not a track",
+        {"name": "", "artist": "Heart"},
+        {"name": "Alone", "artist": None},
+        {"name": "Alone Again", "artist": {"name": "Heart"}, "listeners": "many"},
+        {"name": "Alone (Live)", "artist": "Heart", "listeners": "12"},
+    ]
+    with _patch_get({"results": {"trackmatches": {"track": matches}}}):
+        best = await lastfm._most_listened_match("Heart", "Alone")
+    assert best == {"title": "Alone (Live)", "artist": "Heart"}

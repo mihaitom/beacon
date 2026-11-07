@@ -352,6 +352,9 @@ class FakeHls:
     async def segment(self, index):
         return b"seg" if index == 0 else None
 
+    async def init_segment(self):
+        return b"init"
+
 
 @pytest.fixture
 def fake_hls(monkeypatch):
@@ -401,3 +404,47 @@ def test_an_old_run_or_a_bad_format_gets_no_playlist(configured, fake_hls):
     assert configured.get(url, params={"epoch": "old", "fmt": "flac"}).status_code == 410
     assert configured.get(url, params={"epoch": epoch, "fmt": "wav"}).status_code == 400
     assert fake_hls == []
+
+
+def test_webkit_gets_the_init_segment_of_an_fmp4_run_only(configured, fake_hls):
+    epoch = _start(configured, "a").json()["epoch"]
+    url = f"/stream/local/mix/{PLAYER}/hls/init.mp4"
+    r = configured.get(url, params={"epoch": epoch, "fmt": "aac", "br": 192})
+    assert r.status_code == 200 and r.content == b"init"
+    assert r.headers["content-type"] == "audio/mp4"
+    # Packed MP3 has no init segment.
+    assert configured.get(url, params={"epoch": epoch, "fmt": "mp3", "br": 192}).status_code == 404
+    assert configured.get(url, params={"epoch": "old", "fmt": "aac", "br": 192}).status_code == 410
+
+
+def test_a_lossless_run_is_encoded_lossless_for_webkit(configured, fake_hls):
+    epoch = _start(configured, "a").json()["epoch"]
+    params = {"epoch": epoch, "fmt": "flac"}
+    assert configured.get(f"/stream/local/mix/{PLAYER}/hls/index.m3u8", params=params).is_success
+    assert fake_hls[0].codec_args == routes.lossless_codec_args()
+
+
+@pytest.mark.parametrize(
+    ("segment", "epoch", "status"), [("x.mp4", None, 404), ("0.mp4", "old", 410)]
+)
+def test_a_segment_of_no_name_or_of_an_old_run_is_refused(
+    configured, fake_hls, segment, epoch, status
+):
+    current = _start(configured, "a").json()["epoch"]
+    params = {"epoch": epoch or current, "fmt": "aac", "br": 192}
+    r = configured.get(f"/stream/local/mix/{PLAYER}/hls/{segment}", params=params)
+    assert r.status_code == status
+
+
+def test_asking_for_the_timeline_keeps_the_run_alive(configured, default_session):
+    epoch = _start(configured, "a").json()["epoch"]
+    mix = local_mixes.get(default_session.session_id, PLAYER)
+    with patch.object(LocalMix, "touch") as touch:
+        r = configured.get(f"/stream/local/mix/{PLAYER}/timeline", params={"epoch": epoch})
+    assert r.status_code == 200 and r.json()["epoch"] == epoch
+    touch.assert_called_once()
+    assert local_mixes.get(default_session.session_id, PLAYER) is mix
+
+
+def test_a_mix_needs_songs(configured):
+    assert _start(configured).status_code == 400

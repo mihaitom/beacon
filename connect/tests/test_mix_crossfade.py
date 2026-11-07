@@ -86,6 +86,9 @@ class Rig:
         }
         self.order = order
         self.analysed: list[tuple[str, float, float]] = []
+        # Songs whose decoder has nothing yet; FakeDeck.arrive() delivers.
+        self.slow: set[str] = set()
+        self.decks: list[FakeDeck] = []
         self.engine = MixEngine(
             self.items[order[0]],
             self.items[order[0]].start,
@@ -93,10 +96,16 @@ class Rig:
             self._next,
             lead_seconds=lead,
             clock=self.clock,
-            deck_factory=lambda item, start: FakeDeck(item, start, pcm(songs[item.song_id]), True),
+            deck_factory=self._deck,
             settings=settings,
             analyse_fn=self._analyse if analyse else self._no_analysis,
         )
+
+    def _deck(self, item, start):
+        song = pcm(self.songs[item.song_id])
+        deck = FakeDeck(item, start, song, item.song_id not in self.slow)
+        self.decks.append(deck)
+        return deck
 
     async def _url(self, item):
         return item.song_id
@@ -513,3 +522,120 @@ async def test_a_beatmix_ends_where_the_next_songs_singing_starts():
     assert told["kind"] == "beatmix"
     assert asked == ["b"]
     assert told["end"] == pytest.approx(sung, abs=0.05)
+
+
+async def test_a_song_started_inside_its_crossfade_fades_out_from_there():
+    # Seeked to 25 s of a 30 s song: what the deck holds is those last 5 s.
+    rig = Rig(
+        {"a": tone(440, 5), "b": tone(660, 20)},
+        CROSSFADE,
+        analyse=False,
+        a=MixItem("a", 0, duration=30.0, start=25.0),
+    )
+    out = await rig.render_all()
+    told = rig.engine.transitions()[-1]
+    assert told["kind"] == "crossfade"
+    # The fade covers what was left of the song, not the 8 s it wanted.
+    overlap = 30.0 - told["start"]
+    # From where the render stood when the plan came: within a lead of 25 s.
+    assert 25.0 <= told["start"] <= 27.0
+    assert told["change"] == pytest.approx(told["start"] + overlap / 2)
+    assert band_level(out[-4 * SR :], 660) > 0.25
+
+
+async def test_a_song_started_too_close_to_its_end_to_fade_joins_without_one():
+    rig = Rig(
+        {"a": tone(440, 0.5), "b": tone(660, 20)},
+        CROSSFADE,
+        analyse=False,
+        a=MixItem("a", 0, duration=30.0, start=29.5),
+    )
+    out = await rig.render_all()
+    change = rig.engine.timeline.next_change(0)
+    assert (change.song_id, change.position) == ("b", 0.0)
+    assert all(t["kind"] != "crossfade" for t in rig.engine.transitions())
+    after = out[change.frame + SR : change.frame + 3 * SR]
+    assert band_level(after, 660) > 0.25 and band_level(after, 440) < 0.01
+
+
+async def test_an_analysis_that_fails_leaves_a_crossfade_on_the_metadata():
+    rig = Rig({"a": clicks(128, 60, offset=0.21), "b": clicks(125, 60, offset=0.37)}, CROSSFADE)
+
+    async def broken(item, start, duration):
+        raise RuntimeError("decoder gone")
+
+    rig.engine._analyse_fn = broken
+    await rig.render_all()
+    told = rig.engine.transitions()[-1]
+    assert (told["kind"], told["start"]) == ("crossfade", 52.0)
+
+
+async def test_a_failing_singing_lookup_still_beatmixes():
+    rig = Rig({"a": clicks(128, 60, offset=0.21), "b": clicks(125, 60, offset=0.37)}, CROSSFADE)
+
+    async def broken(item):
+        raise RuntimeError("lyrics server gone")
+
+    rig.engine._vocals_fn = broken
+    await rig.render_all()
+    assert rig.engine.transitions()[-1]["kind"] == "beatmix"
+
+
+async def test_out_of_lead_in_a_crossfade_the_song_is_held_until_the_next_one_arrives():
+    rig = Rig({"a": tone(440, 30), "b": tone(660, 20)}, CROSSFADE, analyse=False)
+    rig.slow.add("b")
+    timeline = rig.engine.timeline
+
+    def held() -> bool:
+        return any(not e.playing for e in timeline.entries if e.song_id is not None)
+
+    rig.engine.start()
+    for _ in range(600):
+        rig.engine.step()
+        for _ in range(5):
+            await asyncio.sleep(0)
+        rig.clock.now += 0.5
+        if held():
+            break
+    stalled = [e for e in timeline.entries if not e.playing and e.song_id is not None]
+    assert [e.song_id for e in stalled] == ["a"]
+    assert 22.0 <= stalled[0].position <= 26.0  # inside the overlap
+
+    rig.decks[1].arrive()
+    for _ in range(600):
+        rig.engine.step()
+        for _ in range(5):
+            await asyncio.sleep(0)
+        rig.clock.now += 0.5
+        if rig.engine.ended:
+            break
+    assert rig.engine.ended
+    resumed = timeline.entries[timeline.entries.index(stalled[0]) + 1]
+    assert (resumed.song_id, resumed.playing) == ("a", True)
+    assert resumed.position == stalled[0].position
+    assert timeline.next_change(0).song_id == "b"
+    rig.engine.stop()
+
+
+async def test_a_song_that_produces_nothing_is_skipped_in_a_crossfade_mix_too():
+    nothing = np.zeros((0, 2))
+    rig = Rig({"a": tone(440, 12), "b": nothing, "c": tone(660, 12)}, CROSSFADE, analyse=False)
+    rig.items["b"] = MixItem("b", 1, duration=12.0)
+    out = await rig.render_all()
+    c = rig.engine.timeline.entries[-2]
+    assert (c.song_id, c.position) == ("c", 0.0)
+    # c follows as soon as a has faded out into b's nothing - no gap.
+    assert c.frame < 12 * SR + DELAY_FRAMES + SR // 10
+    assert band_level(out[c.frame : c.frame + SR], 660) > 0.25
+    assert len(out) == pytest.approx(c.frame + 12 * SR, abs=SR // 10)
+
+
+async def test_a_crossfade_mix_of_broken_songs_ends_instead_of_trying_forever():
+    nothing = np.zeros((0, 2))
+    songs = {"a": nothing, "b": nothing, "c": nothing, "d": tone(440, 5)}
+    rig = Rig(songs, CROSSFADE, analyse=False)
+    for i, sid in enumerate("abc"):
+        rig.items[sid] = MixItem(sid, i, duration=5.0)
+    out = await rig.render_all()
+    assert np.max(np.abs(out), initial=0.0) < 1e-3  # dither, nothing more
+    assert "d" not in [e.song_id for e in rig.engine.timeline.entries]

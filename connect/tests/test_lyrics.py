@@ -1215,3 +1215,32 @@ async def test_first_sung_line_asks_nobody_without_artist_and_title():
     with patch.dict(SEARCH_FETCHERS, {source: fetch for source in ACTIVE_SOURCES}):
         assert await lyrics_routes.first_sung_line(MixItem("s", 0, title="Song")) is None
     fetch.assert_not_awaited()
+
+
+# ── Party fallback and the lookup underneath ────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("found", "expected"),
+    [
+        (
+            {"lyrics": "[00:01.00] Hello"},
+            {"synced": True, "lines": [{"time": 1.0, "text": "Hello"}]},
+        ),
+        ({"lyrics": "   "}, None),
+        (None, None),
+    ],
+)
+async def test_the_party_fallback_hands_out_lines_or_nothing(found, expected):
+    with patch.object(lyrics_routes, "_lookup", AsyncMock(return_value=found)):
+        got = await lyrics_routes.auto_for_party({"title": "Song", "artist": "Artist"})
+    assert got == expected
+
+
+async def test_a_lookup_that_breaks_is_unavailable_and_asked_again_next_time():
+    produce = AsyncMock(side_effect=[RuntimeError("parser crashed"), ({"lyrics": "x"}, True)])
+    key = ("auto", "song-that-breaks")
+    first = await lyrics_routes._lookup(key, produce)
+    assert first is lyrics_routes._UNAVAILABLE
+    assert await lyrics_routes._lookup(key, produce) == {"lyrics": "x"}
+    assert produce.await_count == 2
