@@ -140,7 +140,14 @@ describe('what is new on login', () => {
     visible: boolean
     readonly storageKey: string
     readonly appVersion: string
-    showAutoIfNeeded(): Promise<void>
+    readonly authStore: { authenticated: boolean }
+  }
+
+  // The dialog is mounted with the app, before anyone has logged in, and
+  // decides when the login lands - so the tests log in the same way.
+  async function logIn(vm: LoginVm) {
+    vm.authStore.authenticated = true
+    await flushPromises()
   }
 
   it('opens once for a version the account has not seen anywhere', async () => {
@@ -148,7 +155,7 @@ describe('what is new on login', () => {
     const wrapper = mountNotes()
     const vm = wrapper.vm as unknown as LoginVm
 
-    await vm.showAutoIfNeeded()
+    await logIn(vm)
 
     expect(vm.visible).toBe(true)
     expect(window.localStorage.getItem(vm.storageKey)).toBe(vm.appVersion)
@@ -161,7 +168,7 @@ describe('what is new on login', () => {
     const vm = wrapper.vm as unknown as LoginVm
     fetchSettings.mockResolvedValue({ releaseNotesSeen: vm.appVersion })
 
-    await vm.showAutoIfNeeded()
+    await logIn(vm)
 
     expect(vm.visible).toBe(false)
     expect(pushSettings).not.toHaveBeenCalled()
@@ -174,7 +181,7 @@ describe('what is new on login', () => {
     window.localStorage.setItem(vm.storageKey, vm.appVersion)
     fetchSettings.mockResolvedValue({})
 
-    await vm.showAutoIfNeeded()
+    await logIn(vm)
 
     expect(vm.visible).toBe(false)
     expect(pushSettings).toHaveBeenCalledWith({ releaseNotesSeen: vm.appVersion })
@@ -187,7 +194,24 @@ describe('what is new on login', () => {
     window.localStorage.setItem(vm.storageKey, vm.appVersion)
     fetchSettings.mockRejectedValue(new TypeError('offline'))
 
-    await vm.showAutoIfNeeded()
+    await logIn(vm)
+
+    expect(vm.visible).toBe(false)
+    expect(pushSettings).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  it('stays closed when the account logs out while its settings are on their way', async () => {
+    let answer: (settings: object) => void = () => {}
+    fetchSettings.mockReturnValue(new Promise((resolve) => (answer = resolve)))
+    const wrapper = mountNotes()
+    const vm = wrapper.vm as unknown as LoginVm
+    vm.authStore.authenticated = true
+    await flushPromises()
+
+    vm.authStore.authenticated = false
+    answer({})
+    await flushPromises()
 
     expect(vm.visible).toBe(false)
     expect(pushSettings).not.toHaveBeenCalled()

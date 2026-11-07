@@ -225,6 +225,9 @@ export default defineComponent({
       } catch (error) {
         console.error('[release-notes] Failed to load the seen version:', error)
       }
+      // A logout while the settings were on their way would otherwise open
+      // the dialog over the login page.
+      if (!this.authStore.authenticated) return
       if (seenLocally && fetched && !seenRemotely) {
         this.pushSeen()
       }
