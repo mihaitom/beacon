@@ -56,7 +56,13 @@ async def test_works_without_a_personal_key_using_beacons_project_key(monkeypatc
     with _with_mbid(), _with_get(_response(200, payload)) as get:
         art = await fanart.get_artist_art("Cher")
 
-    assert art == {"banner": "banner", "background": None, "backgrounds": [], "logo": None}
+    assert art == {
+        "banner": "banner",
+        "banners": ["banner"],
+        "background": None,
+        "backgrounds": [],
+        "logo": None,
+    }
     # The project key is the API key, and there is no client_key to send.
     assert get.await_args.kwargs["params"] == {"api_key": "beacon-project"}
 
@@ -75,7 +81,13 @@ async def test_a_collaboration_credit_falls_back_to_its_first_artist(key):
     with patch.object(fanart, "resolve_mbid", resolve), _with_get(_response(200, payload)):
         art = await fanart.get_artist_art("Cardi B & Bruno Mars")
 
-    assert art == {"banner": None, "background": "bg", "backgrounds": ["bg"], "logo": None}
+    assert art == {
+        "banner": None,
+        "banners": [],
+        "background": "bg",
+        "backgrounds": ["bg"],
+        "logo": None,
+    }
     assert [call.args[0] for call in resolve.await_args_list] == ["Cardi B & Bruno Mars", "Cardi B"]
 
 
@@ -156,6 +168,7 @@ async def test_a_failed_request_is_not_cached(key):
     with _with_mbid(), _with_get(_response(200, payload)):
         assert await fanart.get_artist_art("Cher") == {
             "banner": "banner",
+            "banners": ["banner"],
             "background": None,
             "backgrounds": [],
             "logo": None,
@@ -214,6 +227,22 @@ async def test_shows_the_most_liked_when_nothing_is_on_disk(key):
 
     assert art["background"] == "bg2"
     assert art["backgrounds"] == ["bg2", "bg1", "bg3"]
+
+
+async def test_lists_every_banner_most_liked_first(key):
+    """The banner shown is one of them; the rest are there to pick another
+    without asking Fanart.tv again, as with the backgrounds."""
+    payload = {
+        "artistbanner": [
+            {"id": "1", "url": "banner1", "likes": "2"},
+            {"id": "2", "url": "banner2", "likes": "5"},
+        ]
+    }
+    with _with_mbid(), _with_get(_response(200, payload)):
+        art = await fanart.get_artist_art("Cher")
+
+    assert art["banners"] == ["banner2", "banner1"]
+    assert art["banner"] == "banner2"
 
 
 async def test_prefers_an_image_already_on_disk(key):

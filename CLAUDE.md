@@ -41,6 +41,7 @@ pnpm test:layout         # the *.browser.test.ts suite, real Chromium via Playwr
 pnpm type-check          # vue-tsc
 pnpm lint                # oxlint + eslint, both with --fix
 pnpm format:check        # prettier
+pnpm screenshots         # README screenshots as WebP, set up in scripts/screenshots/shots.mjs
 
 cd connect && uv run pytest                        # backend suite
 cd connect && uv run --group dev ruff check .      # backend lint

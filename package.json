@@ -38,6 +38,7 @@
     "test:unit:watch": "vitest",
     "test:unit:coverage": "vitest run --coverage",
     "test:layout": "vitest run --config vitest.browser.config.ts",
+    "screenshots": "node scripts/screenshots/take.mjs",
     "package:connect": "pnpm build:party && cd connect && uv run python packaging/build-binary.py",
     "package:ffmpeg": "bash scripts/build-ffmpeg.sh",
     "package": "npm run package:ffmpeg && npm run package:connect && electron-vite build && electron-builder --publish never",

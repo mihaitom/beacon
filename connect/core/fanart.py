@@ -243,14 +243,16 @@ def _first(urls: list[str]) -> str | None:
 
 def _choose(art: dict | None) -> dict | None:
     """One image of each kind - what actually gets shown - plus the full
-    background candidate list, so a client can offer another one without
-    asking Fanart.tv again. Kept out of the cache on purpose: caching the
+    background and banner candidate lists, so a client can offer another one
+    without asking Fanart.tv again. Kept out of the cache on purpose: caching the
     choice would freeze one image for the whole _REFRESH."""
     if not art:
         return None
     backgrounds = art.get("background") or []
+    banners = art.get("banner") or []
     return {
-        "banner": _first(art.get("banner") or []),
+        "banner": _first(banners),
+        "banners": list(banners),
         "background": _first(backgrounds),
         "backgrounds": list(backgrounds),
         "logo": _first(art.get("logo") or []),
