@@ -198,7 +198,7 @@ export default defineComponent({
     },
   },
   mounted() {
-    this.listener = () => this.openDialog(true)
+    this.listener = () => this.openDialog()
     emitter.on('openReleaseNotes', this.listener)
     setTimeout(() => {
       this.iconAnimation = true
@@ -232,7 +232,7 @@ export default defineComponent({
         this.pushSeen()
       }
       if (!seenLocally && !seenRemotely) {
-        this.openDialog(true)
+        this.openDialog()
       }
     },
     pushSeen() {
@@ -251,20 +251,17 @@ export default defineComponent({
         console.error('[release-notes] Failed to load the upcoming changes:', error)
       }
     },
-    openDialog(autoOpen = false) {
+    openDialog() {
       this.selectedVersion =
         this.changelogEntries.find((entry) => entry.version === this.appVersion)?.version ??
         this.changelogEntries[0]?.version ??
         this.appVersion
       this.visible = true
       void this.loadUpcoming()
-      if (autoOpen) {
-        this.markSeen()
-      }
+      this.markSeen()
     },
     closeDialog() {
       this.visible = false
-      this.markSeen()
     },
     markSeen() {
       window.localStorage.setItem(this.storageKey, this.appVersion)

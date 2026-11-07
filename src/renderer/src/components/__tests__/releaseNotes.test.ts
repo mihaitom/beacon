@@ -10,7 +10,7 @@ import ReleaseNotes, { renderNotes } from '../releaseNotes.vue'
 
 vi.mock('@/services/connect/accountSettings', () => ({
   fetchAccountSettings: vi.fn(),
-  pushAccountSettings: vi.fn(),
+  pushAccountSettings: vi.fn().mockResolvedValue({}),
 }))
 
 describe('release notes', () => {
@@ -45,7 +45,7 @@ describe('upcoming changes', () => {
   type NotesVm = {
     selectedVersion: string
     readonly versionOptions: { title: string; value: string }[]
-    openDialog(autoOpen?: boolean): void
+    openDialog(): void
   }
 
   async function openWith(changelog: string) {
