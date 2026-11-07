@@ -1,11 +1,13 @@
-/** A ten-band graphic equalizer: the bands, the presets, and the curve they
- * add up to.
+/** A ten-band graphic equalizer, or an imported headphone profile in its
+ * place: the bands, the presets, and the curve they add up to.
  *
- * Every band is the RBJ cookbook peaking biquad - what Web Audio's
- * BiquadFilterNode ('peaking') and ffmpeg's `equalizer` filter both are - so
- * one curve sounds the same on this device and on a speaker. The bands are
- * sent to connect as numbers (see toBands()), never defined there a second
- * time; connect/core/equalizer.py works out the same headroom from them. */
+ * Every band is an RBJ cookbook biquad - peaking for the ten bands, low and
+ * high shelves as well in a profile - which is what ffmpeg's `equalizer`,
+ * `lowshelf` and `highshelf` filters are and what this device plays (see
+ * services/audioEngine.ts's setEqualizer()), so one curve sounds the same
+ * on this device and on a speaker. The bands are sent to connect as numbers
+ * (see toBands()), never defined there a second time;
+ * connect/core/equalizer.py works out the same headroom from them. */
 
 /** ISO octave centres, 31 Hz to 16 kHz. */
 export const EQ_FREQUENCIES = [31, 62, 125, 250, 500, 1000, 2000, 4000, 8000, 16000] as const
@@ -19,17 +21,30 @@ export const EQ_MAX_GAIN_DB = 12
 /** A single dB step is finer than anyone hears on a band this wide. */
 export const EQ_STEP_DB = 1
 
-export interface EqualizerSetting {
-  enabled: boolean
-  /** One gain in dB per entry of EQ_FREQUENCIES. */
-  gains: number[]
-}
+export type ShelfType = 'lowshelf' | 'highshelf'
 
-/** What connect's /play and /equalizers take per band. */
+/** What connect's /play and /equalizers take per band. No type is a
+ * peaking band. */
 export interface EqualizerBand {
   frequency: number
   gain: number
   q: number
+  type?: ShelfType
+}
+
+/** A filter set imported from a measurement (services/equalizerImport.ts),
+ * played exactly as it came instead of the ten bands. */
+export interface EqualizerProfile {
+  name: string
+  filters: EqualizerBand[]
+}
+
+export interface EqualizerSetting {
+  enabled: boolean
+  /** One gain in dB per entry of EQ_FREQUENCIES. */
+  gains: number[]
+  /** When set, this is the curve, and `gains` are left as they were. */
+  profile?: EqualizerProfile | null
 }
 
 export type EqualizerPreset = 'flat' | 'bass' | 'treble' | 'vocal' | 'loudness' | 'smallSpeaker'
@@ -53,6 +68,14 @@ export function flatSetting(): EqualizerSetting {
   return { enabled: false, gains: [...EQ_PRESETS.flat] }
 }
 
+// The bounds connect/core/equalizer.py's sanitize() holds every band to.
+export const PROFILE_MAX_FILTERS = 20
+const PROFILE_MAX_GAIN_DB = 20
+const MIN_HZ = 20
+const MAX_HZ = 20000
+const MIN_Q = 0.1
+const MAX_Q = 10
+
 function clampGain(value: unknown): number {
   const n = Number(value)
   if (value === null || value === undefined || !Number.isFinite(n)) return 0
@@ -62,14 +85,49 @@ function clampGain(value: unknown): number {
   )
 }
 
+function within(value: unknown, min: number, max: number): number | null {
+  const n = Number(value)
+  if (value === null || value === undefined || !Number.isFinite(n)) return null
+  return Math.max(min, Math.min(max, n))
+}
+
+/** A profile's filters read back from storage or the wire: each inside
+ * connect's bounds, flat ones dropped (a shelf at 0 dB is no filter). */
+export function sanitizeFilters(value: unknown): EqualizerBand[] {
+  if (!Array.isArray(value)) return []
+  return value.slice(0, PROFILE_MAX_FILTERS).flatMap((entry): EqualizerBand[] => {
+    const raw = (entry ?? {}) as Partial<Record<keyof EqualizerBand, unknown>>
+    const frequency = within(raw.frequency, MIN_HZ, MAX_HZ)
+    const gain = within(raw.gain, -PROFILE_MAX_GAIN_DB, PROFILE_MAX_GAIN_DB)
+    const q = within(raw.q, MIN_Q, MAX_Q)
+    if (frequency === null || q === null || !gain) return []
+    const band: EqualizerBand = { frequency, gain, q }
+    if (raw.type === 'lowshelf' || raw.type === 'highshelf') band.type = raw.type
+    else if (raw.type !== undefined) return []
+    return [band]
+  })
+}
+
+function sanitizeProfile(value: unknown): EqualizerProfile | null {
+  if (!value || typeof value !== 'object') return null
+  const raw = value as Partial<Record<keyof EqualizerProfile, unknown>>
+  const name = String(raw.name ?? '')
+    .trim()
+    .slice(0, PRESET_NAME_MAX_LENGTH)
+  const filters = sanitizeFilters(raw.filters)
+  return name && filters.length ? { name, filters } : null
+}
+
 /** Anything read back from storage or the wire, made into a setting: the
  * right number of bands, each a whole step inside the range. */
 export function sanitizeSetting(value: unknown): EqualizerSetting {
   const raw = (value ?? {}) as Partial<EqualizerSetting>
   const gains = Array.isArray(raw.gains) ? raw.gains : []
+  const profile = sanitizeProfile(raw.profile)
   return {
     enabled: raw.enabled === true,
     gains: EQ_FREQUENCIES.map((_, i) => clampGain(gains[i])),
+    ...(profile ? { profile } : {}),
   }
 }
 
@@ -80,7 +138,7 @@ export function isFlat(gains: readonly number[]): boolean {
 /** Whether this setting changes anything at all - switched on, and not
  * flat. Only then does it cost a filter, or a speaker's copy tier. */
 export function isActive(setting: EqualizerSetting): boolean {
-  return setting.enabled && !isFlat(setting.gains)
+  return setting.enabled && (!!setting.profile || !isFlat(setting.gains))
 }
 
 /** The preset these gains are, or null for a curve of one's own. */
@@ -92,10 +150,12 @@ export function sameGains(a: readonly number[], b: readonly number[]): boolean {
   return a.length === b.length && a.every((g, i) => g === b[i])
 }
 
-/** A curve the listener saved under a name of their own. */
+/** A curve the listener saved under a name of their own, or a profile
+ * they imported - then `profile` is set and `gains` mean nothing. */
 export interface CustomPreset {
   name: string
   gains: number[]
+  profile?: EqualizerProfile
 }
 
 export const PRESET_NAME_MAX_LENGTH = 40
@@ -111,8 +171,8 @@ export function sanitizePresets(value: unknown): CustomPreset[] {
       .trim()
       .slice(0, PRESET_NAME_MAX_LENGTH)
     if (!name) continue
-    const { gains } = sanitizeSetting({ gains: (entry as { gains?: unknown }).gains })
-    byName.set(name, { name, gains })
+    const { gains, profile } = sanitizeSetting(entry)
+    byName.set(name, profile ? { name, gains, profile: { ...profile, name } } : { name, gains })
   }
   return [...byName.values()]
 }
@@ -121,6 +181,7 @@ export function sanitizePresets(value: unknown): CustomPreset[] {
  * does nothing. */
 export function toBands(setting: EqualizerSetting): EqualizerBand[] {
   if (!setting.enabled) return []
+  if (setting.profile) return setting.profile.filters.map((band) => ({ ...band }))
   return EQ_FREQUENCIES.flatMap((frequency, i) =>
     setting.gains[i] ? [{ frequency, gain: setting.gains[i], q: EQ_Q }] : [],
   )
@@ -130,14 +191,47 @@ export function toBands(setting: EqualizerSetting): EqualizerBand[] {
  * _RESPONSE_RATE, which this has to match for the two to agree. */
 const RESPONSE_RATE = 48000
 
-/** One peaking band's magnitude in dB at `frequency`. */
-function peakingDb(band: EqualizerBand, frequency: number): number {
+type Coefficients = [number, number, number]
+
+/** The RBJ cookbook biquad for `band` at `rate`: numerator and
+ * denominator, as core/equalizer.py's _coefficients() has them. */
+export function biquadCoefficients(
+  band: EqualizerBand,
+  rate: number,
+): { feedforward: Coefficients; feedback: Coefficients } {
   const a = 10 ** (band.gain / 40)
-  const w0 = (2 * Math.PI * band.frequency) / RESPONSE_RATE
+  const w0 = (2 * Math.PI * band.frequency) / rate
   const alpha = Math.sin(w0) / (2 * band.q)
   const cos = Math.cos(w0)
-  const [b0, b1, b2] = [1 + alpha * a, -2 * cos, 1 - alpha * a]
-  const [a0, a1, a2] = [1 + alpha / a, -2 * cos, 1 - alpha / a]
+  if (!band.type) {
+    return {
+      feedforward: [1 + alpha * a, -2 * cos, 1 - alpha * a],
+      feedback: [1 + alpha / a, -2 * cos, 1 - alpha / a],
+    }
+  }
+  const shelf = 2 * Math.sqrt(a) * alpha
+  // The high shelf is the low one with the cosine's sign flipped.
+  const sign = band.type === 'lowshelf' ? 1 : -1
+  const c = sign * cos
+  return {
+    feedforward: [
+      a * (a + 1 - (a - 1) * c + shelf),
+      sign * 2 * a * (a - 1 - (a + 1) * c),
+      a * (a + 1 - (a - 1) * c - shelf),
+    ],
+    feedback: [
+      a + 1 + (a - 1) * c + shelf,
+      sign * -2 * (a - 1 + (a + 1) * c),
+      a + 1 + (a - 1) * c - shelf,
+    ],
+  }
+}
+
+/** One band's magnitude in dB at `frequency`. */
+function bandDb(band: EqualizerBand, frequency: number): number {
+  const { feedforward, feedback } = biquadCoefficients(band, RESPONSE_RATE)
+  const [b0, b1, b2] = feedforward
+  const [a0, a1, a2] = feedback
   const w = (2 * Math.PI * frequency) / RESPONSE_RATE
   // |H(e^jw)|: real and imaginary parts of numerator and denominator.
   const re = (c0: number, c1: number, c2: number) => c0 + c1 * Math.cos(w) + c2 * Math.cos(2 * w)
@@ -149,7 +243,7 @@ function peakingDb(band: EqualizerBand, frequency: number): number {
 
 /** The whole curve's level in dB at `frequency`, before headroom. */
 export function responseDb(bands: readonly EqualizerBand[], frequency: number): number {
-  return bands.reduce((sum, band) => sum + peakingDb(band, frequency), 0)
+  return bands.reduce((sum, band) => sum + bandDb(band, frequency), 0)
 }
 
 const RESPONSE_MIN_HZ = 20

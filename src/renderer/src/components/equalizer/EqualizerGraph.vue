@@ -9,12 +9,16 @@
     <div
       ref="graph"
       class="eq-graph"
-      :class="{ 'eq-graph--off': !enabled, 'eq-graph--disabled': disabled }"
+      :class="{
+        'eq-graph--off': !enabled,
+        'eq-graph--disabled': disabled,
+        'eq-graph--profile': profile,
+      }"
       @pointerdown="onPointerDown"
       @pointermove="onPointerMove"
       @pointerup="onPointerUp"
       @pointercancel="onPointerUp"
-      @pointerleave="hovered = null"
+      @pointerleave="hovered = probeX = null"
       @dblclick="onDoubleClick"
     >
       <svg class="eq-graph__svg" :viewBox="`0 0 ${width} ${height}`" aria-hidden="true">
@@ -47,9 +51,10 @@
       </svg>
       <!-- Each point sits at its own band's gain, not on the summed curve:
          - octave-wide bands overlap, so on the curve a point would move
-         - whenever its neighbour does. -->
+         - whenever its neighbour does. A profile has no points: it is
+         - played as imported, not adjusted here. -->
       <div
-        v-for="(frequency, index) in frequencies"
+        v-for="(frequency, index) in profile ? [] : frequencies"
         :key="frequency"
         class="eq-graph__handle"
         :class="{
@@ -76,6 +81,13 @@
       >
         {{ frequencyLabel(frequencies[activeIndex]!) }} Hz · {{ gainLabel(gains[activeIndex]) }} dB
       </div>
+      <div
+        v-if="probe"
+        class="eq-graph__tip"
+        :style="{ left: `${probe.x}px`, top: `${probe.y}px` }"
+      >
+        {{ probe.label }}
+      </div>
     </div>
     <div class="eq-graph__freqs text-body-small text-medium-emphasis" aria-hidden="true">
       <template v-for="(frequency, index) in frequencies" :key="frequency">
@@ -89,7 +101,14 @@
 
 <script lang="ts">
 import type { PropType } from 'vue'
-import { EQ_FREQUENCIES, EQ_MAX_GAIN_DB, EQ_STEP_DB, smoothPath } from '@/services/equalizer'
+import {
+  EQ_FREQUENCIES,
+  EQ_MAX_GAIN_DB,
+  EQ_STEP_DB,
+  responseDb,
+  smoothPath,
+  type EqualizerBand,
+} from '@/services/equalizer'
 import { BAR_COUNT, MAX_FREQ_HZ, MIN_FREQ_HZ } from '@/services/visualizerBands'
 
 // The graph runs a little past the audible range on both sides, so the
@@ -109,6 +128,9 @@ const DECADES_HZ = [100, 1000, 10000]
 // How far the spectrum bars reach up the graph at full level: the music is
 // the backdrop, the curve the subject.
 const SPECTRUM_HEIGHT = 0.6
+// A profile's exact response is worked out every this many pixels - finer
+// than a line can show, and its narrowest peaks still come out round.
+const PROFILE_STEP_PX = 2
 // How much of the previous frame each bar keeps - the same calm the Now
 // Playing bars settle at, without their peaks.
 const SPECTRUM_SMOOTHING = 0.75
@@ -116,7 +138,9 @@ const SPECTRUM_SMOOTHING = 0.75
 let instances = 0
 
 /** The equalizer's curve with a draggable point per band, over a faint
- * spectrum of the music when `sample` gives one. */
+ * spectrum of the music when `sample` gives one. With `filters` (an
+ * imported profile) it is their exact response instead, with no points,
+ * and pointing at it reads the level off. */
 export default {
   name: 'EqualizerGraph',
   props: {
@@ -126,6 +150,7 @@ export default {
     /** Bar heights 0..1, BAR_COUNT of them from MIN_FREQ_HZ up - see
      * services/visualizerBands.ts. Null leaves the backdrop empty. */
     sample: { type: Function as PropType<(() => number[] | null) | null>, default: null },
+    filters: { type: Array as PropType<readonly EqualizerBand[] | null>, default: null },
   },
   emits: ['change'],
   data() {
@@ -135,6 +160,8 @@ export default {
       dragging: null as number | null,
       hovered: null as number | null,
       focused: null as number | null,
+      /** Where the pointer is over a profile's curve, in pixels. */
+      probeX: null as number | null,
       spectrum: null as number[] | null,
       frame: 0,
       observer: null as ResizeObserver | null,
@@ -148,8 +175,23 @@ export default {
     maxGain(): number {
       return EQ_MAX_GAIN_DB
     },
+    profile(): boolean {
+      return this.filters !== null
+    },
     activeIndex(): number | null {
-      return this.dragging ?? this.focused ?? this.hovered
+      return this.profile ? null : (this.dragging ?? this.focused ?? this.hovered)
+    },
+    probe(): { x: number; y: number; label: string } | null {
+      if (!this.filters || this.probeX === null) return null
+      const frequency = this.frequencyAt(this.probeX)
+      const db = responseDb(this.filters, frequency)
+      const rounded = Math.round(db * 10) / 10
+      const hz = frequency >= 1000 ? `${(frequency / 1000).toFixed(1)}k` : Math.round(frequency)
+      return {
+        x: this.probeX,
+        y: this.gainY(db),
+        label: `${hz} Hz · ${rounded > 0 ? '+' : ''}${rounded.toFixed(1)} dB`,
+      }
     },
     /** Which bands get their frequency written under the graph. */
     labelled(): boolean[] {
@@ -161,6 +203,7 @@ export default {
      * and dipped between them, which read as the line not following the
      * points. What is heard has this shape, slightly rounder. */
     curvePath(): string {
+      if (this.filters) return this.responsePath(this.filters)
       const points = EQ_FREQUENCIES.map(
         (_, i) => [this.bandX(i), this.gainY(this.gains[i] ?? 0)] as [number, number],
       )
@@ -238,6 +281,17 @@ export default {
     xOf(frequency: number): number {
       return (Math.log(frequency / LOW_HZ) / Math.log(HIGH_HZ / LOW_HZ)) * this.width
     },
+    frequencyAt(x: number): number {
+      return LOW_HZ * (HIGH_HZ / LOW_HZ) ** (x / this.width)
+    },
+    responsePath(filters: readonly EqualizerBand[]): string {
+      let d = ''
+      for (let x = 0; x <= this.width; x += PROFILE_STEP_PX) {
+        const y = this.gainY(responseDb(filters, this.frequencyAt(x)))
+        d += `${d ? 'L' : 'M'}${x},${y.toFixed(1)}`
+      }
+      return d
+    },
     bandX(index: number): number {
       return this.xOf(EQ_FREQUENCIES[index]!)
     },
@@ -266,12 +320,17 @@ export default {
       if (gain !== this.gains[index]) this.$emit('change', index, gain)
     },
     onPointerDown(event: PointerEvent): void {
-      if (this.disabled || event.button !== 0) return
+      if (this.disabled || this.profile || event.button !== 0) return
       this.dragging = this.bandAt(event.clientX)
       ;(event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId)
       this.set(this.dragging, this.gainAt(event.clientY))
     },
     onPointerMove(event: PointerEvent): void {
+      if (this.profile) {
+        const rect = (this.$refs.graph as HTMLElement).getBoundingClientRect()
+        this.probeX = Math.max(0, Math.min(this.width, event.clientX - rect.left))
+        return
+      }
       if (this.disabled) return
       if (this.dragging === null) {
         if (event.pointerType === 'mouse') this.hovered = this.bandAt(event.clientX)
@@ -283,7 +342,7 @@ export default {
       this.dragging = null
     },
     onDoubleClick(event: MouseEvent): void {
-      if (!this.disabled) this.set(this.bandAt(event.clientX), 0)
+      if (!this.disabled && !this.profile) this.set(this.bandAt(event.clientX), 0)
     },
     onKeydown(index: number, event: KeyboardEvent): void {
       if (this.disabled) return
@@ -334,6 +393,10 @@ export default {
 
 .eq-graph--disabled {
   cursor: default;
+}
+
+.eq-graph--profile {
+  cursor: crosshair;
 }
 
 .eq-graph__svg {

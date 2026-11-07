@@ -19,10 +19,13 @@
 
 # --- Filters -----------------------------------------------------------
 # volume is ReplayGain (core/streamer.py, core/audio_analysis.py),
-# equalizer a speaker's equalizer curve (core/equalizer.py). The other
-# three are what ffmpeg inserts by itself for -ar/-ac/-sample_fmt.
+# equalizer, lowshelf and highshelf a speaker's equalizer curve
+# (core/equalizer.py; the shelves come with an imported headphone profile).
+# The other three are what ffmpeg inserts by itself for -ar/-ac/-sample_fmt.
 filter    volume
 filter    equalizer
+filter    lowshelf
+filter    highshelf
 filter    aresample
 filter    aformat
 filter    anull

@@ -2,7 +2,8 @@
 // to, a picked one of several, otherwise this device), this device's curve
 // is heard as it moves, a speaker's is saved once the slider rests, "Apply
 // now" restarts the song where it is (only needed without transitions),
-// presets of one's own are saved and picked, and a phone says why it has
+// presets of one's own are saved and picked, a headphone profile is
+// imported and played in place of the bands, and a phone says why it has
 // no equalizer of its own. Not the copy or the layout.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, mount } from '@vue/test-utils'
@@ -51,7 +52,9 @@ const KITCHEN = { type: 'sonos' as const, name: 'Kitchen' }
 const TV = { type: 'chromecast' as const, name: 'TV' }
 
 interface Vm {
-  draft: { enabled: boolean; gains: number[] }
+  draft: { enabled: boolean; gains: number[]; profile: { name: string } | null }
+  importProblem: string
+  importFile: (event: Event) => Promise<void>
   device: typeof KITCHEN | null
   unavailable: boolean
   canApplyNow: boolean
@@ -130,7 +133,7 @@ describe('EqualizerDialog', () => {
   it('opens on what was stored', () => {
     useEqualizerStore().setSpeaker(KITCHEN, { enabled: true, gains: [...EQ_PRESETS.vocal] })
     const { vm } = openFor(KITCHEN)
-    expect(vm.draft).toEqual({ enabled: true, gains: [...EQ_PRESETS.vocal] })
+    expect(vm.draft).toEqual({ enabled: true, gains: [...EQ_PRESETS.vocal], profile: null })
   })
 
   it('a preset replaces the curve and switches it on', () => {
@@ -209,6 +212,72 @@ describe('EqualizerDialog', () => {
     vm.pickPreset('flat')
     vm.pickPreset('custom:Kitchen radio')
     expect(useEqualizerStore().local.gains[3]).toBe(7)
+  })
+
+  describe('a headphone profile', () => {
+    const PROFILE_TEXT = [
+      'Preamp: -6.4 dB',
+      'Filter 1: ON LSC Fc 105 Hz Gain 6.5 dB Q 0.70',
+      'Filter 2: ON PK Fc 2900 Hz Gain 4.1 dB Q 2.20',
+    ].join('\n')
+    const FILTERS = [
+      { frequency: 105, gain: 6.5, q: 0.7, type: 'lowshelf' },
+      { frequency: 2900, gain: 4.1, q: 2.2 },
+    ]
+
+    /** What picking `text` as `name` in the file chooser does. */
+    async function importAs(vm: Vm, name: string, text: string): Promise<void> {
+      const input = document.createElement('input')
+      Object.defineProperty(input, 'files', { value: [new File([text], name)] })
+      await vm.importFile({ target: input } as unknown as Event)
+    }
+
+    it('is kept with the own presets and played straight away, as imported', async () => {
+      const { vm } = open()
+      await importAs(vm, 'Sennheiser HD 600 ParametricEQ.txt', PROFILE_TEXT)
+
+      const store = useEqualizerStore()
+      expect(store.presets.map((p) => [p.name, p.profile?.filters])).toEqual([
+        ['Sennheiser HD 600', FILTERS],
+      ])
+      expect(store.local.enabled).toBe(true)
+      expect(getAudioEngine().setEqualizer).toHaveBeenLastCalledWith(FILTERS)
+      expect(vm.selectedPreset).toBe('custom:Sennheiser HD 600')
+    })
+
+    it('shows its curve without points to drag', async () => {
+      const { wrapper, vm } = open()
+      expect(wrapper.findAll('[role="slider"]')).not.toHaveLength(0)
+      await importAs(vm, 'HD 600.txt', PROFILE_TEXT)
+      await vm.$nextTick()
+      expect(wrapper.findAll('[role="slider"]')).toHaveLength(0)
+    })
+
+    it('gives way to the bands again when a preset is picked', async () => {
+      const { vm } = open()
+      await importAs(vm, 'HD 600.txt', PROFILE_TEXT)
+      vm.pickPreset('bass')
+      expect(useEqualizerStore().local.profile).toBeUndefined()
+      expect(useEqualizerStore().local.gains).toEqual([...EQ_PRESETS.bass])
+      vm.pickPreset('custom:HD 600')
+      expect(useEqualizerStore().local.profile?.filters).toEqual(FILTERS)
+    })
+
+    it("is set for a speaker as its curve, and sent as the profile's filters", async () => {
+      castTo(KITCHEN)
+      const { wrapper, vm } = open()
+      await importAs(vm, 'HD 600.txt', PROFILE_TEXT)
+      await wrapper.setProps({ modelValue: false })
+      expect(useEqualizerStore().castPayload).toEqual({ 'sonos:Kitchen': FILTERS })
+    })
+
+    it('says what is wrong with a file it cannot read, and changes nothing', async () => {
+      const { vm } = open()
+      await importAs(vm, 'graphic.txt', 'GraphicEQ: 20 -3; 40 -2')
+      expect(vm.importProblem).not.toBe('')
+      expect(useEqualizerStore().presets).toEqual([])
+      expect(useEqualizerStore().local.enabled).toBe(false)
+    })
   })
 
   it('"Apply now" saves at once and restarts the song where it is', async () => {

@@ -35,6 +35,19 @@ def _band(frequency: float, gain: float, q: float = 1.41) -> dict:
     return {"frequency": frequency, "gain": gain, "q": q}
 
 
+def _shelf(kind: str, frequency: float, gain: float, q: float = 0.7) -> dict:
+    return {**_band(frequency, gain, q), "type": kind}
+
+
+# What a headphone profile looks like: a shelf at either end, peaks between.
+PROFILE = [
+    _shelf("lowshelf", 105, 6.5),
+    _band(180, -3.2, 0.6),
+    _band(2900, 4.1, 2.2),
+    _shelf("highshelf", 10000, -2.5),
+]
+
+
 BASS = [_band(62, 6)]
 
 
@@ -49,6 +62,19 @@ def test_sanitize_drops_flat_bands():
     """A flat band is no filter at all - ffmpeg should not run a pass that
     changes nothing, and a curve of only flat bands is no equalizer."""
     assert sanitize([_band(62, 0), _band(125, 0.001)]) == []
+
+
+def test_sanitize_keeps_a_profiles_shelves():
+    assert sanitize(PROFILE) == PROFILE
+
+
+def test_sanitize_writes_a_peaking_band_without_a_type():
+    """The ten-band curve keeps the shape it always had on the wire."""
+    assert sanitize([{**_band(62, 6), "type": "peaking"}]) == [_band(62, 6)]
+
+
+def test_sanitize_drops_a_filter_type_ffmpeg_is_not_given():
+    assert sanitize([_shelf("lowpass", 100, 3), _band(62, 6)]) == [_band(62, 6)]
 
 
 def test_sanitize_clamps_the_gain():
@@ -392,10 +418,31 @@ def test_ffmpeg_plays_the_curve_this_module_works_out(frequency):
     or a curve sounds different on a speaker than it looks."""
     bands = [_band(1000, 6), _band(2000, -4)]
     expected = float(
-        equalizer._peaking_response_db(bands[0], np.array([frequency]))[0]
-        + equalizer._peaking_response_db(bands[1], np.array([frequency]))[0]
+        equalizer._response_db(bands[0], np.array([frequency]))[0]
+        + equalizer._response_db(bands[1], np.array([frequency]))[0]
     ) - headroom_db(bands)
     assert _level_through(audio_filter(1.0, bands), frequency) == pytest.approx(expected, abs=0.3)
+
+
+@pytest.mark.skipif(shutil.which(FFMPEG_BIN) is None, reason="needs a real ffmpeg")
+@pytest.mark.parametrize("frequency", [40, 105, 1000, 2900, 10000, 16000])
+def test_ffmpeg_plays_a_profiles_shelves_as_worked_out(frequency):
+    """ffmpeg's lowshelf and highshelf take a Q the same way as the RBJ
+    formula here does - which Web Audio's shelves, for one, do not."""
+    expected = float(
+        sum(equalizer._response_db(b, np.array([frequency]), _RATE)[0] for b in PROFILE)
+    ) - headroom_db(PROFILE)
+    assert _level_through(audio_filter(1.0, PROFILE), frequency) == pytest.approx(expected, abs=0.3)
+
+
+def test_a_shelf_flattens_out_on_its_far_side():
+    """The shape the formula has to have: the full gain well past the
+    corner, none well before it."""
+    freqs = np.array([20.0, 20000.0])
+    low = equalizer._response_db(_shelf("lowshelf", 500, 6), freqs)
+    high = equalizer._response_db(_shelf("highshelf", 500, 6), freqs)
+    assert low == pytest.approx([6, 0], abs=0.1)
+    assert high == pytest.approx([0, 6], abs=0.1)
 
 
 @pytest.mark.skipif(shutil.which(FFMPEG_BIN) is None, reason="needs a real ffmpeg")
@@ -442,15 +489,20 @@ def _rms_db(pcm: bytes, start: float = 0.25, end: float = 0.75) -> float:
 
 @pytest.mark.parametrize(
     "bands",
-    [[_band(31, 12)], [_band(31, -12)], [_band(16000, 12)], SMALL_SPEAKER, [_band(1000, 6)]],
+    [
+        [_band(31, 12)],
+        [_band(31, -12)],
+        [_band(16000, 12)],
+        SMALL_SPEAKER,
+        [_band(1000, 6)],
+        PROFILE,
+    ],
 )
 def test_the_live_filter_is_the_curve_the_biquads_make(bands):
     """Within 0.5 dB of the RBJ response, headroom included, across the
     audible range - the ffmpeg path and the renderer hear the biquads."""
     freqs = np.geomspace(20, 20000, 400)
-    expected = sum(equalizer._peaking_response_db(b, freqs, _RATE) for b in bands) - headroom_db(
-        bands
-    )
+    expected = sum(equalizer._response_db(b, freqs, _RATE) for b in bands) - headroom_db(bands)
     response = np.fft.rfft(live_taps(equalizer._bands_key(bands)), 1 << 16)
     grid = np.fft.rfftfreq(1 << 16, 1 / _RATE)
     actual = np.interp(freqs, grid, 20 * np.log10(np.abs(response)))
@@ -484,7 +536,7 @@ def test_a_curve_changed_mid_mix_is_heard_from_then_on():
     before = _rms_db(out, 0.1, 0.45) - _rms_db(pcm, 0.1, 0.45)
     after = _rms_db(out, 0.6, 0.95) - _rms_db(pcm, 0.6, 0.95)
     assert before == pytest.approx(0.0, abs=0.05)
-    expected = float(equalizer._peaking_response_db(BASS[0], np.array([62.0]), _RATE)[0])
+    expected = float(equalizer._response_db(BASS[0], np.array([62.0]), _RATE)[0])
     assert after == pytest.approx(expected - headroom_db(BASS), abs=0.3)
 
 

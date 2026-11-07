@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AudioEngine, getAudioEngine } from '@/services/audioEngine'
-import { EQ_FREQUENCIES, EQ_Q, headroomDb } from '@/services/equalizer'
+import { EQ_FREQUENCIES, EQ_Q, biquadCoefficients, headroomDb } from '@/services/equalizer'
 
 /** Stands in for the real TimeRanges a browser reports on `audio.buffered`
  * — enough of the interface for reportBuffered() to walk. */
@@ -112,6 +112,16 @@ class FakeGain {
     setTargetAtTime: vi.fn(),
   }
   connect = vi.fn()
+  disconnect = vi.fn()
+}
+
+class FakeIIR {
+  constructor(
+    readonly feedforward: number[],
+    readonly feedback: number[],
+  ) {}
+  connect = vi.fn()
+  disconnect = vi.fn()
 }
 
 class FakeBiquad {
@@ -135,13 +145,26 @@ class FakeAudioContext {
   volume = new FakeGain()
   headroom = new FakeGain()
   bands: FakeBiquad[] = []
+  /** The head of each chain of other filters, then the filters. */
+  entries: FakeGain[] = []
+  filters: FakeIIR[] = []
+  sampleRate = 44100
   source = { connect: vi.fn() }
 
   createMediaElementSource = vi.fn(() => this.source)
   createAnalyser = vi.fn(() => this.analyser)
-  createGain = vi.fn(
-    () => [this.gain, this.volume, this.headroom][this.createGain.mock.calls.length - 1],
-  )
+  createGain = vi.fn(() => {
+    const fixed = [this.gain, this.volume, this.headroom][this.createGain.mock.calls.length - 1]
+    if (fixed) return fixed
+    const entry = new FakeGain()
+    this.entries.push(entry)
+    return entry
+  })
+  createIIRFilter = vi.fn((feedforward: number[], feedback: number[]) => {
+    const filter = new FakeIIR(feedforward, feedback)
+    this.filters.push(filter)
+    return filter
+  })
   createBiquadFilter = vi.fn(() => {
     const band = new FakeBiquad()
     this.bands.push(band)
@@ -213,7 +236,9 @@ describe('AudioEngine', () => {
       for (let i = 1; i < context.bands.length; i++) {
         expect(context.bands[i - 1]!.connect).toHaveBeenCalledWith(context.bands[i])
       }
-      expect(context.bands.at(-1)!.connect).toHaveBeenCalledWith(context.volume)
+      // Through the (for now empty) chain an imported profile's filters go in.
+      expect(context.bands.at(-1)!.connect).toHaveBeenCalledWith(context.entries[0])
+      expect(context.entries[0]!.connect).toHaveBeenCalledWith(context.volume)
       expect(context.volume.connect).toHaveBeenCalledWith(context.destination)
     })
 
@@ -356,6 +381,60 @@ describe('AudioEngine', () => {
       expect(byFrequency[8000]).toBe(-3)
       expect(byFrequency[1000]).toBe(0)
       expect(targetOf(context.headroom.gain)).toBeCloseTo(10 ** (-headroomDb(bands) / 20), 6)
+    })
+
+    describe("an imported profile's own filters", () => {
+      const profile = [
+        { frequency: 105, gain: 6.5, q: 0.7, type: 'lowshelf' as const },
+        { frequency: 1000, gain: 3, q: EQ_Q },
+        // At a fixed band's frequency, but not of its shape.
+        { frequency: 62, gain: 4.1, q: 2.2 },
+        { frequency: 16000, gain: -2, q: EQ_Q, type: 'highshelf' as const },
+        // A second filter where a fixed band already went.
+        { frequency: 1000, gain: -1, q: EQ_Q },
+      ]
+
+      it('plays what the fixed bands cannot as filters of the exact shape', () => {
+        engine.setEqualizer(profile)
+
+        // The first 1000 Hz band is one of the fixed ones and goes there.
+        const fixed = Object.fromEntries(
+          context.bands.map((b) => [b.frequency.value, targetOf(b.gain)]),
+        )
+        expect(fixed[1000]).toBe(3)
+        expect(fixed[62]).toBe(0)
+        expect(fixed[16000]).toBe(0)
+        expect(context.filters.map((f) => [f.feedforward, f.feedback])).toEqual(
+          [profile[0]!, profile[2]!, profile[3]!, profile[4]!].map((band) => {
+            const c = biquadCoefficients(band, context.sampleRate)
+            return [c.feedforward, c.feedback]
+          }),
+        )
+        expect(targetOf(context.headroom.gain)).toBeCloseTo(10 ** (-headroomDb(profile) / 20), 6)
+      })
+
+      it('fades the new chain in over the old one, then lets the old one go', () => {
+        vi.useFakeTimers()
+        try {
+          engine.setEqualizer(profile)
+          const [bypass, chain] = context.entries
+          expect(targetOf(bypass!.gain)).toBe(0)
+          expect(chain!.gain.value).toBe(0)
+          expect(targetOf(chain!.gain)).toBe(1)
+          expect(bypass!.disconnect).not.toHaveBeenCalled()
+          vi.advanceTimersByTime(1000)
+          expect(bypass!.disconnect).toHaveBeenCalled()
+          expect(chain!.disconnect).not.toHaveBeenCalled()
+        } finally {
+          vi.useRealTimers()
+        }
+      })
+
+      it('keeps the chain it has while the profile stays the same', () => {
+        engine.setEqualizer(profile)
+        engine.setEqualizer(profile.map((band) => ({ ...band })))
+        expect(context.entries).toHaveLength(2)
+      })
     })
 
     it('goes back to flat and unity for no curve', () => {

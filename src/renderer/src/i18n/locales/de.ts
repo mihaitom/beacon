@@ -797,6 +797,20 @@ export default {
     savePreset: 'Als Preset speichern',
     presetName: 'Name des Presets',
     deletePreset: 'Preset "{name}" löschen',
+    importProfile: 'Kopfhörerprofil importieren…',
+    profileHint:
+      'Ein importiertes Profil spielt genau so, wie es gemessen wurde. Wer die Kurve selbst formen will, wählt ein Preset.',
+    importProblems: {
+      empty:
+        'Keine Filter gefunden. Importieren lässt sich eine ParametricEQ.txt (AutoEq, Equalizer APO) oder ein Filter-Export aus REW.',
+      unsupported:
+        'Dieses Profil nutzt einen Filtertyp ({type}), den der Equalizer nicht abspielen kann. Glocken- und Kuhschwanzfilter mit Q gehen.',
+      channels:
+        'Dieses Profil stellt jeden Kanal anders ein, das kann der Equalizer nicht abspielen.',
+      graphic:
+        'Das ist eine GraphicEQ-Datei. Nimm stattdessen die ParametricEQ.txt desselben Kopfhörers.',
+      tooMany: 'Dieses Profil hat mehr als {max} Filter.',
+    },
     applyNow: 'Jetzt anwenden',
     reset: 'Zurücksetzen',
     custom: 'Eigene Kurve',

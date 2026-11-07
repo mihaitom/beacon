@@ -56,7 +56,10 @@
                 :disabled="unavailable"
                 :aria-label="$t('equalizer.preset')"
               >
-                <equalizer-mini-curve :gains="draft.gains" />
+                <equalizer-mini-curve
+                  :gains="draft.gains"
+                  :filters="draft.profile?.filters ?? null"
+                />
                 <span class="eq__picker-text">
                   <span class="eq__picker-label">{{ $t('equalizer.preset') }}</span>
                   <span>{{ presetTitle }}</span>
@@ -87,7 +90,12 @@
                   color="primary"
                   @click="pickPreset(`custom:${custom.name}`)"
                 >
-                  <template #prepend><equalizer-mini-curve :gains="custom.gains" /></template>
+                  <template #prepend>
+                    <equalizer-mini-curve
+                      :gains="custom.gains"
+                      :filters="custom.profile?.filters ?? null"
+                    />
+                  </template>
                   <v-list-item-title class="eq__menu-title">{{ custom.name }}</v-list-item-title>
                   <template #append>
                     <v-btn
@@ -102,8 +110,21 @@
                   </template>
                 </v-list-item>
               </template>
+              <v-divider />
+              <v-list-item prepend-icon="mdi-file-import-outline" @click="chooseFile">
+                <v-list-item-title>{{ $t('equalizer.importProfile') }}</v-list-item-title>
+              </v-list-item>
             </v-list>
           </v-menu>
+          <input
+            ref="file"
+            type="file"
+            accept=".txt,text/plain"
+            class="eq__file"
+            tabindex="-1"
+            aria-hidden="true"
+            @change="importFile"
+          />
           <v-btn
             icon="mdi-content-save-outline"
             variant="text"
@@ -132,14 +153,22 @@
           </v-btn>
         </form>
 
+        <p v-if="importProblem" class="setting__hint eq__hint eq__error" role="alert">
+          {{ importProblem }}
+        </p>
+
         <equalizer-graph
           :gains="draft.gains"
+          :filters="draft.profile?.filters ?? null"
           :enabled="draft.enabled"
           :disabled="unavailable"
           :sample="spectrum"
           @change="setGain"
         />
 
+        <p v-if="draft.profile" class="setting__hint eq__hint-below">
+          {{ $t('equalizer.profileHint') }}
+        </p>
         <p v-if="device" class="setting__hint eq__hint-below">
           {{ $t(live ? 'equalizer.liveHint' : 'equalizer.speakerHint') }}
         </p>
@@ -168,6 +197,7 @@ import { usePlaybackStore } from '@/stores/playback'
 import { useTransitionsStore } from '@/stores/transitions'
 import { getAudioEngine } from '@/services/audioEngine'
 import { analyserBands, resampleBands } from '@/services/visualizerBands'
+import { ProfileImportError, importProfile } from '@/services/equalizerImport'
 import { VisualizerEventSource } from '@/services/connect/visualizer'
 import type { VisualizerFrame } from '@/services/connect/types'
 import { useAuthStore } from '@/stores/auth'
@@ -175,6 +205,7 @@ import {
   EQ_PRESETS,
   EQ_PRESET_NAMES,
   PRESET_NAME_MAX_LENGTH,
+  PROFILE_MAX_FILTERS,
   isFlat,
   presetOf,
   sameGains,
@@ -208,7 +239,7 @@ export default {
   emits: ['update:modelValue'],
   data() {
     return {
-      draft: { enabled: false, gains: [] as number[] } as EqualizerSetting,
+      draft: { enabled: false, gains: [] as number[], profile: null } as EqualizerSetting,
       // Which speaker the draft belongs to (null: this device). Kept apart
       // from `device`, which can change under a pending save - another
       // speaker picked, or the cast ending.
@@ -218,6 +249,7 @@ export default {
       presetMenu: false,
       naming: false,
       presetName: '',
+      importProblem: '',
       frequencyData: null as Uint8Array<ArrayBuffer> | null,
       castBands: null as number[] | null,
       castEvents: null as VisualizerEventSource | null,
@@ -265,6 +297,9 @@ export default {
     /** The preset the curve is: a built-in name, `custom:<name>` for one
      * of the listener's own, or 'custom' for neither. */
     selectedPreset(): string {
+      // A profile goes by its name: it is played as imported, so the name
+      // is the curve - also after it was taken off the list.
+      if (this.draft.profile) return `custom:${this.draft.profile.name}`
       const builtIn = presetOf(this.draft.gains)
       if (builtIn) return builtIn
       const own = this.customPresets.find((p) => sameGains(p.gains, this.draft.gains))
@@ -277,7 +312,7 @@ export default {
       return this.$t(`equalizer.presets.${selected}`)
     },
     isFlatCurve(): boolean {
-      return isFlat(this.draft.gains)
+      return !this.draft.profile && isFlat(this.draft.gains)
     },
     /** Whether the music behind the curve comes from connect: casting,
      * with the dialog open and something playing. */
@@ -317,6 +352,7 @@ export default {
         if (open) {
           this.pickedKey = null
           this.naming = false
+          this.importProblem = ''
           this.load()
         } else this.flush()
       },
@@ -364,7 +400,11 @@ export default {
     load(): void {
       this.draftDevice = this.device
       const setting = this.device ? this.store.speaker(this.device) : this.store.local
-      this.draft = { enabled: setting.enabled, gains: [...setting.gains] }
+      this.draft = {
+        enabled: setting.enabled,
+        gains: [...setting.gains],
+        profile: setting.profile ?? null,
+      }
     },
     selectTarget(key: string | null | undefined): void {
       if (key) this.pickedKey = key
@@ -399,13 +439,43 @@ export default {
       const own = value.startsWith('custom:')
         ? this.customPresets.find((p) => `custom:${p.name}` === value)
         : undefined
+      if (own?.profile) {
+        this.change({ profile: own.profile, enabled: true })
+        return
+      }
       if (own) {
-        this.change({ gains: [...own.gains], enabled: true })
+        this.change({ gains: [...own.gains], profile: null, enabled: true })
         return
       }
       if (!(value in EQ_PRESETS)) return
       const gains = [...EQ_PRESETS[value as EqualizerPreset]]
-      this.change({ gains, enabled: value !== 'flat' || this.draft.enabled })
+      this.change({ gains, profile: null, enabled: value !== 'flat' || this.draft.enabled })
+    },
+    chooseFile(): void {
+      this.presetMenu = false
+      this.importProblem = ''
+      ;(this.$refs.file as HTMLInputElement).click()
+    },
+    /** Kept with the own presets and put on straight away - importing one
+     * is wanting to hear it. */
+    async importFile(event: Event): Promise<void> {
+      const input = event.target as HTMLInputElement
+      const file = input.files?.[0]
+      // Cleared, so picking the same file again is a change again.
+      input.value = ''
+      if (!file) return
+      try {
+        const profile = importProfile(file.name, await file.text())
+        this.store.saveProfile(profile)
+        this.pickPreset(`custom:${profile.name}`)
+        this.importProblem = ''
+      } catch (error) {
+        if (!(error instanceof ProfileImportError)) throw error
+        this.importProblem = this.$t(`equalizer.importProblems.${error.problem}`, {
+          type: error.detail,
+          max: PROFILE_MAX_FILTERS,
+        })
+      }
     },
     startNaming(): void {
       this.presetName = ''
@@ -526,5 +596,13 @@ export default {
 
 .eq__actions {
   flex-wrap: wrap;
+}
+
+.eq__file {
+  display: none;
+}
+
+.eq__error {
+  color: rgb(var(--v-theme-error));
 }
 </style>

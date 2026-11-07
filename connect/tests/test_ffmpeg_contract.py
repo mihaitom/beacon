@@ -128,7 +128,17 @@ def _every_command() -> list[list[str]]:
         # A speaker's equalizer chain, which stream_tracks() and a mix
         # listener's encoder (routes/mix_cast.py's mix_audio()) both put
         # after -af.
-        ["-af", equalizer.audio_filter(0.7, [{"frequency": 62.0, "gain": 6.0, "q": 1.41}])],
+        [
+            "-af",
+            equalizer.audio_filter(
+                0.7,
+                [
+                    {"frequency": 62.0, "gain": 6.0, "q": 1.41},
+                    {"frequency": 105.0, "gain": 6.0, "q": 0.7, "type": "lowshelf"},
+                    {"frequency": 10000.0, "gain": -3.0, "q": 0.7, "type": "highshelf"},
+                ],
+            ),
+        ],
         # Listening along: a song decoded to PCM, and the encoder reading it.
         list(party_broadcast.decoder_cmd("http://nav/stream", 12.0, 0.7)),
         *[list(party_broadcast.encoder_cmd(kbps)) for kbps in party_broadcast.BITRATES_KBPS],
@@ -180,6 +190,7 @@ def test_every_filter_the_backend_names_is_in_the_contract():
         named |= _components_named_in(command)[2]
     assert "volume" in named, "the ReplayGain filter is no longer reachable from these commands"
     assert "equalizer" in named, "the equalizer filter is no longer reachable from these commands"
+    assert {"lowshelf", "highshelf"} <= named, "the shelves are no longer reachable"
     assert named <= required, f"not in required-components: {sorted(named - required)}"
 
 

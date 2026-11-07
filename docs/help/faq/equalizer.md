@@ -10,6 +10,12 @@ Behind the slider icon in the player bar. It always opens the equalizer for what
 
 To change a band, drag its point up or down - anywhere in its column works, it does not have to be the point itself. A double click puts a band back to 0, and with the keyboard a point moves with the arrow keys.
 
+## Can I use a headphone profile?
+
+Yes. In the preset list, "Import headphone profile…" reads a ParametricEQ.txt in the Equalizer APO format: AutoEq has one for thousands of headphones, and REW writes the same format for a room measured yourself. The profile is kept with your own presets under the headphones' name and plays exactly as measured - its own filters at their own frequencies, often more precise than ten bands could follow. That is also why it has no points to drag: picking a preset, or Reset, goes back to the ten bands.
+
+The file's preamp line is left out on purpose. Beacon lowers the curve by its highest point anyway (see below), and taking the preamp as well would make it quieter twice. A GraphicEQ file, or a profile with different filters per ear, cannot be imported; take the ParametricEQ.txt of the same headphones.
+
 ## Why does my phone have no equalizer of its own?
 
 On phones and tablets Beacon plays straight through the browser, so that the music keeps going while the screen is locked - the same reason there is no ReplayGain there. The equalizer needs to sit in the path of the sound, and that path is exactly what is left out. While casting from a phone, the speaker's equalizer works as usual, since the Beacon server applies it.

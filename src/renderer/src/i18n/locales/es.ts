@@ -801,6 +801,20 @@ export default {
     savePreset: 'Guardar como preajuste',
     presetName: 'Nombre del preajuste',
     deletePreset: 'Eliminar el preajuste "{name}"',
+    importProfile: 'Importar perfil de auriculares…',
+    profileHint:
+      'Un perfil importado suena exactamente como se midió. Para dar forma a la curva tú mismo, elige un preajuste.',
+    importProblems: {
+      empty:
+        'No se encontraron filtros. Importa un ParametricEQ.txt (AutoEq, Equalizer APO) o una exportación de filtros de REW.',
+      unsupported:
+        'Este perfil usa un tipo de filtro ({type}) que el ecualizador no puede reproducir. Funcionan los filtros de pico y de estantería con Q.',
+      channels:
+        'Este perfil ajusta cada canal de forma distinta, algo que el ecualizador no puede reproducir.',
+      graphic:
+        'Es un archivo GraphicEQ. Importa en su lugar el ParametricEQ.txt de los mismos auriculares.',
+      tooMany: 'Este perfil tiene más de {max} filtros.',
+    },
     applyNow: 'Aplicar ahora',
     reset: 'Restablecer',
     custom: 'Personalizado',

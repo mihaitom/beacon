@@ -792,6 +792,19 @@ export default {
     savePreset: 'Save as preset',
     presetName: 'Preset name',
     deletePreset: 'Delete preset "{name}"',
+    importProfile: 'Import headphone profile…',
+    profileHint:
+      'An imported profile plays exactly as measured. To shape the curve yourself, pick a preset.',
+    importProblems: {
+      empty:
+        'No filters found. Import a ParametricEQ.txt (AutoEq, Equalizer APO) or a filter export from REW.',
+      unsupported:
+        'This profile uses a filter type ({type}) the equalizer cannot play. Peak and shelf filters with a Q work.',
+      channels: 'This profile sets each channel differently, which the equalizer cannot play.',
+      graphic:
+        'This is a GraphicEQ file. Import the ParametricEQ.txt of the same headphones instead.',
+      tooMany: 'This profile has more than {max} filters.',
+    },
     applyNow: 'Apply now',
     reset: 'Reset',
     custom: 'Custom',

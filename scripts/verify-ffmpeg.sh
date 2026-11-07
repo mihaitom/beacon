@@ -119,8 +119,9 @@ fi
 smoke "decode to s16le"        -i "$t" -vn -ac 1 -ar 11025 -f s16le "$work/out"
 smoke "decode with ReplayGain" -ss 0.2 -i "$t" -vn -af volume=0.7 -ac 1 -ar 11025 -f s16le "$work/out"
 # core/equalizer.py's chain: ReplayGain and headroom in one volume filter,
-# then one peaking band per filter.
+# then one band per filter - shelves for an imported headphone profile.
 smoke "encode with equalizer"  -i "$t" -vn -af "volume=0.5,equalizer=f=62:t=q:w=1.41:g=6,equalizer=f=8000:t=q:w=1.41:g=-3" -acodec libmp3lame -b:a 192k -f mp3 "$work/out"
+smoke "encode with shelves"    -i "$t" -vn -af "volume=0.5,lowshelf=f=105:t=q:w=0.7:g=6,highshelf=f=10000:t=q:w=0.7:g=-3" -acodec libmp3lame -b:a 192k -f mp3 "$work/out"
 
 # The three lossy tiers, exactly as lossy_encode_args() builds them, and the
 # lossless re-wrap from lossless_encode_args() — with the -ss that once made

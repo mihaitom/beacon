@@ -7,6 +7,7 @@ import {
   isActive,
   presetOf,
   responseDb,
+  sanitizeFilters,
   sanitizePresets,
   smoothPath,
   sanitizeSetting,
@@ -15,6 +16,14 @@ import {
 
 const band = (frequency: number, gain: number) => ({ frequency, gain, q: EQ_Q })
 
+// The same profile connect/tests/test_equalizer.py's PROFILE is.
+const PROFILE = [
+  { frequency: 105, gain: 6.5, q: 0.7, type: 'lowshelf' as const },
+  { frequency: 180, gain: -3.2, q: 0.6 },
+  { frequency: 2900, gain: 4.1, q: 2.2 },
+  { frequency: 10000, gain: -2.5, q: 0.7, type: 'highshelf' as const },
+]
+
 describe('equalizer', () => {
   describe('sanitizeSetting', () => {
     it('gives a flat, switched-off setting for nothing stored', () => {
@@ -22,6 +31,13 @@ describe('equalizer', () => {
         enabled: false,
         gains: EQ_FREQUENCIES.map(() => 0),
       })
+    })
+
+    it('keeps a profile that is whole, and drops one that is not', () => {
+      const profile = { name: 'HD 600', filters: PROFILE }
+      expect(sanitizeSetting({ enabled: true, profile }).profile).toEqual(profile)
+      expect(sanitizeSetting({ profile: { name: '', filters: PROFILE } }).profile).toBeUndefined()
+      expect(sanitizeSetting({ profile: { name: 'x', filters: [] } }).profile).toBeUndefined()
     })
 
     it('brings a value from another build or a hand edit back into shape', () => {
@@ -37,6 +53,45 @@ describe('equalizer', () => {
     expect(isActive({ enabled: true, gains: [...EQ_PRESETS.flat] })).toBe(false)
   })
 
+  it('counts a profile as active while on, whatever the bands under it', () => {
+    const profile = { name: 'HD 600', filters: PROFILE }
+    expect(isActive({ enabled: true, gains: [...EQ_PRESETS.flat], profile })).toBe(true)
+    expect(isActive({ enabled: false, gains: [...EQ_PRESETS.flat], profile })).toBe(false)
+  })
+
+  it('sends a profile in place of the bands', () => {
+    const gains = [6, 0, 0, 0, 0, 0, 0, 0, -3, 0]
+    const profile = { name: 'HD 600', filters: PROFILE }
+    expect(toBands({ enabled: true, gains, profile })).toEqual(PROFILE)
+  })
+
+  describe('sanitizeFilters', () => {
+    it("holds each filter to connect's bounds", () => {
+      expect(
+        sanitizeFilters([
+          { frequency: 10, gain: 30, q: 50 },
+          { frequency: 30000, gain: -30, q: 0.01, type: 'highshelf' },
+        ]),
+      ).toEqual([
+        { frequency: 20, gain: 20, q: 10 },
+        { frequency: 20000, gain: -20, q: 0.1, type: 'highshelf' },
+      ])
+    })
+
+    it('drops a flat filter, one with a type it does not know, and anything malformed', () => {
+      expect(
+        sanitizeFilters([
+          { frequency: 100, gain: 0, q: 1 },
+          { frequency: 100, gain: 3, q: 1, type: 'lowpass' },
+          { frequency: 'x', gain: 3, q: 1 },
+          { frequency: 100, gain: 3 },
+          null,
+          { frequency: 100, gain: 3, q: 1 },
+        ]),
+      ).toEqual([{ frequency: 100, gain: 3, q: 1 }])
+    })
+  })
+
   it('recognises a preset, and a moved band as none', () => {
     expect(presetOf([...EQ_PRESETS.vocal])).toBe('vocal')
     const moved = [...EQ_PRESETS.vocal]
@@ -46,7 +101,7 @@ describe('equalizer', () => {
 
   it('sends connect only the bands that do something, and nothing when off', () => {
     const gains = [6, 0, 0, 0, 0, 0, 0, 0, -3, 0]
-    expect(toBands({ enabled: true, gains })).toEqual([band(31, 6), band(8000, -3)])
+    expect(toBands({ enabled: true, gains, profile: null })).toEqual([band(31, 6), band(8000, -3)])
     expect(toBands({ enabled: false, gains })).toEqual([])
   })
 
@@ -68,6 +123,12 @@ describe('equalizer', () => {
       expect(
         headroomDb(toBands({ enabled: true, gains: [...EQ_PRESETS.smallSpeaker] })),
       ).toBeCloseTo(3.6259, 3)
+    })
+
+    it("agrees with connect on a profile's shelves", () => {
+      expect(headroomDb(PROFILE)).toBeCloseTo(6.3749, 3)
+      expect(responseDb(PROFILE, 50)).toBeCloseTo(5.4809, 3)
+      expect(responseDb(PROFILE, 12000)).toBeCloseTo(-1.8093, 3)
     })
 
     it('agrees with connect on the curve between the bands', () => {

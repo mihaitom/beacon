@@ -803,6 +803,18 @@ export default {
     savePreset: 'Enregistrer comme préréglage',
     presetName: 'Nom du préréglage',
     deletePreset: 'Supprimer le préréglage « {name} »',
+    importProfile: 'Importer un profil de casque…',
+    profileHint:
+      'Un profil importé est joué exactement tel qu’il a été mesuré. Pour façonner la courbe vous-même, choisissez un préréglage.',
+    importProblems: {
+      empty:
+        'Aucun filtre trouvé. Importez un ParametricEQ.txt (AutoEq, Equalizer APO) ou un export de filtres de REW.',
+      unsupported:
+        'Ce profil utilise un type de filtre ({type}) que l’égaliseur ne sait pas jouer. Les filtres en cloche et en plateau avec un Q fonctionnent.',
+      channels: 'Ce profil règle chaque canal différemment, ce que l’égaliseur ne sait pas jouer.',
+      graphic: 'C’est un fichier GraphicEQ. Importez plutôt le ParametricEQ.txt du même casque.',
+      tooMany: 'Ce profil compte plus de {max} filtres.',
+    },
     applyNow: 'Appliquer maintenant',
     reset: 'Réinitialiser',
     custom: 'Personnalisé',

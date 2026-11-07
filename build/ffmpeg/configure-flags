@@ -111,15 +111,15 @@
 --enable-libopus
 
 # Resampling for the device sample-rate ceilings, and every filter connect's
-# own command lines can name. `equalizer` is a speaker's equalizer curve
-# (core/equalizer.py), one peaking band per filter. `volume` is the
+# own command lines can name. `equalizer`, `lowshelf` and `highshelf` are a
+# speaker's equalizer curve (core/equalizer.py), one band per filter. `volume` is the
 # ReplayGain one (streamer.py and
 # audio_analysis.py both build "-af volume=<gain>"), and its absence is what
 # a missing filter looks like: the build succeeds and playback fails at the
 # moment someone has ReplayGain on, with "Error parsing filterchain
 # 'volume=0.9'".
 --enable-swresample
---enable-filter=aresample,anull,aformat,volume,equalizer
+--enable-filter=aresample,anull,aformat,volume,equalizer,lowshelf,highshelf
 
 # One self-contained executable to copy into an image or an app bundle.
 --disable-shared

@@ -796,6 +796,20 @@ export default {
     savePreset: 'Salva come preset',
     presetName: 'Nome del preset',
     deletePreset: 'Elimina il preset "{name}"',
+    importProfile: 'Importa profilo cuffie…',
+    profileHint:
+      'Un profilo importato suona esattamente come è stato misurato. Per modellare la curva da te, scegli un preset.',
+    importProblems: {
+      empty:
+        "Nessun filtro trovato. Importa un ParametricEQ.txt (AutoEq, Equalizer APO) o un'esportazione dei filtri da REW.",
+      unsupported:
+        "Questo profilo usa un tipo di filtro ({type}) che l'equalizzatore non può riprodurre. Funzionano i filtri a campana e shelving con Q.",
+      channels:
+        "Questo profilo regola ogni canale in modo diverso, cosa che l'equalizzatore non può riprodurre.",
+      graphic:
+        'Questo è un file GraphicEQ. Importa invece il ParametricEQ.txt delle stesse cuffie.',
+      tooMany: 'Questo profilo ha più di {max} filtri.',
+    },
     applyNow: 'Applica ora',
     reset: 'Reimposta',
     custom: 'Personalizzato',

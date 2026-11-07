@@ -4,7 +4,30 @@
  * mirrors what this reports via the callbacks below.
  */
 
-import { EQ_FREQUENCIES, EQ_Q, headroomDb, type EqualizerBand } from './equalizer'
+import {
+  EQ_FREQUENCIES,
+  EQ_Q,
+  biquadCoefficients,
+  headroomDb,
+  type EqualizerBand,
+} from './equalizer'
+
+/** `bands` split into what the ten fixed peaking nodes can play - one
+ * gain per EQ_FREQUENCIES entry - and the rest, which needs filters of its
+ * own (an imported profile's). */
+export function splitBands(bands: readonly EqualizerBand[]): {
+  gains: number[]
+  others: EqualizerBand[]
+} {
+  const gains: (number | undefined)[] = EQ_FREQUENCIES.map(() => undefined)
+  const others: EqualizerBand[] = []
+  for (const band of bands) {
+    const i = EQ_FREQUENCIES.indexOf(band.frequency as (typeof EQ_FREQUENCIES)[number])
+    if (!band.type && band.q === EQ_Q && i >= 0 && gains[i] === undefined) gains[i] = band.gain
+    else others.push(band)
+  }
+  return { gains: gains.map((g) => g ?? 0), others }
+}
 
 // How quickly an equalizer change settles: short enough to follow a slider
 // without lag, long enough that a jump of several dB does not click.
@@ -204,6 +227,10 @@ export class AudioEngine {
   // lowers the whole curve by its loudest point - see setEqualizer().
   private eqHeadroomNode: GainNode | null = null
   private eqBands: BiquadFilterNode[] = []
+  // After the fixed bands: an imported profile's own filters, built per
+  // profile and crossfaded in - see setOtherFilters(). Empty is a plain
+  // gain node.
+  private eqOthers: { key: string; nodes: AudioNode[] } | null = null
   private volumeNode: GainNode | null = null
   // Undoes the pending 'loadedmetadata' retry armed by load() below, so a
   // newer load()/seek() is never overwritten by the previous one's
@@ -1377,12 +1404,50 @@ export class AudioEngine {
     source.connect(this.analyserNode)
     this.analyserNode.connect(this.gainNode)
     this.gainNode.connect(this.eqHeadroomNode)
-    const lastBand = this.eqBands.reduce<AudioNode>((from, band) => {
+    this.eqBands.reduce<AudioNode>((from, band) => {
       from.connect(band)
       return band
     }, this.eqHeadroomNode)
-    lastBand.connect(this.volumeNode)
+    this.setOtherFilters([])
     this.volumeNode.connect(this.audioContext.destination)
+  }
+
+  /** Puts `filters` between the fixed bands and the volume node. Unlike
+   * the fixed bands, a filter's shape cannot be eased (Web Audio's own
+   * shelves ignore Q, so these are IIRFilterNodes with fixed
+   * coefficients): a new set is a new chain, faded in over the old one,
+   * which goes once it is silent. Only an imported profile's filters come
+   * here, so this happens on picking a profile, not while dragging. */
+  private setOtherFilters(filters: readonly EqualizerBand[]): void {
+    const context = this.audioContext!
+    const key = JSON.stringify(filters)
+    if (this.eqOthers?.key === key) return
+    const entry = context.createGain()
+    const nodes: AudioNode[] = [
+      entry,
+      ...filters.map((band) => {
+        const { feedforward, feedback } = biquadCoefficients(band, context.sampleRate)
+        return context.createIIRFilter(feedforward, feedback)
+      }),
+    ]
+    nodes.reduce((from, node) => {
+      from.connect(node)
+      return node
+    })
+    this.eqBands.at(-1)!.connect(entry)
+    nodes.at(-1)!.connect(this.volumeNode!)
+    const previous = this.eqOthers
+    this.eqOthers = { key, nodes }
+    if (!previous) return
+    const now = context.currentTime
+    entry.gain.value = 0
+    entry.gain.setTargetAtTime(1, now, EQ_RAMP_SECONDS)
+    ;(previous.nodes[0] as GainNode).gain.setTargetAtTime(0, now, EQ_RAMP_SECONDS)
+    // Ten time constants: a hundred-thousandth of where it started.
+    setTimeout(
+      () => previous.nodes.forEach((node) => node.disconnect()),
+      EQ_RAMP_SECONDS * 10 * 1000,
+    )
   }
 
   /** This device's equalizer curve (services/equalizer.ts's toBands());
@@ -1392,10 +1457,9 @@ export class AudioEngine {
   setEqualizer(bands: readonly EqualizerBand[]): void {
     if (!this.audioContext || !this.eqHeadroomNode) return
     const now = this.audioContext.currentTime
-    for (const node of this.eqBands) {
-      const band = bands.find((b) => b.frequency === node.frequency.value)
-      node.gain.setTargetAtTime(band?.gain ?? 0, now, EQ_RAMP_SECONDS)
-    }
+    const { gains, others } = splitBands(bands)
+    this.eqBands.forEach((node, i) => node.gain.setTargetAtTime(gains[i]!, now, EQ_RAMP_SECONDS))
+    this.setOtherFilters(others)
     this.eqHeadroomNode.gain.setTargetAtTime(10 ** (-headroomDb(bands) / 20), now, EQ_RAMP_SECONDS)
   }
 

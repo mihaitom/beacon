@@ -1,11 +1,12 @@
 """core/equalizer.py — a speaker's equalizer curve, as ffmpeg filters or live.
 
 The curve is the listener's (stores/equalizer.ts in the renderer): a list of
-peaking bands, each a centre frequency, a gain and a Q. The renderer plays
-the same bands through Web Audio's BiquadFilterNode for this device's own
-playback, and both that and ffmpeg's `equalizer` filter are the RBJ cookbook
-peaking biquad - so a curve sounds the same in the app and on a speaker.
-The bands travel as numbers rather than being defined twice.
+bands, each a centre frequency, a gain and a Q - peaking for the ten-band
+curve, and low or high shelves as well for an imported headphone profile.
+Every one is an RBJ cookbook biquad, which is what the renderer plays for
+this device's own playback and what ffmpeg's `equalizer`, `lowshelf` and
+`highshelf` filters are - so a curve sounds the same in the app and on a
+speaker. The bands travel as numbers rather than being defined twice.
 
 Curves are kept per speaker, keyed `type:name` like the device volumes
 (SessionState.device_volumes), because the point is mostly the speaker: a
@@ -26,14 +27,20 @@ import numpy as np
 from .mix_dsp import Dither, pcm_to_float, soft_limit
 from .mix_timeline import SAMPLE_RATE
 
-# What one band may ask for. The renderer offers ±12 dB; the bounds here
-# only keep a hand-made request from reaching ffmpeg as nonsense.
-MAX_GAIN_DB = 12.0
+# What one band may ask for. The ten bands go to ±12 dB, an imported profile
+# can ask for more; the bounds here only keep a hand-made request from
+# reaching ffmpeg as nonsense.
+MAX_GAIN_DB = 20.0
 MIN_FREQUENCY_HZ = 20.0
 MAX_FREQUENCY_HZ = 20000.0
 MIN_Q = 0.1
 MAX_Q = 10.0
-MAX_BANDS = 16
+# A measurement program's filter set, 20 per channel at most.
+MAX_BANDS = 20
+
+PEAKING = "peaking"
+# ffmpeg's filter for each type - also the names the renderer sends.
+_FFMPEG_FILTERS = {PEAKING: "equalizer", "lowshelf": "lowshelf", "highshelf": "highshelf"}
 
 # The rate the headroom is worked out at. The response of a biquad shifts a
 # little with the sample rate near Nyquist; 48 kHz is what the renderer's
@@ -44,7 +51,13 @@ _RESPONSE_RATE = 48000
 # between their centres, is not missed: 1/40 octave at 400 points.
 _RESPONSE_POINTS = 400
 
-Band = dict[str, float]
+# frequency, gain and q as floats, and "type" for anything but a peaking
+# band - so the ten-band curve keeps the shape it always had.
+Band = dict[str, Any]
+
+
+def _type(band: Band) -> str:
+    return band.get("type", PEAKING)
 
 
 def sanitize(bands: object) -> list[Band]:
@@ -64,23 +77,55 @@ def sanitize(bands: object) -> list[Band]:
             continue
         if not all(math.isfinite(v) for v in (frequency, gain, q)):
             continue
+        kind = band.get("type", PEAKING)
+        if kind not in _FFMPEG_FILTERS:
+            continue
         if not MIN_FREQUENCY_HZ <= frequency <= MAX_FREQUENCY_HZ:
             continue
         gain = max(-MAX_GAIN_DB, min(MAX_GAIN_DB, gain))
         if round(gain, 2) == 0:
             continue
-        clean.append({"frequency": frequency, "gain": gain, "q": max(MIN_Q, min(MAX_Q, q))})
+        clean_band: Band = {"frequency": frequency, "gain": gain, "q": max(MIN_Q, min(MAX_Q, q))}
+        if kind != PEAKING:
+            clean_band["type"] = kind
+        clean.append(clean_band)
     return clean
 
 
-def _peaking_response_db(band: Band, freqs: np.ndarray, rate: int = _RESPONSE_RATE) -> np.ndarray:
-    """One RBJ peaking band's magnitude response in dB at `freqs`."""
+def _coefficients(band: Band, rate: int) -> tuple[list[float], list[float]]:
+    """The RBJ cookbook biquad for `band`: numerator and denominator.
+    services/equalizer.ts has the same formulas for the renderer."""
     a = 10 ** (band["gain"] / 40)
     w0 = 2 * math.pi * band["frequency"] / rate
     alpha = math.sin(w0) / (2 * band["q"])
     cos_w0 = math.cos(w0)
-    b = np.array([1 + alpha * a, -2 * cos_w0, 1 - alpha * a])
-    den = np.array([1 + alpha / a, -2 * cos_w0, 1 - alpha / a])
+    kind = _type(band)
+    if kind == PEAKING:
+        return (
+            [1 + alpha * a, -2 * cos_w0, 1 - alpha * a],
+            [1 + alpha / a, -2 * cos_w0, 1 - alpha / a],
+        )
+    shelf = 2 * math.sqrt(a) * alpha
+    # The high shelf is the low one with the cosine's sign flipped.
+    sign = 1 if kind == "lowshelf" else -1
+    c = sign * cos_w0
+    return (
+        [
+            a * ((a + 1) - (a - 1) * c + shelf),
+            sign * 2 * a * ((a - 1) - (a + 1) * c),
+            a * ((a + 1) - (a - 1) * c - shelf),
+        ],
+        [
+            (a + 1) + (a - 1) * c + shelf,
+            sign * -2 * ((a - 1) + (a + 1) * c),
+            (a + 1) + (a - 1) * c - shelf,
+        ],
+    )
+
+
+def _response_db(band: Band, freqs: np.ndarray, rate: int = _RESPONSE_RATE) -> np.ndarray:
+    """One band's magnitude response in dB at `freqs`."""
+    b, den = _coefficients(band, rate)
     z = np.exp(-1j * 2 * np.pi * freqs / rate)
     h = (b[0] + b[1] * z + b[2] * z**2) / (den[0] + den[1] * z + den[2] * z**2)
     return 20 * np.log10(np.abs(h))
@@ -95,7 +140,7 @@ def headroom_db(bands: list[Band]) -> float:
     if not bands:
         return 0.0
     freqs = np.geomspace(MIN_FREQUENCY_HZ, MAX_FREQUENCY_HZ, _RESPONSE_POINTS)
-    total = sum(_peaking_response_db(band, freqs) for band in bands)
+    total = sum(_response_db(band, freqs) for band in bands)
     return max(0.0, float(np.max(total)))
 
 
@@ -106,7 +151,8 @@ def audio_filter(gain: float, bands: list[Band]) -> str | None:
     level = gain * 10 ** (-headroom_db(bands) / 20)
     parts = [f"volume={level:.6g}"] if abs(level - 1.0) > 1e-6 else []
     parts += [
-        f"equalizer=f={b['frequency']:.6g}:t=q:w={b['q']:.6g}:g={b['gain']:.6g}" for b in bands
+        f"{_FFMPEG_FILTERS[_type(b)]}=f={b['frequency']:.6g}:t=q:w={b['q']:.6g}:g={b['gain']:.6g}"
+        for b in bands
     ]
     return ",".join(parts) or None
 
@@ -121,11 +167,11 @@ LIVE_TAPS = 4096
 # does not wrap around (and so smear the 31 Hz band).
 _DESIGN_GRID = 1 << 15
 
-BandsKey = tuple[tuple[float, float, float], ...]
+BandsKey = tuple[tuple[float, float, float, str], ...]
 
 
 def _bands_key(bands: list[Band]) -> BandsKey:
-    return tuple((b["frequency"], b["gain"], b["q"]) for b in bands)
+    return tuple((b["frequency"], b["gain"], b["q"], _type(b)) for b in bands)
 
 
 @functools.lru_cache(maxsize=32)
@@ -138,9 +184,9 @@ def live_taps(key: BandsKey) -> np.ndarray:
     match to what ffmpeg and Web Audio do. Designed from the magnitude alone
     through the real cepstrum, since IIR filters cannot be run vectorised in
     numpy (see core/mix_dsp.py)."""
-    bands = [{"frequency": f, "gain": g, "q": q} for f, g, q in key]
+    bands = [{"frequency": f, "gain": g, "q": q, "type": t} for f, g, q, t in key]
     freqs = np.fft.rfftfreq(_DESIGN_GRID, 1 / SAMPLE_RATE)
-    db = sum(_peaking_response_db(b, freqs, SAMPLE_RATE) for b in bands) - headroom_db(bands)
+    db = sum(_response_db(b, freqs, SAMPLE_RATE) for b in bands) - headroom_db(bands)
     log_magnitude = np.log(10.0 ** (db / 20))
     cepstrum = np.fft.irfft(log_magnitude, _DESIGN_GRID)
     folded = np.zeros(_DESIGN_GRID)

@@ -9,6 +9,7 @@ import {
   toBands,
   type CustomPreset,
   type EqualizerBand,
+  type EqualizerProfile,
   type EqualizerSetting,
 } from '@/services/equalizer'
 import type { ConnectDeviceRef } from '@/services/connect/types'
@@ -129,7 +130,16 @@ export const useEqualizerStore = defineStore('equalizer', {
     /** Saves `gains` under `name`, over a preset of that name if there is
      * one - where it was, so saving again does not reorder the chips. */
     savePreset(name: string, gains: number[]): void {
-      const preset = sanitizePresets([{ name, gains }])[0]
+      this.putPreset({ name, gains })
+    },
+
+    /** An imported profile, kept with the presets under its own name. */
+    saveProfile(profile: EqualizerProfile): void {
+      this.putPreset({ name: profile.name, gains: [], profile })
+    },
+
+    putPreset(entry: CustomPreset): void {
+      const preset = sanitizePresets([entry])[0]
       if (!preset) return
       const index = this.presets.findIndex((p) => p.name === preset.name)
       const presets = [...this.presets]

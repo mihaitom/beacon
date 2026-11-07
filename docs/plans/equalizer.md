@@ -109,6 +109,23 @@ everything - a bass boost for the kitchen must not reach the living room.
   limiter at work on loud masters can be heard. The FAQ explains the
   quieter sound instead.
 
+- **Imported profiles replace the ten bands, played exactly.** A profile
+  (Equalizer APO text: AutoEq's ParametricEQ/FixedBandEQ, REW's export) is
+  a list of peaking and shelf filters at its own frequencies and Q, and is
+  played as such rather than fitted onto the ten bands - fitting loses the
+  narrow peaks that are a measured profile's point. While one is active
+  the dialog draws its exact response with no points: adding "More bass"
+  on top was considered and left out (2026-11-07), since a profile already
+  is the target curve and a preset is one pick away. The file's preamp is
+  ignored; the headroom is worked out from the curve as for the bands.
+  Shelves are RBJ with Q in all three paths: ffmpeg's `lowshelf`/
+  `highshelf` (added to the bundled build), the live FIR, and in the
+  renderer IIRFilterNodes, because Web Audio's own shelves ignore Q. Those
+  have fixed coefficients, so a new profile is a new chain crossfaded in
+  over 30 ms; the ten fixed peaking nodes stay as they are and take any
+  profile filter of their exact shape. GraphicEQ files and per-channel
+  profiles are refused with a message rather than approximated.
+
 ## Left out on purpose
 
 - **Radio while casting.** The relay is one ffmpeg with one output per
