@@ -20,7 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - With a ListenBrainz name set, the shuffle buttons on Home's two Discover shelves are there too: they swap your personal recommendations for suggestions around other artists you play often, and the next start brings the personal ones back
 - The Playlists page has one playlist builder button instead of one per service: Deezer, Last.fm or ListenBrainz is picked inside it, and it opens on the one used last
 - Electron, the build tools and the backend's libraries are updated to their latest versions
-- The "What's new" dialog opens once per version for each account, so a browser that clears its storage on exit no longer shows it at every login, and other browsers using the same Beacon server skip it too (contributed by @b-r-y, #80)
+- The "What's new" dialog opens once per version for each account, so a browser that clears its storage on exit no longer shows it at every login, and other browsers using the same Beacon server skip it too (contributed by [@b-r-y](https://github.com/b-r-y), [#80](https://github.com/mihaitom/beacon/issues/80))
 
 ### Fixed
 
@@ -34,13 +34,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
-- Songs and albums can be rated with stars from their right-click menu everywhere, the playing song in the player bar too. The album and artist lists show the stars, set them directly and sort by them (requested by @mjj042, #55)
+- Songs and albums can be rated with stars from their right-click menu everywhere, the playing song in the player bar too. The album and artist lists show the stars, set them directly and sort by them (requested by [@mjj042](https://github.com/mjj042), [#55](https://github.com/mihaitom/beacon/issues/55))
 - With Navidrome, Beacon keeps the queue on the server, so another app or Beacon on another device can carry on with it at the same song and position. A queue another app or device saved there since is offered once instead of overwritten, so two devices on one account can play different things side by side, and the queue's toolbar loads it or saves your own over it
 - AirPlay speakers have a volume control while Beacon casts to them, like Sonos, Chromecast and DLNA
 - Casting to a Sonos with repeat switched on in the Sonos app says so and can switch it off, since it made every song start over for a moment at its end
 - A Chromecast knows how long the song is, so Google Home and a TV show a progress bar for it
 - The help has a networking guide: which connections casting needs, Docker, a server in more than one network, speakers in another VLAN and Wi-Fi settings that get in the way, with a checklist for a speaker that stops or starts a song over
-- With the log level at Debug, Now Playing shows how the cast stream reaches each speaker: what was sent, whether the speaker is still reading, how much it has buffered and the last error it reported (#56)
+- With the log level at Debug, Now Playing shows how the cast stream reaches each speaker: what was sent, whether the speaker is still reading, how much it has buffered and the last error it reported ([#56](https://github.com/mihaitom/beacon/issues/56))
 
 ### Changed
 
@@ -56,13 +56,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
-- Casting works from a computer or server connected to more than one network: each speaker gets Beacon's address in its own network, where songs used to break off or start over after about half a minute (reported by @mjj042, #56)
-- Casting moves on to the next song when a song's audio is shorter than its listed length, as with some VBR MP3s, instead of stopping until pause and play are pressed (#56)
+- Casting works from a computer or server connected to more than one network: each speaker gets Beacon's address in its own network, where songs used to break off or start over after about half a minute (reported by [@mjj042](https://github.com/mjj042), [#56](https://github.com/mihaitom/beacon/issues/56))
+- Casting moves on to the next song when a song's audio is shorter than its listed length, as with some VBR MP3s, instead of stopping until pause and play are pressed ([#56](https://github.com/mihaitom/beacon/issues/56))
 - On an iPhone or iPad playing at a reduced quality from outside the home network, a long song no longer gets the phone locked out by a reverse proxy running CrowdSec, which mistook loading the song for a crawler
 - The backend's logs no longer contain the media server login, so a log can be shared without giving away access to the server
 - Signing in says why it failed: a busy or unreachable server, a login page in front of it or a certificate problem no longer reads as a wrong password
 - Resuming a paused DLNA renderer could leave it paused while Beacon showed it playing
-- A Sonos or DLNA speaker with a space in its name keeps Beacon up to date, so its volume follows a change made on the speaker or in the Sonos app (#56)
+- A Sonos or DLNA speaker with a space in its name keeps Beacon up to date, so its volume follows a change made on the speaker or in the Sonos app ([#56](https://github.com/mihaitom/beacon/issues/56))
 - Song lists sorted by last played or date added put songs without a date at the end, newest first as well, instead of at the top
 - Adding a song to a playlist, or making a new one from it, keeps a long song list where it was scrolled to instead of jumping back to the top
 - Lyrics are found automatically for more songs, especially ones with a featured artist, where the list of matches already had the right one
@@ -80,7 +80,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
-- Themes: besides Beacon there is the dark Graphite and the light Paper and Glacier, or a theme of your own from a background and an accent colour, chosen per device under Settings → Appearance. Artwork headers and Now Playing stay dark on the light themes, and the Remote Control on the phone takes on the theme of the app it controls. Now Playing can also be kept from tinting the app and its visualizer in the colour of the artist background, so they stay in the theme's accent (requested by @mjj042, #55)
+- Themes: besides Beacon there is the dark Graphite and the light Paper and Glacier, or a theme of your own from a background and an accent colour, chosen per device under Settings → Appearance. Artwork headers and Now Playing stay dark on the light themes, and the Remote Control on the phone takes on the theme of the app it controls. Now Playing can also be kept from tinting the app and its visualizer in the colour of the artist background, so they stay in the theme's accent (requested by [@mjj042](https://github.com/mjj042), [#55](https://github.com/mihaitom/beacon/issues/55))
 - The phone and the Remote Control have a Favorites tab with your favorite songs, albums and artists. It takes the place of the Now Playing tab, which the player bar above the tabs already opens, and the Queue tab moves to the front. Songs are marked as favorites with the heart next to the title on Now Playing or from a song's actions, and on the phone albums from their page
 - Favorites work with Plex too: a favorite there is a five-star rating, the same thing Plexamp's like sets, so the heart and the fifth star always agree
 - The Genres page is new: the biggest genres stand as crates of their records, flipped through one record at a time while pointed at, and below them every genre is listed like a book's index with its number of songs, the big ones set stronger, with the jump bar beside it
@@ -117,8 +117,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Playback on a network that cuts long connections (such as a company proxy) picks up where it was instead of stopping or jumping back to an earlier song, and pressing play after a lost connection starts it again instead of needing a reload
 - When another app or a second Beacon puts something on a speaker Beacon is casting to, Beacon's position, lyrics and track end no longer jump back to the start along with it
 - A speaker that drops out and only comes back after Beacon has reported the interruption, or that asks for a song again once it has ended, stays quiet instead of playing on by itself. Playback continues from the interruption notice or with play
-- With an S1 and an S2 Sonos system on the same network, the device list shows the speakers of both instead of switching between one and the other (reported by @ampcat3, #54)
-- iPad in landscape: the volume slider no longer jumps back after letting go, and where the iPad's own volume buttons are the only way to change the level, the slider is left out as it already was in portrait (reported by @ampcat3, #53)
+- With an S1 and an S2 Sonos system on the same network, the device list shows the speakers of both instead of switching between one and the other (reported by [@ampcat3](https://github.com/ampcat3), [#54](https://github.com/mihaitom/beacon/issues/54))
+- iPad in landscape: the volume slider no longer jumps back after letting go, and where the iPad's own volume buttons are the only way to change the level, the slider is left out as it already was in portrait (reported by [@ampcat3](https://github.com/ampcat3), [#53](https://github.com/mihaitom/beacon/issues/53))
 - With transitions on, removing, moving or shuffling songs in the queue no longer ends the mix after the current song with a gap, playback after a seek while paused or after reopening the app starts where it stood instead of seconds later, and Stop and logging out also end the mix on the server instead of leaving it running unheard
 - More transition fixes: while casting, the seek bar switches to the next song together with its position; a seek no longer scrobbles the song a second time; turning shuffle off just before a transition keeps the right song as current; and picking another song no longer briefly blocks editing the queue
 - Transitions in Safari recover by themselves when the server's encoding fails, instead of stalling silently, and a long listening session in Safari no longer fills up the server's disk
@@ -160,7 +160,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - With Jellyfin and Plex, your own playlists appear under "My playlists" and can be edited there (renaming on Jellyfin needs 10.9 or newer)
 - A lyrics source that was briefly unreachable no longer leaves a song without lyrics until Beacon is restarted
 - On a tablet held sideways, Now Playing no longer cuts off the cover and the album name, and the artist name is no longer nearly as large as the title
-- Turning a tablet sideways with the queue open shows the queue again, instead of only lighting up its button (reported by @ampcat3, #47)
+- Turning a tablet sideways with the queue open shows the queue again, instead of only lighting up its button (reported by [@ampcat3](https://github.com/ampcat3), [#47](https://github.com/mihaitom/beacon/issues/47))
 - "Add to playlist" no longer lists playlists the server will not let you change, such as other users' shared ones
 - The list of other lyrics matches only offers matches with actual lyrics, from the sources switched on in Settings
 
@@ -173,9 +173,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
-- In the mobile layout, a long queue, playlist or station list froze while its covers loaded: it would not scroll and taps did nothing, sometimes for over a minute (reported by @ampcat3, #47)
+- In the mobile layout, a long queue, playlist or station list froze while its covers loaded: it would not scroll and taps did nothing, sometimes for over a minute (reported by [@ampcat3](https://github.com/ampcat3), [#47](https://github.com/mihaitom/beacon/issues/47))
 - Turning a tablet between upright and sideways (or resizing a browser window across the mobile layout's width) kept the page from the other layout, which on Now Playing showed two player bars. The page now switches along with the layout
-- On a touchscreen, the queue that slides out briefly when something is added closed again while it was being scrolled. Touching it now keeps it open, as pointing at it with the mouse already did (reported by @ampcat3, #47)
+- On a touchscreen, the queue that slides out briefly when something is added closed again while it was being scrolled. Touching it now keeps it open, as pointing at it with the mouse already did (reported by [@ampcat3](https://github.com/ampcat3), [#47](https://github.com/mihaitom/beacon/issues/47))
 
 ## [1.7.0] - 2026-10-10
 
@@ -191,7 +191,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - Lyrics from some sources ran off the side of the screen instead of wrapping onto a second line
 - Party guests on a screen between 840 and 960 pixels wide (a small tablet, a phone on its side) got the desktop layout instead of the phone one
-- On Apple Silicon Macs, the downloaded app was reported as damaged and could not be opened. It now opens after confirming it once under System Settings > Privacy & Security (reported by @ampcat3, #46)
+- On Apple Silicon Macs, the downloaded app was reported as damaged and could not be opened. It now opens after confirming it once under System Settings > Privacy & Security (reported by [@ampcat3](https://github.com/ampcat3), [#46](https://github.com/mihaitom/beacon/issues/46))
 - On an iPhone or iPad, dragging the lock-screen scrubber while a song played at a reduced quality (a converted stream) jumped the shown position back to the beginning. It now follows the real position, as it already did for untouched files
 - On an iPhone or iPad, the lock screen offered buttons to skip 10 seconds instead of previous and next track. It now shows previous and next
 - On an iPhone or iPad, the song Beacon reopens with could not be scrubbed until something had played
@@ -230,7 +230,7 @@ Both are brand new and still finding their feet. If something at your party does
 
 ### Fixed
 
-- On Windows and macOS, casting from a media server reached over https, playing a radio station over https and drawing the seek-bar waveform failed with a certificate error; a Sonos showed this as the track restarting every few seconds (reported by @coltonfretz, #37)
+- On Windows and macOS, casting from a media server reached over https, playing a radio station over https and drawing the seek-bar waveform failed with a certificate error; a Sonos showed this as the track restarting every few seconds (reported by [@coltonfretz](https://github.com/coltonfretz), [#37](https://github.com/mihaitom/beacon/issues/37))
 - When a track cannot be loaded from the media server while casting, the app now says so and stops, instead of leaving the speaker silent while the position kept jumping back to the start
 - A wrong Home Assistant key is now always reported as such; before, the answer depended on whether the phone remote happened to be switched on
 - Remote Control on the phone no longer loses all covers and station logos after the desktop app has been reloaded
@@ -240,9 +240,9 @@ Both are brand new and still finding their feet. If something at your party does
 
 ### Added
 
-- Home Assistant and other automation tools can control the desktop app with a key that survives restarts, and find it on the local network on their own; see docs/home-automation.md (suggested by @coltonfretz, #36)
-- A Home Assistant integration with a dashboard in the sidebar: player, speakers, library, queue and autoplay, following whichever computer runs Beacon; see home-assistant/ (inspired by @coltonfretz, #36)
-- The desktop app can run on a fixed port, set under Settings > Advanced or with `BEACON_PORT` (suggested by @coltonfretz, #36)
+- Home Assistant and other automation tools can control the desktop app with a key that survives restarts, and find it on the local network on their own; see docs/home-automation.md (suggested by [@coltonfretz](https://github.com/coltonfretz), [#36](https://github.com/mihaitom/beacon/issues/36))
+- A Home Assistant integration with a dashboard in the sidebar: player, speakers, library, queue and autoplay, following whichever computer runs Beacon; see home-assistant/ (inspired by [@coltonfretz](https://github.com/coltonfretz), [#36](https://github.com/mihaitom/beacon/issues/36))
+- The desktop app can run on a fixed port, set under Settings > Advanced or with `BEACON_PORT` (suggested by [@coltonfretz](https://github.com/coltonfretz), [#36](https://github.com/mihaitom/beacon/issues/36))
 
 ### Changed
 
@@ -262,7 +262,7 @@ Both are brand new and still finding their feet. If something at your party does
 
 ### Fixed
 
-- When Beacon was installed where it cannot write next to itself (for all users on Windows, or as the AppImage or .deb package on Linux), it opened a new Jellyfin session for every track played, which filled the Jellyfin dashboard with phantom Beacon players; Plex was affected the same way (reported by @coltonfretz, #35)
+- When Beacon was installed where it cannot write next to itself (for all users on Windows, or as the AppImage or .deb package on Linux), it opened a new Jellyfin session for every track played, which filled the Jellyfin dashboard with phantom Beacon players; Plex was affected the same way (reported by [@coltonfretz](https://github.com/coltonfretz), [#35](https://github.com/mihaitom/beacon/issues/35))
 - Radio played through Beacon now reconnects on its own when the connection silently dies, after a network or VPN change for instance, instead of going quiet
 - After more than a month away, nearly all downloaded Fanart.tv images were deleted as soon as an artist was opened; the latest artists' images are now always kept
 - Most played artists on the Statistics page could show a song's full credit, featured artists included, instead of the artist's name
@@ -270,7 +270,7 @@ Both are brand new and still finding their feet. If something at your party does
 - On a tablet in landscape, a speaker's volume slider now follows the finger, and controls that used to appear only under a mouse are visible
 - On an artist page in a narrow window, the rating stars no longer run into the artist's name
 - On a tablet, artist and album pages and track lists with many columns could make the page wider than the screen, which cut it off or zoomed it out once the pictures loaded; track list columns that do not fit now step aside until there is room again
-- Jellyfin now shows Beacon's real version instead of 1.0.0 (reported by @coltonfretz, #35)
+- Jellyfin now shows Beacon's real version instead of 1.0.0 (reported by [@coltonfretz](https://github.com/coltonfretz), [#35](https://github.com/mihaitom/beacon/issues/35))
 
 ## [1.4.0] - 2026-09-22
 
@@ -378,7 +378,7 @@ Both are brand new and still finding their feet. If something at your party does
 
 ### Fixed
 
-- A library with more than 500 albums stopped at the first 500 in the Albums view, with the rest missing from browsing, searching and the A-Z index. The whole catalog loads again (reported by @flugster, #24)
+- A library with more than 500 albums stopped at the first 500 in the Albums view, with the rest missing from browsing, searching and the A-Z index. The whole catalog loads again (reported by [@flugster](https://github.com/flugster), [#24](https://github.com/mihaitom/beacon/issues/24))
 - The playlists page could go on showing an out-of-date list, sometimes for an hour and on a Jellyfin server for a whole day: a playlist created from the queue was missing, a deleted one came back, and anything changed on another device took just as long to turn up. The list is kept current now
 - The volume slider on a phone often ignored the finger while casting to a speaker: it moved a few percent and stopped, or did not move at all, and roughly every second attempt failed to land on the level that was set. Tapping a spot always worked, dragging frequently did not. A drag now follows the finger and sets the level on the speaker once, when you let go, instead of sending every moment of it
 - Autoplay no longer falls silent at the end of the queue when the server has nothing similar to offer for the last track. It looks to the songs just before it, and failing that carries on with more from the same artist or something else from your library
