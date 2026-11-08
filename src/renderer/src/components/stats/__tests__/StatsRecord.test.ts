@@ -44,15 +44,16 @@ describe('pointing at the record', () => {
     const wrapper = mountRecord()
     await pointAtGroove(wrapper, 5)
 
-    expect(lastLine(wrapper)).toContain('2,000')
-    expect(lastLine(wrapper)).toContain('2,500')
+    // The first platinum: from 10,000 at 100 a groove.
+    expect(lastLine(wrapper)).toContain('10,400')
+    expect(lastLine(wrapper)).toContain('10,500')
   })
 
   it('names a milestone engraved on that groove', async () => {
-    const wrapper = mountRecord(1000)
-    await pointAtGroove(wrapper, 2)
+    const wrapper = mountRecord(11000)
+    await pointAtGroove(wrapper, 10)
 
-    expect(lastLine(wrapper)).toContain('1,000 reached')
+    expect(lastLine(wrapper)).toContain('11,000 reached')
   })
 
   it('goes quiet on the label and when the pointer leaves', async () => {

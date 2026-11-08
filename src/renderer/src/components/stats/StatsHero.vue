@@ -65,7 +65,7 @@
               class="stats-hero__shelf"
               :records="pressed"
               :seen="seenRecords"
-              :landed="fresh === 'pressing' ? record.finished : null"
+              :landed="landedRecord"
             />
           </div>
         </div>
@@ -108,6 +108,8 @@ export default {
     otherAccount: { type: String as PropType<string | null>, default: null },
     since: { type: String as PropType<string | null>, default: null },
     fresh: { type: String as PropType<Moment['kind'] | null>, default: null },
+    /** The record that has just landed on the shelf. */
+    landedRecord: { type: Number as PropType<number | null>, default: null },
     /** The sentence under the title. */
     line: { type: String as PropType<string | null>, default: null },
     /** The log the shelf's dates are counted back through, oldest first. */
@@ -289,14 +291,14 @@ export default {
 }
 
 .stats-hero__statement {
-  max-width: 30ch;
+  text-wrap: pretty;
   font-size: clamp(1.15rem, 1.7cqi, 1.5rem);
   font-weight: 500;
   line-height: 1.35;
 }
 
 .stats-hero__next {
-  max-width: 460px;
+  max-width: 620px;
 }
 
 /* One line reserved, so the text beside the record stays put while the

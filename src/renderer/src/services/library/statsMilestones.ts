@@ -17,6 +17,8 @@ export interface Moment {
   kind: MilestoneKind | 'pressing'
   value: number
   size: MilestoneSize
+  /** A pressing's metal, which its disc takes on in place of the size's. */
+  tier?: RecordTier
 }
 
 export const PLAYS_STEP = 1000
@@ -59,7 +61,12 @@ export function nextMoment(seen: MilestoneValues | null, values: MilestoneValues
   // what says why.
   if (seen.records !== undefined && values.records !== undefined) {
     if (values.records > seen.records) {
-      return { kind: 'pressing', value: values.records, size: 'l' }
+      return {
+        kind: 'pressing',
+        value: values.records,
+        size: 'l',
+        tier: recordDetails(values.records).tier,
+      }
     }
   }
   const reached = reachedMilestones(values)
@@ -73,7 +80,7 @@ export function nextMoment(seen: MilestoneValues | null, values: MilestoneValues
   return best
 }
 
-export const RECORD_GROOVES = 40
+export const RECORD_GROOVES = 50
 // The record's geometry, in the units of its SVG.
 export const RECORD_OUTER = 250
 export const RECORD_INNER = 96
@@ -105,36 +112,60 @@ export interface RecordProgress {
   finished: number
 }
 
-// Early records run on small grooves so a new listener sees them fill. Past
-// the largest step a groove stays the same and only the records add up: a
-// groove worth thousands of plays no longer moves.
-const LARGEST_STEP = 1000
-const RECORD_STEPS = [50, 100, 250, 500, LARGEST_STEP]
-const LARGEST_RECORD_PLAYS = LARGEST_STEP * RECORD_GROOVES
+export type RecordTier = 'bronze' | 'silver' | 'gold' | 'platinum' | 'diamond'
+
+// Ranked as sales certifications are. Early records run on small grooves so a
+// new listener sees them fill, and the counts are picked so every record is
+// full on a round total: bronze every 500 up to 2,000, then 3,000, 4,000,
+// 5,000, 7,500, 10,000, 15,000, 20,000, 25,000, and diamonds at 50,000 and
+// every 25,000 after it.
+const DIAMOND_STEP = 500
+const DIAMOND_PLAYS = DIAMOND_STEP * RECORD_GROOVES
+const LADDER: { tier: RecordTier; step: number; records: number }[] = [
+  { tier: 'bronze', step: 10, records: 4 },
+  { tier: 'silver', step: 20, records: 3 },
+  { tier: 'gold', step: 50, records: 2 },
+  { tier: 'platinum', step: 100, records: 3 },
+]
+const LADDER_RECORDS = LADDER.flatMap(({ tier, step, records }) =>
+  Array.from({ length: records }, () => ({ tier, step })),
+)
+
+// The total plays at which each of those is full: a record holds its own
+// plays, so the next one starts again at the first groove.
+let playsSoFar = 0
+const LADDER_ENDS = LADDER_RECORDS.map(({ step }) => (playsSoFar += step * RECORD_GROOVES))
+const LADDER_TOTAL = playsSoFar
 
 function finishedRecords(plays: number): number {
-  if (plays >= LARGEST_RECORD_PLAYS) {
-    return RECORD_STEPS.length - 1 + Math.floor(plays / LARGEST_RECORD_PLAYS)
-  }
-  return RECORD_STEPS.findIndex((step) => plays < step * RECORD_GROOVES)
+  const record = LADDER_ENDS.findIndex((end) => plays < end)
+  if (record !== -1) return record
+  return LADDER_RECORDS.length + Math.floor((plays - LADDER_TOTAL) / DIAMOND_PLAYS)
 }
 
 function stepOf(record: number): number {
-  return RECORD_STEPS[record] ?? LARGEST_STEP
+  return LADDER_RECORDS[record]?.step ?? DIAMOND_STEP
 }
 
 /** The total plays at which a record, counted from zero, is full. */
 function endOf(record: number): number {
-  if (record < RECORD_STEPS.length) return stepOf(record) * RECORD_GROOVES
-  return (record - RECORD_STEPS.length + 2) * LARGEST_RECORD_PLAYS
+  return LADDER_ENDS[record] ?? LADDER_TOTAL + (record - LADDER_RECORDS.length + 1) * DIAMOND_PLAYS
+}
+
+/** What a record is, by its number counted from 1. */
+export function recordDetails(number: number): { tier: RecordTier; plays: number; step: number } {
+  const record = number - 1
+  return {
+    tier: LADDER_RECORDS[record]?.tier ?? 'diamond',
+    plays: endOf(record),
+    step: stepOf(record),
+  }
 }
 
 export function recordProgress(plays: number): RecordProgress {
   const finished = finishedRecords(plays)
   const step = stepOf(finished)
-  // The early records are the same plays on a finer scale, so their grooves
-  // count from zero; only the ones after them start empty.
-  const base = finished < RECORD_STEPS.length ? 0 : endOf(finished - 1)
+  const base = finished === 0 ? 0 : endOf(finished - 1)
   const done = Math.floor((plays - base) / step)
   const next = base + (done + 1) * step
   return {
@@ -151,6 +182,8 @@ export function recordProgress(plays: number): RecordProgress {
 export interface PressedRecord {
   /** Counted from 1. */
   number: number
+  tier: RecordTier
+  /** The total plays at which it filled up. */
   plays: number
   step: number
   /** When it filled up, null when that lies before the log begins. */
@@ -163,14 +196,13 @@ export interface PressedRecord {
  * filled one is as many from the end as plays have been added since. */
 export function pressedRecords(plays: number, timestamps: number[]): PressedRecord[] {
   const records: PressedRecord[] = []
-  for (let record = 0; record < finishedRecords(plays); record++) {
-    const end = endOf(record)
-    const earnedAt = timestamps[timestamps.length - 1 - (plays - end)] ?? null
+  for (let number = 1; number <= finishedRecords(plays); number++) {
+    const details = recordDetails(number)
+    const earnedAt = timestamps[timestamps.length - 1 - (plays - details.plays)] ?? null
     const previous = records.at(-1)?.earnedAt ?? null
     records.push({
-      number: record + 1,
-      plays: end,
-      step: stepOf(record),
+      number,
+      ...details,
       earnedAt,
       tookSeconds: earnedAt !== null && previous !== null ? earnedAt - previous : null,
     })
@@ -207,17 +239,15 @@ export interface MilestoneRing {
 }
 
 /** The plays milestones already celebrated, on the groove each happened in.
- * Hours and streaks have no place on a record measured in plays. Once every
- * groove holds a thousand plays only the rounder ones are marked, or each
- * groove would be a ring. */
+ * Hours and streaks have no place on a record measured in plays. */
 export function milestoneRings(seenPlays: number, record: RecordProgress): MilestoneRing[] {
   const { base, step } = record
   const rings: MilestoneRing[] = []
-  for (let value = base + PLAYS_STEP; value <= seenPlays; value += PLAYS_STEP) {
+  const first = (Math.floor(base / PLAYS_STEP) + 1) * PLAYS_STEP
+  for (let value = first; value <= seenPlays; value += PLAYS_STEP) {
     const groove = Math.ceil((value - base) / step)
     if (groove > RECORD_GROOVES) break
-    const size = sizeOf('plays', value)
-    if (step < PLAYS_STEP || size !== 's') rings.push({ groove, value, size })
+    rings.push({ groove, value, size: sizeOf('plays', value) })
   }
   return rings
 }

@@ -5,18 +5,18 @@
       :key="entry.number"
       class="stats-shelf__slot"
       :class="{ 'is-waiting': seen !== null && entry.number > seen }"
-      :style="{ '--i': index, '--vinyl': vinylOf(entry.number) }"
+      :style="{ '--i': index, '--vinyl': VINYLS[entry.tier] }"
     >
       <button
         type="button"
         class="stats-shelf__disc"
-        :class="{ 'is-landed': landed === entry.number }"
+        :class="[`stats-shelf__disc--${entry.tier}`, { 'is-landed': landed === entry.number }]"
         :data-record="entry.number"
         :aria-label="details(entry).join('. ')"
       >
         <span class="stats-shelf__vinyl" />
         <span class="stats-shelf__sheen" />
-        <span class="stats-shelf__label">{{ entry.plays / 1000 }}k</span>
+        <span class="stats-shelf__label">{{ shortPlays(entry.plays) }}</span>
         <v-tooltip activator="parent" location="top" open-on-click>
           <span
             v-for="(detail, row) in details(entry)"
@@ -33,11 +33,16 @@
 
 <script lang="ts">
 import type { PropType } from 'vue'
-import type { PressedRecord } from '@/services/library/statsMilestones'
+import type { PressedRecord, RecordTier } from '@/services/library/statsMilestones'
 
-// Coloured vinyl: objects, the same on every theme (docs/styleguide.md).
-const VINYLS = ['#a8323e', '#256a94', '#2f8a64', '#c1842a', '#6f46ad', '#b83a78']
-const VINYL_FALLBACK = '#a8323e'
+// Objects, the same on every theme (docs/styleguide.md).
+const VINYLS: Record<RecordTier, string> = {
+  bronze: '#a76a3a',
+  silver: '#8d96a4',
+  gold: '#dba92f',
+  platinum: '#d5deea',
+  diamond: '#bfe7ff',
+}
 const SECONDS_PER_DAY = 86400
 const DAYS_PER_MONTH = 30.44
 // Past this, days stop being something anyone counts in.
@@ -52,14 +57,17 @@ export default {
     /** The record that has just arrived. */
     landed: { type: Number as PropType<number | null>, default: null },
   },
+  data() {
+    return { VINYLS }
+  },
   methods: {
-    vinylOf(record: number): string {
-      return VINYLS[(record - 1) % VINYLS.length] ?? VINYL_FALLBACK
+    shortPlays(plays: number): string {
+      return plays < 1000 ? String(plays) : `${plays / 1000}k`
     },
     details(entry: PressedRecord): string[] {
       const format = (value: number): string => value.toLocaleString(this.$i18n.locale)
       const rows = [
-        this.$t('stats.shelfTitle', { n: format(entry.number) }),
+        this.$t(`stats.tiers.${entry.tier}`),
         this.$t('stats.shelfPlays', { n: format(entry.plays), step: format(entry.step) }),
         entry.earnedAt === null
           ? this.$t('stats.shelfBeforeLog')
@@ -94,19 +102,28 @@ export default {
 
 <style scoped>
 .stats-shelf {
+  --disc: clamp(46px, 4.4cqi, 68px);
   display: flex;
-  flex-wrap: wrap;
   justify-content: center;
-  gap: 12px 14px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .stats-shelf__slot {
+  /* One row however many there are: the slots shrink and the records overlap,
+   * where a second row would push the hero off the screen. */
+  position: relative;
+  flex: 0 1 calc(var(--disc) + 14px);
+  min-width: 0;
   /* After the tonearm has set down, one after the other. */
   animation: stats-shelf-in 0.65s cubic-bezier(0.2, 0.9, 0.3, 1.25) both;
   animation-delay: calc(0.9s + var(--i) * 0.1s);
+}
+
+.stats-shelf__slot:hover,
+.stats-shelf__slot:focus-within {
+  z-index: 1;
 }
 
 /* Still in the air during the moment that announces it. */
@@ -124,7 +141,7 @@ export default {
 .stats-shelf__disc {
   position: relative;
   display: block;
-  width: clamp(46px, 4.4cqi, 68px);
+  width: var(--disc);
   aspect-ratio: 1;
   padding: 0;
   border: 0;
@@ -192,6 +209,13 @@ export default {
     rgba(255, 255, 255, 0.22) 61%,
     transparent 67%
   );
+}
+
+/* What sets a diamond apart: the foil of the rarest ring on the record. */
+.stats-shelf__disc--diamond .stats-shelf__vinyl {
+  background:
+    repeating-radial-gradient(circle, rgba(0, 0, 0, 0.14) 0 1px, transparent 1px 3px),
+    conic-gradient(#9fe3ff, #e2c2ff, #ffc9e5, #fff0b8, #b8ffdf, #9fe3ff);
 }
 
 /* One whole turn there and one back, so it always comes to rest upright. */

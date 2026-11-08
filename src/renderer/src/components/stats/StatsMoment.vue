@@ -11,7 +11,11 @@
     >
       <canvas ref="confetti" class="stats-moment__confetti" />
       <div class="stats-moment__inner">
-        <div ref="disc" class="stats-moment__disc" :class="`stats-moment__disc--${moment.size}`">
+        <div
+          ref="disc"
+          class="stats-moment__disc"
+          :class="`stats-moment__disc--${moment.tier ?? moment.size}`"
+        >
           <div class="stats-moment__vinyl">
             <div class="stats-moment__label"><v-icon :icon="icon" /></div>
           </div>
@@ -276,11 +280,51 @@ export default {
 
 /* Metal, not interface: these stay what they are on every theme. The size
  * of the milestone is in the material, silver to iridescent. */
-.stats-moment__disc--s {
+.stats-moment__disc--bronze {
+  --stats-metal: #d99a63;
+}
+
+.stats-moment__disc--bronze .stats-moment__vinyl {
+  background: conic-gradient(
+    from var(--stats-foil),
+    #6e4322,
+    #b67a45,
+    #e6b288,
+    #b67a45,
+    #6e4322,
+    #b67a45,
+    #e6b288,
+    #b67a45,
+    #6e4322
+  );
+}
+
+.stats-moment__disc--platinum {
+  --stats-metal: #e8eef6;
+}
+
+.stats-moment__disc--platinum .stats-moment__vinyl {
+  background: conic-gradient(
+    from var(--stats-foil),
+    #9fb2c9,
+    #e8eef6,
+    #ffffff,
+    #e8eef6,
+    #9fb2c9,
+    #e8eef6,
+    #ffffff,
+    #e8eef6,
+    #9fb2c9
+  );
+}
+
+.stats-moment__disc--s,
+.stats-moment__disc--silver {
   --stats-metal: #d9dee6;
 }
 
-.stats-moment__disc--s .stats-moment__vinyl {
+.stats-moment__disc--s .stats-moment__vinyl,
+.stats-moment__disc--silver .stats-moment__vinyl {
   background: conic-gradient(
     from var(--stats-foil),
     #5f6673,
@@ -295,11 +339,13 @@ export default {
   );
 }
 
-.stats-moment__disc--m {
+.stats-moment__disc--m,
+.stats-moment__disc--gold {
   --stats-metal: #f0c75e;
 }
 
-.stats-moment__disc--m .stats-moment__vinyl {
+.stats-moment__disc--m .stats-moment__vinyl,
+.stats-moment__disc--gold .stats-moment__vinyl {
   background: conic-gradient(
     from var(--stats-foil),
     #a0741b,
@@ -314,11 +360,13 @@ export default {
   );
 }
 
-.stats-moment__disc--l {
+.stats-moment__disc--l,
+.stats-moment__disc--diamond {
   --stats-metal: #bfe7ff;
 }
 
-.stats-moment__disc--l .stats-moment__vinyl {
+.stats-moment__disc--l .stats-moment__vinyl,
+.stats-moment__disc--diamond .stats-moment__vinyl {
   background: conic-gradient(
     from var(--stats-foil),
     #9fe3ff,

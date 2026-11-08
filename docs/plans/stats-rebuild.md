@@ -157,8 +157,8 @@ It already serves the phone shell, so it has to work from 320px up with no
 separate mobile view.
 
 - **Hero:** the blurred backdrop of the most played album (300px cover, as
-  everywhere), in the theme's night. 40 grooves, outermost first; one groove is
-  a number of plays that grows with the listener (50 up to 1,000), grooves
+  everywhere), in the theme's night. 50 grooves, outermost first; one groove is
+  a number of plays that grows with the listener (10 up to 500), grooves
   already filled are quiet, the current one is an amber arc ending at the
   progress. Celebrated plays milestones stay on their groove as a ring of
   silver, gold or foil. Pointing anywhere on the record names the nearest
@@ -188,12 +188,20 @@ and so does the visit after an import: a streak arriving with a year of old
 plays is nothing to celebrate. What has been seen is stored per account in
 connect and only ever goes up, so a second device does not repeat it.
 
-The record gets one more. A record holds 40 grooves and runs to the last one:
-full at 2,000, 4,000, 10,000, 20,000 and 40,000 plays, with a groove worth 50,
-100, 250, 500 and 1,000 plays. A groove never grows past 1,000; after that an
-empty record starts every 40,000 plays. A full record is a "new pressing" and
-flies onto the shelf under the turntable, ahead of any other moment since it
-always lands on a round number of plays.
+The record gets one more. A record holds 50 grooves and runs to the last one,
+and every new record starts again at the first groove. They are ranked as sales
+certifications are, and the counts are picked so each is full on a round total:
+
+| Tier     | Records | A groove | Full at (plays in all)    |
+| -------- | ------- | -------- | ------------------------- |
+| Bronze   | 4       | 10       | 500, 1,000, 1,500, 2,000  |
+| Silver   | 3       | 20       | 3,000, 4,000, 5,000       |
+| Gold     | 2       | 50       | 7,500, 10,000             |
+| Platinum | 3       | 100      | 15,000, 20,000, 25,000    |
+| Diamond  | endless | 500      | 50,000, then every 25,000 |
+
+A full record is a "new pressing" and flies onto the shelf under the turntable,
+ahead of any other moment since it always lands on a round number of plays.
 
 The shelf needs no storage of its own: which records are full follows from the
 plays, and the date comes from counting back through the log, so it is unknown

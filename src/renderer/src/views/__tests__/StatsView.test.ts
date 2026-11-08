@@ -511,7 +511,7 @@ describe('StatsView milestones', () => {
       plays: 1000,
       hours: 0,
       streak: 0,
-      records: 0,
+      records: 2,
     })
   })
 
@@ -525,7 +525,7 @@ describe('StatsView milestones', () => {
       plays: 1000,
       hours: 0,
       streak: 0,
-      records: 0,
+      records: 2,
     })
   })
 
@@ -541,11 +541,40 @@ describe('StatsView milestones', () => {
     expect(playHistory.saveMilestones).not.toHaveBeenCalled()
   })
 
+  describe('debug buttons', () => {
+    const debugButtons = (wrapper: VueWrapper) => wrapper.findAll('.stats-page__debug button')
+
+    afterEach(() => {
+      vi.unstubAllEnvs()
+    })
+
+    it('play a moment without marking anything as seen', async () => {
+      vi.mocked(playHistory.getPlayHistorySummary).mockResolvedValue(
+        summary({ milestones: { plays: 1000, hours: 0, streak: 0, records: 2 } }),
+      )
+      const wrapper = mountView([makeSong('1', { playCount: 1000, duration: 60 })])
+      await settle()
+
+      await debugButtons(wrapper)[0]?.trigger('click')
+
+      expect(moment(wrapper)).toMatchObject({ kind: 'plays', value: 1000 })
+      expect(playHistory.saveMilestones).not.toHaveBeenCalled()
+    })
+
+    it('are not there in a build', async () => {
+      vi.stubEnv('DEV', false)
+      const wrapper = mountView([makeSong('1', { playCount: 10, duration: 60 })])
+      await settle()
+
+      expect(debugButtons(wrapper)).toHaveLength(0)
+    })
+  })
+
   it('announces a new pressing when another record is full', async () => {
     vi.mocked(playHistory.getPlayHistorySummary).mockResolvedValue(
       summary({ milestones: { plays: 1000, hours: 0, streak: 0, records: 0 } }),
     )
-    const wrapper = mountView([makeSong('1', { playCount: 2500, duration: 60 })])
+    const wrapper = mountView([makeSong('1', { playCount: 600, duration: 60 })])
     await settle()
 
     expect(moment(wrapper)).toMatchObject({ kind: 'pressing', value: 1 })
@@ -559,7 +588,7 @@ describe('StatsView milestones', () => {
     await settle()
 
     expect(moment(wrapper)).toBeNull()
-    expect(playHistory.saveMilestones).toHaveBeenCalledWith(expect.objectContaining({ records: 1 }))
+    expect(playHistory.saveMilestones).toHaveBeenCalledWith(expect.objectContaining({ records: 4 }))
   })
 
   it('does not show it while looking at another account', async () => {

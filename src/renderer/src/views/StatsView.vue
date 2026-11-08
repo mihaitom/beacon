@@ -13,6 +13,19 @@
       />
     </div>
 
+    <div v-if="debugMoments.length" class="stats-page__debug">
+      <v-btn
+        v-for="entry in debugMoments"
+        :key="`${entry.kind}${entry.value}`"
+        size="x-small"
+        variant="tonal"
+        :disabled="moment !== null"
+        @click="playDebugMoment(entry)"
+      >
+        {{ entry.tier ?? entry.kind }} {{ entry.value }}
+      </v-btn>
+    </div>
+
     <page-loader v-if="loading && songs.length === 0" />
 
     <template v-else>
@@ -30,8 +43,11 @@
         :since="sinceLabel"
         :fresh="fresh"
         :line="heroLine"
+        :landed-record="landedRecord"
         :timestamps="history?.timestamps ?? []"
-        :seen-records="isOwnView ? (ownHistory?.milestones?.records ?? null) : null"
+        :seen-records="
+          debugHeldRecords ?? (isOwnView ? (ownHistory?.milestones?.records ?? null) : null)
+        "
       />
 
       <div class="stats-page__columns">
@@ -95,6 +111,7 @@ import {
   nextMoment,
   PLAYS_STEP as PLAYS_MILESTONE,
   reachedMilestones,
+  recordDetails,
   recordProgress,
   type MilestoneValues,
   type Moment,
@@ -122,6 +139,25 @@ const MOVEMENT_DAYS = 30
 // After the page's own entrance, so the two do not compete.
 const MOMENT_DELAY_MS = 2000
 const FRESH_MS = 1000
+// One of each kind and size, for looking at the animations.
+const DEBUG_MOMENTS: Moment[] = [
+  { kind: 'plays', value: 1000, size: 's' },
+  { kind: 'plays', value: 5000, size: 'm' },
+  { kind: 'plays', value: 10000, size: 'l' },
+  { kind: 'hours', value: 100, size: 's' },
+  { kind: 'hours', value: 500, size: 'm' },
+  { kind: 'hours', value: 1000, size: 'l' },
+  { kind: 'streak', value: 7, size: 's' },
+  { kind: 'streak', value: 30, size: 'm' },
+  { kind: 'streak', value: 100, size: 'l' },
+  // The first record of each tier.
+  ...[1, 5, 8, 10, 13].map((value): Moment => ({
+    kind: 'pressing',
+    value,
+    size: 'l',
+    tier: recordDetails(value).tier,
+  })),
+]
 const IMPORT_POLL_MS = 2000
 const QUALITY_ORDER: AudioQuality[] = ['hires', 'lossless', 'lossy']
 
@@ -205,6 +241,9 @@ export default {
       /** What the moment on screen will have made seen, once it has landed. */
       momentReached: null as MilestoneValues | null,
       fresh: null as Moment['kind'] | null,
+      landedRecord: null as number | null,
+      /** A debug pressing: that record stays off the shelf until it lands. */
+      debugHeldRecords: null as number | null,
       /** Whether this load of the log has been compared with the milestones. */
       milestonesChecked: false,
       momentTimer: 0,
@@ -489,11 +528,19 @@ export default {
       )
       return line && this.$t(`stats.heroLines.${line.key}`, line.params)
     },
+    /** Only when running from source; a build replaces the condition. */
+    debugMoments(): Moment[] {
+      return import.meta.env.DEV ? DEBUG_MOMENTS : []
+    },
     momentSubtitle(): string {
       if (!this.moment) return ''
       const { kind, value } = this.moment
       if (kind === 'pressing') {
-        return this.$t('stats.milestonePressingSub', { n: this.formatNumber(value) })
+        const { tier, plays } = recordDetails(value)
+        return this.$t('stats.milestonePressingSub', {
+          record: this.$t(`stats.tiers.${tier}`),
+          n: this.formatNumber(plays),
+        })
       }
       if (kind === 'hours') {
         const days = Math.round(value / 24)
@@ -615,13 +662,27 @@ export default {
       }
       return hero.labelRect()
     },
+    /** Shows a moment and nothing else: no milestone is marked as seen. */
+    playDebugMoment(entry: Moment): void {
+      clearTimeout(this.momentTimer)
+      this.momentReached = null
+      if (entry.kind === 'pressing') {
+        // One not earned yet has no place to land: it goes to the turntable.
+        const { finished } = recordProgress(this.totalPlays)
+        this.debugHeldRecords = entry.value <= finished ? entry.value - 1 : null
+      }
+      this.moment = entry
+    },
     onMomentClosed(): void {
+      this.debugHeldRecords = null
       this.fresh = this.moment?.kind ?? null
+      this.landedRecord = this.moment?.kind === 'pressing' ? this.moment.value : null
       // Only now, so a new ring appears as the record lands in the hero.
       if (this.ownHistory && this.momentReached) this.ownHistory.milestones = this.momentReached
       this.moment = null
       this.freshTimer = window.setTimeout(() => {
         this.fresh = null
+        this.landedRecord = null
       }, FRESH_MS)
     },
     async prepareImport(): Promise<void> {
@@ -814,6 +875,13 @@ export default {
   .stats-page__columns {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+.stats-page__debug {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: -32px;
 }
 
 .stats-page__account {

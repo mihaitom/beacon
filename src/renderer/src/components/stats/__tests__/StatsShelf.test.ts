@@ -5,9 +5,17 @@ import type { PressedRecord } from '@/services/library/statsMilestones'
 import StatsShelf from '../StatsShelf.vue'
 
 const DAY = 86400
-const ONE: PressedRecord = { number: 1, plays: 2000, step: 50, earnedAt: null, tookSeconds: null }
+const ONE: PressedRecord = {
+  number: 1,
+  tier: 'bronze',
+  plays: 2000,
+  step: 50,
+  earnedAt: null,
+  tookSeconds: null,
+}
 const TWO: PressedRecord = {
   number: 2,
+  tier: 'gold',
   plays: 4000,
   step: 100,
   earnedAt: Date.UTC(2026, 2, 14, 12) / 1000,
@@ -31,6 +39,7 @@ describe('StatsShelf', () => {
 
   it('says when a record filled up and how long it took', () => {
     const text = details(mountShelf([ONE, TWO]), 2)
+    expect(text).toContain('Gold record')
     expect(text).toContain('4,000')
     expect(text).toContain('March 14, 2026')
     expect(text).toContain('3 months')
