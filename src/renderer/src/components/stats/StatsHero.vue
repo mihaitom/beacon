@@ -53,6 +53,7 @@
               </span>
             </div>
           </div>
+          <stats-visualizer />
         </div>
         <div class="stats-hero__deck">
           <div class="stats-hero__turntable">
@@ -86,6 +87,7 @@ import { useAppearanceStore } from '@/stores/appearance'
 import { pressedRecords, recordProgress, type Moment } from '@/services/library/statsMilestones'
 import StatsRecord from './StatsRecord.vue'
 import StatsShelf from './StatsShelf.vue'
+import StatsVisualizer from './StatsVisualizer.vue'
 
 const COUNT_UP_MS = 1300
 const SECONDS_PER_MINUTE = 60
@@ -98,7 +100,7 @@ function reducedMotion(): boolean {
 
 export default {
   name: 'StatsHero',
-  components: { StatsRecord, StatsShelf },
+  components: { StatsRecord, StatsShelf, StatsVisualizer },
   props: {
     listeningSeconds: { type: Number, default: 0 },
     plays: { type: Number, required: true },

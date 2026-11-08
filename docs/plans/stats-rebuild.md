@@ -8,7 +8,7 @@ the reasoning behind it; the code is the reference for details.
 The Stats page is a stack of equal tiles. It should be something people enjoy
 opening. It becomes four parts, in this order:
 
-1. **Hero:** a record that fills up with the listener's plays
+1. **Hero:** a record that fills up with the listener's plays, and under the figures a recessed display with the visualizer, which makes the card read as a deck
 2. **Your charts:** top songs, artists, albums, genres
 3. **Your listening year:** streak, a year of days, hours of the day
 4. **Your collection:** what the library is made of
@@ -181,8 +181,10 @@ milestone disc are objects and keep their own (`docs/styleguide.md`).
 ## Milestones
 
 A figure being passed is one moment on opening the page, own view only: every
-1,000 plays, every 100 hours, streaks of 7, 14, 30, 50 and 100 days, then every 100. Several passed since the last visit are one moment, the biggest. Silver,
-gold or foil by how round the number is. The first visit only sets the baseline,
+1,000 plays; hours and streaks climb a ladder that spreads out (100 hours up to
+10,000, then every 5,000; 7 days up to 1,000, then every 500), bronze to diamond
+by height. Several passed since the last visit are one moment, the biggest. The
+first visit only sets the baseline,
 and so does the visit after an import: a streak arriving with a year of old
 plays is nothing to celebrate. What has been seen is stored per account in
 connect and only ever goes up, so a second device does not repeat it.

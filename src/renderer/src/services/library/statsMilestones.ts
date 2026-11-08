@@ -22,29 +22,74 @@ export interface Moment {
 }
 
 export const PLAYS_STEP = 1000
-const HOURS_STEP = 100
-const EARLY_STREAKS = [7, 14, 30, 50]
-const LONG_STREAK_STEP = 100
 
-function reachedStreak(days: number): number {
-  if (days >= LONG_STREAK_STEP) return Math.floor(days / LONG_STREAK_STEP) * LONG_STREAK_STEP
-  return [...EARLY_STREAKS].reverse().find((step) => days >= step) ?? 0
+interface Ladder {
+  rungs: number[]
+  /** The distance between milestones past the last rung. */
+  beyond: number
+  /** From which value on each metal is awarded, highest first. */
+  metals: [number, RecordTier][]
+}
+
+// Rungs that spread out as they rise, and diamond far enough away to mean
+// something: 50 days of music is already 1,200 hours.
+const HOURS_LADDER: Ladder = {
+  rungs: [100, 250, 500, 750, 1000, 1500, 2000, 2500, 3000, 4000, 5000, 7500, 10000],
+  beyond: 5000,
+  metals: [
+    [10000, 'diamond'],
+    [2500, 'platinum'],
+    [1000, 'gold'],
+    [500, 'silver'],
+    [0, 'bronze'],
+  ],
+}
+const STREAK_LADDER: Ladder = {
+  rungs: [7, 14, 30, 50, 100, 150, 200, 300, 365, 500, 750, 1000],
+  beyond: 500,
+  metals: [
+    [500, 'diamond'],
+    [300, 'platinum'],
+    [100, 'gold'],
+    [30, 'silver'],
+    [0, 'bronze'],
+  ],
+}
+
+function reachedRung({ rungs, beyond }: Ladder, value: number): number {
+  const last = Math.max(...rungs)
+  if (value >= last) return last + Math.floor((value - last) / beyond) * beyond
+  return [...rungs].reverse().find((rung) => value >= rung) ?? 0
 }
 
 /** The highest milestone of each kind these figures have passed. */
 export function reachedMilestones(values: MilestoneValues): MilestoneValues {
   return {
     plays: Math.floor(values.plays / PLAYS_STEP) * PLAYS_STEP,
-    hours: Math.floor(values.hours / HOURS_STEP) * HOURS_STEP,
-    streak: reachedStreak(values.streak),
+    hours: reachedRung(HOURS_LADDER, values.hours),
+    streak: reachedRung(STREAK_LADDER, values.streak),
     records: values.records,
   }
 }
 
-function sizeOf(kind: MilestoneKind, value: number): MilestoneSize {
-  if (kind === 'streak') return value >= 100 ? 'l' : value >= 30 ? 'm' : 's'
-  const [large, medium] = kind === 'plays' ? [10000, 5000] : [1000, 500]
-  return value % large === 0 ? 'l' : value % medium === 0 ? 'm' : 's'
+function sizeOfPlays(value: number): MilestoneSize {
+  return value % 10000 === 0 ? 'l' : value % 5000 === 0 ? 'm' : 's'
+}
+
+const TIER_SIZE: Record<RecordTier, MilestoneSize> = {
+  bronze: 's',
+  silver: 's',
+  gold: 'm',
+  platinum: 'l',
+  diamond: 'l',
+}
+
+/** The moment for a milestone of this kind at this value. */
+export function milestoneMoment(kind: MilestoneKind, value: number): Moment {
+  if (kind === 'plays') return { kind, value, size: sizeOfPlays(value) }
+  const ladder = kind === 'hours' ? HOURS_LADDER : STREAK_LADDER
+  const tier = ladder.metals.find(([from]) => value >= from)?.[1] ?? 'bronze'
+  return { kind, value, tier, size: TIER_SIZE[tier] }
 }
 
 const SIZE_RANK: Record<MilestoneSize, number> = { s: 0, m: 1, l: 2 }
@@ -74,8 +119,8 @@ export function nextMoment(seen: MilestoneValues | null, values: MilestoneValues
   for (const kind of KIND_ORDER) {
     const value = reached[kind]
     if (value <= (seen[kind] ?? 0)) continue
-    const size = sizeOf(kind, value)
-    if (!best || SIZE_RANK[size] > SIZE_RANK[best.size]) best = { kind, value, size }
+    const moment = milestoneMoment(kind, value)
+    if (!best || SIZE_RANK[moment.size] > SIZE_RANK[best.size]) best = moment
   }
   return best
 }
@@ -247,7 +292,7 @@ export function milestoneRings(seenPlays: number, record: RecordProgress): Miles
   for (let value = first; value <= seenPlays; value += PLAYS_STEP) {
     const groove = Math.ceil((value - base) / step)
     if (groove > RECORD_GROOVES) break
-    rings.push({ groove, value, size: sizeOf('plays', value) })
+    rings.push({ groove, value, size: sizeOfPlays(value) })
   }
   return rings
 }

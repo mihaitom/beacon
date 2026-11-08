@@ -69,6 +69,14 @@ describe('the mobile app bar menu', () => {
     expect(equalizer.props('compact')).toBe(true)
   })
 
+  it('leads to the Stats page', async () => {
+    const { push, item } = await openMenu(false)
+
+    item(i18n.global.t('nav.stats'))!.click()
+
+    expect(push).toHaveBeenCalledWith('/stats')
+  })
+
   it('leads to Settings', async () => {
     const { push, item } = await openMenu(false)
 

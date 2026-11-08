@@ -115,6 +115,7 @@ import {
   recordProgress,
   type MilestoneValues,
   type Moment,
+  milestoneMoment,
 } from '@/services/library/statsMilestones'
 import {
   getImportStatus,
@@ -141,15 +142,10 @@ const MOMENT_DELAY_MS = 2000
 const FRESH_MS = 1000
 // One of each kind and size, for looking at the animations.
 const DEBUG_MOMENTS: Moment[] = [
-  { kind: 'plays', value: 1000, size: 's' },
-  { kind: 'plays', value: 5000, size: 'm' },
-  { kind: 'plays', value: 10000, size: 'l' },
-  { kind: 'hours', value: 100, size: 's' },
-  { kind: 'hours', value: 500, size: 'm' },
-  { kind: 'hours', value: 1000, size: 'l' },
-  { kind: 'streak', value: 7, size: 's' },
-  { kind: 'streak', value: 30, size: 'm' },
-  { kind: 'streak', value: 100, size: 'l' },
+  ...[1000, 5000, 10000].map((value) => milestoneMoment('plays', value)),
+  // The first of each metal.
+  ...[100, 500, 1000, 2500, 10000].map((value) => milestoneMoment('hours', value)),
+  ...[7, 30, 100, 300, 500].map((value) => milestoneMoment('streak', value)),
   // The first record of each tier.
   ...[1, 5, 8, 10, 13].map((value): Moment => ({
     kind: 'pressing',

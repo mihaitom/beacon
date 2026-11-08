@@ -77,6 +77,13 @@
             :title="$t('equalizer.title')"
             @click="showEqualizerDialog = true"
           />
+          <!-- Not one of the five tabs, which are for getting to music. -->
+          <v-list-item
+            v-if="authStore.capabilities.playHistoryStats"
+            prepend-icon="mdi-chart-box-outline"
+            :title="$t('nav.stats')"
+            @click="$router.push('/stats')"
+          />
           <v-list-item
             prepend-icon="mdi-cog-outline"
             :title="$t('nav.settings')"
@@ -118,6 +125,7 @@ import CastTakeoverConfirmDialog from '@/components/connect/CastTakeoverConfirmD
 import PartyModeDialog from '@/components/party/PartyModeDialog.vue'
 import EqualizerDialog from '@/components/equalizer/EqualizerDialog.vue'
 import { phoneLandscapeMixin } from '@/composables/phoneLandscape'
+import { useAuthStore } from '@/stores/auth'
 import { useUpdateStore } from '@/stores/update'
 import { useConnectStore } from '@/stores/connect'
 import { usePartyStore } from '@/stores/party'
@@ -144,6 +152,9 @@ export default {
     }
   },
   computed: {
+    authStore() {
+      return useAuthStore()
+    },
     updateStore() {
       return useUpdateStore()
     },

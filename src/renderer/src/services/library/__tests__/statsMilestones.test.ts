@@ -22,8 +22,15 @@ describe('reachedMilestones', () => {
     })
   })
 
-  it('goes on in hundreds once a streak is past 100', () => {
+  it('climbs a ladder that spreads out', () => {
+    expect(reachedMilestones({ ...zero, hours: 1234 }).hours).toBe(1000)
     expect(reachedMilestones({ ...zero, streak: 257 }).streak).toBe(200)
+    expect(reachedMilestones({ ...zero, streak: 400 }).streak).toBe(365)
+  })
+
+  it('goes on evenly past the last rung', () => {
+    expect(reachedMilestones({ ...zero, hours: 17000 }).hours).toBe(15000)
+    expect(reachedMilestones({ ...zero, streak: 1700 }).streak).toBe(1500)
   })
 
   it('has reached nothing below the first step', () => {
@@ -61,11 +68,40 @@ describe('nextMoment', () => {
     expect(size(20000)).toBe('l')
   })
 
-  it('sizes streaks by length', () => {
-    const size = (streak: number): string | undefined => nextMoment(zero, { ...zero, streak })?.size
-    expect(size(14)).toBe('s')
-    expect(size(30)).toBe('m')
-    expect(size(100)).toBe('l')
+  it('awards streaks a metal by length', () => {
+    const tier = (streak: number): string | undefined => nextMoment(zero, { ...zero, streak })?.tier
+    expect([7, 30, 100, 300, 500].map(tier)).toEqual([
+      'bronze',
+      'silver',
+      'gold',
+      'platinum',
+      'diamond',
+    ])
+  })
+
+  it('awards hours a metal by amount', () => {
+    const tier = (hours: number): string | undefined => nextMoment(zero, { ...zero, hours })?.tier
+    expect([100, 500, 1000, 2500, 10000].map(tier)).toEqual([
+      'bronze',
+      'silver',
+      'gold',
+      'platinum',
+      'diamond',
+    ])
+  })
+
+  it('stays quiet between rungs after a seen figure from the old steps', () => {
+    const seen = { ...zero, hours: 1200 }
+    expect(nextMoment(seen, { ...zero, hours: 1400 })).toBeNull()
+    expect(nextMoment(seen, { ...zero, hours: 1500 })?.value).toBe(1500)
+  })
+
+  it('lets a gold streak win over bronze hours', () => {
+    expect(nextMoment(zero, { plays: 0, hours: 100, streak: 100 })?.kind).toBe('streak')
+  })
+
+  it('lets the bigger metal win over a round number of plays', () => {
+    expect(nextMoment(zero, { plays: 5000, hours: 2500, streak: 0 })?.kind).toBe('hours')
   })
 })
 
