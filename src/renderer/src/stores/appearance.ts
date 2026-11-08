@@ -1,5 +1,6 @@
 import { defineStore } from 'pinia'
 import type { ThemeInstance } from 'vuetify'
+import { accountScopedKey } from '@/services/accountKey'
 import { appAccent, themeAccent } from '@/services/appAccent'
 import { hexToTriplet, isHexColor, towardsContrast, tripletToHex } from '@/services/themeColors'
 import {
@@ -17,10 +18,11 @@ import {
 
 // Which theme is on is per device, not per account: it is already needed on
 // the login page, before there is an account to scope it to, and a phone and
-// a desktop are often wanted differently. The self-made themes follow the
-// account (services/connect/accountSettings.ts) and are kept here as well,
-// for that same login page.
+// a desktop are often wanted differently. The list of self-made themes
+// belongs to the account (services/connect/accountSettings.ts); only the one
+// that is on is kept with the device as well, for that same login page.
 const STORAGE_KEY = 'beacon.theme'
+const THEMES_KEY = 'beacon.customThemes'
 
 // A colour picker reports every step of a drag, and a name every keystroke.
 const PUSH_DEBOUNCE_MS = 800
@@ -34,17 +36,60 @@ function pushCustomThemes(themes: CustomTheme[]): void {
   )
 }
 
-function loadStored(): unknown {
+interface StoredAppearance {
+  theme?: unknown
+  onCustomTheme?: CustomTheme | null
+  adaptiveAccent?: unknown
+  customThemes?: unknown
+  custom?: unknown
+}
+
+function readJson(key: string): unknown {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = localStorage.getItem(key)
     return raw ? JSON.parse(raw) : null
   } catch {
     return null
   }
 }
 
+/** Earlier versions kept the themes with the device. Under the bare key,
+ * accountScopedKey() hands them to the first account that signs in. */
+function moveListToAccount(stored: StoredAppearance): StoredAppearance {
+  const { theme, customThemes } = sanitizeThemePreference(stored)
+  const moved: StoredAppearance = {
+    theme,
+    onCustomTheme: customThemes.find((custom) => custom.id === theme) ?? null,
+    adaptiveAccent: stored.adaptiveAccent,
+  }
+  try {
+    if (customThemes.length) localStorage.setItem(THEMES_KEY, JSON.stringify(customThemes))
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(moved))
+  } catch {
+    // Non-critical - it is tried again at the next launch.
+  }
+  return moved
+}
+
+function loadStored(): StoredAppearance | null {
+  const stored = readJson(STORAGE_KEY)
+  if (typeof stored !== 'object' || stored === null) return null
+  return 'customThemes' in stored || 'custom' in stored
+    ? moveListToAccount(stored)
+    : (stored as StoredAppearance)
+}
+
+function loadAccountThemes(): CustomTheme[] | null {
+  const raw = readJson(accountScopedKey(THEMES_KEY))
+  return raw === null ? null : sanitizeCustomThemes(raw)
+}
+
 export function loadThemePreference(): ThemePreference {
-  return sanitizeThemePreference(loadStored())
+  const stored = loadStored()
+  return sanitizeThemePreference({
+    theme: stored?.theme,
+    customThemes: stored?.onCustomTheme ? [stored.onCustomTheme] : [],
+  })
 }
 
 /** The theme, plus how Now Playing may change it. */
@@ -56,10 +101,13 @@ export interface AppearanceState extends ThemePreference {
 }
 
 function loadAppearance(): AppearanceState {
-  const stored = loadStored() as { adaptiveAccent?: unknown } | null
+  const preference = loadThemePreference()
+  const themes = loadAccountThemes()
   return {
-    ...sanitizeThemePreference(stored),
-    adaptiveAccent: stored?.adaptiveAccent !== false,
+    ...(themes
+      ? sanitizeThemePreference({ theme: preference.theme, customThemes: themes })
+      : preference),
+    adaptiveAccent: loadStored()?.adaptiveAccent !== false,
   }
 }
 
@@ -214,6 +262,21 @@ export const useAppearanceStore = defineStore('appearance', {
       this.customThemes = next.customThemes
       this.theme = next.theme
       this.persist()
+      this.persistAccountThemes()
+    },
+
+    /** The list of whoever just signed in. A self-made theme of the previous
+     * account cannot stay on, and a change still waiting to go out was its
+     * change. */
+    reloadForAccount(): void {
+      clearTimeout(pushTimer)
+      const next = sanitizeThemePreference({
+        theme: this.theme,
+        customThemes: loadAccountThemes() ?? [],
+      })
+      this.customThemes = next.customThemes
+      this.theme = next.theme
+      this.persist()
     },
 
     /** For an account the server has no list for yet. */
@@ -223,6 +286,7 @@ export const useAppearanceStore = defineStore('appearance', {
 
     saveCustomThemes(): void {
       this.persist()
+      this.persistAccountThemes()
       clearTimeout(pushTimer)
       pushTimer = setTimeout(() => pushCustomThemes(this.customThemes), PUSH_DEBOUNCE_MS)
     },
@@ -233,12 +297,20 @@ export const useAppearanceStore = defineStore('appearance', {
           STORAGE_KEY,
           JSON.stringify({
             theme: this.theme,
-            customThemes: this.customThemes,
+            onCustomTheme: this.selectedCustomTheme,
             adaptiveAccent: this.adaptiveAccent,
           }),
         )
       } catch {
         // Non-critical - the theme just doesn't survive to the next launch.
+      }
+    },
+
+    persistAccountThemes(): void {
+      try {
+        localStorage.setItem(accountScopedKey(THEMES_KEY), JSON.stringify(this.customThemes))
+      } catch {
+        // Non-critical - the account's copy on the server still has them.
       }
     },
   },

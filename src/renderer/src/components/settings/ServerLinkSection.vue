@@ -75,6 +75,7 @@
 </template>
 
 <script lang="ts">
+import { syncWithAccount } from '@/services/accountScopedStores'
 import { pollingAllowed } from '@/services/connect/pollGate'
 import { timeAgo } from '@/services/relativeTime'
 import {
@@ -171,6 +172,7 @@ export default {
         this.link = answer
         this.url = ''
         this.key = ''
+        void syncWithAccount()
       } catch (error) {
         this.toastError(error)
       } finally {

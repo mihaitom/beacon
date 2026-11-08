@@ -13,12 +13,15 @@ import {
   unpairServerLink,
   type ServerLinkStatus,
 } from '@/services/connect/serverLink'
+import { syncWithAccount } from '@/services/accountScopedStores'
 
 vi.mock('@/services/connect/serverLink', () => ({
   getServerLink: vi.fn(),
   pairServerLink: vi.fn(),
   unpairServerLink: vi.fn(),
 }))
+
+vi.mock('@/services/accountScopedStores', () => ({ syncWithAccount: vi.fn() }))
 
 const vuetify = createVuetify({ components, directives })
 const UNPAIRED: ServerLinkStatus = { available: true, linked: false }
@@ -56,6 +59,7 @@ describe('ServerLinkSection', () => {
     vi.mocked(getServerLink).mockReset().mockResolvedValue(UNPAIRED)
     vi.mocked(pairServerLink).mockReset()
     vi.mocked(unpairServerLink).mockReset()
+    vi.mocked(syncWithAccount).mockReset()
   })
 
   afterEach(() => {
@@ -99,6 +103,20 @@ describe('ServerLinkSection', () => {
     vi.mocked(getServerLink).mockResolvedValue({ ...PAIRED, state: 'blocked' })
     const { wrapper } = await mountSection()
     expect(wrapper.text()).toContain(i18n.global.t('settings.serverLinkBlocked'))
+  })
+
+  it("takes over the account's settings as soon as it is connected", async () => {
+    vi.mocked(pairServerLink).mockResolvedValue(PAIRED)
+    const { wrapper } = await mountSection()
+    await submit(wrapper)
+    expect(syncWithAccount).toHaveBeenCalledOnce()
+  })
+
+  it('changes nothing here when the pairing was refused', async () => {
+    vi.mocked(pairServerLink).mockResolvedValue({ ...UNPAIRED, error: 'wrong_key' })
+    const { wrapper } = await mountSection()
+    await submit(wrapper)
+    expect(syncWithAccount).not.toHaveBeenCalled()
   })
 
   it('reports a request that failed outright', async () => {

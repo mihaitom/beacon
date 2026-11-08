@@ -9,12 +9,18 @@ const OFFSETS_KEY = 'beacon.lyricsOffsets'
 
 // A nudge button gets pressed several times in a row.
 const PUSH_DEBOUNCE_MS = 1_000
+// A change that did not get through must still reach the account: an undo
+// has no other way there, since nothing local is left to upload later.
+const RETRY_MS = 30_000
 // The most connect takes in one request.
 const UPLOAD_BATCH = 500
 
 type Offsets = Record<string, number>
 
 const unsent = new Map<string, number>()
+/** Whose changes those are: the session a request goes out with may be
+ * somebody else's by then. */
+let unsentFor: string | null = null
 let pushTimer: ReturnType<typeof setTimeout> | undefined
 
 function readAll(): Offsets {
@@ -50,15 +56,31 @@ function send(offsets: Offsets): Promise<unknown> {
 }
 
 function flush(): void {
+  pushTimer = undefined
+  const account = unsentFor
+  if (getAccountKey() !== account) {
+    unsent.clear()
+    return
+  }
   const offsets = Object.fromEntries(unsent)
   unsent.clear()
   send(offsets).catch((error) => {
     console.error('[lyrics] Failed to save a correction to the account:', error)
+    if (getAccountKey() !== account) return
+    for (const [songId, seconds] of Object.entries(offsets)) {
+      if (!unsent.has(songId)) unsent.set(songId, seconds)
+    }
+    pushTimer ??= setTimeout(flush, RETRY_MS)
   })
 }
 
 /** Zero goes too: it is how another device hears a correction was undone. */
 export function pushOffset(songId: string, offset: number): void {
+  const account = getAccountKey()
+  if (account !== unsentFor) {
+    unsent.clear()
+    unsentFor = account
+  }
   unsent.set(songId, offset)
   clearTimeout(pushTimer)
   pushTimer = setTimeout(flush, PUSH_DEBOUNCE_MS)
@@ -89,5 +111,7 @@ export async function pullLyricsOffsets(): Promise<void> {
 
 export function resetLyricsOffsetsForTests(): void {
   clearTimeout(pushTimer)
+  pushTimer = undefined
   unsent.clear()
+  unsentFor = null
 }

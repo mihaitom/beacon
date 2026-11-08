@@ -239,6 +239,22 @@ describe('now playing report', () => {
     expect(report).toHaveBeenCalledTimes(2)
   })
 
+  it('ignores a late "not wanted" about the song before', async () => {
+    let answer: (wanted: boolean) => void = () => {}
+    report.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)))
+    play('a')
+    const older = _test.tick()
+    play('b')
+    await _test.tick()
+    answer(false)
+    await older
+    report.mockClear()
+
+    await _test.tick()
+
+    expect(report).not.toHaveBeenCalled()
+  })
+
   it('reports a change without waiting for the next tick', async () => {
     initNowPlayingReport()
     play('a')

@@ -54,6 +54,8 @@ OTHER_ACCOUNT = "other_account"
 INVALID_URL = "invalid_url"
 INSECURE_URL = "insecure_url"
 
+_PENDING_FIELDS = ("pending_settings", "pending_milestones", "pending_lyrics_offsets")
+
 _BATCH_SIZE = 500
 _OFFSET_BATCH_SIZE = 500
 IDLE_SECONDS = 300.0
@@ -83,6 +85,31 @@ def _path() -> str:
     return os.path.join(_DATA_DIR, _FILENAME)
 
 
+def _is_well_formed(link: object) -> bool:
+    """A file edited by hand is no pairing, and everything that reads one can
+    then rely on these."""
+    if not isinstance(link, dict):
+        return False
+    account = link.get("account")
+    identity = link.get("settings_identity")
+    return (
+        isinstance(link.get("url"), str)
+        and isinstance(link.get("key"), str)
+        and isinstance(account, dict)
+        and set(account) == set(Account._fields)
+        and all(isinstance(value, str) for value in account.values())
+        and (
+            identity is None
+            or (
+                isinstance(identity, list)
+                and len(identity) == 3
+                and all(isinstance(part, str) for part in identity)
+            )
+        )
+        and all(isinstance(link.get(field, {}), dict) for field in _PENDING_FIELDS)
+    )
+
+
 def _read() -> dict | None:
     try:
         with open(_path(), encoding="utf-8") as f:
@@ -92,7 +119,10 @@ def _read() -> dict | None:
     except (OSError, ValueError) as e:
         logger.warning(f"[server-link] Could not read the pairing: {e}")
         return None
-    return link if isinstance(link, dict) else None
+    if not _is_well_formed(link):
+        logger.warning("[server-link] Ignoring a pairing file of the wrong shape")
+        return None
+    return link
 
 
 def _write(link: dict) -> None:
@@ -112,6 +142,14 @@ def _note(state: str) -> None:
     _failures = 0 if state == CONNECTED else _failures + 1
 
 
+def _note_answered() -> None:
+    """A pull got through, so the state a failed pass left is out of date. A
+    pass finds out whether sending works as well."""
+    if _state != CONNECTED:
+        _note(CONNECTED)
+        wake()
+
+
 def _is_private_host(host: str) -> bool:
     try:
         infos = socket.getaddrinfo(host, None)
@@ -129,9 +167,19 @@ def clean_url(url: str) -> str:
     try:
         parts = urlsplit(url)
         host = parts.hostname
+        # Only reading it checks it.
+        _ = parts.port
     except ValueError as e:
         raise LinkError(INVALID_URL) from e
-    if parts.scheme not in ("http", "https") or not host or parts.username or parts.query:
+    # A ? or # would swallow the path that gets appended to this.
+    if (
+        parts.scheme not in ("http", "https")
+        or not host
+        or parts.username
+        or parts.password
+        or "?" in url
+        or "#" in url
+    ):
         raise LinkError(INVALID_URL)
     if parts.scheme == "http" and not _is_private_host(host):
         raise LinkError(INSECURE_URL)
@@ -153,6 +201,9 @@ def _call(
             response = client.request(
                 method, f"{url}/device-link{path}", headers={KEY_HEADER: key}, json=body
             )
+    # UnicodeError: a host name that is not valid IDNA gets past httpx's own check.
+    except (httpx.InvalidURL, UnicodeError) as e:
+        raise LinkError(INVALID_URL) from e
     except httpx.HTTPError as e:
         raise LinkError(UNREACHABLE) from e
     if response.is_redirect:
@@ -284,7 +335,7 @@ def note_settings_changed(identity: tuple[str, str, str], patch: dict) -> None:
         changed = {k: v for k, v in patch.items() if k in LINKED_FIELDS}
         if not changed:
             return
-        link["pending_settings"].update(changed)
+        link.setdefault("pending_settings", {}).update(changed)
         _write(link)
     wake()
 
@@ -300,6 +351,7 @@ def pull_settings(identity: tuple[str, str, str]) -> dict | None:
     except LinkError as e:
         _note(e.state)
         return None
+    _note_answered()
     settings = {k: v for k, v in remote.items() if k in LINKED_FIELDS}
     settings.update(link.get("pending_settings") or {})
     return settings
@@ -326,6 +378,7 @@ def summary_for(account: Account) -> dict | None:
     except LinkError as e:
         _note(e.state)
         return None
+    _note_answered()
     return play_history.with_unsent(account, remote)
 
 
@@ -352,6 +405,7 @@ def pull_lyrics_offsets(account: Account) -> dict[str, float] | None:
     except LinkError as e:
         _note(e.state)
         return None
+    _note_answered()
     return {**(remote.get("offsets") or {}), **(link.get("pending_lyrics_offsets") or {})}
 
 

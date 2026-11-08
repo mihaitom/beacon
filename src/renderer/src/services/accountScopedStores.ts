@@ -171,6 +171,12 @@ async function syncLyricsOffsets(): Promise<void> {
   }
 }
 
+/** Takes over what the account has elsewhere. Besides every account change,
+ * for a desktop that has just been paired with a server. */
+export async function syncWithAccount(): Promise<void> {
+  await Promise.all([pullAccountSettings(), syncLyricsOffsets()])
+}
+
 export function initAccountScopedStores(): void {
   onAccountChange(() => {
     // Cover ids are only unique within one media server, so the artwork
@@ -181,6 +187,7 @@ export function initAccountScopedStores(): void {
     useHomeStore().reset()
     useRadioStationInfoStore().reset()
     useUpdateStore().reload()
+    useAppearanceStore().reloadForAccount()
     usePlaybackStore().reloadAccountScoped()
     reloadLyricsCacheForAccount()
     reloadLocaleForAccount()
@@ -196,7 +203,6 @@ export function initAccountScopedStores(): void {
     useLastfmStore().reloadForAccount()
     useListenbrainzStore().reloadForAccount()
     useFanartStore().reloadForAccount()
-    void pullAccountSettings()
-    void syncLyricsOffsets()
+    void syncWithAccount()
   })
 }

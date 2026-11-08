@@ -420,14 +420,16 @@ def _is_same_play(conn: sqlite3.Connection, account_id: int, entry: dict) -> boo
     return (
         conn.execute(
             "SELECT 1 FROM listens WHERE account_id = ? AND source = ? AND song_id = ?"
-            " AND id != ? AND ABS(ts - ?) < ? LIMIT 1",
+            # Spelled as a range, which the index on (account_id, ts) can
+            # serve: ABS() around ts would read the account's whole history.
+            " AND id != ? AND ts > ? AND ts < ? LIMIT 1",
             (
                 account_id,
                 _OWN_SOURCE,
                 entry["song_id"],
                 entry["id"],
-                entry["ts"],
-                _SAME_PLAY_SECONDS,
+                entry["ts"] - _SAME_PLAY_SECONDS,
+                entry["ts"] + _SAME_PLAY_SECONDS,
             ),
         ).fetchone()
         is not None

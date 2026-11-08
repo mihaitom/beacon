@@ -26,6 +26,9 @@ let stopWatching: (() => void) | null = null
 let last: { report: NowPlayingReport; identity: string; at: number } | null = null
 /** What an answer of "nobody wants this" was about. */
 let unwantedIdentity: string | null = null
+/** Which report is the newest: ticks overlap, and an answer about the song
+ * before says nothing about this one. */
+let newestReport = 0
 
 function currentReport(): NowPlayingReport | null {
   const playback = usePlaybackStore()
@@ -81,6 +84,7 @@ async function tick(): Promise<void> {
   const report = currentReport()
   if (!report) {
     unwantedIdentity = null
+    newestReport++
     if (last) {
       last = null
       await stopNowPlayingReport().catch(() => {})
@@ -93,8 +97,10 @@ async function tick(): Promise<void> {
   const now = Date.now()
   if (!changed(now, report, identity)) return
   last = { report, identity, at: now }
+  const thisReport = ++newestReport
   try {
-    if (!(await reportNowPlaying(report))) {
+    const wanted = await reportNowPlaying(report)
+    if (!wanted && thisReport === newestReport) {
       unwantedIdentity = identity
       last = null
     }

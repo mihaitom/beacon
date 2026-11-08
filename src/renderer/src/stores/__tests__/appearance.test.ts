@@ -19,6 +19,7 @@ import {
   type ThemePreference,
 } from '@/plugins/theme'
 import { contrast, hexToTriplet } from '@/services/themeColors'
+import { useAuthStore } from '@/stores/auth'
 import { DEFAULT_APP_ACCENT, appAccent, themeAccent } from '@/services/appAccent'
 
 const KEY = 'beacon.theme'
@@ -45,6 +46,14 @@ function themesTable(preference: ThemePreference) {
       { colors: { ...definition.colors } as Record<string, unknown> },
     ]),
   )
+}
+
+function signIn(username: string): void {
+  Object.assign(useAuthStore(), {
+    serverUrl: 'https://music.example',
+    username,
+    authenticated: true,
+  })
 }
 
 describe('theme definitions', () => {
@@ -276,6 +285,105 @@ describe('appearance store', () => {
     it('shares nothing when there is nothing', async () => {
       useAppearanceStore().shareCustomThemes()
       expect(await pushed()).toEqual([])
+    })
+
+    it("does not share one account's themes with the next", async () => {
+      signIn('alice')
+      const store = useAppearanceStore()
+      store.addCustomTheme('Hers')
+      await pushed()
+      pushAccountSettings.mockClear()
+
+      signIn('bob')
+      store.reloadForAccount()
+      store.shareCustomThemes()
+
+      expect(await pushed()).toEqual([])
+    })
+
+    it('does not send a waiting change with the next account', async () => {
+      signIn('alice')
+      const store = useAppearanceStore()
+      store.addCustomTheme('Hers')
+
+      signIn('bob')
+      store.reloadForAccount()
+
+      expect(await pushed()).toEqual([])
+    })
+  })
+
+  describe('per account', () => {
+    const LEGACY = {
+      theme: 'custom-a',
+      customThemes: [{ id: 'custom-a', name: 'Old', background: '#111111', primary: '#222222' }],
+    }
+
+    it('keeps each account its own list', () => {
+      signIn('alice')
+      const store = useAppearanceStore()
+      store.addCustomTheme('Hers')
+
+      signIn('bob')
+      store.reloadForAccount()
+      expect(store.customThemes).toEqual([])
+      store.addCustomTheme('His')
+
+      signIn('alice')
+      store.reloadForAccount()
+      expect(store.customThemes.map((t) => t.name)).toEqual(['Hers'])
+    })
+
+    it("does not leave another account's theme on", () => {
+      signIn('alice')
+      const store = useAppearanceStore()
+      store.addCustomTheme('Hers')
+      signIn('bob')
+      store.reloadForAccount()
+      expect(store.theme).toBe('beacon')
+    })
+
+    it('leaves a preset on across accounts', () => {
+      signIn('alice')
+      const store = useAppearanceStore()
+      store.setTheme('glacier')
+      signIn('bob')
+      store.reloadForAccount()
+      expect(store.theme).toBe('glacier')
+    })
+
+    it('still has the theme that is on before anyone has signed in', () => {
+      signIn('alice')
+      useAppearanceStore().addCustomTheme('Mine')
+      useAuthStore().$reset()
+
+      const { theme, customThemes } = loadThemePreference()
+      expect(customThemes.map((t) => t.name)).toEqual(['Mine'])
+      expect(theme).toBe(customThemes[0]!.id)
+    })
+
+    it('gives the themes from before this to the first account only', () => {
+      localStorage.setItem(KEY, JSON.stringify(LEGACY))
+      signIn('alice')
+      const store = useAppearanceStore()
+      store.reloadForAccount()
+      expect(store.customThemes.map((t) => t.name)).toEqual(['Old'])
+      expect(store.theme).toBe('custom-a')
+
+      signIn('bob')
+      store.reloadForAccount()
+      expect(store.customThemes).toEqual([])
+    })
+
+    it('keeps the theme from before on for the login page', () => {
+      localStorage.setItem(KEY, JSON.stringify(LEGACY))
+      expect(loadThemePreference()).toEqual(LEGACY)
+    })
+
+    it('does not touch the list when a theme is picked before signing in', () => {
+      localStorage.setItem('beacon.customThemes', JSON.stringify(LEGACY.customThemes))
+      useAppearanceStore().setTheme('paper')
+      expect(JSON.parse(localStorage.getItem('beacon.customThemes')!)).toEqual(LEGACY.customThemes)
     })
   })
 

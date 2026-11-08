@@ -13,8 +13,9 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
-from fastapi import Response
+from fastapi import HTTPException, Response
 from fastapi.testclient import TestClient
+from starlette.requests import ClientDisconnect
 
 from core import (
     account_settings,
@@ -256,6 +257,27 @@ def test_listens_land_on_the_keys_account_only(public):
     assert own_timestamps(BOB) == []
 
 
+@pytest.mark.parametrize(
+    ("apart", "stored"),
+    [(0, 0), (59, 0), (-59, 0), (60, 1), (-60, 1)],
+)
+def test_a_play_only_counts_as_the_same_within_a_minute(apart, stored):
+    first = {"id": "a" * 32, "ts": NOW, "song_id": "s1"}
+    second = {"id": "b" * 32, "ts": NOW + apart, "song_id": "s1"}
+    play_history.receive_listens(ALICE, [first], now=NOW)
+    assert play_history.receive_listens(ALICE, [second], now=NOW) == stored
+
+
+def test_a_label_of_only_spaces_is_refused(client, signed_in):
+    made = client.post("/device-keys", json={"label": "   ", "scopes": ["sync"]})
+    assert made.status_code == 422
+
+
+def test_a_label_is_stored_without_the_spaces_around_it(client, signed_in):
+    client.post("/device-keys", json={"label": "  Laptop ", "scopes": ["sync"]})
+    assert client.get("/device-keys").json()["keys"][0]["label"] == "Laptop"
+
+
 def test_sending_the_same_play_twice_changes_nothing(public):
     key = key_for()
     body = {"listens": [row()]}
@@ -468,6 +490,85 @@ def paired(server):
 def play(account=ALICE, song_id="s1", now=NOW) -> None:
     play_history.record(account, {"song_id": song_id, "title": "T", "artist": "A"}, now=now)
     play_history._last_recorded.clear()
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://host:abc",
+        "https://host:99999",
+        "https://host/#part",
+        "https://host/#",
+        "https://host/?a=1",
+        "https://host/?",
+        "https://user@host",
+        "https://:secret@host",
+    ],
+)
+def test_an_address_that_cannot_work_is_refused(url):
+    with pytest.raises(server_link.LinkError) as refused:
+        server_link.clean_url(url)
+    assert refused.value.state == server_link.INVALID_URL
+
+
+@pytest.mark.parametrize("url", ["https://ho\x01st", "https://xn--a.com"])
+def test_an_address_only_the_http_client_rejects_is_refused_too(client, signed_in, server, url):
+    answer = client.put("/server-link", json={"url": url, "key": "the-key"})
+    assert answer.status_code == 200
+    assert answer.json()["error"] == server_link.INVALID_URL
+    assert server_link.status(ALICE)["linked"] is False
+
+
+@pytest.mark.parametrize(
+    "broken",
+    [
+        {},
+        {"url": "https://x", "key": "k"},
+        {"url": "https://x", "key": "k", "account": {"username": "alice"}},
+        {"url": "https://x", "key": "k", "account": "alice"},
+        {"url": 1, "key": "k", "account": ALICE._asdict()},
+        {"url": "https://x", "key": "k", "account": ALICE._asdict(), "settings_identity": ["a"]},
+        {"url": "https://x", "key": "k", "account": ALICE._asdict(), "pending_settings": None},
+        ["not", "a", "pairing"],
+    ],
+)
+def test_a_pairing_file_of_the_wrong_shape_counts_as_not_paired(broken):
+    os.makedirs(server_link._DATA_DIR)
+    with open(server_link._path(), "w", encoding="utf-8") as f:
+        json.dump(broken, f)
+    assert server_link.status(ALICE)["linked"] is False
+    assert server_link.is_linked(ALICE) is False
+    assert server_link.send_once() is True
+
+
+def test_a_setting_changed_with_no_list_of_pending_ones_is_kept(server):
+    server_link.pair(ALICE, ALICE_SETTINGS, URL, "the-key")
+    link = server_link._read()
+    del link["pending_settings"]
+    server_link._write(link)
+    server_link.note_settings_changed(ALICE_SETTINGS, {"locale": "de"})
+    assert server_link._read()["pending_settings"] == {"locale": "de"}
+
+
+@pytest.mark.parametrize(
+    "pull",
+    [
+        lambda: server_link.pull_settings(ALICE_SETTINGS),
+        lambda: server_link.summary_for(ALICE),
+        lambda: server_link.pull_lyrics_offsets(ALICE),
+    ],
+    ids=["settings", "summary", "lyrics offsets"],
+)
+def test_a_pull_that_gets_through_ends_the_unreachable_state(paired, pull):
+    paired.fail = httpx.ConnectError("down")
+    assert server_link.send_once() is False
+    assert server_link.status(ALICE)["state"] == server_link.UNREACHABLE
+
+    paired.fail = None
+    assert pull() is not None
+
+    assert server_link.status(ALICE)["state"] == server_link.CONNECTED
+    assert server_link._next_delay() == server_link.IDLE_SECONDS
 
 
 def test_pairing_keeps_the_key_private(server):
@@ -1796,16 +1897,52 @@ def test_a_stream_is_kept_alive_and_keeps_the_key_in_use(monkeypatch, default_se
     assert looked_up == 1
 
 
-def test_an_ended_stream_gives_its_place_back(quick_stream):
-    stream, owner = stream_of(app_key("now_playing"))
+async def _answer_until_gone(response, messages_before_gone: int) -> None:
+    """Answers `response` to a client that goes away after that many messages."""
+    sent = 0
+
+    async def send(_message) -> None:
+        nonlocal sent
+        if sent >= messages_before_gone:
+            raise OSError("gone")
+        sent += 1
+
+    scope = {"type": "http", "asgi": {"spec_version": "2.4"}}
+    with pytest.raises(ClientDisconnect):
+        await response(scope, None, send)
+
+
+@pytest.mark.parametrize(
+    "messages_before_gone",
+    [pytest.param(0, id="before the first byte"), pytest.param(2, id="while streaming")],
+)
+def test_a_stream_gives_its_place_back_when_the_client_goes(quick_stream, messages_before_gone):
+    key = app_key("now_playing")
+    owner = device_keys.resolve(key)
 
     async def run():
-        await _drain(stream, 2)
+        response = await device_link.get_now_playing_events(owner, key)
         assert device_link._open_streams[owner.key_id] == 1
-        await stream.aclose()
+        await _answer_until_gone(response, messages_before_gone)
 
     asyncio.run(run())
     assert owner.key_id not in device_link._open_streams
+
+
+def test_streams_opened_at_once_cannot_pass_the_limit_together():
+    """Each is counted before any of them has sent a byte."""
+    key = app_key("now_playing")
+    owner = device_keys.resolve(key)
+
+    async def run():
+        for _ in range(device_link._MAX_STREAMS_PER_KEY):
+            await device_link.get_now_playing_events(owner, key)
+        with pytest.raises(HTTPException) as refused:
+            await device_link.get_now_playing_events(owner, key)
+        assert refused.value.status_code == 429
+
+    asyncio.run(run())
+    device_link._open_streams.clear()
 
 
 def test_too_many_open_streams_are_refused(public):

@@ -16,10 +16,11 @@ import asyncio
 import json
 import logging
 from collections import Counter
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, StringConstraints, ValidationError
 
 from core import account_settings, api_keys, device_keys, lyrics_offsets, now_playing, play_history
 from core.account_settings import LINKED_FIELDS
@@ -88,7 +89,7 @@ class SettingsPatch(BaseModel):
 
 
 class NewKey(BaseModel):
-    label: str = Field(min_length=1, max_length=100)
+    label: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]
     scopes: list[str] = Field(min_length=1, max_length=10)
 
 
@@ -310,34 +311,43 @@ def _event(state: dict) -> str:
 
 
 async def _now_playing_events(presented_key: str, owner: KeyOwner):
-    """Counted in here, not by the route: a client gone before the first byte
-    never starts this, and its `finally` would never give the place back.
-
-    The key is looked up again at every keepalive, so that revoking ends an
+    """The key is looked up again at every keepalive, so that revoking ends an
     open stream and a stream counts as the device being in use."""
-    _open_streams[owner.key_id] += 1
-    try:
-        yield "retry: 2000\n\n"
-        shown = now_playing.current(owner.account)
-        yield _event(shown)
-        quiet = 0.0
-        while True:
-            await asyncio.sleep(_NOW_PLAYING_POLL_SECONDS)
-            quiet += _NOW_PLAYING_POLL_SECONDS
-            latest = now_playing.current(owner.account)
-            if now_playing.differs(shown, latest):
-                shown = latest
-                yield _event(latest)
-            if quiet >= _KEEPALIVE_SECONDS:
-                quiet = 0.0
-                still = await asyncio.to_thread(device_keys.resolve, presented_key)
-                if still is None or device_keys.NOW_PLAYING not in still.scopes:
-                    return
-                yield ": keepalive\n\n"
-    finally:
-        _open_streams[owner.key_id] -= 1
-        if _open_streams[owner.key_id] <= 0:
-            del _open_streams[owner.key_id]
+    yield "retry: 2000\n\n"
+    shown = now_playing.current(owner.account)
+    yield _event(shown)
+    quiet = 0.0
+    while True:
+        await asyncio.sleep(_NOW_PLAYING_POLL_SECONDS)
+        quiet += _NOW_PLAYING_POLL_SECONDS
+        latest = now_playing.current(owner.account)
+        if now_playing.differs(shown, latest):
+            shown = latest
+            yield _event(latest)
+        if quiet >= _KEEPALIVE_SECONDS:
+            quiet = 0.0
+            still = await asyncio.to_thread(device_keys.resolve, presented_key)
+            if still is None or device_keys.NOW_PLAYING not in still.scopes:
+                return
+            yield ": keepalive\n\n"
+
+
+class _CountedStream(StreamingResponse):
+    """Holds one of its key's places for as long as it is being answered. Not
+    the generator's `finally`: a client gone before the first byte never
+    starts the generator, and the place would stay taken."""
+
+    def __init__(self, key_id: str, content, **kwargs):
+        super().__init__(content, **kwargs)
+        self._key_id = key_id
+
+    async def __call__(self, scope, receive, send) -> None:
+        try:
+            await super().__call__(scope, receive, send)
+        finally:
+            _open_streams[self._key_id] -= 1
+            if _open_streams[self._key_id] <= 0:
+                del _open_streams[self._key_id]
 
 
 @v1_router.get(
@@ -362,7 +372,10 @@ async def get_now_playing_events(
 ) -> StreamingResponse:
     if _open_streams[owner.key_id] >= _MAX_STREAMS_PER_KEY:
         raise HTTPException(status_code=429, detail="Too many open streams")
-    return StreamingResponse(
+    # With no await in between, concurrent opens cannot all pass the check.
+    _open_streams[owner.key_id] += 1
+    return _CountedStream(
+        owner.key_id,
         _now_playing_events(x_beacon_device_key, owner),
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
@@ -530,7 +543,7 @@ def create_device_key(
     try:
         return device_keys.create(
             account,
-            new_key.label.strip(),
+            new_key.label,
             device_keys.settings_identity_of(session),
             scopes=new_key.scopes,
         )

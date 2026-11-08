@@ -111,6 +111,81 @@ describe('lyrics corrections', () => {
     expect(console.error).toHaveBeenCalled()
   })
 
+  describe('when a change cannot be delivered right away', () => {
+    beforeEach(() => {
+      vi.useFakeTimers()
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+    })
+
+    it('tries again, so that an undo still reaches the account', async () => {
+      vi.mocked(fetchConnect).mockRejectedValueOnce(new Error('offline'))
+      pushOffset('s1', 0)
+      await vi.advanceTimersByTimeAsync(1_000)
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(put()).toEqual([{ s1: 0 }, { s1: 0 }])
+    })
+
+    it('stops once it has got through', async () => {
+      vi.mocked(fetchConnect).mockRejectedValueOnce(new Error('offline'))
+      pushOffset('s1', 0)
+      await vi.advanceTimersByTimeAsync(120_000)
+      expect(put()).toHaveLength(2)
+    })
+
+    it('does not let an old value overtake a newer one', async () => {
+      let refuse: (error: Error) => void = () => {}
+      vi.mocked(fetchConnect).mockImplementationOnce(
+        () => new Promise((_resolve, reject) => (refuse = reject)),
+      )
+      pushOffset('s1', 1)
+      await vi.advanceTimersByTimeAsync(1_000)
+      pushOffset('s1', 2)
+      refuse(new Error('offline'))
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(put().at(-1)).toEqual({ s1: 2 })
+    })
+
+    it("does not put a failed change among the next account's", async () => {
+      let refuse: (error: Error) => void = () => {}
+      vi.mocked(fetchConnect).mockImplementationOnce(
+        () => new Promise((_resolve, reject) => (refuse = reject)),
+      )
+      pushOffset('s1', 3)
+      await vi.advanceTimersByTimeAsync(1_000)
+      useAuthStore().username = 'bob'
+      pushOffset('s2', 4)
+      refuse(new Error('offline'))
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(put().at(-1)).toEqual({ s2: 4 })
+    })
+
+    it('does not retry into the next account', async () => {
+      vi.mocked(fetchConnect).mockRejectedValueOnce(new Error('offline'))
+      pushOffset('s1', 3)
+      await vi.advanceTimersByTimeAsync(1_000)
+      useAuthStore().username = 'bob'
+      await vi.advanceTimersByTimeAsync(30_000)
+      expect(put()).toHaveLength(1)
+    })
+  })
+
+  it('does not send a waiting change with the next account', async () => {
+    vi.useFakeTimers()
+    pushOffset('s1', 3)
+    useAuthStore().username = 'bob'
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(put()).toEqual([])
+  })
+
+  it("does not mix the next account's change with the last one's", async () => {
+    vi.useFakeTimers()
+    pushOffset('s1', 3)
+    useAuthStore().username = 'bob'
+    pushOffset('s2', 4)
+    await vi.advanceTimersByTimeAsync(1_000)
+    expect(put()).toEqual([{ s2: 4 }])
+  })
+
   it('keeps the answer away from whoever logged in while asking', async () => {
     writeStoredOffset('s1', 7)
     vi.mocked(fetchConnect).mockImplementation(async () => {
