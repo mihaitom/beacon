@@ -2088,3 +2088,99 @@ def test_a_report_that_is_far_too_big_is_refused(public):
     body["devices"] = ["x" * 2000] * 16
     response = public.put("/device-link/now-playing", headers=auth(key_for()), json=body)
     assert response.status_code == 413
+
+
+# ── lyrics of what is playing ────────────────────────────────────────────
+
+
+SHEET = {
+    "synced": True,
+    "lines": [{"time": 1.5, "text": "First", "extra": "x"}, {"time": 3.0, "text": "Second"}],
+}
+
+
+def lyrics(public, key=None):
+    return public.get(
+        "/device-link/v1/now-playing/lyrics",
+        headers=auth(key or app_key("now_playing", "lyrics")),
+    )
+
+
+@pytest.fixture
+def sheet():
+    with patch.object(device_link, "auto_for_party", AsyncMock(return_value=SHEET)) as found:
+        yield found
+
+
+def test_lyrics_of_the_song_playing_now(public, default_session, at_position, sheet):
+    cast(default_session)
+    assert lyrics(public).json() == {
+        "song_id": "s1",
+        "synced": True,
+        "lines": [{"time": 1.5, "text": "First"}, {"time": 3.0, "text": "Second"}],
+        "offset": 0.0,
+    }
+    asked = sheet.await_args.args[0]
+    assert (asked["title"], asked["artist"], asked["album"]) == ("Song", "Artist", "Album")
+
+
+def test_lyrics_come_with_the_accounts_correction(public, default_session, at_position, sheet):
+    cast(default_session)
+    lyrics_offsets.save(ALICE, {"s1": -0.7, "other": 9.0})
+    assert lyrics(public).json()["offset"] == -0.7
+
+
+def test_a_correction_of_another_account_does_not_count(
+    public, default_session, at_position, sheet
+):
+    cast(default_session)
+    lyrics_offsets.save(BOB, {"s1": 5.0})
+    assert lyrics(public).json()["offset"] == 0.0
+
+
+def test_lyrics_work_for_what_a_window_reports(public, sheet):
+    now_playing.store_report("session:a", ALICE, report())
+    assert lyrics(public).json()["song_id"] == "s1"
+
+
+def test_a_song_without_lyrics_says_so(public, default_session, at_position):
+    cast(default_session)
+    with patch.object(device_link, "auto_for_party", AsyncMock(return_value=None)):
+        answer = lyrics(public).json()
+    assert answer == {"song_id": "s1", "synced": False, "lines": [], "offset": 0.0}
+
+
+def test_unsynced_lyrics_say_so(public, default_session, at_position):
+    cast(default_session)
+    plain = {"synced": False, "lines": [{"time": 0.0, "text": "Line"}]}
+    with patch.object(device_link, "auto_for_party", AsyncMock(return_value=plain)):
+        answer = lyrics(public).json()
+    assert answer["synced"] is False
+    assert answer["lines"] == [{"time": 0.0, "text": "Line"}]
+
+
+def test_a_failing_provider_reads_as_no_lyrics(public, default_session, at_position):
+    cast(default_session)
+    with patch.object(device_link, "auto_for_party", AsyncMock(side_effect=RuntimeError)):
+        response = lyrics(public)
+    assert response.status_code == 200
+    assert response.json()["lines"] == []
+
+
+def test_no_lyrics_with_nothing_playing(public, sheet):
+    assert lyrics(public).status_code == 404
+    sheet.assert_not_awaited()
+
+
+def test_no_lyrics_for_radio(public, sheet):
+    now_playing.store_report("session:a", ALICE, {**report(), **RADIO})
+    assert lyrics(public).status_code == 404
+    sheet.assert_not_awaited()
+
+
+def test_lyrics_need_their_own_right(public, default_session, at_position, sheet):
+    cast(default_session)
+    assert lyrics(public, app_key("now_playing")).status_code == 403
+    assert lyrics(public, key_for()).status_code == 403
+    assert public.get("/device-link/v1/now-playing/lyrics").status_code == 401
+    sheet.assert_not_awaited()

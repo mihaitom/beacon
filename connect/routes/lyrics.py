@@ -499,9 +499,10 @@ async def _do_auto(params: dict, wanted: list[LyricSource]) -> tuple[dict[str, A
 
 
 async def auto_for_party(song: dict) -> dict | None:
-    """The auto lyrics match for a song, parsed into {synced, lines} for
+    """The auto lyrics match for a song, parsed into {synced, lines}: for
     party mode's fallback (core/party.py) when the host's window has not
-    named the song's lyrics. Reuses the same cache as /lyrics/auto, so the
+    named the song's lyrics, and for the account's own apps
+    (routes/device_link.py). Reuses the same cache as /lyrics/auto, so the
     host's own window looking the song up costs nothing extra."""
     duration = song.get("duration")
     params = {

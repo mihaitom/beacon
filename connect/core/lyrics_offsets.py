@@ -30,6 +30,17 @@ def load(account: Account) -> dict[str, float]:
     return {row["song_id"]: row["seconds"] for row in rows}
 
 
+def offset_of(account: Account, song_id: str) -> float:
+    with play_history.transaction() as conn:
+        row = conn.execute(
+            "SELECT seconds FROM lyrics_offsets"
+            " JOIN accounts ON accounts.id = account_id"
+            " WHERE server_type = ? AND server_url = ? AND username = ? AND song_id = ?",
+            (*account, song_id),
+        ).fetchone()
+    return row["seconds"] if row else 0.0
+
+
 def save(account: Account, offsets: dict[str, float]) -> None:
     with play_history.transaction() as conn:
         account_id = play_history.account_row(conn, account)

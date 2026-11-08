@@ -146,8 +146,7 @@ of the server's answer, so a song just played counts at once.
 ## Apps of your own
 
 Built so far: scopes, `/v1/me`, `/v1/history`, `/v1/stats`, CORS, the request
-limit, and `/v1/now-playing` for casts, local playback and the desktop. The
-rest is planned.
+limit, and `/v1/now-playing` with its lyrics. What is left is the FAQ page.
 
 The same key, for apps listeners write themselves: a desk display, a stream
 overlay, a dashboard. Read only, one account, and it needs a Beacon server: a
@@ -309,6 +308,10 @@ into a proxy to the lyrics providers, and each lookup tells them what somebody
 listens to. Uses `auto_for_party()`, so a song the app asks about shares the
 cache with everybody else, and adds the account's correction from
 `lyrics_offsets`, returned as `offset` and not baked into `lines`.
+
+A line counts as reached at `position - offset >= time`, as in Beacon's own
+panel. A song with no lyrics found answers 200 with no `lines`; nothing playing,
+or radio, answers 404.
 
 This is the automatic match. A listener who picked other lyrics by hand in
 Beacon sees those there, and the app the automatic ones.

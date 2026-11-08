@@ -14,6 +14,7 @@ to the desktop app and change with it.
 
 import asyncio
 import json
+import logging
 from collections import Counter
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
@@ -30,9 +31,12 @@ from core.session import SessionState, require_authenticated_session
 from core.trusted_proxies import client_ip
 from lyrics.shared import CONNECT_VERSION
 from routes.coverart import cover_image
+from routes.lyrics import auto_for_party
 from routes.lyrics_offsets import OffsetsPatch
 from routes.now_playing import NowPlayingReport, accept
 from routes.play_history import Listen, Milestones, _own
+
+logger = logging.getLogger("connect.device_link")
 
 router = APIRouter(prefix="/device-link")
 v1_router = APIRouter(prefix="/device-link/v1")
@@ -310,6 +314,32 @@ async def get_now_playing_cover(owner: KeyOwner = _reading(device_keys.NOW_PLAYI
     # The same address shows the next song's cover in three minutes.
     response.headers["Cache-Control"] = "no-store"
     return response
+
+
+@v1_router.get("/now-playing/lyrics")
+async def get_now_playing_lyrics(owner: KeyOwner = _reading(device_keys.LYRICS)) -> dict:
+    """Only for what is playing: a free search would turn a key into a way to
+    query the lyrics providers, and each lookup tells them what somebody
+    listens to. The correction stays apart from `lines` so that an app can
+    show the times as the sheet has them."""
+    song = now_playing.current(owner.account).get("song")
+    if song is None:
+        raise HTTPException(status_code=404, detail="No song is playing")
+    try:
+        found = await auto_for_party(song)
+    except Exception as e:
+        logger.warning(f"[device-link] Lyrics lookup failed: {e}")
+        found = None
+    offset = await asyncio.to_thread(lyrics_offsets.offset_of, owner.account, song["id"])
+    return {
+        "song_id": song["id"],
+        "synced": bool(found and found["synced"]),
+        "lines": [
+            {"time": line["time"], "text": line["text"]}
+            for line in (found or {"lines": []})["lines"]
+        ],
+        "offset": offset,
+    }
 
 
 @router.put("/now-playing")
