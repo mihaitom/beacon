@@ -31,6 +31,50 @@ describe('StatsHero backdrop', () => {
   })
 })
 
+describe('StatsHero landing spots', () => {
+  const LABEL = { x: 1, y: 2, size: 3 }
+  const record = { template: '<div />', methods: { labelRect: () => LABEL } }
+
+  function mountHero(props: Record<string, unknown>) {
+    return mount(StatsHero, {
+      props: { plays: 10, ...props },
+      global: { plugins: [vuetify, i18n], stubs: { StatsRecord: record } },
+    })
+  }
+
+  type Hero = { figureRect(figure: 'hours' | 'streak'): typeof LABEL }
+
+  function placeAt(element: Element, left: number, top: number, height: number): void {
+    element.getBoundingClientRect = () => ({ left, top, height, width: 500 }) as DOMRect
+  }
+
+  it('lands hours at the start of the title', () => {
+    const wrapper = mountHero({})
+    placeAt(wrapper.find('.stats-hero__title').element, 100, 200, 60)
+    expect((wrapper.vm as unknown as Hero).figureRect('hours')).toEqual({
+      x: 130,
+      y: 230,
+      size: 60,
+    })
+  })
+
+  it('lands a streak on its own figure', () => {
+    const wrapper = mountHero({ streak: 30 })
+    const streak = wrapper.findAll('.stats-hero__figure strong').at(-1)
+    placeAt(streak!.element, 400, 300, 30)
+    expect((wrapper.vm as unknown as Hero).figureRect('streak')).toEqual({
+      x: 415,
+      y: 315,
+      size: 30,
+    })
+  })
+
+  it('falls back to the record when the figure is not on the page', () => {
+    const wrapper = mountHero({ streak: 0 })
+    expect((wrapper.vm as unknown as Hero).figureRect('streak')).toEqual(LABEL)
+  })
+})
+
 describe('StatsHero line under the bar', () => {
   it('gives way to the groove being pointed at, and comes back', async () => {
     const wrapper = mount(StatsHero, {

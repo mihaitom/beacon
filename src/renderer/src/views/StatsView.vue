@@ -660,6 +660,9 @@ export default {
       if (this.moment?.kind === 'pressing') {
         return hero.shelfRect(this.moment.value) ?? hero.labelRect()
       }
+      if (this.moment?.kind === 'hours' || this.moment?.kind === 'streak') {
+        return hero.figureRect(this.moment.kind)
+      }
       return hero.labelRect()
     },
     /** Shows a moment and nothing else: no milestone is marked as seen. */

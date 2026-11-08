@@ -75,7 +75,11 @@ const STUBS = {
   PageLoader: true,
 }
 
-function mountView(songs: Song[], artists: Artist[] = []): VueWrapper {
+function mountView(
+  songs: Song[],
+  artists: Artist[] = [],
+  stubs: Record<string, boolean | object> = STUBS,
+): VueWrapper {
   const store = useLibraryStore()
   // created() kicks all three off; the tests supply the state directly.
   store.fetchAllSongs = vi.fn()
@@ -84,7 +88,7 @@ function mountView(songs: Song[], artists: Artist[] = []): VueWrapper {
   store.fetchArtists = vi.fn()
   store.allSongs = songs
   store.artists = artists
-  return mount(StatsView, { global: { plugins: [vuetify, i18n], stubs: STUBS } })
+  return mount(StatsView, { global: { plugins: [vuetify, i18n], stubs } })
 }
 
 function mountStats(songs: Song[], artists: Artist[] = []): StatsVm {
@@ -559,6 +563,29 @@ describe('StatsView milestones', () => {
 
       expect(moment(wrapper)).toMatchObject({ kind: 'plays', value: 1000 })
       expect(playHistory.saveMilestones).not.toHaveBeenCalled()
+    })
+
+    it('land a moment on the figure it is about', async () => {
+      const FIGURE = { x: 1, y: 2, size: 3 }
+      const LABEL = { x: 4, y: 5, size: 6 }
+      const hero = {
+        template: '<div />',
+        methods: { figureRect: () => FIGURE, labelRect: () => LABEL, shelfRect: () => null },
+      }
+      const wrapper = mountView([makeSong('1', { playCount: 10, duration: 60 })], [], {
+        ...STUBS,
+        StatsHero: hero,
+      })
+      await settle()
+      const vm = wrapper.vm as unknown as {
+        playDebugMoment(moment: unknown): void
+        momentTarget(): unknown
+      }
+
+      vm.playDebugMoment({ kind: 'streak', value: 30, size: 'm' })
+      expect(vm.momentTarget()).toEqual(FIGURE)
+      vm.playDebugMoment({ kind: 'plays', value: 1000, size: 's' })
+      expect(vm.momentTarget()).toEqual(LABEL)
     })
 
     it('are not there in a build', async () => {

@@ -12,7 +12,13 @@
         </transition>
         <div class="stats-hero__scrim" />
         <div class="stats-hero__text">
-          <h1 class="stats-hero__title" :class="{ 'is-fresh': fresh === 'hours' }">{{ title }}</h1>
+          <h1
+            ref="hoursFigure"
+            class="stats-hero__title"
+            :class="{ 'is-fresh': fresh === 'hours' }"
+          >
+            {{ title }}
+          </h1>
           <p v-if="statement" class="stats-hero__statement">{{ statement }}</p>
           <div class="stats-hero__next">
             <div v-if="!otherAccount" class="stats-hero__track">
@@ -41,7 +47,7 @@
               class="stats-hero__figure"
               :class="{ 'is-fresh': fresh === 'streak' }"
             >
-              <strong>{{ formatNumber(shown(streak)) }}</strong>
+              <strong ref="streakFigure">{{ formatNumber(shown(streak)) }}</strong>
               <span class="text-body-small text-medium-emphasis">
                 {{ $t('stats.streakFigure', streak) }}
               </span>
@@ -206,6 +212,14 @@ export default {
     /** For a record flying in from elsewhere on the page. */
     labelRect(): { x: number; y: number; size: number } {
       return (this.$refs.record as InstanceType<typeof StatsRecord>).labelRect()
+    },
+    /** For a moment landing on the figure it is about. The start of it, as
+     * the box of a line of text is far wider than what it says. */
+    figureRect(figure: 'hours' | 'streak'): { x: number; y: number; size: number } {
+      const element = this.$refs[`${figure}Figure`] as HTMLElement | undefined
+      if (!element) return this.labelRect()
+      const box = element.getBoundingClientRect()
+      return { x: box.left + box.height / 2, y: box.top + box.height / 2, size: box.height }
     },
     /** For a full record flying onto the shelf. */
     shelfRect(record: number): { x: number; y: number; size: number } | null {

@@ -123,8 +123,8 @@ Plus the chrome tokens in `base.css`:
 The accent is the app's signal colour: an active nav item, a selected segment, an
 eyebrow, a divider. It is not a fill - nothing large is amber.
 
-One exception to theme tokens: the record on the Stats page and its milestone
-disc are objects, not interface. Vinyl, silver, gold and foil keep their own
+One exception to theme tokens: the record on the Stats page and the objects of
+its milestone moments (disc, tape reel, cassette) are objects, not interface. Vinyl, silver, gold and foil keep their own
 colours on every theme, and only the grooves' markings use the accent. The
 full records on the shelf below it are objects too, in the metal of their tier.
 

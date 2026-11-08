@@ -14,9 +14,14 @@
         <div
           ref="disc"
           class="stats-moment__disc"
-          :class="`stats-moment__disc--${moment.tier ?? moment.size}`"
+          :class="[
+            `stats-moment__disc--${moment.tier ?? moment.size}`,
+            { 'stats-moment__disc--upright': moment.kind === 'streak' },
+          ]"
         >
-          <div class="stats-moment__vinyl">
+          <stats-moment-reel v-if="moment.kind === 'hours'" />
+          <stats-moment-cassette v-else-if="moment.kind === 'streak'" />
+          <div v-else class="stats-moment__vinyl">
             <div class="stats-moment__label"><v-icon :icon="icon" /></div>
           </div>
         </div>
@@ -34,6 +39,8 @@
 import type { PropType } from 'vue'
 import { useAppearanceStore } from '@/stores/appearance'
 import type { Moment } from '@/services/library/statsMilestones'
+import StatsMomentCassette from './StatsMomentCassette.vue'
+import StatsMomentReel from './StatsMomentReel.vue'
 
 const SHOWN_MS = 3700
 const BURST_DELAY_MS = 620
@@ -43,23 +50,17 @@ const PARTICLES = 170
 // Foil colours: what the record is made of, the same on every theme.
 const CONFETTI = ['#9fe3ff', '#e2c2ff', '#ffc9e5', '#fff0b8', '#b8ffdf', '#f5a94e', '#ffffff']
 
-const ICONS: Record<Moment['kind'], string> = {
-  plays: 'mdi-play',
-  hours: 'mdi-timer-sand',
-  streak: 'mdi-fire',
-  pressing: 'mdi-album',
-}
-
 function reducedMotion(): boolean {
   return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
 }
 
 export default {
   name: 'StatsMoment',
+  components: { StatsMomentCassette, StatsMomentReel },
   props: {
     moment: { type: Object as PropType<Moment>, required: true },
     subtitle: { type: String, required: true },
-    /** Where the record lands, read when it sets off. */
+    /** Where the object lands, read when it sets off. */
     target: {
       type: Function as PropType<() => { x: number; y: number; size: number } | null>,
       required: true,
@@ -74,7 +75,7 @@ export default {
       return useAppearanceStore()
     },
     icon(): string {
-      return ICONS[this.moment.kind]
+      return this.moment.kind === 'plays' ? 'mdi-play' : 'mdi-album'
     },
     title(): string {
       const n = this.moment.value.toLocaleString(this.$i18n.locale)
@@ -111,7 +112,7 @@ export default {
         this.$emit('closed')
         return
       }
-      // Into the record in the hero, so the eye knows where it went.
+      // Into the hero, so the eye knows where it went.
       const from = disc.getBoundingClientRect()
       const dx = target.x - from.left - from.width / 2
       const dy = target.y - from.top - from.height / 2
@@ -223,8 +224,32 @@ export default {
 .stats-moment__disc {
   width: min(280px, 58vw);
   aspect-ratio: 1;
-  animation: stats-moment-press 1s cubic-bezier(0.15, 1.15, 0.3, 1) both;
+  --stats-foil-light: conic-gradient(
+    from var(--stats-foil),
+    transparent 0 18deg,
+    rgba(255, 255, 255, 0.85) 30deg,
+    transparent 44deg 196deg,
+    rgba(255, 255, 255, 0.6) 210deg,
+    transparent 224deg
+  );
+  animation:
+    stats-moment-press 1s cubic-bezier(0.15, 1.15, 0.3, 1) both,
+    stats-moment-foil 2.6s ease-out both;
   transition: transform 0.6s cubic-bezier(0.5, 0, 0.3, 1);
+}
+
+/* Something that stands the right way up cannot spin in like a record. */
+.stats-moment__disc--upright {
+  animation:
+    stats-moment-rise-in 0.8s cubic-bezier(0.15, 1.2, 0.3, 1) both,
+    stats-moment-foil 2.6s ease-out both;
+}
+
+@keyframes stats-moment-rise-in {
+  from {
+    transform: scale(0.4) translateY(40px);
+    opacity: 0;
+  }
 }
 
 @keyframes stats-moment-press {
@@ -240,7 +265,7 @@ export default {
   overflow: hidden;
   border-radius: 50%;
   box-shadow: 0 12px 26px rgba(0, 0, 0, 0.55);
-  animation: stats-moment-foil 2.6s ease-out both;
+  background: var(--stats-foil-metal);
 }
 
 @keyframes stats-moment-foil {
@@ -268,14 +293,7 @@ export default {
   position: absolute;
   inset: 0;
   mix-blend-mode: screen;
-  background: conic-gradient(
-    from var(--stats-foil),
-    transparent 0 18deg,
-    rgba(255, 255, 255, 0.85) 30deg,
-    transparent 44deg 196deg,
-    rgba(255, 255, 255, 0.6) 210deg,
-    transparent 224deg
-  );
+  background: var(--stats-foil-light);
 }
 
 /* Metal, not interface: these stay what they are on every theme. The size
@@ -284,8 +302,8 @@ export default {
   --stats-metal: #d99a63;
 }
 
-.stats-moment__disc--bronze .stats-moment__vinyl {
-  background: conic-gradient(
+.stats-moment__disc--bronze {
+  --stats-foil-metal: conic-gradient(
     from var(--stats-foil),
     #6e4322,
     #b67a45,
@@ -303,8 +321,8 @@ export default {
   --stats-metal: #e8eef6;
 }
 
-.stats-moment__disc--platinum .stats-moment__vinyl {
-  background: conic-gradient(
+.stats-moment__disc--platinum {
+  --stats-foil-metal: conic-gradient(
     from var(--stats-foil),
     #9fb2c9,
     #e8eef6,
@@ -323,9 +341,9 @@ export default {
   --stats-metal: #d9dee6;
 }
 
-.stats-moment__disc--s .stats-moment__vinyl,
-.stats-moment__disc--silver .stats-moment__vinyl {
-  background: conic-gradient(
+.stats-moment__disc--s,
+.stats-moment__disc--silver {
+  --stats-foil-metal: conic-gradient(
     from var(--stats-foil),
     #5f6673,
     #a4acb9,
@@ -344,9 +362,9 @@ export default {
   --stats-metal: #f0c75e;
 }
 
-.stats-moment__disc--m .stats-moment__vinyl,
-.stats-moment__disc--gold .stats-moment__vinyl {
-  background: conic-gradient(
+.stats-moment__disc--m,
+.stats-moment__disc--gold {
+  --stats-foil-metal: conic-gradient(
     from var(--stats-foil),
     #a0741b,
     #f0c75e,
@@ -365,9 +383,9 @@ export default {
   --stats-metal: #bfe7ff;
 }
 
-.stats-moment__disc--l .stats-moment__vinyl,
-.stats-moment__disc--diamond .stats-moment__vinyl {
-  background: conic-gradient(
+.stats-moment__disc--l,
+.stats-moment__disc--diamond {
+  --stats-foil-metal: conic-gradient(
     from var(--stats-foil),
     #9fe3ff,
     #e2c2ff,
@@ -381,6 +399,10 @@ export default {
     #b8ffdf,
     #9fe3ff
   );
+}
+
+.stats-moment__disc--l .stats-moment__vinyl,
+.stats-moment__disc--diamond .stats-moment__vinyl {
   box-shadow:
     0 12px 26px rgba(0, 0, 0, 0.55),
     0 0 26px rgba(170, 220, 255, 0.4);
@@ -441,7 +463,6 @@ export default {
 @media (prefers-reduced-motion: reduce) {
   .stats-moment,
   .stats-moment__disc,
-  .stats-moment__vinyl,
   .stats-moment__text {
     animation: none;
   }

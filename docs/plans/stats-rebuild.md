@@ -187,6 +187,10 @@ and so does the visit after an import: a streak arriving with a year of old
 plays is nothing to celebrate. What has been seen is stored per account in
 connect and only ever goes up, so a second device does not repeat it.
 
+Only records are records: an hours milestone is a tape reel and a streak a
+cassette, in the same metals, and each lands on its own figure in the hero
+instead of on the record. Nothing about them is collected.
+
 The record gets one more. A record holds 50 grooves and runs to the last one,
 and every new record starts again at the first groove. They are ranked as sales
 certifications are, and the counts are picked so each is full on a round total:
