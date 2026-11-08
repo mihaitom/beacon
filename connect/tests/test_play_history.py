@@ -3,8 +3,8 @@ routes/play_history.py."""
 
 import asyncio
 import json
+import sqlite3
 import threading
-from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -98,24 +98,107 @@ def test_concurrent_appends_lose_nothing():
     assert play_history.summary(ALICE, now=NOW)["total"] == 400
 
 
-def test_a_broken_line_costs_only_itself():
-    play_history.record(ALICE, listen("a"), now=NOW)
-    path = Path(play_history._path(ALICE, "listens.jsonl"))
-    with path.open("a", encoding="utf-8") as f:
-        f.write('{"ts": 12\n[1, 2]\n{"no_ts": true}\n')
-    play_history.record(ALICE, listen("b"), now=NOW + 1)
-    assert play_history.summary(ALICE, now=NOW + 1)["total"] == 2
-
-
 def test_an_unwritable_log_returns_false_instead_of_raising():
-    with patch("core.play_history.open", side_effect=OSError("disk full")):
+    with patch("core.play_history.sqlite3.connect", side_effect=sqlite3.Error("disk full")):
         assert play_history.record(ALICE, listen(), now=NOW) is False
+
+
+def test_a_failed_write_does_not_count_as_the_play_having_happened():
+    with patch("core.play_history.sqlite3.connect", side_effect=sqlite3.Error("disk full")):
+        play_history.record(ALICE, listen(), now=NOW)
+    assert play_history.record(ALICE, listen(), now=NOW + 1)
+
+
+def test_an_unreadable_log_is_an_empty_summary():
+    play_history.record(ALICE, listen(), now=NOW)
+    with patch("core.play_history.sqlite3.connect", side_effect=sqlite3.Error("locked")):
+        assert play_history.summary(ALICE, now=NOW)["total"] == 0
+
+
+def test_every_listen_has_its_own_id():
+    play_history.record(ALICE, listen("a"), now=NOW)
+    play_history.record(ALICE, listen("b"), now=NOW + 1)
+    ids = {row["id"] for row in play_history._read_listens(ALICE)}
+    assert len(ids) == 2 and all(ids)
+
+
+def test_a_play_keeps_everything_it_was_recorded_with():
+    details = {"album": "Album", "album_id": "a1", "genre": "Pop", "duration": 180.5}
+    play_history.record(ALICE, listen("a", **details), now=NOW)
+    stored = play_history._read_listens(ALICE)[0]
+    assert {key: stored[key] for key in details} == details
+    assert stored["title"] == "Title a"
+
+
+# ── the plain files from before the database ─────────────────────────────
+
+
+def old_folder(tmp_path, name: str, identity: Account | None, meta=None, **files) -> None:
+    folder = tmp_path / name
+    folder.mkdir()
+    owner = {"identity": identity._asdict()} if identity else {}
+    (folder / "meta.json").write_text(json.dumps({**owner, **(meta or {})}), encoding="utf-8")
+    for filename, text in files.items():
+        (folder / f"{filename}.jsonl").write_text(text, encoding="utf-8")
+
+
+def old_line(ts: int, **fields) -> str:
+    return json.dumps({"ts": ts, "source": "beacon", **fields}) + "\n"
+
+
+def test_old_logs_are_taken_in_with_their_state(tmp_path):
+    old_folder(
+        tmp_path,
+        "a1",
+        ALICE,
+        meta={"import": {"status": "done", "source": "lastfm"}, "milestones": {"plays": 1000}},
+        listens=old_line(NOW, song_id="s", title="Mine"),
+        imported=old_line(NOW - 50, title="Old", source="lastfm"),
+    )
+    summary = play_history.summary(ALICE, now=NOW)
+    assert summary["timestamps"] == [NOW - 50, NOW]
+    assert summary["live_since"] == NOW
+    assert summary["recent_plays"] == {"s": 1}
+    assert play_history.import_state(ALICE)["source"] == "lastfm"
+    assert play_history.milestones(ALICE) == {"plays": 1000}
+
+
+def test_old_logs_stay_with_their_own_account(tmp_path):
+    old_folder(tmp_path, "a1", ALICE, listens=old_line(NOW))
+    old_folder(tmp_path, "b1", BOB, listens=old_line(NOW) * 2)
+    assert play_history.summary(ALICE, now=NOW)["total"] == 1
+    assert play_history.summary(BOB, now=NOW)["total"] == 2
+
+
+def test_a_broken_old_line_costs_only_itself(tmp_path):
+    broken = '{"ts": 12\n[1, 2]\n{"no_ts": true}\n'
+    old_folder(tmp_path, "a1", ALICE, listens=old_line(NOW) + broken + old_line(NOW))
+    assert play_history.summary(ALICE, now=NOW)["total"] == 2
+
+
+def test_an_old_folder_without_an_owner_is_passed_over(tmp_path):
+    old_folder(tmp_path, "nobody", None, listens=old_line(NOW))
+    old_folder(tmp_path, "a1", ALICE, listens=old_line(NOW))
+    assert play_history.summary(ALICE, now=NOW)["total"] == 1
+
+
+def test_old_logs_are_taken_in_only_once(tmp_path):
+    old_folder(tmp_path, "a1", ALICE, listens=old_line(NOW))
+    play_history.summary(ALICE, now=NOW)
+    assert play_history.summary(ALICE, now=NOW)["total"] == 1
+
+
+def test_an_interrupted_takeover_starts_over(tmp_path):
+    old_folder(tmp_path, "a1", ALICE, listens=old_line(NOW))
+    with patch.object(play_history, "_write_account_field", side_effect=sqlite3.Error("gone")):
+        assert play_history.summary(ALICE, now=NOW)["total"] == 0
+    assert play_history.summary(ALICE, now=NOW)["total"] == 1
 
 
 # ── the summary ──────────────────────────────────────────────────────────
 
 
-def test_timestamps_are_sorted_across_both_files():
+def test_timestamps_are_sorted_across_own_and_imported():
     play_history.record(ALICE, listen(), now=NOW)
     play_history.replace_imported(ALICE, "lastfm", [imported(NOW - 10), imported(NOW - 90)])
     assert play_history.summary(ALICE, now=NOW)["timestamps"] == [NOW - 90, NOW - 10, NOW]
@@ -201,10 +284,26 @@ def test_an_import_replaces_the_previous_one():
     assert play_history.summary(ALICE, now=NOW)["timestamps"] == [3]
 
 
-def test_an_import_records_its_source_on_each_line():
+def test_an_import_records_its_source_on_each_listen():
     play_history.replace_imported(ALICE, "lastfm", [imported(1)])
-    line = Path(play_history._path(ALICE, "imported.jsonl")).read_text(encoding="utf-8")
-    assert json.loads(line)["source"] == "lastfm"
+    assert play_history._read_listens(ALICE)[0]["source"] == "lastfm"
+
+
+def test_a_failed_import_write_leaves_the_previous_year():
+    play_history.replace_imported(ALICE, "lastfm", [imported(1)])
+    with (
+        patch.object(play_history, "_write_account_field", side_effect=sqlite3.Error("full")),
+        pytest.raises(sqlite3.Error),
+    ):
+        play_history.replace_imported(ALICE, "listenbrainz", [imported(2), imported(3)])
+    assert play_history.summary(ALICE, now=NOW)["timestamps"] == [1]
+
+
+def test_an_import_leaves_beacons_own_plays_alone():
+    play_history.record(ALICE, listen(), now=NOW)
+    play_history.replace_imported(ALICE, "lastfm", [imported(1)])
+    play_history.replace_imported(ALICE, "listenbrainz", [imported(2)])
+    assert play_history.summary(ALICE, now=NOW)["timestamps"] == [2, NOW]
 
 
 def test_import_state_starts_at_none():

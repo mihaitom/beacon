@@ -50,20 +50,19 @@ page leaves out the parts that need the log.
 
 ### Storage
 
-JSON lines, following `core/radio_history.py`: one folder per account under
-`CONNECT_DATA_DIR/play-history/<account hash>/`, using the hash from
-`core/account_settings.py`. "log" and "track" are on ad-blocker lists, which is
-why neither is in the path.
+One SQLite file, `CONNECT_DATA_DIR/play-history/play-history.db`. "log" and
+"track" are on ad-blocker lists, which is why neither is in the path.
 
-- `listens.jsonl`, append-only, Beacon's own plays. Each line has `ts` (UTC
+- `listens`: one row per play, Beacon's own and imported ones told apart by
+  `source`. `id` (random, so it stays meaningful on another machine), `ts` (UTC
   seconds), `title`, `artist`, `album`, `song_id`, `artist_id`, `album_id`,
   `cover_art_id`, `genre`, `duration`
-- `imported.jsonl`, the import, replaced whole. `ts`, `title`, `artist`,
-  `album`, `source`
-- `meta.json`: the account's identity, the import state and the milestones seen
+- `accounts`: the account's identity, the import state and the milestones seen
 
 Kept indefinitely. Handlers are sync `def`, as in `routes/account_settings.py`,
-since they do blocking file IO.
+since they do blocking IO. A first start takes in the plain files an earlier
+build wrote per account, and leaves them where they are. Syncing between
+installations is planned in `docs/plans/play-history-sync.md`.
 
 ### What the frontend gets
 
