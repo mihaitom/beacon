@@ -40,9 +40,10 @@ const INLINE_DIALOG = {
   template: '<div class="stub-dialog" :data-persistent="persistent"><slot /></div>',
 }
 
-function mountDialog() {
+function mountDialog(attachTo?: HTMLElement) {
   const emit = vi.fn()
   const wrapper = mount(DeviceKeyDialog, {
+    attachTo,
     props: { modelValue: true },
     global: {
       plugins: [vuetify, i18n],
@@ -88,6 +89,19 @@ describe('DeviceKeyDialog', () => {
     vm.label = 'Display'
     await vm.create()
     expect(createDeviceKey).toHaveBeenCalledWith('Display', ['history'])
+  })
+
+  it('switches a right from anywhere on its row', async () => {
+    // Attached: a checkbox outside the document fires no change event.
+    const { wrapper, vm } = mountDialog(document.body)
+    vm.kind = 'app'
+    await wrapper.vm.$nextTick()
+
+    ;(wrapper.find('.device-key-dialog__row').element as HTMLElement).click()
+    await wrapper.vm.$nextTick()
+
+    expect(vm.appScopes).toEqual(['history'])
+    wrapper.unmount()
   })
 
   it('makes no app key with nothing switched on', async () => {
@@ -142,7 +156,7 @@ describe('DeviceKeyDialog', () => {
     await flushPromises()
 
     expect(vm.newKey).toBe('new.secret')
-    expect(wrapper.find('input[readonly]').element).toHaveProperty('value', 'new.secret')
+    expect(wrapper.find('.device-key-dialog__secret').text()).toBe('new.secret')
     const [[entry]] = wrapper.emitted('created') as [[DeviceKey]]
     expect(entry.id).toBe('new')
     expect(JSON.stringify(entry)).not.toContain('secret')

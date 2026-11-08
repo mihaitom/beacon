@@ -3,44 +3,47 @@
      - would take it away for good. -->
   <v-dialog
     :model-value="modelValue"
-    max-width="460"
+    max-width="480"
     scrollable
     :persistent="!!newKey"
     @update:model-value="$emit('update:modelValue', $event)"
     @after-leave="reset"
   >
-    <v-card v-if="newKey" class="beacon-dialog">
-      <v-card-title>{{ $t('settings.deviceKeysShownTitle', { name: newKeyLabel }) }}</v-card-title>
-      <v-card-text class="device-key-dialog__shown">
-        <v-text-field
-          :model-value="newKey"
-          :label="$t('settings.deviceKeysKey')"
-          readonly
-          variant="solo-filled"
-          spellcheck="false"
-          hide-details
-        >
-          <template #append-inner>
-            <v-icon
-              :icon="copied === 'key' ? 'mdi-check' : 'mdi-content-copy'"
-              :color="copied === 'key' ? 'success' : undefined"
-              :title="$t('settings.deviceKeysCopy')"
-              @click="copyKey"
-            />
-          </template>
-        </v-text-field>
-        <v-alert type="info" variant="tonal" density="compact">
-          {{ $t(newKeyIsForApp ? 'settings.deviceKeysOnceApp' : 'settings.deviceKeysOnce') }}
-        </v-alert>
+    <v-card v-if="newKey" class="device-key-dialog beacon-dialog">
+      <v-card-title class="device-key-dialog__title">
+        {{ $t('settings.deviceKeysShownTitle', { name: newKeyLabel }) }}
+      </v-card-title>
+      <v-card-text class="device-key-dialog__body">
+        <div class="beacon-panel device-key-dialog__key">
+          <code class="device-key-dialog__secret">{{ newKey }}</code>
+          <v-btn
+            color="primary"
+            variant="flat"
+            rounded="pill"
+            :prepend-icon="copied === 'key' ? 'mdi-check' : 'mdi-content-copy'"
+            @click="copyKey"
+          >
+            {{ $t('settings.deviceKeysCopy') }}
+          </v-btn>
+        </div>
+        <p class="device-key-dialog__once text-body-medium">
+          <v-icon icon="mdi-alert-circle-outline" color="primary" size="20" />
+          <span>
+            {{ $t(newKeyIsForApp ? 'settings.deviceKeysOnceApp' : 'settings.deviceKeysOnce') }}
+          </span>
+        </p>
         <div v-if="newKeyIsForApp" class="device-key-dialog__for-ai">
           <v-btn
             variant="tonal"
+            rounded="pill"
             :prepend-icon="copied === 'instructions' ? 'mdi-check' : 'mdi-robot-outline'"
             @click="copyInstructions"
           >
             {{ $t('settings.deviceKeysForAi') }}
           </v-btn>
-          <p class="setting__hint">{{ $t('settings.deviceKeysForAiHint') }}</p>
+          <p class="text-body-small text-medium-emphasis">
+            {{ $t('settings.deviceKeysForAiHint') }}
+          </p>
         </div>
       </v-card-text>
       <v-card-actions>
@@ -51,10 +54,25 @@
       </v-card-actions>
     </v-card>
 
-    <v-card v-else class="beacon-dialog">
-      <v-card-title>{{ $t('settings.deviceKeysAdd') }}</v-card-title>
-      <v-card-text>
-        <choice-tiles v-model="kind" :options="kinds" :label="$t('settings.deviceKeysKind')" />
+    <v-card v-else class="device-key-dialog beacon-dialog">
+      <v-card-title class="device-key-dialog__title device-key-dialog__head">
+        <span>{{ $t('settings.deviceKeysAdd') }}</span>
+        <v-btn
+          icon="mdi-help-circle-outline"
+          variant="text"
+          density="comfortable"
+          :title="$t('settings.serverLinkDocs')"
+          class="device-key-dialog__help"
+          @click="$emitter.emit('openHelp', helpPage)"
+        />
+      </v-card-title>
+      <v-card-text class="device-key-dialog__body">
+        <choice-tiles
+          v-model="kind"
+          :options="kinds"
+          :label="$t('settings.deviceKeysKind')"
+          class="device-key-dialog__kinds"
+        />
         <v-text-field
           v-model="label"
           :label="$t('settings.deviceKeysLabel')"
@@ -64,51 +82,64 @@
           variant="solo-filled"
           maxlength="100"
           hide-details
-          class="device-key-dialog__name"
           @keyup.enter="create"
         />
-        <template v-if="kind === 'desktop'">
-          <v-switch
-            v-model="shareApiKeys"
-            :label="$t('settings.deviceKeysShareApi')"
-            color="primary"
-            density="compact"
-            hide-details
-            class="device-key-dialog__share"
-          />
-          <p class="setting__hint">{{ $t('settings.deviceKeysShareApiHint') }}</p>
-        </template>
-        <template v-else>
-          <h3 class="eyebrow-label panel-title device-key-dialog__rights">
-            {{ $t('settings.deviceKeysAppRights') }}
-          </h3>
-          <v-switch
-            v-for="scope in appScopeList"
-            :key="scope"
-            v-model="appScopes"
-            :value="scope"
-            :label="$t(`settings.deviceKeysScope_${scope}`)"
-            :disabled="scope === 'lyrics' && !appScopes.includes('now_playing')"
-            color="primary"
-            density="compact"
-            hide-details
-          />
-        </template>
+        <div v-if="kind === 'desktop'" class="beacon-panel beacon-panel--flush">
+          <label class="device-key-dialog__row">
+            <span class="device-key-dialog__row-text">
+              <span class="text-body-medium">{{ $t('settings.deviceKeysShareApi') }}</span>
+              <span class="text-body-small text-medium-emphasis">
+                {{ $t('settings.deviceKeysShareApiHint') }}
+              </span>
+            </span>
+            <v-switch
+              v-model="shareApiKeys"
+              color="primary"
+              density="compact"
+              hide-details
+              class="device-key-dialog__switch"
+            />
+          </label>
+        </div>
+        <section v-else>
+          <h3 class="eyebrow-label panel-title">{{ $t('settings.deviceKeysAppRights') }}</h3>
+          <div class="beacon-panel beacon-panel--flush">
+            <label
+              v-for="scope in appScopeList"
+              :key="scope"
+              class="device-key-dialog__row"
+              :class="{ 'device-key-dialog__row--locked': scopeLocked(scope) }"
+            >
+              <span class="text-body-medium device-key-dialog__row-text">
+                {{ $t(`settings.deviceKeysScope_${scope}`) }}
+              </span>
+              <v-switch
+                v-model="appScopes"
+                :value="scope"
+                :disabled="scopeLocked(scope)"
+                color="primary"
+                density="compact"
+                hide-details
+                class="device-key-dialog__switch"
+              />
+            </label>
+          </div>
+        </section>
       </v-card-text>
-      <v-card-actions>
-        <v-btn
-          variant="text"
-          prepend-icon="mdi-help-circle-outline"
-          class="device-key-dialog__help"
-          @click="$emitter.emit('openHelp', helpPage)"
-        >
-          {{ $t('settings.serverLinkDocs') }}
-        </v-btn>
+      <v-card-actions class="device-key-dialog__actions">
         <v-spacer />
         <v-btn variant="text" @click="$emit('update:modelValue', false)">
           {{ $t('common.cancel') }}
         </v-btn>
-        <v-btn color="primary" :loading="busy" :disabled="!canCreate" @click="create">
+        <v-btn
+          color="primary"
+          variant="flat"
+          rounded="pill"
+          :slim="false"
+          :loading="busy"
+          :disabled="!canCreate"
+          @click="create"
+        >
           {{ $t('settings.deviceKeysCreate') }}
         </v-btn>
       </v-card-actions>
@@ -193,6 +224,9 @@ export default {
     clearTimeout(this.copiedTimer)
   },
   methods: {
+    scopeLocked(scope: AppScope): boolean {
+      return scope === 'lyrics' && !this.appScopes.includes('now_playing')
+    },
     reset() {
       this.label = ''
       this.kind = 'desktop'
@@ -244,7 +278,7 @@ export default {
     async copyInstructions() {
       const origin = window.location.origin
       if (await this.copy(appKeyInstructions(origin, this.newKeyScopes), 'instructions')) return
-      // Unlike the key, there is no field on screen to copy this from by hand.
+      // Unlike the key, there is nothing on screen to copy this from by hand.
       this.$emitter.emit('toast', {
         level: 'error',
         title: this.$t('settings.deviceKeysTitle'),
@@ -258,27 +292,114 @@ export default {
 </script>
 
 <style scoped>
-.device-key-dialog__name {
-  margin-top: 16px;
+.device-key-dialog.v-card {
+  border-radius: 16px;
 }
 
-.device-key-dialog__share {
-  margin-top: 8px;
+.device-key-dialog__title {
+  padding-top: 20px;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
-.device-key-dialog__rights {
-  margin-top: 20px;
-}
-
-.device-key-dialog__shown {
+.device-key-dialog__head {
   display: flex;
-  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
   gap: 12px;
 }
 
-/* The tiles' and fields' left edge: the text button's padding would push its
- * icon in from it. */
-.device-key-dialog__help {
-  margin-left: -4px;
+.device-key-dialog__body {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding-top: 12px;
+  padding-bottom: 8px;
+}
+
+/* Two columns leave a phone's tiles a word per line. */
+@media (max-width: 480px) {
+  .device-key-dialog__kinds.choice-tiles.v-btn-toggle {
+    grid-template-columns: 1fr;
+  }
+}
+
+.device-key-dialog__row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 44px;
+  padding: 2px 14px 2px 16px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.device-key-dialog__row + .device-key-dialog__row {
+  border-top: 1px solid var(--beacon-hairline);
+}
+
+.device-key-dialog__row:hover {
+  background: var(--beacon-hover);
+}
+
+.device-key-dialog__row--locked {
+  cursor: default;
+  color: rgba(var(--v-theme-on-surface), var(--v-disabled-opacity));
+}
+
+.device-key-dialog__row--locked:hover {
+  background: none;
+}
+
+.device-key-dialog__row-text {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding-block: 6px;
+}
+
+.device-key-dialog__switch.v-input {
+  flex: none;
+}
+
+.device-key-dialog__actions {
+  padding: 8px 24px 20px;
+}
+
+.device-key-dialog__key {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+/* Selected whole at a click: on plain http the browser has no clipboard for
+ * the button to use, and this is the only way to get the key out. */
+.device-key-dialog__secret {
+  font-family: monospace;
+  font-size: 0.875rem;
+  line-height: 1.6;
+  word-break: break-all;
+  user-select: all;
+}
+
+.device-key-dialog__once {
+  display: flex;
+  gap: 10px;
+}
+
+.device-key-dialog__once .v-icon {
+  flex: none;
+}
+
+.device-key-dialog__for-ai {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding-top: 20px;
+  border-top: 1px solid var(--beacon-hairline);
 }
 </style>

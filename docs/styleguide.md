@@ -680,6 +680,7 @@ Width, by what the dialog is for:
 | `max-width` | For                                                      |
 | ----------- | -------------------------------------------------------- |
 | 400-420     | a form or a confirmation - a rename, a delete, a pairing |
+| 460-480     | a form that opens with `ChoiceTiles` - a playlist, a key |
 | 560-720     | something to read - shortcuts, privacy, a track's fields |
 | 820-920     | a list or a long document - Discover, release notes      |
 | 1080        | the help, whose contents column sits beside the page     |
@@ -732,6 +733,11 @@ does not scroll, which is what "the cap is clipping" looks like.
   right instead - the one exception is a dialog with a picture-backed
   header, which uses the icon only, since the footer button would sit under
   a header that already offers one.
+- A dialog's switches sit in a `.beacon-panel--flush`, one row each with the
+  words on the left and the switch on the right, the whole row clickable
+  (`DeviceKeyDialog.vue`). The confirming button is a filled pill. Help is the
+  icon in the title row, so the footer is left to the buttons that end the
+  dialog.
 - An exception to "never a second scroll region": inside `.beacon-markdown`
   (below), a code block or a table scrolls sideways on its own. Neither can
   wrap, and on a phone one would otherwise widen the whole dialog.
