@@ -52,6 +52,7 @@ from routes.cast_permissions import router as cast_permissions_router
 from routes.coverart import router as coverart_router
 from routes.debug import router as debug_router
 from routes.deezer import router as deezer_router
+from routes.device_link import add_public_api_cors
 from routes.device_link import keys_router as device_keys_router
 from routes.device_link import router as device_link_router
 from routes.device_link import v1_router as device_link_v1_router
@@ -532,6 +533,8 @@ app.include_router(remote_router)
 app.include_router(party_host_router)
 app.include_router(party_router)
 app.include_router(proxy_router)
+# Outside the error boundary, so that a 500 from v1 reaches a page as a 500.
+app.middleware("http")(add_public_api_cors)
 # Last, so it is the outermost middleware: it has to see the answers the
 # error boundary and CORSMiddleware produce in order to correct them.
 app.middleware("http")(add_party_security_headers)

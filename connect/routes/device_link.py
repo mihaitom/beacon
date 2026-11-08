@@ -14,7 +14,7 @@ to the desktop app and change with it.
 
 import asyncio
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field, ValidationError
 
 from core import account_settings, api_keys, device_keys, lyrics_offsets, play_history
@@ -22,7 +22,7 @@ from core.account_settings import LINKED_FIELDS
 from core.auth import require_token
 from core.device_keys import KeyOwner
 from core.party import RateLimiter
-from core.server_link import INVALID_KEY_DETAIL
+from core.server_link import INVALID_KEY_DETAIL, KEY_HEADER
 from core.session import SessionState, require_authenticated_session
 from core.trusted_proxies import client_ip
 from lyrics.shared import CONNECT_VERSION
@@ -40,6 +40,13 @@ _KEY_FAILURES_PER_IP = (10, 300.0)
 
 # Raised only for a change an existing app could not cope with.
 API_VERSION = 1
+
+# Generous for a display refreshing every second; the bound is against a
+# loop nobody meant to write.
+_V1_REQUESTS_PER_KEY = (120, 60.0)
+
+_PUBLIC_PREFIX = "/device-link/v1/"
+_PREFLIGHT_MAX_AGE_SECONDS = 600
 
 _MAX_BATCH = 500
 # A batch of ordinary rows is a few hundred KB.
@@ -86,8 +93,18 @@ async def _require_key(
     return owner
 
 
-def _with_scope(scope: str):
-    async def check(owner: KeyOwner = Depends(_require_key)) -> KeyOwner:
+async def _public_caller(owner: KeyOwner = Depends(_require_key)) -> KeyOwner:
+    if not limiter.hit(f"v1:{owner.key_id}", *_V1_REQUESTS_PER_KEY):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many requests",
+            headers={"Retry-After": str(int(_V1_REQUESTS_PER_KEY[1]))},
+        )
+    return owner
+
+
+def _with_scope(scope: str, caller=_require_key):
+    async def check(owner: KeyOwner = Depends(caller)) -> KeyOwner:
         if scope not in owner.scopes:
             raise HTTPException(status_code=403, detail="This key may not do that")
         return owner
@@ -96,6 +113,35 @@ def _with_scope(scope: str):
 
 
 _syncing = Depends(_with_scope(device_keys.SYNC))
+
+
+def _reading(scope: str):
+    return Depends(_with_scope(scope, _public_caller))
+
+
+async def add_public_api_cors(request: Request, call_next):
+    """Lets a page on any origin use /device-link/v1/. Safe as `*`: nothing
+    there reads a cookie, only the key a page was given and sends itself.
+
+    A middleware rather than an entry in CORSMiddleware's list, which goes
+    by origin and not by path: the routes outside v1 keep their allow list.
+    A preflight carries no key, so it is answered before anything checks one."""
+    if not request.url.path.startswith(_PUBLIC_PREFIX):
+        return await call_next(request)
+    if request.method == "OPTIONS" and "access-control-request-method" in request.headers:
+        return Response(
+            status_code=204,
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "GET",
+                "Access-Control-Allow-Headers": KEY_HEADER,
+                "Access-Control-Max-Age": str(_PREFLIGHT_MAX_AGE_SECONDS),
+            },
+        )
+    response = await call_next(request)
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Expose-Headers"] = "Retry-After"
+    return response
 
 
 async def _parsed(request: Request, model: type[BaseModel], limit: int):
@@ -122,7 +168,7 @@ def get_info(owner: KeyOwner = Depends(_require_key)) -> dict:
 
 
 @v1_router.get("/me")
-def get_me(owner: KeyOwner = Depends(_require_key)) -> dict:
+def get_me(owner: KeyOwner = Depends(_public_caller)) -> dict:
     return {
         "username": owner.account.username,
         "scopes": sorted(owner.scopes),
@@ -133,7 +179,7 @@ def get_me(owner: KeyOwner = Depends(_require_key)) -> dict:
 
 @v1_router.get("/history")
 def get_history(
-    owner: KeyOwner = Depends(_with_scope(device_keys.HISTORY)),
+    owner: KeyOwner = _reading(device_keys.HISTORY),
     cursor: str | None = Query(default=None, pattern=r"^\d{1,18}\.\d{1,18}$"),
     since: int | None = Query(default=None, ge=0),
     until: int | None = Query(default=None, ge=0),
@@ -176,7 +222,7 @@ def _public_top(top: dict) -> dict:
 
 
 @v1_router.get("/stats")
-def get_stats(owner: KeyOwner = Depends(_with_scope(device_keys.STATS))) -> dict:
+def get_stats(owner: KeyOwner = _reading(device_keys.STATS)) -> dict:
     summary = play_history.summary(owner.account)
     return {
         "total": summary["total"],

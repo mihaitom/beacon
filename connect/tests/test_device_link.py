@@ -1401,3 +1401,102 @@ def test_each_read_route_needs_its_own_right(public, path, scope, other):
     assert public.get(url, headers=auth(app_key(other))).status_code == 403
     assert public.get(url, headers=auth(key_for())).status_code == 403
     assert public.get(url).status_code == 401
+
+
+# ── reaching v1 from a browser, and its limits ───────────────────────────
+
+
+ELSEWHERE = {"Origin": "https://my-dashboard.example"}
+
+
+def test_a_page_anywhere_can_preflight_v1_without_a_key(public):
+    response = public.options(
+        "/device-link/v1/history",
+        headers={
+            **ELSEWHERE,
+            "Access-Control-Request-Method": "GET",
+            "Access-Control-Request-Headers": server_link.KEY_HEADER,
+        },
+    )
+    assert response.status_code == 204
+    assert response.headers["access-control-allow-origin"] == "*"
+    assert (
+        server_link.KEY_HEADER.lower() in response.headers["access-control-allow-headers"].lower()
+    )
+
+
+def test_a_page_anywhere_can_read_v1(public):
+    response = public.get("/device-link/v1/me", headers={**ELSEWHERE, **auth(app_key())})
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "*"
+
+
+def test_v1_answers_any_origin_with_one_header_only(public):
+    headers = {"Origin": "http://localhost:5173", **auth(app_key())}
+    response = public.get("/device-link/v1/me", headers=headers)
+    assert response.headers.get_list("access-control-allow-origin") == ["*"]
+
+
+@pytest.mark.parametrize("key", ["bad.key", None])
+def test_a_page_can_read_why_it_was_refused(public, key):
+    headers = {**ELSEWHERE, **(auth(key) if key else {})}
+    response = public.get("/device-link/v1/me", headers=headers)
+    assert response.status_code == 401
+    assert response.headers["access-control-allow-origin"] == "*"
+
+
+def test_a_crash_reaches_a_page_as_what_it_is(public):
+    with patch.object(play_history, "summary", side_effect=RuntimeError):
+        response = public.get(
+            "/device-link/v1/stats", headers={**ELSEWHERE, **auth(app_key("stats"))}
+        )
+    assert response.status_code == 500
+    assert response.headers["access-control-allow-origin"] == "*"
+
+
+@pytest.mark.parametrize("path", ["/device-link/info", "/device-link/settings"])
+def test_the_desktops_routes_stay_closed_to_other_origins(public, path):
+    response = public.get(path, headers={**ELSEWHERE, **auth(key_for())})
+    assert "access-control-allow-origin" not in response.headers
+
+
+def test_the_desktops_routes_get_no_preflight_from_other_origins(public):
+    response = public.options(
+        "/device-link/settings",
+        headers={**ELSEWHERE, "Access-Control-Request-Method": "GET"},
+    )
+    assert response.headers.get("access-control-allow-origin") != "*"
+
+
+def test_too_many_requests_are_refused_and_say_when_to_retry(public):
+    key = app_key()
+    limit = device_link._V1_REQUESTS_PER_KEY[0]
+    for _ in range(limit):
+        assert public.get("/device-link/v1/me", headers=auth(key)).status_code == 200
+    response = public.get("/device-link/v1/me", headers={**ELSEWHERE, **auth(key)})
+    assert response.status_code == 429
+    assert int(response.headers["retry-after"]) > 0
+    assert "retry-after" in response.headers["access-control-expose-headers"].lower()
+
+
+@pytest.mark.parametrize("path", ["me", "history", "stats"])
+def test_every_v1_route_counts_towards_the_limit(public, path):
+    key = app_key("history", "stats")
+    limit = device_link._V1_REQUESTS_PER_KEY[0]
+    for _ in range(limit):
+        public.get(f"/device-link/v1/{path}", headers=auth(key))
+    assert public.get(f"/device-link/v1/{path}", headers=auth(key)).status_code == 429
+
+
+def test_one_keys_limit_is_not_anothers(public):
+    busy = app_key()
+    for _ in range(device_link._V1_REQUESTS_PER_KEY[0] + 1):
+        public.get("/device-link/v1/me", headers=auth(busy))
+    assert public.get("/device-link/v1/me", headers=auth(app_key())).status_code == 200
+
+
+def test_the_desktop_is_not_held_to_an_apps_limit(public):
+    key = key_for()
+    for _ in range(device_link._V1_REQUESTS_PER_KEY[0] + 1):
+        response = public.get("/device-link/summary", headers=auth(key))
+    assert response.status_code == 200

@@ -145,8 +145,8 @@ of the server's answer, so a song just played counts at once.
 
 ## Apps of your own
 
-Built so far: scopes, `/v1/me`, `/v1/history` and `/v1/stats`. The rest is
-planned.
+Built so far: scopes, `/v1/me`, `/v1/history`, `/v1/stats`, CORS and the
+request limit. The rest is planned.
 
 The same key, for apps listeners write themselves: a desk display, a stream
 overlay, a dashboard. Read only, one account, and it needs a Beacon server: a
@@ -304,13 +304,14 @@ Beacon sees those there, and the app the automatic ones.
 
 ### Reaching it
 
-- **nginx:** `location /device-link/` needs `proxy_buffering off` and a long
-  `proxy_read_timeout` for the event stream, as `/party/` has.
-- **CORS:** a page on another origin gets refused today. `/device-link/v1/`
-  answers any origin (`*`, no credentials, nothing here uses cookies), and
-  answers a preflight before the key check, since a preflight cannot carry it.
-  Errors from the boundary in `main.py` need the same header, see
-  `_cors_headers()`. Only `v1`: the other routes keep their allow list.
+- **nginx:** `location /device-link/` has `proxy_buffering off`, as `/party/`
+  does. The event stream's keepalive stays well inside nginx's read timeout.
+- **CORS:** `/device-link/v1/` answers any origin (`*`, no credentials, nothing
+  here uses cookies), from a middleware outside the error boundary, so a crash
+  reaches a page as a 500. A preflight is answered before the key check, since
+  it cannot carry one. Only `v1`: the other routes keep their allow list.
+- **Limit:** 120 requests a minute per key, on `v1` only: a desktop catching up
+  sends more than that and is not somebody's loop.
 
 ### Documentation
 
