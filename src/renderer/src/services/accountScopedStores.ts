@@ -26,9 +26,11 @@
  * the server is the one allowed to win. */
 
 import { onAccountChange } from '@/services/accountKey'
+import { useAppearanceStore } from '@/stores/appearance'
 import { useUpdateStore } from '@/stores/update'
 import { usePlaybackStore } from '@/stores/playback'
-import { reloadLyricsCacheForAccount } from '@/stores/lyrics'
+import { reloadLyricsCacheForAccount, useLyricsStore } from '@/stores/lyrics'
+import { pullLyricsOffsets } from '@/services/lyrics/lyricsOffsets'
 import { useRecommendationsStore } from '@/stores/recommendations'
 import { useRadioSettingsStore } from '@/stores/radioSettings'
 import { useTransitionsStore, type TransitionSettings } from '@/stores/transitions'
@@ -110,6 +112,12 @@ async function pullAccountSettings(): Promise<void> {
       useEqualizerStore().setPresets(remote.equalizerPresets)
     }
 
+    if (Array.isArray(remote.customThemes)) {
+      useAppearanceStore().adoptCustomThemes(remote.customThemes)
+    } else {
+      useAppearanceStore().shareCustomThemes()
+    }
+
     if (typeof remote.lastfmUsername === 'string') {
       useLastfmStore().setUsername(remote.lastfmUsername)
     }
@@ -153,6 +161,16 @@ async function pullAccountSettings(): Promise<void> {
   }
 }
 
+async function syncLyricsOffsets(): Promise<void> {
+  try {
+    await pullLyricsOffsets()
+    useLyricsStore().refreshOffset()
+  } catch (error) {
+    // Best-effort, like the settings above: this device's own stay in use.
+    console.error('[accountScopedStores] Failed to pull lyrics corrections:', error)
+  }
+}
+
 export function initAccountScopedStores(): void {
   onAccountChange(() => {
     // Cover ids are only unique within one media server, so the artwork
@@ -179,5 +197,6 @@ export function initAccountScopedStores(): void {
     useListenbrainzStore().reloadForAccount()
     useFanartStore().reloadForAccount()
     void pullAccountSettings()
+    void syncLyricsOffsets()
   })
 }

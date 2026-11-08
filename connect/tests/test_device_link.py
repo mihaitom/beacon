@@ -14,7 +14,14 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from core import account_settings, device_keys, play_history, server_link
+from core import (
+    account_settings,
+    api_keys,
+    device_keys,
+    lyrics_offsets,
+    play_history,
+    server_link,
+)
 from core.play_history import Account
 from main import app
 from routes import device_link
@@ -31,10 +38,14 @@ DAY = 86_400
 
 
 @pytest.fixture(autouse=True)
-def _isolated(tmp_path):
+def _isolated(tmp_path, monkeypatch):
     play_history._last_recorded.clear()
     device_link.limiter.clear()
+    api_keys._cache.clear()
+    monkeypatch.delenv("LASTFM_API_KEY", raising=False)
+    monkeypatch.delenv("FANART_API_KEY", raising=False)
     with (
+        patch.object(api_keys, "_DATA_DIR", str(tmp_path / "keys")),
         patch.object(play_history, "_DIR", str(tmp_path / "history")),
         patch.object(account_settings, "_PATH", str(tmp_path / "settings.json")),
     ):
@@ -378,6 +389,8 @@ class FakeServer:
     def __init__(self):
         self.requests: list[httpx.Request] = []
         self.settings: dict = {}
+        self.offsets: dict = {}
+        self.api_keys: dict = {}
         self.summary: dict = {
             "available": True,
             "total": 1,
@@ -405,6 +418,10 @@ class FakeServer:
             return httpx.Response(200, json=self.settings)
         if path == "/summary":
             return httpx.Response(200, json=self.summary)
+        if path == "/api-keys":
+            return httpx.Response(200, json={"keys": self.api_keys})
+        if path == "/lyrics-offsets" and request.method == "GET":
+            return httpx.Response(200, json={"offsets": self.offsets})
         return httpx.Response(200, json={"status": "ok"})
 
     def sent(self, method: str, path: str) -> list[dict]:
@@ -808,6 +825,256 @@ def test_the_server_never_receives_its_own_values_back(client, paired):
     read_settings(client)
     server_link.send_once(now=NOW)
     assert paired.sent("PATCH", "/settings") == []
+
+
+# ── lyrics corrections ───────────────────────────────────────────────────
+
+
+def test_corrections_belong_to_one_account():
+    lyrics_offsets.save(ALICE, {"s1": 1.5})
+    assert lyrics_offsets.load(ALICE) == {"s1": 1.5}
+    assert lyrics_offsets.load(BOB) == {}
+
+
+def test_a_correction_taken_back_is_still_known():
+    lyrics_offsets.save(ALICE, {"s1": 1.5})
+    lyrics_offsets.save(ALICE, {"s1": 0})
+    assert lyrics_offsets.load(ALICE) == {"s1": 0}
+
+
+def test_saving_one_song_leaves_the_others():
+    lyrics_offsets.save(ALICE, {"s1": 1.5})
+    lyrics_offsets.save(ALICE, {"s2": 2.0})
+    assert lyrics_offsets.load(ALICE) == {"s1": 1.5, "s2": 2.0}
+
+
+def test_new_songs_stop_at_the_limit_but_known_ones_still_change(monkeypatch):
+    monkeypatch.setattr(lyrics_offsets, "MAX_PER_ACCOUNT", 2)
+    lyrics_offsets.save(ALICE, {"s1": 1.0, "s2": 2.0, "s3": 3.0})
+    lyrics_offsets.save(ALICE, {"s1": 9.0})
+    assert lyrics_offsets.load(ALICE) == {"s1": 9.0, "s2": 2.0}
+
+
+def test_the_routes_use_the_sessions_account(client, signed_in):
+    client.put("/lyrics-offsets", json={"offsets": {"s1": 1.5}})
+    assert client.get("/lyrics-offsets").json() == {"offsets": {"s1": 1.5}}
+    assert lyrics_offsets.load(ALICE) == {"s1": 1.5}
+
+
+def test_the_routes_need_a_verified_session(client):
+    assert client.get("/lyrics-offsets").status_code == 401
+    assert client.put("/lyrics-offsets", json={"offsets": {}}).status_code == 401
+
+
+@pytest.mark.parametrize(
+    "offsets",
+    [{"s": 1e9}, {"": 1.0}, {"x" * 201: 1.0}, {str(i): 1.0 for i in range(501)}],
+)
+def test_nonsense_corrections_are_refused(client, signed_in, offsets):
+    assert client.put("/lyrics-offsets", json={"offsets": offsets}).status_code == 422
+    assert lyrics_offsets.load(ALICE) == {}
+
+
+def test_a_session_without_an_account_has_none(client, default_session):
+    default_session.account_username = ""
+    assert client.get("/lyrics-offsets").json() == {"offsets": {}}
+    assert client.put("/lyrics-offsets", json={"offsets": {"s": 1.0}}).status_code == 200
+
+
+def test_the_server_files_corrections_under_the_key(public):
+    key = key_for()
+    public.patch("/device-link/lyrics-offsets", headers=auth(key), json={"offsets": {"s1": 2.5}})
+    assert lyrics_offsets.load(ALICE) == {"s1": 2.5}
+    assert lyrics_offsets.load(BOB) == {}
+    assert public.get("/device-link/lyrics-offsets", headers=auth(key)).json() == {
+        "offsets": {"s1": 2.5}
+    }
+
+
+def test_corrections_need_a_key(public):
+    assert public.get("/device-link/lyrics-offsets").status_code == 401
+    assert public.patch("/device-link/lyrics-offsets").status_code == 401
+
+
+def test_a_correction_goes_to_the_server(client, signed_in, paired):
+    client.put("/lyrics-offsets", json={"offsets": {"s1": 1.5}})
+    server_link.send_once(now=NOW)
+    assert paired.sent("PATCH", "/lyrics-offsets") == [{"offsets": {"s1": 1.5}}]
+    server_link.send_once(now=NOW)
+    assert len(paired.sent("PATCH", "/lyrics-offsets")) == 1
+
+
+def test_a_lot_of_corrections_go_out_in_batches(paired, monkeypatch):
+    monkeypatch.setattr(server_link, "_OFFSET_BATCH_SIZE", 2)
+    server_link.note_lyrics_offsets(ALICE, {f"s{i}": 1.0 for i in range(5)})
+    server_link.send_once(now=NOW)
+    assert [len(b["offsets"]) for b in paired.sent("PATCH", "/lyrics-offsets")] == [2, 2, 1]
+
+
+def test_a_failed_send_keeps_the_correction(paired):
+    server_link.note_lyrics_offsets(ALICE, {"s1": 1.5})
+    paired.fail = httpx.Response(500)
+    assert server_link.send_once(now=NOW) is False
+    paired.fail = None
+    server_link.send_once(now=NOW)
+    assert paired.sent("PATCH", "/lyrics-offsets") == [{"offsets": {"s1": 1.5}}]
+
+
+def test_a_correction_changed_while_sending_goes_again(paired):
+    server_link.note_lyrics_offsets(ALICE, {"s1": 1.5})
+
+    def change_during_send(request):
+        if request.method == "PATCH":
+            paired.on_request = None
+            server_link.note_lyrics_offsets(ALICE, {"s1": 2.5})
+
+    paired.on_request = change_during_send
+    server_link.send_once(now=NOW)
+    server_link.send_once(now=NOW)
+    assert [b["offsets"]["s1"] for b in paired.sent("PATCH", "/lyrics-offsets")] == [1.5, 2.5]
+
+
+def test_another_accounts_corrections_stay_here(paired):
+    server_link.note_lyrics_offsets(BOB, {"s1": 1.5})
+    server_link.send_once(now=NOW)
+    assert paired.sent("PATCH", "/lyrics-offsets") == []
+
+
+def test_reading_shows_the_server_with_unsent_on_top_and_keeps_a_copy(client, signed_in, paired):
+    paired.offsets = {"s1": 1.0, "s2": 2.0}
+    server_link.note_lyrics_offsets(ALICE, {"s2": 9.0})
+    assert client.get("/lyrics-offsets").json() == {"offsets": {"s1": 1.0, "s2": 9.0}}
+    assert lyrics_offsets.load(ALICE) == {"s1": 1.0, "s2": 9.0}
+
+
+def test_reading_falls_back_with_the_server_away(client, signed_in, paired):
+    lyrics_offsets.save(ALICE, {"s1": 1.0})
+    paired.fail = httpx.ConnectError("down")
+    assert client.get("/lyrics-offsets").json() == {"offsets": {"s1": 1.0}}
+
+
+def test_pairing_sends_what_only_this_desktop_knows(server):
+    lyrics_offsets.save(ALICE, {"mine": 1.0, "both": 2.0})
+    server.offsets = {"both": 5.0}
+    server_link.pair(ALICE, ALICE_SETTINGS, URL, "the-key")
+    server_link.send_once(now=NOW)
+    assert server.sent("PATCH", "/lyrics-offsets") == [{"offsets": {"mine": 1.0}}]
+
+
+def test_a_pairing_made_before_this_feature_keeps_working(paired):
+    with server_link._lock:
+        link = server_link._read()
+        del link["pending_lyrics_offsets"]
+        server_link._write(link)
+    assert server_link.send_once(now=NOW) is True
+    server_link.note_lyrics_offsets(ALICE, {"s1": 1.5})
+    server_link.send_once(now=NOW)
+    assert paired.sent("PATCH", "/lyrics-offsets") == [{"offsets": {"s1": 1.5}}]
+
+
+def test_custom_themes_are_shared_settings(public):
+    key = key_for()
+    themes = [{"id": "custom-a", "name": "Mine", "background": "#111111", "primary": "#222222"}]
+    public.patch(
+        "/device-link/settings", headers=auth(key), json={"settings": {"customThemes": themes}}
+    )
+    assert public.get("/device-link/settings", headers=auth(key)).json() == {"customThemes": themes}
+
+
+# ── API keys ─────────────────────────────────────────────────────────────
+
+
+def admin_key() -> str:
+    return device_keys.create(ALICE, "Laptop", ALICE_SETTINGS, may_read_api_keys=True)["key"]
+
+
+def test_a_key_an_admin_made_gets_the_installations_keys(public):
+    api_keys.set("lastfm", "lastfm-secret")
+    answer = public.get("/device-link/api-keys", headers=auth(admin_key())).json()
+    assert answer == {"keys": {"lastfm": "lastfm-secret", "fanart": ""}}
+
+
+def test_a_listeners_key_does_not(public):
+    api_keys.set("lastfm", "lastfm-secret")
+    response = public.get("/device-link/api-keys", headers=auth(key_for()))
+    assert response.json() == {"keys": {}}
+
+
+def test_api_keys_need_a_device_key(public):
+    assert public.get("/device-link/api-keys").status_code == 401
+
+
+@pytest.mark.parametrize("is_admin", [True, False])
+def test_the_right_is_taken_from_the_session(client, signed_in, is_admin):
+    signed_in.account_is_admin = is_admin
+    made = client.post("/device-keys", json={"label": "Laptop"}).json()
+    assert device_keys.resolve(made["key"]).may_read_api_keys is is_admin
+
+
+def test_the_desktop_uses_the_servers_key(paired):
+    paired.api_keys = {"lastfm": "from-server"}
+    server_link.send_once(now=NOW)
+    assert api_keys.get("lastfm") == "from-server"
+    assert api_keys.status("lastfm") == {
+        "configured": True,
+        "fromEnvironment": False,
+        "fromServer": True,
+    }
+
+
+def test_a_key_entered_here_stays_in_charge(paired):
+    api_keys.set("lastfm", "my-own")
+    paired.api_keys = {"lastfm": "from-server"}
+    server_link.send_once(now=NOW)
+    assert api_keys.get("lastfm") == "my-own"
+    assert api_keys.status("lastfm")["fromServer"] is False
+    server_link.unpair()
+    assert api_keys.get("lastfm") == "my-own"
+
+
+def test_the_environment_stays_ahead_of_the_server(paired, monkeypatch):
+    monkeypatch.setenv("LASTFM_API_KEY", "from-env")
+    paired.api_keys = {"lastfm": "from-server"}
+    server_link.send_once(now=NOW)
+    assert api_keys.get("lastfm") == "from-env"
+    assert api_keys.status("lastfm")["fromEnvironment"] is True
+
+
+def test_a_key_removed_on_the_server_goes_here_too(paired):
+    paired.api_keys = {"lastfm": "from-server"}
+    server_link.send_once(now=NOW)
+    paired.api_keys = {}
+    server_link.send_once(now=NOW)
+    assert api_keys.get("lastfm") == ""
+
+
+def test_disconnecting_returns_the_lent_keys(paired):
+    paired.api_keys = {"lastfm": "from-server"}
+    server_link.send_once(now=NOW)
+    server_link.unpair()
+    assert api_keys.get("lastfm") == ""
+
+
+def test_a_revoked_device_loses_them(paired):
+    paired.api_keys = {"lastfm": "from-server"}
+    server_link.send_once(now=NOW)
+    paired.fail = httpx.Response(401, json={"detail": server_link.INVALID_KEY_DETAIL})
+    server_link.send_once(now=NOW)
+    assert api_keys.get("lastfm") == ""
+
+
+def test_a_server_that_is_away_does_not_take_them(paired):
+    paired.api_keys = {"lastfm": "from-server"}
+    server_link.send_once(now=NOW)
+    paired.fail = httpx.ConnectError("down")
+    server_link.send_once(now=NOW)
+    assert api_keys.get("lastfm") == "from-server"
+
+
+def test_the_lent_key_is_not_world_readable(paired):
+    paired.api_keys = {"lastfm": "from-server"}
+    server_link.send_once(now=NOW)
+    assert stat.S_IMODE(os.stat(api_keys._shared_path("lastfm")).st_mode) == 0o600
 
 
 # ── the desktop's routes ─────────────────────────────────────────────────

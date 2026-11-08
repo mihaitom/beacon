@@ -46,6 +46,7 @@ class KeyOwner(NamedTuple):
     key_id: str
     account: Account
     settings_identity: tuple[str, str, str] | None
+    may_read_api_keys: bool = False
 
 
 def settings_identity_of(session) -> tuple[str, str, str] | None:
@@ -66,6 +67,7 @@ def create(
     label: str,
     settings_identity: tuple[str, str, str] | None,
     now: float | None = None,
+    may_read_api_keys: bool = False,
 ) -> dict:
     """The only time the key itself exists outside the device it goes to."""
     created_at = int(time.time() if now is None else now)
@@ -80,8 +82,8 @@ def create(
             raise TooManyKeys
         conn.execute(
             "INSERT INTO device_keys"
-            " (id, account_id, key_hash, label, settings_identity, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
+            " (id, account_id, key_hash, label, settings_identity, created_at, may_read_api_keys)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 key_id,
                 account_id,
@@ -89,6 +91,7 @@ def create(
                 label,
                 None if settings_identity is None else json.dumps(settings_identity),
                 created_at,
+                int(may_read_api_keys),
             ),
         )
     return {"id": key_id, "key": f"{key_id}.{secret}", "label": label, "created_at": created_at}
@@ -148,4 +151,5 @@ def resolve(presented: str, now: float | None = None) -> KeyOwner | None:
         key_id,
         Account(row["server_type"], row["server_url"], row["username"]),
         None if identity is None else tuple(json.loads(identity)),
+        bool(row["may_read_api_keys"]),
     )

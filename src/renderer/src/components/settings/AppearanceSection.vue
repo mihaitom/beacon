@@ -29,6 +29,15 @@
           </template>
         </v-select>
         <p class="setting__hint">{{ $t('settings.themeHint') }}</p>
+        <v-btn
+          variant="text"
+          prepend-icon="mdi-plus"
+          :disabled="atThemeLimit"
+          class="custom-themes__add"
+          @click="addTheme"
+        >
+          {{ $t('settings.customThemeAdd') }}
+        </v-btn>
       </div>
 
       <div class="setting">
@@ -46,8 +55,18 @@
       <!-- Only the two colours a theme is recognisable by: everything else
          - (the surfaces, the frame, whether text is light or dark) follows
          - from the background, the way the presets' own steps do. -->
-      <div v-if="appearance.theme === 'custom'" class="setting">
+      <div v-if="selected" class="setting">
         <p class="setting__label">{{ $t('settings.customTheme') }}</p>
+        <v-text-field
+          :model-value="selected.name"
+          :label="$t('settings.customThemeName')"
+          variant="solo-filled"
+          density="compact"
+          maxlength="40"
+          hide-details
+          class="custom-themes__name"
+          @update:model-value="appearance.renameCustomTheme($event)"
+        />
         <div class="custom-colors">
           <v-menu
             v-for="field in colorFields"
@@ -57,18 +76,15 @@
           >
             <template #activator="{ props: menuProps }">
               <v-btn v-bind="menuProps" variant="tonal" class="custom-color">
-                <span
-                  class="custom-color__chip"
-                  :style="{ background: appearance.custom[field.key] }"
-                />
+                <span class="custom-color__chip" :style="{ background: selected[field.key] }" />
                 <span class="custom-color__text">
                   <span>{{ field.label }}</span>
-                  <span class="text-medium-emphasis">{{ appearance.custom[field.key] }}</span>
+                  <span class="text-medium-emphasis">{{ selected[field.key] }}</span>
                 </span>
               </v-btn>
             </template>
             <v-color-picker
-              :model-value="appearance.custom[field.key]"
+              :model-value="selected[field.key]"
               mode="hex"
               :modes="['hex']"
               elevation="8"
@@ -79,6 +95,11 @@
         <p v-if="lowContrast" class="setting__hint custom-colors__warning">
           {{ $t('settings.customThemeLowContrast') }}
         </p>
+        <div class="custom-themes__actions">
+          <v-btn variant="text" @click="appearance.deleteCustomTheme(selected.id)">
+            {{ $t('settings.customThemeDelete') }}
+          </v-btn>
+        </div>
       </div>
     </div>
   </section>
@@ -87,8 +108,10 @@
 <script lang="ts">
 import { useAppearanceStore } from '@/stores/appearance'
 import {
+  MAX_CUSTOM_THEMES,
   PRESET_THEMES,
   customTheme,
+  type CustomTheme,
   type CustomThemeColors,
   type ThemeDefinitionColors,
   type ThemeId,
@@ -109,9 +132,10 @@ interface ThemeItem {
 const MIN_ACCENT_CONTRAST = 3
 
 /**
- * The app's theme: four presets and one made from two colours. Applied the
- * moment it is picked (main.ts follows the store), for this device only -
- * see stores/appearance.ts.
+ * The app's theme: four presets and any number made from two colours.
+ * Applied the moment it is picked (main.ts follows the store), for this
+ * device only, while the self-made ones follow the account - see
+ * stores/appearance.ts.
  */
 export default {
   name: 'AppearanceSection',
@@ -120,12 +144,22 @@ export default {
     appearance() {
       return useAppearanceStore()
     },
+    selected(): CustomTheme | null {
+      return this.appearance.selectedCustomTheme
+    },
+    atThemeLimit(): boolean {
+      return this.appearance.customThemes.length >= MAX_CUSTOM_THEMES
+    },
     themeItems(): ThemeItem[] {
       const preset = (id: ThemeId): ThemeItem => ({
         value: id,
         title: this.$t(`settings.themes.${id}.name`),
         subtitle: this.$t(`settings.themes.${id}.description`),
       })
+      const own: ThemeItem[] = this.appearance.customThemes.map((theme) => ({
+        value: theme.id,
+        title: theme.name.trim() || this.$t('settings.customTheme'),
+      }))
       return [
         { type: 'subheader', title: this.$t('settings.themeGroupDark') },
         preset('beacon'),
@@ -133,8 +167,7 @@ export default {
         { type: 'subheader', title: this.$t('settings.themeGroupLight') },
         preset('paper'),
         preset('glacier'),
-        { type: 'divider' },
-        preset('custom'),
+        ...(own.length ? [{ type: 'divider' as const }, ...own] : []),
       ]
     },
     colorFields(): { key: keyof CustomThemeColors; label: string }[] {
@@ -144,17 +177,22 @@ export default {
       ]
     },
     lowContrast(): boolean {
-      const { background, primary } = this.appearance.custom
+      if (!this.selected) return false
+      const { background, primary } = this.selected
       return contrast(background, primary) < MIN_ACCENT_CONTRAST
     },
   },
   methods: {
     swatchOf(id: ThemeId): string[] {
-      const colors: ThemeDefinitionColors =
-        id === 'custom'
-          ? customTheme(this.appearance.custom).colors!
-          : PRESET_THEMES.find((preset) => preset.id === id)!.definition.colors!
+      const own = this.appearance.customThemes.find((theme) => theme.id === id)
+      const colors: ThemeDefinitionColors = own
+        ? customTheme(own).colors!
+        : PRESET_THEMES.find((preset) => preset.id === id)!.definition.colors!
       return [colors.background, colors.surface, colors.primary] as string[]
+    },
+    addTheme(): void {
+      const n = this.appearance.customThemes.length + 1
+      this.appearance.addCustomTheme(this.$t('settings.customThemeNewName', { n }))
     },
     setColor(key: keyof CustomThemeColors, value: string): void {
       // The picker can hand back an alpha channel (#RRGGBBAA) while it is
@@ -175,6 +213,18 @@ export default {
 
 .theme-option__swatch {
   margin-right: 14px;
+}
+
+.custom-themes__add {
+  margin-top: 8px;
+}
+
+.custom-themes__name {
+  margin-bottom: 12px;
+}
+
+.custom-themes__actions {
+  margin-top: 12px;
 }
 
 .custom-colors {

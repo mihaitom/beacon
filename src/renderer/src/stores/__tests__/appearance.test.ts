@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify, type ThemeInstance } from 'vuetify'
 import {
@@ -10,6 +10,7 @@ import {
 } from '../appearance'
 import {
   DEFAULT_CUSTOM_COLORS,
+  MAX_CUSTOM_THEMES,
   customTheme,
   nightTheme,
   sanitizeThemePreference,
@@ -22,9 +23,18 @@ import { DEFAULT_APP_ACCENT, appAccent, themeAccent } from '@/services/appAccent
 
 const KEY = 'beacon.theme'
 
-const prefer = (theme: ThemePreference['theme'], custom = DEFAULT_CUSTOM_COLORS) => ({
+const { pushAccountSettings } = vi.hoisted(() => ({
+  pushAccountSettings: vi.fn(
+    async (_patch: { customThemes?: { primary: string }[] }) => ({}) as unknown,
+  ),
+}))
+vi.mock('@/services/connect/accountSettings', () => ({ pushAccountSettings }))
+
+const prefer = (theme: ThemePreference['theme'], colors = DEFAULT_CUSTOM_COLORS) => ({
   theme,
-  custom,
+  customThemes: theme.startsWith('custom')
+    ? [{ id: theme as `custom${string}`, name: '', ...colors }]
+    : [],
 })
 
 /** What Vuetify keeps per theme, as far as these functions touch it. */
@@ -75,10 +85,43 @@ describe('theme definitions', () => {
     expect(sanitizeThemePreference({ theme: 'solarized' }).theme).toBe('beacon')
     expect(
       sanitizeThemePreference({
-        theme: 'custom',
-        custom: { background: 'blue', primary: '#abcdef' },
-      }).custom,
-    ).toEqual({ background: DEFAULT_CUSTOM_COLORS.background, primary: '#ABCDEF' })
+        theme: 'custom-a',
+        customThemes: [{ id: 'custom-a', name: 'x', background: 'blue', primary: '#abcdef' }],
+      }).customThemes,
+    ).toEqual([
+      {
+        id: 'custom-a',
+        name: 'x',
+        background: DEFAULT_CUSTOM_COLORS.background,
+        primary: '#ABCDEF',
+      },
+    ])
+  })
+
+  it('keeps the one theme somebody made before there could be several', () => {
+    const colours = { background: '#101820', primary: '#E07A5F' }
+    const chosen = sanitizeThemePreference({ theme: 'custom', custom: colours })
+    expect(chosen.theme).toBe('custom')
+    expect(chosen.customThemes).toEqual([{ id: 'custom', name: '', ...colours }])
+
+    const notChosen = sanitizeThemePreference({ theme: 'paper', custom: colours })
+    expect(notChosen.theme).toBe('paper')
+    expect(notChosen.customThemes).toHaveLength(1)
+  })
+
+  it('does not invent a theme from colours nobody touched', () => {
+    expect(
+      sanitizeThemePreference({ theme: 'paper', custom: DEFAULT_CUSTOM_COLORS }).customThemes,
+    ).toEqual([])
+  })
+
+  it('falls back to Beacon when the chosen theme is not there any more', () => {
+    expect(sanitizeThemePreference({ theme: 'custom-gone', customThemes: [] }).theme).toBe('beacon')
+  })
+
+  it('refuses an id that could not go in a class name', () => {
+    const bad = [{ id: 'custom x"><', name: '', background: '#111111', primary: '#222222' }]
+    expect(sanitizeThemePreference({ customThemes: bad }).customThemes).toEqual([])
   })
 })
 
@@ -105,11 +148,134 @@ describe('appearance store', () => {
 
   it('takes one custom colour at a time and ignores one that is not a colour', () => {
     const store = useAppearanceStore()
+    store.addCustomTheme('Mine')
     store.setCustomColors({ primary: '#123456' })
     store.setCustomColors({ background: 'nope' })
-    expect(store.custom).toEqual({
+    expect(store.selectedCustomTheme).toMatchObject({
       background: DEFAULT_CUSTOM_COLORS.background,
       primary: '#123456',
+    })
+  })
+
+  it('keeps several themes apart and turns a new one on', () => {
+    const store = useAppearanceStore()
+    store.addCustomTheme('One')
+    store.setCustomColors({ primary: '#111111' })
+    const first = store.theme
+    store.addCustomTheme('Two')
+    store.setCustomColors({ primary: '#222222' })
+
+    expect(store.theme).not.toBe(first)
+    expect(store.customThemes.map((t) => [t.name, t.primary])).toEqual([
+      ['One', '#111111'],
+      ['Two', '#222222'],
+    ])
+  })
+
+  it('starts a new theme from the self-made one that is on', () => {
+    const store = useAppearanceStore()
+    store.addCustomTheme('One')
+    store.setCustomColors({ background: '#ABCDEF' })
+    store.addCustomTheme('Two')
+    expect(store.selectedCustomTheme!.background).toBe('#ABCDEF')
+  })
+
+  it('stops at the limit', () => {
+    const store = useAppearanceStore()
+    for (let i = 0; i < MAX_CUSTOM_THEMES + 3; i++) store.addCustomTheme(`T${i}`)
+    expect(store.customThemes).toHaveLength(MAX_CUSTOM_THEMES)
+    expect(store.selectedCustomTheme).not.toBeNull()
+  })
+
+  it('goes back to Beacon when the theme that is on is deleted', () => {
+    const store = useAppearanceStore()
+    store.addCustomTheme('One')
+    store.deleteCustomTheme(store.theme)
+    expect(store.theme).toBe('beacon')
+    expect(store.customThemes).toEqual([])
+  })
+
+  it('leaves the theme on alone when another one is deleted', () => {
+    const store = useAppearanceStore()
+    store.addCustomTheme('One')
+    const one = store.theme
+    store.addCustomTheme('Two')
+    store.deleteCustomTheme(one)
+    expect(store.selectedCustomTheme!.name).toBe('Two')
+  })
+
+  it('remembers the themes across a restart', () => {
+    useAppearanceStore().addCustomTheme('One')
+    setActivePinia(createPinia())
+    expect(useAppearanceStore().selectedCustomTheme!.name).toBe('One')
+  })
+
+  it('takes over the account list and leaves a theme removed elsewhere', () => {
+    const store = useAppearanceStore()
+    store.addCustomTheme('Local')
+    store.adoptCustomThemes([
+      { id: 'custom-b', name: 'Remote', background: '#111111', primary: '#222222' },
+    ])
+    expect(store.customThemes.map((t) => t.name)).toEqual(['Remote'])
+    expect(store.theme).toBe('beacon')
+  })
+
+  it('keeps the theme on when the account list still has it', () => {
+    const store = useAppearanceStore()
+    store.addCustomTheme('Local')
+    const id = store.theme
+    store.adoptCustomThemes([{ id, name: 'Renamed', background: '#111111', primary: '#222222' }])
+    expect(store.theme).toBe(id)
+    expect(store.selectedCustomTheme!.name).toBe('Renamed')
+  })
+
+  describe('following the account', () => {
+    beforeEach(() => {
+      vi.useFakeTimers()
+      pushAccountSettings.mockClear()
+    })
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    const pushed = async () => {
+      await vi.advanceTimersByTimeAsync(1000)
+      await vi.dynamicImportSettled()
+      await vi.advanceTimersByTimeAsync(0)
+      return pushAccountSettings.mock.calls.map(([patch]) => patch.customThemes)
+    }
+
+    it('sends a burst of changes once, with the end result', async () => {
+      const store = useAppearanceStore()
+      store.addCustomTheme('One')
+      for (const primary of ['#111111', '#222222', '#333333']) store.setCustomColors({ primary })
+      const calls = await pushed()
+      expect(calls).toHaveLength(1)
+      expect(calls[0]![0]!.primary).toBe('#333333')
+    })
+
+    it('does not send back what came from the server', async () => {
+      useAppearanceStore().adoptCustomThemes([])
+      expect(await pushed()).toEqual([])
+    })
+
+    it('does not send anything for choosing a theme', async () => {
+      useAppearanceStore().setTheme('paper')
+      expect(await pushed()).toEqual([])
+    })
+
+    it('shares an existing list with an account that has none yet', async () => {
+      const store = useAppearanceStore()
+      store.addCustomTheme('One')
+      await pushed()
+      pushAccountSettings.mockClear()
+      store.shareCustomThemes()
+      expect(await pushed()).toHaveLength(1)
+    })
+
+    it('shares nothing when there is nothing', async () => {
+      useAppearanceStore().shareCustomThemes()
+      expect(await pushed()).toEqual([])
     })
   })
 
@@ -143,13 +309,13 @@ describe('applyThemePreference', () => {
   it('switches Vuetify to the theme, with the current custom colours', () => {
     const theme = fakeTheme()
     const custom = { background: '#F3EFFA', primary: '#7B3FC4' }
-    applyThemePreference(theme as unknown as ThemeInstance, prefer('custom', custom))
+    applyThemePreference(theme as unknown as ThemeInstance, prefer('custom-a', custom))
 
-    expect(theme.change).toHaveBeenCalledWith('custom')
-    expect((theme.themes.value.custom as { colors: { primary: string } }).colors.primary).toBe(
+    expect(theme.change).toHaveBeenCalledWith('custom-a')
+    expect((theme.themes.value['custom-a'] as { colors: { primary: string } }).colors.primary).toBe(
       '#7B3FC4',
     )
-    expect(theme.themes.value['custom-night']).toBeDefined()
+    expect(theme.themes.value['custom-a-night']).toBeDefined()
   })
 
   it("hands the canvas components the theme's accents", () => {

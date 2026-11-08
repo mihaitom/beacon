@@ -59,6 +59,7 @@ LINKED_FIELDS = frozenset(
         "transitions",
         "speakerEqualizers",
         "equalizerPresets",
+        "customThemes",
     }
 )
 

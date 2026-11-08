@@ -12,7 +12,7 @@ import asyncio
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from pydantic import BaseModel, Field, ValidationError
 
-from core import account_settings, device_keys, play_history
+from core import account_settings, api_keys, device_keys, lyrics_offsets, play_history
 from core.account_settings import LINKED_FIELDS
 from core.auth import require_token
 from core.device_keys import KeyOwner
@@ -20,6 +20,7 @@ from core.party import RateLimiter
 from core.server_link import INVALID_KEY_DETAIL
 from core.session import SessionState, require_authenticated_session
 from core.trusted_proxies import client_ip
+from routes.lyrics_offsets import OffsetsPatch
 from routes.play_history import Listen, Milestones, _own
 
 router = APIRouter(prefix="/device-link")
@@ -35,6 +36,7 @@ _MAX_BATCH = 500
 _MAX_LISTENS_BODY = 4 * 1024 * 1024
 _MAX_SETTINGS_BODY = 64 * 1024
 _MAX_MILESTONES_BODY = 1024
+_MAX_OFFSETS_BODY = 256 * 1024
 
 
 class IncomingListen(Listen):
@@ -137,6 +139,27 @@ async def patch_settings(request: Request, owner: KeyOwner = Depends(_require_ke
     return {"status": "ok"}
 
 
+@router.get("/api-keys")
+def get_api_keys(owner: KeyOwner = Depends(_require_key)) -> dict:
+    """The installation's keys, for a device an administrator paired: the
+    same people who can see and change them in Settings here."""
+    if not owner.may_read_api_keys:
+        return {"keys": {}}
+    return {"keys": {service: api_keys.get(service) for service in api_keys.SERVICES}}
+
+
+@router.get("/lyrics-offsets")
+def get_lyrics_offsets(owner: KeyOwner = Depends(_require_key)) -> dict:
+    return {"offsets": lyrics_offsets.load(owner.account)}
+
+
+@router.patch("/lyrics-offsets")
+async def patch_lyrics_offsets(request: Request, owner: KeyOwner = Depends(_require_key)) -> dict:
+    patch = await _parsed(request, OffsetsPatch, _MAX_OFFSETS_BODY)
+    await asyncio.to_thread(lyrics_offsets.save, owner.account, patch.offsets)
+    return {"status": "ok"}
+
+
 def _require_account(session: SessionState):
     account = _own(session)
     if account is None:
@@ -156,7 +179,10 @@ def create_device_key(
     account = _require_account(session)
     try:
         return device_keys.create(
-            account, new_key.label.strip(), device_keys.settings_identity_of(session)
+            account,
+            new_key.label.strip(),
+            device_keys.settings_identity_of(session),
+            may_read_api_keys=session.account_is_admin,
         )
     except device_keys.TooManyKeys as e:
         raise HTTPException(status_code=409, detail="Too many device keys") from e

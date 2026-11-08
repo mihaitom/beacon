@@ -1,20 +1,38 @@
 import { defineStore } from 'pinia'
 import type { ThemeInstance } from 'vuetify'
 import { appAccent, themeAccent } from '@/services/appAccent'
-import { hexToTriplet, towardsContrast, tripletToHex } from '@/services/themeColors'
+import { hexToTriplet, isHexColor, towardsContrast, tripletToHex } from '@/services/themeColors'
 import {
+  DEFAULT_CUSTOM_COLORS,
+  MAX_CUSTOM_THEMES,
   nightTheme,
+  sanitizeCustomThemes,
   sanitizeThemePreference,
   themeDefinitions,
+  type CustomTheme,
   type CustomThemeColors,
   type ThemeId,
   type ThemePreference,
 } from '@/plugins/theme'
 
-// Per device, not per account: the theme is already needed on the login
-// page, before there is an account to scope it to, and a phone and a
-// desktop are often wanted differently.
+// Which theme is on is per device, not per account: it is already needed on
+// the login page, before there is an account to scope it to, and a phone and
+// a desktop are often wanted differently. The self-made themes follow the
+// account (services/connect/accountSettings.ts) and are kept here as well,
+// for that same login page.
 const STORAGE_KEY = 'beacon.theme'
+
+// A colour picker reports every step of a drag, and a name every keystroke.
+const PUSH_DEBOUNCE_MS = 800
+
+let pushTimer: ReturnType<typeof setTimeout> | undefined
+
+function pushCustomThemes(themes: CustomTheme[]): void {
+  const customThemes = themes.map((theme) => ({ ...theme }))
+  void import('@/services/connect/accountSettings').then(({ pushAccountSettings }) =>
+    pushAccountSettings({ customThemes }).catch(() => {}),
+  )
+}
 
 function loadStored(): unknown {
   try {
@@ -132,6 +150,9 @@ export const useAppearanceStore = defineStore('appearance', {
     nightTheme(state): string {
       return nightTheme(state)
     },
+    selectedCustomTheme(state): CustomTheme | null {
+      return state.customThemes.find((theme) => theme.id === state.theme) ?? null
+    },
   },
   actions: {
     setTheme(theme: ThemeId): void {
@@ -144,13 +165,66 @@ export const useAppearanceStore = defineStore('appearance', {
       this.persist()
     },
 
+    /** Changes the theme that is on, which has to be a self-made one. */
     setCustomColors(colors: Partial<CustomThemeColors>): void {
-      const next = sanitizeThemePreference({
-        theme: this.theme,
-        custom: { ...this.custom, ...colors },
-      })
-      this.custom = next.custom
+      const valid = Object.fromEntries(
+        Object.entries(colors).filter(([, value]) => isHexColor(value)),
+      )
+      this.updateSelected(valid)
+    },
+
+    renameCustomTheme(name: string): void {
+      this.updateSelected({ name })
+    },
+
+    updateSelected(change: Partial<CustomTheme>): void {
+      this.customThemes = sanitizeCustomThemes(
+        this.customThemes.map((theme) =>
+          theme.id === this.theme ? { ...theme, ...change } : theme,
+        ),
+      )
+      this.saveCustomThemes()
+    },
+
+    /** Starts from the colours of the self-made theme that is on, since a
+     * new one is often a variation of it. Turned on straight away. */
+    addCustomTheme(name: string): void {
+      if (this.customThemes.length >= MAX_CUSTOM_THEMES) return
+      const { background, primary } = this.selectedCustomTheme ?? DEFAULT_CUSTOM_COLORS
+      // Not crypto.randomUUID(): a Docker install on plain http has none.
+      const id = `custom-${Math.random().toString(36).slice(2, 10)}` as const
+      this.customThemes = sanitizeCustomThemes([
+        ...this.customThemes,
+        { id, name, background, primary },
+      ])
+      this.theme = id
+      this.saveCustomThemes()
+    },
+
+    deleteCustomTheme(id: string): void {
+      this.customThemes = this.customThemes.filter((theme) => theme.id !== id)
+      if (this.theme === id) this.theme = 'beacon'
+      this.saveCustomThemes()
+    },
+
+    /** The account's list, from the server. Not sent back: it just came
+     * from there. */
+    adoptCustomThemes(raw: unknown): void {
+      const next = sanitizeThemePreference({ theme: this.theme, customThemes: raw ?? [] })
+      this.customThemes = next.customThemes
+      this.theme = next.theme
       this.persist()
+    },
+
+    /** For an account the server has no list for yet. */
+    shareCustomThemes(): void {
+      if (this.customThemes.length) pushCustomThemes(this.customThemes)
+    },
+
+    saveCustomThemes(): void {
+      this.persist()
+      clearTimeout(pushTimer)
+      pushTimer = setTimeout(() => pushCustomThemes(this.customThemes), PUSH_DEBOUNCE_MS)
     },
 
     persist(): void {
@@ -159,7 +233,7 @@ export const useAppearanceStore = defineStore('appearance', {
           STORAGE_KEY,
           JSON.stringify({
             theme: this.theme,
-            custom: this.custom,
+            customThemes: this.customThemes,
             adaptiveAccent: this.adaptiveAccent,
           }),
         )

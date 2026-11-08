@@ -836,13 +836,18 @@ export default {
     libraryTitle: 'Bibliothèque',
     appearanceTitle: 'Apparence',
     theme: 'Thème',
-    themeHint: "S'applique uniquement à cet appareil.",
+    themeHint:
+      "Le thème actif ne s'applique qu'à cet appareil. Vos thèmes personnels suivent votre compte.",
     adaptiveAccent: "Lecture prend la couleur de l'image",
     adaptiveAccentHint:
       "Tant que Lecture est ouverte, le visualiseur et l'accent de l'app prennent la couleur de l'arrière-plan de l'artiste, ou de la pochette à défaut. Désactivé, ils gardent l'accent du thème.",
     themeGroupDark: 'Sombres',
     themeGroupLight: 'Clairs',
     customTheme: 'Vos couleurs',
+    customThemeAdd: 'Nouveau thème',
+    customThemeName: 'Nom',
+    customThemeDelete: 'Supprimer le thème',
+    customThemeNewName: 'Mon thème {n}',
     customThemeBackground: 'Arrière-plan',
     customThemeAccent: 'Accent',
     customThemeLowContrast:
@@ -852,7 +857,6 @@ export default {
       graphite: { name: 'Graphite', description: 'Anthracite neutre, accent turquoise' },
       paper: { name: 'Papier', description: 'Blanc chaud, accent cuivre' },
       glacier: { name: 'Glacier', description: 'Gris clair froid, accent bleu' },
-      custom: { name: 'Personnalisé', description: 'Votre arrière-plan et votre accent' },
     },
     libraryScanHint:
       'Demandez à {server} de rechercher les fichiers nouveaux, modifiés ou supprimés.',
@@ -921,6 +925,7 @@ export default {
     apiKeySet: 'Une clé est déjà enregistrée',
     apiKeyMissing: 'Aucune clé.',
     apiKeyStored: 'Une clé est enregistrée. Saisissez-en une nouvelle pour la remplacer.',
+    apiKeyFromServer: 'La clé provient de votre serveur Beacon.',
     apiKeyFromEnvironment: 'La clé provient de la configuration de cette installation.',
     apiKeyClear: 'Supprimer la clé',
     apiKeySaved: 'Clé enregistrée',

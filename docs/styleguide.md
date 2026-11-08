@@ -62,8 +62,8 @@ name is.
 
 ## Palette
 
-There are four themes and one made from two colours, picked per device in
-Settings → Appearance (`plugins/theme.ts`, kept in `stores/appearance.ts`):
+There are four themes and any number made from two colours, picked per device
+in Settings → Appearance (`plugins/theme.ts`, kept in `stores/appearance.ts`):
 Beacon (the default) and Graphite are dark, Paper and Glacier are light. **So
 no colour is written down in a component.** A white is
 `rgba(var(--v-theme-on-surface), x)`, the accent `rgba(var(--v-theme-primary), x)`,

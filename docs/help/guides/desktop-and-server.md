@@ -19,10 +19,14 @@ the computer and sent when it can be reached again.
 - **Settings that belong to you:** language, equalizer presets and each
   speaker's equalizer, gapless and crossfade, table columns, lyrics providers,
   your Last.fm and ListenBrainz names and the like.
+- **Your own themes,** though which theme is on stays with each device.
+- **Lyrics timing you corrected,** song by song.
+- **The Last.fm and Fanart keys,** if a server administrator created the
+  device key. A key you entered in the desktop app stays in charge, and the
+  server's keys stop being used when you disconnect.
 
 Things that belong to one computer or one installation stay there: audio
-quality, this device's own equalizer, the API keys, Hue lights and casting
-permissions. Your queue, favourites and playlists already live on your media
+quality, this device's own equalizer, Hue lights and casting permissions. Your queue, favourites and playlists already live on your media
 server.
 
 ## Connecting

@@ -27,7 +27,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from core import account_settings, play_history
+from core import account_settings, api_keys, lyrics_offsets, play_history
 from core.account_settings import LINKED_FIELDS
 from core.paths import data_dir
 from core.play_history import Account
@@ -53,6 +53,7 @@ INVALID_URL = "invalid_url"
 INSECURE_URL = "insecure_url"
 
 _BATCH_SIZE = 500
+_OFFSET_BATCH_SIZE = 500
 IDLE_SECONDS = 300.0
 _BACKOFF_BASE_SECONDS = 30.0
 _BACKOFF_MAX_SECONDS = 3600.0
@@ -228,6 +229,12 @@ def pair(
         remote = _call(url, key, "GET", "/settings", timeout=_SETTINGS_TIMEOUT)
         local = account_settings.load(*settings_identity)
         pending = {k: v for k, v in local.items() if k in LINKED_FIELDS and k not in remote}
+    remote_offsets = _call(url, key, "GET", "/lyrics-offsets").get("offsets") or {}
+    pending_offsets = {
+        song: seconds
+        for song, seconds in lyrics_offsets.load(account).items()
+        if song not in remote_offsets
+    }
     play_history.forget_sent(account)
     with _lock:
         _write(
@@ -239,6 +246,7 @@ def pair(
                 "remote_username": info.get("username", ""),
                 "pending_settings": pending,
                 "pending_milestones": {},
+                "pending_lyrics_offsets": pending_offsets,
                 "backfill": True,
                 "last_sync_at": None,
             }
@@ -256,6 +264,7 @@ def unpair() -> None:
             os.remove(_path())
         except FileNotFoundError:
             pass
+    _forget_api_keys()
     _note(CONNECTED)
 
 
@@ -314,6 +323,32 @@ def summary_for(account: Account) -> dict | None:
     return play_history.with_unsent(account, remote)
 
 
+def note_lyrics_offsets(account: Account, offsets: dict[str, float]) -> None:
+    with _lock:
+        link = _read()
+        if link is None or _account_of(link) != account:
+            return
+        link.setdefault("pending_lyrics_offsets", {}).update(offsets)
+        _write(link)
+    wake()
+
+
+def pull_lyrics_offsets(account: Account) -> dict[str, float] | None:
+    """The server's corrections with this desktop's unsent ones on top, or
+    None when the local copy has to answer."""
+    link = _read()
+    if link is None or _account_of(link) != account:
+        return None
+    try:
+        remote = _call(
+            link["url"], link["key"], "GET", "/lyrics-offsets", timeout=_SETTINGS_TIMEOUT
+        )
+    except LinkError as e:
+        _note(e.state)
+        return None
+    return {**(remote.get("offsets") or {}), **(link.get("pending_lyrics_offsets") or {})}
+
+
 def _send_listens(link: dict, account: Account) -> None:
     backfill = bool(link.get("backfill"))
     while True:
@@ -327,21 +362,30 @@ def _send_listens(link: dict, account: Account) -> None:
             break
 
 
+def _forget_sent(link: dict, field: str, sent: dict) -> None:
+    with _lock:
+        current = _read()
+        if current is None or current["key"] != link["key"]:
+            return
+        # A value changed again while this was on its way is still unsent.
+        current[field] = {k: v for k, v in current[field].items() if k not in sent or sent[k] != v}
+        _write(current)
+
+
 def _send_settings(link: dict) -> None:
     sent = dict(link.get("pending_settings") or {})
     if not sent:
         return
     _call(link["url"], link["key"], "PATCH", "/settings", {"settings": sent})
-    with _lock:
-        current = _read()
-        if current is None or current["key"] != link["key"]:
-            return
-        pending = current["pending_settings"]
-        # A field changed again while this was on its way is still unsent.
-        current["pending_settings"] = {
-            k: v for k, v in pending.items() if k not in sent or sent[k] != v
-        }
-        _write(current)
+    _forget_sent(link, "pending_settings", sent)
+
+
+def _send_lyrics_offsets(link: dict) -> None:
+    items = list((link.get("pending_lyrics_offsets") or {}).items())
+    for start in range(0, len(items), _OFFSET_BATCH_SIZE):
+        sent = dict(items[start : start + _OFFSET_BATCH_SIZE])
+        _call(link["url"], link["key"], "PATCH", "/lyrics-offsets", {"offsets": sent})
+        _forget_sent(link, "pending_lyrics_offsets", sent)
 
 
 def _send_milestones(link: dict) -> None:
@@ -356,6 +400,19 @@ def _send_milestones(link: dict) -> None:
         if current.get("pending_milestones") == sent:
             current["pending_milestones"] = {}
             _write(current)
+
+
+def _adopt_api_keys(link: dict) -> None:
+    lent = _call(link["url"], link["key"], "GET", "/api-keys").get("keys") or {}
+    for service in api_keys.SERVICES:
+        key = lent.get(service)
+        api_keys.set_shared(service, key if isinstance(key, str) else "")
+
+
+def _forget_api_keys() -> None:
+    """They were lent for as long as this desktop is paired."""
+    for service in api_keys.SERVICES:
+        api_keys.set_shared(service, "")
 
 
 def _mark_synced(link: dict, now: float) -> None:
@@ -380,9 +437,13 @@ def send_once(now: float | None = None) -> bool:
         _call(link["url"], link["key"], "GET", "/info")
         _send_listens(link, _account_of(link))
         _send_settings(link)
+        _send_lyrics_offsets(link)
         _send_milestones(link)
+        _adopt_api_keys(link)
     except LinkError as e:
         _note(e.state)
+        if e.state == WRONG_KEY:
+            _forget_api_keys()
         logger.info(f"[server-link] Sync paused: {e.state}")
         return False
     _mark_synced(link, time.time() if now is None else now)

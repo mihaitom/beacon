@@ -25,16 +25,15 @@ Playing never waits for the network, and what was made offline goes out later.
 
 ## Deliberately not synced
 
-| What                                                 | Why                                                |
-| ---------------------------------------------------- | -------------------------------------------------- |
-| Caches (recommendations, artwork, lyrics, waveforms) | can be recomputed, see `CLAUDE.md`                 |
-| Last.fm and Fanart keys                              | the installation's, a listener's key must not read |
-| Cast permissions, Hue, integration key, remote PIN   | bound to a house or an installation                |
-| Favourites, ratings, playlists, Navidrome's queue    | already on the media server                        |
-| `releaseNotesSeen`                                   | names an app version, and the two run different    |
+| What                                                 | Why                                             |
+| ---------------------------------------------------- | ----------------------------------------------- |
+| Caches (recommendations, artwork, lyrics, waveforms) | can be recomputed, see `CLAUDE.md`              |
+| Cast permissions, Hue, integration key, remote PIN   | bound to a house or an installation             |
+| Favourites, ratings, playlists, Navidrome's queue    | already on the media server                     |
+| `releaseNotesSeen`                                   | names an app version, and the two run different |
 
-Considered and left out for now: per-song lyrics offsets, a queue for
-Jellyfin and Plex, radio stations, and steering the desktop through the server
+Considered and left out for now: a queue for Jellyfin and Plex, radio stations,
+and steering the desktop through the server
 (rejected, it would need a channel from the server back to the desktop).
 
 ## The key
@@ -98,6 +97,29 @@ and queues the field, `GET` asks the server and lays unsent fields on top. The
 renderer knows nothing about any of it, and its "server wins" at login is
 unchanged.
 
+## Lyrics corrections
+
+Per song in connect (`core/lyrics_offsets.py`), rather than as one list in the
+account settings: those are written whole, so a device holding an older copy
+would take back a correction made elsewhere. Zero is kept as a row, so that a
+device still holding the old value hears it was undone. The renderer keeps
+reading localStorage, and brings it in step at login: the account wins for
+songs it knows, and what only this device knows goes up.
+
+## Custom themes
+
+The list follows the account as `customThemes` in the settings, whole, since a
+theme is rarely edited on two devices at once. Which theme is on stays with the
+device. A theme deleted elsewhere falls back to Beacon on this one.
+
+## API keys
+
+The Last.fm and Fanart keys belong to the installation, and any listener can
+make a device key. So a key only reads them if a server administrator made it,
+noted when it is made. The desktop keeps them apart from a key entered there,
+which stays in charge, and gives them back on disconnecting or when its key is
+refused.
+
 ## What the server decides about incoming rows
 
 - **Time.** Stamped by the desktop's connect. More than a day ahead is dropped.
@@ -119,6 +141,9 @@ of the server's answer, so a song just played counts at once.
 
 ## Open
 
+- **Rights after the fact.** A device has no session, so an administrator who
+  loses that role keeps the API keys through an existing device key until it is
+  revoked.
 - **Admin view.** A key only speaks for its own account, so the desktop's admin
   picker stays as it was. Listing the server's accounts needs the admin flag
   noted on the key, and a way for it to end when the server stops considering

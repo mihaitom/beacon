@@ -144,14 +144,22 @@ def test_each_service_has_its_own_file(no_key):
 def test_get_reports_every_service(client, no_key):
     body = client.get("/api-keys").json()
     assert set(body["keys"]) == set(api_keys.SERVICES)
-    assert body["keys"]["lastfm"] == {"configured": False, "fromEnvironment": False}
+    assert body["keys"]["lastfm"] == {
+        "configured": False,
+        "fromEnvironment": False,
+        "fromServer": False,
+    }
 
 
 def test_posting_a_key_configures_the_service(client, no_key):
     resp = client.post("/api-keys/lastfm", json={"key": "from-settings"})
 
     assert resp.status_code == 200
-    assert resp.json()["keys"]["lastfm"] == {"configured": True, "fromEnvironment": False}
+    assert resp.json()["keys"]["lastfm"] == {
+        "configured": True,
+        "fromEnvironment": False,
+        "fromServer": False,
+    }
     assert api_keys.get("lastfm") == "from-settings"
 
 
@@ -167,6 +175,7 @@ def test_status_says_when_the_key_came_from_the_environment(client, env_key):
     assert client.get("/api-keys").json()["keys"]["lastfm"] == {
         "configured": True,
         "fromEnvironment": True,
+        "fromServer": False,
     }
     client.post("/api-keys/lastfm", json={"key": "from-settings"})
     assert client.get("/api-keys").json()["keys"]["lastfm"]["fromEnvironment"] is False

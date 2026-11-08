@@ -11,7 +11,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Beacon now keeps its own record of what you play, the same on Navidrome, Jellyfin and Plex, and the Stats page shows a year of it: your streak, every day and your favourite hours. With a Last.fm or ListenBrainz name set up in Settings the past year is filled in from there, by itself with one of the two and at the push of a button with both, and it can be fetched again later
 - Passing a round number gets its own moment when you open Stats: hours from 100 and streaks from a week up, in steps that spread out from bronze to diamond
 - Every full record goes on a stack under the turntable, one stack each from bronze up to diamond, and gets its own moment; pointing at a stack or tapping it fans it out and shows when each record filled up
-- The desktop app can connect to a Beacon server of yours: both then show the same listening history and follow the same settings, and what you play while the server is away is sent later
+- The desktop app can connect to a Beacon server of yours: both then show the same listening history and follow the same settings, your own themes and the Last.fm and Fanart keys come along, and what you play while the server is away is sent later
+- Lyrics timing you corrected for a song now follows your account to every device
+- You can save several themes of your own instead of one, and they follow your account
 - A server administrator can look at the Stats page of the other accounts on the server
 - Playlists can have a description, set when creating or editing one and shown on its page. On Navidrome and other Subsonic servers they can also be made public right when they are created
 - A Navidrome admin can edit and delete other people's playlists and hand a playlist to another user

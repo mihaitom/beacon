@@ -82,6 +82,22 @@ _DEVICE_LINK_SCHEMA = (
     "CREATE INDEX device_keys_by_account ON device_keys (account_id)",
 )
 
+# A row at zero is a correction taken back, which a device that still holds
+# the old value has to hear about.
+_LYRICS_OFFSETS_SCHEMA = (
+    """CREATE TABLE lyrics_offsets (
+        account_id INTEGER NOT NULL REFERENCES accounts (id),
+        song_id TEXT NOT NULL,
+        seconds REAL NOT NULL,
+        PRIMARY KEY (account_id, song_id)
+    )""",
+)
+
+# Noted when the key is made: a device has no session to ask later.
+_KEY_RIGHTS_SCHEMA = (
+    "ALTER TABLE device_keys ADD COLUMN may_read_api_keys INTEGER NOT NULL DEFAULT 0",
+)
+
 _OWN_SOURCE = "beacon"
 _TEXT_FIELDS = (
     "song_id",
@@ -209,8 +225,18 @@ def _add_device_links(conn: sqlite3.Connection) -> None:
         conn.execute(statement)
 
 
+def _add_lyrics_offsets(conn: sqlite3.Connection) -> None:
+    for statement in _LYRICS_OFFSETS_SCHEMA:
+        conn.execute(statement)
+
+
+def _add_key_rights(conn: sqlite3.Connection) -> None:
+    for statement in _KEY_RIGHTS_SCHEMA:
+        conn.execute(statement)
+
+
 # PRAGMA user_version counts how many of these have run. Append only.
-_MIGRATIONS = (_create_log, _add_device_links)
+_MIGRATIONS = (_create_log, _add_device_links, _add_lyrics_offsets, _add_key_rights)
 
 
 def _prepare(conn: sqlite3.Connection) -> None:
@@ -242,7 +268,8 @@ def _database() -> Iterator[sqlite3.Connection]:
 
 @contextmanager
 def transaction() -> Iterator[sqlite3.Connection]:
-    """For the other tables in this database (core/device_keys.py)."""
+    """For the other tables in this database (core/device_keys.py,
+    core/lyrics_offsets.py)."""
     with _lock, _database() as conn:
         yield conn
 

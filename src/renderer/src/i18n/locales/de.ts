@@ -832,13 +832,18 @@ export default {
     libraryTitle: 'Bibliothek',
     appearanceTitle: 'Darstellung',
     theme: 'Theme',
-    themeHint: 'Gilt nur für dieses Gerät.',
+    themeHint:
+      'Welches Theme aktiv ist, gilt nur für dieses Gerät. Deine eigenen Themes folgen deinem Konto.',
     adaptiveAccent: '„Läuft gerade“ übernimmt die Farbe des Bilds',
     adaptiveAccentHint:
       'Solange „Läuft gerade“ offen ist, nehmen der Visualizer und der Akzent der App die Farbe des Künstlerhintergrunds an, ohne einen die des Covers. Aus, bleiben sie im Akzent des Themes.',
     themeGroupDark: 'Dunkel',
     themeGroupLight: 'Hell',
     customTheme: 'Eigene Farben',
+    customThemeAdd: 'Neues Theme',
+    customThemeName: 'Name',
+    customThemeDelete: 'Theme löschen',
+    customThemeNewName: 'Mein Theme {n}',
     customThemeBackground: 'Hintergrund',
     customThemeAccent: 'Akzent',
     customThemeLowContrast:
@@ -848,7 +853,6 @@ export default {
       graphite: { name: 'Graphit', description: 'Neutrales Anthrazit, Türkis-Akzent' },
       paper: { name: 'Papier', description: 'Warmes Papierweiß, Kupfer-Akzent' },
       glacier: { name: 'Gletscher', description: 'Kühles Hellgrau, Blau-Akzent' },
-      custom: { name: 'Eigenes', description: 'Eigener Hintergrund und Akzent' },
     },
     libraryScanHint: '{server} nach neuen, geänderten oder entfernten Dateien durchsuchen lassen.',
     rescanLibrary: 'Bibliothek neu scannen',
@@ -917,6 +921,7 @@ export default {
     apiKeySet: 'Ein Schlüssel ist hinterlegt',
     apiKeyMissing: 'Kein Schlüssel hinterlegt.',
     apiKeyStored: 'Ein Schlüssel ist hinterlegt. Zum Ersetzen einen neuen eingeben.',
+    apiKeyFromServer: 'Der Schlüssel kommt von deinem Beacon-Server.',
     apiKeyFromEnvironment:
       'Es wird der Schlüssel aus der Konfiguration dieser Installation verwendet.',
     apiKeyClear: 'Schlüssel entfernen',

@@ -68,6 +68,7 @@ from routes.local_stream import reset_hls_encodes
 from routes.local_stream import router as local_stream_router
 from routes.log_level import router as log_level_router
 from routes.lyrics import router as lyrics_router
+from routes.lyrics_offsets import router as lyrics_offsets_router
 from routes.navidrome import router as navidrome_router
 from routes.pairing import reap_stale_pairings
 from routes.pairing import router as pairing_router
@@ -493,6 +494,7 @@ app.include_router(cast_permissions_router)
 app.include_router(api_keys_router)
 app.include_router(pairing_router)
 app.include_router(lyrics_router)
+app.include_router(lyrics_offsets_router)
 app.include_router(waveform_router)
 app.include_router(radio_router)
 app.include_router(recommendations_router)

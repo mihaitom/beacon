@@ -48,6 +48,42 @@ def _env(service: str) -> str:
     return f"{service.upper()}_API_KEY"
 
 
+def _shared_path(service: str) -> str:
+    return os.path.join(_DATA_DIR, f"{service}_api_key.shared.txt")
+
+
+def _load_shared(service: str) -> str:
+    """A key a paired Beacon server lent this desktop (core/server_link.py).
+    Kept apart from the one entered here, which it must never replace and
+    which outlives the pairing."""
+    try:
+        with open(_shared_path(service), encoding="utf-8") as f:
+            return f.read().strip()
+    except FileNotFoundError:
+        return ""
+    except OSError as e:
+        logger.warning(f"[api-keys] Could not read the shared {service} key: {e}")
+        return ""
+
+
+def set_shared(service: str, key: str) -> None:
+    """Remembers the server's key, or forgets it when given ''."""
+    with _lock:
+        if _load_shared(service) == key:
+            return
+        try:
+            if key:
+                os.makedirs(_DATA_DIR, exist_ok=True)
+                fd = os.open(_shared_path(service), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
+                    f.write(key)
+            else:
+                os.unlink(_shared_path(service))
+        except OSError as e:
+            logger.error(f"[api-keys] Could not store the shared {service} key: {e}")
+        _cache[service] = None
+
+
 def _load_stored(service: str) -> str:
     try:
         with open(_path(service), encoding="utf-8") as f:
@@ -67,7 +103,11 @@ def get(service: str) -> str:
     while anyone can change it later without touching the container."""
     with _lock:
         if _cache.get(service) is None:
-            _cache[service] = _load_stored(service) or os.getenv(_env(service), "").strip()
+            _cache[service] = (
+                _load_stored(service)
+                or os.getenv(_env(service), "").strip()
+                or _load_shared(service)
+            )
         return _cache[service]
 
 
@@ -111,10 +151,16 @@ def set(service: str, key: str) -> None:
 
 
 def status(service: str) -> dict:
-    """Whether the service has a key at all, and whether it came from the
-    environment rather than from Settings. The key itself is never part of
+    """Whether the service has a key at all, and where it came from if not
+    from Settings. The key itself is never part of
     this: Settings only ever needs to know whether one is set, and an
     installation-wide credential has no business being readable by every
     logged-in account."""
     configured = is_configured(service)
-    return {"configured": configured, "fromEnvironment": configured and not stored(service)}
+    from_settings = bool(stored(service))
+    from_environment = bool(os.getenv(_env(service), "").strip())
+    return {
+        "configured": configured,
+        "fromEnvironment": configured and not from_settings and from_environment,
+        "fromServer": configured and not from_settings and not from_environment,
+    }

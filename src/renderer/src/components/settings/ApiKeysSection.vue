@@ -49,11 +49,15 @@
           >
             {{ $t('settings.apiKeyGet') }}
           </v-btn>
-          <!-- Removing a key that comes from the deployment would do
-           - nothing - the environment's key stays in effect - so the
+          <!-- Removing a key that comes from the deployment or the paired
+           - server would do nothing - that key stays in effect - so the
            - button would look broken. -->
           <v-btn
-            v-if="statusFor(service.id).configured && !statusFor(service.id).fromEnvironment"
+            v-if="
+              statusFor(service.id).configured &&
+              !statusFor(service.id).fromEnvironment &&
+              !statusFor(service.id).fromServer
+            "
             variant="text"
             :disabled="busy[service.id]"
             @click="clearKey(service.id)"
@@ -101,8 +105,8 @@ interface ApiKeyServiceEntry {
 
 function emptyStatuses(): ApiKeyStatuses {
   return {
-    lastfm: { configured: false, fromEnvironment: false },
-    fanart: { configured: false, fromEnvironment: false },
+    lastfm: { configured: false, fromEnvironment: false, fromServer: false },
+    fanart: { configured: false, fromEnvironment: false, fromServer: false },
   }
 }
 
@@ -164,6 +168,7 @@ export default {
     statusText(id: ApiKeyService): string {
       const status = this.statuses[id]
       if (!status.configured) return this.$t('settings.apiKeyMissing')
+      if (status.fromServer) return this.$t('settings.apiKeyFromServer')
       return status.fromEnvironment
         ? this.$t('settings.apiKeyFromEnvironment')
         : this.$t('settings.apiKeyStored')

@@ -1,5 +1,6 @@
 import { fetchConnect } from './http'
 import { useAuthStore } from '@/stores/auth'
+import type { CustomTheme } from '@/plugins/theme'
 
 /** The settings that follow an account across devices — see
  * connect/core/account_settings.py's own docstring. Every field optional:
@@ -40,6 +41,9 @@ export interface AccountSettingsPayload {
   speakerEqualizers?: Record<string, { enabled: boolean; gains: number[] }>
   // The equalizer presets the listener saved under their own names.
   equalizerPresets?: { name: string; gains: number[] }[]
+  // The themes made from two colours - see stores/appearance.ts. Which theme
+  // is on stays with the device.
+  customThemes?: CustomTheme[]
   // The last app version whose "what's new" dialog this account has seen -
   // see components/releaseNotes.vue. Follows the account, so it is not shown
   // again on another browser or device after it was closed once.
