@@ -26,7 +26,7 @@
           >
             <span class="stats-shelf__vinyl" />
             <span class="stats-shelf__sheen" />
-            <span class="stats-shelf__label">{{ shortPlays(entry.plays) }}</span>
+            <span class="stats-shelf__label">{{ shortPlays(entry.holds) }}</span>
             <v-tooltip
               activator="parent"
               location="top"
@@ -125,22 +125,26 @@ export default {
   },
   methods: {
     shortPlays(plays: number): string {
-      return plays < 1000 ? String(plays) : `${plays / 1000}k`
+      return plays < 1000 ? String(plays) : `${(plays / 1000).toLocaleString(this.$i18n.locale)}k`
     },
     isWaiting(entry: PressedRecord): boolean {
       return this.seen !== null && entry.number > this.seen
     },
-    /** A pile at the edge opens inwards, so its fan stays inside the hero. */
+    /** A pile at the edge opens inwards, so its fan stays inside the hero.
+     * A lone pile has no neighbours: centred it opens both ways, at the start
+     * of the row it can only open away from the edge. */
     pileStyle(pile: Pile, index: number): Record<string, string | number> {
       const count = pile.shown.length
       const isOnly = this.piles.length === 1
-      const origin =
-        !isOnly && index === 0
-          ? 0
-          : !isOnly && index === this.piles.length - 1
-            ? 1 - count
-            : (1 - count) / 2
-      return { '--p': index, '--count': count, '--origin': origin, '--vinyl': VINYLS[pile.tier] }
+      const middle = (1 - count) / 2
+      const edge = index === 0 ? 0 : index === this.piles.length - 1 ? 1 - count : middle
+      return {
+        '--p': index,
+        '--count': count,
+        '--origin-centred': isOnly ? middle : edge,
+        '--origin-start': edge,
+        '--vinyl': VINYLS[pile.tier],
+      }
     },
     /** The first tap fans the pile out, a tap on a fanned record answers. */
     onTap(tier: RecordTier, record: number): void {
@@ -165,10 +169,11 @@ export default {
       const format = (value: number): string => value.toLocaleString(this.$i18n.locale)
       const rows = [
         this.$t(`stats.tiers.${entry.tier}`),
-        this.$t('stats.shelfPlays', { n: format(entry.plays), step: format(entry.step) }),
+        this.$t('stats.shelfPlays', { n: format(entry.holds), step: format(entry.step) }),
         entry.earnedAt === null
-          ? this.$t('stats.shelfBeforeLog')
+          ? this.$t('stats.shelfBeforeLog', { total: format(entry.plays) })
           : this.$t('stats.shelfDate', {
+              total: format(entry.plays),
               date: new Date(entry.earnedAt * 1000).toLocaleDateString(this.$i18n.locale, {
                 day: 'numeric',
                 month: 'long',
@@ -213,11 +218,23 @@ export default {
 
 .stats-shelf__pile {
   --fan: 0;
+  --origin: var(--origin-centred);
   position: relative;
   flex: 0 1 calc(var(--disc) + (var(--count) - 1) * var(--rim));
   min-width: 0;
   height: var(--disc);
   transition: opacity 0.2s;
+}
+
+/* Left-aligned beside the display, centred under the record on a phone. */
+@container (min-width: 761px) {
+  .stats-shelf {
+    justify-content: flex-start;
+  }
+
+  .stats-shelf__pile {
+    --origin: var(--origin-start);
+  }
 }
 
 /* Through a custom property, so hover, keyboard and touch share one layout. */

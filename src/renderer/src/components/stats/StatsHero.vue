@@ -76,15 +76,15 @@
               :lit="lit"
               @hover-line="grooveLine = $event"
             />
-            <stats-shelf
-              ref="shelf"
-              class="stats-hero__shelf"
-              :records="pressed"
-              :seen="seenRecords"
-              :landed="landedRecord"
-            />
           </div>
         </div>
+        <stats-shelf
+          ref="shelf"
+          class="stats-hero__shelf"
+          :records="pressed"
+          :seen="seenRecords"
+          :landed="landedRecord"
+        />
       </div>
     </v-theme-provider>
   </section>
@@ -263,8 +263,11 @@ export default {
 /* A box of its own inside the section: a container query cannot restyle the
  * container it is measuring. */
 .stats-hero__layout {
+  --pad: clamp(24px, 4cqi, 56px);
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
+  /* The text and the shelf under it, centred as one block beside the deck. */
+  grid-template-rows: minmax(var(--pad), 1fr) auto auto minmax(var(--pad), 1fr);
   min-height: clamp(420px, 42cqi, 640px);
 }
 
@@ -305,11 +308,9 @@ export default {
 }
 
 .stats-hero__text {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
+  grid-area: 2 / 1;
   min-width: 0;
-  padding: clamp(24px, 4cqi, 56px);
+  padding-inline: var(--pad);
 }
 
 /* As wide as the title, at least 620px when there is room. */
@@ -398,6 +399,8 @@ export default {
 }
 
 .stats-hero__deck {
+  grid-column: 2;
+  grid-row: 1 / -1;
   display: flex;
   align-items: center;
   justify-content: flex-end;
@@ -415,11 +418,10 @@ export default {
   width: 100%;
 }
 
-/* The record's centre sits left of the middle of its picture, where the
- * tonearm takes up the rest. */
 .stats-hero__shelf {
-  width: 84.4%;
-  padding-bottom: 22px;
+  grid-area: 3 / 1;
+  margin-top: 22px;
+  padding-inline: var(--pad);
 }
 
 .is-fresh {
@@ -444,7 +446,8 @@ export default {
 
   /* The gap is the only space between them, and padding would pull the
    * group off the middle. */
-  .stats-hero__text {
+  .stats-hero__text,
+  .stats-hero__shelf {
     padding-inline: 0;
   }
 
@@ -460,11 +463,14 @@ export default {
 
 @container (max-width: 760px) {
   .stats-hero__layout {
+    --turntable: min(100cqi - 28px, 420px);
     grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
   }
 
   .stats-hero__deck {
-    order: -1;
+    grid-column: 1;
+    grid-row: 1;
     justify-content: center;
     padding: 14px 14px 0;
   }
@@ -474,8 +480,20 @@ export default {
     margin: 0;
   }
 
+  /* Under the record here, centred on its middle: that sits left of the
+   * middle of the picture, where the tonearm takes up the rest. */
+  .stats-hero__shelf {
+    grid-area: 2 / 1;
+    justify-self: center;
+    width: calc(var(--turntable) * 0.844);
+    margin: 0;
+    padding: 0 0 22px;
+    translate: calc(var(--turntable) * -0.078) 0;
+  }
+
   .stats-hero__text {
-    padding-top: 12px;
+    grid-area: 3 / 1;
+    padding-block: 12px var(--pad);
   }
 }
 

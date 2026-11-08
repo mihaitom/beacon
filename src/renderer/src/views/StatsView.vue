@@ -532,10 +532,10 @@ export default {
       if (!this.moment) return ''
       const { kind, value } = this.moment
       if (kind === 'pressing') {
-        const { tier, plays } = recordDetails(value)
+        const { tier, holds } = recordDetails(value)
         return this.$t('stats.milestonePressingSub', {
           record: this.$t(`stats.tiers.${tier}`),
-          n: this.formatNumber(plays),
+          n: this.formatNumber(holds),
         })
       }
       if (kind === 'hours') {

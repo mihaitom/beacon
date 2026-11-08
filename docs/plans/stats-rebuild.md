@@ -205,7 +205,7 @@ certifications are, and the counts are picked so each is full on a round total:
 | Platinum | 3       | 100      | 15,000, 20,000, 25,000    |
 | Diamond  | endless | 500      | 50,000, then every 25,000 |
 
-A full record is a "new pressing" and flies onto the shelf under the turntable,
+A full record is a "new pressing" and flies onto the shelf under the display (under the record on a phone),
 ahead of any other moment since it always lands on a round number of plays.
 
 The shelf is one pile per tier, so it can never get wider than five piles. A

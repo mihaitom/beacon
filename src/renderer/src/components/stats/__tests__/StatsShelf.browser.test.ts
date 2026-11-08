@@ -18,6 +18,7 @@ const RECORDS: PressedRecord[] = FULL_PILES.flatMap(([tier, count]) =>
     number: ++number,
     tier,
     plays: number * 500,
+    holds: 500,
     step: 10,
     earnedAt: null,
     tookSeconds: null,
@@ -37,17 +38,17 @@ describe('StatsShelf layout', () => {
     frame?.remove()
   })
 
-  function mountShelf(): HTMLElement {
+  function mountShelf(records = RECORDS, heroWidth = HERO_WIDTH, inset = 'auto'): HTMLElement {
     frame = document.createElement('div')
-    frame.style.cssText = `container-type:inline-size;width:${HERO_WIDTH}px;padding-top:40px`
-    frame.innerHTML = `<div style="width:${SHELF_WIDTH}px;margin:auto"></div>`
+    frame.style.cssText = `container-type:inline-size;width:${heroWidth}px;padding-top:40px`
+    frame.innerHTML = `<div style="width:${SHELF_WIDTH}px;margin:${inset}"></div>`
     document.body.append(frame)
     const style = document.createElement('style')
     style.textContent = '.stats-shelf * { transition: none !important; animation: none !important }'
     frame.append(style)
     wrapper = mount(StatsShelf, {
       attachTo: frame.querySelector('div > div') as HTMLElement,
-      props: { records: RECORDS, seen: null, landed: null },
+      props: { records, seen: null, landed: null },
       global: { plugins: [i18n], stubs: { VTooltip: true } },
     })
     return wrapper.element as HTMLElement
@@ -64,6 +65,18 @@ describe('StatsShelf layout', () => {
       expect(edges(lastOfLeft).right).toBeLessThanOrEqual(edges(firstOfRight).left)
       return right
     })
+  })
+
+  it('opens a lone pile away from the edge beside the display', () => {
+    const bronze = RECORDS.filter((record) => record.tier === 'bronze')
+    const shelf = mountShelf(bronze, 1300, '0')
+    const pile = shelf.querySelector('.stats-shelf__pile') as Element
+
+    pile.classList.add('is-open')
+
+    for (const disc of pile.querySelectorAll('.stats-shelf__disc')) {
+      expect(edges(disc).left).toBeGreaterThanOrEqual(edges(frame as HTMLElement).left)
+    }
   })
 
   it('keeps every fan inside the hero', () => {

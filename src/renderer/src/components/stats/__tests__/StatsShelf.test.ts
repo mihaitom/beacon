@@ -9,6 +9,7 @@ const ONE: PressedRecord = {
   number: 1,
   tier: 'bronze',
   plays: 2000,
+  holds: 2500,
   step: 50,
   earnedAt: null,
   tookSeconds: null,
@@ -17,6 +18,7 @@ const TWO: PressedRecord = {
   number: 2,
   tier: 'gold',
   plays: 4000,
+  holds: 5000,
   step: 100,
   earnedAt: Date.UTC(2026, 2, 14, 12) / 1000,
   tookSeconds: 90 * DAY,
@@ -44,6 +46,15 @@ describe('StatsShelf', () => {
     expect(text).toContain('4,000')
     expect(text).toContain('March 14, 2026')
     expect(text).toContain('3 months')
+  })
+
+  it('tells what a record is worth apart from the total it was full at', () => {
+    const wrapper = mountShelf([ONE, TWO])
+    const text = details(wrapper, 2)
+
+    expect(text).toContain('5,000 plays')
+    expect(text).toContain('4,000 plays overall')
+    expect(wrapper.find('[data-record="2"] .stats-shelf__label').text()).toBe('5k')
   })
 
   it('counts a short one in days', () => {

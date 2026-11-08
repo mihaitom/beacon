@@ -181,6 +181,12 @@ describe('recordProgress', () => {
     expect(recordProgress(50750)).toMatchObject({ done: 1, next: 51000, remaining: 250 })
   })
 
+  it('knows what each record holds on its own', () => {
+    const holds = pressedRecords(50000, []).map((record) => record.holds)
+    expect(holds.slice(0, 4)).toEqual([500, 500, 500, 500])
+    expect(holds.at(-1)).toBe(25000)
+  })
+
   it('never runs off the record, however much was played', () => {
     const huge = recordProgress(50_000_000)
     expect(huge.done).toBeLessThan(RECORD_GROOVES)

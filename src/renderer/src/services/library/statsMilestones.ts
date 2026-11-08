@@ -198,11 +198,17 @@ function endOf(record: number): number {
 }
 
 /** What a record is, by its number counted from 1. */
-export function recordDetails(number: number): { tier: RecordTier; plays: number; step: number } {
+export function recordDetails(number: number): {
+  tier: RecordTier
+  plays: number
+  holds: number
+  step: number
+} {
   const record = number - 1
   return {
     tier: LADDER_RECORDS[record]?.tier ?? 'diamond',
     plays: endOf(record),
+    holds: stepOf(record) * RECORD_GROOVES,
     step: stepOf(record),
   }
 }
@@ -230,6 +236,8 @@ export interface PressedRecord {
   tier: RecordTier
   /** The total plays at which it filled up. */
   plays: number
+  /** The plays on this record alone. */
+  holds: number
   step: number
   /** When it filled up, null when that lies before the log begins. */
   earnedAt: number | null

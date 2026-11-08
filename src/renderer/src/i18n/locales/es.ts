@@ -1606,8 +1606,9 @@ export default {
       diamond: 'Disco de diamante',
     },
     shelfPlays: '{n} reproducciones, {step} por surco',
-    shelfDate: 'Lleno desde el {date}',
-    shelfBeforeLog: 'Lleno antes de que empezara el historial',
+    shelfDate: 'Lleno al llegar a {total} reproducciones en total, el {date}',
+    shelfBeforeLog:
+      'Lleno al llegar a {total} reproducciones en total, antes de que empezara el historial',
     shelfDays: 'Llenado en {n} días',
     shelfMonths: 'Llenado en {n} meses',
     heroDays: '{n} día de música | {n} días de música',
