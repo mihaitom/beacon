@@ -163,6 +163,11 @@ const MIN_OWNED_MATCHES = 8
 // profile, 30 left a single new artist. 200 reaches into the long tail
 // (the whole 1000-recording feed held ~600 artists) for about 2 s.
 const PERSONAL_ARTIST_POOL = 200
+// How often an open Home asks again for what can change without this app
+// hearing about it: a scan run by the server itself (or by an account that
+// may not ask about scans at all), a play on another device. Two small lists
+// a minute, and only while Home is actually on screen.
+const HOME_REFRESH_INTERVAL_MS = 60 * 1000
 
 // Persists pickSeedArtistNames()'s last random pick (see its own comment)
 // — localStorage, not just component state, since the whole point is
@@ -246,6 +251,7 @@ export default {
       // a single field (not one boolean per shelf) since only one of these
       // can realistically be in flight at a time (each is a user click).
       playingAllShelf: null as string | null,
+      refreshTimer: null as ReturnType<typeof setInterval> | null,
     }
   },
   computed: {
@@ -452,13 +458,25 @@ export default {
       return this.loadingRecent
     },
   },
+  watch: {
+    'libraryStore.playsNoted'() {
+      void this.refreshRecent()
+    },
+    'libraryStore.scansFinished'() {
+      void this.refreshNewest()
+      this.loadCatalogue()
+      // Emptied by the scan's invalidation, and Discover's "not owned yet"
+      // check reads it.
+      void this.libraryStore.fetchArtists()
+    },
+  },
   created() {
     // No shelf of its own any more, only Discover's seeds.
     const frequentPromise = this.refreshAlbums('frequent', () =>
       this.libraryStore.fetchFrequentAlbums(30),
     )
-    void this.refreshAlbums('newest', () => this.libraryStore.client().getAlbumList2('newest', 30))
-    void this.refreshAlbums('recent', () => this.libraryStore.fetchRecentlyPlayedAlbums(30))
+    void this.refreshNewest()
+    void this.refreshRecent()
 
     // fetchArtists() only to check which suggestions are already owned
     // (see rerollDiscover()/loadPersonalShelves()) — own cached request, a
@@ -494,14 +512,39 @@ export default {
       this.loadRediscover()
     }
 
-    // Top songs are read off the catalogue (see mostPlayedSongs), usually
-    // already in memory or in the library cache.
-    this.libraryStore
-      .fetchAllSongs()
-      .catch((error) => console.error('[home] Song catalogue failed:', error))
-      .finally(() => (this.catalogSettled = true))
+    this.loadCatalogue()
+  },
+  mounted() {
+    this.refreshTimer = setInterval(this.refreshIfOnScreen, HOME_REFRESH_INTERVAL_MS)
+    document.addEventListener('visibilitychange', this.refreshIfOnScreen)
+  },
+  beforeUnmount() {
+    if (this.refreshTimer) clearInterval(this.refreshTimer)
+    document.removeEventListener('visibilitychange', this.refreshIfOnScreen)
   },
   methods: {
+    refreshNewest(): Promise<Album[]> {
+      return this.refreshAlbums('newest', () =>
+        this.libraryStore.client().getAlbumList2('newest', 30),
+      )
+    },
+    refreshRecent(): Promise<Album[]> {
+      return this.refreshAlbums('recent', () => this.libraryStore.fetchRecentlyPlayedAlbums(30))
+    },
+    refreshIfOnScreen(): void {
+      if (document.hidden) return
+      void this.refreshNewest()
+      void this.refreshRecent()
+    },
+    /** Top songs are read off the catalogue (see mostPlayedSongs), usually
+     * already in memory or in the library cache. */
+    loadCatalogue(): void {
+      this.catalogSettled = false
+      this.libraryStore
+        .fetchAllSongs()
+        .catch((error) => console.error('[home] Song catalogue failed:', error))
+        .finally(() => (this.catalogSettled = true))
+    },
     /** Asks for one of Home's album lists and keeps the answer in
      * stores/home.ts. A failure leaves whatever was showing; on a first
      * visit it ends the placeholders on an empty shelf instead of leaving

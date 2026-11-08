@@ -391,6 +391,11 @@ interface LibraryState {
   scanning: boolean
   scanCount: number | null
   scanPercent: number | null
+  /** Ticks when a scan has finished and its cached results are gone, and
+   * when a play has reached the server - the two moments Home's lists can
+   * have changed under it, for it to watch. */
+  scansFinished: number
+  playsNoted: number
   playlists: Playlist[]
   radioStations: RadioStation[]
   starred: { artists: Artist[]; albums: Album[]; songs: Song[] }
@@ -458,6 +463,8 @@ export const useLibraryStore = defineStore('library', {
     scanning: false,
     scanCount: null,
     scanPercent: null,
+    scansFinished: 0,
+    playsNoted: 0,
     playlists: [],
     radioStations: [],
     starred: { artists: [], albums: [], songs: [] },
@@ -685,7 +692,9 @@ export const useLibraryStore = defineStore('library', {
       }
 
       this.stopScanTracking()
-      void this.invalidateCache()
+      // Ticks only once the cache is really gone: whoever reacts re-reads
+      // the catalogue, and would otherwise be handed the old one back.
+      void this.invalidateCache().finally(() => this.scansFinished++)
       emitter.emit('toast', {
         level: 'success',
         title: i18n.global.t('settings.rescanLibrary'),
@@ -918,6 +927,7 @@ export const useLibraryStore = defineStore('library', {
         entry.playCount = (entry.playCount ?? 0) + 1
         entry.lastPlayed = playedAt
       }
+      this.playsNoted++
     },
 
     /** genres is derived from allSongs (see the getter above) — this just

@@ -7,9 +7,10 @@ export type HomeAlbumList = 'frequent' | 'newest' | 'recent'
 /** What Home last showed, kept for the rest of the session so that coming
  * back to Home paints at once instead of from placeholders.
  *
- * The album lists are still asked for on every visit - Home is meant to be
- * current - and this only holds the previous answer on screen until the new
- * one lands. Discover is different: its lookup is the slow one (MusicBrainz,
+ * The album lists are still asked for on every visit, and again while Home
+ * is open (see HomeView's watchers and HOME_REFRESH_INTERVAL_MS) - Home is
+ * meant to be current - and this only holds the previous answer on screen
+ * until the new one lands. Discover is different: its lookup is the slow one (MusicBrainz,
  * ListenBrainz, then a photo and links per artist) and its seeds are pinned
  * anyway (see HomeView's pickSeedArtistNames), so redoing it on every visit
  * produced nearly the same shelves seconds later. It is kept until somebody

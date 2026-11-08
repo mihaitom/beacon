@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Home stays current while it is open: "Recently added" picks up new albums after a library scan, "Recently played" moves as soon as a song counts as played, and the top songs no longer disappear when a scan finishes
+
 ## [1.11.0] - 2026-11-07
 
 ### Highlights

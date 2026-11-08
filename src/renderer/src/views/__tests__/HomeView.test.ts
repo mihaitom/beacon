@@ -15,6 +15,7 @@ import { useHomeStore } from '@/stores/home'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import HomeView from '../HomeView.vue'
+import AlbumShelf from '@/components/library/AlbumShelf.vue'
 import HeroBand from '@/components/home/HeroBand.vue'
 import RecentAlbumTiles from '@/components/home/RecentAlbumTiles.vue'
 import TopSongsList from '@/components/home/TopSongsList.vue'
@@ -137,6 +138,106 @@ describe('HomeView return visits', () => {
     await flushPromises()
 
     expect(wrapper.getComponent(RecentAlbumTiles).props('loading')).toBe(false)
+  })
+})
+
+describe('HomeView while it stays open', () => {
+  type Library = ReturnType<typeof useLibraryStore>
+
+  /** From here on, every album list the client is asked for is `albums`. */
+  function serveNewest(library: Library, albums: Album[]) {
+    const getAlbumList2 = vi.fn().mockResolvedValue(albums)
+    vi.mocked(library.client).mockReturnValue({
+      getAlbumList2,
+      coverArtUrl: () => null,
+    } as unknown as ReturnType<Library['client']>)
+    return getAlbumList2
+  }
+
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.spyOn(console, 'error').mockImplementation(() => {})
+    // Only these: flushPromises needs the real setTimeout.
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval'] })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.restoreAllMocks()
+  })
+
+  const newestShelf = (wrapper: Awaited<ReturnType<typeof mountHome>>) =>
+    wrapper.getComponent(AlbumShelf)
+
+  it('moves recently played as soon as a play has reached the server', async () => {
+    let library!: Library
+    const wrapper = await mountHome((store) => (library = store))
+    await flushPromises()
+
+    vi.mocked(library.fetchRecentlyPlayedAlbums).mockResolvedValue([album('x'), album('y')])
+    library.notePlayed(makeSong('played'))
+    await flushPromises()
+
+    expect(wrapper.getComponent(RecentAlbumTiles).props('albums')).toEqual([album('y')])
+  })
+
+  it('shows what a finished scan added, and reads the emptied catalogue again', async () => {
+    let library!: Library
+    const wrapper = await mountHome((store) => (library = store))
+    await flushPromises()
+    serveNewest(library, [album('new')])
+    vi.mocked(library.fetchAllSongs).mockClear()
+    vi.mocked(library.fetchArtists).mockClear()
+
+    library.scansFinished++
+    await flushPromises()
+
+    expect(newestShelf(wrapper).props('albums')).toEqual([album('new')])
+    expect(library.fetchAllSongs).toHaveBeenCalledOnce()
+    expect(library.fetchArtists).toHaveBeenCalledOnce()
+  })
+
+  it('notices a scan it never heard about by asking again', async () => {
+    let library!: Library
+    const wrapper = await mountHome((store) => (library = store))
+    await flushPromises()
+
+    serveNewest(library, [album('new')])
+    vi.advanceTimersByTime(60_000)
+    await flushPromises()
+
+    expect(newestShelf(wrapper).props('albums')).toEqual([album('new')])
+  })
+
+  it('does not ask while it is off screen, and catches up on coming back', async () => {
+    let library!: Library
+    const wrapper = await mountHome((store) => (library = store))
+    await flushPromises()
+    const getAlbumList2 = serveNewest(library, [album('new')])
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
+
+    vi.advanceTimersByTime(180_000)
+    await flushPromises()
+    expect(getAlbumList2).not.toHaveBeenCalled()
+
+    hidden.mockReturnValue(false)
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flushPromises()
+    expect(newestShelf(wrapper).props('albums')).toEqual([album('new')])
+  })
+
+  it('stops asking once it is gone', async () => {
+    let library!: Library
+    const wrapper = await mountHome((store) => (library = store))
+    await flushPromises()
+    const getAlbumList2 = serveNewest(library, [])
+
+    wrapper.unmount()
+    vi.advanceTimersByTime(180_000)
+    document.dispatchEvent(new Event('visibilitychange'))
+    await flushPromises()
+
+    expect(getAlbumList2).not.toHaveBeenCalled()
   })
 })
 

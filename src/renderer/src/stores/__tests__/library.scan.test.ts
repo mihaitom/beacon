@@ -97,6 +97,23 @@ describe('library scan', () => {
     expect(toasts).toEqual([expect.objectContaining({ level: 'success' })])
   })
 
+  it('reports a finished scan only once the old cache is really gone', async () => {
+    stubClient([{ scanning: false, count: 1, percent: null }])
+    const library = useLibraryStore()
+    let cleared!: () => void
+    vi.spyOn(library, 'invalidateCache').mockReturnValue(
+      new Promise<void>((resolve) => (cleared = resolve)),
+    )
+
+    await library.startScan()
+    await firstAnswer()
+    expect(library.scansFinished).toBe(0)
+
+    cleared()
+    await firstAnswer()
+    expect(library.scansFinished).toBe(1)
+  })
+
   it('rides out a failed poll rather than dropping the scan', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const library = useLibraryStore()
