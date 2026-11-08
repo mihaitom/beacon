@@ -72,6 +72,7 @@ from routes.pairing import router as pairing_router
 from routes.party import add_security_headers as add_party_security_headers
 from routes.party import host_router as party_host_router
 from routes.party import router as party_router
+from routes.play_history import router as play_history_router
 from routes.playback import router as playback_router
 from routes.plex_auth import router as plex_auth_router
 from routes.proxy import close as close_proxy_client
@@ -494,6 +495,7 @@ app.include_router(fanart_router)
 app.include_router(lastfm_router)
 app.include_router(navidrome_router)
 app.include_router(listenbrainz_router)
+app.include_router(play_history_router)
 app.include_router(deezer_router)
 app.include_router(coverart_router)
 app.include_router(upnp_router)

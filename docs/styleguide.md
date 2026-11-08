@@ -123,6 +123,10 @@ Plus the chrome tokens in `base.css`:
 The accent is the app's signal colour: an active nav item, a selected segment, an
 eyebrow, a divider. It is not a fill - nothing large is amber.
 
+One exception to theme tokens: the record on the Stats page and its milestone
+disc are objects, not interface. Vinyl, silver, gold and foil keep their own
+colours on every theme, and only the grooves' markings use the accent.
+
 ## Type
 
 | Class            | Face                                      | Where                                                |
@@ -809,7 +813,7 @@ of them before anything else:
 | Duration | For                                                                 |
 | -------- | ------------------------------------------------------------------- |
 | 0.15s    | A hover, a colour, an opacity - feedback on something being touched |
-| 0.6s     | The artwork backdrop crossfade (and RankedList's bars filling)      |
+| 0.6s     | The artwork backdrop crossfade (and the Stats chart bars filling)   |
 
 0.15s is used about three dozen times and is the default answer. The rest of
 what the app does is not drift - each of these is a different _kind_ of
@@ -829,6 +833,8 @@ of inventing a neighbouring one:
 | 0.7s               | Now Playing's flip card (artwork <-> lyrics) | The one deliberate showpiece; it is meant to be watched                             |
 | 0.9s               | The release-notes icon                       | A one-off flourish on a dialog seen once per version                                |
 | 1.2s               | Now Playing's scrim and glow                 | Follows the colour extracted from the cover; a fast change reads as a flicker       |
+| 1.1s / 1.3s        | The Stats hero: tonearm, count-up            | The page's one entrance, once per visit                                             |
+| 3.7s in all        | A Stats milestone moment                     | Rare by design (round numbers only) and closed by a click or Esc                    |
 
 Loops are their own thing - they show a state rather than a change, so they
 are slow enough not to nag: 1.8s for the page loader, 2.4s for radio's "on
@@ -837,4 +843,5 @@ air" pulse, 3.5s for the beacon on the sign-in screen.
 **Every loop and every showpiece above answers `prefers-reduced-motion`**
 with `animation: none` or `transition: none` - the page loader, the radio
 pulse, the sign-in beacon, the flip card, the lyrics lines, the genre grid,
-the search box and the visualizer. A new one is expected to do the same.
+the search box, the visualizer and the Stats record and milestone moment. A new
+one is expected to do the same.

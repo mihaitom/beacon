@@ -154,9 +154,9 @@ const SERVICES = {
       host: 'coverartarchive.org',
       url: 'https://coverartarchive.org/',
     },
-    // No opt-out chip: nothing here happens in the background. It is
-    // only ever contacted by the Last.fm playlist builder, which is a
-    // thing you open and fill in - not asking for it is the opt-out.
+    // No opt-out chip: it is only contacted for a profile name someone
+    // entered themselves, by the playlist builder or the one import that
+    // fills the listening year. Not entering a name is the opt-out.
     { key: 'lastfm', host: 'ws.audioscrobbler.com', url: 'https://www.last.fm/' },
     // Same terms as the Last.fm entry above: only for the artist page that
     // is open (and Now Playing), and switchable off under Library.

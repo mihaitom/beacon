@@ -4,10 +4,14 @@ import { flushPromises } from '@vue/test-utils'
 import { useLibraryStore } from '../library'
 import { usePlaybackStore } from '../playback'
 import { getAudioEngine } from '@/services/audioEngine'
+import { recordListen } from '@/services/connect/playHistory'
 import type { SubsonicClient } from '@/services/subsonic/client'
 import { makeSong } from './fixtures'
 
 vi.mock('@/services/audioEngine', () => ({ getAudioEngine: vi.fn() }))
+vi.mock('@/services/connect/playHistory', () => ({
+  recordListen: vi.fn().mockResolvedValue(undefined),
+}))
 
 /** Which song id has already been registered as played is module-level
  * state in the store (it has to survive across position updates), so every
@@ -74,6 +78,37 @@ describe('scrobbling', () => {
     await flushPromises()
 
     expect(submissions(client)).toEqual([[song.id, true]])
+  })
+
+  it('logs the play for the Stats page once, at the same moment', () => {
+    vi.mocked(recordListen).mockClear().mockResolvedValue(undefined)
+    const playback = usePlaybackStore()
+    stubClient()
+    const song = uniqueSong({ duration: 200 })
+    playback.setQueue([song], 0)
+    playback.localPosition = 99
+    playback.checkScrobbleThreshold()
+    expect(recordListen).not.toHaveBeenCalled()
+
+    playback.localPosition = 150
+    playback.checkScrobbleThreshold()
+    playback.checkScrobbleThreshold()
+
+    expect(recordListen).toHaveBeenCalledTimes(1)
+    expect(recordListen).toHaveBeenCalledWith(song)
+  })
+
+  it('still logs the play when the media server refuses the scrobble', async () => {
+    vi.mocked(recordListen).mockClear().mockResolvedValue(undefined)
+    const playback = usePlaybackStore()
+    stubClient().scrobble.mockRejectedValue(new Error('away'))
+    playback.setQueue([uniqueSong({ duration: 200 })], 0)
+    playback.localPosition = 150
+
+    playback.checkScrobbleThreshold()
+    await flushPromises()
+
+    expect(recordListen).toHaveBeenCalledTimes(1)
   })
 
   it('registers a long song after four minutes rather than making it wait for halfway', () => {

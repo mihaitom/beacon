@@ -1,171 +1,120 @@
 <template>
   <v-container fluid class="stats-page">
-    <div class="stats-header">
-      <p class="eyebrow-label stats-header__eyebrow">{{ $t('stats.eyebrow') }}</p>
-      <h1 class="page-title">{{ $t('stats.title') }}</h1>
+    <div v-if="accountItems.length > 1" class="stats-page__account">
+      <v-select
+        v-model="viewedAccount"
+        :items="accountItems"
+        :aria-label="$t('stats.accountPicker')"
+        density="compact"
+        variant="solo-filled"
+        flat
+        hide-details
+        prepend-inner-icon="mdi-account-outline"
+      />
     </div>
 
     <page-loader v-if="loading && songs.length === 0" />
 
     <template v-else>
-      <section>
-        <h2 class="section-title">{{ $t('stats.libraryTitle') }}</h2>
-        <div class="stat-grid">
-          <div class="stat-tile">
-            <div class="stat-tile__value detail-title">{{ formatNumber(totalSongs) }}</div>
-            <div class="stat-tile__label">{{ $t('stats.songs') }}</div>
-          </div>
-          <div class="stat-tile">
-            <div class="stat-tile__value detail-title">{{ formatNumber(totalArtists) }}</div>
-            <div class="stat-tile__label">{{ $t('stats.artists') }}</div>
-          </div>
-          <div class="stat-tile">
-            <div class="stat-tile__value detail-title">{{ formatNumber(totalAlbums) }}</div>
-            <div class="stat-tile__label">{{ $t('stats.albums') }}</div>
-          </div>
-          <div class="stat-tile">
-            <div class="stat-tile__value detail-title">{{ formatNumber(totalGenres) }}</div>
-            <div class="stat-tile__label">{{ $t('stats.genres') }}</div>
-          </div>
-          <div class="stat-tile">
-            <div class="stat-tile__value detail-title">
-              {{ formatBigDuration(libraryDuration) }}
-            </div>
-            <div class="stat-tile__label">{{ $t('stats.libraryDuration') }}</div>
-          </div>
-          <div v-if="storageBytes > 0" class="stat-tile">
-            <div class="stat-tile__value detail-title">{{ formatBytes(storageBytes) }}</div>
-            <div class="stat-tile__label">{{ $t('stats.storage') }}</div>
-          </div>
-        </div>
-      </section>
-
-      <section>
-        <h2 class="section-title">{{ $t('stats.listeningTitle') }}</h2>
-        <div class="stat-grid">
-          <div class="stat-tile stat-tile--highlight">
-            <div class="stat-tile__value detail-title">{{ formatNumber(totalPlays) }}</div>
-            <div class="stat-tile__label">{{ $t('stats.totalPlays') }}</div>
-          </div>
-          <div class="stat-tile stat-tile--highlight">
-            <div class="stat-tile__value detail-title">{{ formatBigDuration(listeningTime) }}</div>
-            <div class="stat-tile__label">{{ $t('stats.listeningTime') }}</div>
-          </div>
-          <div class="stat-tile">
-            <div class="stat-tile__value detail-title">
-              {{ formatShare(playedCount, songs.length) }}
-            </div>
-            <div class="stat-tile__label">{{ $t('stats.playedShare') }}</div>
-          </div>
-          <div v-if="hasLastPlayed" class="stat-tile">
-            <div class="stat-tile__value detail-title">{{ formatNumber(recentlyPlayedCount) }}</div>
-            <div class="stat-tile__label">{{ $t('stats.recentlyPlayed') }}</div>
-          </div>
-        </div>
-      </section>
-
-      <section>
-        <h2 class="section-title">{{ $t('stats.favoritesTitle') }}</h2>
-        <div class="stat-grid">
-          <div class="stat-tile">
-            <div class="stat-tile__value detail-title">
-              {{ formatNumber(starredCounts.songs) }}
-            </div>
-            <div class="stat-tile__label">{{ $t('stats.favoriteSongs') }}</div>
-          </div>
-          <div class="stat-tile">
-            <div class="stat-tile__value detail-title">
-              {{ formatNumber(starredCounts.albums) }}
-            </div>
-            <div class="stat-tile__label">{{ $t('stats.favoriteAlbums') }}</div>
-          </div>
-          <div class="stat-tile">
-            <div class="stat-tile__value detail-title">
-              {{ formatNumber(starredCounts.artists) }}
-            </div>
-            <div class="stat-tile__label">{{ $t('stats.favoriteArtists') }}</div>
-          </div>
-          <template v-if="ratings.count > 0">
-            <div class="stat-tile">
-              <div class="stat-tile__value detail-title">{{ formatNumber(ratings.count) }}</div>
-              <div class="stat-tile__label">{{ $t('stats.ratedSongs') }}</div>
-            </div>
-            <div class="stat-tile">
-              <div class="stat-tile__value detail-title">{{ formatRating(ratings.average) }}</div>
-              <div class="stat-tile__label">{{ $t('stats.averageRating') }}</div>
-            </div>
-          </template>
-        </div>
-      </section>
-
-      <empty-state
-        v-if="totalPlays === 0"
-        icon="mdi-chart-box-outline"
-        :title="$t('stats.noPlaysYet')"
-        class="stats-empty"
+      <stats-hero
+        ref="hero"
+        :listening-seconds="listeningTime"
+        :plays="heroPlays"
+        :library-share="isOwnView && songs.length ? formatShare(playedCount, songs.length) : null"
+        :streak="streak.current"
+        :cover-url="heroCover"
+        :playing="playbackStore.isPlaying"
+        :other-account="viewedAccount"
+        :since="sinceLabel"
+        :fresh="fresh"
       />
 
-      <div v-else class="pair-grid">
-        <section>
-          <h2 class="section-title">{{ $t('stats.topSongs') }}</h2>
-          <ranked-list :items="topSongs" value-icon="mdi-play" />
-        </section>
-        <section>
-          <h2 class="section-title">{{ $t('stats.topArtists') }}</h2>
-          <ranked-list :items="topArtists" value-icon="mdi-play" />
-        </section>
-        <section>
-          <h2 class="section-title">{{ $t('stats.topAlbums') }}</h2>
-          <ranked-list :items="topAlbums" value-icon="mdi-play" />
-        </section>
-        <section>
-          <h2 class="section-title">{{ $t('stats.topGenres') }}</h2>
-          <ranked-list :items="topGenres" value-icon="mdi-play" />
-        </section>
-      </div>
+      <empty-state
+        v-if="chartsEmpty"
+        icon="mdi-chart-box-outline"
+        :title="isOwnView ? $t('stats.noPlaysYet') : $t('stats.otherEmpty')"
+      />
+      <stats-charts v-else :charts="charts" :since="isOwnView ? null : sinceLabel" />
 
-      <!-- Composition facts, not listening facts (unlike everything above),
-       - in the same grid as the top-N lists so they line up with them. -->
-      <div
-        v-if="
-          formatBreakdown.length ||
-          qualityBreakdown.length ||
-          decadeBreakdown.length ||
-          largestArtists.length
-        "
-        class="pair-grid"
-      >
-        <section v-if="formatBreakdown.length">
-          <h2 class="section-title">{{ $t('stats.formatsTitle') }}</h2>
-          <ranked-list :items="formatBreakdown" />
-        </section>
-        <section v-if="qualityBreakdown.length">
-          <h2 class="section-title">{{ $t('stats.qualityTitle') }}</h2>
-          <ranked-list :items="qualityBreakdown" />
-        </section>
-        <section v-if="decadeBreakdown.length">
-          <h2 class="section-title">{{ $t('stats.decadesTitle') }}</h2>
-          <ranked-list :items="decadeBreakdown" />
-        </section>
-        <section v-if="largestArtists.length">
-          <h2 class="section-title">{{ $t('stats.largestArtistsTitle') }}</h2>
-          <ranked-list :items="largestArtists" value-icon="mdi-music-note" />
-        </section>
-      </div>
+      <stats-year
+        :timestamps="history?.timestamps ?? []"
+        :streak="streak"
+        :today="today"
+        :import-status="isOwnView ? importStatus : null"
+        :options="offeredImports"
+        @start-import="beginImport"
+      />
+
+      <stats-collection
+        :facts="collectionFacts"
+        :decades="decadeBreakdown"
+        :quality="qualityBreakdown"
+        :formats="formatBreakdown.slice(0, TOP_FORMATS)"
+      />
     </template>
+
+    <stats-moment
+      v-if="moment"
+      :moment="moment"
+      :subtitle="momentSubtitle"
+      :target="momentTarget"
+      @closed="onMomentClosed"
+    />
   </v-container>
 </template>
 
 <script lang="ts">
+import { useAuthStore } from '@/stores/auth'
+import { useLastfmStore } from '@/stores/lastfm'
 import { useLibraryStore } from '@/stores/library'
+import { useListenbrainzStore } from '@/stores/listenbrainz'
+import { usePlaybackStore } from '@/stores/playback'
 import EmptyState from '@/components/EmptyState.vue'
 import PageLoader from '@/components/PageLoader.vue'
-import RankedList, { type RankedItem } from '@/components/library/RankedList.vue'
+import StatsCharts, { type ChartItem, type ChartKind } from '@/components/stats/StatsCharts.vue'
+import StatsCollection from '@/components/stats/StatsCollection.vue'
+import StatsHero from '@/components/stats/StatsHero.vue'
+import StatsMoment from '@/components/stats/StatsMoment.vue'
+import StatsYear from '@/components/stats/StatsYear.vue'
+import { chartMovement } from '@/services/library/chartMovement'
+import { streaks } from '@/services/library/listeningYear'
+import {
+  importAction,
+  importOptions,
+  type ImportOption,
+} from '@/services/library/playHistoryImport'
+import {
+  nextMoment,
+  PLAYS_STEP as PLAYS_MILESTONE,
+  reachedMilestones,
+  type MilestoneKind,
+  type MilestoneValues,
+  type Moment,
+} from '@/services/library/statsMilestones'
+import {
+  getImportStatus,
+  getPlayHistoryAccounts,
+  getPlayHistorySummary,
+  saveMilestones,
+  startImport,
+  type PlayHistoryImportStatus,
+  type PlayHistorySummary,
+  type PlayHistoryTop,
+} from '@/services/connect/playHistory'
+import { pollingAllowed } from '@/services/connect/pollGate'
 import type { Artist, Song } from '@/types/library'
 
-const TOP_N = 5
-const RECENT_DAYS = 30
-const DAY_MS = 24 * 60 * 60 * 1000
+const TOP_N = 8
+const TOP_FORMATS = 3
+const DAY_SECONDS = 86_400
+// Comparing against "before the last 30 days" says nothing until the log
+// actually covers them: every play would otherwise look like a climb.
+const MOVEMENT_DAYS = 30
+// After the page's own entrance, so the two do not compete.
+const MOMENT_DELAY_MS = 2000
+const FRESH_MS = 1000
+const IMPORT_POLL_MS = 2000
+const QUALITY_ORDER: AudioQuality[] = ['hires', 'lossless', 'lossy']
 
 const LOSSLESS_FORMATS = new Set(['flac', 'alac', 'wav', 'aif', 'aiff', 'ape', 'wv', 'tta'])
 const DSD_FORMATS = new Set(['dsf', 'dff'])
@@ -221,23 +170,90 @@ function aggregateByPlays(
 
 export default {
   name: 'StatsView',
-  components: { EmptyState, PageLoader, RankedList },
+  components: {
+    EmptyState,
+    PageLoader,
+    StatsCharts,
+    StatsCollection,
+    StatsHero,
+    StatsMoment,
+    StatsYear,
+  },
   data() {
     return {
-      // Fixed per visit, so "the last 30 days" doesn't drift while the page
-      // is open and the tests can pin it with fake timers.
+      // Fixed per visit, so a day does not roll over under the listener and
+      // the tests can pin it with fake timers.
       now: Date.now(),
+      TOP_FORMATS,
+      ownHistory: null as PlayHistorySummary | null,
+      otherHistory: null as PlayHistorySummary | null,
+      /** Null is this listener's own page. */
+      viewedAccount: null as string | null,
+      accounts: [] as string[],
+      importStatus: null as PlayHistoryImportStatus | null,
+      lastfmConfigured: false,
+      moment: null as Moment | null,
+      fresh: null as MilestoneKind | null,
+      /** Whether this load of the log has been compared with the milestones. */
+      milestonesChecked: false,
+      momentTimer: 0,
+      freshTimer: 0,
+      importTimer: 0,
     }
   },
   computed: {
     libraryStore() {
       return useLibraryStore()
     },
+    playbackStore() {
+      return usePlaybackStore()
+    },
+    authStore() {
+      return useAuthStore()
+    },
     loading(): boolean {
       return this.libraryStore.loading
     },
     songs(): Song[] {
       return this.libraryStore.allSongs
+    },
+    isOwnView(): boolean {
+      return this.viewedAccount === null
+    },
+    history(): PlayHistorySummary | null {
+      return this.isOwnView ? this.ownHistory : this.otherHistory
+    },
+    today(): Date {
+      return new Date(this.now)
+    },
+    streak(): { current: number; longest: number } {
+      return streaks(this.history?.timestamps ?? [], this.today)
+    },
+    accountItems(): { title: string; value: string | null }[] {
+      const own = this.authStore.username
+      return [
+        { title: this.$t('stats.accountOwn'), value: null },
+        ...this.accounts
+          .filter((name) => name !== own)
+          .map((name) => ({ title: name, value: name })),
+      ]
+    },
+    heroPlays(): number {
+      return this.isOwnView ? this.totalPlays : (this.history?.total ?? 0)
+    },
+    heroCover(): string | null {
+      const cover = this.isOwnView
+        ? this.topAlbums[0]?.coverArtId
+        : this.history?.top.albums.find((album) => album.cover_art_id)?.cover_art_id
+      return cover ? this.libraryStore.client().coverArtUrl(cover, 300) : null
+    },
+    /** When another account's log starts, which is what their figures mean. */
+    sinceLabel(): string | null {
+      const first = this.history?.timestamps[0]
+      if (this.isOwnView || first === undefined) return null
+      return new Intl.DateTimeFormat(this.$i18n.locale, { dateStyle: 'medium' }).format(
+        new Date(first * 1000),
+      )
     },
     totalSongs(): number {
       return this.songs.length
@@ -257,17 +273,9 @@ export default {
     totalPlays(): number {
       return this.songs.reduce((sum, t) => sum + (t.playCount || 0), 0)
     },
-    // Neither Subsonic/Navidrome nor Jellyfin (bridged — see
-    // jellyfin_bridge.py's scrobble()) exposes anything beyond an aggregate
-    // playCount per song, not individual play timestamps — there's no
-    // real "this year" time window to slice by, so this (like everything
-    // else on this page) is all-time. duration × playCount is an estimate,
-    // not a log of actual listens (a play counts once past the scrobble
-    // threshold — see connect's checkScrobbleThreshold() — not necessarily start to
-    // finish), but it's the closest thing to "hours listened" the data
-    // actually supports. For Jellyfin specifically, playCount is reported
-    // via its session-based /Sessions/Playing + /Sessions/Playing/Stopped
-    // flow — see scrobble()'s comment.
+    // duration × playCount is an estimate: a play counts once past the
+    // scrobble threshold, not necessarily start to finish. It is all-time,
+    // which the log (a year at most) cannot be.
     listeningTime(): number {
       return this.songs.reduce((sum, t) => sum + (t.duration || 0) * (t.playCount || 0), 0)
     },
@@ -277,167 +285,369 @@ export default {
     playedCount(): number {
       return this.songs.filter((t) => (t.playCount || 0) > 0).length
     },
-    hasLastPlayed(): boolean {
-      return this.songs.some((t) => t.lastPlayed)
-    },
-    // Each song carries only its latest play, so this counts distinct songs
-    // heard in the window - not plays, which the servers don't log per date.
-    recentlyPlayedCount(): number {
-      const since = this.now - RECENT_DAYS * DAY_MS
-      return this.songs.filter((t) => t.lastPlayed && Date.parse(t.lastPlayed) >= since).length
-    },
     ratings(): { count: number; average: number } {
       const rated = this.songs.filter((t) => t.rating > 0)
       if (rated.length === 0) return { count: 0, average: 0 }
       const total = rated.reduce((sum, t) => sum + t.rating, 0)
       return { count: rated.length, average: total / rated.length }
     },
-    starredCounts(): { songs: number; albums: number; artists: number } {
-      const starred = this.libraryStore.starred
-      return {
-        songs: starred.songs.length,
-        albums: starred.albums.length,
-        artists: starred.artists.length,
+    collectionFacts(): { value: string; label: string }[] {
+      const facts = [
+        { value: this.formatNumber(this.totalSongs), label: this.$t('stats.songs') },
+        { value: this.formatNumber(this.totalArtists), label: this.$t('stats.artists') },
+        { value: this.formatNumber(this.totalAlbums), label: this.$t('stats.albums') },
+        { value: this.formatNumber(this.totalGenres), label: this.$t('stats.genres') },
+        {
+          value: this.formatBigDuration(this.libraryDuration),
+          label: this.$t('stats.libraryDuration'),
+        },
+      ]
+      if (this.storageBytes > 0) {
+        facts.push({ value: this.formatBytes(this.storageBytes), label: this.$t('stats.storage') })
       }
+      // Favourites and ratings are the signed-in account's, not the viewed one's.
+      if (this.isOwnView) {
+        facts.push({
+          value: this.formatNumber(this.libraryStore.starred.songs.length),
+          label: this.$t('stats.favoriteSongs'),
+        })
+        if (this.ratings.count > 0) {
+          facts.push({
+            value: this.formatRating(this.ratings.average),
+            label: this.$t('stats.averageRating'),
+          })
+        }
+      }
+      return facts
     },
-    topSongs(): RankedItem[] {
-      return [...this.songs]
-        .filter((t) => t.playCount > 0)
-        .sort((a, b) => b.playCount - a.playCount)
-        .slice(0, TOP_N)
-        .map((t) => ({
-          id: t.id,
-          label: t.title,
-          sublabel: t.artist,
-          value: t.playCount,
-          // Just the number, no repeated "X plays" unit word — RankedList's
-          // own valueIcon (mdi-play, set on the <ranked-list> tag below)
-          // carries that meaning instead, since every row on this page's
-          // four ranked lists means the same thing.
-          valueLabel: this.formatNumber(t.playCount),
-          // No standalone song page in this app to link to — album is
-          // the closest real destination.
-          to: `/albums/${t.albumId}`,
-          coverArtId: t.coverArtId,
-        }))
+    /** Rank changes need a log that reaches back over the whole window. */
+    recentPlays(): Record<string, number> | null {
+      const since = this.ownHistory?.live_since
+      if (!since || this.now / 1000 - since < MOVEMENT_DAYS * DAY_SECONDS) return null
+      return this.ownHistory?.recent_plays ?? null
     },
-    // Lookup for topArtists' own artist.coverArtId/imageUrl below — a
-    // song's cover is its *album's* art, so showing a random song's album
-    // cover next to an artist's name would be misleading; this instead
-    // draws from libraryStore.artists (fetchArtists(), see created()),
-    // which aggregateByPlays()'s per-song groups have no way to.
+    topSongs(): ChartItem[] {
+      return this.withMovement(
+        [...this.songs]
+          .filter((t) => t.playCount > 0)
+          .sort((a, b) => b.playCount - a.playCount)
+          .slice(0, TOP_N)
+          .map((t) => ({
+            id: t.id,
+            label: t.title,
+            sublabel: t.artist,
+            value: t.playCount,
+            valueLabel: this.formatNumber(t.playCount),
+            // No standalone song page in this app; the album is the closest.
+            to: `/albums/${t.albumId}`,
+            coverArtId: t.coverArtId,
+          })),
+        (t) => t.id,
+      )
+    },
+    // A song's cover is its album's art, which beside an artist's name would
+    // be misleading, so artists draw from the artist list instead.
     artistsById(): Map<string, Artist> {
       return new Map(this.libraryStore.artists.map((a) => [a.id, a]))
     },
-    topArtists(): RankedItem[] {
-      const groups = aggregateByPlays(
-        this.songs,
-        (t) => t.artistId || null,
-        (t) => t.artist,
-      )
-      return this.topFromGroups(groups, (id) => `/artists/${id}`).map((item) => {
+    topArtists(): ChartItem[] {
+      const artistKey = (t: Song): string | null => t.artistId || null
+      const groups = aggregateByPlays(this.songs, artistKey, (t) => t.artist)
+      const items = this.topFromGroups(groups, (id) => `/artists/${id}`).map((item) => {
         const artist = this.artistsById.get(item.id)
-        // artist undefined for as long as fetchArtists() (fired alongside
-        // fetchAllSongs() in created(), see its own comment) is still in
-        // flight — coverArtId stays defined either way (null, not
-        // undefined) so RankedList.vue still reserves the art column
-        // instead of the whole row visibly reflowing once artists arrives.
         return {
           ...item,
           // A song's own artist field is its whole credit ("A, B & C").
           label: artist?.name ?? item.label,
+          // Null, not undefined, while the list loads: the art column stays
+          // and the rows do not reflow when it arrives.
           coverArtId: artist?.coverArtId ?? null,
           imageUrl: artist?.imageUrl ?? null,
         }
       })
+      return this.withMovement(items, artistKey)
     },
-    topAlbums(): RankedItem[] {
-      const groups = aggregateByPlays(
-        this.songs,
-        (t) => t.albumId || null,
-        (t) => t.album,
+    topAlbums(): ChartItem[] {
+      const albumKey = (t: Song): string | null => t.albumId || null
+      const groups = aggregateByPlays(this.songs, albumKey, (t) => t.album)
+      return this.withMovement(
+        this.topFromGroups(groups, (id) => `/albums/${id}`, true),
+        albumKey,
       )
-      return this.topFromGroups(groups, (id) => `/albums/${id}`, true)
     },
-    topGenres(): RankedItem[] {
-      const groups = aggregateByPlays(
-        this.songs,
-        (t) => t.genre,
-        (t) => t.genre ?? '',
+    topGenres(): ChartItem[] {
+      const genreKey = (t: Song): string | null => t.genre
+      const groups = aggregateByPlays(this.songs, genreKey, (t) => t.genre ?? '')
+      return this.withMovement(
+        this.topFromGroups(groups, (name) => `/genres/${encodeURIComponent(name)}`),
+        genreKey,
       )
-      return this.topFromGroups(groups, (name) => `/genres/${encodeURIComponent(name)}`)
     },
-    formatBreakdown(): RankedItem[] {
+    charts(): Record<ChartKind, ChartItem[]> {
+      if (this.isOwnView) {
+        return {
+          songs: this.topSongs,
+          artists: this.topArtists,
+          albums: this.topAlbums,
+          genres: this.topGenres,
+        }
+      }
+      const top = this.history?.top
+      return {
+        songs: (top?.songs ?? []).map((item) => this.logItem(item, 'songs')),
+        artists: (top?.artists ?? []).map((item) => this.logItem(item, 'artists')),
+        albums: (top?.albums ?? []).map((item) => this.logItem(item, 'albums')),
+        genres: (top?.genres ?? []).map((item) => this.logItem(item, 'genres')),
+      }
+    },
+    chartsEmpty(): boolean {
+      return Object.values(this.charts).every((items) => items.length === 0)
+    },
+    formatBreakdown(): ChartItem[] {
       const counts = new Map<string, number>()
       for (const t of this.songs) {
         const key = (t.format || '—').toUpperCase()
         counts.set(key, (counts.get(key) ?? 0) + 1)
       }
-      return this.shareOfLibrary(counts, (format) => ({ id: format, label: format }))
+      return [...counts.entries()]
+        .sort(([, a], [, b]) => b - a)
+        .map(([format, count]) => this.shareItem(format, format, count))
     },
-    qualityBreakdown(): RankedItem[] {
+    qualityBreakdown(): ChartItem[] {
       const counts = new Map<AudioQuality, number>()
       for (const t of this.songs) {
         const quality = audioQuality(t)
         if (quality) counts.set(quality, (counts.get(quality) ?? 0) + 1)
       }
-      return this.shareOfLibrary(counts, (quality) => ({
-        id: quality,
-        label: this.$t(`stats.quality.${quality}`),
-      }))
+      return QUALITY_ORDER.filter((quality) => counts.has(quality)).map((quality) =>
+        this.shareItem(quality, this.$t(`stats.quality.${quality}`), counts.get(quality) ?? 0),
+      )
     },
-    largestArtists(): RankedItem[] {
-      const counts = new Map<string, number>()
-      const names = new Map<string, string>()
-      for (const t of this.songs) {
-        if (!t.artistId) continue
-        counts.set(t.artistId, (counts.get(t.artistId) ?? 0) + 1)
-        // Only the fallback while the artist list loads: a song's artist
-        // field is its whole credit ("A, B & C"), not the artist it's filed under.
-        const name = names.get(t.artistId)
-        if (!name || t.artist.length < name.length) names.set(t.artistId, t.artist)
-      }
-      // A song count rather than a share: in a library of thousands of
-      // artists every one of them rounds to 1%.
-      return this.shareOfLibrary(counts, (id) => {
-        const artist = this.artistsById.get(id)
-        return {
-          id,
-          label: artist?.name ?? names.get(id) ?? '',
-          to: `/artists/${id}`,
-          // Same rule as topArtists: the artist's own art, null while loading.
-          coverArtId: artist?.coverArtId ?? null,
-          imageUrl: artist?.imageUrl ?? null,
-        }
-      }).map((item) => ({ ...item, valueLabel: this.formatNumber(item.value) }))
-    },
-    // Pairs with formatBreakdown above as the other "what's actually in
-    // here" library-composition fact (as opposed to the listening-based
-    // rankings above both) — songs with no year tag are left out rather
-    // than lumped into a misleading "unknown" bucket sized by tagging
-    // gaps, not by anything about the music itself.
-    decadeBreakdown(): RankedItem[] {
+    // Songs with no year tag are left out rather than lumped into an
+    // "unknown" bucket sized by tagging gaps. Oldest first: it is a timeline.
+    decadeBreakdown(): ChartItem[] {
       const counts = new Map<number, number>()
       for (const t of this.songs) {
         if (!t.year) continue
         const decade = Math.floor(t.year / 10) * 10
         counts.set(decade, (counts.get(decade) ?? 0) + 1)
       }
-      return this.shareOfLibrary(counts, (decade) => ({
-        id: String(decade),
-        label: this.$t('stats.decade', { decade }),
-      }))
+      return [...counts.entries()]
+        .sort(([a], [b]) => a - b)
+        .map(([decade, count]) =>
+          this.shareItem(String(decade), this.$t('stats.decade', { decade }), count),
+        )
+    },
+    milestoneValues(): MilestoneValues {
+      return {
+        plays: this.totalPlays,
+        hours: Math.floor(this.listeningTime / 3600),
+        streak: streaks(this.ownHistory?.timestamps ?? [], this.today).current,
+      }
+    },
+    /** Both halves of a milestone have to be in: a comparison against a
+     * library still loading would set the baseline too low. */
+    milestonesReady(): boolean {
+      return (
+        this.ownHistory !== null &&
+        this.ownHistory.available &&
+        this.songs.length > 0 &&
+        !this.loading
+      )
+    },
+    momentSubtitle(): string {
+      if (!this.moment) return ''
+      const { kind, value } = this.moment
+      if (kind === 'hours') {
+        const days = Math.round(value / 24)
+        return this.$t('stats.milestoneHoursSub', { n: this.formatNumber(days) }, days)
+      }
+      if (kind === 'plays') {
+        return this.$t('stats.milestonePlaysSub', { n: this.formatNumber(value + PLAYS_MILESTONE) })
+      }
+      const { current, longest } = streaks(this.ownHistory?.timestamps ?? [], this.today)
+      if (current >= longest) return this.$t('stats.milestoneStreakBest')
+      const left = longest - current
+      return this.$t('stats.milestoneStreakSub', { n: this.formatNumber(left) }, left)
+    },
+    importChoices(): ImportOption[] {
+      return importOptions({
+        lastfmName: useLastfmStore().username,
+        lastfmConfigured: this.lastfmConfigured,
+        listenbrainzName: useListenbrainzStore().username,
+      })
+    },
+    offeredImports(): ImportOption[] {
+      if (!this.isOwnView || !this.importStatus) return []
+      const action = importAction(this.importStatus.status, this.importChoices)
+      return action === 'choose' || action === 'retry' ? this.importChoices : []
+    },
+  },
+  watch: {
+    milestonesReady(ready: boolean): void {
+      if (ready) this.checkMilestones()
+    },
+    // Often still unknown when the page opens: the check is a request.
+    'authStore.isAdmin'(): void {
+      void this.loadAccounts()
+    },
+    viewedAccount(name: string | null): void {
+      this.otherHistory = null
+      if (name !== null) void this.loadOther(name)
     },
   },
   created() {
     this.libraryStore.fetchAllSongs()
     this.libraryStore.fetchStarred()
-    // Only reason to load the full artist list here — see topArtists'
-    // coverArtId/imageUrl comment. Own cached request; a no-op if some
-    // earlier view (e.g. ArtistsView) already populated it.
+    // For the artists' own artwork, see artistsById. A no-op once loaded.
     this.libraryStore.fetchArtists()
+    void this.loadOwn()
+    void this.loadAccounts()
+    void this.prepareImport()
+  },
+  beforeUnmount() {
+    clearTimeout(this.momentTimer)
+    clearTimeout(this.freshTimer)
+    clearTimeout(this.importTimer)
   },
   methods: {
+    async loadOwn(): Promise<void> {
+      try {
+        this.ownHistory = await getPlayHistorySummary()
+        this.milestonesChecked = false
+        if (this.milestonesReady) this.checkMilestones()
+      } catch {
+        // The log is an addition to this page: without connect's answer the
+        // figures the media server provides still stand.
+      }
+    },
+    async loadOther(name: string): Promise<void> {
+      try {
+        const summary = await getPlayHistorySummary(name)
+        if (this.viewedAccount === name) this.otherHistory = summary
+      } catch {
+        // Stays empty; the picker is still there to go elsewhere.
+      }
+    },
+    async loadAccounts(): Promise<void> {
+      if (!this.authStore.isAdmin) return
+      try {
+        this.accounts = await getPlayHistoryAccounts()
+      } catch {
+        // A server that says no just means no picker.
+      }
+    },
+    checkMilestones(): void {
+      if (this.milestonesChecked || !this.ownHistory) return
+      this.milestonesChecked = true
+      const seen = this.ownHistory.milestones ?? null
+      const reached = reachedMilestones(this.milestoneValues)
+      const moment = nextMoment(seen, this.milestoneValues)
+      if (!moment) {
+        if (!seen) void this.rememberMilestones(reached)
+        return
+      }
+      this.momentTimer = window.setTimeout(() => {
+        // Someone browsing another account did not come for this.
+        if (!this.isOwnView) return
+        this.moment = moment
+        // Now rather than on closing: leaving mid-animation has still shown it.
+        void this.rememberMilestones(reached)
+      }, MOMENT_DELAY_MS)
+    },
+    async rememberMilestones(seen: MilestoneValues): Promise<void> {
+      try {
+        await saveMilestones(seen)
+      } catch {
+        // Worst case the same moment comes once more.
+      }
+    },
+    momentTarget(): { x: number; y: number; size: number } | null {
+      return (this.$refs.hero as InstanceType<typeof StatsHero> | undefined)?.labelRect() ?? null
+    },
+    onMomentClosed(): void {
+      this.fresh = this.moment?.kind ?? null
+      this.moment = null
+      this.freshTimer = window.setTimeout(() => {
+        this.fresh = null
+      }, FRESH_MS)
+    },
+    async prepareImport(): Promise<void> {
+      try {
+        const [status, configured] = await Promise.all([
+          getImportStatus(),
+          useLastfmStore().checkConfigured(),
+        ])
+        this.lastfmConfigured = configured
+        this.importStatus = status
+        if (status.status === 'running') this.pollImport()
+        const [only] = this.importChoices
+        if (only && importAction(status.status, this.importChoices) === 'start') {
+          await this.beginImport(only)
+        }
+      } catch {
+        // No import offer, and the year fills from the next song on.
+      }
+    },
+    async beginImport(option: ImportOption): Promise<void> {
+      try {
+        this.importStatus = await startImport(option.source, option.username)
+        if (this.importStatus.status === 'running') this.pollImport()
+      } catch {
+        // connect refused it (no key any more): the offer stays as it was.
+      }
+    },
+    pollImport(): void {
+      // An answer can still arrive after the page has been left.
+      if (this.$.isUnmounted) return
+      this.importTimer = window.setTimeout(async () => {
+        if (!pollingAllowed()) {
+          this.pollImport()
+          return
+        }
+        try {
+          this.importStatus = await getImportStatus()
+        } catch {
+          this.pollImport()
+          return
+        }
+        if (this.importStatus.status === 'running') this.pollImport()
+        else void this.loadOwn()
+      }, IMPORT_POLL_MS)
+    },
+    /** A chart line counted from the log. The ids are empty on what came
+     * from an import, which knows names only, so those lines do not link. */
+    logItem(item: PlayHistoryTop, kind: ChartKind): ChartItem {
+      const base = {
+        id: item.id,
+        label: item.label,
+        sublabel: item.sublabel || undefined,
+        value: item.value,
+        valueLabel: this.formatNumber(item.value),
+      }
+      if (kind === 'genres') {
+        return { ...base, to: `/genres/${encodeURIComponent(item.label)}` }
+      }
+      if (kind === 'artists') {
+        const artist = item.artist_id ? this.artistsById.get(item.artist_id) : undefined
+        return {
+          ...base,
+          to: item.artist_id ? `/artists/${item.artist_id}` : undefined,
+          coverArtId: artist?.coverArtId ?? null,
+          imageUrl: artist?.imageUrl ?? null,
+        }
+      }
+      return {
+        ...base,
+        to: item.album_id ? `/albums/${item.album_id}` : undefined,
+        coverArtId: item.cover_art_id || null,
+      }
+    },
+    withMovement(items: ChartItem[], keyOf: (song: Song) => string | null): ChartItem[] {
+      if (!this.recentPlays) return items
+      const movement = chartMovement(this.songs, this.recentPlays, keyOf)
+      return items.map((item) => ({ ...item, move: movement.get(item.id) }))
+    },
     topFromGroups(
       groups: Map<
         string,
@@ -445,7 +655,7 @@ export default {
       >,
       toFn: (id: string) => string,
       includeCoverArt = false,
-    ): RankedItem[] {
+    ): ChartItem[] {
       return [...groups.entries()]
         .filter(([, v]) => v.plays > 0)
         .sort(([, a], [, b]) => b.plays - a.plays)
@@ -454,25 +664,18 @@ export default {
           id,
           label: v.label,
           value: v.plays,
-          // See topSongs' identical comment above.
           valueLabel: this.formatNumber(v.plays),
           to: toFn(id),
           coverArtId: includeCoverArt ? v.coverArtId : undefined,
         }))
     },
-    shareOfLibrary<K>(
-      counts: Map<K, number>,
-      describe: (key: K) => Omit<RankedItem, 'value' | 'valueLabel'>,
-    ): RankedItem[] {
-      const total = this.songs.length || 1
-      return [...counts.entries()]
-        .sort(([, a], [, b]) => b - a)
-        .slice(0, TOP_N)
-        .map(([key, count]) => ({
-          ...describe(key),
-          value: count,
-          valueLabel: this.formatShare(count, total),
-        }))
+    shareItem(id: string, label: string, count: number): ChartItem {
+      return {
+        id,
+        label,
+        value: count,
+        valueLabel: this.formatShare(count, this.songs.length || 1),
+      }
     },
     formatBytes(bytes: number): string {
       const units = ['byte', 'kilobyte', 'megabyte', 'gigabyte', 'terabyte', 'petabyte']
@@ -522,95 +725,20 @@ export default {
 </script>
 
 <style scoped>
-/* The page's own vertical rhythm: every top-level block on it is followed
- * by the same gap, so a section added later lines up without being told
- * to. The heading inside a section sits closer to its own content than
- * the sections do to each other. */
-.pair-grid,
-.stats-empty,
-.v-container > section {
-  margin-bottom: 40px;
-}
-
-.stats-header {
-  margin-bottom: 32px;
-}
-
-.stats-header__eyebrow {
-  margin-bottom: 8px;
-}
-
-.section-title {
-  margin-bottom: 16px;
-}
-
-.stat-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 16px;
-}
-
-.stat-tile {
-  flex: 1 1 120px;
-  /* As wide as its figure on one line at least: "52 Tage 3 Std" broke onto
-   * two, making its tile - and with it the whole row - taller than the
-   * rest. A tile too wide for the row moves to the next one instead. */
-  min-width: min-content;
-  padding: 20px;
-  border-radius: 12px;
-  background: rgba(var(--v-theme-on-surface), 0.03);
-  border: 1px solid var(--beacon-hairline);
-}
-
-.stat-tile--highlight {
-  background: rgba(var(--v-theme-primary), 0.08);
-  border-color: rgba(var(--v-theme-primary), 0.3);
-}
-
-.stat-tile__value {
-  white-space: nowrap;
-  /* With the page, not the tile, so every row's figures are one size; small
-   * enough at a laptop's width, queue open, for the library's six tiles to
-   * share one row - the sixth used to sit alone below, stretched across. */
-  font-size: clamp(1.4rem, 2.6cqi, 2.25rem);
-  line-height: 1.1;
-}
-
-/* Amber marks the listening figures only - every figure in amber was a
- * page of signal with nothing singled out. */
-.stat-tile--highlight .stat-tile__value {
-  color: rgb(var(--v-theme-primary));
-}
-
-.stat-tile__label {
-  margin-top: 4px;
-  font-size: 0.85rem;
-  color: rgba(var(--v-theme-on-surface), 0.65);
-}
-
-/* Four columns, two, or one - never three: four lists across three columns
- * leave the fourth alone on its own row. Measured against the page, not
- * the window, so an open sidebar counts. The composition lists use the same
- * columns, which keeps them aligned under the top-N lists. */
 .stats-page {
-  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  gap: 48px;
 }
 
-.pair-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 32px 40px;
+.stats-page__account {
+  width: min(100%, 260px);
+  margin-bottom: -32px;
+  margin-left: auto;
 }
 
-@container (min-width: 600px) {
-  .pair-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
-@container (min-width: 1080px) {
-  .pair-grid {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-  }
+/* A rounded pill, as every other control above a page's content. */
+.stats-page__account :deep(.v-field) {
+  border-radius: 999px;
 }
 </style>

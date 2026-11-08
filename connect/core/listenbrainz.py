@@ -33,6 +33,7 @@ recommendation path is two calls, so the second waits its turn.
 import asyncio
 import logging
 import time
+from urllib.parse import quote
 
 import httpx
 
@@ -215,6 +216,47 @@ async def get_sitewide_top_recordings(period: str, limit: int) -> list[dict]:
         params={"range": period, "count": _clamp(wanted * 10)},
     )
     return _recordings_from_stats(data, max_per_artist=_MAX_PER_ARTIST)[:wanted]
+
+
+def _to_listen(entry: object) -> dict | None:
+    if not isinstance(entry, dict) or not isinstance(entry.get("listened_at"), int):
+        return None
+    metadata = entry.get("track_metadata")
+    if not isinstance(metadata, dict) or not metadata.get("track_name"):
+        return None
+    return {
+        "ts": entry["listened_at"],
+        "title": str(metadata["track_name"]).strip(),
+        "artist": str(metadata.get("artist_name") or "").strip(),
+        "album": str(metadata.get("release_name") or "").strip(),
+    }
+
+
+async def get_listens(username: str, since: int, until: int, on_page) -> list[dict]:
+    """Every listen of a public profile between two UTC timestamps, newest
+    first page first. `on_page` hears the running count. _request()'s throttle
+    paces the pages."""
+    listens: list[dict] = []
+    max_ts = until
+    while True:
+        data = await _request(
+            "GET",
+            f"/1/user/{quote(username, safe='')}/listens",
+            params={"max_ts": max_ts, "count": _MAX_LIMIT},
+        )
+        payload = data.get("payload") if isinstance(data, dict) else None
+        raw = payload.get("listens") if isinstance(payload, dict) else None
+        page = [listen for listen in map(_to_listen, raw or []) if listen is not None]
+        if not page:
+            return listens
+        listens += [listen for listen in page if listen["ts"] >= since]
+        on_page(len(listens))
+        oldest = min(listen["ts"] for listen in page)
+        # max_ts is exclusive, so an oldest that did not move means a page of
+        # listens all at one moment, and asking again would never end.
+        if oldest <= since or oldest >= max_ts:
+            return listens
+        max_ts = oldest
 
 
 async def get_user_top_recordings(username: str, period: str, limit: int) -> list[dict]:

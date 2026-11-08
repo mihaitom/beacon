@@ -22,6 +22,7 @@ import { useEqualizerStore } from './equalizer'
 import { useDrawersStore } from './drawers'
 import { useRadioMetadataStore } from './radioMetadata'
 import * as connectPlayback from '@/services/connect/playback'
+import { recordListen } from '@/services/connect/playHistory'
 import type {
   ConnectDeviceRef,
   ConnectStatus,
@@ -1638,6 +1639,9 @@ export const usePlaybackStore = defineStore('playback', {
       const threshold = Math.min(duration * SCROBBLE_PERCENT, SCROBBLE_MAX_SECONDS)
       if (this.localPosition < threshold) return
       scrobbledSongId = song.id
+      // Its own call, not chained to the scrobble: a media server that is
+      // briefly away should not cost the listening year this play.
+      recordListen(song).catch(() => {})
       void useLibraryStore()
         .client()
         .scrobble(song.id, true)
