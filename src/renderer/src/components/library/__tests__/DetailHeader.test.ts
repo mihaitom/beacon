@@ -2,7 +2,7 @@
 // covered here — that's the part with logic (a crossfade between two
 // stacked layers, see services/crossfadeBackdrop.ts); the rest of this
 // component is presentational markup driven straight from its props.
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
@@ -10,6 +10,8 @@ import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import DetailHeader from '../DetailHeader.vue'
+import RecordStack from '../RecordStack.vue'
+import { emitter } from '@/emitter'
 
 const vuetify = createVuetify({ components, directives })
 
@@ -70,5 +72,50 @@ describe('DetailHeader backdrop', () => {
 
     expect(layers(wrapper)).toHaveLength(2)
     expect(layers(wrapper).every((layer) => !layer.image.includes('url('))).toBe(true)
+  })
+})
+
+describe('DetailHeader record stack', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  const stack = (wrapper: ReturnType<typeof mountHeader>) => wrapper.findComponent(RecordStack)
+  const art = (wrapper: ReturnType<typeof mountHeader>) => wrapper.find('.detail-header__cover')
+
+  it('flips through while pointed at, and only then', async () => {
+    const wrapper = mountHeader({ recordStack: ['a', 'b'] })
+    expect(stack(wrapper).props('browsing')).toBe(false)
+
+    await art(wrapper).trigger('mouseenter')
+    expect(stack(wrapper).props('browsing')).toBe(true)
+
+    await art(wrapper).trigger('mouseleave')
+    expect(stack(wrapper).props('browsing')).toBe(false)
+  })
+
+  it('opens the record that is at the front', async () => {
+    const shown = vi.fn()
+    emitter.on('showArtwork', shown)
+    const wrapper = mountHeader({ recordStack: ['a', 'b'], coverArtId: 'mosaic' })
+
+    await art(wrapper).trigger('click')
+    expect(shown.mock.lastCall![0]).toMatchObject({ coverArtId: 'a' })
+
+    stack(wrapper).vm.$emit('change', 'b')
+    await art(wrapper).trigger('click')
+    expect(shown.mock.lastCall![0]).toMatchObject({ coverArtId: 'b' })
+    emitter.off('showArtwork', shown)
+  })
+
+  it('has nothing to open on an empty stack', async () => {
+    const shown = vi.fn()
+    emitter.on('showArtwork', shown)
+    const wrapper = mountHeader({ recordStack: [] })
+
+    await art(wrapper).trigger('click')
+
+    expect(shown).not.toHaveBeenCalled()
+    emitter.off('showArtwork', shown)
   })
 })

@@ -1183,6 +1183,7 @@ export default {
     private: 'Privata',
     privateHint: 'Solo tu',
     publicHint: 'Tutti gli utenti',
+    sortPlaylistOrder: 'Ordine della playlist',
     namePlaceholder: 'Nome della playlist',
     comment: 'Descrizione',
     owner: 'Proprietario',

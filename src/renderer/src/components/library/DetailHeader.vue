@@ -81,8 +81,28 @@
          - square holding nothing but a generic icon takes room from the
          - title without saying anything. The icon remains for a picture that
          - fails to load. -->
+        <div
+          v-if="recordStack"
+          class="detail-header__cover"
+          :class="{ 'detail-header__cover--zoomable': recordStack.length }"
+          :title="recordStack.length ? $t('library.showArtwork') : undefined"
+          @mouseenter="browsing = true"
+          @mouseleave="browsing = false"
+          @click="showArtwork"
+        >
+          <record-stack
+            class="detail-header__stack"
+            :covers="recordStack"
+            :size="STACK_RECORD_SIZE"
+            :depth="3"
+            :rise="STACK_RISE"
+            :browsing="browsing"
+            :fallback-icon="fallbackIcon"
+            @change="stackFront = $event"
+          />
+        </div>
         <cover-art
-          v-if="hasArtwork"
+          v-else-if="hasArtwork"
           :cover-art-id="coverArtId"
           :image-url="imageUrl"
           :size="size"
@@ -114,6 +134,7 @@
 <script lang="ts">
 import type { PropType } from 'vue'
 import CoverArt from './CoverArt.vue'
+import RecordStack from './RecordStack.vue'
 import { useLibraryStore } from '@/stores/library'
 import { emitter } from '@/emitter'
 import { createBackdropLayers, showBackdrop } from '@/services/crossfadeBackdrop'
@@ -129,6 +150,11 @@ import type { Artist } from '@/types/library'
 // in - slow enough to read as a calm backdrop rather than a slideshow.
 const STORED_FANART_INTERVAL_MS = 12_000
 
+// Three records, each 12px higher than the one before, fill the 200px a
+// single cover takes on the other detail pages.
+const STACK_RECORD_SIZE = 176
+const STACK_RISE = 12
+
 /** A stored Fanart.tv banner across the whole card, a stored background
  * photo at its right edge, or the page's own blurred cover. */
 type BackdropKind = 'banner' | 'photo' | 'cover'
@@ -142,7 +168,7 @@ type BackdropKind = 'banner' | 'photo' | 'cover'
  */
 export default {
   name: 'DetailHeader',
-  components: { CoverArt },
+  components: { CoverArt, RecordStack },
   props: {
     coverArtId: { type: String as PropType<string | null>, default: null },
     imageUrl: { type: String as PropType<string | null>, default: null },
@@ -154,6 +180,9 @@ export default {
     // which pass a real category label above the item's own name.
     eyebrow: { type: String, default: '' },
     title: { type: String, required: true },
+    /** Records standing in a crate instead of one cover (a playlist's
+     * albums), flipped through while pointed at. */
+    recordStack: { type: Array as PropType<string[] | null>, default: null },
     fallbackIcon: { type: String, default: 'mdi-album' },
     rounded: { type: Boolean, default: false },
     // null hides the star button entirely (e.g. playlists, which Subsonic
@@ -171,6 +200,11 @@ export default {
   emits: ['toggle-star', 'set-rating'],
   data() {
     return {
+      STACK_RECORD_SIZE,
+      STACK_RISE,
+      browsing: false,
+      /** The record now at the front; null until the stack has moved. */
+      stackFront: null as string | null,
       backdrop: createBackdropLayers(),
       // Per layer, since Fanart.tv art is shown sharp and a cover blurred.
       layerKind: ['cover', 'cover'] as BackdropKind[],
@@ -204,7 +238,7 @@ export default {
       return this.imageUrl
     },
     hasArtwork(): boolean {
-      return Boolean(this.coverArtId || this.imageUrl)
+      return Boolean(this.coverArtId || this.imageUrl || this.recordStack)
     },
     /** The library's artist the stored picture showing now is of, if the
      * library has them. */
@@ -338,8 +372,9 @@ export default {
      * different pages, and the same picture is also opened from places that
      * have no header at all (a song row's context menu). */
     showArtwork(): void {
+      if (this.recordStack && !this.recordStack.length) return
       emitter.emit('showArtwork', {
-        coverArtId: this.coverArtId,
+        coverArtId: this.stackFront ?? this.recordStack?.[0] ?? this.coverArtId,
         imageUrl: this.imageUrl,
         title: this.title,
         subtitle: this.eyebrow || undefined,
@@ -623,6 +658,12 @@ export default {
 
 .detail-header__cover--zoomable {
   cursor: zoom-in;
+}
+
+/* Scales with the record, as on the playlist cards: the stack's own 600px is
+ * for smaller records and would exaggerate the fall of one this size. */
+.detail-header__stack.record-stack {
+  perspective: 915px;
 }
 
 .detail-header__title {

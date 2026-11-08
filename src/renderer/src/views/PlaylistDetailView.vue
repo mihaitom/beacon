@@ -1,8 +1,8 @@
 <template>
-  <v-container v-if="playlist" fluid>
+  <v-container v-if="playlist" fluid class="playlist-detail">
     <detail-header
       :cover-art-id="playlist.coverArtId"
-      :size="200"
+      :record-stack="covers"
       fallback-icon="mdi-playlist-music"
       :eyebrow="$t('library.playlist')"
       :title="playlist.name"
@@ -25,12 +25,12 @@
             color="primary"
             rounded="pill"
             prepend-icon="mdi-play"
-            :disabled="!playlist.songs.length"
+            :disabled="!shownSongs.length"
             @click="playAll"
           >
             {{ $t('library.play') }}
           </v-btn>
-          <preview-button :songs="playlist.songs" />
+          <preview-button :songs="shownSongs" />
         </div>
       </template>
       <template #top-right>
@@ -75,20 +75,65 @@
       :title="playlist.smart ? $t('playlists.smartEmpty') : $t('playlists.noSongsYet')"
       :text="playlist.smart ? undefined : $t('playlists.emptyHint')"
     />
-    <!-- Reordering and removing: only your own playlists. A shared one
-     - belongs to whoever made it, and the server rejects the write anyway
-     - (Navidrome answers createPlaylist for someone else's playlist with a
-     - not-authorized error). Your own smart playlist is refused the same
-     - way: its rules decide the songs. -->
-    <song-table
-      v-else
-      :songs="playlist.songs"
-      :default-sort-key="null"
-      :reorderable="songsEditable"
-      :removable="songsEditable"
-      @reorder="onReorder"
-      @remove="onRemove"
-    />
+    <template v-else>
+      <sticky-filter :z-index="3" :fade="false" @resize="stickyHeaderHeight = $event">
+        <div class="library-filter">
+          <v-text-field
+            v-model="filterQuery"
+            :placeholder="$t('search.label')"
+            :aria-label="$t('search.label')"
+            prepend-inner-icon="mdi-magnify"
+            variant="solo-filled"
+            density="compact"
+            rounded="pill"
+            flat
+            clearable
+            hide-details
+            class="library-search"
+          >
+            <template #append-inner><exact-match-switch /></template>
+          </v-text-field>
+          <div class="library-controls">
+            <library-filter-menu v-model="filters" :items="playlist.songs" :fields="filterFields" />
+            <library-sort-select
+              :model-value="sortValue"
+              :items="sortItems"
+              :direction="tableSort ? sort.direction : null"
+              @update:model-value="pickSort"
+              @toggle-direction="toggleDirection"
+            />
+          </div>
+        </div>
+      </sticky-filter>
+      <!-- Reordering and removing: only your own playlists. A shared one
+       - belongs to whoever made it, and the server rejects the write anyway
+       - (Navidrome answers createPlaylist for someone else's playlist with a
+       - not-authorized error). Your own smart playlist is refused the same
+       - way: its rules decide the songs. Dragging also needs the whole list
+       - on screen: between two rows of a search result is no place in the
+       - playlist. -->
+      <song-table
+        v-if="filteredSongs.length"
+        :songs="filteredSongs"
+        :sort="tableSort"
+        sectioned
+        sticky-header
+        :style="{ '--sticky-header-offset': `${stickyHeaderHeight}px` }"
+        :reorderable="songsEditable && !narrowed"
+        :removable="songsEditable"
+        @reorder="onReorder"
+        @remove="onRemove"
+      />
+      <empty-state
+        v-else
+        :icon="debouncedQuery ? 'mdi-magnify-close' : 'mdi-music-note-off'"
+        :title="
+          debouncedQuery
+            ? $t('library.noSongsForQuery', { query: debouncedQuery })
+            : $t('library.noSongsFound')
+        "
+      />
+    </template>
   </v-container>
   <v-container v-else>
     <page-loader v-if="libraryStore.loading" />
@@ -111,7 +156,17 @@ import PlaylistDeleteDialog from '@/components/library/PlaylistDeleteDialog.vue'
 import PlaylistNotice from '@/components/library/PlaylistNotice.vue'
 import PreviewButton from '@/components/library/PreviewButton.vue'
 import PageLoader from '@/components/PageLoader.vue'
+import StickyFilter from '@/components/StickyFilter.vue'
+import ExactMatchSwitch from '@/components/library/ExactMatchSwitch.vue'
+import LibraryFilterMenu from '@/components/library/LibraryFilterMenu.vue'
+import LibrarySortSelect from '@/components/library/LibrarySortSelect.vue'
+import { songBrowsingMixin } from '@/components/library/songBrowsing'
+import { rankByMatch } from '@/services/textSearch'
+import { filterSongs, sortSongs } from '@/services/library/songBrowse'
+import { activeFilterCount } from '@/services/library/libraryFilter'
+import { coversOf } from '@/services/library/playlistSummary'
 import {
+  positionsIn,
   removeFromPlaylist,
   type PlaylistNotice as Notice,
 } from '@/services/library/playlistRemoval'
@@ -129,9 +184,17 @@ export default {
     PlaylistNotice,
     PageLoader,
     PreviewButton,
+    StickyFilter,
+    ExactMatchSwitch,
+    LibraryFilterMenu,
+    LibrarySortSelect,
   },
+  mixins: [songBrowsingMixin],
   data() {
     return {
+      ownOrderLabel: 'playlists.sortPlaylistOrder',
+      // See GenreDetailView.vue's identical field.
+      stickyHeaderHeight: 0,
       playlist: null as Awaited<
         ReturnType<ReturnType<typeof useLibraryStore>['fetchPlaylist']>
       > | null,
@@ -167,6 +230,37 @@ export default {
     songsEditable(): boolean {
       return this.isOwnPlaylist && !this.playlist?.readonly
     },
+    covers(): string[] {
+      return this.playlist ? coversOf(this.playlist) : []
+    },
+    browsedSongs(): Song[] {
+      return filterSongs(this.playlist?.songs ?? [], this.filters)
+    },
+    filteredSongs(): Song[] {
+      const query = this.debouncedQuery
+      if (!query.trim()) return this.browsedSongs
+      const ranked = rankByMatch(
+        this.browsedSongs,
+        query,
+        (song) => [
+          { text: song.title, weight: 2 },
+          { text: song.artist },
+          { text: song.album, weight: 0.5 },
+        ],
+        { exact: this.libraryStore.searchExact },
+      )
+      if (this.byRelevance) return ranked
+      // Another order was picked for the matches: they are only narrowed.
+      const matches = new Set(ranked)
+      return this.browsedSongs.filter((song) => matches.has(song))
+    },
+    narrowed(): boolean {
+      return Boolean(this.debouncedQuery.trim()) || activeFilterCount(this.filters) > 0
+    },
+    /** What is on screen, in that order: what Play and Preview mean. */
+    shownSongs(): Song[] {
+      return this.tableSort ? sortSongs(this.filteredSongs, this.tableSort) : this.filteredSongs
+    },
     // Summed from the tracks, not the playlist's own duration — which,
     // like the songCount beside it in the heading, is what the server sent
     // and is stale the moment a row is removed here. The heading has to
@@ -184,6 +278,7 @@ export default {
       // A notice is about the playlist it was made on, and so is the undo
       // it offers — neither carries over to the next one.
       this.notice = null
+      this.resetBrowsing()
       this.loadPlaylist()
     },
   },
@@ -271,13 +366,16 @@ export default {
     },
     /** Drops the rows the menu was used on. The optimistic update, the
      * undo offer and the failure handling all live in the service — the
-     * phone's own playlist page does exactly the same thing. */
-    async onRemove({ indexes, songs }: { indexes: number[]; songs: Song[] }) {
+     * phone's own playlist page does exactly the same thing. Positions are
+     * worked out here because the table counts in the list it was given,
+     * which a search or filter may have narrowed, and the server counts in
+     * the whole playlist. */
+    async onRemove({ songs }: { songs: Song[] }) {
       const playlist = this.playlist
       if (!playlist) return
       await removeFromPlaylist({
         playlistId: playlist.id,
-        indexes,
+        indexes: positionsIn(playlist.songs, songs),
         songs,
         before: [...playlist.songs],
         apply: (updated) => {
@@ -296,24 +394,24 @@ export default {
       this.notice?.undo?.()
     },
     async playAll() {
-      if (!this.playlist?.songs.length) return
+      if (!this.shownSongs.length) return
       // pinFirst: false — this is "play the whole playlist", not a specific
       // song pick, so shuffle (if on) should be free to reorder the first
       // song too instead of always starting on track 1.
       // peek: replaces the queue with more than one song — see
       // peekQueueDrawer()'s own comment for the rule.
-      await usePlaybackStore().playSongList(
-        this.playlist.songs,
-        0,
-        false,
-        this.playlist.songs.length > 1,
-      )
+      await usePlaybackStore().playSongList(this.shownSongs, 0, false, this.shownSongs.length > 1)
     },
   },
 }
 </script>
 
 <style scoped>
+/* Clear of the index bar down the right edge, while a long list has one. */
+.playlist-detail:has(.song-table--with-alphabet-bar) .library-filter {
+  margin-right: 40px;
+}
+
 /* Play and Preview side by side, as on the album page. */
 .playlist-actions {
   display: flex;

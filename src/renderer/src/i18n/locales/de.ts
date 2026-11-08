@@ -1187,6 +1187,7 @@ export default {
     private: 'Privat',
     privateHint: 'Nur du',
     publicHint: 'Alle Nutzer',
+    sortPlaylistOrder: 'Playlist-Reihenfolge',
     namePlaceholder: 'Name der Playlist',
     comment: 'Beschreibung',
     owner: 'Besitzer',

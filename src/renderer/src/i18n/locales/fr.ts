@@ -1190,6 +1190,7 @@ export default {
     private: 'Privée',
     privateHint: 'Vous seul',
     publicHint: 'Tous les utilisateurs',
+    sortPlaylistOrder: 'Ordre de la playlist',
     namePlaceholder: 'Nom de la playlist',
     comment: 'Description',
     owner: 'Propriétaire',

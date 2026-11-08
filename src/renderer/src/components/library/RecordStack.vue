@@ -155,6 +155,9 @@ export default {
   z-index: calc(10 - var(--layer));
   border-radius: 4px;
   overflow: hidden;
+  /* A cover's placeholder fill is see-through, which would show an empty
+   * sleeve's icon through the one in front of it. */
+  background: rgb(var(--v-theme-surface-bright));
   box-shadow: 0 -2px 10px rgba(0, 0, 0, 0.45);
   transform-origin: 50% 100%;
   transform: translateY(calc(var(--depth) * var(--record-rise) * -1))

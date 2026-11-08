@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { MAX_GENRES, summarizePlaylist, summaryKey } from '../playlistSummary'
+import { MAX_GENRES, coversOf, summarizePlaylist, summaryKey } from '../playlistSummary'
 import { STACK_COVERS } from '../stackCovers'
 import { makeSong } from '@/stores/__tests__/fixtures'
 import type { Playlist } from '@/types/library'
@@ -20,6 +20,26 @@ function makePlaylist(id: string, overrides: Partial<Playlist> = {}): Playlist {
     ...overrides,
   }
 }
+
+describe('coversOf', () => {
+  const summary = { covers: ['from-summary'], artists: [], genres: [] }
+
+  it('reads the albums from the songs a playlist carries', () => {
+    const songs = [makeSong('a', { coverArtId: 'from-song' })]
+    expect(coversOf(makePlaylist('p', { songs, coverArtId: 'server' }), summary)).toEqual([
+      'from-song',
+    ])
+  })
+
+  it('falls back on the summary for a playlist without its songs', () => {
+    expect(coversOf(makePlaylist('p', { coverArtId: 'server' }), summary)).toEqual(['from-summary'])
+  })
+
+  it("uses the server's artwork only when nothing else has a cover", () => {
+    expect(coversOf(makePlaylist('p', { coverArtId: 'server' }))).toEqual(['server'])
+    expect(coversOf(makePlaylist('p'))).toEqual([])
+  })
+})
 
 describe('summarizePlaylist', () => {
   it('puts the albums with the most tracks first, each once', () => {

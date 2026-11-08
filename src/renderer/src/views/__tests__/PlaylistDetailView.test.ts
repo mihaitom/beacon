@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount, flushPromises } from '@vue/test-utils'
+import { nextTick } from 'vue'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { createVuetify } from 'vuetify'
@@ -8,6 +9,8 @@ import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { useLibraryStore } from '@/stores/library'
 import { useAuthStore } from '@/stores/auth'
+import { usePlaybackStore } from '@/stores/playback'
+import { loadSongSort } from '@/services/library/songBrowse'
 import PlaylistDetailView from '../PlaylistDetailView.vue'
 import PlaylistDeleteDialog from '@/components/library/PlaylistDeleteDialog.vue'
 import SongTable from '@/components/library/SongTable.vue'
@@ -474,6 +477,161 @@ describe('PlaylistDetailView', () => {
       // One re-read, by the write that was last in the queue.
       expect(fetchPlaylist.mock.calls.length).toBe(fetchesAfterMount + 1)
       expect(vm.playlist.songs.map((song) => song.id)).toEqual(['c'])
+    })
+  })
+
+  describe('searching, filtering and sorting', () => {
+    const songs = [
+      makeSong('a', { title: 'Early sun', genre: 'Rock' }),
+      makeSong('b', { title: 'Moonlight', genre: 'Jazz' }),
+      makeSong('c', { title: 'Sun', genre: 'Rock' }),
+    ]
+
+    type BrowsingVm = {
+      debouncedQuery: string
+      filterQuery: string
+      filters: Record<string, string[]>
+      sortValue: string
+      pickSort(value: string): void
+      toggleDirection(): void
+      playAll(): Promise<void>
+    }
+
+    async function mountBrowsing(list: Song[] = songs) {
+      useAuthStore().username = 'thomas'
+      const library = useLibraryStore()
+      vi.spyOn(library, 'fetchPlaylist').mockImplementation(async (id: string) =>
+        makePlaylist({ id, songs: [...list], songCount: list.length }),
+      )
+      const { wrapper, router } = await mountView()
+      const vm = wrapper.vm as unknown as BrowsingVm
+      const table = () => wrapper.findComponent(SongTable)
+      const shown = () => (table().props('songs') as Song[]).map((song) => song.id)
+      const search = async (query: string) => {
+        vm.debouncedQuery = query
+        await nextTick()
+      }
+      return { wrapper, router, vm, library, table, shown, search }
+    }
+
+    it('narrows the list to what was searched for', async () => {
+      const { shown, search } = await mountBrowsing()
+
+      await search('moon')
+
+      expect(shown()).toEqual(['b'])
+    })
+
+    it('says so when nothing matches, and keeps the search box', async () => {
+      const { wrapper, table, search } = await mountBrowsing()
+
+      await search('xyzzy')
+
+      expect(table().exists()).toBe(false)
+      expect(wrapper.text()).toContain(i18n.global.t('library.noSongsForQuery', { query: 'xyzzy' }))
+      expect(wrapper.find('.library-search').exists()).toBe(true)
+    })
+
+    it('removes the song that was picked, not the one at its row number', async () => {
+      // The table counts in the narrowed list, where Moonlight is row 0;
+      // on the server row 0 is another song entirely.
+      const { library, table, search } = await mountBrowsing()
+      const remove = vi.spyOn(library, 'removeFromPlaylist').mockResolvedValue()
+      await search('moon')
+
+      const shownSong = (table().props('songs') as Song[])[0]!
+      ;(table().vm as unknown as { onRemoveRequested(row: object): void }).onRemoveRequested({
+        song: shownSong,
+        index: 0,
+      })
+      await flushPromises()
+
+      expect(remove).toHaveBeenCalledWith('p1', [1])
+    })
+
+    it('removes the copy that was picked when a song is listed twice', async () => {
+      const twice = [makeSong('a'), makeSong('b'), makeSong('a')]
+      const { library, table } = await mountBrowsing(twice)
+      const remove = vi.spyOn(library, 'removeFromPlaylist').mockResolvedValue()
+
+      const lastCopy = (table().props('songs') as Song[])[2]!
+      ;(table().vm as unknown as { onRemoveRequested(row: object): void }).onRemoveRequested({
+        song: lastCopy,
+        index: 2,
+      })
+      await flushPromises()
+
+      expect(remove).toHaveBeenCalledWith('p1', [2])
+    })
+
+    it('offers dragging only with the whole list on screen', async () => {
+      const { vm, table, search } = await mountBrowsing()
+      expect(table().props('reorderable')).toBe(true)
+
+      await search('sun')
+      expect(table().props('reorderable')).toBe(false)
+
+      await search('')
+      vm.filters = { genre: ['Rock'] }
+      await nextTick()
+      expect(table().props('reorderable')).toBe(false)
+    })
+
+    it("starts in the playlist's own order", async () => {
+      const { vm, table } = await mountBrowsing()
+
+      expect(vm.sortValue).toBe('own')
+      expect(table().props('sort')).toBeNull()
+    })
+
+    it('leaves the order remembered for the song list alone', async () => {
+      const before = loadSongSort()
+      const { vm } = await mountBrowsing()
+
+      vm.pickSort(before.key === 'year' ? 'title' : 'year')
+      await nextTick()
+
+      expect(loadSongSort()).toEqual(before)
+    })
+
+    it('ranks by match while searching, and can go back to the playlist order', async () => {
+      const { vm, shown, search } = await mountBrowsing()
+
+      await search('sun')
+      expect(vm.sortValue).toBe('relevance')
+      expect(shown()).toEqual(['c', 'a'])
+
+      vm.pickSort('own')
+      await nextTick()
+      expect(shown()).toEqual(['a', 'c'])
+    })
+
+    it('plays what is on screen, in that order', async () => {
+      const { vm } = await mountBrowsing()
+      const play = vi.spyOn(usePlaybackStore(), 'playSongList').mockResolvedValue()
+
+      vm.filters = { genre: ['Rock'] }
+      vm.pickSort('title')
+      vm.toggleDirection()
+      await nextTick()
+      await vm.playAll()
+
+      expect(play.mock.lastCall![0].map((song) => song.title)).toEqual(['Sun', 'Early sun'])
+    })
+
+    it('starts over on another playlist', async () => {
+      const { vm, router, shown, search } = await mountBrowsing()
+      vm.pickSort('title')
+      vm.filters = { genre: ['Rock'] }
+      await search('sun')
+
+      await router.push('/playlists/p2')
+      await flushPromises()
+
+      expect(vm.debouncedQuery).toBe('')
+      expect(vm.filters).toEqual({})
+      expect(vm.sortValue).toBe('own')
+      expect(shown()).toEqual(['a', 'b', 'c'])
     })
   })
 

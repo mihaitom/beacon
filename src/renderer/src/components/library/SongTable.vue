@@ -365,8 +365,8 @@ export default {
     columns: { type: Array as PropType<SongColumnKey[] | null>, default: null },
     // Overridable for views that hand over an already-meaningfully-ordered
     // list — null means "leave it in the order the list was given in" (no
-    // column highlighted as active), used by album/playlist detail so
-    // song-number/playlist order is what actually plays, not an
+    // column highlighted as active), used by album detail so
+    // song-number order is what actually plays, not an
     // alphabetical-by-title reshuffle. ArtistDetailView's/HomeView's "most
     // played" shelves instead pass 'playCount' (server-sorted desc).
     // Everywhere else without an override defaults to title, so a plain
@@ -436,7 +436,7 @@ export default {
     // and a pick emits `remove`. Unlike reorderable this survives a column
     // sort: which rows you mean is still unambiguous when they are only
     // displayed in a different order (see onRemoveRequested, which maps
-    // them back to real playlist positions).
+    // them back to positions in the list it was given).
     removable: { type: Boolean, default: false },
   },
   emits: ['reorder', 'remove', 'update:sort'],
@@ -1040,7 +1040,9 @@ export default {
       dialog?.open(songs.map((track) => track.id))
     },
     /** Turns the rows the menu was used on into positions within `songs`
-     * as it was handed in, which for a playlist is the server's own order.
+     * as it was handed in. For a playlist narrowed by a search those are
+     * not yet the server's: its page maps them on by the songs emitted
+     * here (PlaylistDetailView's onRemove).
      *
      * Not the row indices this table works in: those count positions in
      * sortedSongs, and under a column sort that is a reordered copy — the

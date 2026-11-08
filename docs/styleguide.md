@@ -549,7 +549,7 @@ it does not stand beside it as a labelled switch. The top bar's search
 carries the same toggle; the results page has none of its own and searches
 again when the setting changes.
 
-The library lists (Songs, Albums, Artists, a genre's page) put their
+The library lists (Songs, Albums, Artists, a genre's page, a playlist's page) put their
 controls in the same row: the search on the left, then, pushed to the right,
 the grid/list toggle where there is one, a "Filter" pill and the sort select
 at the end (`LibraryFilterMenu.vue`, `LibrarySortSelect.vue`), grouped in
@@ -568,6 +568,10 @@ the song table's, and narrowed to what fits the list's width), the sorted column
 sections (letters, decades, stars, and the filter's ranges), the list draws
 them as `.letter-divider` headings and the index bar lists the same
 sections in short form.
+
+A playlist's page starts in the playlist's own order, offered first in the
+sort select and not remembered between playlists. Dragging a row needs the
+whole list in that order, so a search, a filter or another order turns it off.
 
 Scrollbars are hidden app-wide (`base.css`) - scrolling still works, only the
 chrome is gone. A scroll region therefore has to look scrollable on its own.
@@ -764,11 +768,13 @@ inputs.
   result looks the way it does". The second is information, never an error.
 - **A name that is edited in place** wears the title's own type
   (`.detail-title`) and shows it is a field only on hover and focus.
-- **The new-playlist dialog has the same head** (`CreatePlaylistDialog.vue`):
-  empty record sleeves beside the name, with a line under it because an
-  empty field has nothing else to show it is one. The front
-  sleeve lights up with a name, the moment it can be created. Private or public is
-  two tiles saying who sees it (`PlaylistVisibility.vue`), not a switch.
+- **The dialogs for creating and editing a playlist have the same head**
+  (`PlaylistDialogHead.vue`): its record sleeves beside the name, with a line
+  under it because an empty field has nothing else to show it is one. The
+  front sleeve lights up with a name, the moment it can be confirmed. No tinted
+  wash behind it: the head is one flat surface. Private or public is two tiles
+  saying who sees it (`PlaylistVisibility.vue`), not a switch; the chosen one
+  is marked by its outline and icon, not a fill.
 
 ## Debug overlays
 

@@ -16,6 +16,8 @@ import { readBooleanPreference, writeBooleanPreference } from '@/services/boolea
 
 /** Tiles or rows, remembered across visits like the album list's toggle. */
 const GRID_VIEW_KEY = 'beacon.songsGridView'
+/** The sort menu's entry for a list's own order. */
+const OWN_ORDER = 'own'
 
 let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -37,6 +39,11 @@ export const songBrowsingMixin = defineComponent({
       // Set once an order is picked - from then on it applies even while
       // the list is still arriving (see tableSort).
       sortPicked: false,
+      /** For a list with a running order of its own (a playlist): that
+       * order's name in the sort menu. The page starts in it, and what is
+       * picked there is for this visit, not the remembered song order. */
+      ownOrderLabel: null as string | null,
+      inOwnOrder: false,
       filters: {} as LibraryFilters,
       gridView: readBooleanPreference(GRID_VIEW_KEY),
       /** Fields a page has no use for: every song of a genre has the same
@@ -63,24 +70,27 @@ export const songBrowsingMixin = defineComponent({
       )
     },
     sortValue(): string {
-      return this.byRelevance ? 'relevance' : this.sort.key
+      if (this.byRelevance) return 'relevance'
+      return this.inOwnOrder ? OWN_ORDER : this.sort.key
     },
     sortItems(): { title: string; value: string }[] {
       const items = this.sortKeys.map((key): { title: string; value: string } => ({
         title: this.$t(sortLabelKey(key)),
         value: key,
       }))
+      if (this.ownOrderLabel)
+        items.unshift({ title: this.$t(this.ownOrderLabel), value: OWN_ORDER })
       if (this.debouncedQuery.trim()) {
         items.unshift({ title: this.$t('library.songSort.relevance'), value: 'relevance' })
       }
       return items
     },
-    /** Null keeps the list as handed over: ranked by match while a search
-     * is on, and in arrival order while a page's list is still streaming
+    /** Null keeps the list as handed over: in its own order, ranked by
+     * match while a search is on, and in arrival order while a page's list is still streaming
      * in (see listComplete), so rows already on screen are not reshuffled
      * by every page that arrives. */
     tableSort(): SongSort | null {
-      if (this.byRelevance) return null
+      if (this.byRelevance || this.inOwnOrder) return null
       if (!this.listComplete() && !this.sortPicked) return null
       return this.sort
     },
@@ -101,6 +111,7 @@ export const songBrowsingMixin = defineComponent({
   created() {
     // An order saved on a server that has data for it, kept on one that has none.
     if (!this.sortKeys.includes(this.sort.key)) this.sort = { key: 'title', direction: 'asc' }
+    this.inOwnOrder = Boolean(this.ownOrderLabel)
   },
   methods: {
     /** Overridden by a page whose list arrives in pages (Songs). */
@@ -110,6 +121,11 @@ export const songBrowsingMixin = defineComponent({
     pickSort(value: string) {
       if (value === 'relevance') {
         this.byRelevance = true
+        return
+      }
+      if (value === OWN_ORDER) {
+        this.byRelevance = false
+        this.inOwnOrder = true
         return
       }
       const key = value as SongSortKey
@@ -129,9 +145,19 @@ export const songBrowsingMixin = defineComponent({
     },
     applySort(sort: SongSort) {
       this.byRelevance = false
+      this.inOwnOrder = false
       this.sortPicked = true
       this.sort = sort
-      saveSongSort(sort)
+      if (!this.ownOrderLabel) saveSongSort(sort)
+    },
+    /** Another list on the same page: what was typed and picked was about
+     * the last one. */
+    resetBrowsing() {
+      this.filterQuery = ''
+      this.debouncedQuery = ''
+      this.filters = {}
+      this.byRelevance = false
+      this.inOwnOrder = Boolean(this.ownOrderLabel)
     },
   },
 })

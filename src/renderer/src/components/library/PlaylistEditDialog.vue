@@ -1,22 +1,20 @@
 <template>
-  <v-dialog v-model="visible" max-width="400">
+  <v-dialog v-model="visible" max-width="460">
     <v-card>
-      <v-card-title>{{ $t('playlists.editTitle') }}</v-card-title>
-      <v-card-text>
-        <v-text-field
-          v-model="name"
-          :label="$t('common.name')"
-          variant="solo-filled"
-          clearable
-          @keyup.enter="save"
-        />
+      <playlist-dialog-head
+        v-model="name"
+        :eyebrow="$t('playlists.editTitle')"
+        :covers="covers"
+        @confirm="save"
+      />
+      <v-card-text v-if="capabilities.playlistDetails" class="playlist-edit__fields">
         <v-textarea
-          v-if="capabilities.playlistDetails"
           v-model="comment"
           :label="$t('playlists.comment')"
           variant="solo-filled"
-          rows="3"
+          rows="2"
           auto-grow
+          hide-details
         />
         <v-select
           v-if="owners.length"
@@ -24,22 +22,30 @@
           :items="owners"
           :label="$t('playlists.owner')"
           variant="solo-filled"
+          hide-details
         />
         <v-btn
           v-else-if="ownerLoginNeeded"
-          class="playlist-edit__owner-login"
           variant="tonal"
           prepend-icon="mdi-account-key-outline"
           @click="signInForOwner"
         >
           {{ $t('playlists.ownerLogin') }}
         </v-btn>
-        <playlist-visibility v-if="capabilities.playlistDetails" v-model="isPublic" />
+        <playlist-visibility v-model="isPublic" />
       </v-card-text>
       <v-card-actions>
         <v-spacer />
         <v-btn variant="text" @click="visible = false">{{ $t('common.cancel') }}</v-btn>
-        <v-btn color="primary" :disabled="!name.trim()" :loading="saving" @click="save">
+        <v-btn
+          color="primary"
+          variant="flat"
+          rounded="pill"
+          prepend-icon="mdi-check"
+          :disabled="!name.trim()"
+          :loading="saving"
+          @click="save"
+        >
           {{ $t('common.save') }}
         </v-btn>
       </v-card-actions>
@@ -50,9 +56,12 @@
 
 <script lang="ts">
 import NavidromePasswordDialog from '@/components/smartPlaylist/NavidromePasswordDialog.vue'
+import PlaylistDialogHead from './PlaylistDialogHead.vue'
 import PlaylistVisibility from './PlaylistVisibility.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useLibraryStore } from '@/stores/library'
+import { usePlaylistSummariesStore } from '@/stores/playlistSummaries'
+import { coversOf } from '@/services/library/playlistSummary'
 import {
   NavidromeLoginRequired,
   getNavidromePlaylist,
@@ -75,7 +84,7 @@ import type { PlaylistChanges } from '@/services/subsonic/client'
  */
 export default {
   name: 'PlaylistEditDialog',
-  components: { NavidromePasswordDialog, PlaylistVisibility },
+  components: { NavidromePasswordDialog, PlaylistDialogHead, PlaylistVisibility },
   emits: ['saved'],
   data() {
     return {
@@ -84,6 +93,7 @@ export default {
       name: '',
       comment: '',
       isPublic: false,
+      covers: [] as string[],
       playlistId: '',
       owners: [] as { title: string; value: string }[],
       ownerId: '',
@@ -103,6 +113,7 @@ export default {
       this.name = playlist.name
       this.comment = playlist.comment ?? ''
       this.isPublic = playlist.public
+      this.covers = coversOf(playlist, usePlaylistSummariesStore().summaryFor(playlist))
       this.owners = []
       this.ownerId = ''
       this.ownerLoginNeeded = false
@@ -196,8 +207,10 @@ export default {
 </script>
 
 <style scoped>
-/* Same gap under it as the fields have under theirs. */
-.playlist-edit__owner-login {
-  margin-bottom: 22px;
+.playlist-edit__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 18px;
 }
 </style>

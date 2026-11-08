@@ -15,6 +15,7 @@ import {
 } from '@/services/navidrome/client'
 import CreatePlaylistDialog from '../CreatePlaylistDialog.vue'
 import PlaylistEditDialog from '../PlaylistEditDialog.vue'
+import { makeSong } from '@/stores/__tests__/fixtures'
 import type { Playlist } from '@/types/library'
 
 vi.mock('@/services/navidrome/client', async (importOriginal) => ({
@@ -39,7 +40,7 @@ const global = {
 }
 
 const playlist = (overrides: Partial<Playlist> = {}) =>
-  ({ id: 'p1', name: 'Mix', public: false, comment: 'Old', ...overrides }) as Playlist
+  ({ id: 'p1', name: 'Mix', public: false, comment: 'Old', songs: [], ...overrides }) as Playlist
 
 function signIn(server: 'navidrome-admin' | 'navidrome' | 'jellyfin') {
   const auth = useAuthStore()
@@ -103,6 +104,25 @@ describe('PlaylistEditDialog', () => {
 
     expect(update).toHaveBeenCalledWith('p1', { comment: 'New' })
     expect(wrapper.emitted('saved')![0]![0]).toMatchObject({ comment: 'New', ownerChanged: false })
+  })
+
+  it('saves a new name on Enter in the name', async () => {
+    signIn('navidrome')
+    const { update } = stubStore()
+    const { wrapper } = await openEdit()
+    const field = wrapper.findComponent({ name: 'PlaylistDialogHead' }).get('input')
+
+    await field.setValue('Renamed')
+    await field.trigger('keyup.enter')
+
+    expect(update).toHaveBeenCalledWith('p1', { name: 'Renamed' })
+  })
+
+  it("stands the playlist's own albums beside the name", async () => {
+    signIn('navidrome')
+    const { wrapper } = await openEdit(playlist({ songs: [makeSong('a', { coverArtId: 'al-1' })] }))
+
+    expect(wrapper.findComponent({ name: 'PlaylistDialogHead' }).props('covers')).toEqual(['al-1'])
   })
 
   it('makes no call when nothing was changed', async () => {
@@ -284,7 +304,7 @@ describe('CreatePlaylistDialog', () => {
     signIn('jellyfin')
     const create = vi.spyOn(useLibraryStore(), 'createPlaylist').mockResolvedValue()
     const { wrapper } = await openCreate()
-    const field = wrapper.get('input.new-playlist__name')
+    const field = wrapper.get('input.playlist-dialog-head__name')
 
     await field.setValue('   ')
     await field.trigger('keyup.enter')
