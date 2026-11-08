@@ -12,48 +12,57 @@
         </transition>
         <div class="stats-hero__scrim" />
         <div class="stats-hero__text">
-          <h1
-            ref="hoursFigure"
-            class="stats-hero__title"
-            :class="{ 'is-fresh': fresh === 'hours' }"
-          >
-            {{ title }}
-          </h1>
-          <p v-if="statement" class="stats-hero__statement">{{ statement }}</p>
-          <div class="stats-hero__next">
-            <div v-if="!otherAccount" class="stats-hero__track">
+          <div class="stats-hero__column">
+            <div class="stats-hero__heading">
+              <h1
+                ref="hoursFigure"
+                class="stats-hero__title"
+                :class="{ 'is-fresh': fresh === 'hours' }"
+              >
+                {{ title }}
+              </h1>
+              <div class="stats-hero__title stats-hero__title--sizer" aria-hidden="true">
+                {{ finalTitle }}
+              </div>
+            </div>
+            <p v-if="statement" class="stats-hero__statement">{{ statement }}</p>
+            <div class="stats-hero__next">
+              <div v-if="!otherAccount" class="stats-hero__track">
+                <div
+                  class="stats-hero__fill"
+                  :style="{ width: lit ? `${record.progress * 100}%` : '0' }"
+                />
+              </div>
+              <p class="text-body-medium text-medium-emphasis stats-hero__line">
+                {{ grooveLine || nextLine }}
+              </p>
+            </div>
+            <div class="stats-hero__figures">
+              <div class="stats-hero__figure" :class="{ 'is-fresh': fresh === 'plays' }">
+                <strong>{{ formatNumber(shown(plays)) }}</strong>
+                <span class="text-body-small text-medium-emphasis">{{
+                  $t('stats.totalPlays')
+                }}</span>
+              </div>
+              <div v-if="libraryShare" class="stats-hero__figure">
+                <strong>{{ libraryShare }}</strong>
+                <span class="text-body-small text-medium-emphasis">{{
+                  $t('stats.playedShare')
+                }}</span>
+              </div>
               <div
-                class="stats-hero__fill"
-                :style="{ width: lit ? `${record.progress * 100}%` : '0' }"
-              />
+                v-if="streak > 0"
+                class="stats-hero__figure"
+                :class="{ 'is-fresh': fresh === 'streak' }"
+              >
+                <strong ref="streakFigure">{{ formatNumber(shown(streak)) }}</strong>
+                <span class="text-body-small text-medium-emphasis">
+                  {{ $t('stats.streakFigure', streak) }}
+                </span>
+              </div>
             </div>
-            <p class="text-body-medium text-medium-emphasis stats-hero__line">
-              {{ grooveLine || nextLine }}
-            </p>
+            <stats-visualizer />
           </div>
-          <div class="stats-hero__figures">
-            <div class="stats-hero__figure" :class="{ 'is-fresh': fresh === 'plays' }">
-              <strong>{{ formatNumber(shown(plays)) }}</strong>
-              <span class="text-body-small text-medium-emphasis">{{ $t('stats.totalPlays') }}</span>
-            </div>
-            <div v-if="libraryShare" class="stats-hero__figure">
-              <strong>{{ libraryShare }}</strong>
-              <span class="text-body-small text-medium-emphasis">{{
-                $t('stats.playedShare')
-              }}</span>
-            </div>
-            <div
-              v-if="streak > 0"
-              class="stats-hero__figure"
-              :class="{ 'is-fresh': fresh === 'streak' }"
-            >
-              <strong ref="streakFigure">{{ formatNumber(shown(streak)) }}</strong>
-              <span class="text-body-small text-medium-emphasis">
-                {{ $t('stats.streakFigure', streak) }}
-              </span>
-            </div>
-          </div>
-          <stats-visualizer />
         </div>
         <div class="stats-hero__deck">
           <div class="stats-hero__turntable">
@@ -152,14 +161,10 @@ export default {
       return this.labelUrl ?? this.coverUrl
     },
     title(): string {
-      if (this.otherAccount) return this.otherAccount
-      const seconds = this.listeningSeconds
-      if (seconds >= SECONDS_PER_DAY)
-        return this.titleOf('stats.heroDays', seconds / SECONDS_PER_DAY)
-      if (seconds >= SECONDS_PER_HOUR) {
-        return this.titleOf('stats.heroHours', seconds / SECONDS_PER_HOUR)
-      }
-      return this.titleOf('stats.heroMinutes', seconds / SECONDS_PER_MINUTE)
+      return this.titleAt(this.reveal)
+    },
+    finalTitle(): string {
+      return this.titleAt(1)
     },
     statement(): string | null {
       if (this.otherAccount) {
@@ -192,9 +197,20 @@ export default {
     cancelAnimationFrame(this.frame)
   },
   methods: {
-    titleOf(key: string, amount: number): string {
+    titleAt(reveal: number): string {
+      if (this.otherAccount) return this.otherAccount
+      const seconds = this.listeningSeconds
+      if (seconds >= SECONDS_PER_DAY) {
+        return this.titleOf('stats.heroDays', seconds / SECONDS_PER_DAY, reveal)
+      }
+      if (seconds >= SECONDS_PER_HOUR) {
+        return this.titleOf('stats.heroHours', seconds / SECONDS_PER_HOUR, reveal)
+      }
+      return this.titleOf('stats.heroMinutes', seconds / SECONDS_PER_MINUTE, reveal)
+    },
+    titleOf(key: string, amount: number, reveal: number): string {
       const whole = Math.floor(amount)
-      return this.$t(key, { n: this.formatNumber(this.shown(whole)) }, whole)
+      return this.$t(key, { n: this.formatNumber(Math.round(whole * reveal)) }, whole)
     },
     shown(value: number): number {
       return Math.round(value * this.reveal)
@@ -292,9 +308,39 @@ export default {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 22px;
   min-width: 0;
   padding: clamp(24px, 4cqi, 56px);
+}
+
+/* As wide as the title, at least 620px when there is room. */
+.stats-hero__column {
+  display: grid;
+  gap: 22px;
+  width: fit-content;
+  min-width: min(100%, 620px);
+}
+
+/* These fill the column without widening it: the sentence changes daily and
+ * the line under the bar with the pointer, and neither may move the layout. */
+.stats-hero__statement,
+.stats-hero__next,
+.stats-hero__figures {
+  width: 0;
+  min-width: 100%;
+}
+
+/* The finished title holds the width while the number counts up; otherwise
+ * the column, and on an ultrawide the whole centred group, moves with it. */
+.stats-hero__heading {
+  display: grid;
+}
+
+.stats-hero__heading > * {
+  grid-area: 1 / 1;
+}
+
+.stats-hero__title--sizer {
+  visibility: hidden;
 }
 
 .stats-hero__title {
@@ -311,10 +357,6 @@ export default {
   font-size: clamp(1.15rem, 1.7cqi, 1.5rem);
   font-weight: 500;
   line-height: 1.35;
-}
-
-.stats-hero__next {
-  max-width: 620px;
 }
 
 /* One line reserved, so the text beside the record stays put while the
@@ -342,6 +384,7 @@ export default {
 .stats-hero__figures {
   display: flex;
   flex-wrap: wrap;
+  justify-content: space-between;
   gap: 14px 40px;
 }
 
@@ -388,6 +431,30 @@ export default {
   from {
     transform: scale(1.14);
     filter: brightness(1.8) drop-shadow(0 0 16px rgba(var(--v-theme-primary), 0.9));
+  }
+}
+
+/* Past this the record and the text would sit far apart at the two edges. */
+@container (min-width: 2000px) {
+  .stats-hero__layout {
+    grid-template-columns: auto auto;
+    justify-content: center;
+    column-gap: clamp(140px, 7.6cqi, 256px);
+  }
+
+  /* The gap is the only space between them, and padding would pull the
+   * group off the middle. */
+  .stats-hero__text {
+    padding-inline: 0;
+  }
+
+  /* An auto track gives a percentage nothing to resolve against. */
+  .stats-hero__column {
+    min-width: 620px;
+  }
+
+  .stats-hero__turntable {
+    margin-right: 0;
   }
 }
 

@@ -122,7 +122,6 @@ export default {
 .stats-visualizer {
   position: relative;
   width: 100%;
-  max-width: 620px;
   height: clamp(96px, 10cqi, 160px);
   padding: 12px 14px 0;
   border-radius: 10px;
