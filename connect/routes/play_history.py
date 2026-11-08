@@ -21,6 +21,11 @@ router = APIRouter(prefix="/play-history", dependencies=[Depends(require_token)]
 
 _MAX_TEXT = 2000
 
+# Matches core/play_history.py's PERIOD_DAYS, plus the one window that is
+# not a number of days. Validated here so a typo comes back as a 422 naming
+# the alternatives instead of silently meaning all-time.
+Period = Literal["week", "month", "quarter", "half_yearly", "year", "all_time"]
+
 
 class Listen(BaseModel):
     song_id: str = Field(max_length=_MAX_TEXT)
@@ -66,6 +71,19 @@ def _require_admin(session: SessionState) -> None:
         raise HTTPException(status_code=403, detail="Server administrator rights required")
 
 
+def _readable_account(session: SessionState, username: str | None) -> Account | None:
+    """The account a read is about: the session's own, or another one on
+    the same server when a server administrator names it. None only for the
+    session's own, nameless account (possible on Plex)."""
+    own = _own(session)
+    if username is None or (own is not None and username == own.username):
+        return own
+    _require_admin(session)
+    if username not in _known_accounts(session):
+        raise HTTPException(status_code=404, detail="No such account on this server")
+    return Account(session.account_server_type, session.account_server_url, username)
+
+
 def _empty_summary() -> dict:
     return {
         "available": False,
@@ -97,20 +115,36 @@ def get_summary(
     username: str | None = None,
     session: SessionState = Depends(require_authenticated_session),
 ) -> dict:
-    own = _own(session)
-    if username is not None and (own is None or username != own.username):
-        _require_admin(session)
-        if username not in _known_accounts(session):
-            raise HTTPException(status_code=404, detail="No such account on this server")
-        return play_history.summary(
-            Account(session.account_server_type, session.account_server_url, username)
-        )
-    if own is None:
+    account = _readable_account(session, username)
+    if account is None:
         return {**_empty_summary(), "milestones": None}
-    from_server = server_link.summary_for(own)
-    if from_server is not None:
-        return from_server
-    return {**play_history.summary(own), "milestones": play_history.milestones(own)}
+    own = _own(session)
+    if username is None:
+        # A paired desktop shows the server's log; an administrator looking
+        # at another account on this server still gets that account's own.
+        from_server = server_link.summary_for(own)
+        if from_server is not None:
+            return from_server
+    result = play_history.summary(account)
+    if username is None or (own is not None and username == own.username):
+        # Another account's milestones are nobody else's to celebrate.
+        result["milestones"] = play_history.milestones(account)
+    return result
+
+
+@router.get("/charts")
+def get_charts(
+    period: Period = "all_time",
+    username: str | None = None,
+    session: SessionState = Depends(require_authenticated_session),
+) -> dict:
+    """The same charts for one window, which is what the Stats page's period
+    picker asks for. Readable exactly like the summary: own account, or
+    another one for a server administrator."""
+    account = _readable_account(session, username)
+    if account is None:
+        return {"period": period, "total": 0, "top": _empty_summary()["top"]}
+    return play_history.period_charts(account, period)
 
 
 @router.get("/accounts")

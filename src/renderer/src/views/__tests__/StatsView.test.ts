@@ -45,6 +45,7 @@ interface StatsVm {
 vi.mock('@/services/connect/playHistory', () => ({
   recordListen: vi.fn(),
   getPlayHistorySummary: vi.fn(),
+  getPlayHistoryCharts: vi.fn(),
   getPlayHistoryAccounts: vi.fn(),
   saveMilestones: vi.fn(),
   getImportStatus: vi.fn(),
@@ -62,6 +63,18 @@ function summary(
     recent_plays: {},
     top: { songs: [], artists: [], albums: [], genres: [] },
     milestones: { plays: 0, hours: 0, streak: 0 },
+    ...over,
+  }
+}
+
+function charts(
+  period: playHistory.PlayHistoryPeriod = 'week',
+  over: Partial<playHistory.PlayHistoryCharts> = {},
+): playHistory.PlayHistoryCharts {
+  return {
+    period,
+    total: 0,
+    top: { songs: [], artists: [], albums: [], genres: [] },
     ...over,
   }
 }
@@ -99,6 +112,7 @@ beforeEach(() => {
   setActivePinia(createPinia())
   vi.clearAllMocks()
   vi.mocked(playHistory.getPlayHistorySummary).mockResolvedValue(summary())
+  vi.mocked(playHistory.getPlayHistoryCharts).mockResolvedValue(charts())
   vi.mocked(playHistory.getPlayHistoryAccounts).mockResolvedValue([])
   vi.mocked(playHistory.getImportStatus).mockResolvedValue({ status: 'done' })
   vi.mocked(playHistory.saveMilestones).mockResolvedValue({})
@@ -249,6 +263,127 @@ describe('StatsView genre crate', () => {
 
     expect(vm.charts.genres[0]?.covers).toEqual(['loud', 'quiet'])
     expect(vm.charts.genres[1]?.covers).toBeUndefined()
+  })
+})
+
+describe('StatsView chart period', () => {
+  type PeriodVm = {
+    chartPeriod: playHistory.PlayHistoryPeriod
+    periodAvailable: boolean
+    periodLoading: boolean
+    charts: Record<ChartKind, ChartItem[]>
+  }
+
+  function admin(accounts: string[]): void {
+    const auth = useAuthStore()
+    auth.username = 'me'
+    auth.isAdmin = true
+    vi.mocked(playHistory.getPlayHistoryAccounts).mockResolvedValue(accounts)
+  }
+
+  it('keeps the all-time charts from the media server until a window is picked', async () => {
+    const wrapper = mountView([makeSong('1', { albumId: 'alb', playCount: 3 })])
+    await flushPromises()
+
+    const vm = wrapper.vm as unknown as PeriodVm
+    expect(vm.chartPeriod).toBe('all_time')
+    expect(vm.charts.songs[0]?.value).toBe(3)
+    expect(playHistory.getPlayHistoryCharts).not.toHaveBeenCalled()
+  })
+
+  it('reads the chosen window from the log instead', async () => {
+    const line = {
+      id: 'x',
+      value: 4,
+      label: 'Song',
+      sublabel: 'Artist',
+      album_id: 'alb',
+      cover_art_id: 'c',
+    }
+    vi.mocked(playHistory.getPlayHistoryCharts).mockResolvedValue(
+      charts('week', { total: 4, top: { ...charts().top, songs: [line] } }),
+    )
+    const wrapper = mountView([makeSong('1', { playCount: 99 })])
+    await wrapper.setData({ chartPeriod: 'week' })
+    await flushPromises()
+
+    expect(playHistory.getPlayHistoryCharts).toHaveBeenCalledWith('week', undefined)
+    const vm = wrapper.vm as unknown as PeriodVm
+    expect(vm.charts.songs[0]).toMatchObject({
+      label: 'Song',
+      to: '/albums/alb',
+      coverArtId: 'c',
+      value: 4,
+    })
+  })
+
+  it("asks for the viewed account's own log", async () => {
+    admin(['bob'])
+    const wrapper = mountView([])
+    await flushPromises()
+    await wrapper.setData({ viewedAccount: 'bob' })
+    await wrapper.setData({ chartPeriod: 'month' })
+    await flushPromises()
+
+    expect(playHistory.getPlayHistoryCharts).toHaveBeenCalledWith('month', 'bob')
+  })
+
+  it('marks the panel as loading and keeps it empty until the answer is in', async () => {
+    let answer: (value: playHistory.PlayHistoryCharts) => void = () => {}
+    vi.mocked(playHistory.getPlayHistoryCharts).mockReturnValue(
+      new Promise((resolve) => (answer = resolve)),
+    )
+    const wrapper = mountView([makeSong('1', { playCount: 2 })])
+    await wrapper.setData({ chartPeriod: 'week' })
+
+    const vm = wrapper.vm as unknown as PeriodVm
+    expect(vm.periodLoading).toBe(true)
+    expect(vm.charts.songs).toEqual([])
+
+    answer(
+      charts('week', {
+        top: {
+          ...charts().top,
+          songs: [{ id: 'x', value: 1, label: 'Loaded' }],
+        },
+      }),
+    )
+    await flushPromises()
+
+    expect(vm.periodLoading).toBe(false)
+    expect(vm.charts.songs[0]?.label).toBe('Loaded')
+  })
+
+  it('drops a late answer for a window no longer chosen', async () => {
+    let answer: (value: playHistory.PlayHistoryCharts) => void = () => {}
+    vi.mocked(playHistory.getPlayHistoryCharts).mockReturnValue(
+      new Promise((resolve) => (answer = resolve)),
+    )
+    const wrapper = mountView([makeSong('1', { albumId: 'alb', playCount: 2 })])
+    await wrapper.setData({ chartPeriod: 'week' })
+    await wrapper.setData({ chartPeriod: 'all_time' })
+
+    answer(
+      charts('week', {
+        top: { ...charts().top, songs: [{ id: 'late', value: 9, label: 'Late' }] },
+      }),
+    )
+    await flushPromises()
+
+    const vm = wrapper.vm as unknown as PeriodVm
+    expect(vm.charts.songs[0]?.id).not.toBe('late')
+  })
+
+  it('offers the picker only once the log has plays in it', async () => {
+    vi.mocked(playHistory.getPlayHistorySummary).mockResolvedValue(summary({ total: 0 }))
+    const empty = mountView([])
+    await flushPromises()
+    expect((empty.vm as unknown as PeriodVm).periodAvailable).toBe(false)
+
+    vi.mocked(playHistory.getPlayHistorySummary).mockResolvedValue(summary({ total: 5 }))
+    const populated = mountView([])
+    await flushPromises()
+    expect((populated.vm as unknown as PeriodVm).periodAvailable).toBe(true)
   })
 })
 

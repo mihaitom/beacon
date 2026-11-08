@@ -2,19 +2,62 @@
   <section class="stats-charts">
     <div class="stats-charts__head">
       <h2 class="section-title">{{ $t('stats.chartsTitle') }}</h2>
-      <v-btn-toggle
-        v-model="tab"
-        mandatory
-        class="beacon-view-toggle beacon-view-toggle--text"
-        :aria-label="$t('stats.chartsTitle')"
-      >
-        <v-btn v-for="key in tabs" :key="key" :value="key">{{ $t(`stats.${key}`) }}</v-btn>
-      </v-btn-toggle>
+      <!-- The shared control row from the library pages: same flat pill
+         - surface as a filter row's fields, see base.css. -->
+      <div class="library-filter stats-charts__controls">
+        <v-select
+          v-if="showPeriod"
+          :model-value="period"
+          :items="periods"
+          :aria-label="$t('stats.periodLabel')"
+          prepend-inner-icon="mdi-calendar-range"
+          density="compact"
+          variant="solo-filled"
+          rounded="pill"
+          flat
+          hide-details
+          class="stats-charts__period"
+          @update:model-value="$emit('update:period', $event)"
+        >
+          <!-- Every window's name stacked in one cell, only the picked one
+             - visible: the pill is as wide as its longest name, so it keeps
+             - its width whichever window is on and no name is cut off
+             - (same trick as LibrarySortSelect). -->
+          <template #selection="{ item }">
+            <span class="stats-charts__period-label">
+              <span
+                v-for="option in periods"
+                :key="option.value"
+                class="stats-charts__period-name"
+                :class="{ 'stats-charts__period-name--shown': option.value === item.value }"
+                :aria-hidden="option.value !== item.value"
+                >{{ option.title }}</span
+              >
+            </span>
+          </template>
+        </v-select>
+        <v-btn-toggle
+          v-model="tab"
+          mandatory
+          class="beacon-view-toggle beacon-view-toggle--text stats-charts__tabs"
+          :aria-label="$t('stats.chartsTitle')"
+        >
+          <v-btn v-for="key in tabs" :key="key" :value="key">{{ $t(`stats.${key}`) }}</v-btn>
+        </v-btn-toggle>
+      </div>
     </div>
     <p v-if="since" class="text-body-small text-medium-emphasis stats-charts__since">
       {{ $t('stats.chartsSince', { date: since }) }}
     </p>
 
+    <div v-if="loading" class="stats-charts__loading">
+      <v-progress-circular indeterminate size="28" color="primary" />
+    </div>
+    <!-- A quiet line rather than the page's empty state: only this window is
+       - empty, and the picker above has to stay to leave it again. -->
+    <p v-else-if="!items.length" class="text-body-medium text-medium-emphasis">
+      {{ $t('stats.chartsEmptyPeriod') }}
+    </p>
     <div v-if="first" class="beacon-panel stats-charts__panel">
       <component
         :is="first.to ? 'router-link' : 'div'"
@@ -95,6 +138,7 @@
 import type { PropType } from 'vue'
 import CoverArt from '@/components/library/CoverArt.vue'
 import RecordStack from '@/components/library/RecordStack.vue'
+import type { PlayHistoryPeriod } from '@/services/connect/playHistory'
 
 // With its rise as tall as the other tabs' cover. The rise has to clear the
 // 4% each record behind shrinks by, or only the front one shows.
@@ -128,7 +172,14 @@ export default {
     charts: { type: Object as PropType<Record<ChartKind, ChartItem[]>>, required: true },
     /** The date a chart counted from the log starts at. */
     since: { type: String as PropType<string | null>, default: null },
+    /** Which window the charts count. */
+    period: { type: String as PropType<PlayHistoryPeriod>, default: 'all_time' },
+    /** Only once the log has plays in it: before that there is nothing a
+     * window could narrow. */
+    showPeriod: { type: Boolean, default: false },
+    loading: { type: Boolean, default: false },
   },
+  emits: ['update:period'],
   data() {
     return {
       CRATE_SIZE,
@@ -139,6 +190,16 @@ export default {
     }
   },
   computed: {
+    periods(): { title: string; value: PlayHistoryPeriod }[] {
+      return [
+        { title: this.$t('stats.periodWeek'), value: 'week' },
+        { title: this.$t('stats.periodMonth'), value: 'month' },
+        { title: this.$t('stats.periodQuarter'), value: 'quarter' },
+        { title: this.$t('stats.periodHalfYearly'), value: 'half_yearly' },
+        { title: this.$t('stats.periodYear'), value: 'year' },
+        { title: this.$t('stats.periodAllTime'), value: 'all_time' },
+      ]
+    },
     items(): ChartItem[] {
       return this.charts[this.tab]
     },
@@ -174,8 +235,46 @@ export default {
   margin-bottom: 16px;
 }
 
+/* .library-filter lays the row out; the chart-kind toggle keeps its width
+ * while the period pill is the one that gives when space runs out. */
+.stats-charts__tabs {
+  flex-shrink: 0;
+}
+
+/* As wide as its longest window (see the selection slot), giving only in a
+ * header too narrow for it beside the toggle. */
+.stats-charts__period {
+  flex: 0 1 auto;
+  min-width: 160px;
+}
+
+.stats-charts__period-label {
+  display: inline-grid;
+  min-width: 0;
+}
+
+.stats-charts__period-name {
+  grid-area: 1 / 1;
+  visibility: hidden;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stats-charts__period-name--shown {
+  visibility: visible;
+}
+
 .stats-charts__since {
   margin: -8px 0 12px;
+}
+
+/* Keeps the header at the panel's own top padding while the answer is in,
+ * so the chart area does not jump when it arrives. */
+.stats-charts__loading {
+  display: flex;
+  justify-content: center;
+  padding: 48px 0;
 }
 
 .stats-charts__panel {

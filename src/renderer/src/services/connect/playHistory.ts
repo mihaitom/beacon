@@ -15,6 +15,16 @@ export interface PlayHistoryTop {
   cover_art_id?: string
 }
 
+/** The Stats page's chart windows. "all_time" means no cutoff. */
+export type PlayHistoryPeriod = 'week' | 'month' | 'quarter' | 'half_yearly' | 'year' | 'all_time'
+
+/** The charts over one window of an account's log. */
+export interface PlayHistoryCharts {
+  period: PlayHistoryPeriod
+  total: number
+  top: Record<'songs' | 'artists' | 'albums' | 'genres', PlayHistoryTop[]>
+}
+
 export interface PlayHistorySummary {
   /** False for a session the server gave no name for: it has no log. */
   available: boolean
@@ -59,6 +69,15 @@ export function recordListen(song: Song): Promise<unknown> {
 export function getPlayHistorySummary(username?: string): Promise<PlayHistorySummary> {
   const query = username === undefined ? '' : `?username=${encodeURIComponent(username)}`
   return fetchConnect<PlayHistorySummary>(`/play-history/summary${query}`)
+}
+
+export function getPlayHistoryCharts(
+  period: PlayHistoryPeriod,
+  username?: string,
+): Promise<PlayHistoryCharts> {
+  const params = new URLSearchParams({ period })
+  if (username !== undefined) params.set('username', username)
+  return fetchConnect<PlayHistoryCharts>(`/play-history/charts?${params.toString()}`)
 }
 
 export async function getPlayHistoryAccounts(): Promise<string[]> {

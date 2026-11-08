@@ -52,11 +52,19 @@
 
       <div class="stats-page__columns">
         <empty-state
-          v-if="chartsEmpty"
+          v-if="chartsEmpty && !periodAvailable"
           icon="mdi-chart-box-outline"
           :title="isOwnView ? $t('stats.noPlaysYet') : $t('stats.otherEmpty')"
         />
-        <stats-charts v-else :charts="charts" :since="isOwnView ? null : sinceLabel" />
+        <stats-charts
+          v-else
+          :charts="charts"
+          :since="chartSince"
+          :period="chartPeriod"
+          :show-period="periodAvailable"
+          :loading="periodLoading"
+          @update:period="chartPeriod = $event"
+        />
 
         <stats-year
           :timestamps="history?.timestamps ?? []"
@@ -119,10 +127,13 @@ import {
 import {
   getImportStatus,
   getPlayHistoryAccounts,
+  getPlayHistoryCharts,
   getPlayHistorySummary,
   saveMilestones,
   startImport,
+  type PlayHistoryCharts,
   type PlayHistoryImportStatus,
+  type PlayHistoryPeriod,
   type PlayHistorySummary,
   type PlayHistoryTop,
 } from '@/services/connect/playHistory'
@@ -228,6 +239,12 @@ export default {
       otherHistory: null as PlayHistorySummary | null,
       /** Null is this listener's own page. */
       viewedAccount: null as string | null,
+      /** The charts' window. All-time stays what the page always showed:
+       * the media server's own play counts, or the whole log for another
+       * account. Every other window is read from the log. */
+      chartPeriod: 'all_time' as PlayHistoryPeriod,
+      periodCharts: null as PlayHistoryCharts | null,
+      periodLoading: false,
       accounts: [] as string[],
       importStatus: null as PlayHistoryImportStatus | null,
       lastfmConfigured: false,
@@ -434,6 +451,9 @@ export default {
       )
     },
     charts(): Record<ChartKind, ChartItem[]> {
+      // A chosen window always comes from the log: the media server only
+      // knows an all-time count per song.
+      if (this.chartPeriod !== 'all_time') return this.logCharts(this.periodCharts?.top)
       if (this.isOwnView) {
         return {
           songs: this.topSongs,
@@ -442,16 +462,17 @@ export default {
           genres: this.withCrate(this.topGenres),
         }
       }
-      const top = this.history?.top
-      return {
-        songs: (top?.songs ?? []).map((item) => this.logItem(item, 'songs')),
-        artists: (top?.artists ?? []).map((item) => this.logItem(item, 'artists')),
-        albums: (top?.albums ?? []).map((item) => this.logItem(item, 'albums')),
-        genres: this.withCrate((top?.genres ?? []).map((item) => this.logItem(item, 'genres'))),
-      }
+      return this.logCharts(this.history?.top)
     },
     chartsEmpty(): boolean {
       return Object.values(this.charts).every((items) => items.length === 0)
+    },
+    /** The picker only earns its place once the log has something in it. */
+    periodAvailable(): boolean {
+      return (this.history?.available ?? false) && (this.history?.total ?? 0) > 0
+    },
+    chartSince(): string | null {
+      return this.isOwnView || this.chartPeriod !== 'all_time' ? null : this.sinceLabel
     },
     formatBreakdown(): ChartItem[] {
       const counts = new Map<string, number>()
@@ -575,7 +596,13 @@ export default {
     },
     viewedAccount(name: string | null): void {
       this.otherHistory = null
+      // Not the previous account's charts either.
+      this.periodCharts = null
       if (name !== null) void this.loadOther(name)
+      void this.loadPeriodCharts()
+    },
+    chartPeriod(): void {
+      void this.loadPeriodCharts()
     },
   },
   created() {
@@ -617,6 +644,33 @@ export default {
         this.accounts = await getPlayHistoryAccounts()
       } catch {
         // A server that says no just means no picker.
+      }
+    },
+    /** The chosen window's charts, or none at all for all-time (the page's
+     * own rankings already stand there). A late answer for a window or
+     * account the reader has since left is dropped, not applied. */
+    async loadPeriodCharts(): Promise<void> {
+      const period = this.chartPeriod
+      if (period === 'all_time') {
+        this.periodCharts = null
+        this.periodLoading = false
+        return
+      }
+      const account = this.viewedAccount
+      this.periodCharts = null
+      this.periodLoading = true
+      try {
+        const charts = await getPlayHistoryCharts(period, account ?? undefined)
+        if (this.chartPeriod === period && this.viewedAccount === account) {
+          this.periodCharts = charts
+        }
+      } catch {
+        // The empty panel is the answer: no plays in that window, or no
+        // answer from connect.
+      } finally {
+        if (this.chartPeriod === period && this.viewedAccount === account) {
+          this.periodLoading = false
+        }
       }
     },
     checkMilestones(): void {
@@ -727,6 +781,15 @@ export default {
         if (this.importStatus.status === 'running') this.pollImport()
         else void this.loadOwn()
       }, IMPORT_POLL_MS)
+    },
+    /** All four rankings from one set of log counts. */
+    logCharts(top: PlayHistoryCharts['top'] | undefined): Record<ChartKind, ChartItem[]> {
+      return {
+        songs: (top?.songs ?? []).map((item) => this.logItem(item, 'songs')),
+        artists: (top?.artists ?? []).map((item) => this.logItem(item, 'artists')),
+        albums: (top?.albums ?? []).map((item) => this.logItem(item, 'albums')),
+        genres: this.withCrate((top?.genres ?? []).map((item) => this.logItem(item, 'genres'))),
+      }
     },
     /** A chart line counted from the log. The ids are empty on what came
      * from an import, which knows names only, so those lines do not link. */
