@@ -8,10 +8,11 @@ import os
 import sqlite3
 import stat
 import time
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
+from fastapi import Response
 from fastapi.testclient import TestClient
 
 from core import (
@@ -19,11 +20,16 @@ from core import (
     api_keys,
     device_keys,
     lyrics_offsets,
+    now_playing,
     play_history,
     server_link,
 )
+from core import session as session_module
 from core.play_history import Account
+from core.session import SessionState
+from core.state import TEST_TONE_TRACK_ID
 from main import app
+from media.base import Track
 from routes import device_link
 
 # Before the autouse fixture in conftest.py stands in for it.
@@ -1500,3 +1506,303 @@ def test_the_desktop_is_not_held_to_an_apps_limit(public):
     for _ in range(device_link._V1_REQUESTS_PER_KEY[0] + 1):
         response = public.get("/device-link/summary", headers=auth(key))
     assert response.status_code == 200
+
+
+# ── what is playing now ──────────────────────────────────────────────────
+
+
+class SpeakerDelivery:
+    target = "Living room"
+
+
+def cast(session, *, song="s1", paused=False, started=100.0, account=ALICE):
+    session.account_server_type = account.server_type
+    session.account_server_url = account.server_url
+    session.account_username = account.username
+    st = session.state
+    st.is_streaming = True
+    st.active_delivery = SpeakerDelivery()
+    st.current_track = Track(
+        id=song,
+        title="Song",
+        artist="Artist",
+        album="Album",
+        duration=214,
+        cover_art_id="cover-1",
+    )
+    st.clock.play_start_time = started
+    st.clock.is_paused = paused
+    return session
+
+
+def playing(public, key=None):
+    return public.get("/device-link/v1/now-playing", headers=auth(key or app_key("now_playing")))
+
+
+@pytest.fixture
+def at_position():
+    with patch("core.now_playing.compute_position", return_value=31.4) as position:
+        yield position
+
+
+def test_nothing_playing_says_so(public):
+    assert playing(public).json() == {"playing": False}
+
+
+def test_a_cast_is_described_with_a_fixed_list_of_fields(public, default_session, at_position):
+    cast(default_session)
+    answer = playing(public).json()
+    assert answer.pop("at") > 0
+    assert answer == {
+        "playing": True,
+        "paused": False,
+        "kind": "song",
+        "source": "cast",
+        "devices": ["Living room"],
+        "song": {
+            "id": "s1",
+            "title": "Song",
+            "artist": "Artist",
+            "album": "Album",
+            "duration": 214,
+        },
+        "radio": None,
+        "position": 31.4,
+    }
+
+
+def test_the_media_servers_credentials_stay_on_the_server(public, default_session, at_position):
+    cast(default_session)
+    default_session.media.get_cover_art_url = lambda *_a, **_k: "http://media/x?t=SECRET"
+    assert "SECRET" not in playing(public).text
+
+
+def test_a_paused_cast_says_it_is_paused(public, default_session, at_position):
+    cast(default_session, paused=True)
+    answer = playing(public).json()
+    assert answer["playing"] is True
+    assert answer["paused"] is True
+
+
+def test_another_accounts_cast_is_not_shown(public, default_session, at_position):
+    cast(default_session, account=BOB)
+    assert playing(public).json() == {"playing": False}
+
+
+@pytest.mark.parametrize(
+    "spoil",
+    [
+        lambda st: setattr(st, "is_streaming", False),
+        lambda st: setattr(st, "track_ended", True),
+        lambda st: setattr(st, "preview", object()),
+        lambda st: setattr(st, "active_delivery", None),
+        lambda st: setattr(st.current_track, "id", TEST_TONE_TRACK_ID),
+    ],
+)
+def test_what_is_not_really_playing_is_not_shown(public, default_session, at_position, spoil):
+    cast(default_session)
+    spoil(default_session.state)
+    assert playing(public).json() == {"playing": False}
+
+
+def add_session(session_id: str) -> SessionState:
+    extra = SessionState(session_id)
+    session_module.registry._sessions[session_id] = extra
+    return extra
+
+
+def test_of_two_casts_the_last_started_is_shown(public, default_session, at_position):
+    cast(default_session, song="older", started=100.0)
+    cast(add_session("second"), song="newer", started=200.0)
+    assert playing(public).json()["song"]["id"] == "newer"
+
+
+def test_a_playing_cast_comes_before_a_paused_one(public, default_session, at_position):
+    cast(default_session, song="playing", started=100.0)
+    cast(add_session("second"), song="paused", started=200.0, paused=True)
+    assert playing(public).json()["song"]["id"] == "playing"
+
+
+def test_radio_has_a_station_and_no_position(public, default_session):
+    cast(default_session)
+    default_session.state.current_track = None
+    default_session.state.radio_info = {"title": "Station One", "url": "http://r"}
+    default_session.radio_title = "Artist - Tune"
+    answer = playing(public).json()
+    assert answer["kind"] == "radio"
+    assert answer["song"] is None
+    assert answer["radio"] == {"station": "Station One", "title": "Artist - Tune"}
+    assert answer["position"] is None
+
+
+@pytest.mark.parametrize("path", ["now-playing", "now-playing/events", "now-playing/cover"])
+def test_now_playing_needs_its_own_right(public, path):
+    url = f"/device-link/v1/{path}"
+    assert public.get(url, headers=auth(app_key("history"))).status_code == 403
+    assert public.get(url, headers=auth(key_for())).status_code == 403
+    assert public.get(url).status_code == 401
+
+
+def test_the_cover_comes_through_the_server_and_is_never_cached(public, default_session):
+    cast(default_session)
+    served = AsyncMock(return_value=Response(b"img", media_type="image/png"))
+    with patch.object(device_link, "cover_image", served):
+        response = public.get(
+            "/device-link/v1/now-playing/cover", headers=auth(app_key("now_playing"))
+        )
+    assert response.content == b"img"
+    assert response.headers["cache-control"] == "no-store"
+    served.assert_awaited_once_with(default_session.media, "cover-1")
+
+
+def test_no_cover_for_a_song_without_one(public, default_session):
+    cast(default_session)
+    default_session.state.current_track.cover_art_id = ""
+    served = AsyncMock()
+    with patch.object(device_link, "cover_image", served):
+        response = public.get(
+            "/device-link/v1/now-playing/cover", headers=auth(app_key("now_playing"))
+        )
+    assert response.status_code == 404
+    served.assert_not_awaited()
+
+
+def test_no_cover_when_nothing_is_playing(public):
+    response = public.get("/device-link/v1/now-playing/cover", headers=auth(app_key("now_playing")))
+    assert response.status_code == 404
+
+
+def test_no_cover_for_radio(public, default_session):
+    cast(default_session)
+    default_session.state.current_track = None
+    default_session.state.radio_info = {"title": "Station One", "url": "http://r"}
+    response = public.get("/device-link/v1/now-playing/cover", headers=auth(app_key("now_playing")))
+    assert response.status_code == 404
+
+
+def song_state(**over) -> dict:
+    return {
+        "playing": True,
+        "paused": False,
+        "kind": "song",
+        "song": {"id": "s1"},
+        "position": 10.0,
+        "at": 1000.0,
+        **over,
+    }
+
+
+@pytest.mark.parametrize(
+    "latest, expected",
+    [
+        (song_state(position=15.0, at=1005.0), False),
+        (song_state(position=16.0, at=1005.0), False),
+        (song_state(position=60.0, at=1005.0), True),
+        (song_state(position=2.0, at=1005.0), True),
+        (song_state(paused=True, position=15.0, at=1005.0), True),
+        (song_state(song={"id": "s2"}, position=15.0, at=1005.0), True),
+        ({"playing": False}, True),
+    ],
+)
+def test_an_app_hears_about_changes_and_not_about_time_passing(latest, expected):
+    assert now_playing.differs(song_state(), latest) is expected
+
+
+def test_a_paused_song_stays_quiet_while_time_passes():
+    shown = song_state(paused=True)
+    assert now_playing.differs(shown, song_state(paused=True, at=1100.0)) is False
+
+
+def stream_of(owner_key: str):
+    owner = device_keys.resolve(owner_key)
+    return device_link._now_playing_events(owner_key, owner), owner
+
+
+async def _drain(stream, count: int) -> list[str]:
+    return [await anext(stream) for _ in range(count)]
+
+
+@pytest.fixture
+def quick_stream(monkeypatch):
+    monkeypatch.setattr(device_link, "_NOW_PLAYING_POLL_SECONDS", 0)
+    monkeypatch.setattr(device_link, "_KEEPALIVE_SECONDS", 1000)
+
+
+def test_a_stream_starts_with_the_current_state(quick_stream, default_session, at_position):
+    cast(default_session)
+    stream, _ = stream_of(app_key("now_playing"))
+
+    async def run():
+        _, first = await _drain(stream, 2)
+        await stream.aclose()
+        return first
+
+    first = asyncio.run(run())
+    assert json.loads(first.removeprefix("data: "))["song"]["id"] == "s1"
+
+
+def test_a_stream_reports_the_next_song(quick_stream, default_session, at_position):
+    cast(default_session)
+    stream, _ = stream_of(app_key("now_playing"))
+
+    async def run():
+        await _drain(stream, 2)
+        default_session.state.current_track.id = "s2"
+        change = await anext(stream)
+        await stream.aclose()
+        return change
+
+    assert json.loads(asyncio.run(run()).removeprefix("data: "))["song"]["id"] == "s2"
+
+
+def test_a_revoked_key_ends_its_stream(monkeypatch, default_session, at_position):
+    monkeypatch.setattr(device_link, "_NOW_PLAYING_POLL_SECONDS", 0.001)
+    monkeypatch.setattr(device_link, "_KEEPALIVE_SECONDS", 0.001)
+    made = device_keys.create(ALICE, "Display", ALICE_SETTINGS, scopes=("now_playing",))
+    stream, _ = stream_of(made["key"])
+
+    async def run():
+        await _drain(stream, 2)
+        device_keys.revoke(ALICE, made["id"])
+        with pytest.raises(StopAsyncIteration):
+            await asyncio.wait_for(anext(stream), 5)
+
+    asyncio.run(run())
+
+
+def test_a_stream_is_kept_alive_and_keeps_the_key_in_use(monkeypatch, default_session):
+    monkeypatch.setattr(device_link, "_NOW_PLAYING_POLL_SECONDS", 0.001)
+    monkeypatch.setattr(device_link, "_KEEPALIVE_SECONDS", 0.001)
+    key = app_key("now_playing")
+    stream, _ = stream_of(key)
+
+    async def run():
+        await _drain(stream, 2)
+        with patch.object(device_keys, "resolve", wraps=device_keys.resolve) as resolve:
+            beat = await asyncio.wait_for(anext(stream), 5)
+        await stream.aclose()
+        return beat, resolve.call_count
+
+    beat, looked_up = asyncio.run(run())
+    assert beat.startswith(":")
+    assert looked_up == 1
+
+
+def test_an_ended_stream_gives_its_place_back(quick_stream):
+    stream, owner = stream_of(app_key("now_playing"))
+
+    async def run():
+        await _drain(stream, 2)
+        assert device_link._open_streams[owner.key_id] == 1
+        await stream.aclose()
+
+    asyncio.run(run())
+    assert owner.key_id not in device_link._open_streams
+
+
+def test_too_many_open_streams_are_refused(public):
+    key = app_key("now_playing")
+    device_link._open_streams[key.split(".")[0]] = device_link._MAX_STREAMS_PER_KEY
+    response = public.get("/device-link/v1/now-playing/events", headers=auth(key))
+    assert response.status_code == 429
+    device_link._open_streams.clear()

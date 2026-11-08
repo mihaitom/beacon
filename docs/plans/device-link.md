@@ -145,8 +145,8 @@ of the server's answer, so a song just played counts at once.
 
 ## Apps of your own
 
-Built so far: scopes, `/v1/me`, `/v1/history`, `/v1/stats`, CORS and the
-request limit. The rest is planned.
+Built so far: scopes, `/v1/me`, `/v1/history`, `/v1/stats`, CORS, the request
+limit, and `/v1/now-playing` for casts. The rest is planned.
 
 The same key, for apps listeners write themselves: a desk display, a stream
 overlay, a dashboard. Read only, one account, and it needs a Beacon server: a
@@ -266,15 +266,22 @@ report. That is the order the lights use.
   "paused": false,
   "kind": "song",
   "source": "cast",
-  "device": "Living room",
-  "song": { "id": "", "title": "", "artist": "", "album": "", "duration": 214.0 },
+  "devices": ["Living room"],
+  "song": { "id": "", "title": "", "artist": "", "album": "", "duration": 214 },
+  "radio": null,
   "position": 31.4,
-  "at": 1762632000
+  "at": 1762632000.123
 }
 ```
 
 `position` is correct at `at`; the app carries it forward. For radio, `kind` is
-`radio` and `song` has only `title`, `artist` and the `station`.
+`radio`, `song` and `position` are null, and `radio` has `station` and `title`
+(the station's own "Artist - Title", null during an advert).
+
+`devices` is a list because a cast can be grouped. The event stream asks once a
+second rather than subscribing, since playing can start in a session that does
+not exist yet when the stream opens. It sends the state at the start and then
+on a new song, pause, resume, seek or stop, not as time passes.
 
 **A list of fields, never `build_status_dict()`.** That carries the queue and
 stream diagnostics, and `cover_art_url` holds the media server's credentials in

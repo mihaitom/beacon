@@ -13,11 +13,14 @@ to the desktop app and change with it.
 """
 
 import asyncio
+import json
+from collections import Counter
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
 
-from core import account_settings, api_keys, device_keys, lyrics_offsets, play_history
+from core import account_settings, api_keys, device_keys, lyrics_offsets, now_playing, play_history
 from core.account_settings import LINKED_FIELDS
 from core.auth import require_token
 from core.device_keys import KeyOwner
@@ -26,6 +29,7 @@ from core.server_link import INVALID_KEY_DETAIL, KEY_HEADER
 from core.session import SessionState, require_authenticated_session
 from core.trusted_proxies import client_ip
 from lyrics.shared import CONNECT_VERSION
+from routes.coverart import cover_image
 from routes.lyrics_offsets import OffsetsPatch
 from routes.play_history import Listen, Milestones, _own
 
@@ -34,6 +38,7 @@ v1_router = APIRouter(prefix="/device-link/v1")
 keys_router = APIRouter(prefix="/device-keys", dependencies=[Depends(require_token)])
 
 limiter = RateLimiter()
+_open_streams: Counter[str] = Counter()
 # Keys are too long to guess; this keeps a broken client or a scanner from
 # turning into a database read per request.
 _KEY_FAILURES_PER_IP = (10, 300.0)
@@ -44,6 +49,13 @@ API_VERSION = 1
 # Generous for a display refreshing every second; the bound is against a
 # loop nobody meant to write.
 _V1_REQUESTS_PER_KEY = (120, 60.0)
+
+_MAX_STREAMS_PER_KEY = 3
+# Asked rather than subscribed to: playing can start in any of an account's
+# sessions, including one that does not exist yet when the stream opens.
+_NOW_PLAYING_POLL_SECONDS = 1.0
+# Well inside the 60 seconds after which nginx gives up on a silent stream.
+_KEEPALIVE_SECONDS = 15.0
 
 _PUBLIC_PREFIX = "/device-link/v1/"
 _PREFLIGHT_MAX_AGE_SECONDS = 600
@@ -231,6 +243,71 @@ def get_stats(owner: KeyOwner = _reading(device_keys.STATS)) -> dict:
         "milestones": play_history.milestones(owner.account),
         "timestamps": summary["timestamps"],
     }
+
+
+@v1_router.get("/now-playing")
+def get_now_playing(owner: KeyOwner = _reading(device_keys.NOW_PLAYING)) -> dict:
+    return now_playing.current(owner.account)
+
+
+def _event(state: dict) -> str:
+    return f"data: {json.dumps(state)}\n\n"
+
+
+async def _now_playing_events(presented_key: str, owner: KeyOwner):
+    """Counted in here, not by the route: a client gone before the first byte
+    never starts this, and its `finally` would never give the place back.
+
+    The key is looked up again at every keepalive, so that revoking ends an
+    open stream and a stream counts as the device being in use."""
+    _open_streams[owner.key_id] += 1
+    try:
+        yield "retry: 2000\n\n"
+        shown = now_playing.current(owner.account)
+        yield _event(shown)
+        quiet = 0.0
+        while True:
+            await asyncio.sleep(_NOW_PLAYING_POLL_SECONDS)
+            quiet += _NOW_PLAYING_POLL_SECONDS
+            latest = now_playing.current(owner.account)
+            if now_playing.differs(shown, latest):
+                shown = latest
+                yield _event(latest)
+            if quiet >= _KEEPALIVE_SECONDS:
+                quiet = 0.0
+                still = await asyncio.to_thread(device_keys.resolve, presented_key)
+                if still is None or device_keys.NOW_PLAYING not in still.scopes:
+                    return
+                yield ": keepalive\n\n"
+    finally:
+        _open_streams[owner.key_id] -= 1
+        if _open_streams[owner.key_id] <= 0:
+            del _open_streams[owner.key_id]
+
+
+@v1_router.get("/now-playing/events")
+async def get_now_playing_events(
+    owner: KeyOwner = _reading(device_keys.NOW_PLAYING),
+    x_beacon_device_key: str = Header(max_length=200),
+) -> StreamingResponse:
+    if _open_streams[owner.key_id] >= _MAX_STREAMS_PER_KEY:
+        raise HTTPException(status_code=429, detail="Too many open streams")
+    return StreamingResponse(
+        _now_playing_events(x_beacon_device_key, owner),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@v1_router.get("/now-playing/cover")
+async def get_now_playing_cover(owner: KeyOwner = _reading(device_keys.NOW_PLAYING)) -> Response:
+    found = now_playing.cover_of(owner.account)
+    if found is None:
+        raise HTTPException(status_code=404, detail="No cover for what is playing")
+    response = await cover_image(*found)
+    # The same address shows the next song's cover in three minutes.
+    response.headers["Cache-Control"] = "no-store"
+    return response
 
 
 @router.post("/listens")
