@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { i18n } from '@/i18n'
 import type { PressedRecord } from '@/services/library/statsMilestones'
 import StatsShelf from '../StatsShelf.vue'
@@ -103,6 +103,69 @@ describe('StatsShelf', () => {
 
   it('needs no count while every record shows', () => {
     expect(mountShelf(diamonds(5)).find('.stats-shelf__count').exists()).toBe(false)
+  })
+
+  describe('with the details shown nearby', () => {
+    function point(element: Element, type: string, pointerType: string): void {
+      const event = new MouseEvent(type, { bubbles: false })
+      Object.defineProperty(event, 'pointerType', { value: pointerType })
+      element.dispatchEvent(event)
+    }
+
+    function inline() {
+      return mount(StatsShelf, {
+        props: { records: [ONE, TWO], seen: null, inlineDetails: true },
+        global: { plugins: [i18n], stubs: { VTooltip: true } },
+      })
+    }
+
+    const lastDetail = (wrapper: ReturnType<typeof inline>) =>
+      wrapper.emitted('detail')?.at(-1)?.[0] as string[] | null
+
+    it('has no tooltip', () => {
+      expect(inline().find('v-tooltip-stub').exists()).toBe(false)
+    })
+
+    it('hands over the record under the pointer and lets go off the shelf', async () => {
+      const wrapper = inline()
+
+      point(wrapper.find('[data-record="2"]').element, 'pointerenter', 'mouse')
+      await flushPromises()
+      expect(lastDetail(wrapper)?.[0]).toBe('Gold record')
+
+      point(wrapper.element, 'pointerleave', 'mouse')
+      await flushPromises()
+      expect(lastDetail(wrapper)).toBeNull()
+    })
+
+    it('stays with a record while the pointer crosses to the next', async () => {
+      const wrapper = inline()
+      point(wrapper.find('[data-record="2"]').element, 'pointerenter', 'mouse')
+      point(wrapper.find('[data-record="2"]').element, 'pointerleave', 'mouse')
+      await flushPromises()
+
+      expect(lastDetail(wrapper)?.[0]).toBe('Gold record')
+    })
+
+    it('leaves a finger to its taps', async () => {
+      const wrapper = inline()
+
+      point(wrapper.find('[data-record="2"]').element, 'pointerenter', 'touch')
+      await flushPromises()
+
+      expect(wrapper.emitted('detail')).toBeUndefined()
+    })
+
+    it('follows the keyboard', async () => {
+      const wrapper = inline()
+      const disc = wrapper.find('[data-record="1"]')
+
+      await disc.trigger('focus')
+      expect(lastDetail(wrapper)?.[0]).toBe('Bronze record')
+
+      await disc.trigger('blur')
+      expect(lastDetail(wrapper)).toBeNull()
+    })
   })
 
   describe('by touch', () => {

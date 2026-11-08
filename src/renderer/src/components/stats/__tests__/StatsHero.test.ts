@@ -1,5 +1,5 @@
-import { beforeEach, describe, expect, it } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
@@ -91,5 +91,69 @@ describe('StatsHero line under the bar', () => {
     wrapper.findComponent(StatsRecord).vm.$emit('hover-line', '')
     await wrapper.vm.$nextTick()
     expect(line.text()).toBe(next)
+  })
+})
+
+describe('StatsHero record details', () => {
+  const STUBS = { StatsRecord: true, StatsShelf: true, StatsVisualizer: true }
+
+  async function showAt(width: number) {
+    let measure: () => void = () => {}
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(callback: () => void) {
+          measure = callback
+        }
+        observe(): void {}
+        disconnect(): void {}
+      },
+    )
+    const wrapper = mount(StatsHero, {
+      props: { plays: 1000 },
+      global: { plugins: [vuetify, i18n], stubs: STUBS },
+    })
+    Object.defineProperty(wrapper.element, 'clientWidth', { value: width })
+    measure()
+    await flushPromises()
+    return wrapper
+  }
+
+  const shelf = (wrapper: Awaited<ReturnType<typeof showAt>>) =>
+    wrapper.findComponent({ name: 'StatsShelf' })
+  const display = (wrapper: Awaited<ReturnType<typeof showAt>>) =>
+    wrapper.findComponent({ name: 'StatsVisualizer' })
+
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('shows them in the display beside the records', async () => {
+    const wrapper = await showAt(1300)
+    display(wrapper).vm.$emit('availability', true)
+    await flushPromises()
+    expect(shelf(wrapper).props('inlineDetails')).toBe(true)
+
+    shelf(wrapper).vm.$emit('detail', ['Gold record'])
+    await flushPromises()
+
+    expect(display(wrapper).props('readout')).toEqual(['Gold record'])
+  })
+
+  it('keeps the tooltips in one column', async () => {
+    const wrapper = await showAt(700)
+    display(wrapper).vm.$emit('availability', true)
+    await flushPromises()
+
+    expect(shelf(wrapper).props('inlineDetails')).toBe(false)
+    shelf(wrapper).vm.$emit('detail', ['Gold record'])
+    await flushPromises()
+    expect(display(wrapper).props('readout')).toBeNull()
+  })
+
+  it('keeps the tooltips without a display', async () => {
+    const wrapper = await showAt(1300)
+    display(wrapper).vm.$emit('availability', false)
+    await flushPromises()
+
+    expect(shelf(wrapper).props('inlineDetails')).toBe(false)
   })
 })

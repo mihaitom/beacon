@@ -31,8 +31,8 @@ function reduceMotion(reduced: boolean): void {
   vi.stubGlobal('matchMedia', vi.fn().mockReturnValue({ matches: reduced }))
 }
 
-function show(): VueWrapper {
-  const wrapper = mount(StatsVisualizer, { global: { stubs: { VisualizerBars: BARS } } })
+function show(props: Record<string, unknown> = {}): VueWrapper {
+  const wrapper = mount(StatsVisualizer, { props, global: { stubs: { VisualizerBars: BARS } } })
   wrappers.push(wrapper)
   return wrapper
 }
@@ -160,6 +160,39 @@ describe('the Stats display', () => {
     reduceMotion(true)
 
     expect(show().find('.stats-visualizer').exists()).toBe(false)
+  })
+
+  it('says whether it exists', () => {
+    expect(show().emitted('availability')?.at(-1)).toEqual([true])
+    engine(false)
+    expect(show().emitted('availability')?.at(-1)).toEqual([false])
+  })
+
+  it('shows a readout when handed one, and none otherwise', () => {
+    expect(show().find('.stats-visualizer__readout').exists()).toBe(false)
+
+    const readout = show({ readout: ['Gold record', '2,500 plays'] }).find(
+      '.stats-visualizer__readout',
+    )
+    expect(readout.text()).toContain('Gold record')
+    expect(readout.text()).toContain('2,500 plays')
+  })
+
+  it('lets the bars fall while a readout is up and brings them back', async () => {
+    cast()
+    usePlaybackStore().isPlaying = true
+    const wrapper = show()
+    await flushPromises()
+    ;(eventSource().onFrame as (frame: { bands: number[] }) => void)({ bands: [0.5, 0.5] })
+    const sample = wrapper.findComponent(BARS).props('sample') as () => number[] | null
+
+    await wrapper.setProps({ readout: ['Gold record'] })
+    expect(sample()).toBeNull()
+    expect(wrapper.findComponent(BARS).props('active')).toBe(false)
+
+    await wrapper.setProps({ readout: null })
+    expect(sample()?.[0]).toBe(0.5)
+    expect(wrapper.findComponent(BARS).props('active')).toBe(true)
   })
 
   it('survives the analyser failing', async () => {

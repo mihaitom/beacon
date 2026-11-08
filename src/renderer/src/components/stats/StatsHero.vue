@@ -61,7 +61,10 @@
                 </span>
               </div>
             </div>
-            <stats-visualizer />
+            <stats-visualizer
+              :readout="inlineDetails ? shelfDetail : null"
+              @availability="displayThere = $event"
+            />
           </div>
         </div>
         <div class="stats-hero__deck">
@@ -84,6 +87,8 @@
           :records="pressed"
           :seen="seenRecords"
           :landed="landedRecord"
+          :inline-details="inlineDetails"
+          @detail="shelfDetail = $event"
         />
       </div>
     </v-theme-provider>
@@ -102,6 +107,8 @@ const COUNT_UP_MS = 1300
 const SECONDS_PER_MINUTE = 60
 const SECONDS_PER_HOUR = 3600
 const SECONDS_PER_DAY = 86400
+// The hero's own one-column breakpoint, in its <style>.
+const ONE_COLUMN_MAX_WIDTH = 760
 
 function reducedMotion(): boolean {
   return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
@@ -135,7 +142,16 @@ export default {
     seenRecords: { type: Number as PropType<number | null>, default: null },
   },
   data() {
-    return { lit: false, reveal: 0, frame: 0, grooveLine: '' }
+    return {
+      lit: false,
+      reveal: 0,
+      frame: 0,
+      grooveLine: '',
+      oneColumn: false,
+      displayThere: false,
+      shelfDetail: null as string[] | null,
+      resizeObserver: null as ResizeObserver | null,
+    }
   },
   computed: {
     appearance() {
@@ -143,6 +159,11 @@ export default {
     },
     record() {
       return recordProgress(this.plays)
+    },
+    /** In one column the display is far from the records, so they keep
+     * their tooltips there. */
+    inlineDetails(): boolean {
+      return this.displayThere && !this.oneColumn
     },
     pressed() {
       return pressedRecords(this.plays, this.timestamps)
@@ -180,6 +201,10 @@ export default {
     },
   },
   mounted() {
+    this.resizeObserver = new ResizeObserver(() => {
+      this.oneColumn = (this.$el as HTMLElement).clientWidth <= ONE_COLUMN_MAX_WIDTH
+    })
+    this.resizeObserver.observe(this.$el as HTMLElement)
     if (reducedMotion()) {
       this.lit = true
       this.reveal = 1
@@ -194,6 +219,7 @@ export default {
     })
   },
   beforeUnmount() {
+    this.resizeObserver?.disconnect()
     cancelAnimationFrame(this.frame)
   },
   methods: {

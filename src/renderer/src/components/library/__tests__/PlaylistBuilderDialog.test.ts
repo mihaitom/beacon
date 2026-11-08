@@ -243,6 +243,24 @@ describe('PlaylistBuilderDialog', () => {
     expect(vm.copiedIndex).toBe(1)
   })
 
+  it('does not write a Last.fm name typed in the builder back to settings', async () => {
+    const store = useLastfmStore()
+    store.setUsername('settings-name')
+    vi.spyOn(lastfmApi, 'getLastfmTracks').mockResolvedValue([
+      { title: 'Anything', artist: 'Anyone', mbid: '' },
+    ])
+    stubSearch([])
+
+    const { vm } = await openDialog()
+    ;(vm as unknown as { open: (source: string) => void }).open('lastfm')
+    vm.op = 'mytop'
+    vm.username = 'someone-else'
+    await (vm as unknown as { search: () => Promise<void> }).search()
+    await flushPromises()
+
+    expect(store.username).toBe('settings-name')
+  })
+
   it('does not write a ListenBrainz name typed in the builder back to settings', async () => {
     // The settings value also fills Home's "Recommended for you" shelf, so
     // looking at someone else's charts from here must not repoint it.

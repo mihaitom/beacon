@@ -1223,15 +1223,10 @@ export default {
                   period: this.period,
                 })
 
-        // ListenBrainz deliberately does not write the name back: its
-        // settings value also drives Home's "Recommended for you" shelf,
-        // and typing a name here to look at someone else's charts must not
-        // silently repoint that shelf. Last.fm has no such second reader,
-        // so it keeps remembering what was typed.
-        if (this.source === 'lastfm') {
-          if (this.op === 'mytop') this.lastfmStore.setUsername(this.username)
-          this.rememberCountry()
-        }
+        // The usernames are only read from Settings: typing one here to look
+        // at someone else's charts must not repoint Home's shelf or the
+        // Stats import.
+        if (this.source === 'lastfm') this.rememberCountry()
         if (this.abortSignal.aborted) return
 
         if (tracks.length === 0) {

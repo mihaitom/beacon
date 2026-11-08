@@ -142,6 +142,9 @@ full records on the shelf below it are objects too, in the metal of their tier.
 Body text stays on Vuetify's scale: `text-body-medium`, `text-body-small`,
 `text-medium-emphasis` for the quieter line.
 
+The Stats hero's display is the one exception to the faces above: it reads in
+VT323, as a device's own display would, and nothing else uses it.
+
 Inter is bundled (`@fontsource-variable/inter`, imported in `main.css`) and
 reaches Vuetify through `--v-font-body`/`--v-font-heading` in `base.css`.
 Without those two variables every Vuetify component and type class stays on

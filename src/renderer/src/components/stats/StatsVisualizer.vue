@@ -1,16 +1,26 @@
 <template>
-  <div v-if="available" class="stats-visualizer" :style="{ '--bar': color }">
+  <div
+    v-if="available"
+    class="stats-visualizer"
+    :class="{ 'has-readout': readout }"
+    :style="{ '--bar': color }"
+  >
     <visualizer-bars
       v-if="showBars"
-      :active="mode !== 'idle'"
+      :active="mode !== 'idle' && !readout"
       :color="color"
       :sample="sample"
       :smoothing="SMOOTHING"
     />
+    <div v-if="readout" class="stats-visualizer__readout" aria-hidden="true">
+      <span v-for="(row, index) in readout" :key="index">{{ row }}</span>
+    </div>
   </div>
 </template>
 
 <script lang="ts">
+import '@fontsource/vt323/latin-400.css'
+import type { PropType } from 'vue'
 import VisualizerBars from '@/components/player/VisualizerBars.vue'
 import { getAudioEngine } from '@/services/audioEngine'
 import { VisualizerEventSource } from '@/services/connect/visualizer'
@@ -29,6 +39,11 @@ const SETTLE_MS = 400
 export default {
   name: 'StatsVisualizer',
   components: { VisualizerBars },
+  props: {
+    /** Lines to show in place of the bars, the first as a heading. */
+    readout: { type: Array as PropType<string[] | null>, default: null },
+  },
+  emits: ['availability'],
   data() {
     return {
       SMOOTHING,
@@ -64,6 +79,12 @@ export default {
     },
   },
   watch: {
+    available: {
+      immediate: true,
+      handler(available: boolean) {
+        this.$emit('availability', available)
+      },
+    },
     mode: {
       immediate: true,
       handler(mode: 'local' | 'cast' | 'idle') {
@@ -100,6 +121,7 @@ export default {
     },
     /** Read by the bars on every frame. */
     sample(): number[] | null {
+      if (this.readout) return null
       if (this.mode !== 'local') return resampleBands(this.castBands)
       let analyser: AnalyserNode
       try {
@@ -130,6 +152,35 @@ export default {
   box-shadow:
     inset 0 2px 7px rgba(0, 0, 0, 0.75),
     0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+.stats-visualizer__readout {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-content: center;
+  column-gap: 16px;
+  padding: 4px 14px;
+  /* A face made for a display like this one; nothing else uses it. */
+  font-family: 'VT323', monospace;
+  font-size: clamp(1.1rem, 1.4cqi, 1.4rem);
+  line-height: 1.05;
+  color: rgb(var(--bar));
+  text-shadow: 0 0 8px rgba(var(--bar), 0.55);
+}
+
+.stats-visualizer__readout span {
+  grid-column: 1 / -1;
+}
+
+/* Up on the heading's line, so a wrapped row still fits the narrow display. */
+.stats-visualizer__readout span:first-child {
+  grid-column: 1;
+}
+
+.stats-visualizer__readout span:nth-child(4) {
+  grid-area: 1 / 2;
 }
 
 /* The bars at rest, for when they are not there at all. */

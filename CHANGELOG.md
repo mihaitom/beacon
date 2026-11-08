@@ -22,6 +22,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - A playlist's page can be searched, filtered and sorted like Songs, always starting in the playlist's own order, and Play and Preview take what is on screen. Its artwork is a stack of its albums that flips through on hover
 - The dialogs for creating and editing a playlist show its records beside the name and say who gets to see it
 - The Radio page is now a wall of station logos, each on a sleeve in the logo's own colours, with the list still one click away. It can be narrowed by your most common genres and sorted by last heard, name, country or bitrate, and a click on the playing station stops it
+- The Last.fm name is set in Settings next to ListenBrainz, and the playlist builder only starts from it instead of changing it
 
 ### Fixed
 

@@ -1,5 +1,10 @@
 <template>
-  <ul v-if="records.length" class="stats-shelf" :aria-label="$t('stats.shelfLabel')">
+  <ul
+    v-if="records.length"
+    class="stats-shelf"
+    :aria-label="$t('stats.shelfLabel')"
+    @pointerleave="onPointerLeave"
+  >
     <li
       v-for="(pile, pileIndex) in piles"
       :key="pile.tier"
@@ -22,12 +27,16 @@
             :data-record="entry.number"
             :aria-label="details(entry).join('. ')"
             @pointerdown="touching = $event.pointerType === 'touch'"
+            @pointerenter="onPointerEnter(entry.number, $event)"
+            @focus="onFocus(entry.number)"
+            @blur="onBlur(entry.number)"
             @click="onTap(pile.tier, entry.number)"
           >
             <span class="stats-shelf__vinyl" />
             <span class="stats-shelf__sheen" />
             <span class="stats-shelf__label">{{ shortPlays(entry.holds) }}</span>
             <v-tooltip
+              v-if="!inlineDetails"
               activator="parent"
               location="top"
               :open-delay="TIP_DELAY_MS"
@@ -89,7 +98,10 @@ export default {
     seen: { type: Number as PropType<number | null>, default: null },
     /** The record that has just arrived. */
     landed: { type: Number as PropType<number | null>, default: null },
+    /** Something nearby shows the details (`detail`), so no tooltip. */
+    inlineDetails: { type: Boolean, default: false },
   },
+  emits: ['detail'],
   data() {
     return {
       VINYLS,
@@ -115,6 +127,15 @@ export default {
         shown: records.slice(-MAX_SHOWN),
         total: records.filter((record) => !this.isWaiting(record)).length,
       }))
+    },
+    shownDetails(): string[] | null {
+      const entry = this.records.find((record) => record.number === this.tip)
+      return entry ? this.details(entry) : null
+    },
+  },
+  watch: {
+    shownDetails(details: string[] | null): void {
+      this.$emit('detail', details)
     },
   },
   mounted() {
@@ -155,6 +176,20 @@ export default {
         this.open = tier
         this.tip = null
       }
+    },
+    // On the shelf rather than each record: crossing the gap between two
+    // must not blink back to the bars.
+    onPointerLeave(event: PointerEvent): void {
+      if (this.inlineDetails && event.pointerType === 'mouse') this.tip = null
+    },
+    onPointerEnter(record: number, event: PointerEvent): void {
+      if (this.inlineDetails && event.pointerType === 'mouse') this.tip = record
+    },
+    onFocus(record: number): void {
+      if (this.inlineDetails) this.tip = record
+    },
+    onBlur(record: number): void {
+      if (this.inlineDetails && this.tip === record) this.tip = null
     },
     setTip(record: number, shown: boolean): void {
       if (shown) this.tip = record
