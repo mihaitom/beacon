@@ -25,6 +25,10 @@ on a device, what is decided and what is not.
 
 - [Radio stations are global instead of per account](radio/stations-per-account.md) - the migration is decided (every account branches off the existing list), not built
 
+## Library
+
+- [Deezer lookups fail or go wrong when an artist was renamed](library/deezer-lookup-with-renamed-artists.md) - seen with one artist only, deliberately not built; ISRC lookup is the smallest step
+
 ## Remote Control
 
 - [Remote: "Play All" does not wait for the ack](remote-control/play-all-waits-for-ack.md) - small, the pattern is in `js/sheet.js`
