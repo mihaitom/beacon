@@ -35,10 +35,10 @@ export default {
       name: 'home',
       device: 'desktop',
       theme: { theme: 'beacon', adaptiveAccent: true },
-      fanart: { 'Lady Gaga': { banner: 1 } },
+      fanart: { deadmau5: { banner: 1 } },
       song: {
-        artist: 'Lady Gaga',
-        title: 'Black Jesus † Amen Fashion (Michael Woods remix)',
+        artist: 'deadmau5',
+        title: 'Ghosts ’n’ Stuff',
         position: 236,
       },
       open: { route: '/' },
@@ -48,7 +48,7 @@ export default {
       device: 'desktop',
       theme: { theme: 'glacier', adaptiveAccent: true },
       fanart: { Gorillaz: 2 },
-      song: { artist: 'Gorillaz', title: 'Feel Good Inc.', position: 140 },
+      song: { artist: 'Gorillaz', title: 'Feel Good Inc.', position: 170 },
       // lyrics: the lyrics panel open next to Now Playing.
       open: { route: '/now-playing', lyrics: true },
     },
