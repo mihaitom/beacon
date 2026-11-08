@@ -2,7 +2,9 @@
   <section class="stats-charts">
     <div class="stats-charts__head">
       <h2 class="section-title">{{ $t('stats.chartsTitle') }}</h2>
-      <div class="stats-charts__controls">
+      <!-- The shared control row from the library pages: same flat pill
+         - surface as a filter row's fields, see base.css. -->
+      <div class="library-filter stats-charts__controls">
         <v-select
           v-if="showPeriod"
           :model-value="period"
@@ -16,11 +18,28 @@
           hide-details
           class="stats-charts__period"
           @update:model-value="$emit('update:period', $event)"
-        />
+        >
+          <!-- Every window's name stacked in one cell, only the picked one
+             - visible: the pill is as wide as its longest name, so it keeps
+             - its width whichever window is on and no name is cut off
+             - (same trick as LibrarySortSelect). -->
+          <template #selection="{ item }">
+            <span class="stats-charts__period-label">
+              <span
+                v-for="option in periods"
+                :key="option.value"
+                class="stats-charts__period-name"
+                :class="{ 'stats-charts__period-name--shown': option.value === item.value }"
+                :aria-hidden="option.value !== item.value"
+                >{{ option.title }}</span
+              >
+            </span>
+          </template>
+        </v-select>
         <v-btn-toggle
           v-model="tab"
           mandatory
-          class="beacon-view-toggle beacon-view-toggle--text"
+          class="beacon-view-toggle beacon-view-toggle--text stats-charts__tabs"
           :aria-label="$t('stats.chartsTitle')"
         >
           <v-btn v-for="key in tabs" :key="key" :value="key">{{ $t(`stats.${key}`) }}</v-btn>
@@ -34,6 +53,8 @@
     <div v-if="loading" class="stats-charts__loading">
       <v-progress-circular indeterminate size="28" color="primary" />
     </div>
+    <!-- A quiet line rather than the page's empty state: only this window is
+       - empty, and the picker above has to stay to leave it again. -->
     <p v-else-if="!items.length" class="text-body-medium text-medium-emphasis">
       {{ $t('stats.chartsEmptyPeriod') }}
     </p>
@@ -214,21 +235,42 @@ export default {
   margin-bottom: 16px;
 }
 
-.stats-charts__controls {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 12px;
+/* .library-filter lays the row out; the chart-kind toggle keeps its width
+ * while the period pill is the one that gives when space runs out. */
+.stats-charts__tabs {
+  flex-shrink: 0;
 }
 
+/* As wide as its longest window (see the selection slot), giving only in a
+ * header too narrow for it beside the toggle. */
 .stats-charts__period {
-  width: 210px;
+  flex: 0 1 auto;
+  min-width: 160px;
+}
+
+.stats-charts__period-label {
+  display: inline-grid;
+  min-width: 0;
+}
+
+.stats-charts__period-name {
+  grid-area: 1 / 1;
+  visibility: hidden;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stats-charts__period-name--shown {
+  visibility: visible;
 }
 
 .stats-charts__since {
   margin: -8px 0 12px;
 }
 
+/* Keeps the header at the panel's own top padding while the answer is in,
+ * so the chart area does not jump when it arrives. */
 .stats-charts__loading {
   display: flex;
   justify-content: center;
