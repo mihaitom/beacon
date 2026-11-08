@@ -146,7 +146,8 @@ of the server's answer, so a song just played counts at once.
 ## Apps of your own
 
 Built so far: scopes, `/v1/me`, `/v1/history`, `/v1/stats`, CORS, the request
-limit, and `/v1/now-playing` for casts. The rest is planned.
+limit, and `/v1/now-playing` for casts, local playback and the desktop. The
+rest is planned.
 
 The same key, for apps listeners write themselves: a desk display, a stream
 overlay, a dashboard. Read only, one account, and it needs a Beacon server: a
@@ -252,13 +253,16 @@ Built in that order, each usable without the next:
 2. **Local playback.** A report from the renderer to connect, with title,
    artist, album and duration, independent of the lights. On each change (song,
    play/pause, seek) plus every 30 seconds, since connect carries the position
-   forward. A report older than 90 seconds counts as gone. Only sent while the
-   account has a key with `now_playing`, so nobody pays for this unasked.
+   forward. A report older than 90 seconds counts as gone.
 3. **Desktop.** Its connect passes the same report to the server over
    `PUT /device-link/now-playing` (`sync`).
 
-With several at once: a cast first, the one started last; then the newest local
-report. That is the order the lights use.
+With several at once: what can be heard before what is paused, then a cast
+before a device playing by itself, then the one that started last. A window
+tells connect through `POST /now-playing/report`, and the answer says whether
+any app wants to know: told no, it stays quiet until the next song. So an
+account with no such key costs one request per song. A browser leaves its casts
+out, since connect knows those; the desktop reports them with their `devices`.
 
 ```json
 {
@@ -295,8 +299,8 @@ request gets for free: look the key up again on every keepalive, so revoking
 ends it, and count as use, or the green light goes out while it runs.
 
 **Cover.** Needs a signed-in session of that account on the server to reach the
-media server, so playing only on the desktop answers 404 and the app shows its
-own placeholder.
+media server, so with nobody signed in there, playing on the desktop answers
+404 and the app shows its own placeholder.
 
 ### Lyrics
 

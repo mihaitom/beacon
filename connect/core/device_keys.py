@@ -172,6 +172,16 @@ def revoke(account: Account, key_id: str) -> bool:
         return cursor.rowcount > 0
 
 
+def account_has_scope(account: Account, scope: str) -> bool:
+    with play_history.transaction() as conn:
+        rows = conn.execute(
+            "SELECT scopes FROM device_keys JOIN accounts ON accounts.id = account_id"
+            " WHERE server_type = ? AND server_url = ? AND username = ?",
+            account,
+        ).fetchall()
+    return any(scope in row["scopes"].split(",") for row in rows)
+
+
 def resolve(presented: str, now: float | None = None) -> KeyOwner | None:
     """Whose key this is, or None for one that is wrong or revoked."""
     key_id, _, secret = presented.partition(".")

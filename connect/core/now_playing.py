@@ -1,11 +1,16 @@
 """core/now_playing.py - what an account is listening to, for its own apps.
 
+A cast is read from its session. What a browser or a desktop app plays by
+itself is known only from what it reports (routes/now_playing.py), and counts
+as gone once the reports stop.
+
 A field list of its own rather than build_status_dict(): that one carries the
 queue and stream diagnostics, and its cover_art_url has the media server's
 credentials in the query string on Subsonic.
 """
 
 import time
+from typing import NamedTuple
 
 from core.play_history import Account
 from core.session import SessionState, compute_position, registry
@@ -18,6 +23,22 @@ NOTHING: dict = {"playing": False}
 _SEEK_TOLERANCE_SECONDS = 2.0
 
 _POSITION_FIELDS = ("position", "at")
+
+# A window reports every 30 seconds. Long enough for a lost request or two,
+# short enough that a closed laptop stops counting as playing.
+REPORT_TTL_SECONDS = 90.0
+
+_SONG_FIELDS = ("id", "title", "artist", "album", "duration")
+
+
+class _Report(NamedTuple):
+    account: Account
+    report: dict
+    at: float
+    started: float
+
+
+_reports: dict[str, _Report] = {}
 
 
 def _is_casting(session: SessionState, account: Account) -> bool:
@@ -37,20 +58,48 @@ def _is_casting(session: SessionState, account: Account) -> bool:
     return st.radio_info is not None
 
 
-def _cast_of(account: Account) -> SessionState | None:
-    """One that is playing before one that is paused, then the last started."""
-    casts = [session for session in registry.all() if _is_casting(session, account)]
-    return max(
-        casts,
-        key=lambda s: (not s.state.clock.is_paused, s.state.clock.play_start_time or 0.0),
-        default=None,
-    )
+def store_report(source: str, account: Account, report: dict, now: float | None = None) -> None:
+    now = time.time() if now is None else now
+    for key in [key for key, kept in _reports.items() if now - kept.at > REPORT_TTL_SECONDS]:
+        del _reports[key]
+    before = _reports.get(source)
+    same = before is not None and _subject(before.report) == _subject(report)
+    _reports[source] = _Report(account, report, now, before.started if same else now)
 
 
-def current(account: Account, now: float | None = None) -> dict:
-    session = _cast_of(account)
-    if session is None:
-        return NOTHING
+def forget_report(source: str) -> None:
+    _reports.pop(source, None)
+
+
+def _subject(report: dict) -> object:
+    return report["song"]["id"] if report["song"] else report["radio"]["station"]
+
+
+def _candidates(account: Account, now: float) -> list[tuple[tuple, SessionState | _Report]]:
+    """Each with what it is ranked by: what can be heard before what is
+    paused, then a cast before a device playing by itself, then the newest."""
+    ranked: list[tuple[tuple, SessionState | _Report]] = [
+        (
+            (not session.state.clock.is_paused, True, session.state.clock.play_start_time or 0.0),
+            session,
+        )
+        for session in registry.all()
+        if _is_casting(session, account)
+    ]
+    ranked += [
+        ((not kept.report["paused"], bool(kept.report["devices"]), kept.started), kept)
+        for kept in _reports.values()
+        if kept.account == account and now - kept.at <= REPORT_TTL_SECONDS
+    ]
+    return ranked
+
+
+def _best(account: Account, now: float) -> SessionState | _Report | None:
+    ranked = _candidates(account, now)
+    return max(ranked, key=lambda entry: entry[0])[1] if ranked else None
+
+
+def _from_session(session: SessionState, now: float) -> dict:
     st = session.state
     track = st.current_track
     return {
@@ -72,8 +121,37 @@ def current(account: Account, now: float | None = None) -> dict:
         if track is not None
         else {"station": st.radio_info["title"], "title": session.radio_title},
         "position": None if track is None else round(compute_position(session), 3),
-        "at": round(time.time() if now is None else now, 3),
+        "at": round(now, 3),
     }
+
+
+def _from_report(kept: _Report, now: float) -> dict:
+    report = kept.report
+    song = report["song"]
+    position = report["position"]
+    if song is None:
+        position = None
+    elif position is not None and not report["paused"]:
+        position = min(position + now - kept.at, song["duration"] or float("inf"))
+    return {
+        "playing": True,
+        "paused": report["paused"],
+        "kind": "song" if song else "radio",
+        "source": "cast" if report["devices"] else "local",
+        "devices": report["devices"],
+        "song": None if song is None else {k: song[k] for k in _SONG_FIELDS},
+        "radio": report["radio"],
+        "position": None if position is None else round(position, 3),
+        "at": round(now, 3),
+    }
+
+
+def current(account: Account, now: float | None = None) -> dict:
+    now = time.time() if now is None else now
+    best = _best(account, now)
+    if best is None:
+        return NOTHING
+    return _from_report(best, now) if isinstance(best, _Report) else _from_session(best, now)
 
 
 def differs(shown: dict, latest: dict) -> bool:
@@ -90,10 +168,31 @@ def differs(shown: dict, latest: dict) -> bool:
     return abs(shown["position"] + moved - latest["position"]) > _SEEK_TOLERANCE_SECONDS
 
 
-def cover_of(account: Account) -> tuple[object, str] | None:
-    """The media client and cover id of the song being cast, if it has one."""
-    session = _cast_of(account)
-    if session is None or session.state.current_track is None:
+def _session_of(account: Account) -> SessionState | None:
+    """Any signed-in session of the account: the cover is the media server's,
+    and for what a desktop reports there is no other way to reach it."""
+    for session in registry.all():
+        if account == (
+            session.account_server_type,
+            session.account_server_url,
+            session.account_username,
+        ):
+            return session
+    return None
+
+
+def cover_of(account: Account, now: float | None = None) -> tuple[object, str] | None:
+    """The media client and cover id of the song playing now, if it has one."""
+    best = _best(account, time.time() if now is None else now)
+    if isinstance(best, _Report):
+        song = best.report["song"]
+        session = _session_of(account)
+        return (
+            (session.media, song["cover_art_id"])
+            if song and session and song["cover_art_id"]
+            else None
+        )
+    if best is None or best.state.current_track is None:
         return None
-    cover_id = session.state.current_track.cover_art_id
-    return (session.media, cover_id) if cover_id else None
+    cover_id = best.state.current_track.cover_art_id
+    return (best.media, cover_id) if cover_id else None

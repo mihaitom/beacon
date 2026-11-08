@@ -355,6 +355,26 @@ def pull_lyrics_offsets(account: Account) -> dict[str, float] | None:
     return {**(remote.get("offsets") or {}), **(link.get("pending_lyrics_offsets") or {})}
 
 
+def relay_now_playing(report: dict | None) -> bool:
+    """Passes on what this desktop plays, None for nothing. Whether the
+    server has a use for it; not reaching it counts as no, and the next song
+    asks again."""
+    link = _read()
+    if link is None:
+        return False
+    try:
+        answer = _call(
+            link["url"],
+            link["key"],
+            *(("PUT", "/now-playing") if report is not None else ("DELETE", "/now-playing")),
+            body=report,
+            timeout=_SETTINGS_TIMEOUT,
+        )
+    except LinkError:
+        return False
+    return bool(answer.get("wanted"))
+
+
 def _send_listens(link: dict, account: Account) -> None:
     backfill = bool(link.get("backfill"))
     while True:

@@ -31,6 +31,7 @@ from core.trusted_proxies import client_ip
 from lyrics.shared import CONNECT_VERSION
 from routes.coverart import cover_image
 from routes.lyrics_offsets import OffsetsPatch
+from routes.now_playing import NowPlayingReport, accept
 from routes.play_history import Listen, Milestones, _own
 
 router = APIRouter(prefix="/device-link")
@@ -66,6 +67,7 @@ _MAX_LISTENS_BODY = 4 * 1024 * 1024
 _MAX_SETTINGS_BODY = 64 * 1024
 _MAX_MILESTONES_BODY = 1024
 _MAX_OFFSETS_BODY = 256 * 1024
+_MAX_REPORT_BODY = 16 * 1024
 
 
 class IncomingListen(Listen):
@@ -308,6 +310,21 @@ async def get_now_playing_cover(owner: KeyOwner = _reading(device_keys.NOW_PLAYI
     # The same address shows the next song's cover in three minutes.
     response.headers["Cache-Control"] = "no-store"
     return response
+
+
+@router.put("/now-playing")
+async def put_now_playing(request: Request, owner: KeyOwner = _syncing) -> dict:
+    report = await _parsed(request, NowPlayingReport, _MAX_REPORT_BODY)
+    wanted = await asyncio.to_thread(
+        accept, owner.account, f"key:{owner.key_id}", report.model_dump()
+    )
+    return {"wanted": wanted}
+
+
+@router.delete("/now-playing")
+def delete_now_playing(owner: KeyOwner = _syncing) -> dict:
+    now_playing.forget_report(f"key:{owner.key_id}")
+    return {"status": "ok"}
 
 
 @router.post("/listens")

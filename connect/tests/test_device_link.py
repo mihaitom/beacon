@@ -47,6 +47,7 @@ DAY = 86_400
 def _isolated(tmp_path, monkeypatch):
     play_history._last_recorded.clear()
     device_link.limiter.clear()
+    now_playing._reports.clear()
     api_keys._cache.clear()
     monkeypatch.delenv("LASTFM_API_KEY", raising=False)
     monkeypatch.delenv("FANART_API_KEY", raising=False)
@@ -393,6 +394,8 @@ class FakeServer:
     """A paired Beacon server, answering what each test tells it to."""
 
     def __init__(self):
+        self.reported: list = []
+        self.wants_now_playing = True
         self.scopes = ["sync"]
         self.requests: list[httpx.Request] = []
         self.settings: dict = {}
@@ -419,6 +422,10 @@ class FakeServer:
         if self.fail is not None:
             return self.fail
         path = request.url.path.removeprefix("/device-link")
+        if path == "/now-playing":
+            body = json.loads(request.content) if request.method == "PUT" else None
+            self.reported.append(body)
+            return httpx.Response(200, json={"wanted": self.wants_now_playing})
         if path == "/info":
             return httpx.Response(
                 200, json={"device_link": 1, "username": "alice-remote", "scopes": self.scopes}
@@ -1806,3 +1813,278 @@ def test_too_many_open_streams_are_refused(public):
     response = public.get("/device-link/v1/now-playing/events", headers=auth(key))
     assert response.status_code == 429
     device_link._open_streams.clear()
+
+
+# ── what a window reports it plays by itself ─────────────────────────────
+
+
+def report(song="s1", paused=False, position=10.0, devices=(), **over) -> dict:
+    return {
+        "song": {
+            "id": song,
+            "title": "Song",
+            "artist": "Artist",
+            "album": "Album",
+            "duration": 200,
+            "cover_art_id": "cover-1",
+        },
+        "radio": None,
+        "position": position,
+        "paused": paused,
+        "devices": list(devices),
+        **over,
+    }
+
+
+RADIO = {"radio": {"station": "Station One", "title": "Artist - Tune"}, "song": None}
+
+
+def stored(song="s1", at=NOW, source="session:a", account=ALICE, **over):
+    now_playing.store_report(source, account, report(song, **over), now=at)
+
+
+def test_nobody_is_told_when_no_app_wants_it(client, signed_in):
+    assert client.post("/now-playing/report", json=report()).json() == {"wanted": False}
+    assert now_playing.current(ALICE)["playing"] is False
+
+
+def test_a_key_for_something_else_does_not_count(client, signed_in):
+    app_key("history")
+    assert client.post("/now-playing/report", json=report()).json() == {"wanted": False}
+
+
+def test_an_app_sees_what_a_browser_plays(client, signed_in, public):
+    key = app_key("now_playing")
+    assert client.post("/now-playing/report", json=report()).json() == {"wanted": True}
+    answer = playing(public, key).json()
+    assert answer.pop("at") > 0
+    assert answer.pop("position") >= 10.0
+    assert answer == {
+        "playing": True,
+        "paused": False,
+        "kind": "song",
+        "source": "local",
+        "devices": [],
+        "song": {
+            "id": "s1",
+            "title": "Song",
+            "artist": "Artist",
+            "album": "Album",
+            "duration": 200,
+        },
+        "radio": None,
+    }
+
+
+def test_a_key_revoked_means_the_next_report_is_unwanted(client, signed_in):
+    made = device_keys.create(ALICE, "Display", ALICE_SETTINGS, scopes=("now_playing",))
+    client.post("/now-playing/report", json=report())
+    device_keys.revoke(ALICE, made["id"])
+    assert client.post("/now-playing/report", json=report()).json() == {"wanted": False}
+    assert now_playing.current(ALICE)["playing"] is False
+
+
+def test_taking_a_report_back_ends_it(client, signed_in):
+    app_key("now_playing")
+    client.post("/now-playing/report", json=report())
+    client.delete("/now-playing/report")
+    assert now_playing.current(ALICE)["playing"] is False
+
+
+def test_the_report_routes_need_a_token(public):
+    assert public.post("/now-playing/report", json=report()).status_code == 401
+    assert public.delete("/now-playing/report").status_code == 401
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        report(song=""),
+        report(position=-1),
+        {**report(), "radio": RADIO["radio"]},
+        {**report(), "song": None},
+    ],
+)
+def test_a_report_about_nothing_sensible_is_refused(client, signed_in, body):
+    assert client.post("/now-playing/report", json=body).status_code == 422
+
+
+def test_position_carries_forward_while_playing():
+    stored(position=10.0, at=NOW)
+    assert now_playing.current(ALICE, now=NOW + 20)["position"] == 30.0
+
+
+def test_position_stops_at_the_end_of_the_song():
+    stored(position=190.0, at=NOW)
+    assert now_playing.current(ALICE, now=NOW + 60)["position"] == 200
+
+
+def test_position_stands_still_while_paused():
+    stored(position=10.0, at=NOW, paused=True)
+    answer = now_playing.current(ALICE, now=NOW + 20)
+    assert answer["position"] == 10.0
+    assert answer["paused"] is True
+
+
+def test_a_report_counts_until_the_window_goes_quiet():
+    stored(at=NOW)
+    limit = now_playing.REPORT_TTL_SECONDS
+    assert now_playing.current(ALICE, now=NOW + limit)["playing"] is True
+    assert now_playing.current(ALICE, now=NOW + limit + 1)["playing"] is False
+
+
+def test_old_reports_do_not_pile_up():
+    stored(at=NOW, source="session:gone")
+    stored(at=NOW + now_playing.REPORT_TTL_SECONDS + 1, source="session:new")
+    assert set(now_playing._reports) == {"session:new"}
+
+
+def test_another_accounts_report_is_not_shown():
+    stored(at=NOW, account=BOB)
+    assert now_playing.current(ALICE, now=NOW)["playing"] is False
+
+
+def test_radio_can_be_reported():
+    now_playing.store_report("session:a", ALICE, {**report(), **RADIO}, now=NOW)
+    answer = now_playing.current(ALICE, now=NOW + 5)
+    assert answer["kind"] == "radio"
+    assert answer["song"] is None
+    assert answer["radio"] == RADIO["radio"]
+    assert answer["position"] is None
+
+
+def test_a_reported_cast_says_where_it_plays():
+    stored(at=NOW, devices=["Living room"])
+    answer = now_playing.current(ALICE, now=NOW)
+    assert answer["source"] == "cast"
+    assert answer["devices"] == ["Living room"]
+
+
+def test_a_cast_comes_before_a_browser(default_session, at_position):
+    cast(default_session, song="cast", started=NOW - 100)
+    stored("browser", at=NOW)
+    assert now_playing.current(ALICE, now=NOW)["song"]["id"] == "cast"
+
+
+def test_what_can_be_heard_comes_before_a_paused_cast(default_session, at_position):
+    cast(default_session, song="cast", started=NOW - 100, paused=True)
+    stored("browser", at=NOW)
+    assert now_playing.current(ALICE, now=NOW)["song"]["id"] == "browser"
+
+
+def test_a_reported_cast_comes_before_a_browser():
+    stored("desktop", at=NOW - 50, source="key:a", devices=["Living room"])
+    stored("browser", at=NOW, source="session:b")
+    assert now_playing.current(ALICE, now=NOW)["song"]["id"] == "desktop"
+
+
+def test_of_two_browsers_the_last_to_start_wins_whatever_the_heartbeats_say():
+    stored("older", at=NOW, source="session:a")
+    stored("newer", at=NOW + 5, source="session:b")
+    stored("older", at=NOW + 10, source="session:a")
+    assert now_playing.current(ALICE, now=NOW + 10)["song"]["id"] == "newer"
+
+
+def test_a_browser_that_plays_comes_before_one_paused_later():
+    stored("playing", at=NOW, source="session:a")
+    stored("paused", at=NOW + 5, source="session:b", paused=True)
+    assert now_playing.current(ALICE, now=NOW + 5)["song"]["id"] == "playing"
+
+
+def test_a_new_song_counts_as_starting_again():
+    stored("first", at=NOW, source="session:a")
+    stored("other", at=NOW + 5, source="session:b")
+    stored("second", at=NOW + 10, source="session:a")
+    assert now_playing.current(ALICE, now=NOW + 10)["song"]["id"] == "second"
+
+
+def test_a_cover_for_what_a_browser_plays(public, default_session):
+    default_session.account_server_type = ALICE.server_type
+    default_session.account_server_url = ALICE.server_url
+    default_session.account_username = ALICE.username
+    now_playing.store_report("session:a", ALICE, report())
+    served = AsyncMock(return_value=Response(b"img", media_type="image/png"))
+    with patch.object(device_link, "cover_image", served):
+        response = public.get(
+            "/device-link/v1/now-playing/cover", headers=auth(app_key("now_playing"))
+        )
+    assert response.content == b"img"
+    served.assert_awaited_once_with(default_session.media, "cover-1")
+
+
+def test_no_cover_for_a_reported_song_without_one(public, default_session):
+    default_session.account_server_type = ALICE.server_type
+    default_session.account_server_url = ALICE.server_url
+    default_session.account_username = ALICE.username
+    bare = report()
+    bare["song"]["cover_art_id"] = ""
+    now_playing.store_report("session:a", ALICE, bare)
+    served = AsyncMock()
+    with patch.object(device_link, "cover_image", served):
+        response = public.get(
+            "/device-link/v1/now-playing/cover", headers=auth(app_key("now_playing"))
+        )
+    assert response.status_code == 404
+    served.assert_not_awaited()
+
+
+def test_no_cover_with_no_session_to_reach_the_media_server(public):
+    now_playing.store_report("key:a", ALICE, report())
+    response = public.get("/device-link/v1/now-playing/cover", headers=auth(app_key("now_playing")))
+    assert response.status_code == 404
+
+
+def test_a_paired_desktop_passes_its_report_on(paired, client, signed_in):
+    assert client.post("/now-playing/report", json=report()).json() == {"wanted": True}
+    assert paired.reported[-1]["song"]["id"] == "s1"
+    assert now_playing._reports == {}
+
+
+def test_a_paired_desktop_hears_when_nobody_wants_it(paired, client, signed_in):
+    paired.wants_now_playing = False
+    assert client.post("/now-playing/report", json=report()).json() == {"wanted": False}
+
+
+def test_a_paired_desktop_takes_its_report_back(paired, client, signed_in):
+    client.delete("/now-playing/report")
+    assert paired.reported == [None]
+
+
+def test_a_paired_desktop_with_the_server_away_is_not_held_up(paired, client, signed_in):
+    paired.fail = httpx.ConnectError("away")
+    assert client.post("/now-playing/report", json=report()).json() == {"wanted": False}
+
+
+def test_the_server_keeps_what_a_desktop_passes_on(public):
+    desktop, app = key_for(), app_key("now_playing")
+    response = public.put("/device-link/now-playing", headers=auth(desktop), json=report())
+    assert response.json() == {"wanted": True}
+    assert playing(public, app).json()["song"]["id"] == "s1"
+
+
+def test_the_server_refuses_it_with_no_app_to_show_it_to(public):
+    response = public.put("/device-link/now-playing", headers=auth(key_for()), json=report())
+    assert response.json() == {"wanted": False}
+    assert now_playing._reports == {}
+
+
+def test_a_desktop_can_take_it_back_on_the_server(public):
+    desktop, app = key_for(), app_key("now_playing")
+    public.put("/device-link/now-playing", headers=auth(desktop), json=report())
+    public.delete("/device-link/now-playing", headers=auth(desktop))
+    assert playing(public, app).json() == {"playing": False}
+
+
+def test_an_app_cannot_report_anything(public):
+    key = app_key("now_playing")
+    assert (
+        public.put("/device-link/now-playing", headers=auth(key), json=report()).status_code == 403
+    )
+    assert public.delete("/device-link/now-playing", headers=auth(key)).status_code == 403
+
+
+def test_a_report_that_is_far_too_big_is_refused(public):
+    body = report()
+    body["devices"] = ["x" * 2000] * 16
+    response = public.put("/device-link/now-playing", headers=auth(key_for()), json=body)
+    assert response.status_code == 413
