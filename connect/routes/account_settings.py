@@ -13,7 +13,7 @@ import logging
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
 
-from core import account_settings
+from core import account_settings, server_link
 from core.auth import require_token
 
 logger = logging.getLogger("connect.account_settings")
@@ -35,9 +35,18 @@ class AccountSettingsPatch(BaseModel):
 # file IO wants.
 @router.get("")
 def get_account_settings(server_type: str, server_url: str, username: str) -> dict:
-    return account_settings.load(server_type, server_url, username)
+    identity = (server_type, server_url, username)
+    # The renderer does not know about a paired server: what it reads here
+    # is simply the account's settings. A mirror, so the app still has them
+    # with the server away.
+    linked = server_link.pull_settings(identity)
+    if linked:
+        account_settings.save(*identity, linked)
+    return account_settings.load(*identity)
 
 
 @router.post("")
 def update_account_settings(req: AccountSettingsPatch) -> dict:
-    return account_settings.save(req.server_type, req.server_url, req.username, req.settings)
+    saved = account_settings.save(req.server_type, req.server_url, req.username, req.settings)
+    server_link.note_settings_changed((req.server_type, req.server_url, req.username), req.settings)
+    return saved

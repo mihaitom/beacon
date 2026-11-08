@@ -89,6 +89,10 @@ class SessionState:
         self.account_server_url: str = ""
         self.account_username: str = ""
         self.account_is_admin: bool = False
+        # (server_type, url, username) as this login's renderer spells them:
+        # what routes/account_settings.py files its settings under, which is
+        # not the verified account above (that one prefers a server id).
+        self.settings_identity: tuple[str, str, str] | None = None
         # Navidrome's own API token for the smart playlist editor (see
         # routes/navidrome.py). Memory only, like the session itself; the
         # password it was issued for is never kept.

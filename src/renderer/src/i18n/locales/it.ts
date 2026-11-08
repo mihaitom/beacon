@@ -948,6 +948,45 @@ export default {
     fixedPortTaken:
       "La porta {port} era occupata all'avvio, quindi Beacon usa per ora la porta {current}.",
     fixedPortFromEnvironment: 'Impostata su {port} da BEACON_PORT.',
+    serverLinkTitle: 'Server Beacon',
+    serverLinkWhat:
+      'Collega questa app al tuo server Beacon, così entrambi mostrano la stessa cronologia di ascolto e seguono le stesse impostazioni. La riproduzione non lo aspetta mai e ciò che ascolti mentre non è raggiungibile viene inviato dopo.',
+    serverLinkUrl: 'Indirizzo del server',
+    serverLinkKey: 'Chiave del dispositivo',
+    serverLinkKeyWhere:
+      "Crea la chiave sul server, in Impostazioni, dopo aver effettuato l'accesso con questo account.",
+    serverLinkPair: 'Collega',
+    serverLinkUnpair: 'Scollega',
+    serverLinkDocs: 'Come funziona',
+    serverLinkConnected: 'Collegato',
+    serverLinkWrongKey: 'Il server non accetta questa chiave. Potrebbe essere stata revocata.',
+    serverLinkUnreachable: 'Il server al momento non è raggiungibile.',
+    serverLinkTooOld:
+      "Questo server usa una versione di Beacon senza questa funzione, oppure l'indirizzo non è di un server Beacon.",
+    serverLinkBlocked:
+      'Ha risposto un accesso davanti al server invece di Beacon. /device-link/ deve poter passare.',
+    serverLinkOtherAccount:
+      "Collegato per un account diverso da quello con cui hai effettuato l'accesso.",
+    serverLinkInvalidUrl: 'Questo indirizzo del server non è valido.',
+    serverLinkInsecureUrl: 'Un server su internet richiede https.',
+    serverLinkPairedWith: '{url}, come {name}',
+    serverLinkLastSync: 'Ultima sincronizzazione {ago}',
+    serverLinkUnsent: 'Non ancora inviati: {count}',
+    serverLinkFailed: 'Non è stato possibile modificare il collegamento',
+    deviceKeysTitle: 'App desktop',
+    deviceKeysWhat:
+      "Una chiave permette a un'app desktop di Beacon di condividere cronologia e impostazioni con questo server, solo per questo account.",
+    deviceKeysLabel: 'Nuova chiave per',
+    deviceKeysLabelHint: 'Ad esempio, Portatile',
+    deviceKeysCreate: 'Crea chiave',
+    deviceKeysKey: 'Chiave',
+    deviceKeysCopy: 'Copia chiave',
+    deviceKeysOnce:
+      "Mostrata solo ora. Inseriscila nell'app desktop; se la perdi, creane un'altra.",
+    deviceKeysRevoke: 'Revoca',
+    deviceKeysNeverUsed: 'Non ancora usata',
+    deviceKeysLastUsed: 'Ultimo uso {ago}',
+    deviceKeysFailed: 'Non è stato possibile modificare la chiave',
     advancedTitle: 'Avanzate',
     logLevel: 'Livello di log',
     logLevelHint:

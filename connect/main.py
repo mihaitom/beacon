@@ -26,7 +26,7 @@ from fastapi.responses import JSONResponse
 # or exported manually), never via a plain .env file alone.
 load_dotenv()
 
-from core import local_mixes, mdns
+from core import local_mixes, mdns, server_link
 from core.auth import TOKEN as _CONNECT_TOKEN
 from core.auth import TOKEN_WAS_GENERATED as _CONNECT_TOKEN_GENERATED
 from core.device_volume import capture_main_loop
@@ -52,6 +52,8 @@ from routes.cast_permissions import router as cast_permissions_router
 from routes.coverart import router as coverart_router
 from routes.debug import router as debug_router
 from routes.deezer import router as deezer_router
+from routes.device_link import keys_router as device_keys_router
+from routes.device_link import router as device_link_router
 from routes.devices import router as devices_router
 from routes.discovery import discover_all
 from routes.discovery import router as discovery_router
@@ -80,6 +82,7 @@ from routes.proxy import router as proxy_router
 from routes.radio import router as radio_router
 from routes.recommendations import router as recommendations_router
 from routes.remote import router as remote_router
+from routes.server_link import router as server_link_router
 from routes.stream import router as stream_router
 from routes.upnp import router as upnp_router
 from routes.volume import router as volume_router
@@ -309,6 +312,7 @@ async def lifespan(_: FastAPI):
     loop_lag_task = asyncio.create_task(monitor_loop_lag())
     upnp_renewal_task = asyncio.create_task(_renew_upnp_subscriptions())
     mdns_task = asyncio.create_task(mdns.keep_announced())
+    server_link_task = asyncio.create_task(server_link.run())
     light_controller.start()
     background_tasks = (
         discovery_task,
@@ -319,6 +323,7 @@ async def lifespan(_: FastAPI):
         loop_lag_task,
         upnp_renewal_task,
         mdns_task,
+        server_link_task,
     )
     try:
         yield
@@ -496,6 +501,9 @@ app.include_router(lastfm_router)
 app.include_router(navidrome_router)
 app.include_router(listenbrainz_router)
 app.include_router(play_history_router)
+app.include_router(device_keys_router)
+app.include_router(device_link_router)
+app.include_router(server_link_router)
 app.include_router(deezer_router)
 app.include_router(coverart_router)
 app.include_router(upnp_router)

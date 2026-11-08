@@ -12,7 +12,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from core import cast_permissions, lastfm, play_history, play_history_import
+from core import cast_permissions, lastfm, play_history, play_history_import, server_link
 from core.auth import require_token
 from core.play_history import Account
 from core.session import SessionState, require_authenticated_session
@@ -86,7 +86,10 @@ def record_listen(
     account = _own(session)
     if account is None:
         return {"recorded": False}
-    return {"recorded": play_history.record(account, listen.model_dump())}
+    recorded = play_history.record(account, listen.model_dump())
+    if recorded and server_link.is_linked(account):
+        server_link.wake()
+    return {"recorded": recorded}
 
 
 @router.get("/summary")
@@ -104,6 +107,9 @@ def get_summary(
         )
     if own is None:
         return {**_empty_summary(), "milestones": None}
+    from_server = server_link.summary_for(own)
+    if from_server is not None:
+        return from_server
     return {**play_history.summary(own), "milestones": play_history.milestones(own)}
 
 
@@ -120,6 +126,7 @@ def put_milestones(
     account = _own(session)
     if account is not None:
         play_history.save_milestones(account, seen.model_dump())
+        server_link.note_milestones(account, seen.model_dump())
     return {"status": "ok"}
 
 
@@ -129,7 +136,9 @@ async def get_import(session: SessionState = Depends(require_authenticated_sessi
     if account is None:
         return {"status": "none"}
     saved = await asyncio.to_thread(play_history.import_state, account)
-    return play_history_import.status(account, saved)
+    status = play_history_import.status(account, saved)
+    # The server's log is the one being read, so an import belongs there.
+    return {**status, "paired": await asyncio.to_thread(server_link.is_linked, account)}
 
 
 @router.post("/import")
@@ -139,6 +148,8 @@ async def start_import(
     account = _own(session)
     if account is None:
         raise HTTPException(status_code=409, detail="This account has no play history")
+    if await asyncio.to_thread(server_link.is_linked, account):
+        raise HTTPException(status_code=409, detail="Paired with a server: import there")
     if req.source == "lastfm" and not lastfm.is_configured():
         raise HTTPException(status_code=409, detail="No Last.fm API key configured")
     saved = await asyncio.to_thread(play_history.import_state, account)

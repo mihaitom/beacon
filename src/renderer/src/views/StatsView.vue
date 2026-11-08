@@ -557,7 +557,8 @@ export default {
       })
     },
     offeredImports(): ImportOption[] {
-      if (!this.isOwnView || !this.importStatus) return []
+      // While paired the server's log is the one shown, so it imports there.
+      if (!this.isOwnView || !this.importStatus || this.importStatus.paired) return []
       const action = importAction(this.importStatus.status, this.importChoices)
       return action === 'choose' || action === 'retry' || action === 'again'
         ? this.importChoices

@@ -952,6 +952,44 @@ export default {
     fixedPortTaken:
       'El puerto {port} estaba ocupado al iniciar, así que Beacon usa el puerto {current} por ahora.',
     fixedPortFromEnvironment: 'Fijado en {port} por BEACON_PORT.',
+    serverLinkTitle: 'Servidor de Beacon',
+    serverLinkWhat:
+      'Conecta esta aplicación con tu servidor de Beacon para que ambos muestren el mismo historial de escucha y sigan los mismos ajustes. La reproducción nunca lo espera, y lo que escuches mientras no esté disponible se envía después.',
+    serverLinkUrl: 'Dirección del servidor',
+    serverLinkKey: 'Clave del dispositivo',
+    serverLinkKeyWhere:
+      'Crea la clave en el servidor, en Ajustes, con la sesión iniciada en esta cuenta.',
+    serverLinkPair: 'Conectar',
+    serverLinkUnpair: 'Desconectar',
+    serverLinkDocs: 'Cómo funciona',
+    serverLinkConnected: 'Conectado',
+    serverLinkWrongKey: 'El servidor no acepta esta clave. Puede que se haya revocado.',
+    serverLinkUnreachable: 'No se puede acceder al servidor en este momento.',
+    serverLinkTooOld:
+      'Este servidor usa una versión de Beacon sin esta función, o la dirección no es de un servidor de Beacon.',
+    serverLinkBlocked:
+      'Ha respondido un inicio de sesión delante del servidor en lugar de Beacon. Hay que dejar pasar /device-link/.',
+    serverLinkOtherAccount: 'Conectado para una cuenta distinta de la que ha iniciado sesión.',
+    serverLinkInvalidUrl: 'Esa dirección de servidor no es válida.',
+    serverLinkInsecureUrl: 'Un servidor en internet necesita https.',
+    serverLinkPairedWith: '{url}, como {name}',
+    serverLinkLastSync: 'Última sincronización {ago}',
+    serverLinkUnsent: 'Sin enviar: {count}',
+    serverLinkFailed: 'No se ha podido cambiar la conexión',
+    deviceKeysTitle: 'Aplicaciones de escritorio',
+    deviceKeysWhat:
+      'Una clave permite a una aplicación de escritorio de Beacon compartir su historial y sus ajustes con este servidor, solo para esta cuenta.',
+    deviceKeysLabel: 'Nueva clave para',
+    deviceKeysLabelHint: 'Por ejemplo, Portátil',
+    deviceKeysCreate: 'Crear clave',
+    deviceKeysKey: 'Clave',
+    deviceKeysCopy: 'Copiar clave',
+    deviceKeysOnce:
+      'Solo se muestra ahora. Introdúcela en la aplicación de escritorio; si la pierdes, crea otra.',
+    deviceKeysRevoke: 'Revocar',
+    deviceKeysNeverUsed: 'Aún sin usar',
+    deviceKeysLastUsed: 'Último uso {ago}',
+    deviceKeysFailed: 'No se ha podido cambiar la clave',
     advancedTitle: 'Avanzado',
     logLevel: 'Nivel de registro',
     logLevelHint:

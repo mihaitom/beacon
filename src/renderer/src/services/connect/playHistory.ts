@@ -35,6 +35,8 @@ export interface PlayHistoryImportStatus {
   source?: ImportSource
   fetched?: number
   error?: 'not_found' | 'unavailable'
+  /** This desktop is paired with a server, and imports belong there. */
+  paired?: boolean
 }
 
 export function recordListen(song: Song): Promise<unknown> {

@@ -119,6 +119,18 @@ server {
     proxy_buffering off;
   }
 
+  # A paired desktop app (connect/routes/device_link.py). Its own prefix for
+  # the same reason as /party/, and the same rule: no injected token, the
+  # request stands on the device key it brought.
+  location /device-link/ {
+    proxy_pass http://127.0.0.1:${PORT}/device-link/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Connect-Token "";
+    client_max_body_size 4m;
+  }
+
   location /stream {
     proxy_pass http://127.0.0.1:${PORT}/stream;
     proxy_set_header X-Connect-Token "${CONNECT_TOKEN}";

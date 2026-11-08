@@ -9,8 +9,9 @@ year read once from Last.fm or ListenBrainz, told apart by `source`, and
 already celebrated. A listen's id is random rather than a counter, so it still
 names the same play on another machine.
 
-The account always comes from the verified session (routes/play_history.py),
-never from a request: this is a dated record of what somebody listened to.
+The account always comes from the verified session (routes/play_history.py) or
+a device key made by that session (routes/device_link.py), never from a
+request: this is a dated record of what somebody listened to.
 """
 
 import json
@@ -32,7 +33,6 @@ logger = logging.getLogger("connect.play_history")
 
 _DIR = os.path.join(data_dir(), "play-history")
 _DATABASE = "play-history.db"
-_SCHEMA_VERSION = 1
 
 # No WAL: there is one writer, a write per song, and data directories on a
 # network share, which WAL does not work on.
@@ -64,6 +64,24 @@ _SCHEMA = (
     "CREATE INDEX listens_by_account ON listens (account_id, ts)",
 )
 
+_DEVICE_LINK_SCHEMA = (
+    # Null until the paired server has acknowledged the row.
+    "ALTER TABLE listens ADD COLUMN sent_at INTEGER",
+    "CREATE INDEX listens_unsent ON listens (account_id, ts) WHERE sent_at IS NULL",
+    # settings_identity is null when the account settings cannot be tied to
+    # the verified name (core/device_keys.py).
+    """CREATE TABLE device_keys (
+        id TEXT PRIMARY KEY,
+        account_id INTEGER NOT NULL REFERENCES accounts (id),
+        key_hash TEXT NOT NULL,
+        label TEXT NOT NULL,
+        settings_identity TEXT,
+        created_at INTEGER NOT NULL,
+        last_used_at INTEGER
+    )""",
+    "CREATE INDEX device_keys_by_account ON device_keys (account_id)",
+)
+
 _OWN_SOURCE = "beacon"
 _TEXT_FIELDS = (
     "song_id",
@@ -75,6 +93,7 @@ _TEXT_FIELDS = (
     "cover_art_id",
     "genre",
 )
+_WIRE_FIELDS = ("id", "ts", "duration", *_TEXT_FIELDS)
 _FIND_ACCOUNT = "server_type = ? AND server_url = ? AND username = ?"
 
 # Several windows can follow one cast, and each reports the same play. Longer
@@ -98,14 +117,16 @@ class Account(NamedTuple):
 _last_recorded: dict[Account, tuple[str, float]] = {}
 
 
-def _insert_listens(conn: sqlite3.Connection, account_id: int, listens: Iterable[dict]) -> None:
+def _insert_listens(conn: sqlite3.Connection, account_id: int, listens: Iterable[dict]) -> int:
+    """How many were new. An id already stored is the same play sent again."""
     columns = ", ".join(_TEXT_FIELDS)
     marks = ", ".join("?" * (len(_TEXT_FIELDS) + 5))
-    conn.executemany(
-        f"INSERT INTO listens (id, account_id, ts, source, duration, {columns}) VALUES ({marks})",
+    return conn.executemany(
+        f"INSERT INTO listens (id, account_id, ts, source, duration, {columns}) VALUES ({marks})"
+        " ON CONFLICT (id) DO NOTHING",
         (
             (
-                uuid.uuid4().hex,
+                entry.get("id") or uuid.uuid4().hex,
                 account_id,
                 entry["ts"],
                 entry.get("source") or _OWN_SOURCE,
@@ -114,7 +135,7 @@ def _insert_listens(conn: sqlite3.Connection, account_id: int, listens: Iterable
             )
             for entry in listens
         ),
-    )
+    ).rowcount
 
 
 def _account_id(conn: sqlite3.Connection, account: Account) -> int:
@@ -177,15 +198,30 @@ def _adopt_old_logs(conn: sqlite3.Connection) -> None:
         _write_account_field(conn, account_id, "milestones", meta.get("milestones"))
 
 
-def _prepare(conn: sqlite3.Connection) -> None:
-    if conn.execute("PRAGMA user_version").fetchone()[0] >= _SCHEMA_VERSION:
-        return
-    # One transaction, so an interrupted first start simply happens again.
-    conn.execute("BEGIN IMMEDIATE")
+def _create_log(conn: sqlite3.Connection) -> None:
     for statement in _SCHEMA:
         conn.execute(statement)
     _adopt_old_logs(conn)
-    conn.execute(f"PRAGMA user_version = {_SCHEMA_VERSION}")
+
+
+def _add_device_links(conn: sqlite3.Connection) -> None:
+    for statement in _DEVICE_LINK_SCHEMA:
+        conn.execute(statement)
+
+
+# PRAGMA user_version counts how many of these have run. Append only.
+_MIGRATIONS = (_create_log, _add_device_links)
+
+
+def _prepare(conn: sqlite3.Connection) -> None:
+    version = conn.execute("PRAGMA user_version").fetchone()[0]
+    if version >= len(_MIGRATIONS):
+        return
+    # One transaction, so an interrupted upgrade simply happens again.
+    conn.execute("BEGIN IMMEDIATE")
+    for migrate in _MIGRATIONS[version:]:
+        migrate(conn)
+    conn.execute(f"PRAGMA user_version = {len(_MIGRATIONS)}")
     conn.commit()
 
 
@@ -202,6 +238,18 @@ def _database() -> Iterator[sqlite3.Connection]:
             yield conn
     finally:
         conn.close()
+
+
+@contextmanager
+def transaction() -> Iterator[sqlite3.Connection]:
+    """For the other tables in this database (core/device_keys.py)."""
+    with _lock, _database() as conn:
+        yield conn
+
+
+def account_row(conn: sqlite3.Connection, account: Account) -> int:
+    """The account's id in this database, created if it is new."""
+    return _account_id(conn, account)
 
 
 def record(account: Account, listen: dict, now: float | None = None) -> bool:
@@ -272,6 +320,108 @@ def save_milestones(account: Account, seen: dict) -> None:
         current = _read_account_field(conn, account, "milestones") or {}
         merged = {name: max(value, current.get(name, 0)) for name, value in seen.items()}
         _write_account_field(conn, _account_id(conn, account), "milestones", merged)
+
+
+def _first_own_play(conn: sqlite3.Connection, account_id: int) -> int | None:
+    return conn.execute(
+        "SELECT MIN(ts) FROM listens WHERE account_id = ? AND source = ?",
+        (account_id, _OWN_SOURCE),
+    ).fetchone()[0]
+
+
+def _is_same_play(conn: sqlite3.Connection, account_id: int, entry: dict) -> bool:
+    """One play reported through two paths has two ids, so only song and time
+    can tell. Plays without a song id cannot be compared and are kept."""
+    if not entry.get("song_id"):
+        return False
+    return (
+        conn.execute(
+            "SELECT 1 FROM listens WHERE account_id = ? AND source = ? AND song_id = ?"
+            " AND id != ? AND ABS(ts - ?) < ? LIMIT 1",
+            (
+                account_id,
+                _OWN_SOURCE,
+                entry["song_id"],
+                entry["id"],
+                entry["ts"],
+                _SAME_PLAY_SECONDS,
+            ),
+        ).fetchone()
+        is not None
+    )
+
+
+def receive_listens(
+    account: Account, listens: list[dict], backfill: bool = False, now: float | None = None
+) -> int:
+    """Stores plays a paired device made, returning how many were new.
+
+    `ts` comes from outside here, unlike record(): it was stamped by the
+    device's own connect, and anything further ahead than a day is a broken
+    clock rather than a play."""
+    now = time.time() if now is None else now
+    latest = now + _DAY_SECONDS
+    stored = 0
+    with _lock, _database() as conn:
+        account_id = _account_id(conn, account)
+        first_before = _first_own_play(conn, account_id)
+        for entry in listens:
+            if entry["ts"] > latest or _is_same_play(conn, account_id, entry):
+                continue
+            stored += _insert_listens(conn, account_id, [{**entry, "source": _OWN_SOURCE}])
+        first_after = _first_own_play(conn, account_id)
+        if first_after is not None and first_after != first_before:
+            # The rule replace_imported() applies: an import only ever covers
+            # what is older than Beacon's first own play, and that just moved.
+            conn.execute(
+                "DELETE FROM listens WHERE account_id = ? AND source != ? AND ts >= ?",
+                (account_id, _OWN_SOURCE, first_after),
+            )
+        if backfill and stored:
+            # A desktop's whole past arriving is not a moment either, see
+            # replace_imported().
+            _write_account_field(conn, account_id, "milestones", None)
+    return stored
+
+
+def unsent_listens(account: Account, limit: int) -> list[dict]:
+    """Beacon's own plays the paired server has not acknowledged, oldest
+    first. Only this account's: a desktop can have held another login."""
+    with _lock, _database() as conn:
+        rows = conn.execute(
+            "SELECT listens.* FROM listens JOIN accounts ON accounts.id = account_id"
+            f" WHERE {_FIND_ACCOUNT} AND source = ? AND sent_at IS NULL ORDER BY ts LIMIT ?",
+            (*account, _OWN_SOURCE, limit),
+        ).fetchall()
+    return [{field: row[field] for field in _WIRE_FIELDS} for row in rows]
+
+
+def mark_sent(ids: list[str], now: float | None = None) -> None:
+    stamp = int(time.time() if now is None else now)
+    with _lock, _database() as conn:
+        conn.executemany(
+            "UPDATE listens SET sent_at = ? WHERE id = ?", ((stamp, id_) for id_ in ids)
+        )
+
+
+def forget_sent(account: Account) -> None:
+    """A new pairing may be with a different server. Sending a play again to
+    the same one changes nothing, so this needs no way of telling them apart."""
+    with _lock, _database() as conn:
+        conn.execute(
+            "UPDATE listens SET sent_at = NULL WHERE account_id ="
+            f" (SELECT id FROM accounts WHERE {_FIND_ACCOUNT})",
+            account,
+        )
+
+
+def count_unsent(account: Account) -> int:
+    with _lock, _database() as conn:
+        return conn.execute(
+            "SELECT COUNT(*) FROM listens JOIN accounts ON accounts.id = account_id"
+            f" WHERE {_FIND_ACCOUNT} AND source = ? AND sent_at IS NULL",
+            (*account, _OWN_SOURCE),
+        ).fetchone()[0]
 
 
 def _name_key(value: str) -> str:
@@ -368,4 +518,38 @@ def summary(account: Account, now: float | None = None) -> dict:
         "live_since": min((e["ts"] for e in own), default=None),
         "recent_plays": dict(recent),
         "top": _charts(listens),
+    }
+
+
+def _merged_top(server: list[dict], unsent: list[dict]) -> list[dict]:
+    merged = {item["id"]: dict(item) for item in server}
+    for item in unsent:
+        if item["id"] in merged:
+            merged[item["id"]]["value"] += item["value"]
+        else:
+            merged[item["id"]] = item
+    return sorted(merged.values(), key=lambda item: -item["value"])[:_TOP_N]
+
+
+def with_unsent(account: Account, server: dict, now: float | None = None) -> dict:
+    """The server's summary plus what it has not received yet, so a song just
+    played counts at once."""
+    now = time.time() if now is None else now
+    unsent = unsent_listens(account, limit=-1)
+    if not unsent:
+        return server
+    recent = Counter(server.get("recent_plays") or {})
+    since = now - _RECENT_DAYS * _DAY_SECONDS
+    recent.update(e["song_id"] for e in unsent if e["ts"] >= since and e.get("song_id"))
+    earliest = min(e["ts"] for e in unsent)
+    live_since = server.get("live_since")
+    charts = _charts([{**entry, "source": _OWN_SOURCE} for entry in unsent])
+    top = server.get("top") or {}
+    return {
+        **server,
+        "total": server.get("total", 0) + len(unsent),
+        "timestamps": sorted([*server.get("timestamps", []), *(e["ts"] for e in unsent)]),
+        "live_since": earliest if live_since is None else min(live_since, earliest),
+        "recent_plays": dict(recent),
+        "top": {name: _merged_top(top.get(name, []), items) for name, items in charts.items()},
     }

@@ -951,6 +951,45 @@ export default {
     fixedPortTaken:
       'Port {port} war beim Start belegt, deshalb läuft Beacon vorerst auf Port {current}.',
     fixedPortFromEnvironment: 'Durch BEACON_PORT auf {port} festgelegt.',
+    serverLinkTitle: 'Beacon-Server',
+    serverLinkWhat:
+      'Verbindet diese App mit deinem Beacon-Server, damit beide denselben Hörverlauf zeigen und denselben Einstellungen folgen. Die Wiedergabe wartet nie darauf, und was du hörst, während er nicht erreichbar ist, wird nachgereicht.',
+    serverLinkUrl: 'Serveradresse',
+    serverLinkKey: 'Geräteschlüssel',
+    serverLinkKeyWhere:
+      'Erstelle den Schlüssel auf dem Server unter Einstellungen, angemeldet mit diesem Konto.',
+    serverLinkPair: 'Verbinden',
+    serverLinkUnpair: 'Trennen',
+    serverLinkDocs: 'So funktioniert es',
+    serverLinkConnected: 'Verbunden',
+    serverLinkWrongKey:
+      'Der Server akzeptiert diesen Schlüssel nicht. Vielleicht wurde er widerrufen.',
+    serverLinkUnreachable: 'Der Server ist gerade nicht erreichbar.',
+    serverLinkTooOld:
+      'Auf diesem Server läuft eine Beacon-Version ohne diese Funktion, oder die Adresse gehört zu keinem Beacon-Server.',
+    serverLinkBlocked:
+      'Statt Beacon hat eine Anmeldung vor dem Server geantwortet. /device-link/ muss daran vorbeigelassen werden.',
+    serverLinkOtherAccount: 'Verbunden für ein anderes Konto als das angemeldete.',
+    serverLinkInvalidUrl: 'Das ist keine gültige Serveradresse.',
+    serverLinkInsecureUrl: 'Ein Server im Internet braucht https.',
+    serverLinkPairedWith: '{url}, als {name}',
+    serverLinkLastSync: 'Zuletzt abgeglichen {ago}',
+    serverLinkUnsent: 'Noch nicht gesendet: {count}',
+    serverLinkFailed: 'Die Verbindung konnte nicht geändert werden',
+    deviceKeysTitle: 'Desktop-Apps',
+    deviceKeysWhat:
+      'Mit einem Schlüssel teilt eine Beacon-Desktop-App ihren Hörverlauf und ihre Einstellungen mit diesem Server, nur für dieses Konto.',
+    deviceKeysLabel: 'Neuer Schlüssel für',
+    deviceKeysLabelHint: 'Zum Beispiel Laptop',
+    deviceKeysCreate: 'Schlüssel erstellen',
+    deviceKeysKey: 'Schlüssel',
+    deviceKeysCopy: 'Schlüssel kopieren',
+    deviceKeysOnce:
+      'Wird nur jetzt angezeigt. Trage ihn in der Desktop-App ein. Geht er verloren, erstelle einen neuen.',
+    deviceKeysRevoke: 'Widerrufen',
+    deviceKeysNeverUsed: 'Noch nicht benutzt',
+    deviceKeysLastUsed: 'Zuletzt benutzt {ago}',
+    deviceKeysFailed: 'Der Schlüssel konnte nicht geändert werden',
     advancedTitle: 'Erweitert',
     logLevel: 'Log-Level',
     logLevelHint:

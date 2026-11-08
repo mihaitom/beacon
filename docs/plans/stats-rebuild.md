@@ -62,7 +62,7 @@ One SQLite file, `CONNECT_DATA_DIR/play-history/play-history.db`. "log" and
 Kept indefinitely. Handlers are sync `def`, as in `routes/account_settings.py`,
 since they do blocking IO. A first start takes in the plain files an earlier
 build wrote per account, and leaves them where they are. Syncing between
-installations is planned in `docs/plans/play-history-sync.md`.
+installations is planned in `docs/plans/device-link.md`.
 
 ### What the frontend gets
 

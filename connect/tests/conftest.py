@@ -190,6 +190,26 @@ def _isolated_client_ids(monkeypatch, tmp_path):
 
 
 @pytest.fixture(autouse=True)
+def _isolated_server_link(monkeypatch, tmp_path):
+    """No test may find a pairing another one left behind, and none may
+    reach the network through a real one."""
+    from core import server_link
+
+    monkeypatch.setattr(server_link, "_DATA_DIR", str(tmp_path / "link"))
+    monkeypatch.setattr(server_link, "AVAILABLE", True)
+
+    async def not_running() -> None:
+        return None
+
+    # The app's lifespan would start the real sender, which then races each
+    # test for the same unsent rows.
+    monkeypatch.setattr(server_link, "run", not_running)
+    server_link.reset_for_tests()
+    yield
+    server_link.reset_for_tests()
+
+
+@pytest.fixture(autouse=True)
 def _isolated_integration_key(monkeypatch, tmp_path):
     """No integration key unless a test makes one, and never in the real data directory."""
     from core import integration_key

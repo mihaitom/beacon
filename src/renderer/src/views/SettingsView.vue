@@ -28,6 +28,8 @@
     <v-tabs-window v-model="tab">
       <v-tabs-window-item value="account" eager>
         <account-section />
+        <server-link-section />
+        <device-keys-section />
         <about-section />
       </v-tabs-window-item>
 
@@ -71,6 +73,8 @@ import StorageSection from '@/components/settings/StorageSection.vue'
 import LyricsProvidersSection from '@/components/settings/LyricsProvidersSection.vue'
 import ApiKeysSection from '@/components/settings/ApiKeysSection.vue'
 import HomeAutomationSection from '@/components/settings/HomeAutomationSection.vue'
+import ServerLinkSection from '@/components/settings/ServerLinkSection.vue'
+import DeviceKeysSection from '@/components/settings/DeviceKeysSection.vue'
 
 export default {
   name: 'SettingsView',
@@ -86,6 +90,8 @@ export default {
     LyricsProvidersSection,
     ApiKeysSection,
     HomeAutomationSection,
+    ServerLinkSection,
+    DeviceKeysSection,
   },
   data() {
     return {

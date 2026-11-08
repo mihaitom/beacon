@@ -1,139 +1,129 @@
-# Syncing the play history between installations
+# Pairing a desktop app with a Beacon server
 
-Not built yet. The desktop app bundles its own connect, so its Stats page only
-knows what was played on that machine, and a server install only knows what
-was played through it. This plan connects a desktop app to a Beacon server, so
-both show the same history.
+Built on `feature/device-link`, not released yet. The desktop app bundles its
+own connect, so its Stats page only knew what was played on that machine, and
+its account settings stopped at that installation. This connects a desktop app
+to a Beacon server, so both show the same history and follow the same
+settings. The user-facing side is `docs/help/guides/desktop-and-server.md`.
 
-Storage is ready for it: every listen has a random `id`
-(`connect/core/play_history.py`), so a play stays the same play on another
-machine and sending it twice changes nothing.
+Server-to-server sync is out of scope. Docker refuses to pair (`BEACON_HOSTED`
+in `start.sh`): the URL comes from a signed-in listener, and connect would be
+making requests wherever one of them pointed it.
 
 ## Shape
 
 The server is the truth, the desktop app keeps writing locally.
 
 ```
-player -> desktop connect -> listens (local, written first)
-                               |  unsent rows, in batches, whenever reachable
+player -> desktop connect -> listens, settings (local, written first)
+                               |  unsent rows and fields, whenever reachable
                                v
-                          server connect -> listens (ON CONFLICT id DO NOTHING)
+                          server connect (ON CONFLICT id DO NOTHING)
 ```
 
-Playing never waits for the network, and plays made offline go out later.
-Docker and web installs change nothing: they already write to the server.
-Server-to-server sync is out of scope, and only the play history syncs.
+Playing never waits for the network, and what was made offline goes out later.
 
-## Pairing
+## Deliberately not synced
 
-In Settings the desktop app gets a server URL and a sync key. The key is made
-on the server, by the logged-in listener, and is shown once.
+| What                                                 | Why                                                |
+| ---------------------------------------------------- | -------------------------------------------------- |
+| Caches (recommendations, artwork, lyrics, waveforms) | can be recomputed, see `CLAUDE.md`                 |
+| Last.fm and Fanart keys                              | the installation's, a listener's key must not read |
+| Cast permissions, Hue, integration key, remote PIN   | bound to a house or an installation                |
+| Favourites, ratings, playlists, Navidrome's queue    | already on the media server                        |
+| `releaseNotesSeen`                                   | names an app version, and the two run different    |
 
-The key decides everything the URL cannot:
+Considered and left out for now: per-song lyrics offsets, a queue for
+Jellyfin and Plex, radio stations, and steering the desktop through the server
+(rejected, it would need a channel from the server back to the desktop).
 
-- **Which account.** The account key today is server type + media server URL +
-  username. A desktop app reaching Navidrome by LAN address and a server
-  reaching it by domain would count as two people. A key belongs to exactly
-  one account row on the server, so the desktop's own spelling of the URL does
-  not matter.
-- **Getting past the login in front of the server.** A reverse proxy with
-  forward auth redirects an Electron fetch to a login page. Sync gets its own
-  prefix, `/play-history-sync/`, which the proxy can let through as it does
-  for `/party/`. That prefix then has to be safe on its own, by the same
-  standard as `docs/help/guides/party-over-the-internet.md`.
-- **No media server login on the server.** The desktop app does not need to
-  hand the listener's password to a second machine.
+## The key
 
-Rules for the key:
+Made on the server by the signed-in listener, shown once.
 
-- Long and random. The server stores a hash and compares in constant time.
-- One per device, with a label and a last-used time, listed in Settings on the
-  server and revocable there.
-- On the desktop it lives in connect's data directory the way `core/api_keys.py`
-  keeps installation keys, and is never handed back to the renderer.
-- The URL must be https, except for a private address.
+- **Which account.** A key belongs to one `accounts` row, so the desktop's own
+  spelling of the media server's URL does not matter.
+- **Getting past a login.** A forward auth redirects an Electron fetch to a
+  login page, so sync has its own prefix, `/device-link/`, which the proxy lets
+  through as it does `/party/`. `ng.conf.template` gives it its own location
+  without the injected token.
+- **No media server login on the server.** The listener's password does not
+  go to a second machine.
 
-## Routes (server)
+`<id>.<secret>`: the id finds the row, and only the secret's hash is compared,
+in constant time. One per device, with a label and a last-used time, listed
+and revocable in the server's Settings. On the desktop it lives in
+`server_link.json` (0600) and is never handed back to the renderer. The URL
+must be https, except for a private address.
 
-Authenticated by the key alone, not by a session or `CONNECT_TOKEN`:
+## Two identities
 
-| Route                               | Purpose                                                 |
-| ----------------------------------- | ------------------------------------------------------- |
-| `POST /play-history-sync/listens`   | a batch of at most 500 rows, fields limited as `Listen` |
-| `GET /play-history-sync/summary`    | the same answer as `/play-history/summary`              |
-| `PUT /play-history-sync/milestones` | merged upwards, as today                                |
+The play history is filed under the account `/config` verified, which prefers
+a server id over the URL. The account settings are filed under what the
+renderer sends (`auth.serverUrl`). They are different strings on Plex and
+Jellyfin, so a key stores both (`SessionState.settings_identity`). The second
+is partly claimed by the renderer, and a key outlives the session that made
+it, so it is only kept when its name matches the verified one. Without it the
+key shares no settings.
 
-Session-authenticated, for the Settings page on the server:
+## Routes
 
-| Route                                | Purpose      |
-| ------------------------------------ | ------------ |
-| `GET/POST /play-history/sync-keys`   | list, create |
-| `DELETE /play-history/sync-keys/:id` | revoke       |
+Key only, no session and no `CONNECT_TOKEN`:
 
-Failed key checks are rate limited per address.
+| Route                             | Purpose                                      |
+| --------------------------------- | -------------------------------------------- |
+| `GET /device-link/info`           | checks the key, says who it is               |
+| `POST /device-link/listens`       | at most 500 rows, fields limited as `Listen` |
+| `GET /device-link/summary`        | the same answer as `/play-history/summary`   |
+| `PUT /device-link/milestones`     | merged upwards                               |
+| `GET/PATCH /device-link/settings` | only `LINKED_FIELDS`, 64 KB                  |
 
-## Storage (schema version 2)
-
-- `sync_keys` (server): `id`, `account_id`, `key_hash`, `label`, `created_at`,
-  `last_used_at`
-- `listens.sent_at` (desktop): null until the server has acknowledged the row
-- The URL and key on the desktop stay out of this database, next to the other
-  installation settings
+Failed key checks are rate limited per address. Bodies are read only after the
+key has passed. `/device-keys` (session) makes and revokes keys, `/server-link`
+(session, desktop) pairs.
 
 ## Sending
 
-A background task in the desktop's connect. It runs after each recorded play
-and on a timer, backs off while the server is unreachable, and sends only
-`source = 'beacon'` rows with `sent_at IS NULL`, oldest first. A row is marked
-sent only after a 2xx.
+A background task in the desktop's connect, after each recorded play or change
+and on a timer, backing off while the server is unreachable. Every pass starts
+with `/info`, so an idle desktop still notices a server that went away or a
+revoked key. A row is marked sent only after a 2xx.
 
-The first sync is the same loop over the whole local log.
+Only the paired account's `source = 'beacon'` rows go: a desktop can have held
+other logins. Pairing clears `sent_at`, since it may be a different server, and
+sending a row twice to the same one changes nothing.
 
-## What the server has to decide about incoming rows
+Settings go through the existing route: `POST /account-settings` writes locally
+and queues the field, `GET` asks the server and lays unsent fields on top. The
+renderer knows nothing about any of it, and its "server wins" at login is
+unchanged.
 
-- **Time.** `record()` stamps plays itself so a wrong client clock cannot damage
-  the log. Here the time has to come from outside. It was stamped by the
-  desktop's connect, and the server rejects anything more than a day in the
-  future.
-- **The same play twice.** Different ids on two devices are normally two real
-  plays. The server still applies `_SAME_PLAY_SECONDS`, comparing song and time
-  against its neighbours in the log, for the case of one play reported through
-  both paths.
-- **Imports.** An import is kept only where it is older than Beacon's first own
-  play. Own plays arriving from a desktop can move that point back, and the
-  import would then overlap them. The server applies the same rule again after
-  a batch that moves it. This can drop scrobbles made outside Beacon in the
-  overlap; that is the price of never counting a play twice.
-- The desktop stops offering an import while paired. Its local imported rows
-  are not sent.
+## What the server decides about incoming rows
+
+- **Time.** Stamped by the desktop's connect. More than a day ahead is dropped.
+- **The same play twice.** Same song within `_SAME_PLAY_SECONDS` of a neighbour
+  counts once.
+- **Imports.** An import only covers what is older than Beacon's first own
+  play. A batch that moves that point back cuts the import to match. This can
+  drop scrobbles made outside Beacon in the overlap; that is the price of never
+  counting a play twice.
+- **Milestones.** The first sync is sent as `backfill` and resets them, so the
+  next visit sets a silent baseline, as after an import. The desktop's own
+  milestones do not go up at pairing for the same reason.
 
 ## Reading
 
 While paired, the desktop's `/play-history/summary` answers from the server and
-falls back to the local log when the server is unreachable. Unsent local plays
-are added on top of the server's answer, so a song just played counts at once.
+falls back to the local log when it cannot. Unsent local plays are added on top
+of the server's answer, so a song just played counts at once.
 
-Milestones are saved in both places. They only ever merge upwards, which is
-what stops a moment from being celebrated twice.
-
-## Steps
-
-1. `sync_keys`, the key routes and their Settings section on the server
-2. The `/play-history-sync/` routes, including the checks above
-3. Pairing in the desktop's Settings, with a clear state: connected, last sync,
-   wrong key, unreachable
-4. Sending and the first sync
-5. Reading from the server with the fallback
-6. Help page for the reverse proxy exception, next to the party guide
-
-## Open questions
+## Open
 
 - **Admin view.** A key only speaks for its own account, so the desktop's admin
-  picker stays as it is in the first version. Letting it list the server's
-  accounts needs the admin flag noted when the key is made, and a way for that
-  to end when the server stops considering the account an admin.
-- **Leaving a server.** Unpairing keeps the local log as it is. Whether the
-  desktop should keep a copy of what only the server knows is undecided; so far
-  it does not.
+  picker stays as it was. Listing the server's accounts needs the admin flag
+  noted on the key, and a way for it to end when the server stops considering
+  the account an admin.
+- **Leaving a server.** Unpairing keeps the local log. What only the server
+  knows is not copied down.
 - **Deleting.** There is no way to delete a single play today. If one comes, it
   needs tombstones to survive a sync.

@@ -41,6 +41,27 @@ _PATH = os.path.join(_DATA_DIR, "account_settings.json")
 # threading.Lock is the right primitive.
 _lock = threading.Lock()
 
+# What a paired desktop app and its server share (routes/device_link.py), and
+# the only fields that public route accepts. releaseNotesSeen stays out: it
+# names an app version, and the two run different ones.
+LINKED_FIELDS = frozenset(
+    {
+        "locale",
+        "recommendationsEnabled",
+        "lyricsProviders",
+        "castRadioDirectly",
+        "lastfmUsername",
+        "listenbrainzUsername",
+        "songColumns",
+        "albumColumns",
+        "artistColumns",
+        "fanartEnabled",
+        "transitions",
+        "speakerEqualizers",
+        "equalizerPresets",
+    }
+)
+
 
 def _account_key(server_type: str, server_url: str, username: str) -> str:
     # Not reversible on purpose — nothing here needs to read a username back

@@ -954,6 +954,44 @@ export default {
     fixedPortTaken:
       "Le port {port} était occupé au démarrage, Beacon utilise donc le port {current} pour l'instant.",
     fixedPortFromEnvironment: 'Fixé à {port} par BEACON_PORT.',
+    serverLinkTitle: 'Serveur Beacon',
+    serverLinkWhat:
+      "Relie cette application à votre serveur Beacon, pour que les deux affichent le même historique d'écoute et suivent les mêmes réglages. La lecture ne l'attend jamais, et ce que vous écoutez en son absence est envoyé plus tard.",
+    serverLinkUrl: 'Adresse du serveur',
+    serverLinkKey: "Clé de l'appareil",
+    serverLinkKeyWhere:
+      'Créez la clé sur le serveur, dans Réglages, en étant connecté avec ce compte.',
+    serverLinkPair: 'Connecter',
+    serverLinkUnpair: 'Déconnecter',
+    serverLinkDocs: 'Comment ça marche',
+    serverLinkConnected: 'Connecté',
+    serverLinkWrongKey: "Le serveur n'accepte pas cette clé. Elle a peut-être été révoquée.",
+    serverLinkUnreachable: 'Le serveur est injoignable pour le moment.',
+    serverLinkTooOld:
+      "Ce serveur utilise une version de Beacon sans cette fonction, ou l'adresse n'est pas celle d'un serveur Beacon.",
+    serverLinkBlocked:
+      'Une page de connexion placée devant le serveur a répondu à la place de Beacon. /device-link/ doit pouvoir passer.',
+    serverLinkOtherAccount: 'Connecté pour un autre compte que celui actuellement ouvert.',
+    serverLinkInvalidUrl: "Cette adresse de serveur n'est pas valide.",
+    serverLinkInsecureUrl: 'Un serveur sur internet nécessite https.',
+    serverLinkPairedWith: '{url}, en tant que {name}',
+    serverLinkLastSync: 'Dernière synchronisation {ago}',
+    serverLinkUnsent: 'Pas encore envoyés : {count}',
+    serverLinkFailed: "La connexion n'a pas pu être modifiée",
+    deviceKeysTitle: 'Applications de bureau',
+    deviceKeysWhat:
+      'Une clé permet à une application de bureau Beacon de partager son historique et ses réglages avec ce serveur, pour ce compte uniquement.',
+    deviceKeysLabel: 'Nouvelle clé pour',
+    deviceKeysLabelHint: 'Par exemple, Portable',
+    deviceKeysCreate: 'Créer une clé',
+    deviceKeysKey: 'Clé',
+    deviceKeysCopy: 'Copier la clé',
+    deviceKeysOnce:
+      "Affichée uniquement maintenant. Saisissez-la dans l'application de bureau ; si vous la perdez, créez-en une autre.",
+    deviceKeysRevoke: 'Révoquer',
+    deviceKeysNeverUsed: 'Pas encore utilisée',
+    deviceKeysLastUsed: 'Dernière utilisation {ago}',
+    deviceKeysFailed: "La clé n'a pas pu être modifiée",
     advancedTitle: 'Avancé',
     logLevel: 'Niveau de journalisation',
     logLevelHint:

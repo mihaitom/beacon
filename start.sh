@@ -44,6 +44,9 @@ fi
 # recreations/updates. No compose changes needed beyond that volume mount.
 export CONNECT_DATA_DIR="${CONNECT_DATA_DIR:-/data}"
 
+# Pairing with another Beacon is for desktop apps (connect/core/server_link.py).
+export BEACON_HOSTED=1
+
 # nginx access logging is off by default and only enabled with DEBUG=true,
 # matching the Python backend's DEBUG-gated verbose logging.
 case "$(printf '%s' "$DEBUG" | tr '[:upper:]' '[:lower:]')" in

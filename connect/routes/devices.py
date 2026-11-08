@@ -226,6 +226,7 @@ async def configure(req: ConfigRequest, session: SessionState = Depends(get_sess
     session.account_server_url = (account.server_id if account else "") or req.url
     session.account_username = account.username if account else ""
     session.account_is_admin = bool(account and account.is_admin)
+    session.settings_identity = (req.server_type, req.url, req.username)
     # The verified name when there is one, so "in use by" shows the real
     # account; the request body's value stays the fallback for a server
     # that could not answer (and for Plex, until plex.tv has confirmed it).
