@@ -13,7 +13,7 @@ export interface PlaylistSort {
 
 export const PLAYLIST_SORT_KEYS: PlaylistSortKey[] = ['changed', 'name', 'songCount', 'duration']
 
-export type PlaylistSegment = 'all' | 'mine' | 'smart' | 'shared'
+export type PlaylistSegment = 'all' | 'mine' | 'smart' | 'sharedByMe' | 'sharedWithMe'
 
 const STORAGE_KEY = 'beacon.playlistSort'
 const DEFAULT_SORT: PlaylistSort = { key: 'changed', direction: 'desc' }
@@ -52,16 +52,59 @@ export function sortPlaylists(playlists: Playlist[], sort: PlaylistSort): Playli
 export function inSegment(playlist: Playlist, segment: PlaylistSegment, username: string): boolean {
   if (segment === 'smart') return playlist.smart
   if (segment === 'all') return true
-  return isOwnedBy(playlist, username) === (segment === 'mine')
+  const owned = isOwnedBy(playlist, username)
+  if (segment === 'sharedByMe') return owned && playlist.public
+  return owned === (segment === 'mine')
 }
 
 /** The groups worth offering for this list. Empty when there is nothing to
  * tell apart, so a server without smart or shared playlists shows no switch. */
 export function availableSegments(playlists: Playlist[], username: string): PlaylistSegment[] {
-  const extra = (['smart', 'shared'] as const).filter((segment) =>
+  const extra = (['smart', 'sharedByMe', 'sharedWithMe'] as const).filter((segment) =>
     playlists.some((playlist) => inSegment(playlist, segment, username)),
   )
   return extra.length ? ['all', 'mine', ...extra] : []
+}
+
+export interface PlaylistSections {
+  /** The user's own that nobody else sees. */
+  mine: Playlist[]
+  sharedByMe: Playlist[]
+  sharedWithMe: Playlist[]
+}
+
+/** The sections a page lists playlists under, each playlist in exactly one. */
+export function sectionPlaylists(playlists: Playlist[], username: string): PlaylistSections {
+  const sharedByMe = (playlist: Playlist) => inSegment(playlist, 'sharedByMe', username)
+  const mine = (playlist: Playlist) => inSegment(playlist, 'mine', username)
+  return {
+    mine: playlists.filter((playlist) => mine(playlist) && !sharedByMe(playlist)),
+    sharedByMe: playlists.filter(sharedByMe),
+    sharedWithMe: playlists.filter((playlist) => !mine(playlist)),
+  }
+}
+
+export interface PlaylistSection {
+  key: keyof PlaylistSections
+  title: string
+  playlists: Playlist[]
+}
+
+/** The sections that have anything in them, titled, in page order. */
+export function playlistSectionsFor(
+  playlists: Playlist[],
+  username: string,
+  t: (key: string) => string,
+): PlaylistSection[] {
+  const sections = sectionPlaylists(playlists, username)
+  const titles = {
+    mine: 'playlists.personal',
+    sharedByMe: 'playlists.sharedByMe',
+    sharedWithMe: 'playlists.sharedWithMe',
+  } as const
+  return (Object.keys(titles) as (keyof PlaylistSections)[])
+    .filter((key) => sections[key].length)
+    .map((key) => ({ key, title: t(titles[key]), playlists: sections[key] }))
 }
 
 export function loadPlaylistSort(): PlaylistSort {

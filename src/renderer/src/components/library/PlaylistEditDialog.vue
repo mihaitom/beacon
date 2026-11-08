@@ -34,13 +34,7 @@
         >
           {{ $t('playlists.ownerLogin') }}
         </v-btn>
-        <v-switch
-          v-if="capabilities.playlistDetails"
-          v-model="isPublic"
-          :label="$t('playlists.public')"
-          color="primary"
-          hide-details
-        />
+        <playlist-visibility v-if="capabilities.playlistDetails" v-model="isPublic" />
       </v-card-text>
       <v-card-actions>
         <v-spacer />
@@ -56,6 +50,7 @@
 
 <script lang="ts">
 import NavidromePasswordDialog from '@/components/smartPlaylist/NavidromePasswordDialog.vue'
+import PlaylistVisibility from './PlaylistVisibility.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useLibraryStore } from '@/stores/library'
 import {
@@ -80,7 +75,7 @@ import type { PlaylistChanges } from '@/services/subsonic/client'
  */
 export default {
   name: 'PlaylistEditDialog',
-  components: { NavidromePasswordDialog },
+  components: { NavidromePasswordDialog, PlaylistVisibility },
   emits: ['saved'],
   data() {
     return {

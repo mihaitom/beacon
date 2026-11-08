@@ -13,7 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
-- The Playlists page is now a wall of large record stacks that flip through on hover and tint the page with the cover in front; you can switch to the list as on Albums, sort by last edited, name, number of songs or length, and narrow it to your own, smart or shared playlists
+- The Playlists page is now a wall of large record stacks that flip through on hover and tint the page with the cover in front; you can switch to the list as on Albums, sort by last edited, name, number of songs or length, and narrow it to your own or smart playlists, those you share or those shared with you. "Global playlists" are now listed as "Shared by me" and "Shared with me"
 
 ### Fixed
 

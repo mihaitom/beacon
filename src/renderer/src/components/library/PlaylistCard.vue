@@ -61,14 +61,14 @@
       <div class="playlist-card__name">
         <span class="playlist-card__clip">{{ playlist.name }}</span>
         <v-icon
-          v-if="!row && playlist.smart"
+          v-if="playlist.smart"
           icon="mdi-auto-fix"
           size="16"
           class="playlist-card__mark"
           :title="$t('playlists.smart')"
         />
         <v-icon
-          v-else-if="!row && playlist.public"
+          v-if="playlist.public"
           icon="mdi-earth"
           size="16"
           class="playlist-card__mark"
@@ -77,13 +77,6 @@
       </div>
       <div class="text-body-small text-medium-emphasis playlist-card__line">
         {{ row ? meta : shortMeta }}
-        <v-icon
-          v-if="row && playlist.public"
-          icon="mdi-earth"
-          size="14"
-          class="playlist-card__public"
-          :title="$t('playlists.public')"
-        />
       </div>
       <!-- Both lines keep their place while the summary loads, so the list
        - does not shift as the summaries come in one card at a time. -->
@@ -205,7 +198,7 @@ export default {
       default: false,
     },
     // Set in the "global playlists" section, where every playlist belongs
-    // to someone else (see PlaylistsView.vue's globalPlaylists).
+    // to someone else (see PlaylistsView.vue's sections).
     showOwner: {
       type: Boolean,
       default: false,
@@ -262,7 +255,6 @@ export default {
       const parts = [
         this.$t('playlists.songCount', { count: this.$n(this.playlist.songCount) }),
         formatTotalDuration(this.playlist.duration, this.$t),
-        this.playlist.smart ? this.$t('playlists.smart') : '',
         ago ? this.$t('playlists.editedAgo', { ago }) : '',
       ]
       if (this.showOwner && this.playlist.owner) {
@@ -512,11 +504,6 @@ export default {
 .playlist-card__who > .playlist-card__clip {
   flex-shrink: 1;
   min-width: 0;
-}
-
-.playlist-card__public {
-  margin-left: 4px;
-  vertical-align: -2px;
 }
 
 /* One line's height even when empty, for the same reason as the artist

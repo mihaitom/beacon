@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { accountScopedKey } from '@/services/accountKey'
 import {
   availableSegments,
+  playlistSectionsFor,
   inSegment,
   loadPlaylistSort,
   savePlaylistSort,
@@ -96,9 +97,9 @@ describe('segments', () => {
     const other = makePlaylist('y', { owner: 'anna' })
 
     expect(inSegment(bridged, 'mine', 'me')).toBe(true)
-    expect(inSegment(bridged, 'shared', 'me')).toBe(false)
+    expect(inSegment(bridged, 'sharedWithMe', 'me')).toBe(false)
     expect(inSegment(other, 'mine', 'me')).toBe(false)
-    expect(inSegment(other, 'shared', 'me')).toBe(true)
+    expect(inSegment(other, 'sharedWithMe', 'me')).toBe(true)
   })
 
   it('counts a smart playlist from someone else as smart too', () => {
@@ -116,8 +117,56 @@ describe('segments', () => {
     expect(availableSegments([makePlaylist('a', { owner: 'anna' })], 'me')).toEqual([
       'all',
       'mine',
-      'shared',
+      'sharedWithMe',
     ])
+    expect(availableSegments([makePlaylist('a', { public: true })], 'me')).toEqual([
+      'all',
+      'mine',
+      'sharedByMe',
+    ])
+  })
+
+  it('counts only your own public playlists as shared by you', () => {
+    expect(inSegment(makePlaylist('a', { public: true }), 'sharedByMe', 'me')).toBe(true)
+    expect(inSegment(makePlaylist('b'), 'sharedByMe', 'me')).toBe(false)
+    expect(inSegment(makePlaylist('c', { owner: 'anna', public: true }), 'sharedByMe', 'me')).toBe(
+      false,
+    )
+  })
+
+  it('keeps a shared playlist of your own among yours when picking "mine"', () => {
+    expect(inSegment(makePlaylist('a', { public: true }), 'mine', 'me')).toBe(true)
+  })
+})
+
+describe('playlistSectionsFor', () => {
+  const t = (key: string) => key
+
+  it('puts every playlist in exactly one section, in page order', () => {
+    const sections = playlistSectionsFor(
+      [
+        makePlaylist('anna', { owner: 'anna' }),
+        makePlaylist('public', { public: true }),
+        makePlaylist('private'),
+      ],
+      'me',
+      t,
+    )
+
+    expect(sections.map((section) => [section.key, ids(section.playlists)])).toEqual([
+      ['mine', ['private']],
+      ['sharedByMe', ['public']],
+      ['sharedWithMe', ['anna']],
+    ])
+  })
+
+  it('leaves out a section with nothing in it', () => {
+    expect(playlistSectionsFor([makePlaylist('a')], 'me', t).map((s) => s.key)).toEqual(['mine'])
+    expect(playlistSectionsFor([], 'me', t)).toEqual([])
+  })
+
+  it('titles each section', () => {
+    expect(playlistSectionsFor([makePlaylist('a')], 'me', t)[0]!.title).toBe('playlists.personal')
   })
 })
 

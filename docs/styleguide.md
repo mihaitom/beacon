@@ -490,6 +490,10 @@ buttons, and the record in front casts its colour on the page around it,
 following each flip. That glow is for the one card being pointed at, so it
 never amounts to a page of moving pictures.
 
+Its sections say who sees a playlist: "My playlists" are the user's own and
+private, "Shared by me" their own and public, "Shared with me" everyone
+else's. Each playlist is in exactly one (`services/library/playlistBrowse.ts`).
+
 Albums, Artists and Playlists switch between their grid and a list (a `v-btn-toggle`
 with `.beacon-view-toggle` in the filter row - the field's 40px pill, the
 shown layout in amber - remembered per page). A list line is the card itself in
@@ -760,6 +764,11 @@ inputs.
   result looks the way it does". The second is information, never an error.
 - **A name that is edited in place** wears the title's own type
   (`.detail-title`) and shows it is a field only on hover and focus.
+- **The new-playlist dialog has the same head** (`CreatePlaylistDialog.vue`):
+  empty record sleeves beside the name, with a line under it because an
+  empty field has nothing else to show it is one. The front
+  sleeve lights up with a name, the moment it can be created. Private or public is
+  two tiles saying who sees it (`PlaylistVisibility.vue`), not a switch.
 
 ## Debug overlays
 

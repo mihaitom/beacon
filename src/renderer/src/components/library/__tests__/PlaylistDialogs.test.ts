@@ -34,6 +34,7 @@ const global = {
     // In place, so the form is in the wrapper rather than teleported away.
     VDialog: { template: '<div><slot /></div>' },
     NavidromePasswordDialog: { template: '<div />', methods: { ask } },
+    CoverArt: true,
   },
 }
 
@@ -131,7 +132,7 @@ describe('PlaylistEditDialog', () => {
     const { update } = stubStore()
     const { vm, wrapper } = await openEdit(playlist({ comment: undefined }))
 
-    expect(wrapper.findComponent({ name: 'VSwitch' }).exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'PlaylistVisibility' }).exists()).toBe(false)
     expect(wrapper.findComponent({ name: 'VTextarea' }).exists()).toBe(false)
     vm.isPublic = true
     vm.comment = 'x'
@@ -275,8 +276,35 @@ describe('CreatePlaylistDialog', () => {
     signIn('jellyfin')
     const { wrapper } = await openCreate()
 
-    expect(wrapper.findComponent({ name: 'VSwitch' }).exists()).toBe(false)
+    expect(wrapper.findComponent({ name: 'PlaylistVisibility' }).exists()).toBe(false)
     expect(wrapper.findComponent({ name: 'VTextarea' }).exists()).toBe(false)
+  })
+
+  it('creates on Enter in the name, and not without a name', async () => {
+    signIn('jellyfin')
+    const create = vi.spyOn(useLibraryStore(), 'createPlaylist').mockResolvedValue()
+    const { wrapper } = await openCreate()
+    const field = wrapper.get('input.new-playlist__name')
+
+    await field.setValue('   ')
+    await field.trigger('keyup.enter')
+    expect(create).not.toHaveBeenCalled()
+
+    await field.setValue('Mix')
+    await field.trigger('keyup.enter')
+    expect(create).toHaveBeenCalledWith('Mix', ['s1'], {})
+  })
+
+  it('picks private or public from its two tiles', async () => {
+    signIn('navidrome')
+    const { wrapper, vm } = await openCreate()
+    const tiles = wrapper.findComponent({ name: 'PlaylistVisibility' }).findAll('button')
+
+    await tiles[1]!.trigger('click')
+    expect(vm.isPublic).toBe(true)
+
+    await tiles[0]!.trigger('click')
+    expect(vm.isPublic).toBe(false)
   })
 
   it('forgets what was typed the last time', async () => {

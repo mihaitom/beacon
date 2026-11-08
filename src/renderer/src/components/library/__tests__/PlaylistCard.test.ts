@@ -115,6 +115,12 @@ describe('PlaylistCard', () => {
     expect(wrapper.get('.mdi-headphones').element.closest('button')!.disabled).toBe(true)
   })
 
+  it('marks a smart playlist in the list form too', async () => {
+    const { wrapper } = await mountRow({ playlist: makePlaylist({ smart: true }) })
+
+    expect(wrapper.find('.mdi-auto-fix').exists()).toBe(true)
+  })
+
   it('says how long ago it was edited, where the server says', async () => {
     vi.useFakeTimers({ now: Date.parse('2026-10-06T12:00:00Z'), toFake: ['Date'] })
     const { wrapper } = await mountRow({

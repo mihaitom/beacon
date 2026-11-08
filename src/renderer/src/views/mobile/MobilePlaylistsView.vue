@@ -19,33 +19,21 @@
 
     <v-progress-circular v-if="libraryStore.loading" indeterminate class="view-notice" />
 
-    <template v-if="personalPlaylists.length">
-      <h2 class="section-title">{{ $t('playlists.personal') }}</h2>
+    <template v-for="section in sections" :key="section.key">
+      <h2 class="section-title">{{ section.title }}</h2>
       <div class="mobile-playlist-list">
         <mobile-playlist-row
-          v-for="playlist in personalPlaylists"
+          v-for="playlist in section.playlists"
           :key="playlist.id"
           :playlist="playlist"
-          @play="play"
-        />
-      </div>
-    </template>
-
-    <template v-if="globalPlaylists.length">
-      <h2 class="section-title">{{ $t('playlists.global') }}</h2>
-      <div class="mobile-playlist-list">
-        <mobile-playlist-row
-          v-for="playlist in globalPlaylists"
-          :key="playlist.id"
-          :playlist="playlist"
-          show-owner
+          :show-owner="section.key === 'sharedWithMe'"
           @play="play"
         />
       </div>
     </template>
 
     <empty-state
-      v-if="!libraryStore.loading && !personalPlaylists.length && !globalPlaylists.length"
+      v-if="!libraryStore.loading && !sections.length"
       :icon="filterQuery ? 'mdi-magnify-close' : 'mdi-playlist-music-outline'"
       :title="
         filterQuery
@@ -64,7 +52,7 @@ import { usePlaybackStore } from '@/stores/playback'
 import { matchesAllTerms } from '@/services/textSearch'
 import MobilePlaylistRow from '@/components/mobile/MobilePlaylistRow.vue'
 import StickyFilter from '@/components/StickyFilter.vue'
-import { isOwnedBy } from '@/services/library/playlistOwnership'
+import { playlistSectionsFor, type PlaylistSection } from '@/services/library/playlistBrowse'
 import type { Playlist } from '@/types/library'
 
 let debounceTimer: ReturnType<typeof setTimeout> | undefined
@@ -92,11 +80,12 @@ export default {
         matchesAllTerms(query, [playlist.name], { exact: true }),
       )
     },
-    personalPlaylists(): Playlist[] {
-      return this.filteredPlaylists.filter((p) => isOwnedBy(p, this.authStore.username))
-    },
-    globalPlaylists(): Playlist[] {
-      return this.filteredPlaylists.filter((p) => !isOwnedBy(p, this.authStore.username))
+    sections(): PlaylistSection[] {
+      return playlistSectionsFor(
+        this.filteredPlaylists,
+        this.authStore.username,
+        this.$t.bind(this),
+      )
     },
   },
   watch: {

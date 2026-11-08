@@ -107,43 +107,26 @@
       />
     </div>
 
-    <template v-if="personalPlaylists.length">
-      <h2 class="section-title">{{ $t('playlists.personal') }}</h2>
+    <template v-for="section in sections" :key="section.key">
+      <h2 class="section-title">{{ section.title }}</h2>
       <div :class="containerClass">
         <playlist-card
-          v-for="playlist in personalPlaylists"
+          v-for="playlist in section.playlists"
           :key="playlist.id"
           :playlist="playlist"
           :row="listView"
+          :show-owner="section.key === 'sharedWithMe'"
           @play="playPlaylist"
           @play-next="queuePlaylist($event, 'next')"
           @add-to-queue="queuePlaylist($event, 'end')"
           @rename="openRename"
           @delete="openDelete"
-        />
-      </div>
-    </template>
-
-    <template v-if="globalPlaylists.length">
-      <h2 class="section-title">{{ $t('playlists.global') }}</h2>
-      <div :class="containerClass">
-        <playlist-card
-          v-for="playlist in globalPlaylists"
-          :key="playlist.id"
-          :playlist="playlist"
-          :row="listView"
-          show-owner
-          @rename="openRename"
-          @delete="openDelete"
-          @play="playPlaylist"
-          @play-next="queuePlaylist($event, 'next')"
-          @add-to-queue="queuePlaylist($event, 'end')"
         />
       </div>
     </template>
 
     <empty-state
-      v-if="!libraryStore.loading && !personalPlaylists.length && !globalPlaylists.length"
+      v-if="!libraryStore.loading && !sections.length"
       :icon="filterQuery ? 'mdi-magnify-close' : 'mdi-playlist-music-outline'"
       :title="
         filterQuery
@@ -175,7 +158,6 @@ import CreatePlaylistDialog from '@/components/library/CreatePlaylistDialog.vue'
 import PlaylistBuilderDialog from '@/components/library/PlaylistBuilderDialog.vue'
 import PlaylistDeleteDialog from '@/components/library/PlaylistDeleteDialog.vue'
 import StickyFilter from '@/components/StickyFilter.vue'
-import { isOwnedBy } from '@/services/library/playlistOwnership'
 import {
   PLAYLIST_SORT_KEYS,
   availableSegments,
@@ -184,6 +166,8 @@ import {
   loadPlaylistSort,
   savePlaylistSort,
   sortPlaylists,
+  playlistSectionsFor,
+  type PlaylistSection,
   type PlaylistSegment,
   type PlaylistSort,
   type PlaylistSortKey,
@@ -242,7 +226,8 @@ export default {
         all: 'segmentAll',
         mine: 'segmentMine',
         smart: 'segmentSmart',
-        shared: 'segmentShared',
+        sharedByMe: 'sharedByMe',
+        sharedWithMe: 'sharedWithMe',
       } as const
       return availableSegments(this.libraryStore.playlists, this.authStore.username).map(
         (value) => ({ title: this.$t(`playlists.${titles[value]}`), value }),
@@ -276,13 +261,12 @@ export default {
       )
       return sortPlaylists(matching, this.sort)
     },
-    // Own playlists first, everything else (public playlists shared by
-    // other users) below in its own section.
-    personalPlaylists(): Playlist[] {
-      return this.filteredPlaylists.filter((p) => isOwnedBy(p, this.authStore.username))
-    },
-    globalPlaylists(): Playlist[] {
-      return this.filteredPlaylists.filter((p) => !isOwnedBy(p, this.authStore.username))
+    sections(): PlaylistSection[] {
+      return playlistSectionsFor(
+        this.filteredPlaylists,
+        this.authStore.username,
+        this.$t.bind(this),
+      )
     },
   },
   watch: {
