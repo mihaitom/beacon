@@ -17,7 +17,9 @@
       <!-- One sleeve per station: a station has one logo, so there is
        - nothing to stack or flip through. -->
       <div class="radio-card__sleeve" :style="sleeveStyle">
+        <img v-if="hazeSrc" class="radio-card__haze" :src="hazeSrc" alt="" />
         <cover-art
+          class="radio-card__logo"
           :radio-favicon="radioFavicon"
           :size="logoSize"
           contain
@@ -123,7 +125,7 @@ import type { RadioStation } from '@/types/library'
 // (see faviconSizeStep), so one resolved logo serves all of them.
 const FAVICON_MIN_SIZE = 88
 // How far a logo is enlarged at most: past this a small favicon goes blurry.
-const MAX_LOGO_SCALE = 2
+const MAX_LOGO_SCALE = 3
 const GRID_TAGS = 3
 
 export default {
@@ -173,10 +175,19 @@ export default {
       const sleeve = this.look?.sleeve
       return sleeve ? { backgroundColor: `rgb(${sleeve.join(', ')})` } : undefined
     },
+    /** A logo with no background of its own to continue stands in front of
+     * a blurred copy of itself; the sleeve would be plain grey otherwise. */
+    hazeSrc(): string | null {
+      return this.look && !this.look.sleeve ? this.logoSrc : null
+    },
     logoSize(): string {
       const box = this.row ? '60px' : '62cqi'
-      const pixels = this.look?.pixels
-      return pixels ? `min(${box}, ${pixels * MAX_LOGO_SCALE}px)` : box
+      if (!this.look) return box
+      const { fill, pixels } = this.look
+      // Grown by the margin the image has around the logo, so that it is the
+      // logos that come out the same size; the sleeve clips the margin.
+      const fitted = `calc(${box} / ${fill})`
+      return pixels ? `min(${fitted}, ${pixels * MAX_LOGO_SCALE}px)` : fitted
     },
     /** Which logo the glow should follow; none until it is wanted, so a
      * page of cards reads no colour nobody asked about. */
@@ -314,10 +325,31 @@ export default {
   place-items: center;
   width: 100cqi;
   height: 100cqi;
+  overflow: hidden;
   border-radius: 4px;
   background-color: rgb(var(--v-theme-surface-bright));
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.45);
   transition: background-color 0.3s ease;
+}
+
+/* Oversized so the blur's faded rim falls outside the sleeve. */
+.radio-card__haze {
+  position: absolute;
+  top: -30%;
+  left: -30%;
+  width: 160%;
+  height: 160%;
+  object-fit: cover;
+  filter: blur(46px) saturate(1.5);
+  opacity: 0.55;
+}
+
+/* The sleeve is the backdrop: CoverFrame's own would show through a
+ * transparent logo as a second, lighter square. Both classes, to outrank its
+ * scoped rule whatever the build order. */
+.radio-card__logo.cover-art {
+  position: relative;
+  background: transparent;
 }
 
 .radio-card__controls {
@@ -458,6 +490,10 @@ export default {
 .radio-card--row .radio-card__sleeve {
   width: 88px;
   height: 88px;
+}
+
+.radio-card--row .radio-card__haze {
+  filter: blur(18px) saturate(1.5);
 }
 
 .radio-card--row .radio-card__info {

@@ -11,7 +11,7 @@ import RadioStationCard from '../RadioStationCard.vue'
 import { useRadioStationInfoStore } from '@/stores/radioStationInfo'
 import { useRadioMetadataStore } from '@/stores/radioMetadata'
 import { extractDominantColor } from '@/services/colorExtractor'
-import { readLogoLook } from '@/services/stationLogo'
+import { readLogoLook, type LogoLook } from '@/services/stationLogo'
 import type { RadioStation } from '@/types/library'
 
 vi.mock('@/services/stationLogo', () => ({ readLogoLook: vi.fn() }))
@@ -231,7 +231,7 @@ describe('RadioStationCard', () => {
     })
 
     it("puts the logo on a sleeve of the logo's own colour", async () => {
-      vi.mocked(readLogoLook).mockResolvedValue({ sleeve: [200, 10, 20], pixels: 512 })
+      vi.mocked(readLogoLook).mockResolvedValue({ sleeve: [200, 10, 20], pixels: 512, fill: 1 })
       const wrapper = mountRow({ row: false })
 
       await loadLogo(wrapper, 'blob:logo')
@@ -240,27 +240,64 @@ describe('RadioStationCard', () => {
       expect(sleeve.style.backgroundColor).toBe('rgb(200, 10, 20)')
     })
 
+    describe('a logo with no background of its own', () => {
+      it('stands in front of a blurred copy of itself', async () => {
+        vi.mocked(readLogoLook).mockResolvedValue({ sleeve: null, pixels: 512, fill: 1 })
+        const wrapper = mountRow({ row: false })
+
+        await loadLogo(wrapper, 'blob:floating')
+
+        expect(wrapper.get('.radio-card__haze').attributes('src')).toBe('blob:floating')
+      })
+
+      it('gets none when the sleeve already has a colour', async () => {
+        vi.mocked(readLogoLook).mockResolvedValue({ sleeve: [200, 10, 20], pixels: 512, fill: 1 })
+        const wrapper = mountRow({ row: false })
+
+        await loadLogo(wrapper, 'blob:solid')
+
+        expect(wrapper.find('.radio-card__haze').exists()).toBe(false)
+      })
+
+      it('gets none when the logo could not be read', async () => {
+        const wrapper = mountRow({ row: false })
+
+        await loadLogo(wrapper, 'blob:unreadable')
+
+        expect(wrapper.find('.radio-card__haze').exists()).toBe(false)
+      })
+    })
+
     it('does not enlarge a small favicon past what it can carry', async () => {
-      vi.mocked(readLogoLook).mockResolvedValue({ sleeve: null, pixels: 48 })
+      vi.mocked(readLogoLook).mockResolvedValue({ sleeve: null, pixels: 48, fill: 1 })
       const wrapper = mountRow({ row: false })
 
       await loadLogo(wrapper, 'blob:favicon')
 
-      expect(logoOf(wrapper).props('size')).toContain('96px')
+      expect(logoOf(wrapper).props('size')).toContain('144px')
+    })
+
+    it('sizes a logo by what it fills, not by its transparent margin', async () => {
+      vi.mocked(readLogoLook).mockResolvedValue({ sleeve: null, pixels: 512, fill: 0.5 })
+      const wrapper = mountRow({ row: false })
+
+      await loadLogo(wrapper, 'blob:margin')
+
+      expect(logoOf(wrapper).props('size')).toContain('/ 0.5')
     })
 
     /** Logos arrive in batches and a reused card changes station, so a slow
      * read of the old logo can finish after the new one. */
     it('ignores the look of a logo that has been replaced meanwhile', async () => {
-      let finishOld: (look: { sleeve: [number, number, number]; pixels: number }) => void
+      let finishOld: (look: LogoLook) => void
       vi.mocked(readLogoLook)
         .mockReturnValueOnce(new Promise((resolve) => (finishOld = resolve)))
-        .mockResolvedValueOnce({ sleeve: [1, 2, 3], pixels: 512 })
+        .mockResolvedValueOnce({ sleeve: [1, 2, 3], pixels: 512, fill: 1 })
       const wrapper = mountRow({ row: false })
 
       await loadLogo(wrapper, 'blob:old')
       await loadLogo(wrapper, 'blob:new')
-      finishOld!({ sleeve: [9, 9, 9], pixels: 512 })
+      finishOld!({ sleeve: [9, 9, 9], pixels: 512, fill: 1 })
       await flushPromises()
 
       const sleeve = wrapper.get('.radio-card__sleeve').element as HTMLElement

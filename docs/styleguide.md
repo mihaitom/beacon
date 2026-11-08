@@ -484,8 +484,11 @@ each with its own moving picture is too much at once.
 The Radio page's default form is a wall built like the Playlists one, one
 sleeve per station rather than a stack: a station has one logo, so there is
 nothing to flip through. The sleeve takes the logo's own background colour, so
-a logo reads as a whole cover (`services/stationLogo.ts`), and a logo is
-enlarged at most twofold, so a small favicon stays small rather than blurred.
+a logo reads as a whole cover (`services/stationLogo.ts`); a logo without one
+stands in front of a blurred copy of itself. A logo is
+enlarged at most threefold, and sized by what it fills rather than its
+transparent margin, so logos come out alike without a small favicon turning
+to mush.
 The station that is on is marked by its name and level bars, not a fill.
 
 The Playlists page's default form is a wall of record stacks
