@@ -1,5 +1,6 @@
 ---
-order: 2
+group: connecting
+order: 4
 ---
 
 # Home automation API

@@ -1393,8 +1393,11 @@ export default {
   help: {
     title: 'Guida',
     englishOnly: 'Queste pagine sono disponibili solo in inglese.',
-    guides: 'Guide',
-    reference: 'Approfondimenti',
+    group_about: 'Informazioni su Beacon',
+    group_listening: 'Riproduzione e libreria',
+    group_casting: 'Altoparlanti e rete',
+    group_party: 'Modalità festa',
+    group_connecting: 'Collegare Beacon',
     faq: 'Domande frequenti',
     conversion: 'Cosa viene convertito e perché',
     search: 'Cerca nella guida',

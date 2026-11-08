@@ -28,11 +28,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The dialogs for creating and editing a playlist show its records beside the name and say who gets to see it
 - The Radio page is now a wall of station logos, each on a sleeve in the logo's own colours, with the list still one click away. It can be narrowed by your most common genres and sorted by last heard, name, country or bitrate, and a click on the playing station stops it
 - The Last.fm name is set in Settings next to ListenBrainz, and the playlist builder only starts from it instead of changing it
+- The help is sorted by topic, so that for example the desktop app, your own apps and home automation sit together, and its questions stand out from their answers
 
 ### Fixed
 
 - Home stays current while it is open: "Recently added" picks up new albums after a library scan, "Recently played" moves as soon as a song counts as played, and the top songs no longer disappear when a scan finishes
 - The queue no longer twitches while it slides in or out, and the page next to it follows smoothly
+- In the help's contents, clicking one of the last questions of a page marks that question instead of one further up
 
 ## [1.11.0] - 2026-11-07
 

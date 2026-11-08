@@ -27,6 +27,10 @@ export type HelpLink =
 const REPO_URL = `${packageJson.homepage}/blob/main`
 const REPO_TREE_URL = `${packageJson.homepage}/tree/main`
 
+/** The topics the dialog sorts its pages under. The folders say what kind of
+ * page something is, which is no use to somebody looking for a subject. */
+export const HELP_GROUPS = ['about', 'listening', 'casting', 'party', 'connecting'] as const
+
 export interface HelpPage {
   /** The file's path under docs/help/ without `.md`:
    * `guides/party-mode`, `faq/playback`. */
@@ -37,7 +41,10 @@ export interface HelpPage {
   title: string
   /** Everything under that heading. */
   body: string
-  /** From the file's front matter; pages without one come last. */
+  /** From the file's front matter: one of HELP_GROUPS. */
+  group: string
+  /** From the file's front matter, its place in its group; pages without
+   * one come last. */
   order: number
   /** Every heading id on the page, so a link finds the page holding it. */
   anchors: Set<string>
@@ -93,6 +100,7 @@ function helpPage(file: string, raw: string): HelpPage {
   const path = file.slice(file.indexOf('docs/help/'))
   const front = raw.match(FRONT_MATTER)
   const order = front?.[1]!.match(/^order:\s*(\d+)\s*$/m)?.[1]
+  const group = front?.[1]!.match(/^group:\s*(\S+)\s*$/m)?.[1]
   const content = front ? raw.slice(front[0].length) : raw
   const title = content.match(TITLE)
   const body = title ? content.slice(title[0].length) : content
@@ -101,6 +109,7 @@ function helpPage(file: string, raw: string): HelpPage {
     path,
     title: title ? title[1]!.trim() : '',
     body,
+    group: group ?? '',
     order: order ? Number(order) : Infinity,
     anchors: anchorsOf(body),
   }
@@ -121,23 +130,8 @@ export function pageFor(id: string, anchor: string | null = null): HelpPage {
   return (anchor ? pages.find((page) => page.anchors.has(anchor)) : undefined) ?? pages[0]!
 }
 
-/** The FAQ, one page per topic. */
-export function isFaqPage(page: HelpPage): boolean {
-  return page.id.startsWith('faq/')
-}
-
-/** Step by step, to set something up or use it. */
-export function isGuidePage(page: HelpPage): boolean {
-  return page.id.startsWith('guides/')
-}
-
-/** To look things up in: how a decision is made, an interface. */
-export function isReferencePage(page: HelpPage): boolean {
-  return page.id.startsWith('reference/')
-}
-
-/** What someone already running Beacon gets out of the README, heading the
- * help dialog's FAQ as "What Beacon can do". */
+/** What someone already running Beacon gets out of the README, the help
+ * dialog's first entry as "What Beacon can do". */
 export const FEATURES_PAGE = findHelpPage('features')
 
 /** What a link in the file at `fromPath` (relative to the repository root)

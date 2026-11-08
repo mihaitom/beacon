@@ -1397,8 +1397,11 @@ export default {
   help: {
     title: 'Hilfe',
     englishOnly: 'Diese Seiten gibt es nur auf Englisch.',
-    guides: 'Anleitungen',
-    reference: 'Hintergrund',
+    group_about: 'Über Beacon',
+    group_listening: 'Wiedergabe und Mediathek',
+    group_casting: 'Lautsprecher und Netzwerk',
+    group_party: 'Partymodus',
+    group_connecting: 'Beacon verbinden',
     faq: 'Häufige Fragen',
     conversion: 'Was wann umgewandelt wird',
     search: 'Hilfe durchsuchen',

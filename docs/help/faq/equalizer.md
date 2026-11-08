@@ -1,5 +1,6 @@
 ---
-order: 5
+group: listening
+order: 3
 ---
 
 # Equalizer

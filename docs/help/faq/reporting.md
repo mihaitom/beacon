@@ -1,5 +1,6 @@
 ---
-order: 10
+group: about
+order: 3
 ---
 
 # Reporting a problem

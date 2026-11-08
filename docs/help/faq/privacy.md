@@ -1,5 +1,6 @@
 ---
-order: 8
+group: about
+order: 2
 ---
 
 # What leaves the deployment

@@ -1,5 +1,6 @@
 ---
-order: 4
+group: connecting
+order: 3
 ---
 
 # Home automation

@@ -3,10 +3,8 @@ import dockerfile from '../../../../../../Dockerfile?raw'
 import dockerignore from '../../../../../../.dockerignore?raw'
 import {
   FEATURES_PAGE,
+  HELP_GROUPS,
   HELP_PAGES,
-  isFaqPage,
-  isGuidePage,
-  isReferencePage,
   pageFor,
   renderHelpPage,
   resolveLink,
@@ -94,9 +92,9 @@ describe('the bundled docs', () => {
 
   it('are every file under docs/help/, the FAQ one page per topic', () => {
     expect(HELP_PAGES.map((page) => page.id)).toContain('guides/party-mode')
-    expect(HELP_PAGES.filter(isFaqPage).length).toBeGreaterThan(1)
-    expect(HELP_PAGES.filter(isGuidePage).length).toBeGreaterThan(1)
-    expect(HELP_PAGES.filter(isReferencePage).length).toBeGreaterThan(0)
+    expect(HELP_PAGES.filter((page) => page.id.startsWith('faq/')).length).toBeGreaterThan(1)
+    expect(HELP_PAGES.filter((page) => page.id.startsWith('guides/')).length).toBeGreaterThan(1)
+    expect(HELP_PAGES.filter((page) => page.id.startsWith('reference/')).length).toBeGreaterThan(0)
     expect(FEATURES_PAGE.id).toBe('features')
   })
 
@@ -108,25 +106,21 @@ describe('the bundled docs', () => {
     }
   })
 
-  it('come in the order their front matter gives', () => {
-    for (const group of [isFaqPage, isGuidePage, isReferencePage]) {
-      const orders = HELP_PAGES.filter(group).map((page) => page.order)
+  it('come in the order their front matter gives, within each topic', () => {
+    for (const group of HELP_GROUPS) {
+      const orders = HELP_PAGES.filter((page) => page.group === group).map((page) => page.order)
       expect(orders).toEqual([...orders].sort((a, b) => a - b))
       expect(orders.every(Number.isFinite)).toBe(true)
     }
   })
 
-  // features.md is the one page outside the three folders, and the dialog
-  // puts it at the top of the FAQ itself.
-  it('each belong to the FAQ, the guides or the background', () => {
-    for (const page of HELP_PAGES) {
-      if (page === FEATURES_PAGE) continue
-      expect(isFaqPage(page) || isGuidePage(page) || isReferencePage(page), page.id).toBe(true)
-    }
+  // A page without one would be missing from the contents, with no error.
+  it('each belong to a topic', () => {
+    for (const page of HELP_PAGES) expect(HELP_GROUPS, page.id).toContain(page.group)
   })
 
   it('find the FAQ topic that holds a question', () => {
-    for (const page of HELP_PAGES.filter(isFaqPage)) {
+    for (const page of HELP_PAGES.filter((page) => page.id.startsWith('faq/'))) {
       for (const anchor of page.anchors) {
         expect(pageFor('faq', anchor).id, `${page.id}#${anchor}`).toBe(page.id)
       }

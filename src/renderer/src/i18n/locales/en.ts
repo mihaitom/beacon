@@ -1382,8 +1382,11 @@ export default {
   help: {
     title: 'Help',
     englishOnly: 'These pages are only available in English.',
-    guides: 'Guides',
-    reference: 'Background',
+    group_about: 'About Beacon',
+    group_listening: 'Playback and library',
+    group_casting: 'Speakers and network',
+    group_party: 'Party mode',
+    group_connecting: 'Connecting Beacon',
     faq: 'FAQ',
     conversion: 'What gets converted, and why',
     search: 'Search help',

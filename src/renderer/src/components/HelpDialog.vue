@@ -87,7 +87,7 @@
 
           <v-list v-else density="compact" nav class="help-dialog__toc">
             <template v-for="group in groups" :key="group.title">
-              <v-list-subheader>{{ group.title }}</v-list-subheader>
+              <h3 class="eyebrow-label panel-title help-dialog__group">{{ group.title }}</h3>
               <template v-for="page in group.pages" :key="page.id">
                 <v-list-item
                   :active="page.id === pageId"
@@ -113,7 +113,11 @@
 
         <div ref="body" class="help-dialog__content" @scroll.passive="onScroll">
           <!-- eslint-disable-next-line vue/no-v-html -- our own docs/help/, rendered by markdown-it with html off, never user input -->
-          <div class="beacon-markdown" @click="onContentClick" v-html="html" />
+          <div
+            class="beacon-markdown beacon-markdown--sections"
+            @click="onContentClick"
+            v-html="html"
+          />
         </div>
       </div>
       <v-divider />
@@ -139,11 +143,9 @@ import { emitter } from '@/emitter'
 import packageJson from '../../../../package.json'
 import {
   FEATURES_PAGE,
+  HELP_GROUPS,
   HELP_PAGES,
   findHelpPage,
-  isFaqPage,
-  isGuidePage,
-  isReferencePage,
   pageFor,
   renderHelpPage,
   type HelpPage,
@@ -184,16 +186,9 @@ interface Visit {
   scrollTop: number
 }
 
-/** What Beacon can do heads the FAQ: it answers the first question anyone
- * has. */
-function inFaq(page: HelpPage): boolean {
-  return page === FEATURES_PAGE || isFaqPage(page)
-}
-
 /** The bundled docs (services/help/docs.ts), each opened from where its
  * question comes up and browsable from there: a search over all of them,
- * and the contents of the FAQ, the guides and the background beside the
- * page. */
+ * and their contents by topic beside the page. */
 export default {
   name: 'HelpDialog',
   props: {
@@ -207,6 +202,8 @@ export default {
       pageId: FEATURES_PAGE.id,
       query: '',
       activeAnchor: null as string | null,
+      /** The contents entry last jumped to, and where that left the page. */
+      jumped: null as { anchor: string; scrollTop: number } | null,
       history: [] as Visit[],
       flashTimer: 0,
       listener: null as ((target: string | HelpTarget) => void) | null,
@@ -217,11 +214,10 @@ export default {
       return findHelpPage(this.pageId)
     },
     groups(): { title: string; pages: HelpPage[] }[] {
-      return [
-        { title: this.$t('help.faq'), pages: [FEATURES_PAGE, ...HELP_PAGES.filter(isFaqPage)] },
-        { title: this.$t('help.guides'), pages: HELP_PAGES.filter(isGuidePage) },
-        { title: this.$t('help.reference'), pages: HELP_PAGES.filter(isReferencePage) },
-      ]
+      return HELP_GROUPS.map((group) => ({
+        title: this.groupTitle(group),
+        pages: HELP_PAGES.filter((page) => page.group === group),
+      }))
     },
     contents(): HelpSection[] {
       return tableOfContents(this.page)
@@ -245,6 +241,7 @@ export default {
   watch: {
     pageId() {
       this.activeAnchor = null
+      this.jumped = null
     },
   },
   mounted() {
@@ -274,6 +271,7 @@ export default {
     back() {
       const visit = this.history.pop()
       if (!visit) return
+      this.jumped = null
       this.pageId = visit.page
       void this.$nextTick(() => {
         const body = this.bodyEl()
@@ -300,11 +298,12 @@ export default {
     highlight(text: string): HelpTextRun[] {
       return highlightRuns(text, this.query)
     },
-    /** A FAQ topic says it is one, since its title alone ("Party mode")
-     * can read like the guide of the same name. */
+    groupTitle(group: string): string {
+      return this.$t(`help.group_${group}`)
+    },
     pageLabel(id: string): string {
       const page = findHelpPage(id)
-      return inFaq(page) ? `${this.$t('help.faq')} · ${this.pageTitle(page)}` : page.title
+      return `${this.groupTitle(page.group)} · ${this.pageTitle(page)}`
     },
     /** The README's heading ("Features") reads like a section of it, not
      * like the page it is here - so this one has a title of its own. */
@@ -322,10 +321,23 @@ export default {
       return this.$refs.body as HTMLElement | undefined
     },
     /** The contents entry of the heading being read: the last main heading
-     * at or above the top of the text. */
+     * at or above the top of the text. The questions at the end of a page
+     * can never scroll up that far, so one jumped to stays marked until the
+     * page moves, and the end of the page counts as the last one. */
     onScroll() {
       const body = this.bodyEl()
       if (!body) return
+      if (this.jumped && Math.abs(body.scrollTop - this.jumped.scrollTop) <= 1) {
+        this.activeAnchor = this.jumped.anchor
+        return
+      }
+      this.jumped = null
+      const atEnd =
+        body.scrollTop > 0 && body.scrollTop + body.clientHeight >= body.scrollHeight - 1
+      if (atEnd) {
+        this.activeAnchor = this.contents.at(-1)?.anchor ?? null
+        return
+      }
       const top = body.getBoundingClientRect().top + SCROLL_SPY_OFFSET
       let active: string | null = null
       for (const entry of this.contents) {
@@ -370,6 +382,9 @@ export default {
       } else {
         body.scrollTop = 0
       }
+      this.jumped = this.contents.some((entry) => entry.anchor === anchor)
+        ? { anchor: anchor!, scrollTop: body.scrollTop }
+        : null
       this.onScroll()
     },
     /** Marks the heading jumped to for a moment, so the eye finds it in a
@@ -486,6 +501,16 @@ export default {
 .help-dialog__toc {
   padding: 4px 0 0;
   background: transparent;
+}
+
+/* The padding is the rows': a topic starts where their text does. */
+.help-dialog__group {
+  margin: 20px 0 4px;
+  padding-inline: 8px;
+}
+
+.help-dialog__group:first-child {
+  margin-top: 8px;
 }
 
 /* A question is often longer than the column: wrapped, not cut off, since

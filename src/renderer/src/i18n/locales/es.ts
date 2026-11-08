@@ -1396,8 +1396,11 @@ export default {
   help: {
     title: 'Ayuda',
     englishOnly: 'Estas páginas solo están disponibles en inglés.',
-    guides: 'Guías',
-    reference: 'Más a fondo',
+    group_about: 'Acerca de Beacon',
+    group_listening: 'Reproducción y biblioteca',
+    group_casting: 'Altavoces y red',
+    group_party: 'Modo fiesta',
+    group_connecting: 'Conectar Beacon',
     faq: 'Preguntas frecuentes',
     conversion: 'Qué se convierte y por qué',
     search: 'Buscar en la ayuda',

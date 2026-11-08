@@ -1,5 +1,6 @@
 ---
-order: 5
+group: connecting
+order: 1
 ---
 
 # Desktop app and Beacon server

@@ -756,6 +756,10 @@ alternatives of which a reader wants one, like one reverse proxy's setup out
 of five. GitHub hides the two markers, so the doc reads the same there; the
 tabs' look is in `base.css` with the rest of `.beacon-markdown`.
 
+The help adds `.beacon-markdown--sections`: its main headings in the accent
+and the text under them set in by 1rem, so a question stands out of its
+answer on a page that is nothing but those.
+
 A doc that wants a help entry somewhere in the app goes into `docs/help/`,
 in the group it belongs to (`docs/README.md` says which is which), and is
 opened with `emitter.emit('openHelp', id)` from where its question

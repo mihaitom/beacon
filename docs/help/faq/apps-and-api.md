@@ -1,5 +1,6 @@
 ---
-order: 9
+group: connecting
+order: 2
 ---
 
 # Your own apps
@@ -166,6 +167,8 @@ If you write the prompt yourself, these are the things a description does not sa
 
 Not within `v1`: existing fields keep their meaning, and new ones may appear, so ignore what you do not know. The other addresses under `/device-link/` belong to the desktop app and can change with any release.
 
-## Why can it not play music or control Beacon?
+## Why does it not stream music or control Beacon?
 
-Other players already do that well, and a key that can only read is safe to put in a script. To control the desktop app from home automation, there is the [Home automation API](../reference/home-automation-api.md).
+Music is better fetched straight from your media server. Navidrome, Jellyfin and Plex all have their own interface for that, and going through Beacon would only add a stop on the way.
+
+Control is left out so that a key can only ever read, which makes it safe to put in a script. To control the desktop app from home automation, there is the [Home automation API](../reference/home-automation-api.md).

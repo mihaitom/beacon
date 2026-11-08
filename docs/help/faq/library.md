@@ -1,5 +1,6 @@
 ---
-order: 7
+group: listening
+order: 6
 ---
 
 # What the library shows

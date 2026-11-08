@@ -4,14 +4,15 @@ What lives here, and when to open it. `help/` is for people running Beacon,
 the rest for people working on it.
 
 Everything in `help/` is also the app's help, one file per page
-(`services/help/docs.ts` picks the folder up as it is), in three groups by
-folder: `faq/`, short answers, one file per topic; `guides/`, step by step,
-to set something up or use it; `reference/`, to look things up in. A page
-for one reader goes into one group - a guide that grows an API reference
-or a list of proxy setups is two pages. `features.md` is the one file
-outside them; the app shows it as the first entry of the FAQ ("What Beacon
-can do"). A file's `# ` heading is its title in the app, and `order:` in its
-front matter its place in its group. Links between them are followed inside
+(`services/help/docs.ts` picks the folder up as it is). The folder says what
+kind of page it is: `faq/`, short answers, one file per topic; `guides/`,
+step by step, to set something up or use it; `reference/`, to look things up
+in. A page for one reader is one kind - a guide that grows an API reference
+or a list of proxy setups is two pages. `features.md` is the one file outside
+them; the app calls it "What Beacon can do". The app sorts by subject rather
+than kind: `group:` in a file's front matter is its topic there (one of
+`HELP_GROUPS` in `docs.ts`) and `order:` its place in that topic. A file's
+`# ` heading is its title in the app. Links between them are followed inside
 the app, so a renamed heading or a moved file needs the links to it updated
 too - the frontend suite checks every one, and every page the app opens.
 Headings between a `<!-- tabs -->` and a `<!-- /tabs -->` line are shown as

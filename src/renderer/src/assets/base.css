@@ -769,6 +769,23 @@ body {
   margin: 0.2rem 0;
 }
 
+/* A page of sections, the help's: each heading in the accent and what
+ * belongs to it set in under it, so a question stands out of its answer.
+ * Only after the first heading, a page's opening text has none to sit under. */
+.beacon-markdown--sections > h2 {
+  color: rgb(var(--v-theme-primary));
+}
+
+.beacon-markdown--sections > h2 ~ :not(h2) {
+  margin-left: 1rem;
+}
+
+/* Their usual left margin is where the bullets hang, on top of the indent. */
+.beacon-markdown--sections > h2 ~ ul,
+.beacon-markdown--sections > h2 ~ ol {
+  margin-left: 2.25rem;
+}
+
 .beacon-markdown hr {
   margin: 1.25rem 0;
   border: 0;

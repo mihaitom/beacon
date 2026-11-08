@@ -66,6 +66,54 @@ describe('HelpDialog layout', () => {
     expect(card.getBoundingClientRect().height).toBeCloseTo(window.innerHeight * 0.7, 0)
   })
 
+  describe('the contents beside a page whose last questions are short', () => {
+    const entries = (card: HTMLElement) => [
+      ...card.querySelectorAll<HTMLElement>('.help-dialog__toc-entry'),
+    ]
+    const marked = (card: HTMLElement) =>
+      entries(card).flatMap((entry, i) =>
+        entry.classList.contains('v-list-item--active') ? [i] : [],
+      )
+
+    async function openShortEnded() {
+      const card = await open(1280, 900)
+      emitter.emit('openHelp', 'faq/apps-and-api')
+      await expect.poll(() => entries(card).length).toBeGreaterThan(2)
+      return { card, content: card.querySelector('.help-dialog__content') as HTMLElement }
+    }
+
+    // Long enough for the scroll event of the jump itself to have come in.
+    const settled = () =>
+      new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve, 50)))
+
+    it.each([1, 2])('mark the entry %i from the end when it is clicked', async (fromEnd) => {
+      const { card, content } = await openShortEnded()
+      const index = entries(card).length - fromEnd
+      entries(card)[index]!.click()
+      await expect.poll(() => marked(card)).toEqual([index])
+      await settled()
+      expect(marked(card)).toEqual([index])
+      // What makes this worth a test: the page ended before the heading got to the top.
+      expect(content.scrollTop + content.clientHeight).toBeGreaterThanOrEqual(
+        content.scrollHeight - 1,
+      )
+    })
+
+    it('follow the page again once it is scrolled', async () => {
+      const { card, content } = await openShortEnded()
+      const last = entries(card).length - 1
+      entries(card)[last]!.click()
+      await expect.poll(() => marked(card)).toEqual([last])
+      await settled()
+
+      content.scrollTop -= 600
+      await expect.poll(() => marked(card)).not.toEqual([last])
+
+      content.scrollTop = content.scrollHeight
+      await expect.poll(() => marked(card)).toEqual([last])
+    })
+  })
+
   it('scrolls the page and the contents inside it, not the card', async () => {
     const card = await open(1280, 900)
     const content = card.querySelector('.help-dialog__content') as HTMLElement

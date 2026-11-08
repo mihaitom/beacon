@@ -1,3 +1,8 @@
+---
+group: about
+order: 1
+---
+
 # Features
 
 **Casting is the point.** Beacon grew around a backend that talks to real speakers on its own, and the rest of the app is built on top of that. Everything you would expect is here too - a full library (albums, artists, tracks, genres, playlists, favorites, with local filtering and search), a home page built from your own listening, a Stats page with your charts, a year of listening and what your library is made of, multiselect and bulk queue/playlist actions, starring and rating, synced or unsynced lyrics, light and dark themes or one of your own, and a UI in German, English, Spanish, French and Italian. What makes Beacon worth running is below.
