@@ -9,7 +9,7 @@ export interface MilestoneValues {
   records?: number
 }
 
-export type MilestoneKind = 'plays' | 'hours' | 'streak'
+export type MilestoneKind = 'hours' | 'streak'
 export type MilestoneSize = 's' | 'm' | 'l'
 
 export interface Moment {
@@ -86,7 +86,6 @@ const TIER_SIZE: Record<RecordTier, MilestoneSize> = {
 
 /** The moment for a milestone of this kind at this value. */
 export function milestoneMoment(kind: MilestoneKind, value: number): Moment {
-  if (kind === 'plays') return { kind, value, size: sizeOfPlays(value) }
   const ladder = kind === 'hours' ? HOURS_LADDER : STREAK_LADDER
   const tier = ladder.metals.find(([from]) => value >= from)?.[1] ?? 'bronze'
   return { kind, value, tier, size: TIER_SIZE[tier] }
@@ -94,7 +93,7 @@ export function milestoneMoment(kind: MilestoneKind, value: number): Moment {
 
 const SIZE_RANK: Record<MilestoneSize, number> = { s: 0, m: 1, l: 2 }
 // When two are equally big, the order they are named in here decides.
-const KIND_ORDER: MilestoneKind[] = ['hours', 'plays', 'streak']
+const KIND_ORDER: MilestoneKind[] = ['hours', 'streak']
 
 /** The one milestone worth celebrating on this visit, if any: several passed
  * since the last one are one moment, the biggest. `seen` is null on the first
@@ -291,13 +290,13 @@ export interface MilestoneRing {
   size: MilestoneSize
 }
 
-/** The plays milestones already celebrated, on the groove each happened in.
+/** The round numbers of plays passed so far, on the groove each happened in.
  * Hours and streaks have no place on a record measured in plays. */
-export function milestoneRings(seenPlays: number, record: RecordProgress): MilestoneRing[] {
+export function milestoneRings(passedPlays: number, record: RecordProgress): MilestoneRing[] {
   const { base, step } = record
   const rings: MilestoneRing[] = []
   const first = (Math.floor(base / PLAYS_STEP) + 1) * PLAYS_STEP
-  for (let value = first; value <= seenPlays; value += PLAYS_STEP) {
+  for (let value = first; value <= passedPlays; value += PLAYS_STEP) {
     const groove = Math.ceil((value - base) / step)
     if (groove > RECORD_GROOVES) break
     rings.push({ groove, value, size: sizeOfPlays(value) })

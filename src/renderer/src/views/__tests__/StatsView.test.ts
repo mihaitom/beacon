@@ -486,7 +486,8 @@ describe('StatsView listening facts', () => {
 })
 
 describe('StatsView milestones', () => {
-  const thousandPlays = [makeSong('1', { playCount: 1000, duration: 60 })]
+  // A hundred hours in all.
+  const thousandPlays = [makeSong('1', { playCount: 1000, duration: 360 })]
 
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
@@ -510,13 +511,24 @@ describe('StatsView milestones', () => {
     const wrapper = mountView(thousandPlays)
     await settle()
 
-    expect(moment(wrapper)).toMatchObject({ kind: 'plays', value: 1000 })
+    expect(moment(wrapper)).toMatchObject({ kind: 'hours', value: 100 })
     expect(playHistory.saveMilestones).toHaveBeenCalledWith({
       plays: 1000,
-      hours: 0,
+      hours: 100,
       streak: 0,
       records: 2,
     })
+  })
+
+  it('marks the round numbers on the record without a moment', async () => {
+    vi.mocked(playHistory.getPlayHistorySummary).mockResolvedValue(
+      summary({ milestones: { plays: 0, hours: 0, streak: 0, records: 2 } }),
+    )
+    const wrapper = mountView([makeSong('1', { playCount: 1000, duration: 60 })])
+    await settle()
+
+    expect(moment(wrapper)).toBeNull()
+    expect(wrapper.findComponent({ name: 'StatsHero' }).props('passedPlays')).toBe(1000)
   })
 
   it('stays silent the first time and only sets the baseline', async () => {
@@ -527,7 +539,7 @@ describe('StatsView milestones', () => {
     expect(moment(wrapper)).toBeNull()
     expect(playHistory.saveMilestones).toHaveBeenCalledWith({
       plays: 1000,
-      hours: 0,
+      hours: 100,
       streak: 0,
       records: 2,
     })
@@ -561,7 +573,7 @@ describe('StatsView milestones', () => {
 
       await debugButtons(wrapper)[0]?.trigger('click')
 
-      expect(moment(wrapper)).toMatchObject({ kind: 'plays', value: 1000 })
+      expect(moment(wrapper)).toMatchObject({ kind: 'hours', value: 100 })
       expect(playHistory.saveMilestones).not.toHaveBeenCalled()
     })
 
@@ -584,7 +596,7 @@ describe('StatsView milestones', () => {
 
       vm.playDebugMoment({ kind: 'streak', value: 30, size: 'm' })
       expect(vm.momentTarget()).toEqual(FIGURE)
-      vm.playDebugMoment({ kind: 'plays', value: 1000, size: 's' })
+      vm.playDebugMoment({ kind: 'pressing', value: 99, size: 'l', tier: 'diamond' })
       expect(vm.momentTarget()).toEqual(LABEL)
     })
 

@@ -22,7 +22,7 @@
           <stats-moment-reel v-if="moment.kind === 'hours'" />
           <stats-moment-cassette v-else-if="moment.kind === 'streak'" />
           <div v-else class="stats-moment__vinyl">
-            <div class="stats-moment__label"><v-icon :icon="icon" /></div>
+            <div class="stats-moment__label"><v-icon icon="mdi-album" /></div>
           </div>
         </div>
         <div class="stats-moment__text" :class="{ 'stats-moment__text--gone': leaving }">
@@ -74,13 +74,9 @@ export default {
     appearance() {
       return useAppearanceStore()
     },
-    icon(): string {
-      return this.moment.kind === 'plays' ? 'mdi-play' : 'mdi-album'
-    },
     title(): string {
       const n = this.moment.value.toLocaleString(this.$i18n.locale)
       const keys = {
-        plays: 'stats.milestonePlays',
         hours: 'stats.milestoneHours',
         streak: 'stats.milestoneStreak',
         pressing: 'stats.milestonePressing',

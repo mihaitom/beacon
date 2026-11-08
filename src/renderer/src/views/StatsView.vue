@@ -37,7 +37,7 @@
         :streak="streak.current"
         :cover-url="heroCover"
         :label-url="recordLabel"
-        :seen-plays="isOwnView ? (ownHistory?.milestones?.plays ?? 0) : 0"
+        :passed-plays="isOwnView ? passedPlays : 0"
         :playing="playbackStore.isPlaying"
         :other-account="viewedAccount"
         :since="sinceLabel"
@@ -109,7 +109,6 @@ import {
 } from '@/services/library/playHistoryImport'
 import {
   nextMoment,
-  PLAYS_STEP as PLAYS_MILESTONE,
   reachedMilestones,
   recordDetails,
   recordProgress,
@@ -142,7 +141,6 @@ const MOMENT_DELAY_MS = 2000
 const FRESH_MS = 1000
 // One of each kind and size, for looking at the animations.
 const DEBUG_MOMENTS: Moment[] = [
-  ...[1000, 5000, 10000].map((value) => milestoneMoment('plays', value)),
   // The first of each metal.
   ...[100, 500, 1000, 2500, 10000].map((value) => milestoneMoment('hours', value)),
   ...[7, 30, 100, 300, 500].map((value) => milestoneMoment('streak', value)),
@@ -490,6 +488,10 @@ export default {
           this.shareItem(String(decade), this.$t('stats.decade', { decade }), count),
         )
     },
+    /** The last round number of plays, marked on the record. */
+    passedPlays(): number {
+      return reachedMilestones(this.milestoneValues).plays
+    },
     milestoneValues(): MilestoneValues {
       return {
         plays: this.totalPlays,
@@ -541,9 +543,6 @@ export default {
       if (kind === 'hours') {
         const days = Math.round(value / 24)
         return this.$t('stats.milestoneHoursSub', { n: this.formatNumber(days) }, days)
-      }
-      if (kind === 'plays') {
-        return this.$t('stats.milestonePlaysSub', { n: this.formatNumber(value + PLAYS_MILESTONE) })
       }
       const { current, longest } = streaks(this.ownHistory?.timestamps ?? [], this.today)
       if (current >= longest) return this.$t('stats.milestoneStreakBest')

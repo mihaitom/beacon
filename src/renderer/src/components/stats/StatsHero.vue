@@ -38,7 +38,7 @@
               </p>
             </div>
             <div class="stats-hero__figures">
-              <div class="stats-hero__figure" :class="{ 'is-fresh': fresh === 'plays' }">
+              <div class="stats-hero__figure">
                 <strong>{{ formatNumber(shown(plays)) }}</strong>
                 <span class="text-body-small text-medium-emphasis">{{
                   $t('stats.totalPlays')
@@ -74,7 +74,7 @@
               class="stats-hero__record"
               :record="record"
               :cover-url="backdropUrl"
-              :seen-plays="seenPlays"
+              :passed-plays="passedPlays"
               :playing="playing"
               :lit="lit"
               @hover-line="grooveLine = $event"
@@ -125,8 +125,8 @@ export default {
     coverUrl: { type: String as PropType<string | null>, default: null },
     /** The cover of what is on, which takes over from `coverUrl`. */
     labelUrl: { type: String as PropType<string | null>, default: null },
-    /** The plays milestone celebrated so far, engraved on the record. */
-    seenPlays: { type: Number, default: 0 },
+    /** The last round number of plays, marked on the record. */
+    passedPlays: { type: Number, default: 0 },
     playing: { type: Boolean, default: false },
     /** Someone else's page: the name and their log, no total listening time. */
     otherAccount: { type: String as PropType<string | null>, default: null },

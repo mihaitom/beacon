@@ -10,9 +10,9 @@ const BOX = { left: 0, top: 0, width: 640, height: 560 } as DOMRect
 const CENTRE_X = 270
 const CENTRE_Y = 280
 
-function mountRecord(seenPlays = 0): VueWrapper {
+function mountRecord(passedPlays = 0): VueWrapper {
   const wrapper = mount(StatsRecord, {
-    props: { record: recordProgress(13459), seenPlays },
+    props: { record: recordProgress(13459), passedPlays },
     global: { plugins: [i18n] },
   })
   vi.spyOn(wrapper.find('svg').element, 'getBoundingClientRect').mockReturnValue(BOX)

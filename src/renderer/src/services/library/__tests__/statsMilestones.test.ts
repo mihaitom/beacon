@@ -44,28 +44,25 @@ describe('nextMoment', () => {
   })
 
   it('does not repeat what has been seen', () => {
-    expect(nextMoment({ plays: 3000, hours: 0, streak: 0 }, { ...zero, plays: 3500 })).toBeNull()
+    expect(nextMoment({ ...zero, hours: 100 }, { ...zero, hours: 200 })).toBeNull()
   })
 
   it('fires exactly at the step', () => {
-    expect(nextMoment(zero, { ...zero, plays: 1000 })?.value).toBe(1000)
-    expect(nextMoment(zero, { ...zero, plays: 999 })).toBeNull()
+    expect(nextMoment(zero, { ...zero, hours: 100 })?.value).toBe(100)
+    expect(nextMoment(zero, { ...zero, hours: 99 })).toBeNull()
   })
 
   it('makes one moment of several, the biggest', () => {
-    const moment = nextMoment(zero, { plays: 10000, hours: 100, streak: 7 })
-    expect(moment).toMatchObject({ kind: 'plays', value: 10000, size: 'l' })
+    const moment = nextMoment(zero, { plays: 0, hours: 100, streak: 300 })
+    expect(moment).toMatchObject({ kind: 'streak', value: 300, tier: 'platinum' })
   })
 
   it('prefers hours when two are the same size', () => {
-    expect(nextMoment(zero, { plays: 1000, hours: 100, streak: 0 })?.kind).toBe('hours')
+    expect(nextMoment(zero, { plays: 0, hours: 100, streak: 7 })?.kind).toBe('hours')
   })
 
-  it('sizes by how round the number is', () => {
-    const size = (plays: number): string | undefined => nextMoment(zero, { ...zero, plays })?.size
-    expect(size(3000)).toBe('s')
-    expect(size(5000)).toBe('m')
-    expect(size(20000)).toBe('l')
+  it('leaves a round number of plays to the records', () => {
+    expect(nextMoment(zero, { ...zero, plays: 10000 })).toBeNull()
   })
 
   it('awards streaks a metal by length', () => {
@@ -98,10 +95,6 @@ describe('nextMoment', () => {
 
   it('lets a gold streak win over bronze hours', () => {
     expect(nextMoment(zero, { plays: 0, hours: 100, streak: 100 })?.kind).toBe('streak')
-  })
-
-  it('lets the bigger metal win over a round number of plays', () => {
-    expect(nextMoment(zero, { plays: 5000, hours: 2500, streak: 0 })?.kind).toBe('hours')
   })
 })
 

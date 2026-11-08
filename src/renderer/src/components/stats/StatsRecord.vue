@@ -169,8 +169,8 @@ export default {
     coverUrl: { type: String as PropType<string | null>, default: null },
     playing: { type: Boolean, default: false },
     lit: { type: Boolean, default: false },
-    /** The plays milestone celebrated so far. */
-    seenPlays: { type: Number, default: 0 },
+    /** The last round number of plays. */
+    passedPlays: { type: Number, default: 0 },
   },
   emits: ['hover-line'],
   data() {
@@ -197,7 +197,7 @@ export default {
       return Array.from({ length: RECORD_GROOVES - 1 }, (_, index) => grooveRadius(index + 1.5))
     },
     rings(): (MilestoneRing & { r: number; stroke: string })[] {
-      return milestoneRings(this.seenPlays, this.record).map((ring) => ({
+      return milestoneRings(this.passedPlays, this.record).map((ring) => ({
         ...ring,
         r: grooveRadius(ring.groove),
         stroke: RING_STROKES[ring.size],

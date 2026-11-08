@@ -180,8 +180,8 @@ milestone disc are objects and keep their own (`docs/styleguide.md`).
 
 ## Milestones
 
-A figure being passed is one moment on opening the page, own view only: every
-1,000 plays; hours and streaks climb a ladder that spreads out (100 hours up to
+A figure being passed is one moment on opening the page, own view only: hours
+and streaks climb a ladder that spreads out (100 hours up to
 10,000, then every 5,000; 7 days up to 1,000, then every 500), bronze to diamond
 by height. Several passed since the last visit are one moment, the biggest. The
 first visit only sets the baseline,
