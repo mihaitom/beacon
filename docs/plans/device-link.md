@@ -145,8 +145,7 @@ of the server's answer, so a song just played counts at once.
 
 ## Apps of your own
 
-Built so far: scopes, `/v1/me`, `/v1/history`, `/v1/stats`, CORS, the request
-limit, and `/v1/now-playing` with its lyrics. What is left is the FAQ page.
+Built. The specification for whoever writes one is `docs/help/faq/apps-and-api.md`.
 
 The same key, for apps listeners write themselves: a desk display, a stream
 overlay, a dashboard. Read only, one account, and it needs a Beacon server: a

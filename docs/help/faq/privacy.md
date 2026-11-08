@@ -10,6 +10,6 @@ Settings > About Beacon > **Privacy** lists every outside service Beacon asks - 
 
 ## Who can see what I listen to?
 
-For the Stats page, your Beacon server keeps a record of which songs you played and when, per account. Administrators of your media server can open the Stats page of the other accounts on that server, and with it this record. Other Beacon users cannot.
+For the Stats page, your Beacon server keeps a record of which songs you played and when, per account. Administrators of your media server can open the Stats page of the other accounts on that server, and with it this record. Other Beacon users cannot. An app you made a key for sees what that key allows, which can include what you are playing at that moment, see [Your own apps](apps-and-api.md).
 
 If a Last.fm or ListenBrainz name is set up, Beacon reads the public listens of that profile for the past year once, to fill in the listening year. It reads them and sends nothing back.

@@ -103,7 +103,7 @@
           <v-btn
             variant="text"
             prepend-icon="mdi-help-circle-outline"
-            @click="$emitter.emit('openHelp', 'guides/desktop-and-server')"
+            @click="$emitter.emit('openHelp', helpPage)"
           >
             {{ $t('settings.serverLinkDocs') }}
           </v-btn>
@@ -164,6 +164,9 @@ export default {
       return this.appScopes.includes('now_playing')
         ? this.appScopes
         : this.appScopes.filter((scope) => scope !== 'lyrics')
+    },
+    helpPage(): string {
+      return this.kind === 'app' ? 'faq/apps-and-api' : 'guides/desktop-and-server'
     },
     canCreate(): boolean {
       return !this.busy && !!this.label.trim() && this.chosenScopes.length > 0

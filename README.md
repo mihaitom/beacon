@@ -57,6 +57,7 @@
 - **Internet radio** with a directory to find stations in and a running list of what each one played
 - **Navidrome, Subsonic, Jellyfin and Plex** in the same app, plus smart playlists for Navidrome
 - **Home Assistant** finds the desktop app on its own and gets playback, speakers and your library
+- **Your own apps** can read your listening history, statistics, what is playing and its lyrics from a Beacon server
 
 Everything you would expect is here too: a full library with filtering and search, a home page built from your own listening, a Stats page that a desktop app can share with your Beacon server, synced lyrics, a fullscreen Now Playing with a visualizer, themes of your own, keyboard shortcuts (press `?` in the app for the list) and a UI in German, English, Spanish, French and Italian.
 
@@ -246,7 +247,7 @@ The browser itself is never the problem: it always talks to Beacon's own Connect
 
 Everything below is also the app's own help (the `?` in the party dialog, Settings > About Beacon > FAQ), with a search across all of it.
 
-- **Frequently asked questions**, one page per topic: [Casting](docs/help/faq/casting.md), [Playback](docs/help/faq/playback.md), [Transitions](docs/help/faq/transitions.md), [Room lights](docs/help/faq/lights.md), [Equalizer](docs/help/faq/equalizer.md), [Formats and converting](docs/help/faq/formats.md), [What the library shows](docs/help/faq/library.md), [Privacy](docs/help/faq/privacy.md), [Reporting a problem](docs/help/faq/reporting.md)
+- **Frequently asked questions**, one page per topic: [Casting](docs/help/faq/casting.md), [Playback](docs/help/faq/playback.md), [Transitions](docs/help/faq/transitions.md), [Room lights](docs/help/faq/lights.md), [Equalizer](docs/help/faq/equalizer.md), [Your own apps](docs/help/faq/apps-and-api.md), [Formats and converting](docs/help/faq/formats.md), [What the library shows](docs/help/faq/library.md), [Privacy](docs/help/faq/privacy.md), [Reporting a problem](docs/help/faq/reporting.md)
 - **Guides**: [Networking](docs/help/guides/networking.md), [Party mode](docs/help/guides/party-mode.md), [Party mode over the internet](docs/help/guides/party-over-the-internet.md), [Home automation](docs/help/guides/home-automation.md), [Desktop app and Beacon server](docs/help/guides/desktop-and-server.md)
 - **Background**: [What gets converted, and why](docs/help/reference/transcoding-decisions.md), [Home automation API](docs/help/reference/home-automation-api.md)
 

@@ -152,6 +152,19 @@ describe('DeviceKeysSection', () => {
     expect(createDeviceKey).toHaveBeenLastCalledWith('Laptop', ['sync'])
   })
 
+  it('points to the help for the kind of key being made', async () => {
+    const { wrapper, emit, vm } = await mountSection()
+    const help = wrapper.find('.device-keys__help button')
+
+    await help.trigger('click')
+    expect(emit).toHaveBeenLastCalledWith('openHelp', 'guides/desktop-and-server')
+
+    vm.kind = 'app'
+    await flushPromises()
+    await help.trigger('click')
+    expect(emit).toHaveBeenLastCalledWith('openHelp', 'faq/apps-and-api')
+  })
+
   it('says what each key may do', async () => {
     vi.mocked(listDeviceKeys).mockResolvedValue([
       { ...EXISTING, id: 'a', scopes: ['sync', 'api_keys'] },
