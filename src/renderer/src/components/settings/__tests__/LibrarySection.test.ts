@@ -13,6 +13,7 @@ import { i18n } from '@/i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useLibraryStore } from '@/stores/library'
 import { useListenbrainzStore } from '@/stores/listenbrainz'
+import { useLastfmStore } from '@/stores/lastfm'
 import { useFanartStore } from '@/stores/fanart'
 import LibrarySection from '../LibrarySection.vue'
 
@@ -204,6 +205,54 @@ describe('LibrarySection ListenBrainz name', () => {
     field.saveListenbrainzUsername()
 
     expect(useListenbrainzStore().username).toBe('')
+  })
+})
+
+/** Without this the Stats page cannot offer a Last.fm import on an install
+ * where the name was never typed into the playlist builder. */
+describe('LibrarySection Last.fm name', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    localStorage.clear()
+  })
+
+  const hint = () => i18n.global.t('settings.lastfmUsernameHint')
+
+  function nameField(wrapper: ReturnType<typeof mountSection>) {
+    return wrapper.vm as unknown as { lastfmUsername: string; saveLastfmUsername: () => void }
+  }
+
+  it('is offered once the installation has a key', () => {
+    useLastfmStore().configured = true
+
+    expect(mountSection().text()).toContain(hint())
+  })
+
+  it('is not offered without a key', () => {
+    useLastfmStore().configured = false
+
+    expect(mountSection().text()).not.toContain(hint())
+  })
+
+  it('asks whether the installation has a key', () => {
+    const asked = vi.spyOn(useLastfmStore(), 'checkConfigured').mockResolvedValue(true)
+
+    mountSection()
+
+    expect(asked).toHaveBeenCalled()
+  })
+
+  it('starts from the name the store holds and saves a new one', () => {
+    useLastfmStore().configured = true
+    useLastfmStore().setUsername('listener')
+    const wrapper = mountSection()
+    const field = nameField(wrapper)
+    expect(field.lastfmUsername).toBe('listener')
+
+    field.lastfmUsername = 'someone'
+    field.saveLastfmUsername()
+
+    expect(useLastfmStore().username).toBe('someone')
   })
 })
 

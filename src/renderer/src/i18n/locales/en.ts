@@ -959,6 +959,9 @@ export default {
     fanartEnabledHint:
       "Shows Fanart.tv's artist backgrounds and logos on artist pages and in Now Playing. Beacon identifies itself with its own project key, so this works with no setup; a personal key keeps the requests on your own limit.",
     listenbrainzUsername: 'ListenBrainz username',
+    lastfmUsername: 'Last.fm username',
+    lastfmUsernameHint:
+      'Your public Last.fm name. The Stats page can fill your listening year from it, and the playlist builder starts from it. No password needed.',
     listenbrainzHint:
       'Your public ListenBrainz name. It fills the "Recommended for you" shelf on Home and is offered as the default in the playlist builder. No password needed. Last.fm is the better playlist builder, though - its charts come out more varied.',
     lyricsProvidersTitle: 'Lyrics providers',

@@ -972,6 +972,9 @@ export default {
     fanartEnabledHint:
       "Affiche les fonds et logos d'artiste de Fanart.tv sur les pages d'artiste et dans « Lecture en cours ». Beacon s'identifie avec sa propre clé de projet, donc cela fonctionne sans rien configurer ; une clé personnelle garde les requêtes sur votre propre limite.",
     listenbrainzUsername: 'Nom d’utilisateur ListenBrainz',
+    lastfmUsername: 'Nom d’utilisateur Last.fm',
+    lastfmUsernameHint:
+      'Votre nom public Last.fm. La page Statistiques peut en tirer votre année d’écoute, et le générateur de playlists part de ce nom. Aucun mot de passe requis.',
     listenbrainzHint:
       "Votre nom public ListenBrainz. Il remplit la rangée « Recommandé pour vous » sur l'accueil et sert de valeur par défaut dans le générateur de playlists. Aucun mot de passe requis. Pour créer une playlist, en revanche, Last.fm reste le meilleur choix : ses classements sont plus variés.",
     lyricsProvidersTitle: 'Fournisseurs de paroles',

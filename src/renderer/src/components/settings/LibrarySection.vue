@@ -133,6 +133,21 @@
           @keyup.enter="saveListenbrainzUsername"
         />
       </div>
+
+      <!-- Only with an application key: without one nothing can read it. -->
+      <div v-if="lastfmStore.configured" class="setting">
+        <p class="setting__description">{{ $t('settings.lastfmUsernameHint') }}</p>
+        <v-text-field
+          v-model="lastfmUsername"
+          :label="$t('settings.lastfmUsername')"
+          variant="solo-filled"
+          autocomplete="off"
+          spellcheck="false"
+          hide-details
+          @change="saveLastfmUsername"
+          @keyup.enter="saveLastfmUsername"
+        />
+      </div>
     </div>
   </section>
 </template>
@@ -142,6 +157,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useLibraryStore } from '@/stores/library'
 import { useRecommendationsStore } from '@/stores/recommendations'
 import { useListenbrainzStore } from '@/stores/listenbrainz'
+import { useLastfmStore } from '@/stores/lastfm'
 import { useFanartStore } from '@/stores/fanart'
 
 /**
@@ -160,6 +176,7 @@ export default {
       // Draft of the store's value, saved on blur/enter rather than on
       // every keystroke — the store syncs to the account on each set.
       listenbrainzUsername: '',
+      lastfmUsername: '',
     }
   },
   created() {
@@ -168,6 +185,8 @@ export default {
     // once, and only where the control that shows it exists.
     if (this.authStore.capabilities.libraryScan) void this.libraryStore.resumeScanIfRunning()
     this.listenbrainzUsername = this.listenbrainzStore.username
+    this.lastfmUsername = this.lastfmStore.username
+    void this.lastfmStore.checkConfigured()
   },
   computed: {
     authStore() {
@@ -181,6 +200,9 @@ export default {
     },
     listenbrainzStore() {
       return useListenbrainzStore()
+    },
+    lastfmStore() {
+      return useLastfmStore()
     },
     fanartStore() {
       return useFanartStore()
@@ -237,6 +259,9 @@ export default {
      * shelf again. */
     saveListenbrainzUsername(): void {
       this.listenbrainzStore.setUsername(this.listenbrainzUsername ?? '')
+    },
+    saveLastfmUsername(): void {
+      this.lastfmStore.setUsername(this.lastfmUsername ?? '')
     },
     /** Hands the whole scan to the library store — see its startScan() for
      * why it lives there and not here. Only the "could not even start"

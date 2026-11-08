@@ -969,6 +969,9 @@ export default {
     fanartEnabledHint:
       'Zeigt Künstlerhintergründe und -logos von Fanart.tv auf Künstlerseiten und in „Läuft gerade“. Beacon weist sich mit seinem eigenen Projekt-Schlüssel aus, es funktioniert also ohne Einrichtung; ein persönlicher Schlüssel hält die Anfragen auf deinem eigenen Limit.',
     listenbrainzUsername: 'ListenBrainz-Benutzername',
+    lastfmUsername: 'Last.fm-Benutzername',
+    lastfmUsernameHint:
+      'Dein öffentlicher Last.fm-Name. Die Stats-Seite kann daraus dein Hörjahr füllen, und der Playlist-Baukasten startet damit. Kein Passwort nötig.',
     listenbrainzHint:
       'Dein öffentlicher ListenBrainz-Name. Er füllt den Shelf „Für dich empfohlen“ auf Home und steht im Playlist-Baukasten als Vorauswahl. Kein Passwort nötig. Zum Bauen einer Playlist ist Last.fm allerdings die bessere Wahl - seine Charts sind abwechslungsreicher.',
     lyricsProvidersTitle: 'Songtext-Anbieter',
