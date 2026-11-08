@@ -124,6 +124,7 @@ import {
   type Moment,
   milestoneMoment,
 } from '@/services/library/statsMilestones'
+import { LibraryNames } from '@/services/library/libraryNames'
 import {
   getImportStatus,
   getPlayHistoryAccounts,
@@ -407,6 +408,7 @@ export default {
             valueLabel: this.formatNumber(t.playCount),
             // No standalone song page in this app; the album is the closest.
             to: `/albums/${t.albumId}`,
+            artistId: t.artistId,
             coverArtId: t.coverArtId,
           })),
         (t) => t.id,
@@ -417,6 +419,9 @@ export default {
     artistsById(): Map<string, Artist> {
       return new Map(this.libraryStore.artists.map((a) => [a.id, a]))
     },
+    libraryNames(): LibraryNames {
+      return new LibraryNames(this.songs, this.libraryStore.artists)
+    },
     topArtists(): ChartItem[] {
       const artistKey = (t: Song): string | null => t.artistId || null
       const groups = aggregateByPlays(this.songs, artistKey, (t) => t.artist)
@@ -426,6 +431,7 @@ export default {
           ...item,
           // A song's own artist field is its whole credit ("A, B & C").
           label: artist?.name ?? item.label,
+          artistId: item.id,
           // Null, not undefined, while the list loads: the art column stays
           // and the rows do not reflow when it arrives.
           coverArtId: artist?.coverArtId ?? null,
@@ -791,8 +797,9 @@ export default {
         genres: this.withCrate((top?.genres ?? []).map((item) => this.logItem(item, 'genres'))),
       }
     },
-    /** A chart line counted from the log. The ids are empty on what came
-     * from an import, which knows names only, so those lines do not link. */
+    /** A chart line counted from the log. What came from an import knows
+     * names only, so its cover and link are looked up in the library, and a
+     * line the library does not have goes without. */
     logItem(item: PlayHistoryTop, kind: ChartKind): ChartItem {
       const base = {
         id: item.id,
@@ -805,18 +812,30 @@ export default {
         return { ...base, to: `/genres/${encodeURIComponent(item.label)}` }
       }
       if (kind === 'artists') {
-        const artist = item.artist_id ? this.artistsById.get(item.artist_id) : undefined
+        const artist =
+          (item.artist_id ? this.artistsById.get(item.artist_id) : undefined) ??
+          this.libraryNames.artist(item.label)
+        const artistId = item.artist_id || artist?.id
         return {
           ...base,
-          to: item.artist_id ? `/artists/${item.artist_id}` : undefined,
+          to: artistId ? `/artists/${artistId}` : undefined,
+          artistId,
           coverArtId: artist?.coverArtId ?? null,
           imageUrl: artist?.imageUrl ?? null,
         }
       }
+      const owned =
+        item.album_id && item.cover_art_id
+          ? undefined
+          : kind === 'songs'
+            ? this.libraryNames.song(item.sublabel ?? '', item.label)
+            : this.libraryNames.album(item.sublabel ?? '', item.label)
+      const albumId = item.album_id || owned?.albumId
       return {
         ...base,
-        to: item.album_id ? `/albums/${item.album_id}` : undefined,
-        coverArtId: item.cover_art_id || null,
+        to: albumId ? `/albums/${albumId}` : undefined,
+        artistId: owned?.artistId,
+        coverArtId: item.cover_art_id || owned?.coverArtId || null,
       }
     },
     /** A genre has no picture, so its number one shows the records it is

@@ -836,6 +836,48 @@ describe('StatsView other accounts', () => {
     expect(charts.songs[0]?.to).toBeUndefined()
   })
 
+  it('finds the cover and link of an imported line in the library', async () => {
+    const imported = (label: string, sublabel: string) => ({
+      id: label,
+      value: 4,
+      label,
+      sublabel,
+      album_id: '',
+      cover_art_id: '',
+      artist_id: '',
+    })
+    vi.mocked(playHistory.getPlayHistoryCharts).mockResolvedValue(
+      charts('week', {
+        top: {
+          songs: [imported('Song', 'Band'), imported('Unknown', 'Nobody')],
+          artists: [{ ...imported('Band', '') }],
+          albums: [imported('Record', 'Band')],
+          genres: [],
+        },
+      }),
+    )
+    const wrapper = mountView(
+      [
+        makeSong('1', {
+          title: 'Song',
+          artist: 'Band',
+          album: 'Record',
+          albumId: 'alb',
+          coverArtId: 'c',
+        }),
+      ],
+      [{ id: 'art', name: 'Band', coverArtId: 'face' } as Artist],
+    )
+    await wrapper.setData({ chartPeriod: 'week' })
+    await flushPromises()
+
+    const { charts: shown } = wrapper.vm as unknown as { charts: Record<ChartKind, ChartItem[]> }
+    expect(shown.songs[0]).toMatchObject({ to: '/albums/alb', coverArtId: 'c' })
+    expect(shown.songs[1]).toMatchObject({ to: undefined, coverArtId: null })
+    expect(shown.albums[0]).toMatchObject({ to: '/albums/alb', coverArtId: 'c' })
+    expect(shown.artists[0]).toMatchObject({ to: '/artists/art', coverArtId: 'face' })
+  })
+
   it('keeps a late answer for one account off the page of another', async () => {
     admin(['bob', 'eve'])
     let answerBob: (value: playHistory.PlayHistorySummary) => void = () => {}

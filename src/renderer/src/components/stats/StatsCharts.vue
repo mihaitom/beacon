@@ -59,13 +59,15 @@
       {{ $t('stats.chartsEmptyPeriod') }}
     </p>
     <div v-if="first" class="beacon-panel stats-charts__panel">
-      <component
-        :is="first.to ? 'router-link' : 'div'"
-        :to="first.to"
-        class="stats-charts__first"
-        @mouseenter="browsing = true"
-        @mouseleave="browsing = false"
-      >
+      <div class="stats-charts__first" @mouseenter="browsing = true" @mouseleave="browsing = false">
+        <!-- Over the line rather than around it: the artist names in it are
+           - links of their own, and a link cannot hold another. -->
+        <router-link
+          v-if="first.to"
+          :to="first.to"
+          :aria-label="first.label"
+          class="stats-charts__stretch"
+        />
         <record-stack
           v-if="first.covers"
           :covers="first.covers"
@@ -78,26 +80,40 @@
           <cover-art :cover-art-id="first.coverArtId" :image-url="first.imageUrl" size="100%" />
         </div>
         <div>
-          <p class="stats-charts__name">{{ first.label }}</p>
+          <p class="stats-charts__name">
+            <artist-credit
+              v-if="tab === 'artists'"
+              :credit="first.label"
+              :artist-id="first.artistId"
+            />
+            <template v-else>{{ first.label }}</template>
+          </p>
           <p v-if="first.sublabel" class="text-body-medium text-medium-emphasis">
-            {{ first.sublabel }}
+            <artist-credit :credit="first.sublabel" :artist-id="first.artistId" />
           </p>
         </div>
         <p>
           <span class="stats-charts__plays">{{ first.valueLabel }}</span>
           <span class="text-medium-emphasis">{{ $t('stats.totalPlays') }}</span>
         </p>
-      </component>
+      </div>
 
       <div class="beacon-list">
-        <component
-          :is="item.to ? 'router-link' : 'div'"
+        <div
           v-for="(item, index) in rest"
           :key="item.id"
-          :to="item.to"
           class="stats-charts__row"
-          :class="{ 'stats-charts__row--bare': item.coverArtId === undefined }"
+          :class="{
+            'stats-charts__row--bare': item.coverArtId === undefined,
+            'stats-charts__row--linked': item.to,
+          }"
         >
+          <router-link
+            v-if="item.to"
+            :to="item.to"
+            :aria-label="item.label"
+            class="stats-charts__stretch"
+          />
           <span class="stats-charts__rank text-medium-emphasis">{{ index + 2 }}</span>
           <cover-art
             v-if="item.coverArtId !== undefined"
@@ -106,12 +122,19 @@
             :size="40"
           />
           <div class="stats-charts__text">
-            <div class="stats-charts__title">{{ item.label }}</div>
+            <div class="stats-charts__title">
+              <artist-credit
+                v-if="tab === 'artists'"
+                :credit="item.label"
+                :artist-id="item.artistId"
+              />
+              <template v-else>{{ item.label }}</template>
+            </div>
             <div
               v-if="item.sublabel"
               class="stats-charts__title text-body-small text-medium-emphasis"
             >
-              {{ item.sublabel }}
+              <artist-credit :credit="item.sublabel" :artist-id="item.artistId" />
             </div>
             <div class="stats-charts__track">
               <div class="stats-charts__fill" :style="{ width: `${share(item)}%` }" />
@@ -128,7 +151,7 @@
               {{ Math.abs(item.move) }}
             </span>
           </div>
-        </component>
+        </div>
       </div>
     </div>
   </section>
@@ -136,6 +159,7 @@
 
 <script lang="ts">
 import type { PropType } from 'vue'
+import ArtistCredit from '@/components/library/ArtistCredit.vue'
 import CoverArt from '@/components/library/CoverArt.vue'
 import RecordStack from '@/components/library/RecordStack.vue'
 import type { PlayHistoryPeriod } from '@/services/connect/playHistory'
@@ -148,7 +172,10 @@ const CRATE_RISE = 22
 export interface ChartItem {
   id: string
   label: string
+  /** Always an artist credit where there is one. */
   sublabel?: string
+  /** The server's id for that credit, or for the artist of an artist line. */
+  artistId?: string | null
   value: number
   valueLabel: string
   to?: string
@@ -167,7 +194,7 @@ export type ChartKind = 'songs' | 'artists' | 'albums' | 'genres'
 
 export default {
   name: 'StatsCharts',
-  components: { CoverArt, RecordStack },
+  components: { ArtistCredit, CoverArt, RecordStack },
   props: {
     charts: { type: Object as PropType<Record<ChartKind, ChartItem[]>>, required: true },
     /** The date a chart counted from the log starts at. */
@@ -291,12 +318,22 @@ export default {
 }
 
 .stats-charts__first {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 12px;
   min-width: 0;
-  color: inherit;
-  text-decoration: none;
+}
+
+.stats-charts__stretch {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.stats-charts__panel :deep(.artist-credit__link) {
+  position: relative;
+  z-index: 1;
 }
 
 .stats-charts__cover {
@@ -326,14 +363,13 @@ export default {
 }
 
 .stats-charts__row {
+  position: relative;
   display: grid;
   grid-template-columns: 24px 40px minmax(0, 1fr) 76px;
   align-items: center;
   gap: 12px;
   padding: 7px 8px;
   border-radius: 8px;
-  color: inherit;
-  text-decoration: none;
   transition: background 0.15s;
 }
 
@@ -341,7 +377,7 @@ export default {
   grid-template-columns: 24px minmax(0, 1fr) 76px;
 }
 
-a.stats-charts__row:hover {
+.stats-charts__row--linked:hover {
   background: var(--beacon-hover);
 }
 
