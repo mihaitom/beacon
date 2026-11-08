@@ -145,7 +145,8 @@ of the server's answer, so a song just played counts at once.
 
 ## Apps of your own
 
-Built so far: scopes and `/v1/me`. The rest is planned.
+Built so far: scopes, `/v1/me`, `/v1/history` and `/v1/stats`. The rest is
+planned.
 
 The same key, for apps listeners write themselves: a desk display, a stream
 overlay, a dashboard. Read only, one account, and it needs a Beacon server: a
@@ -228,7 +229,10 @@ No `cover_art_id`: with no session behind a key, no route could use it.
 
 ### Statistics
 
-`/play-history/summary`'s data under a field list of its own. No current
+`/play-history/summary`'s data under a field list of its own: `top.songs` and
+`top.albums` have `title`, `artist`, `album_id`, `plays`; `top.artists` `name`,
+`artist_id`, `plays`; `top.genres` `name`, `plays`. `milestones` is what the
+Stats page last saw, null before its first visit and after an import. No current
 streak: only the client knows the listener's time zone, which is why
 `timestamps` is there. `milestones` has the best streak reached.
 

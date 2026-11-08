@@ -104,6 +104,10 @@ _KEY_SCOPES_SCHEMA = (
     "ALTER TABLE device_keys DROP COLUMN may_read_api_keys",
 )
 
+_HISTORY_EPOCH_SCHEMA = (
+    "ALTER TABLE accounts ADD COLUMN history_epoch INTEGER NOT NULL DEFAULT 0",
+)
+
 _OWN_SOURCE = "beacon"
 _TEXT_FIELDS = (
     "song_id",
@@ -116,6 +120,21 @@ _TEXT_FIELDS = (
     "genre",
 )
 _WIRE_FIELDS = ("id", "ts", "duration", *_TEXT_FIELDS)
+# What an app sees of a play. No cover_art_id: without a session behind a key,
+# no route could turn one into a picture.
+_HISTORY_FIELDS = (
+    "id",
+    "ts",
+    "source",
+    "song_id",
+    "title",
+    "artist",
+    "artist_id",
+    "album",
+    "album_id",
+    "genre",
+    "duration",
+)
 _FIND_ACCOUNT = "server_type = ? AND server_url = ? AND username = ?"
 
 # Several windows can follow one cast, and each reports the same play. Longer
@@ -128,6 +147,10 @@ _RECENT_DAYS = 30
 _DAY_SECONDS = 24 * 60 * 60
 
 _lock = threading.Lock()
+
+
+class StaleCursor(Exception):
+    pass
 
 
 class Account(NamedTuple):
@@ -167,6 +190,18 @@ def _account_id(conn: sqlite3.Connection, account: Account) -> int:
         account,
     )
     return conn.execute(f"SELECT id FROM accounts WHERE {_FIND_ACCOUNT}", account).fetchone()["id"]
+
+
+def _delete_listens(conn: sqlite3.Connection, account_id: int, where: str, params: tuple) -> None:
+    """Every removal goes here: a cursor from before it can no longer be
+    trusted, see history_page()."""
+    removed = conn.execute(
+        f"DELETE FROM listens WHERE account_id = ? AND {where}", (account_id, *params)
+    ).rowcount
+    if removed:
+        conn.execute(
+            "UPDATE accounts SET history_epoch = history_epoch + 1 WHERE id = ?", (account_id,)
+        )
 
 
 def _write_account_field(conn: sqlite3.Connection, account_id: int, field: str, value) -> None:
@@ -246,6 +281,11 @@ def _add_key_scopes(conn: sqlite3.Connection) -> None:
         conn.execute(statement)
 
 
+def _add_history_epoch(conn: sqlite3.Connection) -> None:
+    for statement in _HISTORY_EPOCH_SCHEMA:
+        conn.execute(statement)
+
+
 # PRAGMA user_version counts how many of these have run. Append only.
 _MIGRATIONS = (
     _create_log,
@@ -253,6 +293,7 @@ _MIGRATIONS = (
     _add_lyrics_offsets,
     _add_key_rights,
     _add_key_scopes,
+    _add_history_epoch,
 )
 
 
@@ -328,9 +369,7 @@ def replace_imported(account: Account, source: str, listens: list[dict]) -> int:
             (account_id, _OWN_SOURCE),
         ).fetchone()[0]
         kept = [entry for entry in listens if cutoff is None or entry["ts"] < cutoff]
-        conn.execute(
-            "DELETE FROM listens WHERE account_id = ? AND source != ?", (account_id, _OWN_SOURCE)
-        )
+        _delete_listens(conn, account_id, "source != ?", (_OWN_SOURCE,))
         _insert_listens(conn, account_id, ({**entry, "source": source} for entry in kept))
         _write_account_field(conn, account_id, "import_state", {"status": "done", "source": source})
         # Forgets what was seen, so the next visit sets a silent baseline: a
@@ -417,10 +456,7 @@ def receive_listens(
         if first_after is not None and first_after != first_before:
             # The rule replace_imported() applies: an import only ever covers
             # what is older than Beacon's first own play, and that just moved.
-            conn.execute(
-                "DELETE FROM listens WHERE account_id = ? AND source != ? AND ts >= ?",
-                (account_id, _OWN_SOURCE, first_after),
-            )
+            _delete_listens(conn, account_id, "source != ? AND ts >= ?", (_OWN_SOURCE, first_after))
         if backfill and stored:
             # A desktop's whole past arriving is not a moment either, see
             # replace_imported().
@@ -528,6 +564,60 @@ def _charts(listens: list[dict]) -> dict:
             lambda e: _name_key(e.get("genre") or ""),
             lambda e: {"label": e.get("genre", "")},
         ),
+    }
+
+
+def history_page(
+    account: Account,
+    cursor: str | None = None,
+    since: int | None = None,
+    until: int | None = None,
+    limit: int = 100,
+) -> dict:
+    """Plays in order of arrival, for an app following the log. By time played
+    would be wrong: a desktop that was offline delivers plays days old, and
+    someone paging by date would never see them.
+
+    The position is the rowid, which only holds while rows are not removed
+    (SQLite reuses the highest ones, and an import can be replaced). So a
+    cursor carries the account's epoch and raises StaleCursor once rows have
+    gone. Nothing in connect may VACUUM this table: on one without an INTEGER
+    PRIMARY KEY, that may renumber the rowids.
+
+    Raises StaleCursor for a cursor from before a removal."""
+    where = ["listens.rowid > ?", "account_id = ?"]
+    with _lock, _database() as conn:
+        row = conn.execute(
+            f"SELECT id, history_epoch FROM accounts WHERE {_FIND_ACCOUNT}", account
+        ).fetchone()
+        if row is None:
+            return {"items": [], "next_cursor": "0.0", "more": False}
+        account_id, epoch = row["id"], row["history_epoch"]
+        after = 0
+        if cursor is not None:
+            cursor_epoch, _, position = cursor.partition(".")
+            if int(cursor_epoch) != epoch:
+                raise StaleCursor
+            after = int(position)
+        params: list[int] = [after, account_id]
+        if since is not None:
+            where.append("ts >= ?")
+            params.append(since)
+        if until is not None:
+            where.append("ts <= ?")
+            params.append(until)
+        rows = conn.execute(
+            "SELECT rowid AS position, * FROM listens WHERE "
+            + " AND ".join(where)
+            + " ORDER BY rowid LIMIT ?",
+            (*params, limit + 1),
+        ).fetchall()
+    page = rows[:limit]
+    last = page[-1]["position"] if page else after
+    return {
+        "items": [{field: row[field] for field in _HISTORY_FIELDS} for row in page],
+        "next_cursor": f"{epoch}.{last}",
+        "more": len(rows) > limit,
     }
 
 

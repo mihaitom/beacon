@@ -1234,3 +1234,170 @@ def test_older_keys_keep_what_they_could_do(tmp_path):
     scopes = dict(conn.execute("SELECT id, scopes FROM device_keys").fetchall())
     assert scopes == {"plain": "sync", "trusted": "api_keys,sync"}
     conn.close()
+
+
+# ── what an app can read ─────────────────────────────────────────────────
+
+
+def history_key(*scopes: str) -> str:
+    return app_key(*(scopes or ("history",)))
+
+
+def history(public, key, **params):
+    return public.get("/device-link/v1/history", headers=auth(key), params=params)
+
+
+def delivered(*listens, account=ALICE):
+    play_history.receive_listens(account, list(listens), now=NOW)
+
+
+def imported(ts: int, source="lastfm", account=ALICE):
+    play_history.replace_imported(
+        account, source, [{"ts": ts, "song_id": "", "title": "Old", "artist": "A"}]
+    )
+
+
+def test_history_returns_a_fixed_list_of_fields(public):
+    delivered(row("a" * 32, NOW - 10, song_id="s1", cover_art_id="secret-id"))
+    item = history(public, history_key()).json()["items"][0]
+    assert set(item) == {
+        "id",
+        "ts",
+        "source",
+        "song_id",
+        "title",
+        "artist",
+        "artist_id",
+        "album",
+        "album_id",
+        "genre",
+        "duration",
+    }
+    assert item["id"] == "a" * 32
+    assert item["source"] == "beacon"
+
+
+def test_history_pages_through_in_order_of_arrival(public):
+    delivered(*(row(f"{i:032x}", NOW - 1000 + i * 100) for i in range(3)))
+    key = history_key()
+    first = history(public, key, limit=2).json()
+    assert [item["id"][-1] for item in first["items"]] == ["0", "1"]
+    assert first["more"] is True
+    second = history(public, key, limit=2, cursor=first["next_cursor"]).json()
+    assert [item["id"][-1] for item in second["items"]] == ["2"]
+    assert second["more"] is False
+
+
+def test_history_is_in_order_of_arrival_not_of_time_played(public):
+    delivered(row("a" * 32, NOW - 10), row("b" * 32, NOW - 5 * DAY))
+    answer = history(public, history_key()).json()
+    assert [item["id"] for item in answer["items"]] == ["a" * 32, "b" * 32]
+
+
+def test_a_late_delivery_of_old_plays_still_reaches_a_follower(public):
+    key = history_key()
+    delivered(row("a" * 32, NOW - 10))
+    cursor = history(public, key).json()["next_cursor"]
+    delivered(row("b" * 32, NOW - 5 * DAY))
+    assert [item["id"] for item in history(public, key, cursor=cursor).json()["items"]] == [
+        "b" * 32
+    ]
+
+
+def test_a_follower_with_nothing_new_keeps_its_place(public):
+    key = history_key()
+    delivered(row("a" * 32, NOW - 10))
+    cursor = history(public, key).json()["next_cursor"]
+    answer = history(public, key, cursor=cursor).json()
+    assert answer == {"items": [], "next_cursor": cursor, "more": False}
+
+
+def test_history_can_be_limited_by_time(public):
+    delivered(*(row(f"{i:032x}", NOW - 1000 + i * 100) for i in range(4)))
+    answer = history(public, history_key(), since=NOW - 900, until=NOW - 800).json()
+    assert [item["ts"] for item in answer["items"]] == [NOW - 900, NOW - 800]
+
+
+def test_history_is_only_ever_the_keys_own_account(public):
+    delivered(row("a" * 32, NOW - 10), account=BOB)
+    assert history(public, history_key()).json()["items"] == []
+
+
+def test_a_replaced_import_expires_older_cursors(public):
+    imported(NOW - 5 * DAY)
+    key = history_key()
+    cursor = history(public, key).json()["next_cursor"]
+    imported(NOW - 4 * DAY)
+    response = history(public, key, cursor=cursor)
+    assert response.status_code == 410
+    assert response.json()["detail"] == "cursor_expired"
+    assert len(history(public, key).json()["items"]) == 1
+
+
+def test_a_delivery_that_cuts_an_import_back_expires_older_cursors(public):
+    imported(NOW - 2 * DAY)
+    key = history_key()
+    cursor = history(public, key).json()["next_cursor"]
+    delivered(row("a" * 32, NOW - 3 * DAY))
+    assert history(public, key, cursor=cursor).status_code == 410
+
+
+def test_a_first_import_removes_nothing_and_keeps_cursors_valid(public):
+    key = history_key()
+    delivered(row("a" * 32, NOW - 10))
+    cursor = history(public, key).json()["next_cursor"]
+    imported(NOW - 5 * DAY)
+    response = history(public, key, cursor=cursor)
+    assert response.status_code == 200
+    assert [item["source"] for item in response.json()["items"]] == ["lastfm"]
+
+
+def test_one_accounts_removal_leaves_anothers_cursor_alone(public):
+    key = history_key()
+    delivered(row("a" * 32, NOW - 10))
+    cursor = history(public, key).json()["next_cursor"]
+    imported(NOW - 5 * DAY, account=BOB)
+    imported(NOW - 4 * DAY, account=BOB)
+    assert history(public, key, cursor=cursor).status_code == 200
+
+
+@pytest.mark.parametrize(
+    "params", [{"limit": 501}, {"limit": 0}, {"cursor": "nonsense"}, {"since": -1}, {"until": -1}]
+)
+def test_history_refuses_what_it_cannot_answer(public, params):
+    assert history(public, history_key(), **params).status_code == 422
+
+
+def stats(public, key):
+    return public.get("/device-link/v1/stats", headers=auth(key))
+
+
+def test_stats_answers_with_a_list_of_its_own(public):
+    delivered(row("a" * 32, NOW - 10, album="B", cover_art_id="secret-id", genre="Rock"))
+    play_history.save_milestones(ALICE, {"plays": 1, "hours": 0, "streak": 1, "records": 0})
+    answer = stats(public, history_key("stats")).json()
+    assert set(answer) == {"total", "live_since", "top", "milestones", "timestamps"}
+    assert answer["total"] == 1
+    assert answer["timestamps"] == [NOW - 10]
+    assert answer["milestones"]["streak"] == 1
+    assert answer["top"]["songs"] == [{"title": "T", "artist": "A", "album_id": "", "plays": 1}]
+    assert answer["top"]["artists"] == [{"name": "A", "artist_id": "", "plays": 1}]
+    assert answer["top"]["albums"] == [{"title": "B", "artist": "A", "album_id": "", "plays": 1}]
+    assert answer["top"]["genres"] == [{"name": "Rock", "plays": 1}]
+
+
+def test_stats_are_only_ever_the_keys_own_account(public):
+    delivered(row("a" * 32, NOW - 10), account=BOB)
+    assert stats(public, history_key("stats")).json()["total"] == 0
+
+
+@pytest.mark.parametrize(
+    "path, scope, other",
+    [("history", "history", "stats"), ("stats", "stats", "history")],
+)
+def test_each_read_route_needs_its_own_right(public, path, scope, other):
+    url = f"/device-link/v1/{path}"
+    assert public.get(url, headers=auth(app_key(scope))).status_code == 200
+    assert public.get(url, headers=auth(app_key(other))).status_code == 403
+    assert public.get(url, headers=auth(key_for())).status_code == 403
+    assert public.get(url).status_code == 401

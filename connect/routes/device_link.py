@@ -14,7 +14,7 @@ to the desktop app and change with it.
 
 import asyncio
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request
 from pydantic import BaseModel, Field, ValidationError
 
 from core import account_settings, api_keys, device_keys, lyrics_offsets, play_history
@@ -128,6 +128,62 @@ def get_me(owner: KeyOwner = Depends(_require_key)) -> dict:
         "scopes": sorted(owner.scopes),
         "beacon_version": CONNECT_VERSION,
         "api_version": API_VERSION,
+    }
+
+
+@v1_router.get("/history")
+def get_history(
+    owner: KeyOwner = Depends(_with_scope(device_keys.HISTORY)),
+    cursor: str | None = Query(default=None, pattern=r"^\d{1,18}\.\d{1,18}$"),
+    since: int | None = Query(default=None, ge=0),
+    until: int | None = Query(default=None, ge=0),
+    limit: int = Query(default=100, ge=1, le=_MAX_BATCH),
+) -> dict:
+    try:
+        return play_history.history_page(owner.account, cursor, since, until, limit)
+    except play_history.StaleCursor as e:
+        raise HTTPException(status_code=410, detail="cursor_expired") from e
+
+
+def _public_top(top: dict) -> dict:
+    """A list of fields of its own: the Stats page's chart entries may change
+    with the page, this may not."""
+    return {
+        "songs": [
+            {
+                "title": item["label"],
+                "artist": item["sublabel"],
+                "album_id": item["album_id"],
+                "plays": item["value"],
+            }
+            for item in top["songs"]
+        ],
+        "artists": [
+            {"name": item["label"], "artist_id": item["artist_id"], "plays": item["value"]}
+            for item in top["artists"]
+        ],
+        "albums": [
+            {
+                "title": item["label"],
+                "artist": item["sublabel"],
+                "album_id": item["album_id"],
+                "plays": item["value"],
+            }
+            for item in top["albums"]
+        ],
+        "genres": [{"name": item["label"], "plays": item["value"]} for item in top["genres"]],
+    }
+
+
+@v1_router.get("/stats")
+def get_stats(owner: KeyOwner = Depends(_with_scope(device_keys.STATS))) -> dict:
+    summary = play_history.summary(owner.account)
+    return {
+        "total": summary["total"],
+        "live_since": summary["live_since"],
+        "top": _public_top(summary["top"]),
+        "milestones": play_history.milestones(owner.account),
+        "timestamps": summary["timestamps"],
     }
 
 
