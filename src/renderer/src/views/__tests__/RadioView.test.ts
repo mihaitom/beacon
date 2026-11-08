@@ -8,10 +8,13 @@ import { i18n } from '@/i18n'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import RadioView from '../RadioView.vue'
-import RadioStationRow from '@/components/library/RadioStationRow.vue'
+import RadioStationCard from '@/components/library/RadioStationCard.vue'
 import RowSkeleton from '@/components/library/RowSkeleton.vue'
 import { useRadioStationInfoStore } from '@/stores/radioStationInfo'
 import * as radioBrowser from '@/services/connect/radioBrowser'
+import { accountScopedKey } from '@/services/accountKey'
+import { loadRadioSort, saveRadioSort } from '@/services/library/radioBrowse'
+import type { RadioStationInfo } from '@/services/connect/radio'
 import type { RadioStation } from '@/types/library'
 
 vi.mock('@/services/connect/radioBrowser', () => ({
@@ -82,15 +85,8 @@ describe('RadioView', () => {
   })
 
   describe('saved-station search', () => {
-    it('hides the search field for a short list not worth searching', () => {
-      useLibraryStore().radioStations = makeStations(3)
-      const wrapper = mountRadioView()
-
-      expect(wrapper.findComponent({ name: 'StickyFilter' }).exists()).toBe(false)
-    })
-
-    it('offers a search field once there are enough stations to search through', () => {
-      useLibraryStore().radioStations = makeStations(9)
+    it('offers the filter bar as soon as there is a station', () => {
+      useLibraryStore().radioStations = makeStations(1)
       const wrapper = mountRadioView()
 
       expect(wrapper.findComponent({ name: 'StickyFilter' }).exists()).toBe(true)
@@ -98,13 +94,14 @@ describe('RadioView', () => {
 
     it('filters the grid by name', async () => {
       useLibraryStore().radioStations = makeStations(9)
+      useRadioStationInfoStore().settled = true
       const wrapper = mountRadioView()
 
-      expect(wrapper.findAllComponents({ name: 'RadioStationRow' })).toHaveLength(9)
+      expect(wrapper.findAllComponents({ name: 'RadioStationCard' })).toHaveLength(9)
 
       await withFilterQuery(wrapper, 'Station 3')
 
-      const cards = wrapper.findAllComponents({ name: 'RadioStationRow' })
+      const cards = wrapper.findAllComponents({ name: 'RadioStationCard' })
       expect(cards).toHaveLength(1)
       expect(cards[0]!.props('station').name).toBe('Station 3')
     })
@@ -119,7 +116,7 @@ describe('RadioView', () => {
 
       await withFilterQuery(wrapper, 'Statoin 3')
 
-      expect(wrapper.findAllComponents({ name: 'RadioStationRow' })).toHaveLength(0)
+      expect(wrapper.findAllComponents({ name: 'RadioStationCard' })).toHaveLength(0)
     })
 
     it('tells "nothing saved yet" apart from "nothing matches this search"', async () => {
@@ -127,6 +124,7 @@ describe('RadioView', () => {
       expect(noneYet.text()).toContain('No radio stations saved yet')
 
       useLibraryStore().radioStations = makeStations(9)
+      useRadioStationInfoStore().settled = true
       const wrapper = mountRadioView()
       await withFilterQuery(wrapper, 'nothing matches this')
 
@@ -136,13 +134,13 @@ describe('RadioView', () => {
   })
 
   describe('while the station list is still loading', () => {
-    it('holds the layout still with row-shaped placeholders instead of a spinner', async () => {
+    it('holds the layout still with placeholders instead of a spinner', async () => {
       const library = useLibraryStore()
       library.loadingCount = 1
       const wrapper = mountRadioView()
       await wrapper.vm.$nextTick()
 
-      expect(wrapper.findAllComponents(RowSkeleton).length).toBeGreaterThan(0)
+      expect(wrapper.findComponent({ name: 'VSkeletonLoader' }).exists()).toBe(true)
       // A spinner in the flow was what pushed everything below it down
       // while it was there, and back up when it went.
       expect(wrapper.findComponent({ name: 'VProgressCircular' }).exists()).toBe(false)
@@ -157,11 +155,184 @@ describe('RadioView', () => {
       const library = useLibraryStore()
       library.radioStations = makeStations(3)
       library.loadingCount = 1
+      useRadioStationInfoStore().settled = true
       const wrapper = mountRadioView()
       await wrapper.vm.$nextTick()
 
-      expect(wrapper.findAllComponents(RowSkeleton)).toHaveLength(0)
-      expect(wrapper.findAllComponents(RadioStationRow)).toHaveLength(3)
+      expect(wrapper.findComponent({ name: 'VSkeletonLoader' }).exists()).toBe(false)
+      expect(wrapper.findAllComponents(RadioStationCard)).toHaveLength(3)
+    })
+
+    it('uses row-shaped placeholders in the list form', async () => {
+      localStorage.setItem(accountScopedKey('beacon.radioListView'), 'true')
+      useLibraryStore().loadingCount = 1
+      const wrapper = mountRadioView()
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.findComponent(RowSkeleton).exists()).toBe(true)
+    })
+
+    /** Every order but the name comes from the details, so showing the
+     * cards first would reshuffle them under the pointer a moment later. */
+    it('waits for the details unless sorting by name', async () => {
+      useLibraryStore().radioStations = makeStations(3)
+      const waiting = mountRadioView()
+      expect(waiting.findAllComponents(RadioStationCard)).toHaveLength(0)
+
+      await vi.advanceTimersByTimeAsync(0)
+      expect(waiting.findAllComponents(RadioStationCard)).toHaveLength(3)
+
+      useRadioStationInfoStore().settled = false
+      saveRadioSort({ key: 'name', direction: 'asc' })
+      const byName = mountRadioView()
+      expect(byName.findAllComponents(RadioStationCard)).toHaveLength(3)
+    })
+  })
+
+  describe('browsing the wall', () => {
+    const NOW = Date.parse('2026-10-20T12:00:00Z')
+    const secondsAgo = (days: number) => (NOW - days * 86_400_000) / 1000
+
+    /** Station i gets info[i]; the details are in before the page mounts. */
+    function withStations(info: Partial<RadioStationInfo>[]) {
+      const stations = makeStations(info.length)
+      useLibraryStore().radioStations = stations
+      const store = useRadioStationInfoStore()
+      store.byUrl = Object.fromEntries(
+        stations.map((station, i) => [station.streamUrl, { lastTitle: null, ...info[i]! }]),
+      )
+      store.settled = true
+      vi.spyOn(store, 'load').mockResolvedValue()
+    }
+
+    function shown(wrapper: ReturnType<typeof mountRadioView>): string[] {
+      return wrapper
+        .findAllComponents(RadioStationCard)
+        .map((card) => card.props('station').name as string)
+    }
+
+    function vmOf(wrapper: ReturnType<typeof mountRadioView>) {
+      return wrapper.vm as unknown as {
+        tag: string
+        tags: string[]
+        pickSort(key: string): void
+        toggleDirection(): void
+        setListView(list: boolean): void
+      }
+    }
+
+    beforeEach(() => vi.setSystemTime(NOW))
+
+    it('narrows the wall to the picked genre, and keeps the search working inside it', async () => {
+      withStations([{ tags: ['jazz'] }, { tags: ['jazz', 'rock'] }, { tags: ['rock'] }])
+      const wrapper = mountRadioView()
+      expect(vmOf(wrapper).tags).toEqual(expect.arrayContaining(['jazz', 'rock']))
+
+      vmOf(wrapper).tag = 'jazz'
+      await wrapper.vm.$nextTick()
+      expect(shown(wrapper).sort()).toEqual(['Station 0', 'Station 1'])
+
+      await withFilterQuery(wrapper, 'Station 1')
+      expect(shown(wrapper)).toEqual(['Station 1'])
+    })
+
+    /** Deleting the last jazz station takes the jazz button with it, and
+     * nothing would be left to click out of an empty page with. */
+    it('falls back to everything when the picked genre has gone', async () => {
+      withStations([{ tags: ['jazz'] }, { tags: ['jazz'] }, {}])
+      const wrapper = mountRadioView()
+      vmOf(wrapper).tag = 'jazz'
+      await wrapper.vm.$nextTick()
+
+      useLibraryStore().radioStations = makeStations(3).slice(1)
+      await wrapper.vm.$nextTick()
+
+      expect(shown(wrapper).sort()).toEqual(['Station 1', 'Station 2'])
+    })
+
+    it('splits by what was heard this week when sorted by last heard', () => {
+      withStations([
+        { lastTitle: { title: 'a', at: secondsAgo(30) } },
+        { lastTitle: { title: 'b', at: secondsAgo(1) } },
+      ])
+      const wrapper = mountRadioView()
+
+      const titles = wrapper.findAll('h2.section-title').map((title) => title.text())
+      expect(titles).toEqual(['Heard this week', 'Earlier'])
+      expect(shown(wrapper)).toEqual(['Station 1', 'Station 0'])
+    })
+
+    it('shows no heading when everything falls into one group', () => {
+      withStations([{ lastTitle: { title: 'a', at: secondsAgo(1) } }])
+      const wrapper = mountRadioView()
+
+      expect(wrapper.find('h2.section-title').exists()).toBe(false)
+      expect(shown(wrapper)).toEqual(['Station 0'])
+    })
+
+    it('shows no heading for any other order', async () => {
+      withStations([
+        { lastTitle: { title: 'a', at: secondsAgo(30) } },
+        { lastTitle: { title: 'b', at: secondsAgo(1) } },
+      ])
+      const wrapper = mountRadioView()
+
+      vmOf(wrapper).pickSort('name')
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.find('h2.section-title').exists()).toBe(false)
+      expect(shown(wrapper)).toEqual(['Station 0', 'Station 1'])
+    })
+
+    it('remembers the order across visits', async () => {
+      withStations([{ bitrate: 128 }, { bitrate: 320 }])
+      const wrapper = mountRadioView()
+
+      vmOf(wrapper).pickSort('bitrate')
+      await wrapper.vm.$nextTick()
+      expect(shown(wrapper)).toEqual(['Station 1', 'Station 0'])
+
+      vmOf(wrapper).toggleDirection()
+      await wrapper.vm.$nextTick()
+      expect(shown(wrapper)).toEqual(['Station 0', 'Station 1'])
+      expect(loadRadioSort()).toEqual({ key: 'bitrate', direction: 'asc' })
+      expect(shown(mountRadioView())).toEqual(['Station 0', 'Station 1'])
+    })
+
+    it('switches to the list form and remembers it', async () => {
+      withStations([{}])
+      const wrapper = mountRadioView()
+      expect(wrapper.findComponent(RadioStationCard).props('row')).toBe(false)
+
+      vmOf(wrapper).setListView(true)
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.findComponent(RadioStationCard).props('row')).toBe(true)
+      expect(mountRadioView().findComponent(RadioStationCard).props('row')).toBe(true)
+    })
+
+    describe('clicking a station', () => {
+      it('starts a station that is not on', () => {
+        withStations([{}])
+        const wrapper = mountRadioView()
+
+        wrapper.findComponent(RadioStationCard).vm.$emit('play', useLibraryStore().radioStations[0])
+
+        expect(usePlaybackStore().playRadioStation).toHaveBeenCalledTimes(1)
+      })
+
+      it('stops the one that is on instead of starting it again', () => {
+        withStations([{}])
+        const playback = usePlaybackStore()
+        const togglePlay = vi.spyOn(playback, 'togglePlay').mockResolvedValue()
+        playback.radioStation = useLibraryStore().radioStations[0]!
+        const wrapper = mountRadioView()
+
+        wrapper.findComponent(RadioStationCard).vm.$emit('play', playback.radioStation)
+
+        expect(togglePlay).toHaveBeenCalledTimes(1)
+        expect(playback.playRadioStation).not.toHaveBeenCalled()
+      })
     })
   })
 

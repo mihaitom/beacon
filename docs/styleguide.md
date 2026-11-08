@@ -472,14 +472,21 @@ does not.
 Desktop rows get their hover from `--beacon-hover`; a plain `v-list` opts in
 with `.beacon-list` on its container.
 
-The desktop Radio page, and Playlists in its list form, are large rows in
-one `.beacon-panel--flush` rather than tiles (`RadioStationRow.vue`,
+Radio and Playlists in their list forms are large rows in
+one `.beacon-panel--flush` rather than tiles (`RadioStationCard.vue` and
 `PlaylistCard.vue` with `row`, placeholders from `RowSkeleton.vue`): artwork
 on the left, a name at 1.15rem/600 (Inter - the serif is never for a row), a
 quiet meta line, one line saying what is in it (a playlist's main artists,
 the last title heard on a station) and tonal genre chips; the actions sit as
 plain buttons, not pills, centred on the right. No backdrop - a page of rows
 each with its own moving picture is too much at once.
+
+The Radio page's default form is a wall built like the Playlists one, one
+sleeve per station rather than a stack: a station has one logo, so there is
+nothing to flip through. The sleeve takes the logo's own background colour, so
+a logo reads as a whole cover (`services/stationLogo.ts`), and a logo is
+enlarged at most twofold, so a small favicon stays small rather than blurred.
+The station that is on is marked by its name and level bars, not a fill.
 
 The Playlists page's default form is a wall of record stacks
 (`PlaylistCard.vue`, a grid of at least 220px columns): each front record is

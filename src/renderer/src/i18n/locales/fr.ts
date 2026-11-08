@@ -1493,6 +1493,13 @@ export default {
   },
   radio: {
     title: 'Radio',
+    stop: 'Arrêter',
+    sortHeard: 'Dernière écoute',
+    sortCountry: 'Pays',
+    sortBitrate: 'Débit',
+    sectionHeardThisWeek: 'Écoutées cette semaine',
+    sectionEarlier: 'Plus anciennes',
+    segments: 'Afficher',
     station1: 'station',
     stationsN: 'stations',
     addStation: 'Ajouter une station',

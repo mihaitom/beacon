@@ -17,7 +17,7 @@
 <script lang="ts">
 /**
  * The placeholder for one row of the Playlists or Radio list
- * (PlaylistCard.vue, RadioStationRow.vue) while the list is still loading.
+ * (PlaylistCard.vue, RadioStationCard.vue) while the list is still loading.
  *
  * In the list's own place rather than a spinner above it: a spinner in the
  * flow pushed the whole page down while it was there and back up when it

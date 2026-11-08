@@ -1475,6 +1475,13 @@ export default {
   },
   radio: {
     title: 'Radio',
+    stop: 'Stop',
+    sortHeard: 'Last heard',
+    sortCountry: 'Country',
+    sortBitrate: 'Bitrate',
+    sectionHeardThisWeek: 'Heard this week',
+    sectionEarlier: 'Earlier',
+    segments: 'Show',
     station1: 'station',
     stationsN: 'stations',
     addStation: 'Add station',

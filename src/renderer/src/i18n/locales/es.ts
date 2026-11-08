@@ -1488,6 +1488,13 @@ export default {
   },
   radio: {
     title: 'Radio',
+    stop: 'Detener',
+    sortHeard: 'Última escucha',
+    sortCountry: 'País',
+    sortBitrate: 'Bitrate',
+    sectionHeardThisWeek: 'Escuchadas esta semana',
+    sectionEarlier: 'Hace más tiempo',
+    segments: 'Mostrar',
     station1: 'emisora',
     stationsN: 'emisoras',
     addStation: 'Añadir emisora',

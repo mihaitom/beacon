@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
@@ -7,10 +7,15 @@ import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { useAuthStore } from '@/stores/auth'
 import { usePlaybackStore } from '@/stores/playback'
-import RadioStationRow from '../RadioStationRow.vue'
+import RadioStationCard from '../RadioStationCard.vue'
 import { useRadioStationInfoStore } from '@/stores/radioStationInfo'
 import { useRadioMetadataStore } from '@/stores/radioMetadata'
+import { extractDominantColor } from '@/services/colorExtractor'
+import { readLogoLook } from '@/services/stationLogo'
 import type { RadioStation } from '@/types/library'
+
+vi.mock('@/services/stationLogo', () => ({ readLogoLook: vi.fn() }))
+vi.mock('@/services/colorExtractor', () => ({ extractDominantColor: vi.fn() }))
 
 const vuetify = createVuetify({ components, directives })
 
@@ -24,18 +29,20 @@ function makeStation(overrides: Partial<RadioStation> = {}): RadioStation {
   }
 }
 
-function mountRow(props: Partial<InstanceType<typeof RadioStationRow>['$props']> = {}) {
-  return mount(RadioStationRow, {
-    props: { station: makeStation(), ...props },
+function mountRow(props: Partial<InstanceType<typeof RadioStationCard>['$props']> = {}) {
+  return mount(RadioStationCard, {
+    props: { station: makeStation(), row: true, ...props },
     global: { plugins: [vuetify, i18n], stubs: { CoverArt: true } },
     // v-menu teleports its content out of the component tree.
     attachTo: document.body,
   })
 }
 
-describe('RadioStationRow', () => {
+describe('RadioStationCard', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    vi.mocked(readLogoLook).mockReset().mockResolvedValue(null)
+    vi.mocked(extractDominantColor).mockReset().mockResolvedValue(null)
   })
 
   afterEach(() => {
@@ -49,16 +56,16 @@ describe('RadioStationRow', () => {
     useAuthStore().$patch({ serverType: 'subsonic', isAdmin: false })
     const wrapper = mountRow()
 
-    expect(wrapper.find('.radio-row__menu').exists()).toBe(false)
+    expect(wrapper.find('.radio-card__menu').exists()).toBe(false)
 
-    await wrapper.get('.radio-row').trigger('click')
+    await wrapper.get('.radio-card').trigger('click')
     expect(wrapper.emitted('play')?.[0]?.[0]).toMatchObject({ id: 's1' })
   })
 
   it('plays the station when the row is clicked', async () => {
     const wrapper = mountRow()
 
-    await wrapper.get('.radio-row').trigger('click')
+    await wrapper.get('.radio-card').trigger('click')
 
     expect(wrapper.emitted('play')).toEqual([[wrapper.props('station')]])
   })
@@ -126,7 +133,7 @@ describe('RadioStationRow', () => {
   it('opens an edit/delete menu without also playing the station', async () => {
     const wrapper = mountRow()
 
-    await wrapper.get('.radio-row__menu').trigger('click')
+    await wrapper.get('.radio-card__menu').trigger('click')
     expect(wrapper.emitted('play')).toBeUndefined()
 
     const editItem = [...document.querySelectorAll('.v-list-item')].find((el) =>
@@ -141,7 +148,7 @@ describe('RadioStationRow', () => {
   it('emits delete from the same menu', async () => {
     const wrapper = mountRow()
 
-    await wrapper.get('.radio-row__menu').trigger('click')
+    await wrapper.get('.radio-card__menu').trigger('click')
     const deleteItem = [...document.querySelectorAll('.v-list-item')].find((el) =>
       el.textContent?.includes('Delete'),
     ) as HTMLElement
@@ -151,28 +158,154 @@ describe('RadioStationRow', () => {
     expect(wrapper.emitted('delete')).toEqual([[wrapper.props('station')]])
   })
 
-  it('highlights the row and pins the logo overlay with a volume icon while this station is current', async () => {
-    const notPlaying = mountRow()
-    expect(notPlaying.find('.radio-row--current').exists()).toBe(false)
-    expect(notPlaying.find('.radio-row__logo-overlay--current').exists()).toBe(false)
-    expect(notPlaying.find('.mdi-play').exists()).toBe(true)
+  describe('the station that is on', () => {
+    function mountCurrent(isPlaying: boolean) {
+      const station = makeStation()
+      const playback = usePlaybackStore()
+      playback.radioStation = { ...station }
+      playback.isPlaying = isPlaying
+      return mountRow({ station })
+    }
 
-    const station = makeStation()
-    const playing = mountRow({ station })
-    usePlaybackStore().radioStation = { ...station }
-    await playing.vm.$nextTick()
+    it('is marked and offers to stop', () => {
+      const wrapper = mountCurrent(true)
 
-    expect(playing.find('.radio-row--current').exists()).toBe(true)
-    expect(playing.find('.radio-row__logo-overlay--current').exists()).toBe(true)
-    expect(playing.find('.mdi-volume-high').exists()).toBe(true)
+      expect(wrapper.find('.radio-card--current').exists()).toBe(true)
+      expect(wrapper.find('.radio-card__bars').exists()).toBe(true)
+      expect(wrapper.find('.radio-card__actions .mdi-stop').exists()).toBe(true)
+    })
+
+    /** Paused it is still the current station, but nothing is on air, and
+     * a stop button would have nothing to stop. */
+    it('offers to play again while paused', () => {
+      const wrapper = mountCurrent(false)
+
+      expect(wrapper.find('.radio-card--current').exists()).toBe(true)
+      expect(wrapper.find('.radio-card__bars').exists()).toBe(false)
+      expect(wrapper.find('.radio-card__actions .mdi-play').exists()).toBe(true)
+    })
+
+    it('does not mark any other station', () => {
+      usePlaybackStore().radioStation = makeStation({ id: 'other' })
+      usePlaybackStore().isPlaying = true
+      const wrapper = mountRow()
+
+      expect(wrapper.find('.radio-card--current').exists()).toBe(false)
+      expect(wrapper.find('.radio-card__bars').exists()).toBe(false)
+    })
   })
 
   it('plays from its play button, once', async () => {
     const wrapper = mountRow()
 
-    await wrapper.get('.radio-row__actions .mdi-play').element.closest('button')!.click()
+    await wrapper.get('.radio-card__actions .mdi-play').element.closest('button')!.click()
 
     expect(wrapper.emitted('play')).toEqual([[wrapper.props('station')]])
+  })
+
+  describe('as a tile', () => {
+    function logoOf(wrapper: ReturnType<typeof mountRow>) {
+      return wrapper.findComponent({ name: 'CoverArt' })
+    }
+
+    async function loadLogo(wrapper: ReturnType<typeof mountRow>, src: string) {
+      logoOf(wrapper).vm.$emit('loaded', src)
+      await flushPromises()
+    }
+
+    it('plays from the button on the sleeve, once', async () => {
+      const wrapper = mountRow({ row: false })
+
+      await wrapper.get('.radio-card__play').trigger('click')
+
+      expect(wrapper.emitted('play')).toEqual([[wrapper.props('station')]])
+    })
+
+    it('opens the menu from the sleeve without playing', async () => {
+      const wrapper = mountRow({ row: false })
+
+      await wrapper.get('.radio-card__menu').trigger('click')
+
+      expect(wrapper.emitted('play')).toBeUndefined()
+      expect(document.body.textContent).toContain('Edit')
+    })
+
+    it("puts the logo on a sleeve of the logo's own colour", async () => {
+      vi.mocked(readLogoLook).mockResolvedValue({ sleeve: [200, 10, 20], pixels: 512 })
+      const wrapper = mountRow({ row: false })
+
+      await loadLogo(wrapper, 'blob:logo')
+
+      const sleeve = wrapper.get('.radio-card__sleeve').element as HTMLElement
+      expect(sleeve.style.backgroundColor).toBe('rgb(200, 10, 20)')
+    })
+
+    it('does not enlarge a small favicon past what it can carry', async () => {
+      vi.mocked(readLogoLook).mockResolvedValue({ sleeve: null, pixels: 48 })
+      const wrapper = mountRow({ row: false })
+
+      await loadLogo(wrapper, 'blob:favicon')
+
+      expect(logoOf(wrapper).props('size')).toContain('96px')
+    })
+
+    /** Logos arrive in batches and a reused card changes station, so a slow
+     * read of the old logo can finish after the new one. */
+    it('ignores the look of a logo that has been replaced meanwhile', async () => {
+      let finishOld: (look: { sleeve: [number, number, number]; pixels: number }) => void
+      vi.mocked(readLogoLook)
+        .mockReturnValueOnce(new Promise((resolve) => (finishOld = resolve)))
+        .mockResolvedValueOnce({ sleeve: [1, 2, 3], pixels: 512 })
+      const wrapper = mountRow({ row: false })
+
+      await loadLogo(wrapper, 'blob:old')
+      await loadLogo(wrapper, 'blob:new')
+      finishOld!({ sleeve: [9, 9, 9], pixels: 512 })
+      await flushPromises()
+
+      const sleeve = wrapper.get('.radio-card__sleeve').element as HTMLElement
+      expect(sleeve.style.backgroundColor).toBe('rgb(1, 2, 3)')
+    })
+
+    it('reads the glow colour only once the card is pointed at', async () => {
+      vi.mocked(extractDominantColor).mockResolvedValue([40, 50, 60])
+      const wrapper = mountRow({ row: false })
+      await loadLogo(wrapper, 'blob:logo')
+      expect(extractDominantColor).not.toHaveBeenCalled()
+
+      await wrapper.get('.radio-card').trigger('mouseenter')
+      await flushPromises()
+
+      expect(extractDominantColor).toHaveBeenCalledWith('blob:logo')
+      const glow = wrapper.get('.radio-card__glow').element as HTMLElement
+      expect(glow.style.backgroundColor).toBe('rgb(40, 50, 60)')
+    })
+
+    it('glows for the station that is on without being pointed at', async () => {
+      const station = makeStation()
+      usePlaybackStore().radioStation = { ...station }
+      const wrapper = mountRow({ row: false, station })
+
+      await loadLogo(wrapper, 'blob:logo')
+
+      expect(extractDominantColor).toHaveBeenCalledWith('blob:logo')
+    })
+
+    it('gives the caption to country and format once those are known', () => {
+      useRadioStationInfoStore().byUrl = {
+        'https://stream.example.com/chill.mp3': { country: 'Germany', lastTitle: null },
+      }
+      const wrapper = mountRow({ row: false })
+
+      expect(wrapper.text()).toContain('Germany')
+      expect(wrapper.text()).not.toContain('chillfm.example')
+    })
+
+    it('still names the host while nothing else is known', () => {
+      const wrapper = mountRow({ row: false })
+
+      expect(wrapper.text()).toContain('chillfm.example')
+    })
   })
 
   describe('the details under the name', () => {
