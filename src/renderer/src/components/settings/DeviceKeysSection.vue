@@ -14,8 +14,8 @@
             <div class="device-keys__text">
               <span>{{ entry.label }}</span>
               <span class="setting__hint setting__hint--inline">{{ deviceStatus(entry) }}</span>
-              <span v-if="entry.shares_api_keys" class="setting__hint setting__hint--inline">
-                {{ $t('settings.deviceKeysSharesApi') }}
+              <span v-if="rightsOf(entry)" class="setting__hint setting__hint--inline">
+                {{ rightsOf(entry) }}
               </span>
             </div>
             <v-spacer />
@@ -48,6 +48,41 @@
           <p class="setting__hint">{{ $t('settings.deviceKeysOnce') }}</p>
         </template>
 
+        <v-btn-toggle
+          v-model="kind"
+          mandatory
+          class="beacon-view-toggle beacon-view-toggle--text device-keys__kind"
+          :aria-label="$t('settings.deviceKeysKind')"
+        >
+          <v-btn value="desktop">{{ $t('settings.deviceKeysKindDesktop') }}</v-btn>
+          <v-btn value="app">{{ $t('settings.deviceKeysKindApp') }}</v-btn>
+        </v-btn-toggle>
+
+        <template v-if="kind === 'desktop'">
+          <v-switch
+            v-model="shareApiKeys"
+            :label="$t('settings.deviceKeysShareApi')"
+            color="primary"
+            density="compact"
+            hide-details
+          />
+          <p class="setting__hint">{{ $t('settings.deviceKeysShareApiHint') }}</p>
+        </template>
+        <template v-else>
+          <p class="setting__hint">{{ $t('settings.deviceKeysAppHint') }}</p>
+          <v-switch
+            v-for="scope in appScopeList"
+            :key="scope"
+            v-model="appScopes"
+            :value="scope"
+            :label="scopeLabel(scope)"
+            :disabled="scope === 'lyrics' && !appScopes.includes('now_playing')"
+            color="primary"
+            density="compact"
+            hide-details
+          />
+        </template>
+
         <div class="device-keys__create">
           <v-text-field
             v-model="label"
@@ -63,15 +98,6 @@
             {{ $t('settings.deviceKeysCreate') }}
           </v-btn>
         </div>
-
-        <v-switch
-          v-model="shareApiKeys"
-          :label="$t('settings.deviceKeysShareApi')"
-          color="primary"
-          density="compact"
-          hide-details
-        />
-        <p class="setting__hint">{{ $t('settings.deviceKeysShareApiHint') }}</p>
 
         <div class="device-keys__help">
           <v-btn
@@ -91,10 +117,13 @@
 import { pollingAllowed } from '@/services/connect/pollGate'
 import { timeAgo } from '@/services/relativeTime'
 import {
+  APP_SCOPES,
   createDeviceKey,
   listDeviceKeys,
   revokeDeviceKey,
+  type AppScope,
   type DeviceKey,
+  type DeviceKeyScope,
 } from '@/services/connect/serverLink'
 
 // A device that was just connected should show up while someone is still
@@ -111,7 +140,10 @@ export default {
     return {
       keys: [] as DeviceKey[],
       label: '',
+      kind: 'desktop' as 'desktop' | 'app',
       shareApiKeys: false,
+      appScopes: [] as AppScope[],
+      appScopeList: APP_SCOPES,
       busy: false,
       /** Only right after creating: the key is never sent again. */
       newKey: '',
@@ -126,8 +158,15 @@ export default {
     visible(): boolean {
       return !window.api
     },
+    /** Lyrics are only those of the song playing now, so they go with it. */
+    chosenScopes(): DeviceKeyScope[] {
+      if (this.kind === 'desktop') return this.shareApiKeys ? ['sync', 'api_keys'] : ['sync']
+      return this.appScopes.includes('now_playing')
+        ? this.appScopes
+        : this.appScopes.filter((scope) => scope !== 'lyrics')
+    },
     canCreate(): boolean {
-      return !this.busy && !!this.label.trim()
+      return !this.busy && !!this.label.trim() && this.chosenScopes.length > 0
     },
   },
   created() {
@@ -157,17 +196,30 @@ export default {
       const ago = timeAgo(entry.last_used_at * 1000, Date.now(), this.$i18n.locale)
       return this.$t('settings.deviceKeysLastUsed', { ago })
     },
+    scopeLabel(scope: AppScope): string {
+      return this.$t(`settings.deviceKeysScope_${scope}`)
+    },
+    rightsOf(entry: DeviceKey): string {
+      if (entry.scopes.includes('sync')) {
+        return entry.scopes.includes('api_keys') ? this.$t('settings.deviceKeysSharesApi') : ''
+      }
+      return this.appScopeList
+        .filter((scope) => entry.scopes.includes(scope))
+        .map(this.scopeLabel)
+        .join(', ')
+    },
     async create() {
       if (!this.canCreate) return
       this.busy = true
       try {
-        const { key, ...entry } = await createDeviceKey(this.label.trim(), this.shareApiKeys)
+        const { key, ...entry } = await createDeviceKey(this.label.trim(), this.chosenScopes)
         this.listVersion += 1
         this.newKey = key
         this.keys = [...this.keys, { ...entry, last_used_at: null, active: false }]
         this.label = ''
-        // Confirmed device by device, so it never carries over to the next.
+        // Confirmed key by key, so it never carries over to the next.
         this.shareApiKeys = false
+        this.appScopes = []
       } catch (error) {
         this.toastError(error)
       } finally {
@@ -237,6 +289,10 @@ export default {
 }
 
 .device-keys__field {
+  margin-top: 12px;
+}
+
+.device-keys__kind {
   margin-top: 12px;
 }
 

@@ -40,6 +40,11 @@ export function unpairServerLink(): Promise<ServerLinkStatus> {
   return fetchConnect<ServerLinkStatus>('/server-link', { method: 'DELETE' })
 }
 
+export type DeviceKeyScope = 'sync' | 'api_keys' | AppScope
+export type AppScope = 'history' | 'stats' | 'now_playing' | 'lyrics'
+
+export const APP_SCOPES: readonly AppScope[] = ['history', 'stats', 'now_playing', 'lyrics']
+
 export interface DeviceKey {
   id: string
   label: string
@@ -48,8 +53,8 @@ export interface DeviceKey {
   last_used_at: number | null
   /** The device has checked in recently, so it is connected right now. */
   active: boolean
-  /** Confirmed when the key was made; a different answer takes a new key. */
-  shares_api_keys: boolean
+  /** Chosen when the key was made; a different answer takes a new key. */
+  scopes: DeviceKeyScope[]
 }
 
 export async function listDeviceKeys(): Promise<DeviceKey[]> {
@@ -60,11 +65,11 @@ export async function listDeviceKeys(): Promise<DeviceKey[]> {
 /** The one response that carries the key itself. */
 export function createDeviceKey(
   label: string,
-  shareApiKeys: boolean,
+  scopes: DeviceKeyScope[],
 ): Promise<DeviceKey & { key: string }> {
   return fetchConnect('/device-keys', {
     method: 'POST',
-    body: { label, share_api_keys: shareApiKeys },
+    body: { label, scopes },
   })
 }
 

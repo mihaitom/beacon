@@ -1,10 +1,15 @@
-"""routes/device_link.py - a paired desktop app talking to this server.
+"""routes/device_link.py - a paired desktop app or a listener's own app talking
+to this server.
 
 /device-link/ is reachable without a session or CONNECT_TOKEN so that a
 reverse proxy can let exactly this prefix past its login, the way it does for
 /party/. Everything under it stands on the device key alone, and a key only
 ever speaks for the account that made it. /device-keys, where a signed-in
 listener makes one, deliberately stays outside that prefix.
+
+The routes under /device-link/v1/ are the public interface for listeners' own
+apps and may only grow (docs/help/faq/apps-and-api.md). The others are private
+to the desktop app and change with it.
 """
 
 import asyncio
@@ -20,16 +25,21 @@ from core.party import RateLimiter
 from core.server_link import INVALID_KEY_DETAIL
 from core.session import SessionState, require_authenticated_session
 from core.trusted_proxies import client_ip
+from lyrics.shared import CONNECT_VERSION
 from routes.lyrics_offsets import OffsetsPatch
 from routes.play_history import Listen, Milestones, _own
 
 router = APIRouter(prefix="/device-link")
+v1_router = APIRouter(prefix="/device-link/v1")
 keys_router = APIRouter(prefix="/device-keys", dependencies=[Depends(require_token)])
 
 limiter = RateLimiter()
 # Keys are too long to guess; this keeps a broken client or a scanner from
 # turning into a database read per request.
 _KEY_FAILURES_PER_IP = (10, 300.0)
+
+# Raised only for a change an existing app could not cope with.
+API_VERSION = 1
 
 _MAX_BATCH = 500
 # A batch of ordinary rows is a few hundred KB.
@@ -55,7 +65,7 @@ class SettingsPatch(BaseModel):
 
 class NewKey(BaseModel):
     label: str = Field(min_length=1, max_length=100)
-    share_api_keys: bool = False
+    scopes: list[str] = Field(min_length=1, max_length=10)
 
 
 async def _require_key(
@@ -76,6 +86,18 @@ async def _require_key(
     return owner
 
 
+def _with_scope(scope: str):
+    async def check(owner: KeyOwner = Depends(_require_key)) -> KeyOwner:
+        if scope not in owner.scopes:
+            raise HTTPException(status_code=403, detail="This key may not do that")
+        return owner
+
+    return check
+
+
+_syncing = Depends(_with_scope(device_keys.SYNC))
+
+
 async def _parsed(request: Request, model: type[BaseModel], limit: int):
     """The body, read only after the key has passed and only up to `limit`.
     A body declared as a handler parameter would be read before either."""
@@ -92,11 +114,25 @@ async def _parsed(request: Request, model: type[BaseModel], limit: int):
 
 @router.get("/info")
 def get_info(owner: KeyOwner = Depends(_require_key)) -> dict:
-    return {"device_link": 1, "username": owner.account.username}
+    return {
+        "device_link": 1,
+        "username": owner.account.username,
+        "scopes": sorted(owner.scopes),
+    }
+
+
+@v1_router.get("/me")
+def get_me(owner: KeyOwner = Depends(_require_key)) -> dict:
+    return {
+        "username": owner.account.username,
+        "scopes": sorted(owner.scopes),
+        "beacon_version": CONNECT_VERSION,
+        "api_version": API_VERSION,
+    }
 
 
 @router.post("/listens")
-async def post_listens(request: Request, owner: KeyOwner = Depends(_require_key)) -> dict:
+async def post_listens(request: Request, owner: KeyOwner = _syncing) -> dict:
     batch = await _parsed(request, ListenBatch, _MAX_LISTENS_BODY)
     stored = await asyncio.to_thread(
         play_history.receive_listens,
@@ -108,7 +144,7 @@ async def post_listens(request: Request, owner: KeyOwner = Depends(_require_key)
 
 
 @router.get("/summary")
-def get_summary(owner: KeyOwner = Depends(_require_key)) -> dict:
+def get_summary(owner: KeyOwner = _syncing) -> dict:
     return {
         **play_history.summary(owner.account),
         "milestones": play_history.milestones(owner.account),
@@ -116,14 +152,14 @@ def get_summary(owner: KeyOwner = Depends(_require_key)) -> dict:
 
 
 @router.put("/milestones")
-async def put_milestones(request: Request, owner: KeyOwner = Depends(_require_key)) -> dict:
+async def put_milestones(request: Request, owner: KeyOwner = _syncing) -> dict:
     seen = await _parsed(request, Milestones, _MAX_MILESTONES_BODY)
     await asyncio.to_thread(play_history.save_milestones, owner.account, seen.model_dump())
     return {"status": "ok"}
 
 
 @router.get("/settings")
-def get_settings(owner: KeyOwner = Depends(_require_key)) -> dict:
+def get_settings(owner: KeyOwner = _syncing) -> dict:
     if owner.settings_identity is None:
         return {}
     stored = account_settings.load(*owner.settings_identity)
@@ -131,7 +167,7 @@ def get_settings(owner: KeyOwner = Depends(_require_key)) -> dict:
 
 
 @router.patch("/settings")
-async def patch_settings(request: Request, owner: KeyOwner = Depends(_require_key)) -> dict:
+async def patch_settings(request: Request, owner: KeyOwner = _syncing) -> dict:
     patch = await _parsed(request, SettingsPatch, _MAX_SETTINGS_BODY)
     # An unknown field is a newer desktop's, and stays there.
     known = {k: v for k, v in patch.settings.items() if k in LINKED_FIELDS}
@@ -141,21 +177,21 @@ async def patch_settings(request: Request, owner: KeyOwner = Depends(_require_ke
 
 
 @router.get("/api-keys")
-def get_api_keys(owner: KeyOwner = Depends(_require_key)) -> dict:
+def get_api_keys(owner: KeyOwner = _syncing) -> dict:
     """The installation's keys, for a device they were confirmed for when its
     key was made. They end up in a file on that computer, hence one by one."""
-    if not owner.may_read_api_keys:
+    if device_keys.API_KEYS not in owner.scopes:
         return {"keys": {}}
     return {"keys": {service: api_keys.get(service) for service in api_keys.SERVICES}}
 
 
 @router.get("/lyrics-offsets")
-def get_lyrics_offsets(owner: KeyOwner = Depends(_require_key)) -> dict:
+def get_lyrics_offsets(owner: KeyOwner = _syncing) -> dict:
     return {"offsets": lyrics_offsets.load(owner.account)}
 
 
 @router.patch("/lyrics-offsets")
-async def patch_lyrics_offsets(request: Request, owner: KeyOwner = Depends(_require_key)) -> dict:
+async def patch_lyrics_offsets(request: Request, owner: KeyOwner = _syncing) -> dict:
     patch = await _parsed(request, OffsetsPatch, _MAX_OFFSETS_BODY)
     await asyncio.to_thread(lyrics_offsets.save, owner.account, patch.offsets)
     return {"status": "ok"}
@@ -183,8 +219,10 @@ def create_device_key(
             account,
             new_key.label.strip(),
             device_keys.settings_identity_of(session),
-            may_read_api_keys=new_key.share_api_keys,
+            scopes=new_key.scopes,
         )
+    except device_keys.InvalidScopes as e:
+        raise HTTPException(status_code=422, detail="Invalid scopes") from e
     except device_keys.TooManyKeys as e:
         raise HTTPException(status_code=409, detail="Too many device keys") from e
 

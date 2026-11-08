@@ -181,13 +181,13 @@ def test_settings_identity_needs_the_verified_name(signed_in):
 
 
 def test_keys_are_made_for_the_signed_in_account(client, signed_in):
-    made = client.post("/device-keys", json={"label": "Laptop"}).json()
+    made = client.post("/device-keys", json={"label": "Laptop", "scopes": ["sync"]}).json()
     assert device_keys.resolve(made["key"]).account == ALICE
     assert device_keys.resolve(made["key"]).settings_identity == ALICE_SETTINGS
 
 
 def test_the_list_never_contains_a_key(client, signed_in):
-    made = client.post("/device-keys", json={"label": "Laptop"}).json()
+    made = client.post("/device-keys", json={"label": "Laptop", "scopes": ["sync"]}).json()
     text = client.get("/device-keys").text
     assert made["key"] not in text
     assert made["key"].split(".")[1] not in text
@@ -199,7 +199,7 @@ def test_making_a_key_needs_a_session(client):
 
 
 def test_a_key_can_be_revoked_over_http(client, signed_in):
-    made = client.post("/device-keys", json={"label": "Laptop"}).json()
+    made = client.post("/device-keys", json={"label": "Laptop", "scopes": ["sync"]}).json()
     assert client.delete(f"/device-keys/{made['id']}").status_code == 200
     assert client.delete(f"/device-keys/{made['id']}").status_code == 404
 
@@ -225,7 +225,7 @@ def test_every_route_needs_a_key(public, method, path):
 
 def test_a_key_alone_is_enough(public):
     response = public.get("/device-link/info", headers=auth(key_for()))
-    assert response.json() == {"device_link": 1, "username": "alice"}
+    assert response.json() == {"device_link": 1, "username": "alice", "scopes": ["sync"]}
 
 
 def test_repeated_wrong_keys_are_slowed_down(public):
@@ -387,6 +387,7 @@ class FakeServer:
     """A paired Beacon server, answering what each test tells it to."""
 
     def __init__(self):
+        self.scopes = ["sync"]
         self.requests: list[httpx.Request] = []
         self.settings: dict = {}
         self.offsets: dict = {}
@@ -413,7 +414,9 @@ class FakeServer:
             return self.fail
         path = request.url.path.removeprefix("/device-link")
         if path == "/info":
-            return httpx.Response(200, json={"device_link": 1, "username": "alice-remote"})
+            return httpx.Response(
+                200, json={"device_link": 1, "username": "alice-remote", "scopes": self.scopes}
+            )
         if path == "/settings" and request.method == "GET":
             return httpx.Response(200, json=self.settings)
         if path == "/summary":
@@ -985,7 +988,7 @@ def test_custom_themes_are_shared_settings(public):
 
 
 def sharing_key() -> str:
-    return device_keys.create(ALICE, "Laptop", ALICE_SETTINGS, may_read_api_keys=True)["key"]
+    return device_keys.create(ALICE, "Laptop", ALICE_SETTINGS, scopes=("sync", "api_keys"))["key"]
 
 
 def test_a_device_confirmed_for_it_gets_the_installations_keys(public):
@@ -1007,23 +1010,22 @@ def test_api_keys_need_a_device_key(public):
 @pytest.mark.parametrize("is_admin", [True, False])
 def test_only_the_confirmation_decides_not_the_role(client, signed_in, is_admin):
     signed_in.account_is_admin = is_admin
-    without = client.post("/device-keys", json={"label": "Laptop"}).json()
+    without = client.post("/device-keys", json={"label": "Laptop", "scopes": ["sync"]}).json()
     confirmed = client.post(
-        "/device-keys", json={"label": "Desktop", "share_api_keys": True}
+        "/device-keys", json={"label": "Desktop", "scopes": ["sync", "api_keys"]}
     ).json()
-    assert device_keys.resolve(without["key"]).may_read_api_keys is False
-    assert device_keys.resolve(confirmed["key"]).may_read_api_keys is True
+    assert "api_keys" not in device_keys.resolve(without["key"]).scopes
+    assert "api_keys" in device_keys.resolve(confirmed["key"]).scopes
 
 
-def test_the_list_says_which_devices_have_the_keys(client, signed_in):
-    client.post("/device-keys", json={"label": "Laptop"})
-    made = client.post("/device-keys", json={"label": "Desktop", "share_api_keys": True}).json()
+def test_the_list_says_what_each_key_may_do(client, signed_in):
+    client.post("/device-keys", json={"label": "Laptop", "scopes": ["sync"]})
+    made = client.post("/device-keys", json={"label": "Display", "scopes": ["history"]}).json()
     listed = {
-        entry["label"]: entry["shares_api_keys"]
-        for entry in client.get("/device-keys").json()["keys"]
+        entry["label"]: entry["scopes"] for entry in client.get("/device-keys").json()["keys"]
     }
-    assert made["shares_api_keys"] is True
-    assert listed == {"Laptop": False, "Desktop": True}
+    assert made["scopes"] == ["history"]
+    assert listed == {"Laptop": ["sync"], "Display": ["history"]}
 
 
 def test_the_desktop_uses_the_servers_key(paired):
@@ -1124,3 +1126,111 @@ def test_the_routes_need_a_session(client):
 def test_unpairing_over_http(client, signed_in, paired):
     assert client.delete("/server-link").json()["linked"] is False
     assert not server_link.is_linked(ALICE)
+
+
+# ── scopes ───────────────────────────────────────────────────────────────
+
+
+APP_ONLY = ("history", "stats", "now_playing", "lyrics")
+
+
+def app_key(*scopes: str) -> str:
+    return device_keys.create(ALICE, "Display", ALICE_SETTINGS, scopes=scopes or APP_ONLY)["key"]
+
+
+@pytest.mark.parametrize(
+    "method, path",
+    [
+        ("POST", "/device-link/listens"),
+        ("GET", "/device-link/summary"),
+        ("PUT", "/device-link/milestones"),
+        ("GET", "/device-link/settings"),
+        ("PATCH", "/device-link/settings"),
+        ("GET", "/device-link/api-keys"),
+        ("GET", "/device-link/lyrics-offsets"),
+        ("PATCH", "/device-link/lyrics-offsets"),
+    ],
+)
+def test_an_apps_key_stays_out_of_what_the_desktop_uses(public, method, path):
+    response = public.request(method, path, headers=auth(app_key()))
+    assert response.status_code == 403
+
+
+@pytest.mark.parametrize(
+    "scopes",
+    [
+        [],
+        ["nonsense"],
+        ["api_keys"],
+        ["lyrics"],
+        ["sync", "history"],
+    ],
+)
+def test_a_key_cannot_be_made_with_a_combination_nobody_should_have(client, signed_in, scopes):
+    response = client.post("/device-keys", json={"label": "x", "scopes": scopes})
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "scopes", [["sync"], ["api_keys", "sync"], ["history"], ["lyrics", "now_playing"]]
+)
+def test_the_combinations_the_form_offers_are_accepted(client, signed_in, scopes):
+    assert client.post("/device-keys", json={"label": "x", "scopes": scopes}).status_code == 200
+
+
+def test_a_key_with_no_rights_at_all_is_not_made():
+    with pytest.raises(device_keys.InvalidScopes):
+        device_keys.create(ALICE, "Display", ALICE_SETTINGS, scopes=())
+
+
+def test_me_says_who_the_key_is_and_what_it_may_do(public):
+    answer = public.get("/device-link/v1/me", headers=auth(app_key("history", "stats"))).json()
+    assert answer["username"] == ALICE.username
+    assert answer["scopes"] == ["history", "stats"]
+    assert answer["api_version"] == 1
+    assert answer["beacon_version"]
+
+
+def test_me_needs_a_key(public):
+    assert public.get("/device-link/v1/me").status_code == 401
+
+
+def test_a_revoked_key_is_gone_from_v1_too(public):
+    made = device_keys.create(ALICE, "Display", ALICE_SETTINGS, scopes=("history",))
+    device_keys.revoke(ALICE, made["id"])
+    assert public.get("/device-link/v1/me", headers=auth(made["key"])).status_code == 401
+
+
+def test_a_desktop_refuses_an_apps_key_when_pairing(server):
+    server.scopes = ["history"]
+    with pytest.raises(server_link.LinkError) as refused:
+        server_link.pair(ALICE, ALICE_SETTINGS, URL, "id.secret")
+    assert refused.value.state == server_link.WRONG_KEY
+    assert server_link.status(ALICE)["linked"] is False
+
+
+def test_older_keys_keep_what_they_could_do(tmp_path):
+    conn = sqlite3.connect(tmp_path / "old.db")
+    conn.row_factory = sqlite3.Row
+    for statement in play_history._SCHEMA:
+        conn.execute(statement)
+    for migrate in play_history._MIGRATIONS[1:4]:
+        migrate(conn)
+    conn.execute("PRAGMA user_version = 4")
+    conn.execute(
+        "INSERT INTO accounts (id, server_type, server_url, username) VALUES (1, 's', 'u', 'a')"
+    )
+    for key_id, may_read in (("plain", 0), ("trusted", 1)):
+        conn.execute(
+            "INSERT INTO device_keys"
+            " (id, account_id, key_hash, label, created_at, may_read_api_keys)"
+            " VALUES (?, 1, 'h', 'l', 0, ?)",
+            (key_id, may_read),
+        )
+    conn.commit()
+
+    play_history._prepare(conn)
+
+    scopes = dict(conn.execute("SELECT id, scopes FROM device_keys").fetchall())
+    assert scopes == {"plain": "sync", "trusted": "api_keys,sync"}
+    conn.close()

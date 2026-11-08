@@ -15,6 +15,7 @@ import {
 } from '@/services/connect/serverLink'
 
 vi.mock('@/services/connect/serverLink', () => ({
+  APP_SCOPES: ['history', 'stats', 'now_playing', 'lyrics'],
   createDeviceKey: vi.fn(),
   listDeviceKeys: vi.fn(),
   revokeDeviceKey: vi.fn(),
@@ -27,14 +28,16 @@ const EXISTING: DeviceKey = {
   created_at: 1,
   last_used_at: null,
   active: false,
-  shares_api_keys: false,
+  scopes: ['sync'],
 }
 
 type Vm = {
   newKey: string
   keys: DeviceKey[]
   label: string
+  kind: 'desktop' | 'app'
   shareApiKeys: boolean
+  appScopes: string[]
   create(): Promise<void>
   revoke(entry: DeviceKey): Promise<void>
 }
@@ -83,22 +86,80 @@ describe('DeviceKeysSection', () => {
 
     vm.label = 'Laptop'
     await vm.create()
-    expect(createDeviceKey).toHaveBeenLastCalledWith('Laptop', false)
+    expect(createDeviceKey).toHaveBeenLastCalledWith('Laptop', ['sync'])
 
     vm.label = 'Desktop'
     vm.shareApiKeys = true
     await vm.create()
-    expect(createDeviceKey).toHaveBeenLastCalledWith('Desktop', true)
+    expect(createDeviceKey).toHaveBeenLastCalledWith('Desktop', ['sync', 'api_keys'])
 
     vm.label = 'Tablet'
     await vm.create()
-    expect(createDeviceKey).toHaveBeenLastCalledWith('Tablet', false)
+    expect(createDeviceKey).toHaveBeenLastCalledWith('Tablet', ['sync'])
   })
 
-  it('says which devices have the API keys', async () => {
-    vi.mocked(listDeviceKeys).mockResolvedValue([{ ...EXISTING, shares_api_keys: true }])
+  it('makes an app key with only what was switched on', async () => {
+    vi.mocked(createDeviceKey).mockResolvedValue({ ...EXISTING, id: 'new', key: 'new.secret' })
+    const { vm } = await mountSection()
+
+    vm.kind = 'app'
+    vm.label = 'Display'
+    vm.appScopes = ['history', 'stats']
+    await vm.create()
+    expect(createDeviceKey).toHaveBeenLastCalledWith('Display', ['history', 'stats'])
+    expect(vm.appScopes).toEqual([])
+  })
+
+  it('takes a right from its switch', async () => {
+    vi.mocked(createDeviceKey).mockResolvedValue({ ...EXISTING, id: 'new', key: 'new.secret' })
+    const { wrapper, vm } = await mountSection()
+    vm.kind = 'app'
+    vm.label = 'Display'
+    await flushPromises()
+
+    await wrapper.find('input[type="checkbox"]').setValue(true)
+    await vm.create()
+
+    expect(createDeviceKey).toHaveBeenLastCalledWith('Display', ['history'])
+  })
+
+  it('makes no app key with nothing switched on', async () => {
+    const { vm } = await mountSection()
+    vm.kind = 'app'
+    vm.label = 'Display'
+    await vm.create()
+    expect(createDeviceKey).not.toHaveBeenCalled()
+  })
+
+  it('does not ask for lyrics without what is playing now', async () => {
+    vi.mocked(createDeviceKey).mockResolvedValue({ ...EXISTING, id: 'new', key: 'new.secret' })
+    const { vm } = await mountSection()
+    vm.kind = 'app'
+    vm.label = 'Display'
+    vm.appScopes = ['history', 'lyrics']
+    await vm.create()
+    expect(createDeviceKey).toHaveBeenLastCalledWith('Display', ['history'])
+  })
+
+  it('never keeps app rights on a key for the desktop', async () => {
+    vi.mocked(createDeviceKey).mockResolvedValue({ ...EXISTING, id: 'new', key: 'new.secret' })
+    const { vm } = await mountSection()
+    vm.kind = 'app'
+    vm.appScopes = ['history']
+    vm.kind = 'desktop'
+    vm.label = 'Laptop'
+    await vm.create()
+    expect(createDeviceKey).toHaveBeenLastCalledWith('Laptop', ['sync'])
+  })
+
+  it('says what each key may do', async () => {
+    vi.mocked(listDeviceKeys).mockResolvedValue([
+      { ...EXISTING, id: 'a', scopes: ['sync', 'api_keys'] },
+      { ...EXISTING, id: 'b', scopes: ['history'] },
+    ])
     const { wrapper } = await mountSection()
     expect(wrapper.text()).toContain(i18n.global.t('settings.deviceKeysSharesApi'))
+    expect(wrapper.text()).toContain(i18n.global.t('settings.deviceKeysScope_history'))
   })
 
   it('stops asking once it is gone', async () => {
@@ -140,7 +201,7 @@ describe('DeviceKeysSection', () => {
       created_at: 2,
       last_used_at: null,
       active: false,
-      shares_api_keys: false,
+      scopes: ['sync'],
     })
     const { wrapper, vm } = await mountSection()
     await wrapper.setData({ label: 'Laptop' })

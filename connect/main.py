@@ -54,6 +54,7 @@ from routes.debug import router as debug_router
 from routes.deezer import router as deezer_router
 from routes.device_link import keys_router as device_keys_router
 from routes.device_link import router as device_link_router
+from routes.device_link import v1_router as device_link_v1_router
 from routes.devices import router as devices_router
 from routes.discovery import discover_all
 from routes.discovery import router as discovery_router
@@ -505,6 +506,7 @@ app.include_router(listenbrainz_router)
 app.include_router(play_history_router)
 app.include_router(device_keys_router)
 app.include_router(device_link_router)
+app.include_router(device_link_v1_router)
 app.include_router(server_link_router)
 app.include_router(deezer_router)
 app.include_router(coverart_router)

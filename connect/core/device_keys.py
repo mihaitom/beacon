@@ -1,4 +1,4 @@
-"""core/device_keys.py - the keys a Beacon server gives out to paired desktops.
+"""core/device_keys.py - the keys a Beacon server gives out to desktops and apps.
 
 A desktop app has its own connect and its own login, so a server cannot tell
 from a request whose desktop is calling. A key answers that: a listener makes
@@ -19,6 +19,7 @@ import json
 import secrets
 import time
 import uuid
+from collections.abc import Iterable
 from typing import NamedTuple
 
 from core import play_history, server_link
@@ -37,8 +38,20 @@ ACTIVE_WITHIN_SECONDS = int(2 * server_link.IDLE_SECONDS) + _LAST_USED_RESOLUTIO
 
 _NO_SUCH_KEY_HASH = hashlib.sha256(b"").hexdigest()
 
+SYNC = server_link.SYNC_SCOPE
+API_KEYS = "api_keys"
+HISTORY = "history"
+STATS = "stats"
+NOW_PLAYING = "now_playing"
+LYRICS = "lyrics"
+_APP_SCOPES = {HISTORY, STATS, NOW_PLAYING, LYRICS}
+
 
 class TooManyKeys(Exception):
+    pass
+
+
+class InvalidScopes(Exception):
     pass
 
 
@@ -46,7 +59,23 @@ class KeyOwner(NamedTuple):
     key_id: str
     account: Account
     settings_identity: tuple[str, str, str] | None
-    may_read_api_keys: bool = False
+    scopes: frozenset[str] = frozenset({SYNC})
+
+
+def _stored_scopes(scopes: Iterable[str]) -> str:
+    """A key is a desktop's or an app's, never both: a desktop key can write
+    to the account, and an app's lives in somebody's own code."""
+    chosen = set(scopes)
+    if not chosen or not chosen <= {SYNC, API_KEYS, *_APP_SCOPES}:
+        raise InvalidScopes
+    if SYNC in chosen and chosen & _APP_SCOPES:
+        raise InvalidScopes
+    if API_KEYS in chosen and SYNC not in chosen:
+        raise InvalidScopes
+    # Lyrics are only ever those of the song playing now.
+    if LYRICS in chosen and NOW_PLAYING not in chosen:
+        raise InvalidScopes
+    return ",".join(sorted(chosen))
 
 
 def settings_identity_of(session) -> tuple[str, str, str] | None:
@@ -67,9 +96,11 @@ def create(
     label: str,
     settings_identity: tuple[str, str, str] | None,
     now: float | None = None,
-    may_read_api_keys: bool = False,
+    scopes: Iterable[str] = (SYNC,),
 ) -> dict:
-    """The only time the key itself exists outside the device it goes to."""
+    """The only time the key itself exists outside the device it goes to.
+    Raises InvalidScopes for a combination no key may have."""
+    stored_scopes = _stored_scopes(scopes)
     created_at = int(time.time() if now is None else now)
     key_id = uuid.uuid4().hex
     secret = secrets.token_urlsafe(32)
@@ -82,7 +113,7 @@ def create(
             raise TooManyKeys
         conn.execute(
             "INSERT INTO device_keys"
-            " (id, account_id, key_hash, label, settings_identity, created_at, may_read_api_keys)"
+            " (id, account_id, key_hash, label, settings_identity, created_at, scopes)"
             " VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 key_id,
@@ -91,7 +122,7 @@ def create(
                 label,
                 None if settings_identity is None else json.dumps(settings_identity),
                 created_at,
-                int(may_read_api_keys),
+                stored_scopes,
             ),
         )
     return {
@@ -99,7 +130,7 @@ def create(
         "key": f"{key_id}.{secret}",
         "label": label,
         "created_at": created_at,
-        "shares_api_keys": may_read_api_keys,
+        "scopes": stored_scopes.split(","),
     }
 
 
@@ -109,7 +140,7 @@ def list_keys(account: Account, now: float | None = None) -> list[dict]:
     stamp = time.time() if now is None else now
     with play_history.transaction() as conn:
         rows = conn.execute(
-            "SELECT device_keys.id, label, created_at, last_used_at, may_read_api_keys"
+            "SELECT device_keys.id, label, created_at, last_used_at, scopes"
             " FROM device_keys"
             " JOIN accounts ON accounts.id = account_id"
             " WHERE server_type = ? AND server_url = ? AND username = ?"
@@ -122,7 +153,7 @@ def list_keys(account: Account, now: float | None = None) -> list[dict]:
             "label": row["label"],
             "created_at": row["created_at"],
             "last_used_at": row["last_used_at"],
-            "shares_api_keys": bool(row["may_read_api_keys"]),
+            "scopes": row["scopes"].split(","),
             "active": row["last_used_at"] is not None
             and stamp - row["last_used_at"] < ACTIVE_WITHIN_SECONDS,
         }
@@ -162,5 +193,5 @@ def resolve(presented: str, now: float | None = None) -> KeyOwner | None:
         key_id,
         Account(row["server_type"], row["server_url"], row["username"]),
         None if identity is None else tuple(json.loads(identity)),
-        bool(row["may_read_api_keys"]),
+        frozenset(row["scopes"].split(",")),
     )

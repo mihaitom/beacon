@@ -981,9 +981,9 @@ export default {
     serverLinkLastSync: 'Última sincronización {ago}',
     serverLinkUnsent: 'Sin enviar: {count}',
     serverLinkFailed: 'No se ha podido cambiar la conexión',
-    deviceKeysTitle: 'Aplicaciones de escritorio',
+    deviceKeysTitle: 'Aplicaciones y dispositivos',
     deviceKeysWhat:
-      'Una clave permite a una aplicación de escritorio de Beacon compartir su historial y sus ajustes con este servidor, solo para esta cuenta.',
+      'Una clave permite a una aplicación de escritorio de Beacon compartir su historial y sus ajustes con este servidor, o a una aplicación propia leer lo que elijas. Solo para esta cuenta.',
     deviceKeysLabel: 'Nueva clave para',
     deviceKeysLabelHint: 'Por ejemplo, Portátil',
     deviceKeysCreate: 'Crear clave',
@@ -995,6 +995,14 @@ export default {
     deviceKeysConnected: 'Conectado',
     deviceKeysNeverUsed: 'Aún sin usar',
     deviceKeysLastUsed: 'Último uso {ago}',
+    deviceKeysKind: 'Para qué es la clave',
+    deviceKeysKindDesktop: 'Aplicación de escritorio de Beacon',
+    deviceKeysKindApp: 'Aplicación propia',
+    deviceKeysAppHint: 'Lo que esta aplicación puede leer. Nunca puede cambiar nada.',
+    deviceKeysScope_history: 'Historial de escucha',
+    deviceKeysScope_stats: 'Estadísticas',
+    deviceKeysScope_now_playing: 'Lo que suena ahora',
+    deviceKeysScope_lyrics: 'Letra de lo que suena',
     deviceKeysShareApi:
       'Dar también a este dispositivo las claves de Last.fm y Fanart del servidor',
     deviceKeysShareApiHint:

@@ -143,7 +143,9 @@ While paired, the desktop's `/play-history/summary` answers from the server and
 falls back to the local log when it cannot. Unsent local plays are added on top
 of the server's answer, so a song just played counts at once.
 
-## Apps of your own (planned, not built)
+## Apps of your own
+
+Built so far: scopes and `/v1/me`. The rest is planned.
 
 The same key, for apps listeners write themselves: a desk display, a stream
 overlay, a dashboard. Read only, one account, and it needs a Beacon server: a
@@ -165,8 +167,7 @@ what is playing now.
 
 ### What a key may do
 
-Today any key may call every route. A key gets a list of scopes instead, chosen
-when it is made and checked per route:
+A key has a list of scopes, chosen when it is made and checked per route:
 
 | Scope         | Allows                                                     |
 | ------------- | ---------------------------------------------------------- |
@@ -177,7 +178,8 @@ when it is made and checked per route:
 | `now_playing` | `/v1/now-playing`, its event stream and its cover          |
 | `lyrics`      | `/v1/now-playing/lyrics`, only together with `now_playing` |
 
-The Settings section becomes "Apps and devices". Making a key starts with
+A key is a desktop's or an app's, never both: `sync` cannot be combined with a
+read scope. The Settings section is "Apps and devices". Making a key starts with
 Beacon desktop app (today's form, with today's switch for the API keys) or
 Own app (one switch per read scope, all off). The list shows what each key may
 do. A different answer takes a new key, as for the API keys.
@@ -201,7 +203,8 @@ private to the desktop app and may change with it; `v1` may only grow.
 | `GET /now-playing/cover`  | the image, through connect's existing artwork cache      |
 | `GET /now-playing/lyrics` | `song_id`, `synced`, `lines`, `offset`                   |
 
-Scope missing is a 403, a wrong key a 401, too many requests a 429.
+`/me` takes any key. Scope missing is a 403, a wrong key a 401, too many
+requests a 429. A desktop refuses an app's key when pairing.
 
 Limits to start from: 120 requests a minute and 3 open event streams per key.
 

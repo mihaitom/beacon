@@ -41,6 +41,8 @@ _FILENAME = "server_link.json"
 
 KEY_HEADER = "X-Beacon-Device-Key"
 INVALID_KEY_DETAIL = "Invalid device key"
+# What a key needs to be a desktop app's: core/device_keys.py has the others.
+SYNC_SCOPE = "sync"
 
 CONNECTED = "connected"
 WRONG_KEY = "wrong_key"
@@ -224,6 +226,10 @@ def pair(
     info = _call(url, key, "GET", "/info")
     if info.get("device_link") != 1:
         raise LinkError(SERVER_TOO_OLD)
+    # A key made for somebody's own app: refused here in those words, rather
+    # than as the first sync call that it may not make.
+    if SYNC_SCOPE not in info.get("scopes", [SYNC_SCOPE]):
+        raise LinkError(WRONG_KEY)
     pending: dict = {}
     if settings_identity is not None:
         remote = _call(url, key, "GET", "/settings", timeout=_SETTINGS_TIMEOUT)

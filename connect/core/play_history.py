@@ -98,6 +98,12 @@ _KEY_RIGHTS_SCHEMA = (
     "ALTER TABLE device_keys ADD COLUMN may_read_api_keys INTEGER NOT NULL DEFAULT 0",
 )
 
+_KEY_SCOPES_SCHEMA = (
+    "ALTER TABLE device_keys ADD COLUMN scopes TEXT NOT NULL DEFAULT 'sync'",
+    "UPDATE device_keys SET scopes = 'api_keys,sync' WHERE may_read_api_keys = 1",
+    "ALTER TABLE device_keys DROP COLUMN may_read_api_keys",
+)
+
 _OWN_SOURCE = "beacon"
 _TEXT_FIELDS = (
     "song_id",
@@ -235,8 +241,19 @@ def _add_key_rights(conn: sqlite3.Connection) -> None:
         conn.execute(statement)
 
 
+def _add_key_scopes(conn: sqlite3.Connection) -> None:
+    for statement in _KEY_SCOPES_SCHEMA:
+        conn.execute(statement)
+
+
 # PRAGMA user_version counts how many of these have run. Append only.
-_MIGRATIONS = (_create_log, _add_device_links, _add_lyrics_offsets, _add_key_rights)
+_MIGRATIONS = (
+    _create_log,
+    _add_device_links,
+    _add_lyrics_offsets,
+    _add_key_rights,
+    _add_key_scopes,
+)
 
 
 def _prepare(conn: sqlite3.Connection) -> None:
