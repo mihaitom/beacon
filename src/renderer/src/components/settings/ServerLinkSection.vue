@@ -97,6 +97,7 @@ const STATE_TEXT: Record<ServerLinkState, string> = {
   server_too_old: 'settings.serverLinkTooOld',
   blocked: 'settings.serverLinkBlocked',
   other_account: 'settings.serverLinkOtherAccount',
+  key_of_another_account: 'settings.serverLinkKeyOfAnotherAccount',
   invalid_url: 'settings.serverLinkInvalidUrl',
   insecure_url: 'settings.serverLinkInsecureUrl',
 }

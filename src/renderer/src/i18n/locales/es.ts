@@ -975,6 +975,8 @@ export default {
     serverLinkBlocked:
       'Ha respondido un inicio de sesión delante del servidor en lugar de Beacon. Hay que dejar pasar /device-link/.',
     serverLinkOtherAccount: 'Conectado para una cuenta distinta de la que ha iniciado sesión.',
+    serverLinkKeyOfAnotherAccount:
+      'Esta clave pertenece a una cuenta distinta de la que ha iniciado sesión aquí.',
     serverLinkInvalidUrl: 'Esa dirección de servidor no es válida.',
     serverLinkInsecureUrl: 'Un servidor en internet necesita https.',
     serverLinkPairedWith: '{url}, como {name}',

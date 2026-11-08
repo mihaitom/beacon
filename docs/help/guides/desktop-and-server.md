@@ -43,10 +43,11 @@ The first time, plays already on the computer are sent over, and the server's
 settings replace the desktop app's wherever the server has one. A setting only
 the desktop app has goes to the server.
 
-A key belongs to exactly one account. Signed in with a different account, the
-desktop app keeps that account's plays to itself and Settings says so. Each
-device should get its own key, so one can be revoked without touching the
-others.
+A key belongs to exactly one account, and connecting with a key made for a
+different account than the one signed in on the desktop is refused. Signed in
+with a different account later, the desktop app keeps that account's plays to
+itself and Settings says so. Each device should get its own key, so one can be
+revoked without touching the others.
 
 ## Behind a login
 

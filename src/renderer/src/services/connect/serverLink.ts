@@ -9,6 +9,7 @@ export type ServerLinkState =
   | 'server_too_old'
   | 'blocked'
   | 'other_account'
+  | 'key_of_another_account'
   | 'invalid_url'
   | 'insecure_url'
 

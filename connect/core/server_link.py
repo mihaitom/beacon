@@ -51,6 +51,7 @@ SERVER_TOO_OLD = "server_too_old"
 # A login page or forward auth answered instead of Beacon.
 BLOCKED = "blocked"
 OTHER_ACCOUNT = "other_account"
+KEY_OF_ANOTHER_ACCOUNT = "key_of_another_account"
 INVALID_URL = "invalid_url"
 INSECURE_URL = "insecure_url"
 
@@ -281,6 +282,11 @@ def pair(
     # than as the first sync call that it may not make.
     if SYNC_SCOPE not in info.get("scopes", [SYNC_SCOPE]):
         raise LinkError(WRONG_KEY)
+    # Only the name can be compared: the two sides file an account under
+    # different server ids and addresses. Without this, a mixed-up key would
+    # put this account's plays and settings into somebody else's.
+    if str(info.get("username", "")).casefold() != account.username.casefold():
+        raise LinkError(KEY_OF_ANOTHER_ACCOUNT)
     pending: dict = {}
     if settings_identity is not None:
         remote = _call(url, key, "GET", "/settings", timeout=_SETTINGS_TIMEOUT)

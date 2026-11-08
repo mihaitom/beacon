@@ -970,6 +970,8 @@ export default {
       "Questo server usa una versione di Beacon senza questa funzione, oppure l'indirizzo non è di un server Beacon.",
     serverLinkBlocked:
       'Ha risposto un accesso davanti al server invece di Beacon. /device-link/ deve poter passare.',
+    serverLinkKeyOfAnotherAccount:
+      'Questa chiave appartiene a un account diverso da quello connesso qui.',
     serverLinkOtherAccount:
       "Collegato per un account diverso da quello con cui hai effettuato l'accesso.",
     serverLinkInvalidUrl: 'Questo indirizzo del server non è valido.',

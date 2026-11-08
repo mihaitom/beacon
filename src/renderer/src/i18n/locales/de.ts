@@ -975,6 +975,8 @@ export default {
     serverLinkBlocked:
       'Statt Beacon hat eine Anmeldung vor dem Server geantwortet. /device-link/ muss daran vorbeigelassen werden.',
     serverLinkOtherAccount: 'Verbunden für ein anderes Konto als das angemeldete.',
+    serverLinkKeyOfAnotherAccount:
+      'Dieser Schlüssel gehört zu einem anderen Konto als dem hier angemeldeten.',
     serverLinkInvalidUrl: 'Das ist keine gültige Serveradresse.',
     serverLinkInsecureUrl: 'Ein Server im Internet braucht https.',
     serverLinkPairedWith: '{url}, als {name}',

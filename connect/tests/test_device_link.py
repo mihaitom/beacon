@@ -433,6 +433,9 @@ class FakeServer:
             "top": {"songs": [], "artists": [], "albums": [], "genres": []},
             "milestones": {"plays": 3},
         }
+        # Spelled differently from ALICE on purpose: the same person to a
+        # server that does not care about case.
+        self.username = "Alice"
         self.fail: httpx.Response | Exception | None = None
         self.on_request = None
 
@@ -451,7 +454,7 @@ class FakeServer:
             return httpx.Response(200, json={"wanted": self.wants_now_playing})
         if path == "/info":
             return httpx.Response(
-                200, json={"device_link": 1, "username": "alice-remote", "scopes": self.scopes}
+                200, json={"device_link": 1, "username": self.username, "scopes": self.scopes}
             )
         if path == "/settings" and request.method == "GET":
             return httpx.Response(200, json=self.settings)
@@ -571,10 +574,27 @@ def test_a_pull_that_gets_through_ends_the_unreachable_state(paired, pull):
     assert server_link._next_delay() == server_link.IDLE_SECONDS
 
 
+def test_a_key_of_another_account_is_refused_before_anything_moves(server):
+    server.username = "bob"
+    play()
+    with pytest.raises(server_link.LinkError) as refused:
+        server_link.pair(ALICE, ALICE_SETTINGS, URL, "the-key")
+    assert refused.value.state == server_link.KEY_OF_ANOTHER_ACCOUNT
+    assert server_link.status(ALICE)["linked"] is False
+    assert [r.url.path for r in server.requests] == ["/device-link/info"]
+
+
+def test_pairing_says_so_when_the_key_is_somebody_elses(client, signed_in, server):
+    server.username = "bob"
+    answer = client.put("/server-link", json={"url": URL, "key": "the-key"}).json()
+    assert answer["linked"] is False
+    assert answer["error"] == server_link.KEY_OF_ANOTHER_ACCOUNT
+
+
 def test_pairing_keeps_the_key_private(server):
     answer = server_link.pair(ALICE, ALICE_SETTINGS, URL, "the-key")
     assert answer["linked"] is True
-    assert answer["remote_username"] == "alice-remote"
+    assert answer["remote_username"] == "Alice"
     assert "the-key" not in json.dumps(answer)
     assert "the-key" not in json.dumps(server_link.status(ALICE))
     mode = os.stat(server_link._path()).st_mode
