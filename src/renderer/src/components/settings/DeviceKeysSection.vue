@@ -1,140 +1,59 @@
 <template>
   <section v-if="visible" class="settings-section">
     <h2 class="section-title">{{ $t('settings.deviceKeysTitle') }}</h2>
-    <div class="beacon-panel">
-      <div class="setting">
-        <p class="setting__description">{{ $t('settings.deviceKeysWhat') }}</p>
-
-        <ul v-if="keys.length" class="device-keys__list">
-          <li v-for="entry in keys" :key="entry.id" class="device-keys__row">
-            <span
-              class="status-dot"
-              :class="entry.active ? 'status-dot--ok' : 'device-keys__dot--idle'"
-            />
-            <div class="device-keys__text">
-              <span>{{ entry.label }}</span>
-              <span class="setting__hint setting__hint--inline">{{ deviceStatus(entry) }}</span>
-              <span v-if="rightsOf(entry)" class="setting__hint setting__hint--inline">
-                {{ rightsOf(entry) }}
-              </span>
-            </div>
-            <v-spacer />
-            <v-btn variant="text" :disabled="busy" @click="revoke(entry)">
-              {{ $t('settings.deviceKeysRevoke') }}
-            </v-btn>
-          </li>
-        </ul>
-
-        <template v-if="newKey">
-          <v-text-field
-            :model-value="newKey"
-            :label="$t('settings.deviceKeysKey')"
-            readonly
-            variant="solo-filled"
-            density="compact"
-            spellcheck="false"
-            hide-details
-            class="device-keys__field"
-          >
-            <template #append-inner>
-              <v-icon
-                :icon="copied === 'key' ? 'mdi-check' : 'mdi-content-copy'"
-                :color="copied === 'key' ? 'success' : undefined"
-                :title="$t('settings.deviceKeysCopy')"
-                @click="copyKey"
-              />
-            </template>
-          </v-text-field>
-          <p class="setting__hint">{{ $t('settings.deviceKeysOnce') }}</p>
-          <div v-if="newKeyIsForApp" class="device-keys__for-ai">
-            <v-btn
-              variant="tonal"
-              :prepend-icon="copied === 'instructions' ? 'mdi-check' : 'mdi-robot-outline'"
-              @click="copyInstructions"
-            >
-              {{ $t('settings.deviceKeysForAi') }}
-            </v-btn>
-            <p class="setting__hint">{{ $t('settings.deviceKeysForAiHint') }}</p>
-          </div>
-        </template>
-
-        <v-btn-toggle
-          v-model="kind"
-          mandatory
-          class="beacon-view-toggle beacon-view-toggle--text device-keys__kind"
-          :aria-label="$t('settings.deviceKeysKind')"
-        >
-          <v-btn value="desktop">{{ $t('settings.deviceKeysKindDesktop') }}</v-btn>
-          <v-btn value="app">{{ $t('settings.deviceKeysKindApp') }}</v-btn>
-        </v-btn-toggle>
-
-        <template v-if="kind === 'desktop'">
-          <v-switch
-            v-model="shareApiKeys"
-            :label="$t('settings.deviceKeysShareApi')"
-            color="primary"
-            density="compact"
-            hide-details
-          />
-          <p class="setting__hint">{{ $t('settings.deviceKeysShareApiHint') }}</p>
-        </template>
-        <template v-else>
-          <p class="setting__hint">{{ $t('settings.deviceKeysAppHint') }}</p>
-          <v-switch
-            v-for="scope in appScopeList"
-            :key="scope"
-            v-model="appScopes"
-            :value="scope"
-            :label="scopeLabel(scope)"
-            :disabled="scope === 'lyrics' && !appScopes.includes('now_playing')"
-            color="primary"
-            density="compact"
-            hide-details
-          />
-        </template>
-
-        <div class="device-keys__create">
-          <v-text-field
-            v-model="label"
-            :label="$t('settings.deviceKeysLabel')"
-            :placeholder="$t('settings.deviceKeysLabelHint')"
-            variant="solo-filled"
-            maxlength="100"
-            hide-details
-            class="device-keys__label"
-            @keyup.enter="create"
-          />
-          <v-btn color="primary" :loading="busy" :disabled="!canCreate" @click="create">
-            {{ $t('settings.deviceKeysCreate') }}
-          </v-btn>
-        </div>
-
-        <div class="device-keys__help">
-          <v-btn
-            variant="text"
-            prepend-icon="mdi-help-circle-outline"
-            @click="$emitter.emit('openHelp', helpPage)"
-          >
-            {{ $t('settings.serverLinkDocs') }}
-          </v-btn>
-        </div>
+    <div class="beacon-panel beacon-panel--flush">
+      <div class="device-keys__head">
+        <p class="setting__description device-keys__intro">{{ $t('settings.deviceKeysWhat') }}</p>
+        <v-btn variant="tonal" prepend-icon="mdi-plus" @click="adding = true">
+          {{ $t('settings.deviceKeysAdd') }}
+        </v-btn>
       </div>
+
+      <ul v-if="keys.length" class="device-keys__list">
+        <li v-for="entry in keys" :key="entry.id" class="device-keys__row">
+          <span class="device-keys__art">
+            <v-icon :icon="iconOf(entry)" size="20" />
+          </span>
+          <div class="device-keys__text">
+            <span class="text-body-medium device-keys__name">{{ entry.label }}</span>
+            <span class="device-keys__status">
+              <span
+                class="status-dot"
+                :class="entry.active ? 'status-dot--ok' : 'device-keys__dot--idle'"
+              />
+              <span class="setting__hint setting__hint--inline">{{ deviceStatus(entry) }}</span>
+            </span>
+          </div>
+          <v-btn variant="text" :disabled="busy" class="device-keys__revoke" @click="revoke(entry)">
+            {{ $t('settings.deviceKeysRevoke') }}
+          </v-btn>
+          <div v-if="rightsOf(entry).length" class="device-keys__rights">
+            <v-chip
+              v-for="right in rightsOf(entry)"
+              :key="right"
+              size="small"
+              variant="tonal"
+              color="primary"
+            >
+              {{ right }}
+            </v-chip>
+          </div>
+        </li>
+      </ul>
     </div>
+    <device-key-dialog v-model="adding" @created="onCreated" />
   </section>
 </template>
 
 <script lang="ts">
+import DeviceKeyDialog from '@/components/settings/DeviceKeyDialog.vue'
 import { pollingAllowed } from '@/services/connect/pollGate'
-import { appKeyInstructions } from '@/services/connect/appKeyInstructions'
 import { timeAgo } from '@/services/relativeTime'
 import {
   APP_SCOPES,
-  createDeviceKey,
   listDeviceKeys,
   revokeDeviceKey,
-  type AppScope,
   type DeviceKey,
-  type DeviceKeyScope,
 } from '@/services/connect/serverLink'
 
 // A device that was just connected should show up while someone is still
@@ -143,24 +62,17 @@ const REFRESH_MS = 10_000
 
 /**
  * The keys that let a desktop app send this account's listening history and
- * settings to this server. The server's side of ServerLinkSection.vue.
+ * settings to this server, or an app of the listener's own read from it. The
+ * server's side of ServerLinkSection.vue.
  */
 export default {
   name: 'DeviceKeysSection',
+  components: { DeviceKeyDialog },
   data() {
     return {
       keys: [] as DeviceKey[],
-      label: '',
-      kind: 'desktop' as 'desktop' | 'app',
-      shareApiKeys: false,
-      appScopes: [] as AppScope[],
-      appScopeList: APP_SCOPES,
+      adding: false,
       busy: false,
-      /** Only right after creating: the key is never sent again. */
-      newKey: '',
-      newKeyScopes: [] as DeviceKeyScope[],
-      copied: '' as '' | 'key' | 'instructions',
-      copiedTimer: undefined as ReturnType<typeof setTimeout> | undefined,
       refreshTimer: undefined as ReturnType<typeof setInterval> | undefined,
       /** Bumped by every change, so a list asked for before it is dropped. */
       listVersion: 0,
@@ -169,22 +81,6 @@ export default {
   computed: {
     visible(): boolean {
       return !window.api
-    },
-    /** Lyrics are only those of the song playing now, so they go with it. */
-    chosenScopes(): DeviceKeyScope[] {
-      if (this.kind === 'desktop') return this.shareApiKeys ? ['sync', 'api_keys'] : ['sync']
-      return this.appScopes.includes('now_playing')
-        ? this.appScopes
-        : this.appScopes.filter((scope) => scope !== 'lyrics')
-    },
-    helpPage(): string {
-      return this.kind === 'app' ? 'faq/apps-and-api' : 'guides/desktop-and-server'
-    },
-    canCreate(): boolean {
-      return !this.busy && !!this.label.trim() && this.chosenScopes.length > 0
-    },
-    newKeyIsForApp(): boolean {
-      return !this.newKeyScopes.includes('sync')
     },
   },
   created() {
@@ -195,7 +91,6 @@ export default {
     }, REFRESH_MS)
   },
   beforeUnmount() {
-    clearTimeout(this.copiedTimer)
     clearInterval(this.refreshTimer)
   },
   methods: {
@@ -208,42 +103,26 @@ export default {
         console.error('[settings] Failed to list device keys:', error)
       }
     },
+    iconOf(entry: DeviceKey): string {
+      return entry.scopes.includes('sync') ? 'mdi-laptop' : 'mdi-application-braces-outline'
+    },
     deviceStatus(entry: DeviceKey): string {
       if (entry.active) return this.$t('settings.deviceKeysConnected')
       if (!entry.last_used_at) return this.$t('settings.deviceKeysNeverUsed')
       const ago = timeAgo(entry.last_used_at * 1000, Date.now(), this.$i18n.locale)
       return this.$t('settings.deviceKeysLastUsed', { ago })
     },
-    scopeLabel(scope: AppScope): string {
-      return this.$t(`settings.deviceKeysScope_${scope}`)
-    },
-    rightsOf(entry: DeviceKey): string {
+    rightsOf(entry: DeviceKey): string[] {
       if (entry.scopes.includes('sync')) {
-        return entry.scopes.includes('api_keys') ? this.$t('settings.deviceKeysSharesApi') : ''
+        return entry.scopes.includes('api_keys') ? [this.$t('settings.deviceKeysSharesApi')] : []
       }
-      return this.appScopeList
-        .filter((scope) => entry.scopes.includes(scope))
-        .map(this.scopeLabel)
-        .join(', ')
+      return APP_SCOPES.filter((scope) => entry.scopes.includes(scope)).map((scope) =>
+        this.$t(`settings.deviceKeysScope_${scope}`),
+      )
     },
-    async create() {
-      if (!this.canCreate) return
-      this.busy = true
-      try {
-        const { key, ...entry } = await createDeviceKey(this.label.trim(), this.chosenScopes)
-        this.listVersion += 1
-        this.newKey = key
-        this.newKeyScopes = entry.scopes
-        this.keys = [...this.keys, { ...entry, last_used_at: null, active: false }]
-        this.label = ''
-        // Confirmed key by key, so it never carries over to the next.
-        this.shareApiKeys = false
-        this.appScopes = []
-      } catch (error) {
-        this.toastError(error)
-      } finally {
-        this.busy = false
-      }
+    onCreated(entry: DeviceKey) {
+      this.listVersion += 1
+      this.keys = [...this.keys, entry]
     },
     async revoke(entry: DeviceKey) {
       this.busy = true
@@ -251,104 +130,112 @@ export default {
         await revokeDeviceKey(entry.id)
         this.listVersion += 1
         this.keys = this.keys.filter((other) => other.id !== entry.id)
-        this.newKey = ''
       } catch (error) {
-        this.toastError(error)
+        this.$emitter.emit('toast', {
+          level: 'error',
+          title: this.$t('settings.deviceKeysTitle'),
+          message: this.$t('settings.deviceKeysFailed'),
+        })
+        console.error('[settings] Device key request failed:', error)
       } finally {
         this.busy = false
       }
-    },
-    /** navigator.clipboard is absent on plain http, so this can fail there. */
-    async copy(text: string, what: 'key' | 'instructions'): Promise<boolean> {
-      try {
-        await navigator.clipboard.writeText(text)
-      } catch (error) {
-        console.error('[settings] Failed to copy:', error)
-        return false
-      }
-      clearTimeout(this.copiedTimer)
-      this.copied = what
-      this.copiedTimer = setTimeout(() => {
-        this.copied = ''
-      }, 2000)
-      return true
-    },
-    async copyKey() {
-      await this.copy(this.newKey, 'key')
-    },
-    async copyInstructions() {
-      const origin = window.location.origin
-      if (await this.copy(appKeyInstructions(origin, this.newKeyScopes), 'instructions')) return
-      // Unlike the key, there is no field on screen to copy this from by hand.
-      this.$emitter.emit('toast', {
-        level: 'error',
-        title: this.$t('settings.deviceKeysTitle'),
-        message: this.$t('settings.deviceKeysForAiFailed', {
-          url: `${origin}/device-link/v1/openapi.json`,
-        }),
-      })
-    },
-    toastError(error: unknown) {
-      this.$emitter.emit('toast', {
-        level: 'error',
-        title: this.$t('settings.deviceKeysTitle'),
-        message: this.$t('settings.deviceKeysFailed'),
-      })
-      console.error('[settings] Device key request failed:', error)
     },
   },
 }
 </script>
 
 <style scoped>
+.device-keys__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 24px;
+  padding: 18px 20px;
+}
+
+.device-keys__intro.setting__description {
+  flex: 1 1 280px;
+  margin-bottom: 0;
+}
+
 .device-keys__list {
-  list-style: none;
-  margin: 12px 0 0;
+  container-type: inline-size;
+  margin: 0;
   padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--beacon-hairline);
 }
 
 .device-keys__row {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 12px 20px;
+}
+
+.device-keys__row + .device-keys__row {
+  border-top: 1px solid var(--beacon-hairline);
+}
+
+.device-keys__art {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+  background: rgba(var(--v-theme-on-surface), 0.06);
+}
+
+.device-keys__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.device-keys__name {
+  overflow: hidden;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.device-keys__status {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 4px 0;
+  gap: 6px;
 }
 
 .device-keys__dot--idle {
   background: rgba(var(--v-theme-on-surface), 0.3);
 }
 
-.device-keys__text {
+/* Under the name and the button together, where a long chip has room. */
+.device-keys__rights {
+  grid-column: 2 / -1;
   display: flex;
-  flex-direction: column;
-  min-width: 0;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
-.device-keys__field {
-  margin-top: 12px;
-}
+/* A phone: the button would leave the name a few letters. */
+@container (max-width: 480px) {
+  .device-keys__row {
+    grid-template-columns: 40px minmax(0, 1fr);
+  }
 
-.device-keys__for-ai {
-  margin-top: 8px;
-}
+  .device-keys__rights {
+    grid-column: 1 / -1;
+  }
 
-.device-keys__kind {
-  margin-top: 12px;
-}
-
-.device-keys__create {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.device-keys__label {
-  flex: 1;
-  min-width: 0;
-}
-
-.device-keys__help {
-  margin-top: 12px;
+  .device-keys__revoke {
+    grid-column: 1 / -1;
+    grid-row: 3;
+    justify-self: end;
+  }
 }
 </style>

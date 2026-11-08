@@ -35,7 +35,7 @@ describe('PlaylistVisibility', () => {
 
       for (const tile of wrapper.findAll('button')) {
         const box = tile.element.getBoundingClientRect()
-        const text = tile.element.querySelector('.playlist-visibility__text')!
+        const text = tile.element.querySelector('.choice-tiles__text')!
         const words = text.getBoundingClientRect()
         expect(words.top).toBeGreaterThanOrEqual(box.top)
         expect(words.bottom).toBeLessThanOrEqual(box.bottom)

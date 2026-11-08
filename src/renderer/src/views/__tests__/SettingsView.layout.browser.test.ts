@@ -151,7 +151,8 @@ describe('SettingsView layout', () => {
    * place in the page where the rhythm visibly broke. */
   it('draws a divider between blocks but never above the topmost in a panel', async () => {
     await mountSettings(1200)
-    const panels = [...document.querySelectorAll('.beacon-panel')]
+    // Not the list panels, whose rows draw their own lines.
+    const panels = [...document.querySelectorAll('.beacon-panel:not(.beacon-panel--flush)')]
 
     for (const panel of panels) {
       const settings = [...panel.querySelectorAll(':scope > .setting')]

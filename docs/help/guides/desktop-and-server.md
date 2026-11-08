@@ -34,7 +34,7 @@ server.
 
 1. Open Beacon on the server in a browser, signed in with your account, and
    go to Settings > Account > Apps and devices.
-2. Give the key a name, decide whether this device also gets the server's
+2. Choose **New key**, give it a name, decide whether this device also gets the server's
    Last.fm and Fanart keys, and create it. The key is shown once, and changing
    that decision takes a new key.
 3. In the desktop app, signed in with the same account, go to Settings >

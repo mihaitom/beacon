@@ -792,7 +792,8 @@ inputs.
   front sleeve lights up with a name, the moment it can be confirmed. No tinted
   wash behind it: the head is one flat surface. Private or public is two tiles
   saying who sees it (`PlaylistVisibility.vue`), not a switch; the chosen one
-  is marked by its outline and icon, not a fill.
+  is marked by its outline and icon, not a fill. `ChoiceTiles.vue` is that
+  control for any choice between a few things that need a line of explanation.
 
 ## Debug overlays
 

@@ -22,7 +22,7 @@ The app can only read. It cannot start music, change a setting or reach another 
 
 ## How do I get a key?
 
-Open Beacon on the server in a browser, go to Settings > Account > Apps and devices, choose **Own app**, switch on what the app may read and create the key. It is shown once. Each app gets its own key, and revoking one in the same place cuts off only that app. What a key may read cannot be changed afterwards: make a new one.
+Open Beacon on the server in a browser, go to Settings > Account > Apps and devices, choose **New key** and **Own app**, switch on what the app may read and create the key. It is shown once. Each app gets its own key, and revoking one in the same place cuts off only that app. What a key may read cannot be changed afterwards: make a new one.
 
 | Right               | Allows                                                        |
 | ------------------- | ------------------------------------------------------------- |
