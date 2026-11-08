@@ -143,6 +143,209 @@ While paired, the desktop's `/play-history/summary` answers from the server and
 falls back to the local log when it cannot. Unsent local plays are added on top
 of the server's answer, so a song just played counts at once.
 
+## Apps of your own (planned, not built)
+
+The same key, for apps listeners write themselves: a desk display, a stream
+overlay, a dashboard. Read only, one account, and it needs a Beacon server: a
+desktop app on its own does not offer this.
+
+**In:** listening history, statistics, what is playing now, synced lyrics of
+what is playing now.
+
+**Out, on purpose:**
+
+- Library and streams. Other players do that better, and a key has no media
+  server login to do it with.
+- Reporting plays from outside. A play cannot be deleted, song ids differ per
+  player, and players that scrobble can already be imported.
+- Steering playback. `/remote/*` with the integration key exists for home
+  automation.
+- The Last.fm and Fanart keys, the account's settings, cast permissions, Hue,
+  and other accounts.
+
+### What a key may do
+
+Today any key may call every route. A key gets a list of scopes instead, chosen
+when it is made and checked per route:
+
+| Scope         | Allows                                                     |
+| ------------- | ---------------------------------------------------------- |
+| `sync`        | everything the desktop app uses today                      |
+| `api_keys`    | `GET /device-link/api-keys`, only together with `sync`     |
+| `history`     | `/v1/history`                                              |
+| `stats`       | `/v1/stats`                                                |
+| `now_playing` | `/v1/now-playing`, its event stream and its cover          |
+| `lyrics`      | `/v1/now-playing/lyrics`, only together with `now_playing` |
+
+The Settings section becomes "Apps and devices". Making a key starts with
+Beacon desktop app (today's form, with today's switch for the API keys) or
+Own app (one switch per read scope, all off). The list shows what each key may
+do. A different answer takes a new key, as for the API keys.
+
+Migration 5 replaces `may_read_api_keys` with `scopes`: every existing key
+becomes `sync`, those with the right `sync,api_keys`.
+
+### Routes
+
+All under `/device-link/v1/`, so no new exception in anybody's reverse proxy,
+and with the same `X-Beacon-Device-Key` header. The routes outside `v1` stay
+private to the desktop app and may change with it; `v1` may only grow.
+
+| Route                     | Answer                                                   |
+| ------------------------- | -------------------------------------------------------- |
+| `GET /me`                 | `username`, `scopes`, `beacon_version`, `api_version`    |
+| `GET /history`            | plays in order of arrival, see below                     |
+| `GET /stats`              | `total`, `live_since`, `top`, `milestones`, `timestamps` |
+| `GET /now-playing`        | see below; `{"playing": false}` when nothing is          |
+| `GET /now-playing/events` | server-sent events, one on each change                   |
+| `GET /now-playing/cover`  | the image, through connect's existing artwork cache      |
+| `GET /now-playing/lyrics` | `song_id`, `synced`, `lines`, `offset`                   |
+
+Scope missing is a 403, a wrong key a 401, too many requests a 429.
+
+Limits to start from: 120 requests a minute and 3 open event streams per key.
+
+### History
+
+`GET /history?cursor=&since=&until=&limit=` (at most 500, default 100). Each
+item: `id`, `ts`, `source` (`beacon` or the import it came from), `song_id`,
+`title`, `artist`, `artist_id`, `album`, `album_id`, `genre`, `duration`.
+
+**Ordered by arrival, not by time played.** A desktop that was offline delivers
+plays dated days ago, so a dashboard paging by `ts` would never see them.
+`next_cursor` is `rowid` based; asking again with it returns only what is new.
+
+**Rows can also go away.** An import can be fetched again, and a desktop batch
+can cut one back. `rowid` is also reused once the newest rows are gone. So
+`accounts` gets a `history_epoch`, raised whenever rows are removed, and the
+cursor carries it: a cursor from an older epoch answers 410, and the app starts
+over.
+
+No `cover_art_id`: with no session behind a key, no route could use it.
+
+### Statistics
+
+`/play-history/summary`'s data under a field list of its own. No current
+streak: only the client knows the listener's time zone, which is why
+`timestamps` is there. `milestones` has the best streak reached.
+
+### What is playing now
+
+The one part that needs new plumbing, because connect does not know all of it:
+
+| Playing on                   | Known to the server today                             |
+| ---------------------------- | ----------------------------------------------------- |
+| A cast started on the server | yes, per session, and sessions name their account     |
+| A browser or phone, locally  | no: `/lights/local` has an id only, and only with Hue |
+| The desktop app              | no: that is another connect                           |
+
+Built in that order, each usable without the next:
+
+1. **Casts.** `registry.all()` filtered by the key's account.
+2. **Local playback.** A report from the renderer to connect, with title,
+   artist, album and duration, independent of the lights. On each change (song,
+   play/pause, seek) plus every 30 seconds, since connect carries the position
+   forward. A report older than 90 seconds counts as gone. Only sent while the
+   account has a key with `now_playing`, so nobody pays for this unasked.
+3. **Desktop.** Its connect passes the same report to the server over
+   `PUT /device-link/now-playing` (`sync`).
+
+With several at once: a cast first, the one started last; then the newest local
+report. That is the order the lights use.
+
+```json
+{
+  "playing": true,
+  "paused": false,
+  "kind": "song",
+  "source": "cast",
+  "device": "Living room",
+  "song": { "id": "", "title": "", "artist": "", "album": "", "duration": 214.0 },
+  "position": 31.4,
+  "at": 1762632000
+}
+```
+
+`position` is correct at `at`; the app carries it forward. For radio, `kind` is
+`radio` and `song` has only `title`, `artist` and the `station`.
+
+**A list of fields, never `build_status_dict()`.** That carries the queue and
+stream diagnostics, and `cover_art_url` holds the media server's credentials in
+its query string on Subsonic. The same goes for the event stream: it does not
+forward `session.event_bus`.
+
+**Event streams.** Header only, no `?key=`, unlike `/remote/events`: this key
+crosses the internet and URLs end up in proxy logs. A browser app reads the
+stream with `fetch` or polls. A stream that stays open has to do two things a
+request gets for free: look the key up again on every keepalive, so revoking
+ends it, and count as use, or the green light goes out while it runs.
+
+**Cover.** Needs a signed-in session of that account on the server to reach the
+media server, so playing only on the desktop answers 404 and the app shows its
+own placeholder.
+
+### Lyrics
+
+Only for what is playing now, not by search: a free search would turn the key
+into a proxy to the lyrics providers, and each lookup tells them what somebody
+listens to. Uses `auto_for_party()`, so a song the app asks about shares the
+cache with everybody else, and adds the account's correction from
+`lyrics_offsets`, returned as `offset` and not baked into `lines`.
+
+This is the automatic match. A listener who picked other lyrics by hand in
+Beacon sees those there, and the app the automatic ones.
+
+### Reaching it
+
+- **nginx:** `location /device-link/` needs `proxy_buffering off` and a long
+  `proxy_read_timeout` for the event stream, as `/party/` has.
+- **CORS:** a page on another origin gets refused today. `/device-link/v1/`
+  answers any origin (`*`, no credentials, nothing here uses cookies), and
+  answers a preflight before the key check, since a preflight cannot carry it.
+  Errors from the boundary in `main.py` need the same header, see
+  `_cors_headers()`. Only `v1`: the other routes keep their allow list.
+
+### Documentation
+
+A new page, `docs/help/faq/apps-and-api.md`, linked from the Settings section:
+how to get a key, every route with its scope, fields, errors and limits, a
+`curl` example, the rule that `v1` only grows, and what can be built with it:
+
+- a desk display or e-ink frame showing the song and cover
+- a stream overlay
+- a Discord or chat status
+- karaoke on a television
+- a yearly review, or a Grafana dashboard
+- a personal backup of the history as a file
+- a "listening to" box on a home page
+
+`faq/privacy.md`'s "Who can see what I listen to?" gets a sentence: a key with
+these rights tells that app live what is playing.
+
+### Order of work
+
+1. Scopes, migration, checks on the existing routes, `/me`, the Settings form.
+2. `/history` with `history_epoch`, `/stats`.
+3. nginx, CORS, limits.
+4. `/now-playing` and its events for casts, with cover.
+5. Local reports, then the desktop's.
+6. `/now-playing/lyrics`.
+7. The FAQ page, `faq/privacy.md`, `CHANGELOG.md`.
+
+### How to check it
+
+- Each route with a key lacking its scope, a revoked key, no key, and another
+  account's key. A desktop key must not read `v1`, an app key must not reach
+  `/settings`, `/listens` or `/api-keys`.
+- History: a late delivery appears after the cursor; a repeated import answers 410.
+- No response from `v1` contains a media server credential, tested against a
+  session whose cover URL has one.
+- Revoking ends an open event stream.
+- Two accounts on one server never see each other's playback.
+- Breaking each of these in a copy turns the suite red.
+- The nginx rule and an event stream through it on a real image, which needs
+  the maintainer's build.
+
 ## Open
 
 - **Admin view.** A key only speaks for its own account, so the desktop's admin
