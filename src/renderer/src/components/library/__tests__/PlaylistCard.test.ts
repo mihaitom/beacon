@@ -6,12 +6,15 @@ import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
-import PlaylistRow from '../PlaylistRow.vue'
+import PlaylistCard from '../PlaylistCard.vue'
+import { extractDominantColor } from '@/services/colorExtractor'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { makeSong } from '@/stores/__tests__/fixtures'
 import type { Playlist } from '@/types/library'
 import type { SubsonicClient } from '@/services/subsonic/client'
+
+vi.mock('@/services/colorExtractor', () => ({ extractDominantColor: vi.fn() }))
 
 const vuetify = createVuetify({ components, directives })
 
@@ -32,7 +35,13 @@ function makePlaylist(overrides: Partial<Playlist> = {}): Playlist {
   }
 }
 
-async function mountRow(props: Partial<InstanceType<typeof PlaylistRow>['$props']> = {}) {
+type CardProps = Partial<InstanceType<typeof PlaylistCard>['$props']>
+
+async function mountRow(props: CardProps = {}) {
+  return mountCard({ row: true, ...props })
+}
+
+async function mountCard(props: CardProps = {}) {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
@@ -43,7 +52,7 @@ async function mountRow(props: Partial<InstanceType<typeof PlaylistRow>['$props'
   await router.push('/')
   await router.isReady()
   return {
-    wrapper: mount(PlaylistRow, {
+    wrapper: mount(PlaylistCard, {
       props: { playlist: makePlaylist(), ...props },
       global: { plugins: [vuetify, i18n, router], stubs: { CoverArt: true } },
     }),
@@ -58,10 +67,11 @@ beforeEach(() => {
   getPlaylist = vi.fn().mockResolvedValue(makePlaylist())
   vi.spyOn(useLibraryStore(), 'client').mockReturnValue({
     getPlaylist,
+    coverArtUrl: (id: string) => `/cover/${id}`,
   } as unknown as SubsonicClient)
 })
 
-describe('PlaylistRow', () => {
+describe('PlaylistCard', () => {
   it('links the whole row to the playlist detail page', async () => {
     const { wrapper } = await mountRow()
 
@@ -195,5 +205,78 @@ describe('PlaylistRow', () => {
 
     await wrapper.trigger('mouseleave')
     expect(cover.props('browsing')).toBe(false)
+  })
+
+  describe('in the grid', () => {
+    const artOf = (id: string) => makePlaylist({ songs: [makeSong(id, { coverArtId: id })] })
+
+    it('plays from the button on its cover without opening the playlist', async () => {
+      const { wrapper } = await mountCard()
+
+      expect(clickKeptFromLink(wrapper, '.mdi-play')).toBe(true)
+      expect(wrapper.emitted('play')).toEqual([[wrapper.props('playlist')]])
+    })
+
+    it('previews from the button on its cover without opening the playlist', async () => {
+      const songs = [makeSong('1')]
+      vi.spyOn(useLibraryStore(), 'fetchPlaylist').mockResolvedValue(makePlaylist({ songs }))
+      const preview = vi.spyOn(usePlaybackStore(), 'startPreview').mockResolvedValue()
+      const { wrapper } = await mountCard()
+
+      expect(clickKeptFromLink(wrapper, '.mdi-headphones')).toBe(true)
+      await flushPromises()
+      expect(preview).toHaveBeenCalledWith(songs)
+    })
+
+    it('names two artists and counts the rest', async () => {
+      getPlaylist.mockResolvedValue(
+        makePlaylist({
+          songs: ['A', 'B', 'C', 'D'].map((artist) => makeSong(artist, { artist })),
+        }),
+      )
+      const { wrapper } = await mountCard()
+      await flushPromises()
+
+      expect(wrapper.text()).toContain('A, B')
+      expect(wrapper.text()).toContain('+2')
+      expect(wrapper.text()).not.toContain('C')
+    })
+
+    it('marks a smart playlist', async () => {
+      const { wrapper } = await mountCard({ playlist: makePlaylist({ smart: true }) })
+
+      expect(wrapper.find('.mdi-auto-fix').exists()).toBe(true)
+    })
+
+    it('reads a cover for its glow only once it is browsed', async () => {
+      vi.mocked(extractDominantColor).mockReset().mockResolvedValue([10, 20, 30])
+      getPlaylist.mockResolvedValue(artOf('front'))
+      const { wrapper } = await mountCard()
+      await flushPromises()
+      expect(extractDominantColor).not.toHaveBeenCalled()
+
+      await wrapper.trigger('mouseenter')
+      await flushPromises()
+
+      expect(extractDominantColor).toHaveBeenCalledWith('/cover/front')
+      expect(wrapper.get('.playlist-card__glow').attributes('style')).toContain('rgb(10, 20, 30)')
+    })
+
+    it('drops a colour that arrives after the pointer has left', async () => {
+      let answer: (color: [number, number, number]) => void = () => {}
+      vi.mocked(extractDominantColor)
+        .mockReset()
+        .mockReturnValue(new Promise((resolve) => (answer = resolve)))
+      getPlaylist.mockResolvedValue(artOf('front'))
+      const { wrapper } = await mountCard()
+      await flushPromises()
+
+      await wrapper.trigger('mouseenter')
+      await wrapper.trigger('mouseleave')
+      answer([10, 20, 30])
+      await flushPromises()
+
+      expect(wrapper.get('.playlist-card__glow').attributes('style') ?? '').not.toContain('rgb')
+    })
   })
 })

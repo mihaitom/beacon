@@ -3,9 +3,9 @@
     class="record-stack"
     :class="{ 'record-stack--browsing': browsing }"
     :style="{
-      width: `${size}px`,
-      height: `${size + (depth - 1) * rise}px`,
-      '--record-rise': `${rise}px`,
+      width: sizeCss,
+      height: `calc(${sizeCss} + ${depth - 1} * ${riseCss})`,
+      '--record-rise': riseCss,
     }"
     aria-hidden="true"
   >
@@ -28,7 +28,12 @@
         :class="{ 'record-stack__record--waiting': record.waiting }"
         :style="{ '--depth': Math.min(record.depth, depth - 1), '--layer': record.depth }"
       >
-        <cover-art :cover-art-id="record.coverArtId" :size="size" :fallback-icon="fallbackIcon" />
+        <cover-art
+          :cover-art-id="record.coverArtId"
+          :size="size"
+          :fetch-as="fetchAs"
+          :fallback-icon="fallbackIcon"
+        />
       </div>
     </transition-group>
   </div>
@@ -55,12 +60,15 @@ export default {
     /** Cover art ids, front first. Fewer than `depth` fill the back with
      * empty sleeves rather than showing a half-empty crate. */
     covers: { type: Array as PropType<string[]>, default: () => [] },
-    /** A record's edge, in px. */
-    size: { type: Number, required: true },
+    /** A record's edge: pixels, or a CSS length for a stack as wide as its
+     * column. */
+    size: { type: [Number, String] as PropType<number | string>, required: true },
     /** How many records stand in the stack. */
     depth: { type: Number, default: 4 },
-    /** How much higher each record behind stands, in px. */
-    rise: { type: Number, default: 15 },
+    /** How much higher each record behind stands: pixels or a CSS length. */
+    rise: { type: [Number, String] as PropType<number | string>, default: 15 },
+    /** See CoverArt's prop of the same name. */
+    fetchAs: { type: Number, default: undefined },
     browsing: { type: Boolean, default: false },
     fallbackIcon: { type: String, default: 'mdi-album' },
   },
@@ -76,6 +84,12 @@ export default {
     }
   },
   computed: {
+    sizeCss(): string {
+      return typeof this.size === 'number' ? `${this.size}px` : this.size
+    },
+    riseCss(): string {
+      return typeof this.rise === 'number' ? `${this.rise}px` : this.rise
+    },
     records(): { key: number; depth: number; waiting: boolean; coverArtId: string | null }[] {
       return Array.from({ length: this.depth + 1 }, (_, depth) => {
         const key = this.offset + depth

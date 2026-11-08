@@ -321,6 +321,12 @@ body {
   color: rgba(var(--v-theme-on-surface), 0.6);
 }
 
+/* The same pill holding words rather than two icons (Playlists' groups). */
+.beacon-view-toggle--text .v-btn {
+  width: auto;
+  padding: 0 14px;
+}
+
 .beacon-view-toggle .v-btn--active {
   color: rgb(var(--v-theme-primary));
   background: rgba(var(--v-theme-primary), 0.14);

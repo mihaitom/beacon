@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- The Playlists page is now a wall of large record stacks that flip through on hover and tint the page with the cover in front; you can switch to the list as on Albums, sort by last edited, name, number of songs or length, and narrow it to your own, smart or shared playlists
+
 ### Fixed
 
 - Home stays current while it is open: "Recently added" picks up new albums after a library scan, "Recently played" moves as soon as a song counts as played, and the top songs no longer disappear when a scan finishes

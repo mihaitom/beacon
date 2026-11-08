@@ -176,7 +176,7 @@ export default {
 </script>
 
 <style scoped>
-/* Same row as PlaylistRow.vue's, in the same flush panel - see
+/* Same row as PlaylistCard.vue's, in the same flush panel - see
  * docs/styleguide.md's Lists section. */
 .radio-row {
   display: flex;
@@ -263,7 +263,7 @@ export default {
 }
 
 /* Below this the button would squeeze the name down to a few letters; it
- * goes under the text instead. Same cut as PlaylistRow.vue's. */
+ * goes under the text instead. Same cut as PlaylistCard.vue's. */
 @media (max-width: 760px) {
   .radio-row {
     flex-wrap: wrap;

@@ -1178,6 +1178,12 @@ export default {
     editedAgo: 'bearbeitet {ago}',
     withArtists: 'Mit {artists}',
     withArtistsAndMore: 'Mit {artists} und {count} weiteren',
+    segments: 'Anzeigen',
+    segmentAll: 'Alle',
+    segmentMine: 'Meine',
+    segmentSmart: 'Smart',
+    segmentShared: 'Geteilt',
+    sortChanged: 'Zuletzt bearbeitet',
   },
   smartPlaylists: {
     eyebrow: 'Smart Playlist',

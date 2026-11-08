@@ -24,7 +24,7 @@ import ArtworkLightbox from '../ArtworkLightbox.vue'
 import DetailHeader from '../DetailHeader.vue'
 import AlbumCard from '../AlbumCard.vue'
 import ArtistCard from '../ArtistCard.vue'
-import PlaylistRow from '../PlaylistRow.vue'
+import PlaylistCard from '../PlaylistCard.vue'
 
 const vuetify = createVuetify({ components, directives })
 
@@ -299,7 +299,7 @@ describe('tile context menus', () => {
         history: createMemoryHistory(),
         routes: [{ path: '/:pathMatch(.*)*', component: { template: '<div />' } }],
       })
-      return mount(PlaylistRow, {
+      return mount(PlaylistCard, {
         props: { playlist: { ...playlist, ...overrides } },
         global: { ...globalOptions, plugins: [vuetify, i18n, router], stubs: { CoverArt: true } },
       })

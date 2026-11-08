@@ -267,6 +267,13 @@ export default {
       type: [Number, String] as PropType<number | string>,
       default: 160,
     },
+    /** The pixels a CSS-sized box reaches at most, where that is known and
+     * well under the browsing maximum: a wall of covers as wide as their
+     * column would otherwise each fetch the 640 tier. */
+    fetchAs: {
+      type: Number,
+      default: undefined,
+    },
     /** Ask for the full-size tier (FULL_SIZE_FETCH) rather than deriving a
      * tier from the box. For the artwork viewer alone: its box is a CSS
      * string, which has no pixel figure to round up from and so settles for
@@ -393,7 +400,8 @@ export default {
     // caller that needs more than that says so.
     fetchSize(): number {
       if (this.fullSize) return FULL_SIZE_FETCH
-      return typeof this.size === 'number' ? fetchSizeFor(this.size) : BROWSING_MAX_FETCH
+      if (typeof this.size === 'number') return fetchSizeFor(this.size)
+      return this.fetchAs ? fetchSizeFor(this.fetchAs) : BROWSING_MAX_FETCH
     },
     // Each entry carries what decides its network path (see Candidate) —
     // loadCandidates() reads that rather than trying to tell the routes

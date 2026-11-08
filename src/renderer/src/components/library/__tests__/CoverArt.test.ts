@@ -345,6 +345,14 @@ describe('CoverArt', () => {
       expect(requests[0]!.size).toBe(640)
     })
 
+    it('lets a box sized in CSS units name the bucket it really needs', async () => {
+      // A wall of covers as wide as their column has no pixel figure either,
+      // but would fetch twice the image it can show at 640.
+      await scrollIntoRest(mountCover({ size: '100cqi', fetchAs: 320 }))
+
+      expect(requests[0]!.size).toBe(320)
+    })
+
     it('asks for the full-size bucket only where fullSize says so', async () => {
       // The artwork viewer (ArtworkLightbox.vue) fills most of the window
       // with one deliberately-opened picture, where 640 is visibly soft.

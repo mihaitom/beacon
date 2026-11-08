@@ -472,17 +472,25 @@ does not.
 Desktop rows get their hover from `--beacon-hover`; a plain `v-list` opts in
 with `.beacon-list` on its container.
 
-The desktop Playlists and Radio pages are lists of large rows in one
-`.beacon-panel--flush` rather than grids of tiles (`PlaylistRow.vue`,
-`RadioStationRow.vue`, placeholders from `RowSkeleton.vue`): artwork on the
-left, a name at 1.15rem/600 (Inter - the serif is never for a row), a
+The desktop Radio page, and Playlists in its list form, are large rows in
+one `.beacon-panel--flush` rather than tiles (`RadioStationRow.vue`,
+`PlaylistCard.vue` with `row`, placeholders from `RowSkeleton.vue`): artwork
+on the left, a name at 1.15rem/600 (Inter - the serif is never for a row), a
 quiet meta line, one line saying what is in it (a playlist's main artists,
 the last title heard on a station) and tonal genre chips; the actions sit as
-plain buttons, not pills, centred on the right. A playlist's artwork is made
-from its own albums and only cycles while the row is hovered. No backdrop -
-a page of rows each with its own moving picture is too much at once.
+plain buttons, not pills, centred on the right. No backdrop - a page of rows
+each with its own moving picture is too much at once.
 
-Albums and Artists switch between their grid and a list (a `v-btn-toggle`
+The Playlists page's default form is a wall of record stacks
+(`PlaylistCard.vue`, a grid of at least 220px columns): each front record is
+as wide as its column, the name, length, two artists and genres under it.
+The stack only flips through the playlist's own albums while the card is
+pointed at. Play and Preview appear on the front record then, as round
+buttons, and the record in front casts its colour on the page around it,
+following each flip. That glow is for the one card being pointed at, so it
+never amounts to a page of moving pictures.
+
+Albums, Artists and Playlists switch between their grid and a list (a `v-btn-toggle`
 with `.beacon-view-toggle` in the filter row - the field's 40px pill, the
 shown layout in amber - remembered per page). A list line is the card itself in
 its `row` form (`AlbumCard`/`ArtistCard` with `row`), 56px tall, figures in
