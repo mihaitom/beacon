@@ -100,6 +100,26 @@ describe('the Stats page', () => {
     expect(record.height).toBeGreaterThan(150)
   })
 
+  it('keeps a fanned-out pile of records inside the hero on a phone', async () => {
+    const root = await mountPage(360)
+    await vi.waitFor(() => expect(root.querySelector('.stats-shelf')).not.toBeNull())
+    const style = document.createElement('style')
+    style.textContent = '.stats-shelf * { transition: none !important; animation: none !important }'
+    document.head.append(style)
+    const hero = root.querySelector('.stats-hero')?.getBoundingClientRect() as DOMRect
+
+    for (const pile of root.querySelectorAll('.stats-shelf__pile')) {
+      pile.classList.add('is-open')
+      for (const disc of pile.querySelectorAll('.stats-shelf__disc')) {
+        const box = disc.getBoundingClientRect()
+        expect(box.left).toBeGreaterThanOrEqual(hero.left)
+        expect(box.right).toBeLessThanOrEqual(hero.right)
+      }
+      pile.classList.remove('is-open')
+    }
+    style.remove()
+  })
+
   it('shows fewer weeks on a phone, large enough to tell apart', async () => {
     const root = await mountPage(360)
     const shown = [...root.querySelectorAll<HTMLElement>('.stats-year__week')].filter(

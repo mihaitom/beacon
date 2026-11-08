@@ -1,32 +1,52 @@
 <template>
   <ul v-if="records.length" class="stats-shelf" :aria-label="$t('stats.shelfLabel')">
     <li
-      v-for="(entry, index) in records"
-      :key="entry.number"
-      class="stats-shelf__slot"
-      :class="{ 'is-waiting': seen !== null && entry.number > seen }"
-      :style="{ '--i': index, '--vinyl': VINYLS[entry.tier] }"
+      v-for="(pile, pileIndex) in piles"
+      :key="pile.tier"
+      class="stats-shelf__pile"
+      :class="{ 'is-open': open === pile.tier }"
+      :style="pileStyle(pile, pileIndex)"
     >
-      <button
-        type="button"
-        class="stats-shelf__disc"
-        :class="[`stats-shelf__disc--${entry.tier}`, { 'is-landed': landed === entry.number }]"
-        :data-record="entry.number"
-        :aria-label="details(entry).join('. ')"
+      <div
+        v-for="(entry, position) in pile.shown"
+        :key="entry.number"
+        class="stats-shelf__place"
+        :class="{ 'is-waiting': isWaiting(entry) }"
+        :style="{ '--n': position }"
       >
-        <span class="stats-shelf__vinyl" />
-        <span class="stats-shelf__sheen" />
-        <span class="stats-shelf__label">{{ shortPlays(entry.plays) }}</span>
-        <v-tooltip activator="parent" location="top" open-on-click>
-          <span
-            v-for="(detail, row) in details(entry)"
-            :key="row"
-            class="stats-shelf__tip"
-            :class="{ 'stats-shelf__tip--title': row === 0 }"
-            >{{ detail }}</span
+        <div class="stats-shelf__drop">
+          <button
+            type="button"
+            class="stats-shelf__disc"
+            :class="[`stats-shelf__disc--${entry.tier}`, { 'is-landed': landed === entry.number }]"
+            :data-record="entry.number"
+            :aria-label="details(entry).join('. ')"
+            @pointerdown="touching = $event.pointerType === 'touch'"
+            @click="onTap(pile.tier, entry.number)"
           >
-        </v-tooltip>
-      </button>
+            <span class="stats-shelf__vinyl" />
+            <span class="stats-shelf__sheen" />
+            <span class="stats-shelf__label">{{ shortPlays(entry.plays) }}</span>
+            <v-tooltip
+              activator="parent"
+              location="top"
+              :open-delay="TIP_DELAY_MS"
+              :open-on-hover="canHover"
+              :model-value="tip === entry.number"
+              @update:model-value="setTip(entry.number, $event)"
+            >
+              <span
+                v-for="(detail, row) in details(entry)"
+                :key="row"
+                class="stats-shelf__tip"
+                :class="{ 'stats-shelf__tip--title': row === 0 }"
+                >{{ detail }}</span
+              >
+            </v-tooltip>
+          </button>
+        </div>
+      </div>
+      <span v-if="pile.total > MAX_SHOWN" class="stats-shelf__count">×{{ pile.total }}</span>
     </li>
   </ul>
 </template>
@@ -43,10 +63,23 @@ const VINYLS: Record<RecordTier, string> = {
   platinum: '#d5deea',
   diamond: '#bfe7ff',
 }
+// A diamond pile would otherwise grow for ever.
+const MAX_SHOWN = 5
+// Past the fan's movement: a tooltip placed sooner would point at where the
+// record was.
+const TIP_DELAY_MS = 280
 const SECONDS_PER_DAY = 86400
 const DAYS_PER_MONTH = 30.44
 // Past this, days stop being something anyone counts in.
 const MONTHS_FROM_DAYS = 60
+
+interface Pile {
+  tier: RecordTier
+  /** The newest, last on top. */
+  shown: PressedRecord[]
+  /** How many are on it, not counting one still in the air. */
+  total: number
+}
 
 export default {
   name: 'StatsShelf',
@@ -58,11 +91,75 @@ export default {
     landed: { type: Number as PropType<number | null>, default: null },
   },
   data() {
-    return { VINYLS }
+    return {
+      VINYLS,
+      MAX_SHOWN,
+      TIP_DELAY_MS,
+      /** A pile fanned out by touch, which has no hover to do it. */
+      open: null as RecordTier | null,
+      touching: false,
+      tip: null as number | null,
+      // Fixed at mount: Vuetify binds a tooltip's triggers once. On a phone a
+      // tap's emulated hover would otherwise open one over the first tap.
+      canHover: window.matchMedia?.('(hover: hover)').matches ?? true,
+    }
+  },
+  computed: {
+    piles(): Pile[] {
+      const byTier = new Map<RecordTier, PressedRecord[]>()
+      for (const record of this.records) {
+        byTier.set(record.tier, [...(byTier.get(record.tier) ?? []), record])
+      }
+      return [...byTier].map(([tier, records]) => ({
+        tier,
+        shown: records.slice(-MAX_SHOWN),
+        total: records.filter((record) => !this.isWaiting(record)).length,
+      }))
+    },
+  },
+  mounted() {
+    window.addEventListener('pointerdown', this.closeIfOutside)
+  },
+  beforeUnmount() {
+    window.removeEventListener('pointerdown', this.closeIfOutside)
   },
   methods: {
     shortPlays(plays: number): string {
       return plays < 1000 ? String(plays) : `${plays / 1000}k`
+    },
+    isWaiting(entry: PressedRecord): boolean {
+      return this.seen !== null && entry.number > this.seen
+    },
+    /** A pile at the edge opens inwards, so its fan stays inside the hero. */
+    pileStyle(pile: Pile, index: number): Record<string, string | number> {
+      const count = pile.shown.length
+      const isOnly = this.piles.length === 1
+      const origin =
+        !isOnly && index === 0
+          ? 0
+          : !isOnly && index === this.piles.length - 1
+            ? 1 - count
+            : (1 - count) / 2
+      return { '--p': index, '--count': count, '--origin': origin, '--vinyl': VINYLS[pile.tier] }
+    },
+    /** The first tap fans the pile out, a tap on a fanned record answers. */
+    onTap(tier: RecordTier, record: number): void {
+      if (!this.touching) return
+      if (this.open === tier) {
+        this.tip = this.tip === record ? null : record
+      } else {
+        this.open = tier
+        this.tip = null
+      }
+    },
+    setTip(record: number, shown: boolean): void {
+      if (shown) this.tip = record
+      else if (this.tip === record) this.tip = null
+    },
+    closeIfOutside(event: PointerEvent): void {
+      if (this.$el.contains?.(event.target as Node)) return
+      this.open = null
+      this.tip = null
     },
     details(entry: PressedRecord): string[] {
       const format = (value: number): string => value.toLocaleString(this.$i18n.locale)
@@ -102,33 +199,86 @@ export default {
 
 <style scoped>
 .stats-shelf {
-  --disc: clamp(46px, 4.4cqi, 68px);
+  /* Sized so five full piles still fit a phone. */
+  --disc: clamp(42px, 4.4cqi, 68px);
+  --rim: clamp(3px, 0.8cqi, 9px);
+  --fan-step: calc(var(--disc) + 8px);
   display: flex;
   justify-content: center;
+  gap: clamp(6px, 1.6cqi, 22px);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
-.stats-shelf__slot {
-  /* One row however many there are: the slots shrink and the records overlap,
-   * where a second row would push the hero off the screen. */
+.stats-shelf__pile {
+  --fan: 0;
   position: relative;
-  flex: 0 1 calc(var(--disc) + 14px);
+  flex: 0 1 calc(var(--disc) + (var(--count) - 1) * var(--rim));
   min-width: 0;
-  /* After the tonearm has set down, one after the other. */
-  animation: stats-shelf-in 0.65s cubic-bezier(0.2, 0.9, 0.3, 1.25) both;
-  animation-delay: calc(0.9s + var(--i) * 0.1s);
+  height: var(--disc);
+  transition: opacity 0.2s;
 }
 
-.stats-shelf__slot:hover,
-.stats-shelf__slot:focus-within {
+/* Through a custom property, so hover, keyboard and touch share one layout. */
+@media (hover: hover) {
+  .stats-shelf__pile:hover {
+    --fan: 1;
+  }
+
+  .stats-shelf:has(.stats-shelf__pile:hover) .stats-shelf__pile:not(:hover) {
+    opacity: 0.2;
+  }
+}
+
+.stats-shelf__pile:has(:focus-visible),
+.stats-shelf__pile.is-open {
+  --fan: 1;
+}
+
+.stats-shelf:has(.is-open) .stats-shelf__pile:not(.is-open) {
+  opacity: 0.2;
+}
+
+.stats-shelf__pile:hover,
+.stats-shelf__pile:has(:focus-visible),
+.stats-shelf__pile.is-open {
   z-index: 1;
 }
 
+/* Bridges the gaps between fanned records, or the pointer crossing one would
+ * close the fan under it. */
+.stats-shelf__pile::before {
+  content: '';
+  position: absolute;
+  top: -14px;
+  bottom: 0;
+  left: calc(var(--origin) * var(--fan-step));
+  width: calc(var(--fan) * var(--count) * var(--fan-step));
+}
+
+.stats-shelf__place {
+  position: absolute;
+  inset: 0 auto auto 0;
+  transform: translate(
+    calc(
+      (1 - var(--fan)) * var(--n) * var(--rim) + var(--fan) * (var(--n) + var(--origin)) *
+        var(--fan-step)
+    ),
+    calc((1 - var(--fan)) * var(--n) * -1.5px - var(--fan) * 8px)
+  );
+  transition: transform 0.26s cubic-bezier(0.2, 0.9, 0.3, 1.15);
+}
+
 /* Still in the air during the moment that announces it. */
-.stats-shelf__slot.is-waiting {
+.stats-shelf__place.is-waiting {
   visibility: hidden;
+}
+
+.stats-shelf__drop {
+  /* After the tonearm has set down, pile by pile, each dealt from the bottom. */
+  animation: stats-shelf-in 0.6s cubic-bezier(0.2, 0.9, 0.3, 1.25) both;
+  animation-delay: calc(0.9s + var(--p) * 0.14s + var(--n) * 0.07s);
 }
 
 @keyframes stats-shelf-in {
@@ -136,6 +286,22 @@ export default {
     opacity: 0;
     transform: translateY(-34px) scale(0.55);
   }
+}
+
+.stats-shelf__count {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  z-index: 1;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #2a2420;
+  background: #f1e9db;
+  opacity: calc(1 - var(--fan));
+  pointer-events: none;
 }
 
 .stats-shelf__disc {
@@ -246,11 +412,13 @@ export default {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .stats-shelf__slot,
+  .stats-shelf__drop,
   .stats-shelf__disc.is-landed {
     animation: none;
   }
 
+  .stats-shelf__pile,
+  .stats-shelf__place,
   .stats-shelf__disc,
   .stats-shelf__label {
     transition: none;

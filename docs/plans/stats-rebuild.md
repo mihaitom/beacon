@@ -203,6 +203,10 @@ certifications are, and the counts are picked so each is full on a round total:
 A full record is a "new pressing" and flies onto the shelf under the turntable,
 ahead of any other moment since it always lands on a round number of plays.
 
+The shelf is one pile per tier, so it can never get wider than five piles. A
+pile shows its newest five with a count above that, and fans out on hover or
+tap, each record with its own tooltip.
+
 The shelf needs no storage of its own: which records are full follows from the
 plays, and the date comes from counting back through the log, so it is unknown
 for a record older than the log. The tooltip says so.
