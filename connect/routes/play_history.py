@@ -37,6 +37,7 @@ class Listen(BaseModel):
 class ImportRequest(BaseModel):
     source: Literal["lastfm", "listenbrainz"]
     username: str = Field(min_length=1, max_length=200)
+    again: bool = False
 
 
 class Milestones(BaseModel):
@@ -141,5 +142,5 @@ async def start_import(
     if req.source == "lastfm" and not lastfm.is_configured():
         raise HTTPException(status_code=409, detail="No Last.fm API key configured")
     saved = await asyncio.to_thread(play_history.import_state, account)
-    play_history_import.start(account, req.source, req.username, saved)
+    play_history_import.start(account, req.source, req.username, saved, again=req.again)
     return play_history_import.status(account, saved)

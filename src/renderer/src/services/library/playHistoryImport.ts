@@ -24,7 +24,7 @@ export function importOptions(accounts: {
   return options
 }
 
-export type ImportAction = 'nothing' | 'start' | 'choose' | 'retry'
+export type ImportAction = 'nothing' | 'start' | 'choose' | 'retry' | 'again'
 
 /** One profile starts by itself. With two, which history is the right one is
  * the listener's call, and they are never mixed: the same plays would count
@@ -36,6 +36,7 @@ export function importAction(
 ): ImportAction {
   if (options.length === 0) return 'nothing'
   if (status === 'failed') return 'retry'
+  if (status === 'done') return 'again'
   if (status !== 'none') return 'nothing'
   return options.length === 1 ? 'start' : 'choose'
 }

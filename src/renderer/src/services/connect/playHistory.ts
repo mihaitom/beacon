@@ -74,9 +74,10 @@ export function getImportStatus(): Promise<PlayHistoryImportStatus> {
 export function startImport(
   source: ImportSource,
   username: string,
+  again = false,
 ): Promise<PlayHistoryImportStatus> {
   return fetchConnect<PlayHistoryImportStatus>('/play-history/import', {
     method: 'POST',
-    body: { source, username },
+    body: { source, username, again },
   })
 }

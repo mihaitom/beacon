@@ -1640,6 +1640,7 @@ export default {
     yearTitle: 'Il tuo anno di ascolti',
     yearEmpty: 'Il tuo anno di ascolti inizia con il prossimo brano.',
     importRunning: 'Recupero del tuo anno da {source}, {n} finora.',
+    importAgain: 'Il tuo anno viene da {source}. Recuperalo di nuovo da:',
     importChoose: "Completa l'ultimo anno da:",
     importNotFound: '{source} non conosce questo profilo, oppure è privato. Riprova:',
     importFailed: 'Impossibile raggiungere {source}. Riprova:',

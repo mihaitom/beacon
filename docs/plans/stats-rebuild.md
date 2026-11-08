@@ -113,6 +113,9 @@ Source details:
   whole history with this endpoint and to use it for bounded queries, which a
   year is
 
+A finished import can be fetched again from a quiet button under the year, from
+either profile; the old year stays until the new one has arrived whole.
+
 A failed import can run again, by button only: a private profile would
 otherwise be asked on every visit. Nothing is written until the last page has
 arrived.

@@ -23,7 +23,9 @@
             :data-tip="`${decade.label}: ${decade.valueLabel}`"
           >
             <span class="stats-collection__bar" :style="{ height: `${barHeight(decade)}%` }" />
-            <em>{{ decadeLabelShown(index) ? decade.label : '' }}</em>
+            <em :class="{ 'stats-collection__decade-name--spare': isSpareLabel(index) }">
+              {{ decade.label }}
+            </em>
           </div>
         </div>
       </stats-tips>
@@ -66,10 +68,6 @@ import type { PropType } from 'vue'
 import type { ChartItem } from './StatsCharts.vue'
 import StatsTips from './StatsTips.vue'
 
-// Past this many a panel beside two others has no room for every name, so
-// every other one goes (counted from the newest); the tooltip still has them.
-const ALL_DECADE_LABELS = 7
-
 // Under the panel's height, leaving room for the decade's name below the bar.
 const TALLEST_BAR = 82
 
@@ -88,9 +86,10 @@ export default {
     },
   },
   methods: {
-    decadeLabelShown(index: number): boolean {
-      if (this.decades.length <= ALL_DECADE_LABELS) return true
-      return (this.decades.length - 1 - index) % 2 === 0
+    /** The names that go first when a column gets too narrow for one, every
+     * other counted from the newest. The tooltip still has them. */
+    isSpareLabel(index: number): boolean {
+      return (this.decades.length - 1 - index) % 2 === 1
     },
     barHeight(decade: ChartItem): number {
       return (decade.value / this.maxDecade) * TALLEST_BAR
@@ -132,6 +131,9 @@ export default {
 }
 
 .stats-collection__decade {
+  /* Measured by each column, so it follows both the panel and how many
+   * decades there are. */
+  container-type: inline-size;
   display: flex;
   flex: 1 1 0;
   flex-direction: column;
@@ -148,6 +150,12 @@ export default {
   font-style: normal;
   white-space: nowrap;
   color: rgba(var(--v-theme-on-surface), 0.55);
+}
+
+@container (max-width: 39px) {
+  .stats-collection__decade-name--spare {
+    visibility: hidden;
+  }
 }
 
 .stats-collection__bar {
@@ -217,15 +225,30 @@ export default {
  * percentage. */
 @container stats-page (min-width: 2000px) {
   .stats-collection {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) minmax(0, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
   .stats-collection__facts {
     grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 26px 18px;
+  }
+
+  .stats-collection__facts dd {
+    font-size: 1.9rem;
+  }
+
+  .stats-collection__bar {
+    width: 62%;
+    max-width: none;
   }
 
   .stats-collection__quality {
-    height: 22px;
+    height: 34px;
+    margin-bottom: 22px;
+  }
+
+  .stats-collection__formats {
+    margin-top: 22px;
   }
 
   .stats-collection__legends {

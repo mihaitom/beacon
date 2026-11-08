@@ -1649,6 +1649,7 @@ export default {
     yearTitle: "Ton année d'écoute",
     yearEmpty: "Ton année d'écoute commence avec le prochain morceau.",
     importRunning: 'Récupération de ton année depuis {source}, {n} pour le moment.',
+    importAgain: 'Votre année vient de {source}. La récupérer à nouveau depuis :',
     importChoose: 'Compléter ta dernière année depuis :',
     importNotFound: '{source} ne connaît pas ce profil, ou il est privé. Réessayer :',
     importFailed: "{source} n'a pas pu être joint. Réessayer :",

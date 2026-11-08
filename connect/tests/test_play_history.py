@@ -322,6 +322,46 @@ async def test_a_finished_import_is_stored_and_not_run_again():
     assert play_history.summary(ALICE, now=NOW)["timestamps"] == [5]
 
 
+async def test_a_finished_import_runs_again_when_asked_and_replaces_the_year():
+    fetch = AsyncMock(side_effect=[[imported(5)], [imported(7), imported(9)]])
+    with patch.object(lastfm, "get_recent_listens", fetch):
+        play_history_import.start(ALICE, "lastfm", "x", {"status": "none"})
+        await _finish(ALICE)
+        saved = play_history.import_state(ALICE)
+        play_history_import.start(ALICE, "lastfm", "x", saved, again=True)
+        await _finish(ALICE)
+    assert play_history.summary(ALICE, now=NOW)["timestamps"] == [7, 9]
+
+
+async def test_a_failed_second_import_keeps_the_year_there_was():
+    fetch = AsyncMock(side_effect=[[imported(5)], lastfm.LastfmError("down")])
+    with patch.object(lastfm, "get_recent_listens", fetch):
+        play_history_import.start(ALICE, "lastfm", "x", {"status": "none"})
+        await _finish(ALICE)
+        saved = play_history.import_state(ALICE)
+        play_history_import.start(ALICE, "lastfm", "x", saved, again=True)
+        await _finish(ALICE)
+    assert play_history.import_state(ALICE)["status"] == "failed"
+    assert play_history.summary(ALICE, now=NOW)["timestamps"] == [5]
+
+
+async def test_an_import_already_running_is_not_started_twice_even_when_asked():
+    release = asyncio.Event()
+
+    async def slow(*_args):
+        await release.wait()
+        return []
+
+    fetch = AsyncMock(side_effect=slow)
+    with patch.object(lastfm, "get_recent_listens", fetch):
+        play_history_import.start(ALICE, "lastfm", "x", {"status": "none"})
+        play_history_import.start(ALICE, "lastfm", "x", {"status": "done"}, again=True)
+        await asyncio.sleep(0)
+        release.set()
+        await _finish(ALICE)
+    assert fetch.await_count == 1
+
+
 async def test_the_source_decides_which_service_is_read():
     brainz = AsyncMock(return_value=[])
     fm = AsyncMock(return_value=[])
@@ -470,6 +510,13 @@ def test_starting_an_import_for_a_nameless_session_is_refused(client, signed_in)
     signed_in.account_username = ""
     response = client.post("/play-history/import", json={"source": "listenbrainz", "username": "x"})
     assert response.status_code == 409
+
+
+def test_the_route_passes_on_a_request_to_import_again(client, signed_in):
+    with patch.object(play_history_import, "start") as start:
+        body = {"source": "listenbrainz", "username": "x", "again": True}
+        assert client.post("/play-history/import", json=body).status_code == 200
+    assert start.call_args.kwargs == {"again": True}
 
 
 def test_import_runs_for_the_sessions_account(client, signed_in):

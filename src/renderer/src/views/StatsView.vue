@@ -517,7 +517,9 @@ export default {
     offeredImports(): ImportOption[] {
       if (!this.isOwnView || !this.importStatus) return []
       const action = importAction(this.importStatus.status, this.importChoices)
-      return action === 'choose' || action === 'retry' ? this.importChoices : []
+      return action === 'choose' || action === 'retry' || action === 'again'
+        ? this.importChoices
+        : []
     },
   },
   watch: {
@@ -641,7 +643,8 @@ export default {
     },
     async beginImport(option: ImportOption): Promise<void> {
       try {
-        this.importStatus = await startImport(option.source, option.username)
+        const again = this.importStatus?.status === 'done'
+        this.importStatus = await startImport(option.source, option.username, again)
         if (this.importStatus.status === 'running') this.pollImport()
       } catch {
         // connect refused it (no key any more): the offer stays as it was.

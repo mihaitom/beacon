@@ -667,7 +667,25 @@ describe('StatsView import', () => {
     mountView([])
     await flushPromises()
 
-    expect(playHistory.startImport).toHaveBeenCalledWith('listenbrainz', 'me-lb')
+    expect(playHistory.startImport).toHaveBeenCalledWith('listenbrainz', 'me-lb', false)
+  })
+
+  it('offers a finished import again and says so when starting it', async () => {
+    useListenbrainzStore().username = 'me-lb'
+    useLastfmStore().username = ''
+    vi.mocked(playHistory.getImportStatus).mockResolvedValue({
+      status: 'done',
+      source: 'listenbrainz',
+    })
+    const wrapper = mountView([])
+    await flushPromises()
+
+    expect(playHistory.startImport).not.toHaveBeenCalled()
+    expect(offered(wrapper)).toHaveLength(1)
+    await (wrapper.vm as unknown as { beginImport(option: unknown): Promise<void> }).beginImport(
+      offered(wrapper)[0],
+    )
+    expect(playHistory.startImport).toHaveBeenCalledWith('listenbrainz', 'me-lb', true)
   })
 
   it('waits for a choice with two profiles', async () => {

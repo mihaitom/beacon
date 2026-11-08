@@ -1630,6 +1630,7 @@ export default {
     yearTitle: 'Your listening year',
     yearEmpty: 'Your listening year starts with the next song.',
     importRunning: 'Fetching your year from {source}, {n} so far.',
+    importAgain: 'Your year came from {source}. Fetch it again from:',
     importChoose: 'Fill in your past year from:',
     importNotFound: "{source} doesn't know this profile, or it is private. Try again:",
     importFailed: "{source} couldn't be reached. Try again:",

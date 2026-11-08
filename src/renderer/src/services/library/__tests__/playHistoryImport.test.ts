@@ -36,8 +36,12 @@ describe('importAction', () => {
     expect(importAction('failed', [lastfm])).toBe('retry')
   })
 
-  it('leaves a finished or running import alone', () => {
-    expect(importAction('done', [lastfm])).toBe('nothing')
+  it('leaves a running import alone', () => {
     expect(importAction('running', [lastfm])).toBe('nothing')
+  })
+
+  it('offers a finished one again, without starting it', () => {
+    expect(importAction('done', [lastfm])).toBe('again')
+    expect(importAction('done', [])).toBe('nothing')
   })
 })

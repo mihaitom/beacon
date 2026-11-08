@@ -1,7 +1,7 @@
 """core/play_history_import.py - fills the listening year on the first visit.
 
-Reads a year of a public Last.fm or ListenBrainz profile, once per account,
-in the background: ListenBrainz alone allows one call a second, so it takes
+Reads a year of a public Last.fm or ListenBrainz profile, once per account
+unless the listener asks again, in the background: ListenBrainz alone allows one call a second, so it takes
 longer than a request should stay open.
 
 Everything is held in memory until the last page has arrived and then written
@@ -63,11 +63,12 @@ async def _run(account: Account, source: str, username: str, fetched: list[int])
     logger.info(f"[play-history] imported {kept} listens from {source}")
 
 
-def start(account: Account, source: str, username: str, saved: dict) -> None:
+def start(account: Account, source: str, username: str, saved: dict, again: bool = False) -> None:
     """Starts unless one is running or has already finished. A failed one may
-    run again."""
+    run again, and a finished one when the listener asks (`again`): what is
+    there stays until the new year has arrived whole."""
     run = _runs.get(account)
-    if (run and not run.task.done()) or saved.get("status") == "done":
+    if (run and not run.task.done()) or (saved.get("status") == "done" and not again):
         return
     fetched = [0]
     task = asyncio.create_task(_run(account, source, username, fetched))

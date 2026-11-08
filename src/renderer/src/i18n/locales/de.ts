@@ -1644,6 +1644,7 @@ export default {
     yearTitle: 'Dein Hörjahr',
     yearEmpty: 'Dein Hörjahr beginnt mit dem nächsten Song.',
     importRunning: 'Hörjahr wird von {source} geholt, {n} bisher.',
+    importAgain: 'Dein Jahr stammt von {source}. Neu holen von:',
     importChoose: 'Dein letztes Jahr nachtragen von:',
     importNotFound: '{source} kennt dieses Profil nicht, oder es ist privat. Nochmal versuchen:',
     importFailed: '{source} war gerade nicht erreichbar. Nochmal versuchen:',

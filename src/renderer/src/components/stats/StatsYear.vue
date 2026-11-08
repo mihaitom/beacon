@@ -10,7 +10,7 @@
         })
       }}
     </p>
-    <div v-else-if="importOffer" class="stats-year__notice">
+    <div v-else-if="importOffer && !imported" class="stats-year__notice">
       <span class="text-body-medium text-medium-emphasis">{{ importOfferText }}</span>
       <v-btn
         v-for="option in options"
@@ -85,6 +85,20 @@
         </div>
       </div>
     </stats-tips>
+
+    <div v-if="importOffer && imported" class="stats-year__notice stats-year__notice--again">
+      <span class="text-body-small text-medium-emphasis">{{ importAgainText }}</span>
+      <v-btn
+        v-for="option in options"
+        :key="option.source"
+        variant="text"
+        color="primary"
+        size="small"
+        @click="$emit('start-import', option)"
+      >
+        {{ sourceName(option.source) }}
+      </v-btn>
+    </div>
   </section>
 </template>
 
@@ -145,6 +159,12 @@ export default {
     },
     importOffer(): boolean {
       return this.options.length > 0
+    },
+    imported(): boolean {
+      return this.importStatus?.status === 'done'
+    },
+    importAgainText(): string {
+      return this.$t('stats.importAgain', { source: this.sourceName(this.importStatus?.source) })
     },
     importOfferText(): string {
       if (this.importStatus?.status !== 'failed') return this.$t('stats.importChoose')
@@ -358,5 +378,9 @@ export default {
   margin-top: 5px;
   white-space: nowrap;
   font-size: 0.74rem;
+}
+.stats-year__notice--again {
+  margin-top: 10px;
+  margin-bottom: 0;
 }
 </style>
