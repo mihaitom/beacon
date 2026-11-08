@@ -43,6 +43,7 @@ const ICONS: Record<Moment['kind'], string> = {
   plays: 'mdi-play',
   hours: 'mdi-timer-sand',
   streak: 'mdi-fire',
+  pressing: 'mdi-album',
 }
 
 function reducedMotion(): boolean {
@@ -77,6 +78,7 @@ export default {
         plays: 'stats.milestonePlays',
         hours: 'stats.milestoneHours',
         streak: 'stats.milestoneStreak',
+        pressing: 'stats.milestonePressing',
       }
       return this.$t(keys[this.moment.kind], { n })
     },

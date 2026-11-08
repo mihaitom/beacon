@@ -1590,6 +1590,13 @@ export default {
       'Aún no publicado: en lo que se está trabajando para la próxima versión, leído de GitHub. Puede cambiar antes del lanzamiento.',
   },
   stats: {
+    recordGroove: 'Surco {n}: de {from} a {to} reproducciones',
+    recordGrooveNow: 'Surco {n}: vas por {at} de {to}',
+    recordGrooveAhead:
+      'Surco {n}: falta {left} reproducción para llegar | Surco {n}: faltan {left} reproducciones para llegar',
+    recordRing: '{n} conseguidas',
+    milestonePressing: 'Nuevo prensado',
+    milestonePressingSub: 'Ahora un surco son {n} reproducciones',
     heroDays: '{n} día de música | {n} días de música',
     heroHours: '{n} hora de música | {n} horas de música',
     heroMinutes: '{n} minuto de música | {n} minutos de música',

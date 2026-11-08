@@ -59,7 +59,8 @@ async function mountPage(width: number): Promise<HTMLElement> {
     attachTo: document.body,
     global: {
       plugins: [vuetify, i18n],
-      stubs: { CoverArt: true, RouterLink: RouterLinkStub },
+      // A stubbed <transition> is an element of its own, and a grid item with it.
+      stubs: { CoverArt: true, RouterLink: RouterLinkStub, transition: false },
     },
   })
   await new Promise((resolve) => setTimeout(resolve, 200))
@@ -76,12 +77,18 @@ afterEach(() => {
 })
 
 describe('the Stats page', () => {
-  it.each([360, 768, 1440])('does not run off the side at %ipx', async (width) => {
+  it.each([360, 768, 1440, 3440])('does not run off the side at %ipx', async (width) => {
     const root = await mountPage(width)
     expect(root.scrollWidth).toBeLessThanOrEqual(root.clientWidth + 1)
     for (const section of root.querySelectorAll<HTMLElement>('section')) {
       expect(section.getBoundingClientRect().right).toBeLessThanOrEqual(width + 1)
     }
+  })
+
+  it('keeps the hero on the screen on an ultrawide', async () => {
+    const root = await mountPage(3440)
+    expect(root.querySelector('.stats-hero')!.getBoundingClientRect().height).toBeLessThan(800)
+    expect(root.querySelector('.stats-record')!.getBoundingClientRect().width).toBeGreaterThan(600)
   })
 
   it('keeps a whole record inside the hero on a phone', async () => {

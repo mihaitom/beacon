@@ -2,30 +2,27 @@
   <section class="stats-hero" :class="`v-theme--${appearance.nightTheme}`">
     <v-theme-provider :theme="appearance.nightTheme">
       <div class="stats-hero__layout">
-        <div
-          v-if="coverUrl"
-          class="stats-hero__art"
-          :style="{ backgroundImage: `url(&quot;${coverUrl}&quot;)` }"
-        />
+        <transition name="stats-hero-art">
+          <div
+            v-if="backdropUrl"
+            :key="backdropUrl"
+            class="stats-hero__art"
+            :style="{ backgroundImage: `url(&quot;${backdropUrl}&quot;)` }"
+          />
+        </transition>
         <div class="stats-hero__scrim" />
         <div class="stats-hero__text">
           <h1 class="stats-hero__title" :class="{ 'is-fresh': fresh === 'hours' }">{{ title }}</h1>
           <p v-if="statement" class="stats-hero__statement">{{ statement }}</p>
-          <div v-if="!otherAccount" class="stats-hero__next">
-            <div class="stats-hero__track">
+          <div class="stats-hero__next">
+            <div v-if="!otherAccount" class="stats-hero__track">
               <div
                 class="stats-hero__fill"
                 :style="{ width: lit ? `${record.progress * 100}%` : '0' }"
               />
             </div>
-            <p class="text-body-medium text-medium-emphasis">
-              {{
-                $t(
-                  'stats.heroNext',
-                  { remaining: formatNumber(record.remaining), next: formatNumber(record.next) },
-                  record.remaining,
-                )
-              }}
+            <p class="text-body-medium text-medium-emphasis stats-hero__line">
+              {{ grooveLine || nextLine }}
             </p>
           </div>
           <div class="stats-hero__figures">
@@ -56,7 +53,9 @@
             ref="record"
             class="stats-hero__record"
             :record="record"
-            :cover-url="coverUrl"
+            :cover-url="backdropUrl"
+            :seen-plays="seenPlays"
+            @hover-line="grooveLine = $event"
             :playing="playing"
             :lit="lit"
           />
@@ -92,6 +91,10 @@ export default {
     libraryShare: { type: String as PropType<string | null>, default: null },
     streak: { type: Number, default: 0 },
     coverUrl: { type: String as PropType<string | null>, default: null },
+    /** The cover of what is on, which takes over from `coverUrl`. */
+    labelUrl: { type: String as PropType<string | null>, default: null },
+    /** The plays milestone celebrated so far, engraved on the record. */
+    seenPlays: { type: Number, default: 0 },
     playing: { type: Boolean, default: false },
     /** Someone else's page: the name and their log, no total listening time. */
     otherAccount: { type: String as PropType<string | null>, default: null },
@@ -99,7 +102,7 @@ export default {
     fresh: { type: String as PropType<MilestoneKind | null>, default: null },
   },
   data() {
-    return { lit: false, reveal: 0, frame: 0 }
+    return { lit: false, reveal: 0, frame: 0, grooveLine: '' }
   },
   computed: {
     appearance() {
@@ -107,6 +110,19 @@ export default {
     },
     record() {
       return recordProgress(this.plays)
+    },
+    /** The song that is on, or else the top album: backdrop and label alike. */
+    nextLine(): string {
+      if (this.otherAccount) return ''
+      const { remaining, next } = this.record
+      return this.$t(
+        'stats.heroNext',
+        { remaining: this.formatNumber(remaining), next: this.formatNumber(next) },
+        remaining,
+      )
+    },
+    backdropUrl(): string | null {
+      return this.labelUrl ?? this.coverUrl
     },
     title(): string {
       if (this.otherAccount) return this.otherAccount
@@ -193,7 +209,7 @@ export default {
  * container it is measuring. */
 .stats-hero__layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  grid-template-columns: minmax(0, 1fr) auto;
   min-height: clamp(420px, 42cqi, 640px);
 }
 
@@ -206,6 +222,17 @@ export default {
   background-position: center;
   filter: blur(38px) saturate(1.4) brightness(0.55);
   transform: scale(1.15);
+}
+
+/* The app's backdrop crossfade: docs/styleguide.md, Motion. */
+.stats-hero-art-enter-active,
+.stats-hero-art-leave-active {
+  transition: opacity 0.6s;
+}
+
+.stats-hero-art-enter-from,
+.stats-hero-art-leave-to {
+  opacity: 0;
 }
 
 .stats-hero__scrim {
@@ -251,6 +278,12 @@ export default {
   max-width: 460px;
 }
 
+/* One line reserved, so the text beside the record stays put while the
+ * pointer moves over it. */
+.stats-hero__line {
+  min-height: 1.5em;
+}
+
 .stats-hero__track {
   height: 8px;
   margin-bottom: 8px;
@@ -290,10 +323,10 @@ export default {
 }
 
 .stats-hero__record {
-  width: auto;
-  max-width: 104%;
-  height: min(106%, 700px);
-  margin: -3% 1% -3% 0;
+  /* By width, with a ceiling: the hero's height follows the record, and on
+   * an ultrawide an uncapped one ran past the bottom of the screen. */
+  width: clamp(420px, 48cqi, 780px);
+  margin-right: 1%;
 }
 
 .is-fresh {
@@ -320,9 +353,7 @@ export default {
   }
 
   .stats-hero__record {
-    width: 100%;
-    max-width: 420px;
-    height: auto;
+    width: min(100%, 420px);
     margin: 0;
   }
 

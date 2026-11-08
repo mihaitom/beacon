@@ -154,11 +154,13 @@ It already serves the phone shell, so it has to work from 320px up with no
 separate mobile view.
 
 - **Hero:** the blurred backdrop of the most played album (300px cover, as
-  everywhere), in the theme's night. 60 grooves, outermost first; one groove is
+  everywhere), in the theme's night. 40 grooves, outermost first; one groove is
   a number of plays that grows with the listener (50 up to 50,000), grooves
-  already filled are quiet, every tenth is lit, the current one is an amber arc
-  ending at the progress. The tonearm rests on it. The cover only turns while
-  music is playing
+  already filled are quiet, the current one is an amber arc ending at the
+  progress. Celebrated plays milestones stay on their groove as a ring of
+  silver, gold or foil. Pointing anywhere on the record names the nearest
+  groove. The arm lifts on pause, the record only turns while music plays, and
+  the label shows what is on
 - **Charts:** tabs, a large number one with its cover, then the next seven with
   bars. Up/down arrows compare the all-time rank now with the rank without
   `recent_plays`, and appear once the log has 30 days of Beacon's own entries.
@@ -182,6 +184,12 @@ gold or foil by how round the number is. The first visit only sets the baseline,
 and so does the visit after an import: a streak arriving with a year of old
 plays is nothing to celebrate. What has been seen is stored per account in
 connect and only ever goes up, so a second device does not repeat it.
+
+The record gets one more: when a groove starts standing for more plays, half
+the filled grooves empty at once, and a "new pressing" says why. It goes ahead
+of any other moment, since the jump always lands on a round number of plays.
+The comparison waits for the whole library: counted on the first pages, the
+baseline would be too low and the next visit would celebrate nothing.
 
 ## Tests
 

@@ -16,8 +16,22 @@
     </p>
 
     <div v-if="first" class="beacon-panel stats-charts__panel">
-      <component :is="first.to ? 'router-link' : 'div'" :to="first.to" class="stats-charts__first">
-        <div v-if="first.coverArtId !== undefined" class="stats-charts__cover">
+      <component
+        :is="first.to ? 'router-link' : 'div'"
+        :to="first.to"
+        class="stats-charts__first"
+        @mouseenter="browsing = true"
+        @mouseleave="browsing = false"
+      >
+        <record-stack
+          v-if="first.covers"
+          :covers="first.covers"
+          :size="CRATE_SIZE"
+          :rise="CRATE_RISE"
+          :browsing="browsing"
+          fallback-icon="mdi-tag-multiple"
+        />
+        <div v-else-if="first.coverArtId !== undefined" class="stats-charts__cover">
           <cover-art :cover-art-id="first.coverArtId" :image-url="first.imageUrl" size="100%" />
         </div>
         <div>
@@ -80,6 +94,12 @@
 <script lang="ts">
 import type { PropType } from 'vue'
 import CoverArt from '@/components/library/CoverArt.vue'
+import RecordStack from '@/components/library/RecordStack.vue'
+
+// With its rise as tall as the other tabs' cover. The rise has to clear the
+// 4% each record behind shrinks by, or only the front one shows.
+const CRATE_SIZE = 'min(72cqi, 240px)'
+const CRATE_RISE = 22
 
 export interface ChartItem {
   id: string
@@ -92,6 +112,9 @@ export interface ChartItem {
    * it has, and it is not known yet. */
   coverArtId?: string | null
   imageUrl?: string | null
+  /** A kind with no artwork of its own: the number one stands as a crate of
+   * its records instead. */
+  covers?: string[]
   /** Places climbed (negative: fallen) in the last 30 days. */
   move?: number
 }
@@ -100,7 +123,7 @@ export type ChartKind = 'songs' | 'artists' | 'albums' | 'genres'
 
 export default {
   name: 'StatsCharts',
-  components: { CoverArt },
+  components: { CoverArt, RecordStack },
   props: {
     charts: { type: Object as PropType<Record<ChartKind, ChartItem[]>>, required: true },
     /** The date a chart counted from the log starts at. */
@@ -108,6 +131,9 @@ export default {
   },
   data() {
     return {
+      CRATE_SIZE,
+      CRATE_RISE,
+      browsing: false,
       tab: 'songs' as ChartKind,
       tabs: ['songs', 'artists', 'albums', 'genres'] as ChartKind[],
     }
@@ -135,6 +161,8 @@ export default {
 /* On the section: a container query cannot restyle its own container. */
 .stats-charts {
   container-type: inline-size;
+  display: flex;
+  flex-direction: column;
 }
 
 .stats-charts__head {
@@ -151,6 +179,7 @@ export default {
 }
 
 .stats-charts__panel {
+  flex: 1;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 28px;

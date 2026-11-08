@@ -1575,6 +1575,13 @@ export default {
       'Not released yet: what is being worked on for the next version, read from GitHub. It may still change before the release.',
   },
   stats: {
+    recordGroove: 'Groove {n}: {from} to {to} plays',
+    recordGrooveNow: 'Groove {n}: you are at {at} of {to}',
+    recordGrooveAhead:
+      'Groove {n}: {left} play to go until here | Groove {n}: {left} plays to go until here',
+    recordRing: '{n} reached',
+    milestonePressing: 'A new pressing',
+    milestonePressingSub: 'One groove is now {n} plays',
     heroDays: '{n} day of music | {n} days of music',
     heroHours: '{n} hour of music | {n} hours of music',
     heroMinutes: '{n} minute of music | {n} minutes of music',

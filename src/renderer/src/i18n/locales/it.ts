@@ -1585,6 +1585,13 @@ export default {
       'Non ancora pubblicato: ciò su cui si sta lavorando per la prossima versione, letto da GitHub. Può ancora cambiare prima del rilascio.',
   },
   stats: {
+    recordGroove: 'Solco {n}: da {from} a {to} ascolti',
+    recordGrooveNow: 'Solco {n}: sei a {at} di {to}',
+    recordGrooveAhead:
+      'Solco {n}: manca {left} ascolto per arrivarci | Solco {n}: mancano {left} ascolti per arrivarci',
+    recordRing: '{n} raggiunti',
+    milestonePressing: 'Nuova stampa',
+    milestonePressingSub: 'Ora un solco vale {n} ascolti',
     heroDays: '{n} giorno di musica | {n} giorni di musica',
     heroHours: '{n} ora di musica | {n} ore di musica',
     heroMinutes: '{n} minuto di musica | {n} minuti di musica',

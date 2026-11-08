@@ -12,6 +12,7 @@ import * as playHistory from '@/services/connect/playHistory'
 import { useAuthStore } from '@/stores/auth'
 import { useLastfmStore } from '@/stores/lastfm'
 import { useListenbrainzStore } from '@/stores/listenbrainz'
+import { usePlaybackStore } from '@/stores/playback'
 import { makeSong } from '@/stores/__tests__/fixtures'
 import StatsView from '../StatsView.vue'
 
@@ -78,6 +79,7 @@ function mountView(songs: Song[], artists: Artist[] = []): VueWrapper {
   const store = useLibraryStore()
   // created() kicks all three off; the tests supply the state directly.
   store.fetchAllSongs = vi.fn()
+  store.allSongsLoaded = true
   store.fetchStarred = vi.fn()
   store.fetchArtists = vi.fn()
   store.allSongs = songs
@@ -205,6 +207,44 @@ describe('StatsView artist artwork', () => {
     expect(vm.topAlbums[0]?.coverArtId).toBe('c1')
     // A genre has no artwork of its own to show.
     expect(vm.topGenres[0]?.coverArtId).toBeUndefined()
+  })
+})
+
+describe('StatsView record label', () => {
+  type LabelVm = { recordLabel: string | null }
+
+  it('plays the song that is on', async () => {
+    const wrapper = mountView([])
+    usePlaybackStore().setQueue([makeSong('1', { coverArtId: 'on-now' })], 0)
+    await flushPromises()
+
+    expect((wrapper.vm as unknown as LabelVm).recordLabel).toContain('on-now')
+  })
+
+  it('has nothing of its own with nothing on', () => {
+    expect((mountStats([]) as unknown as LabelVm).recordLabel).toBeNull()
+  })
+
+  it("keeps away from another account's page", async () => {
+    const wrapper = mountView([])
+    usePlaybackStore().setQueue([makeSong('1', { coverArtId: 'on-now' })], 0)
+    await wrapper.setData({ viewedAccount: 'bob' })
+
+    expect((wrapper.vm as unknown as LabelVm).recordLabel).toBeNull()
+  })
+})
+
+describe('StatsView genre crate', () => {
+  it('stands the number one genre on its records, the most played in front', () => {
+    const vm = mountStats([
+      makeSong('1', { genre: 'Rock', coverArtId: 'quiet', playCount: 1 }),
+      makeSong('2', { genre: 'Rock', coverArtId: 'loud', playCount: 9 }),
+      makeSong('3', { genre: 'Rock', coverArtId: 'quiet', playCount: 1 }),
+      makeSong('4', { genre: 'Jazz', coverArtId: 'other', playCount: 2 }),
+    ]) as StatsVm & { charts: Record<ChartKind, ChartItem[]> }
+
+    expect(vm.charts.genres[0]?.covers).toEqual(['loud', 'quiet'])
+    expect(vm.charts.genres[1]?.covers).toBeUndefined()
   })
 })
 
@@ -467,7 +507,12 @@ describe('StatsView milestones', () => {
     await settle()
 
     expect(moment(wrapper)).toMatchObject({ kind: 'plays', value: 1000 })
-    expect(playHistory.saveMilestones).toHaveBeenCalledWith({ plays: 1000, hours: 0, streak: 0 })
+    expect(playHistory.saveMilestones).toHaveBeenCalledWith({
+      plays: 1000,
+      hours: 0,
+      streak: 0,
+      step: 50,
+    })
   })
 
   it('stays silent the first time and only sets the baseline', async () => {
@@ -476,7 +521,45 @@ describe('StatsView milestones', () => {
     await settle()
 
     expect(moment(wrapper)).toBeNull()
-    expect(playHistory.saveMilestones).toHaveBeenCalledWith({ plays: 1000, hours: 0, streak: 0 })
+    expect(playHistory.saveMilestones).toHaveBeenCalledWith({
+      plays: 1000,
+      hours: 0,
+      streak: 0,
+      step: 50,
+    })
+  })
+
+  it('waits for the whole library before comparing', async () => {
+    vi.mocked(playHistory.getPlayHistorySummary).mockResolvedValue(
+      summary({ milestones: { plays: 1000, hours: 0, streak: 0, step: 50 } }),
+    )
+    const wrapper = mountView([makeSong('1', { playCount: 1800, duration: 60 })])
+    useLibraryStore().allSongsLoaded = false
+    await settle()
+
+    expect(moment(wrapper)).toBeNull()
+    expect(playHistory.saveMilestones).not.toHaveBeenCalled()
+  })
+
+  it('announces a new pressing when the grooves have grown', async () => {
+    vi.mocked(playHistory.getPlayHistorySummary).mockResolvedValue(
+      summary({ milestones: { plays: 1000, hours: 0, streak: 0, step: 50 } }),
+    )
+    const wrapper = mountView([makeSong('1', { playCount: 1800, duration: 60 })])
+    await settle()
+
+    expect(moment(wrapper)).toMatchObject({ kind: 'pressing', value: 100 })
+  })
+
+  it('takes on the step silently when what was saved has none', async () => {
+    vi.mocked(playHistory.getPlayHistorySummary).mockResolvedValue(
+      summary({ milestones: { plays: 1000, hours: 0, streak: 0 } }),
+    )
+    const wrapper = mountView([makeSong('1', { playCount: 1800, duration: 60 })])
+    await settle()
+
+    expect(moment(wrapper)).toBeNull()
+    expect(playHistory.saveMilestones).toHaveBeenCalledWith(expect.objectContaining({ step: 100 }))
   })
 
   it('does not show it while looking at another account', async () => {

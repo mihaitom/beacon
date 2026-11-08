@@ -1594,6 +1594,13 @@ export default {
       'Pas encore publié : ce sur quoi on travaille pour la prochaine version, lu depuis GitHub. Cela peut encore changer avant la sortie.',
   },
   stats: {
+    recordGroove: 'Sillon {n} : de {from} à {to} écoutes',
+    recordGrooveNow: 'Sillon {n} : tu en es à {at} sur {to}',
+    recordGrooveAhead:
+      'Sillon {n} : encore {left} écoute pour y arriver | Sillon {n} : encore {left} écoutes pour y arriver',
+    recordRing: '{n} atteintes',
+    milestonePressing: 'Nouveau pressage',
+    milestonePressingSub: 'Un sillon vaut maintenant {n} écoutes',
     heroDays: '{n} jour de musique | {n} jours de musique',
     heroHours: '{n} heure de musique | {n} heures de musique',
     heroMinutes: '{n} minute de musique | {n} minutes de musique',

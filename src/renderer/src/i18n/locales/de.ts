@@ -1589,6 +1589,13 @@ export default {
       'Noch nicht veröffentlicht: woran gerade für die nächste Version gearbeitet wird, abgerufen von GitHub. Bis zum Release kann sich noch etwas ändern.',
   },
   stats: {
+    recordGroove: 'Rille {n}: {from} bis {to} Wiedergaben',
+    recordGrooveNow: 'Rille {n}: du bist bei {at} von {to}',
+    recordGrooveAhead:
+      'Rille {n}: noch {left} Wiedergabe bis hierhin | Rille {n}: noch {left} Wiedergaben bis hierhin',
+    recordRing: '{n} geschafft',
+    milestonePressing: 'Neue Pressung',
+    milestonePressingSub: 'Eine Rille sind jetzt {n} Wiedergaben',
     heroDays: '{n} Tag Musik | {n} Tage Musik',
     heroHours: '{n} Stunde Musik | {n} Stunden Musik',
     heroMinutes: '{n} Minute Musik | {n} Minuten Musik',

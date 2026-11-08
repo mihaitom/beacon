@@ -201,9 +201,13 @@ export default {
 /* On the section: a container query cannot restyle its own container. */
 .stats-year__section {
   container-type: inline-size;
+  display: flex;
+  flex-direction: column;
 }
 
 .stats-year {
+  flex: 1;
+  align-content: center;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 28px;
@@ -243,6 +247,20 @@ export default {
 @container (max-width: 620px) {
   .stats-year__week--older {
     display: none;
+  }
+}
+
+/* Beside the charts it has height to spare and too little width for three
+ * columns, which left a year of days the size of a stamp. */
+@container stats-page (min-width: 2000px) {
+  .stats-year {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: start;
+  }
+
+  .stats-year__calendar {
+    grid-row: 2;
+    grid-column: 1 / -1;
   }
 }
 

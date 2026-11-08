@@ -23,27 +23,31 @@
         :library-share="isOwnView && songs.length ? formatShare(playedCount, songs.length) : null"
         :streak="streak.current"
         :cover-url="heroCover"
+        :label-url="recordLabel"
+        :seen-plays="isOwnView ? (ownHistory?.milestones?.plays ?? 0) : 0"
         :playing="playbackStore.isPlaying"
         :other-account="viewedAccount"
         :since="sinceLabel"
         :fresh="fresh"
       />
 
-      <empty-state
-        v-if="chartsEmpty"
-        icon="mdi-chart-box-outline"
-        :title="isOwnView ? $t('stats.noPlaysYet') : $t('stats.otherEmpty')"
-      />
-      <stats-charts v-else :charts="charts" :since="isOwnView ? null : sinceLabel" />
+      <div class="stats-page__columns">
+        <empty-state
+          v-if="chartsEmpty"
+          icon="mdi-chart-box-outline"
+          :title="isOwnView ? $t('stats.noPlaysYet') : $t('stats.otherEmpty')"
+        />
+        <stats-charts v-else :charts="charts" :since="isOwnView ? null : sinceLabel" />
 
-      <stats-year
-        :timestamps="history?.timestamps ?? []"
-        :streak="streak"
-        :today="today"
-        :import-status="isOwnView ? importStatus : null"
-        :options="offeredImports"
-        @start-import="beginImport"
-      />
+        <stats-year
+          :timestamps="history?.timestamps ?? []"
+          :streak="streak"
+          :today="today"
+          :import-status="isOwnView ? importStatus : null"
+          :options="offeredImports"
+          @start-import="beginImport"
+        />
+      </div>
 
       <stats-collection
         :facts="collectionFacts"
@@ -78,6 +82,7 @@ import StatsMoment from '@/components/stats/StatsMoment.vue'
 import StatsYear from '@/components/stats/StatsYear.vue'
 import { chartMovement } from '@/services/library/chartMovement'
 import { streaks } from '@/services/library/listeningYear'
+import { STACK_COVERS } from '@/services/library/stackCovers'
 import {
   importAction,
   importOptions,
@@ -87,6 +92,7 @@ import {
   nextMoment,
   PLAYS_STEP as PLAYS_MILESTONE,
   reachedMilestones,
+  recordProgress,
   type MilestoneKind,
   type MilestoneValues,
   type Moment,
@@ -193,6 +199,8 @@ export default {
       importStatus: null as PlayHistoryImportStatus | null,
       lastfmConfigured: false,
       moment: null as Moment | null,
+      /** What the moment on screen will have made seen, once it has landed. */
+      momentReached: null as MilestoneValues | null,
       fresh: null as MilestoneKind | null,
       /** Whether this load of the log has been compared with the milestones. */
       milestonesChecked: false,
@@ -245,6 +253,12 @@ export default {
       const cover = this.isOwnView
         ? this.topAlbums[0]?.coverArtId
         : this.history?.top.albums.find((album) => album.cover_art_id)?.cover_art_id
+      return cover ? this.libraryStore.client().coverArtUrl(cover, 300) : null
+    },
+    /** The record plays what is playing; with nothing on, it stays the top
+     * album the page is built around. Someone else's page keeps theirs. */
+    recordLabel(): string | null {
+      const cover = this.isOwnView ? this.playbackStore.currentSong?.coverArtId : null
       return cover ? this.libraryStore.client().coverArtUrl(cover, 300) : null
     },
     /** When another account's log starts, which is what their figures mean. */
@@ -389,7 +403,7 @@ export default {
           songs: this.topSongs,
           artists: this.topArtists,
           albums: this.topAlbums,
-          genres: this.topGenres,
+          genres: this.withCrate(this.topGenres),
         }
       }
       const top = this.history?.top
@@ -397,7 +411,7 @@ export default {
         songs: (top?.songs ?? []).map((item) => this.logItem(item, 'songs')),
         artists: (top?.artists ?? []).map((item) => this.logItem(item, 'artists')),
         albums: (top?.albums ?? []).map((item) => this.logItem(item, 'albums')),
-        genres: (top?.genres ?? []).map((item) => this.logItem(item, 'genres')),
+        genres: this.withCrate((top?.genres ?? []).map((item) => this.logItem(item, 'genres'))),
       }
     },
     chartsEmpty(): boolean {
@@ -443,6 +457,7 @@ export default {
         plays: this.totalPlays,
         hours: Math.floor(this.listeningTime / 3600),
         streak: streaks(this.ownHistory?.timestamps ?? [], this.today).current,
+        step: recordProgress(this.totalPlays).step,
       }
     },
     /** Both halves of a milestone have to be in: a comparison against a
@@ -452,12 +467,16 @@ export default {
         this.ownHistory !== null &&
         this.ownHistory.available &&
         this.songs.length > 0 &&
+        this.libraryStore.allSongsLoaded &&
         !this.loading
       )
     },
     momentSubtitle(): string {
       if (!this.moment) return ''
       const { kind, value } = this.moment
+      if (kind === 'pressing') {
+        return this.$t('stats.milestonePressingSub', { n: this.formatNumber(value) })
+      }
       if (kind === 'hours') {
         const days = Math.round(value / 24)
         return this.$t('stats.milestoneHoursSub', { n: this.formatNumber(days) }, days)
@@ -544,13 +563,19 @@ export default {
       const reached = reachedMilestones(this.milestoneValues)
       const moment = nextMoment(seen, this.milestoneValues)
       if (!moment) {
-        if (!seen) void this.rememberMilestones(reached)
+        // Without a step yet: saved before pressings existed, and there is
+        // nothing to compare against.
+        if (!seen?.step) {
+          this.ownHistory.milestones = reached
+          void this.rememberMilestones(reached)
+        }
         return
       }
       this.momentTimer = window.setTimeout(() => {
         // Someone browsing another account did not come for this.
         if (!this.isOwnView) return
         this.moment = moment
+        this.momentReached = reached
         // Now rather than on closing: leaving mid-animation has still shown it.
         void this.rememberMilestones(reached)
       }, MOMENT_DELAY_MS)
@@ -566,7 +591,10 @@ export default {
       return (this.$refs.hero as InstanceType<typeof StatsHero> | undefined)?.labelRect() ?? null
     },
     onMomentClosed(): void {
-      this.fresh = this.moment?.kind ?? null
+      const kind = this.moment?.kind
+      this.fresh = kind && kind !== 'pressing' ? kind : null
+      // Only now, so a new ring appears as the record lands in the hero.
+      if (this.ownHistory && this.momentReached) this.ownHistory.milestones = this.momentReached
       this.moment = null
       this.freshTimer = window.setTimeout(() => {
         this.fresh = null
@@ -642,6 +670,23 @@ export default {
         to: item.album_id ? `/albums/${item.album_id}` : undefined,
         coverArtId: item.cover_art_id || null,
       }
+    },
+    /** A genre has no picture, so its number one shows the records it is
+     * made of, the most played in front. */
+    withCrate(items: ChartItem[]): ChartItem[] {
+      const [first, ...rest] = items
+      if (!first) return items
+      const name = first.label.toLowerCase()
+      const plays = new Map<string, number>()
+      for (const song of this.songs) {
+        if (!song.coverArtId || song.genre?.toLowerCase() !== name) continue
+        plays.set(song.coverArtId, (plays.get(song.coverArtId) ?? 0) + (song.playCount || 0))
+      }
+      const covers = [...plays.entries()]
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, STACK_COVERS)
+        .map(([cover]) => cover)
+      return [{ ...first, covers }, ...rest]
     },
     withMovement(items: ChartItem[], keyOf: (song: Song) => string | null): ChartItem[] {
       if (!this.recentPlays) return items
@@ -726,9 +771,24 @@ export default {
 
 <style scoped>
 .stats-page {
+  container: stats-page / inline-size;
   display: flex;
   flex-direction: column;
   gap: 48px;
+}
+
+.stats-page__columns {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 48px;
+}
+
+/* Side by side once one column would only stretch: a chart's bars and a
+ * year's days had grown to absurd lengths on an ultrawide. */
+@container stats-page (min-width: 2000px) {
+  .stats-page__columns {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .stats-page__account {
