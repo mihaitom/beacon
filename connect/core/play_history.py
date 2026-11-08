@@ -86,6 +86,16 @@ _TOP_N = 8
 _RECENT_DAYS = 30
 _DAY_SECONDS = 24 * 60 * 60
 
+# The windows the Stats page offers for its charts, in days. "all_time" is
+# absent on purpose: it means no cutoff rather than a very large one.
+PERIOD_DAYS = {
+    "week": 7,
+    "month": 30,
+    "quarter": 90,
+    "half_yearly": 180,
+    "year": 365,
+}
+
 _lock = threading.Lock()
 
 
@@ -369,3 +379,18 @@ def summary(account: Account, now: float | None = None) -> dict:
         "recent_plays": dict(recent),
         "top": _charts(listens),
     }
+
+
+def period_charts(account: Account, period: str, now: float | None = None) -> dict:
+    """The charts over one window of the log, for the Stats page's period
+    picker. Rolling windows counted back from now, not calendar periods: the
+    page's whole year view is rolling too, and a "this month" that resets on
+    the first would make the charts jump for no musical reason. An unknown
+    period falls back to all-time rather than returning nothing."""
+    now = time.time() if now is None else now
+    listens = _read_listens(account)
+    days = PERIOD_DAYS.get(period)
+    if days is not None:
+        since = now - days * _DAY_SECONDS
+        listens = [entry for entry in listens if entry["ts"] >= since]
+    return {"period": period, "total": len(listens), "top": _charts(listens)}

@@ -5,6 +5,7 @@ import asyncio
 import json
 import sqlite3
 import threading
+import time
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -241,6 +242,30 @@ def test_a_chart_group_is_described_by_beacons_entry_when_it_has_one():
 def test_charts_leave_out_entries_with_nothing_to_group_by():
     play_history.record(ALICE, listen("a", genre=""), now=NOW)
     assert play_history.summary(ALICE, now=NOW)["top"]["genres"] == []
+
+
+def test_period_charts_only_count_plays_inside_the_window():
+    play_history.record(ALICE, listen("old", title="Old"), now=NOW - 10 * DAY)
+    play_history.record(ALICE, listen("new", title="New"), now=NOW - 1 * DAY)
+
+    week = play_history.period_charts(ALICE, "week", now=NOW)
+    assert week["period"] == "week"
+    assert week["total"] == 1
+    assert [(song["label"], song["value"]) for song in week["top"]["songs"]] == [("New", 1)]
+
+    month = play_history.period_charts(ALICE, "month", now=NOW)
+    assert month["total"] == 2
+
+
+def test_period_charts_include_a_play_exactly_on_the_cutoff():
+    play_history.record(ALICE, listen(), now=NOW - 7 * DAY)
+    assert play_history.period_charts(ALICE, "week", now=NOW)["total"] == 1
+    assert play_history.period_charts(ALICE, "week", now=NOW + 1)["total"] == 0
+
+
+def test_period_charts_all_time_counts_everything():
+    play_history.record(ALICE, listen(), now=NOW - 400 * DAY)
+    assert play_history.period_charts(ALICE, "all_time", now=NOW)["total"] == 1
 
 
 # ── milestones ───────────────────────────────────────────────────────────
@@ -519,6 +544,7 @@ async def test_an_upstream_failure_is_reported_as_unavailable():
 
 def test_routes_need_a_verified_session(client):
     assert client.get("/play-history/summary").status_code == 401
+    assert client.get("/play-history/charts").status_code == 401
     assert client.post("/play-history", json=listen()).status_code == 401
 
 
@@ -553,6 +579,53 @@ def test_a_listener_can_name_themselves(client, signed_in):
 
 def test_a_listener_cannot_list_accounts(client, signed_in):
     assert client.get("/play-history/accounts").status_code == 403
+
+
+def test_charts_are_read_for_a_period(client, signed_in):
+    # The route reads the clock itself, so these are relative to the real
+    # one rather than to the test's fixed NOW.
+    now = int(time.time())
+    play_history.record(ALICE, listen("old", title="Old"), now=now - 10 * DAY)
+    play_history.record(ALICE, listen("new", title="New"), now=now - 1 * DAY)
+
+    body = client.get("/play-history/charts", params={"period": "week"}).json()
+    assert body["period"] == "week"
+    assert body["total"] == 1
+    assert [song["label"] for song in body["top"]["songs"]] == ["New"]
+
+
+def test_charts_default_to_all_time(client, signed_in):
+    play_history.record(ALICE, listen(), now=int(time.time()) - 400 * DAY)
+    assert client.get("/play-history/charts").json()["total"] == 1
+
+
+def test_an_unknown_period_is_refused(client, signed_in):
+    assert client.get("/play-history/charts", params={"period": "decade"}).status_code == 422
+
+
+def test_a_session_without_a_name_gets_empty_charts(client, signed_in):
+    signed_in.account_username = ""
+    body = client.get("/play-history/charts", params={"period": "week"}).json()
+    assert body == {
+        "period": "week",
+        "total": 0,
+        "top": {"songs": [], "artists": [], "albums": [], "genres": []},
+    }
+
+
+def test_a_listener_cannot_read_another_accounts_charts(client, signed_in):
+    play_history.record(BOB, listen())
+    response = client.get("/play-history/charts", params={"username": "bob"})
+    assert response.status_code == 403
+
+
+def test_an_admin_reads_another_accounts_charts(client, signed_in):
+    signed_in.account_is_admin = True
+    play_history.record(BOB, listen("a", title="Bobs song"), now=int(time.time()))
+    with patch("core.cast_permissions.known_accounts", return_value=["alice", "bob"]):
+        response = client.get("/play-history/charts", params={"username": "bob", "period": "month"})
+    assert response.status_code == 200
+    assert response.json()["top"]["songs"][0]["label"] == "Bobs song"
 
 
 def test_an_admin_reads_another_account_on_their_server(client, signed_in):

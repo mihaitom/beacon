@@ -2,19 +2,41 @@
   <section class="stats-charts">
     <div class="stats-charts__head">
       <h2 class="section-title">{{ $t('stats.chartsTitle') }}</h2>
-      <v-btn-toggle
-        v-model="tab"
-        mandatory
-        class="beacon-view-toggle beacon-view-toggle--text"
-        :aria-label="$t('stats.chartsTitle')"
-      >
-        <v-btn v-for="key in tabs" :key="key" :value="key">{{ $t(`stats.${key}`) }}</v-btn>
-      </v-btn-toggle>
+      <div class="stats-charts__controls">
+        <v-select
+          v-if="showPeriod"
+          :model-value="period"
+          :items="periods"
+          :aria-label="$t('stats.periodLabel')"
+          prepend-inner-icon="mdi-calendar-range"
+          density="compact"
+          variant="solo-filled"
+          rounded="pill"
+          flat
+          hide-details
+          class="stats-charts__period"
+          @update:model-value="$emit('update:period', $event)"
+        />
+        <v-btn-toggle
+          v-model="tab"
+          mandatory
+          class="beacon-view-toggle beacon-view-toggle--text"
+          :aria-label="$t('stats.chartsTitle')"
+        >
+          <v-btn v-for="key in tabs" :key="key" :value="key">{{ $t(`stats.${key}`) }}</v-btn>
+        </v-btn-toggle>
+      </div>
     </div>
     <p v-if="since" class="text-body-small text-medium-emphasis stats-charts__since">
       {{ $t('stats.chartsSince', { date: since }) }}
     </p>
 
+    <div v-if="loading" class="stats-charts__loading">
+      <v-progress-circular indeterminate size="28" color="primary" />
+    </div>
+    <p v-else-if="!items.length" class="text-body-medium text-medium-emphasis">
+      {{ $t('stats.chartsEmptyPeriod') }}
+    </p>
     <div v-if="first" class="beacon-panel stats-charts__panel">
       <component
         :is="first.to ? 'router-link' : 'div'"
@@ -95,6 +117,7 @@
 import type { PropType } from 'vue'
 import CoverArt from '@/components/library/CoverArt.vue'
 import RecordStack from '@/components/library/RecordStack.vue'
+import type { PlayHistoryPeriod } from '@/services/connect/playHistory'
 
 // With its rise as tall as the other tabs' cover. The rise has to clear the
 // 4% each record behind shrinks by, or only the front one shows.
@@ -128,7 +151,14 @@ export default {
     charts: { type: Object as PropType<Record<ChartKind, ChartItem[]>>, required: true },
     /** The date a chart counted from the log starts at. */
     since: { type: String as PropType<string | null>, default: null },
+    /** Which window the charts count. */
+    period: { type: String as PropType<PlayHistoryPeriod>, default: 'all_time' },
+    /** Only once the log has plays in it: before that there is nothing a
+     * window could narrow. */
+    showPeriod: { type: Boolean, default: false },
+    loading: { type: Boolean, default: false },
   },
+  emits: ['update:period'],
   data() {
     return {
       CRATE_SIZE,
@@ -139,6 +169,16 @@ export default {
     }
   },
   computed: {
+    periods(): { title: string; value: PlayHistoryPeriod }[] {
+      return [
+        { title: this.$t('stats.periodWeek'), value: 'week' },
+        { title: this.$t('stats.periodMonth'), value: 'month' },
+        { title: this.$t('stats.periodQuarter'), value: 'quarter' },
+        { title: this.$t('stats.periodHalfYearly'), value: 'half_yearly' },
+        { title: this.$t('stats.periodYear'), value: 'year' },
+        { title: this.$t('stats.periodAllTime'), value: 'all_time' },
+      ]
+    },
     items(): ChartItem[] {
       return this.charts[this.tab]
     },
@@ -174,8 +214,25 @@ export default {
   margin-bottom: 16px;
 }
 
+.stats-charts__controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+
+.stats-charts__period {
+  width: 210px;
+}
+
 .stats-charts__since {
   margin: -8px 0 12px;
+}
+
+.stats-charts__loading {
+  display: flex;
+  justify-content: center;
+  padding: 48px 0;
 }
 
 .stats-charts__panel {

@@ -18,6 +18,7 @@ import StatsView from '../StatsView.vue'
 vi.mock('@/services/connect/playHistory', () => ({
   recordListen: vi.fn(),
   getPlayHistorySummary: vi.fn(),
+  getPlayHistoryCharts: vi.fn(),
   getPlayHistoryAccounts: vi.fn().mockResolvedValue([]),
   saveMilestones: vi.fn().mockResolvedValue({}),
   getImportStatus: vi.fn().mockResolvedValue({ status: 'done' }),
