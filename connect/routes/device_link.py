@@ -36,7 +36,7 @@ from routes.coverart import cover_image
 from routes.lyrics import auto_for_party
 from routes.lyrics_offsets import OffsetsPatch
 from routes.now_playing import NowPlayingReport, accept
-from routes.play_history import Listen, Milestones, _own
+from routes.play_history import Listen, Milestones, Period, _own
 
 logger = logging.getLogger("connect.device_link")
 
@@ -475,6 +475,13 @@ def get_summary(owner: KeyOwner = _syncing) -> dict:
         **play_history.summary(owner.account),
         "milestones": play_history.milestones(owner.account),
     }
+
+
+@router.get("/charts")
+def get_charts(period: Period = "all_time", owner: KeyOwner = _syncing) -> dict:
+    """The Stats charts over one window, for a paired desktop. Like the other
+    routes outside v1 this one is private to the desktop app."""
+    return play_history.period_charts(owner.account, period)
 
 
 @router.put("/milestones")

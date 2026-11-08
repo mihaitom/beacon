@@ -144,6 +144,12 @@ def get_charts(
     account = _readable_account(session, username)
     if account is None:
         return {"period": period, "total": 0, "top": _empty_summary()["top"]}
+    if username is None:
+        # A paired desktop shows the server's log; an administrator looking
+        # at another account on this server still gets that account's own.
+        from_server = server_link.charts_for(account, period)
+        if from_server is not None:
+            return from_server
     return play_history.period_charts(account, period)
 
 

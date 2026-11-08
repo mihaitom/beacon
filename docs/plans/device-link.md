@@ -74,6 +74,7 @@ Key only, no session and no `CONNECT_TOKEN`:
 | `GET /device-link/info`           | checks the key, says who it is               |
 | `POST /device-link/listens`       | at most 500 rows, fields limited as `Listen` |
 | `GET /device-link/summary`        | the same answer as `/play-history/summary`   |
+| `GET /device-link/charts`         | the same answer as `/play-history/charts`    |
 | `PUT /device-link/milestones`     | merged upwards                               |
 | `GET/PATCH /device-link/settings` | only `LINKED_FIELDS`, 64 KB                  |
 
@@ -140,8 +141,9 @@ key is refused.
 ## Reading
 
 While paired, the desktop's `/play-history/summary` answers from the server and
-falls back to the local log when it cannot. Unsent local plays are added on top
-of the server's answer, so a song just played counts at once.
+falls back to the local log when it cannot. The Stats page's period charts
+(`/play-history/charts`) do the same for their window. Unsent local plays are
+added on top of the server's answer, so a song just played counts at once.
 
 ## Apps of your own
 

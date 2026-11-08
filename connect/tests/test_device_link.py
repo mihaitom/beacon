@@ -221,6 +221,7 @@ def test_a_key_can_be_revoked_over_http(client, signed_in):
     [
         ("GET", "/device-link/info"),
         ("GET", "/device-link/summary"),
+        ("GET", "/device-link/charts"),
         ("GET", "/device-link/settings"),
         ("POST", "/device-link/listens"),
         ("PUT", "/device-link/milestones"),
@@ -378,6 +379,27 @@ def test_summary_is_the_keys_account(public):
     assert answer["milestones"] is None
 
 
+def test_charts_are_the_keys_account_over_the_chosen_window(public):
+    now = int(time.time())
+    play_history.receive_listens(
+        ALICE,
+        [row(id_="a" * 32, ts=now - 2 * DAY), row(id_="b" * 32, ts=now - 40 * DAY)],
+        now=now,
+    )
+    key = key_for()
+    week = public.get("/device-link/charts?period=week", headers=auth(key)).json()
+    assert week["period"] == "week"
+    assert week["total"] == 1
+    assert public.get("/device-link/charts", headers=auth(key)).json()["total"] == 2
+    play_history.receive_listens(BOB, [row(id_="c" * 32, ts=now)], now=now)
+    assert public.get("/device-link/charts", headers=auth(key)).json()["total"] == 2
+
+
+def test_a_nonsense_chart_window_is_refused(public):
+    response = public.get("/device-link/charts?period=decade", headers=auth(key_for()))
+    assert response.status_code == 422
+
+
 def test_settings_only_carry_the_shared_fields(public):
     key = key_for()
     public.patch(
@@ -433,6 +455,11 @@ class FakeServer:
             "top": {"songs": [], "artists": [], "albums": [], "genres": []},
             "milestones": {"plays": 3},
         }
+        self.charts: dict = {
+            "period": "all_time",
+            "total": 1,
+            "top": {"songs": [], "artists": [], "albums": [], "genres": []},
+        }
         # Spelled differently from ALICE on purpose: the same person to a
         # server that does not care about case.
         self.username = "Alice"
@@ -460,6 +487,8 @@ class FakeServer:
             return httpx.Response(200, json=self.settings)
         if path == "/summary":
             return httpx.Response(200, json=self.summary)
+        if path == "/charts":
+            return httpx.Response(200, json=self.charts)
         if path == "/api-keys":
             return httpx.Response(200, json={"keys": self.api_keys})
         if path == "/lyrics-offsets" and request.method == "GET":
@@ -826,6 +855,58 @@ def test_the_summary_route_survives_a_server_outage(client, signed_in, paired):
     play(now=NOW)
     paired.fail = httpx.ConnectError("down")
     assert client.get("/play-history/summary").json()["timestamps"] == [NOW]
+
+
+def test_charts_are_the_servers_plus_what_is_unsent(paired):
+    now = int(time.time())
+    song = play_history._charts([{"title": "T", "artist": "A"}])["songs"][0]["id"]
+    paired.charts = {
+        "period": "all_time",
+        "total": 4,
+        "top": {
+            "songs": [{"id": song, "value": 4, "label": "T"}],
+            "artists": [],
+            "albums": [],
+            "genres": [],
+        },
+    }
+    play(now=now)
+    answer = server_link.charts_for(ALICE, "all_time")
+    assert answer["total"] == 5
+    assert answer["top"]["songs"][0]["value"] == 5
+
+
+def test_unsent_plays_outside_the_window_do_not_count(paired):
+    now = int(time.time())
+    paired.charts["total"] = 4
+    play(now=now - 40 * DAY)
+    answer = server_link.charts_for(ALICE, "week")
+    assert answer["period"] == "week"
+    assert answer["total"] == 4
+
+
+def test_charts_fall_back_when_the_server_is_away(paired):
+    paired.fail = httpx.ConnectError("down")
+    assert server_link.charts_for(ALICE, "week") is None
+
+
+def test_charts_are_local_for_another_account(paired):
+    assert server_link.charts_for(BOB, "week") is None
+    assert paired.requests == []
+
+
+def test_the_charts_route_answers_from_the_server(client, signed_in, paired):
+    paired.charts["total"] = 9
+    answer = client.get("/play-history/charts?period=month").json()
+    assert answer["period"] == "month"
+    assert answer["total"] == 9
+
+
+def test_the_charts_route_survives_a_server_outage(client, signed_in, paired):
+    play(now=int(time.time()))
+    paired.fail = httpx.ConnectError("down")
+    answer = client.get("/play-history/charts?period=all_time").json()
+    assert answer["total"] == 1
 
 
 def test_recording_a_play_stays_local_when_the_server_is_away(client, signed_in, paired):
@@ -1278,6 +1359,7 @@ def app_key(*scopes: str) -> str:
     [
         ("POST", "/device-link/listens"),
         ("GET", "/device-link/summary"),
+        ("GET", "/device-link/charts"),
         ("PUT", "/device-link/milestones"),
         ("GET", "/device-link/settings"),
         ("PATCH", "/device-link/settings"),

@@ -388,6 +388,20 @@ def summary_for(account: Account) -> dict | None:
     return play_history.with_unsent(account, remote)
 
 
+def charts_for(account: Account, period: str) -> dict | None:
+    """The charts over one window from the server, with this desktop's
+    unsent plays on top, or None when the local log has to answer."""
+    link = _read()
+    if link is None or _account_of(link) != account:
+        return None
+    try:
+        remote = _call(link["url"], link["key"], "GET", f"/charts?period={period}")
+    except LinkError as e:
+        _note(e.state)
+        return None
+    return play_history.with_unsent_charts(account, remote, period)
+
+
 def note_lyrics_offsets(account: Account, offsets: dict[str, float]) -> None:
     with _lock:
         link = _read()

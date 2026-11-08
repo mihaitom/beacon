@@ -15,7 +15,8 @@ the computer and sent when it can be reached again.
 ## What is shared
 
 - **Your listening history**, in both directions as far as the Stats page is
-  concerned: the desktop app sends its plays and reads the server's.
+  concerned: the desktop app sends its plays and reads the server's, including
+  the charts when a time window is picked.
 - **Settings that belong to you:** language, equalizer presets and each
   speaker's equalizer, gapless and crossfade, table columns, lyrics providers,
   your Last.fm and ListenBrainz names and the like.

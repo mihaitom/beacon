@@ -714,3 +714,26 @@ def with_unsent(account: Account, server: dict, now: float | None = None) -> dic
         "recent_plays": dict(recent),
         "top": {name: _merged_top(top.get(name, []), items) for name, items in charts.items()},
     }
+
+
+def with_unsent_charts(
+    account: Account, server: dict, period: str, now: float | None = None
+) -> dict:
+    """The server's charts for one window plus what it has not received yet:
+    the same rule with_unsent() applies to the summary."""
+    now = time.time() if now is None else now
+    days = PERIOD_DAYS.get(period)
+    unsent = unsent_listens(account, limit=-1)
+    if days is not None:
+        since = now - days * _DAY_SECONDS
+        unsent = [entry for entry in unsent if entry["ts"] >= since]
+    if not unsent:
+        return {**server, "period": period}
+    charts = _charts([{**entry, "source": _OWN_SOURCE} for entry in unsent])
+    top = server.get("top") or {}
+    return {
+        **server,
+        "period": period,
+        "total": server.get("total", 0) + len(unsent),
+        "top": {name: _merged_top(top.get(name, []), items) for name, items in charts.items()},
+    }
