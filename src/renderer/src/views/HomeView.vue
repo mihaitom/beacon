@@ -464,10 +464,6 @@ export default {
     },
     'libraryStore.scansFinished'() {
       void this.refreshNewest()
-      this.loadCatalogue()
-      // Emptied by the scan's invalidation, and Discover's "not owned yet"
-      // check reads it.
-      void this.libraryStore.fetchArtists()
     },
   },
   created() {
@@ -512,7 +508,12 @@ export default {
       this.loadRediscover()
     }
 
-    this.loadCatalogue()
+    // Top songs are read off the catalogue (see mostPlayedSongs), usually
+    // already in memory or in the library cache.
+    this.libraryStore
+      .fetchAllSongs()
+      .catch((error) => console.error('[home] Song catalogue failed:', error))
+      .finally(() => (this.catalogSettled = true))
   },
   mounted() {
     this.refreshTimer = setInterval(this.refreshIfOnScreen, HOME_REFRESH_INTERVAL_MS)
@@ -535,15 +536,6 @@ export default {
       if (document.hidden) return
       void this.refreshNewest()
       void this.refreshRecent()
-    },
-    /** Top songs are read off the catalogue (see mostPlayedSongs), usually
-     * already in memory or in the library cache. */
-    loadCatalogue(): void {
-      this.catalogSettled = false
-      this.libraryStore
-        .fetchAllSongs()
-        .catch((error) => console.error('[home] Song catalogue failed:', error))
-        .finally(() => (this.catalogSettled = true))
     },
     /** Asks for one of Home's album lists and keeps the answer in
      * stores/home.ts. A failure leaves whatever was showing; on a first

@@ -181,20 +181,16 @@ describe('HomeView while it stays open', () => {
     expect(wrapper.getComponent(RecentAlbumTiles).props('albums')).toEqual([album('y')])
   })
 
-  it('shows what a finished scan added, and reads the emptied catalogue again', async () => {
+  it('shows what a finished scan added', async () => {
     let library!: Library
     const wrapper = await mountHome((store) => (library = store))
     await flushPromises()
     serveNewest(library, [album('new')])
-    vi.mocked(library.fetchAllSongs).mockClear()
-    vi.mocked(library.fetchArtists).mockClear()
 
     library.scansFinished++
     await flushPromises()
 
     expect(newestShelf(wrapper).props('albums')).toEqual([album('new')])
-    expect(library.fetchAllSongs).toHaveBeenCalledOnce()
-    expect(library.fetchArtists).toHaveBeenCalledOnce()
   })
 
   it('notices a scan it never heard about by asking again', async () => {

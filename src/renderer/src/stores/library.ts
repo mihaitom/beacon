@@ -84,7 +84,7 @@ interface LibraryCacheTypes {
 // the background, while the user is trying to browse. Jellyfin 12 cut that
 // down from minutes, but the gap is still wide enough to keep the day. A library's contents do
 // not change hourly, and the parts that do have their own paths: the manual
-// rescan in Settings (invalidateCache()) and a forced fetchAlbums(true).
+// rescan in Settings (reloadAfterScan()) and a forced fetchAlbums(true).
 const CACHE_TTL_MS = 60 * 60 * 1000
 const JELLYFIN_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 
@@ -221,6 +221,27 @@ export function clearLibraryCache(): Promise<void> {
     // Nothing to clean up if storage isn't available in the first place.
   }
   return cleared
+}
+
+/** Song catalogue pages go out one after another, so the size trades how
+ * fast the first tracks appear against how long the whole catalog takes.
+ * Measured on Jellyfin 12.0.0, 20k tracks: 200 puts data on screen after
+ * 0.3s but needs 33s in total, 1000 needs 0.9s and 18s. On the ~7x slower
+ * 10.11.11 that same 1000 costs about 9s before anything shows, which is
+ * what 200 was picked to avoid — knowingly given up here rather than
+ * branching on the server version, since 12 is where this is measured and
+ * 10.x is on its way out. */
+function songPageSize(): number {
+  return useAuthStore().serverType === 'jellyfin' ? 1000 : 3000
+}
+
+/** Smaller pages for Jellyfin mean a faster first paint. Deliberately not
+ * raised alongside songPageSize(): these pages go out
+ * ALBUM_PAGE_CONCURRENCY at a time rather than one after another, so the
+ * per-request overhead a bigger page would save is already overlapped away
+ * here. */
+function albumPageSize(): number {
+  return useAuthStore().serverType === 'jellyfin' ? 200 : 500
 }
 
 /** Fetches every page of the flat song catalog (search3 with an empty
@@ -391,9 +412,9 @@ interface LibraryState {
   scanning: boolean
   scanCount: number | null
   scanPercent: number | null
-  /** Ticks when a scan has finished and its cached results are gone, and
-   * when a play has reached the server - the two moments Home's lists can
-   * have changed under it, for it to watch. */
+  /** Ticks when a scan has finished and when a play has reached the
+   * server - the two moments Home's lists can have changed under it, for
+   * it to watch. */
   scansFinished: number
   playsNoted: number
   playlists: Playlist[]
@@ -586,18 +607,10 @@ export const useLibraryStore = defineStore('library', {
       }
     },
 
-    /** Called once a triggered Navidrome library scan finishes (see
-     * SettingsView.vue) — a scan can add, remove, or re-tag songs
-     * Beacon's own in-memory state has no way to hear about on its own.
-     * fetchAlbums()/fetchArtists()/fetchAllSongs() each skip re-fetching
-     * once their collection is non-empty (unlike fetchPlaylists(), which
-     * already stale-while-revalidates via cachedFetch() every call — left
-     * alone here), so clearing those specifically is what makes the next
-     * visit to each view actually pick up what the scan changed instead of
-     * serving Beacon's now-possibly-stale idea of the library until the
-     * app restarts. Per-item caches (albumCache/artistCache) go too, since
-     * a scan can change a specific album/artist's own song list without
-     * that id ever having been "missing" before. */
+    /** Forgets the library this app holds, for the next visit to each view
+     * to fetch afresh - Settings' "clear cache". Per-item caches go too,
+     * since an album's or artist's own song list can be just as out of
+     * date. */
     invalidateCache(): Promise<void> {
       const cleared = clearLibraryCache()
       this.artists = []
@@ -609,16 +622,72 @@ export const useLibraryStore = defineStore('library', {
       return cleared
     },
 
+    /** Brings everything a finished scan may have changed up to date.
+     *
+     * The lists already in memory are fetched whole and swapped in one step,
+     * because a page may be showing them: emptying them first blanked the
+     * page and refilled it page by page, with Home's top songs reshuffling
+     * at every one. What was never loaded is left for its first reader,
+     * which the emptied cache sends to the server. If a list cannot be
+     * read, it is emptied after all so that the next visit tries again
+     * rather than the old one standing until a restart. */
+    async reloadAfterScan(): Promise<void> {
+      await clearLibraryCache()
+      this.albumCache = {}
+      this.artistCache = {}
+      const client = this.client()
+
+      const reload = async <K extends LibraryCacheField>(
+        field: K,
+        loaded: boolean,
+        fetcher: () => Promise<LibraryCacheTypes[K][]>,
+        apply: (items: LibraryCacheTypes[K][]) => void,
+      ): Promise<void> => {
+        if (!loaded) return
+        try {
+          const fresh = await withRetry(fetcher)
+          apply(fresh)
+          await saveLibraryCacheField(field, fresh)
+        } catch (error) {
+          console.error(`[library] Reloading ${field} after a scan failed:`, error)
+          apply([])
+        }
+      }
+
+      await Promise.all([
+        reload(
+          'songs',
+          this.allSongsLoaded,
+          () => fetchSongPages(client, songPageSize()),
+          (songs) => {
+            this.allSongs = songs
+            this.allSongsLoaded = songs.length > 0
+          },
+        ),
+        reload(
+          'albums',
+          this.albums.length > 0,
+          () => fetchAlbumPages(client, albumPageSize()),
+          (albums) => (this.albums = albums),
+        ),
+        reload(
+          'artists',
+          this.artists.length > 0,
+          () => client.getArtists(),
+          (artists) => (this.artists = artists),
+        ),
+      ])
+    },
+
     /** Starts a scan on the media server and follows it to the end, no
      * matter where the person goes in the meantime.
      *
      * Everything about a scan used to live in SettingsView: its state, its
-     * poll timer, and the cache invalidation at the end. Leaving that page
+     * poll timer, and the reload at the end. Leaving that page
      * cleared the timer, so a scan longer than the visit simply stopped
      * being watched - the button read as idle on the way back (a second
      * click would have started a second scan), and, worse, the
-     * invalidateCache() that makes the scan's results actually show up
-     * never ran. That is the very complaint the feature exists for.
+     * reload that makes the scan's results actually show up never ran. That is the very complaint the feature exists for.
      *
      * Rejects only when the scan could not be *started*; a scan that is
      * running is then followed by pollScanStatus() below. */
@@ -660,9 +729,9 @@ export const useLibraryStore = defineStore('library', {
     },
 
     /** Asks how the running scan is doing and either schedules the next
-     * ask or finishes up: the cache goes (a scan can add, remove or re-tag
-     * songs, and without this Beacon keeps serving what it already had)
-     * and the person is told, wherever they happen to be by then. */
+     * ask or finishes up: the library is read again (a scan can add, remove
+     * or re-tag songs, and without this Beacon keeps serving what it already
+     * had) and the person is told, wherever they happen to be by then. */
     async pollScanStatus(): Promise<void> {
       let status
       try {
@@ -692,9 +761,8 @@ export const useLibraryStore = defineStore('library', {
       }
 
       this.stopScanTracking()
-      // Ticks only once the cache is really gone: whoever reacts re-reads
-      // the catalogue, and would otherwise be handed the old one back.
-      void this.invalidateCache().finally(() => this.scansFinished++)
+      this.scansFinished++
+      void this.reloadAfterScan()
       emitter.emit('toast', {
         level: 'success',
         title: i18n.global.t('settings.rescanLibrary'),
@@ -716,8 +784,8 @@ export const useLibraryStore = defineStore('library', {
     /** Called from authStore.logout() — without this, a different account
      * signing in afterwards would see the previous account's playlists,
      * radio stations, starred items, and search results, not just its
-     * artists/albums/songs (which invalidateCache() above already
-     * handles for the narrower "same-account rescan" case). This store is
+     * artists/albums/songs (which reloadAfterScan() above already
+     * replaces for the narrower "same-account rescan" case). This store is
      * a singleton for the app's whole lifetime, so nothing else clears it
      * between accounts. */
     resetForLogout(): void {
@@ -740,12 +808,7 @@ export const useLibraryStore = defineStore('library', {
      * see that branch's own comment for why. */
     async fetchAlbums(force = false): Promise<void> {
       if (!force && this.albums.length > 0) return
-      // Smaller pages for Jellyfin mean a faster first paint. Deliberately
-      // not raised alongside fetchAllSongsNow()'s PAGE_SIZE: these pages go
-      // out ALBUM_PAGE_CONCURRENCY at a time rather than one after another,
-      // so the per-request overhead a bigger page would save is already
-      // overlapped away here.
-      const ALBUM_PAGE_SIZE = useAuthStore().serverType === 'jellyfin' ? 200 : 500
+      const ALBUM_PAGE_SIZE = albumPageSize()
       if (force) {
         await this.withLoading(async () => {
           this.albums = []
@@ -982,16 +1045,7 @@ export const useLibraryStore = defineStore('library', {
     },
 
     async fetchAllSongsNow(): Promise<void> {
-      // These pages go out one after another, so the size trades how fast
-      // the first tracks appear against how long the whole catalog takes.
-      // Measured on Jellyfin 12.0.0, 20k tracks: 200 puts data on screen
-      // after 0.3s but needs 33s in total, 1000 needs 0.9s and 18s. On the
-      // ~7x slower 10.11.11 that same 1000 costs about 9s before anything
-      // shows, which is what 200 was picked to avoid — knowingly given up
-      // here rather than branching on the server version, since 12 is where
-      // this is measured and 10.x is on its way out. The rest streams in via
-      // the .push() loop below either way.
-      const PAGE_SIZE = useAuthStore().serverType === 'jellyfin' ? 1000 : 3000
+      const PAGE_SIZE = songPageSize()
       const client = this.client()
 
       const cached = await readCacheField('songs')
@@ -1048,7 +1102,7 @@ export const useLibraryStore = defineStore('library', {
      * on any server tested so far they're fast enough not to need one. */
     async refreshLibrary(): Promise<void> {
       const client = this.client()
-      const PAGE_SIZE = useAuthStore().serverType === 'jellyfin' ? 1000 : 3000
+      const PAGE_SIZE = songPageSize()
       this.songScanProgress = { loaded: 0, total: null }
       try {
         const fresh = await fetchSongPages(client, PAGE_SIZE, (progress) => {

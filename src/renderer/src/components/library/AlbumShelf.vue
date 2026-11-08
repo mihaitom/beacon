@@ -195,6 +195,19 @@ export default {
       return this.skeletonsFitting
     },
   },
+  watch: {
+    // Scroll snapping keeps a row on the card it was snapped to, so albums
+    // arriving at the front pushed themselves out of view to the left and
+    // the shelf looked unchanged. A row somebody has scrolled along is left
+    // to it: there, staying on the same card is the right thing.
+    albums() {
+      const row = this.$refs.row as HTMLElement | undefined
+      if (!row || row.scrollLeft > 0) return
+      void this.$nextTick(() => {
+        row.scrollLeft = 0
+      })
+    },
+  },
   mounted() {
     this.resizeObserver = observeCardsAcross(this.$el as Element, (width) => {
       this.visibleCount = cardsAcross(width)

@@ -9,6 +9,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { emitter } from '@/emitter'
 import { useLibraryStore } from '../library'
 import type { SubsonicClient } from '@/services/subsonic/client'
+import type { Album, Artist, Song } from '@/types/library'
 
 vi.mock('@/services/library/libraryCacheStore', () => ({
   LEGACY_CACHE_KEY: 'beacon.library-cache',
@@ -81,7 +82,7 @@ describe('library scan', () => {
       { scanning: false, count: 4321, percent: null },
     ])
     const library = useLibraryStore()
-    const invalidate = vi.spyOn(library, 'invalidateCache').mockResolvedValue()
+    const reload = vi.spyOn(library, 'reloadAfterScan').mockResolvedValue()
     const toasts: { level: string }[] = []
     emitter.on('toast', (toast) => toasts.push(toast as { level: string }))
 
@@ -93,25 +94,9 @@ describe('library scan', () => {
     expect(library.scanning).toBe(false)
     // The whole point: a scan that finishes while the person is somewhere
     // else still makes its results show up.
-    expect(invalidate).toHaveBeenCalled()
-    expect(toasts).toEqual([expect.objectContaining({ level: 'success' })])
-  })
-
-  it('reports a finished scan only once the old cache is really gone', async () => {
-    stubClient([{ scanning: false, count: 1, percent: null }])
-    const library = useLibraryStore()
-    let cleared!: () => void
-    vi.spyOn(library, 'invalidateCache').mockReturnValue(
-      new Promise<void>((resolve) => (cleared = resolve)),
-    )
-
-    await library.startScan()
-    await firstAnswer()
-    expect(library.scansFinished).toBe(0)
-
-    cleared()
-    await firstAnswer()
+    expect(reload).toHaveBeenCalled()
     expect(library.scansFinished).toBe(1)
+    expect(toasts).toEqual([expect.objectContaining({ level: 'success' })])
   })
 
   it('rides out a failed poll rather than dropping the scan', async () => {
@@ -202,5 +187,85 @@ describe('library scan', () => {
     // the previous account's scan.
     expect(client.getScanStatus.mock.calls.length).toBe(asked)
     expect(library.scanning).toBe(false)
+  })
+
+  describe('reading the library again afterwards', () => {
+    const song = (id: string) => ({ id }) as Song
+    const album = (id: string) => ({ id }) as Album
+    const artist = (id: string) => ({ id }) as Artist
+
+    function stubCatalogue(overrides: Partial<Record<'search3' | 'getArtists', unknown>> = {}) {
+      const client = {
+        search3: vi.fn().mockResolvedValue({ songs: [song('new')], totalRecordCount: null }),
+        getAlbumList2: vi.fn().mockResolvedValue([album('new')]),
+        getArtists: vi.fn().mockResolvedValue([artist('new')]),
+        ...overrides,
+      }
+      vi.spyOn(useLibraryStore(), 'client').mockReturnValue(client as unknown as SubsonicClient)
+      return client
+    }
+
+    function loadedLibrary() {
+      const library = useLibraryStore()
+      library.allSongs = [song('old')]
+      library.allSongsLoaded = true
+      library.albums = [album('old')]
+      library.artists = [artist('old')]
+      return library
+    }
+
+    it('keeps the old lists showing until the new ones are complete', async () => {
+      const library = loadedLibrary()
+      let answer!: (page: unknown) => void
+      stubCatalogue({
+        search3: vi.fn().mockReturnValue(new Promise((resolve) => (answer = resolve))),
+      })
+
+      const reloaded = library.reloadAfterScan()
+      await vi.advanceTimersByTimeAsync(0)
+      expect(library.allSongs).toEqual([song('old')])
+
+      answer({ songs: [song('new')], totalRecordCount: null })
+      await reloaded
+      expect(library.allSongs).toEqual([song('new')])
+      expect(library.albums).toEqual([album('new')])
+      expect(library.artists).toEqual([artist('new')])
+    })
+
+    it('forgets single albums and artists, which the lists do not replace', async () => {
+      const library = loadedLibrary()
+      stubCatalogue()
+      library.albumCache = { a: album('a') }
+      library.artistCache = { b: artist('b') }
+
+      await library.reloadAfterScan()
+
+      expect(library.albumCache).toEqual({})
+      expect(library.artistCache).toEqual({})
+    })
+
+    it('does not fetch what nobody has loaded yet', async () => {
+      const client = stubCatalogue()
+
+      await useLibraryStore().reloadAfterScan()
+
+      expect(client.search3).not.toHaveBeenCalled()
+      expect(client.getAlbumList2).not.toHaveBeenCalled()
+      expect(client.getArtists).not.toHaveBeenCalled()
+    })
+
+    it('leaves a list it could not read for the next visit to fetch', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      const library = loadedLibrary()
+      stubCatalogue({ search3: vi.fn().mockRejectedValue(new Error('offline')) })
+
+      const reloaded = library.reloadAfterScan()
+      await vi.advanceTimersByTimeAsync(10_000)
+      await reloaded
+
+      expect(library.allSongs).toEqual([])
+      expect(library.allSongsLoaded).toBe(false)
+      expect(library.artists).toEqual([artist('new')])
+    })
   })
 })
