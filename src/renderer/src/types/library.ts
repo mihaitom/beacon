@@ -132,6 +132,8 @@ export interface Playlist {
   readonly: boolean
   /** Filled from rules by the server rather than by hand. */
   smart: boolean
+  /** The description. Absent where the server has none to give. */
+  comment?: string
   /** Said outright by the Jellyfin and Plex bridges; absent where the
    * server only names the owner. See isOwnedBy(). */
   ownedByUser?: boolean

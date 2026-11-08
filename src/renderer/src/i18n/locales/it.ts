@@ -1180,6 +1180,9 @@ export default {
     segmentSmart: 'Smart',
     segmentShared: 'Condivise',
     sortChanged: 'Ultima modifica',
+    comment: 'Descrizione',
+    owner: 'Proprietario',
+    ownerLogin: 'Accedi per cambiare il proprietario',
   },
   smartPlaylists: {
     eyebrow: 'Playlist intelligente',

@@ -101,6 +101,7 @@ export function mapPlaylist(raw: RawPlaylist): Playlist {
     readonly: raw.readonly ?? false,
     smart: raw.validUntil != null,
     ...(raw.owned !== undefined && { ownedByUser: raw.owned }),
+    ...(raw.comment && { comment: raw.comment }),
     songs: (raw.entry ?? []).map(mapSong),
   }
 }

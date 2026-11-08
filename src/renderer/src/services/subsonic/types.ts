@@ -136,6 +136,7 @@ export interface RawArtistIndex {
 export interface RawPlaylist {
   id: string
   name: string
+  comment?: string
   songCount: number
   duration: number
   coverArt?: string

@@ -1,20 +1,21 @@
-"""routes/navidrome.py — Navidrome's own API, for the smart playlist editor.
+"""routes/navidrome.py — Navidrome's own API, for smart playlists and owners.
 
-Smart playlist rules can only be read and written through Navidrome's native
-API, which wants a JWT issued for the account's password rather than the
+A smart playlist's rules and a playlist's owner can only be changed through
+Navidrome's native API, which wants a JWT issued for the account's password rather than the
 Subsonic credential the session holds (see
 docs/plans/smart-playlist-builder.md). The frontend sends the password once
 to /navidrome/session; connect logs in with it, keeps the token on the
 session and forgets the password.
 
-Only the playlist endpoints are forwarded with that token. The rest of that
-API includes user administration, and a token held here must not be a way
-into it. (routes/proxy.py's catch-all, an older pass-through to the same API
+Only the playlist endpoints, and a list of who there is to hand a playlist
+to, are forwarded with that token. The rest of that API includes user
+administration, and a token held here must not be a way into it. (routes/proxy.py's catch-all, an older pass-through to the same API
 for a deployment with NAVIDROME_INTERNAL_URL, answers every other path under
 this prefix - without the token.)
 """
 
 import asyncio
+import json
 import logging
 import re
 
@@ -134,6 +135,23 @@ async def update_playlist(
     playlist_id: str, body: dict, session: SessionState = Depends(require_authenticated_session)
 ):
     return await _forward("PUT", f"playlist/{_segment(playlist_id)}", session, body=body)
+
+
+@router.get("/users")
+async def list_users(session: SessionState = Depends(require_authenticated_session)):
+    """Who a playlist can be handed to. Id and names only: Navidrome's answer
+    also carries email addresses, which nothing here needs. It refuses
+    anyone but an admin itself, and _forward passes that refusal on."""
+    response = await _forward("GET", "user", session)
+    users = [
+        {
+            "id": user["id"],
+            "userName": user.get("userName", ""),
+            "name": user.get("name") or user.get("userName", ""),
+        }
+        for user in json.loads(response.body)
+    ]
+    return sorted(users, key=lambda user: user["name"].casefold())
 
 
 def _segment(playlist_id: str) -> str:

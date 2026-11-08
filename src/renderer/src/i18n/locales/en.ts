@@ -1171,6 +1171,9 @@ export default {
     segmentSmart: 'Smart',
     segmentShared: 'Shared',
     sortChanged: 'Last edited',
+    comment: 'Description',
+    owner: 'Owner',
+    ownerLogin: 'Sign in to change the owner',
   },
   smartPlaylists: {
     eyebrow: 'Smart playlist',

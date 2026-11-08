@@ -3,7 +3,7 @@ import { toRaw } from 'vue'
 import { emitter } from '@/emitter'
 import { i18n } from '@/i18n'
 import { useAuthStore } from './auth'
-import { SubsonicClient } from '@/services/subsonic/client'
+import { SubsonicClient, type PlaylistChanges } from '@/services/subsonic/client'
 import { accountScopedKey, getAccountKey } from '@/services/accountKey'
 import {
   clearLibraryFields,
@@ -1141,8 +1141,19 @@ export const useLibraryStore = defineStore('library', {
       return this.withLoading(async () => this.client().getPlaylist(id))
     },
 
-    async createPlaylist(name: string, songIds: string[] = []): Promise<void> {
-      await this.withErrorReported(() => this.client().createPlaylist(name, songIds))
+    async createPlaylist(
+      name: string,
+      songIds: string[] = [],
+      details: PlaylistChanges = {},
+    ): Promise<void> {
+      const id = await this.withErrorReported(() => this.client().createPlaylist(name, songIds))
+      // A second call: creating takes only a name and songs. Its failure is
+      // not the creation's, or trying again would make a second playlist.
+      if (id && Object.keys(details).length) {
+        await this.client()
+          .updatePlaylist(id, details)
+          .catch((error) => console.error('[library] Could not save the details:', error))
+      }
       await this.refreshPlaylistCache()
       announce(i18n.global.t('playlists.created', { name }))
     },
@@ -1205,13 +1216,14 @@ export const useLibraryStore = defineStore('library', {
       }
     },
 
-    async updatePlaylist(id: string, updates: { name?: string; public?: boolean }): Promise<void> {
+    async updatePlaylist(id: string, updates: PlaylistChanges): Promise<void> {
       await this.withLoading(async () => {
         await this.client().updatePlaylist(id, updates)
         const cached = this.playlists.find((p) => p.id === id)
         if (cached) {
           if (updates.name !== undefined) cached.name = updates.name
           if (updates.public !== undefined) cached.public = updates.public
+          if (updates.comment !== undefined) cached.comment = updates.comment
           await saveLibraryCacheField('playlists', this.playlists)
         }
       })

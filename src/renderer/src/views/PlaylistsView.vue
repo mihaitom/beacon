@@ -27,13 +27,9 @@
             to="/playlists/smart/new"
             >{{ $t('smartPlaylists.newButton') }}</v-btn
           >
-          <v-btn
-            prepend-icon="mdi-plus"
-            color="primary"
-            rounded="pill"
-            @click="createDialog = true"
-            >{{ $t('playlists.newPlaylist') }}</v-btn
-          >
+          <v-btn prepend-icon="mdi-plus" color="primary" rounded="pill" @click="openCreate">{{
+            $t('playlists.newPlaylist')
+          }}</v-btn>
         </div>
       </template>
     </detail-header>
@@ -137,6 +133,8 @@
           :playlist="playlist"
           :row="listView"
           show-owner
+          @rename="openRename"
+          @delete="openDelete"
           @play="playPlaylist"
           @play-next="queuePlaylist($event, 'next')"
           @add-to-queue="queuePlaylist($event, 'end')"
@@ -158,25 +156,7 @@
     <playlist-edit-dialog ref="editDialog" />
     <playlist-delete-dialog ref="deleteDialog" />
 
-    <v-dialog v-model="createDialog" max-width="400">
-      <v-card>
-        <v-card-title>{{ $t('playlists.createTitle') }}</v-card-title>
-        <v-card-text>
-          <v-text-field
-            v-model="newPlaylistName"
-            :label="$t('common.name')"
-            variant="solo-filled"
-            clearable
-            @keyup.enter="createPlaylist"
-          />
-        </v-card-text>
-        <v-card-actions>
-          <v-spacer />
-          <v-btn variant="text" @click="createDialog = false">{{ $t('common.cancel') }}</v-btn>
-          <v-btn color="primary" @click="createPlaylist">{{ $t('common.create') }}</v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+    <create-playlist-dialog ref="createDialog" />
   </v-container>
 </template>
 
@@ -191,6 +171,7 @@ import PlaylistCard from '@/components/library/PlaylistCard.vue'
 import LibrarySortSelect from '@/components/library/LibrarySortSelect.vue'
 import RowSkeleton from '@/components/library/RowSkeleton.vue'
 import PlaylistEditDialog from '@/components/library/PlaylistEditDialog.vue'
+import CreatePlaylistDialog from '@/components/library/CreatePlaylistDialog.vue'
 import PlaylistBuilderDialog from '@/components/library/PlaylistBuilderDialog.vue'
 import PlaylistDeleteDialog from '@/components/library/PlaylistDeleteDialog.vue'
 import StickyFilter from '@/components/StickyFilter.vue'
@@ -228,6 +209,7 @@ export default {
     LibrarySortSelect,
     RowSkeleton,
     PlaylistEditDialog,
+    CreatePlaylistDialog,
     PlaylistBuilderDialog,
     PlaylistDeleteDialog,
     StickyFilter,
@@ -235,8 +217,6 @@ export default {
   data() {
     return {
       SKELETON_ROWS,
-      createDialog: false,
-      newPlaylistName: '',
       filterQuery: '',
       // filteredPlaylists reads this instead of filterQuery directly, so
       // filtering doesn't run synchronously on every keystroke — see the
@@ -335,6 +315,9 @@ export default {
       this.sort = sort
       savePlaylistSort(sort)
     },
+    openCreate(): void {
+      ;(this.$refs.createDialog as { open: (songIds: string[]) => void } | undefined)?.open([])
+    },
     openBuilder(): void {
       ;(this.$refs.builder as { open: () => void } | undefined)?.open()
     },
@@ -373,12 +356,6 @@ export default {
       ;(this.$refs.deleteDialog as { open: (playlist: Playlist) => void } | undefined)?.open(
         playlist,
       )
-    },
-    async createPlaylist() {
-      if (!this.newPlaylistName.trim()) return
-      await this.libraryStore.createPlaylist(this.newPlaylistName)
-      this.newPlaylistName = ''
-      this.createDialog = false
     },
   },
 }

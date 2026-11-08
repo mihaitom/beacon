@@ -1,5 +1,6 @@
 /**
- * The smart playlist editor's calls to Navidrome's own API, through
+ * The calls to Navidrome's own API - the smart playlist editor's and a
+ * playlist's owner - through
  * connect's /navidrome route (connect/routes/navidrome.py).
  *
  * That API wants a login with the account's password, which connect turns
@@ -7,7 +8,7 @@
  * or Navidrome stopped accepting the old one), the password Beacon stored at
  * sign-in is sent once without asking. Only when there is none - a login
  * taken over from Remote, say - or Navidrome refuses it does the caller get
- * NavidromeLoginRequired, and the editor asks for the password itself.
+ * NavidromeLoginRequired, and it asks for the password itself.
  */
 
 import { ConnectApiError, fetchConnect } from '@/services/connect/http'
@@ -99,6 +100,28 @@ async function call<T>(
     if (detailOf(error) === LOGIN_REQUIRED) throw new NavidromeLoginRequired()
     throw error
   }
+}
+
+/** Someone a playlist can be handed to. `userName` is what a playlist's
+ * `owner` names; `name` is what to show. */
+export interface NavidromeUser {
+  id: string
+  userName: string
+  name: string
+}
+
+/** Everyone on the server. Admins only; Navidrome refuses anybody else. */
+export function listNavidromeUsers(): Promise<NavidromeUser[]> {
+  return call<NavidromeUser[]>('/navidrome/users')
+}
+
+/** Hands a playlist to someone else, leaving everything else about it as
+ * it is (see updateSmartPlaylist()). Admins only. */
+export async function setNavidromePlaylistOwner(id: string, ownerId: string): Promise<void> {
+  await call(`/navidrome/api/playlist/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: { ownerId },
+  })
 }
 
 export function getNavidromePlaylist(id: string): Promise<NavidromePlaylist> {

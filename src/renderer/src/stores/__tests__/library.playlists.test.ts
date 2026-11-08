@@ -100,6 +100,40 @@ describe('library mutations', () => {
     vi.restoreAllMocks()
   })
 
+  describe('creating with details', () => {
+    it('saves them on the new playlist in a second step', async () => {
+      const client = stubClient({ createPlaylist: vi.fn().mockResolvedValue('new-id') })
+
+      await useLibraryStore().createPlaylist('Road trip', [], { comment: 'Long', public: true })
+
+      expect(client.updatePlaylist).toHaveBeenCalledWith('new-id', {
+        comment: 'Long',
+        public: true,
+      })
+    })
+
+    it('makes no second call when there is nothing to add', async () => {
+      const client = stubClient({ createPlaylist: vi.fn().mockResolvedValue('new-id') })
+
+      await useLibraryStore().createPlaylist('Road trip')
+
+      expect(client.updatePlaylist).not.toHaveBeenCalled()
+    })
+
+    it('still counts as created when the details could not be saved', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      const client = stubClient({
+        createPlaylist: vi.fn().mockResolvedValue('new-id'),
+        updatePlaylist: vi.fn().mockRejectedValue(new Error('500')),
+      })
+
+      await expect(
+        useLibraryStore().createPlaylist('Road trip', [], { public: true }),
+      ).resolves.toBeUndefined()
+      expect(client.getPlaylists).toHaveBeenCalled()
+    })
+  })
+
   afterEach(() => emitter.all.clear())
 
   it('offers only playlists that take songs as targets, owner or not', async () => {

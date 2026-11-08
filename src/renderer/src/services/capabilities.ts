@@ -108,6 +108,13 @@ export interface ServerCapabilities {
    * docs/plans/smart-playlist-builder.md). Decided by what the server
    * says it is rather than by server type - see capabilitiesFor(). */
   smartPlaylistEditor: boolean
+  /** A playlist's description and public flag. The bridges have nowhere to
+   * put either: Jellyfin's sharing does not map onto a public flag and both
+   * drop the field (see their update_playlist()). */
+  playlistDetails: boolean
+  /** Changing other people's playlists and who owns one: Navidrome grants
+   * an admin both. Needs a definite admin, as castPermissions does. */
+  playlistAdmin: boolean
   /** Keeping the play queue on the server (savePlayQueue/getPlayQueue), so
    * another app can carry on with it - see services/playback/serverQueueSync.ts. Subsonic
    * only: Jellyfin and Plex keep no queue per account that any other app
@@ -129,6 +136,8 @@ const SUBSONIC_CAPABILITIES: ServerCapabilities = {
   playHistoryStats: true,
   logLevelControl: true,
   smartPlaylistEditor: false,
+  playlistDetails: true,
+  playlistAdmin: false,
   serverQueue: true,
 }
 
@@ -153,6 +162,8 @@ const JELLYFIN_CAPABILITIES: ServerCapabilities = {
   playHistoryStats: true,
   logLevelControl: true,
   smartPlaylistEditor: false,
+  playlistDetails: false,
+  playlistAdmin: false,
   serverQueue: false,
 }
 
@@ -207,6 +218,8 @@ const PLEX_CAPABILITIES: ServerCapabilities = {
   playHistoryStats: true,
   logLevelControl: true,
   smartPlaylistEditor: false,
+  playlistDetails: false,
+  playlistAdmin: false,
   serverQueue: false,
 }
 
@@ -244,6 +257,8 @@ export function capabilitiesFor(
     ...base,
     castPermissions: base.castPermissions && isAdmin === true,
     smartPlaylistEditor: base === SUBSONIC_CAPABILITIES && serverSoftware === 'navidrome',
+    playlistAdmin:
+      base === SUBSONIC_CAPABILITIES && serverSoftware === 'navidrome' && isAdmin === true,
   }
   if (isAdmin === false) {
     return {

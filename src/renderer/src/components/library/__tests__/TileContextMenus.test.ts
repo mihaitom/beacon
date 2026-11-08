@@ -225,7 +225,7 @@ describe('tile context menus', () => {
       dialog.name = 'Night drive'
       await dialog.confirm()
 
-      expect(create).toHaveBeenCalledWith('Night drive', ['a', 'b'])
+      expect(create).toHaveBeenCalledWith('Night drive', ['a', 'b'], {})
       expect(dialog.visible).toBe(false)
     })
 

@@ -16,6 +16,9 @@
         <template v-if="playlist.public"> · {{ $t('playlists.public') }}</template>
         <template v-if="playlist.smart"> · {{ $t('playlists.smart') }}</template>
       </template>
+      <template v-if="playlist.comment" #description>
+        <p class="text-body-medium playlist-comment">{{ playlist.comment }}</p>
+      </template>
       <template #actions>
         <div class="playlist-actions">
           <v-btn
@@ -40,13 +43,14 @@
           :to="`/playlists/${playlist.id}/rules`"
         />
         <v-btn
-          v-if="isOwnPlaylist"
+          v-if="canManage"
           icon="mdi-pencil-outline"
           variant="text"
           :title="$t('common.edit')"
           @click="openEdit"
         />
         <v-btn
+          v-if="canManage"
           icon="mdi-delete-outline"
           variant="text"
           :title="$t('common.delete')"
@@ -111,7 +115,7 @@ import {
   removeFromPlaylist,
   type PlaylistNotice as Notice,
 } from '@/services/library/playlistRemoval'
-import { isOwnedBy } from '@/services/library/playlistOwnership'
+import { canManagePlaylist, isOwnedBy } from '@/services/library/playlistOwnership'
 import type { Playlist, Song } from '@/types/library'
 
 export default {
@@ -145,6 +149,12 @@ export default {
     },
     isOwnPlaylist(): boolean {
       return !!this.playlist && isOwnedBy(this.playlist, this.authStore.username)
+    },
+    canManage(): boolean {
+      return (
+        !!this.playlist &&
+        canManagePlaylist(this.playlist, this.authStore.username, this.authStore.capabilities)
+      )
     },
     /** Navidrome lets only the owner change the rules. */
     canEditRules(): boolean {
@@ -206,10 +216,17 @@ export default {
     /** This view holds its own copy of the playlist (fetched by id, not the
      * store's list entry), so the new name has to be written into it here —
      * the store's own list is already updated by the dialog. */
-    onRenamed({ name, public: isPublic }: { name: string; public: boolean }) {
+    onRenamed(saved: { name: string; public: boolean; comment: string; ownerChanged: boolean }) {
       if (!this.playlist) return
-      this.playlist.name = name
-      this.playlist.public = isPublic
+      // Whether its songs can be changed went with the owner, and only the
+      // server says what that now is.
+      if (saved.ownerChanged) {
+        void this.loadPlaylist()
+        return
+      }
+      this.playlist.name = saved.name
+      this.playlist.public = saved.public
+      this.playlist.comment = saved.comment
     },
     /** Moves a song and saves the result. The row moves first and is put
      * back if the save fails — a drag that only takes effect a round trip
@@ -302,5 +319,17 @@ export default {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+/* Clipped, not scrolled: a long description must not push the buttons out
+ * of a header whose height follows the window. */
+.playlist-comment {
+  display: -webkit-box;
+  max-width: 70ch;
+  margin: 6px 0 0;
+  overflow: hidden;
+  white-space: pre-line;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
 }
 </style>

@@ -172,3 +172,45 @@ describe('SubsonicClient.isAdmin', () => {
     await expect(client.isAdmin('bob')).resolves.toBeNull()
   })
 })
+
+describe('SubsonicClient playlist details', () => {
+  const client = new SubsonicClient('http://connect:8080', 'u=bob&t=abc&s=xyz', 'connect-token')
+  let requested: URL
+  let answer: Record<string, unknown>
+
+  beforeEach(() => {
+    answer = { status: 'ok' }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        requested = new URL(url)
+        return { ok: true, json: async () => ({ 'subsonic-response': answer }) } as Response
+      }),
+    )
+  })
+
+  afterEach(() => vi.unstubAllGlobals())
+
+  it("answers a new playlist's id where the server says it", async () => {
+    answer = { status: 'ok', playlist: { id: 'new-id' } }
+
+    expect(await client.createPlaylist('Mix')).toBe('new-id')
+  })
+
+  it('answers null where the server does not', async () => {
+    expect(await client.createPlaylist('Mix')).toBeNull()
+  })
+
+  it('sends an emptied description, so it can be cleared', async () => {
+    await client.updatePlaylist('p1', { comment: '' })
+
+    expect(requested.searchParams.get('comment')).toBe('')
+  })
+
+  it('leaves out what is not being changed', async () => {
+    await client.updatePlaylist('p1', { name: 'New' })
+
+    expect(requested.searchParams.has('comment')).toBe(false)
+    expect(requested.searchParams.has('public')).toBe(false)
+  })
+})

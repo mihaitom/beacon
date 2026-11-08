@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isOwnedBy } from '../playlistOwnership'
+import { canManagePlaylist, isOwnedBy } from '../playlistOwnership'
 import type { Playlist } from '@/types/library'
 
 function makePlaylist(overrides: Partial<Playlist> = {}): Playlist {
@@ -30,5 +30,21 @@ describe('isOwnedBy', () => {
     expect(isOwnedBy(makePlaylist({ ownedByUser: true }), '')).toBe(true)
     // Someone else's playlist shared on Jellyfin, also without a name.
     expect(isOwnedBy(makePlaylist({ ownedByUser: false }), '')).toBe(false)
+  })
+})
+
+describe('canManagePlaylist', () => {
+  const owned = (owner: string) => ({ owner }) as Playlist
+
+  it('lets the owner manage their own', () => {
+    expect(canManagePlaylist(owned('me'), 'me', { playlistAdmin: false })).toBe(true)
+  })
+
+  it("keeps someone else out of another person's", () => {
+    expect(canManagePlaylist(owned('anna'), 'me', { playlistAdmin: false })).toBe(false)
+  })
+
+  it("lets a Navidrome admin manage anyone's", () => {
+    expect(canManagePlaylist(owned('anna'), 'me', { playlistAdmin: true })).toBe(true)
   })
 })

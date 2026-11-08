@@ -11,6 +11,21 @@
           clearable
           @keyup.enter="confirm"
         />
+        <template v-if="capabilities.playlistDetails">
+          <v-textarea
+            v-model="comment"
+            :label="$t('playlists.comment')"
+            variant="solo-filled"
+            rows="3"
+            auto-grow
+          />
+          <v-switch
+            v-model="isPublic"
+            :label="$t('playlists.public')"
+            color="primary"
+            hide-details
+          />
+        </template>
       </v-card-text>
       <v-card-actions>
         <v-spacer />
@@ -24,7 +39,9 @@
 </template>
 
 <script lang="ts">
+import { useAuthStore } from '@/stores/auth'
 import { useLibraryStore } from '@/stores/library'
+import type { PlaylistChanges } from '@/services/subsonic/client'
 
 /**
  * "Create new playlist…", asked for from a context menu and seeded with
@@ -41,14 +58,23 @@ export default {
     return {
       visible: false,
       name: '',
+      comment: '',
+      isPublic: false,
       creating: false,
       songIds: [] as string[],
     }
+  },
+  computed: {
+    capabilities() {
+      return useAuthStore().capabilities
+    },
   },
   methods: {
     open(songIds: string[]): void {
       this.songIds = songIds
       this.name = ''
+      this.comment = ''
+      this.isPublic = false
       this.visible = true
     },
     async confirm(): Promise<void> {
@@ -56,7 +82,10 @@ export default {
       if (!name || this.creating) return
       this.creating = true
       try {
-        await useLibraryStore().createPlaylist(name, this.songIds)
+        const details: PlaylistChanges = {}
+        if (this.comment.trim()) details.comment = this.comment.trim()
+        if (this.isPublic) details.public = true
+        await useLibraryStore().createPlaylist(name, this.songIds, details)
         this.visible = false
         this.$emit('created')
       } catch (error) {

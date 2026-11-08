@@ -6,6 +6,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Added
+
+- Playlists can have a description, set when creating or editing one and shown on its page. On Navidrome and other Subsonic servers they can also be made public right when they are created
+- A Navidrome admin can edit and delete other people's playlists and hand a playlist to another user
+
 ### Changed
 
 - The Playlists page is now a wall of large record stacks that flip through on hover and tint the page with the cover in front; you can switch to the list as on Albums, sort by last edited, name, number of songs or length, and narrow it to your own, smart or shared playlists

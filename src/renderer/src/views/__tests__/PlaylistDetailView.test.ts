@@ -75,6 +75,10 @@ describe('PlaylistDetailView', () => {
   })
 
   describe('deleting a playlist', () => {
+    beforeEach(() => {
+      useAuthStore().username = 'thomas'
+    })
+
     // The confirmation itself lives in PlaylistDeleteDialog.vue, shared
     // with the playlists overview's own tile menu — this view's part is
     // opening it and deciding what happens afterwards (navigating away).
@@ -564,6 +568,52 @@ describe('PlaylistDetailView', () => {
     it('blames the rules, not the user, when nothing matches', async () => {
       const wrapper = await mountOwn({ readonly: true, smart: true })
       expect(wrapper.text()).toContain(i18n.global.t('playlists.smartEmpty'))
+    })
+  })
+
+  describe('who may change it', () => {
+    const asNavidrome = (isAdmin: boolean) => {
+      const auth = useAuthStore()
+      auth.username = 'thomas'
+      auth.isAdmin = isAdmin
+      auth.health = {
+        ffmpeg: true,
+        navidrome_configured: true,
+        server_lock: null,
+        session_server_type: 'subsonic',
+        session_server_software: 'navidrome',
+      }
+    }
+    const offered = (wrapper: { find: (selector: string) => { exists: () => boolean } }) => [
+      wrapper.find('.mdi-pencil-outline').exists(),
+      wrapper.find('.mdi-delete-outline').exists(),
+    ]
+
+    it("offers a Navidrome admin someone else's playlist", async () => {
+      asNavidrome(true)
+      vi.spyOn(useLibraryStore(), 'fetchPlaylist').mockResolvedValue(
+        makePlaylist({ owner: 'anna' }),
+      )
+
+      expect(offered((await mountView()).wrapper)).toEqual([true, true])
+    })
+
+    it("keeps anyone else out of someone else's playlist", async () => {
+      asNavidrome(false)
+      vi.spyOn(useLibraryStore(), 'fetchPlaylist').mockResolvedValue(
+        makePlaylist({ owner: 'anna' }),
+      )
+
+      expect(offered((await mountView()).wrapper)).toEqual([false, false])
+    })
+
+    it('shows the description', async () => {
+      asNavidrome(false)
+      vi.spyOn(useLibraryStore(), 'fetchPlaylist').mockResolvedValue(
+        makePlaylist({ comment: 'For long drives' }),
+      )
+
+      expect((await mountView()).wrapper.text()).toContain('For long drives')
     })
   })
 })

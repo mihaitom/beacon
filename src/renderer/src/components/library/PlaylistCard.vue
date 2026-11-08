@@ -112,8 +112,8 @@
       </v-btn>
       <preview-button :load="loadSongs" :song-count="playlist.songCount" :pill="false" />
     </div>
-    <!-- Renaming and deleting are offered for the user's own playlists
-     - only; someone else's shared playlist is not theirs to change. -->
+    <!-- Renaming and deleting are for whoever may change the playlist:
+     - someone else's shared playlist is only a Navidrome admin's to edit. -->
     <tile-context-menu ref="menu">
       <context-menu-section :label="$t('library.menuPlayback')" />
       <v-list-item @click="$emit('play', playlist)">
@@ -128,7 +128,7 @@
         <template #prepend><v-icon icon="mdi-playlist-plus" size="small" /></template>
         <v-list-item-title>{{ $t('common.addToQueue') }}</v-list-item-title>
       </v-list-item>
-      <template v-if="isOwnPlaylist">
+      <template v-if="canManage">
         <context-menu-section :label="$t('library.menuLibrary')" />
         <v-list-item @click="$emit('rename', playlist)">
           <template #prepend><v-icon icon="mdi-pencil-outline" size="small" /></template>
@@ -168,7 +168,7 @@ import { timeAgo } from '@/services/relativeTime'
 import { getLocale } from '@/i18n'
 import { emitter } from '@/emitter'
 import { extractDominantColor } from '@/services/colorExtractor'
-import { isOwnedBy } from '@/services/library/playlistOwnership'
+import { canManagePlaylist } from '@/services/library/playlistOwnership'
 import type { Playlist } from '@/types/library'
 
 const COVER_SIZE = 112
@@ -251,8 +251,9 @@ export default {
       return this.shownCover ?? this.covers[0] ?? null
     },
     /** Same rule as PlaylistDetailView.vue's own edit/delete buttons. */
-    isOwnPlaylist(): boolean {
-      return isOwnedBy(this.playlist, useAuthStore().username)
+    canManage(): boolean {
+      const auth = useAuthStore()
+      return canManagePlaylist(this.playlist, auth.username, auth.capabilities)
     },
     meta(): string {
       const ago = this.playlist.changed
