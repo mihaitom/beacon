@@ -197,7 +197,7 @@ export default {
       return Array.from({ length: RECORD_GROOVES - 1 }, (_, index) => grooveRadius(index + 1.5))
     },
     rings(): (MilestoneRing & { r: number; stroke: string })[] {
-      return milestoneRings(this.seenPlays, this.record.step).map((ring) => ({
+      return milestoneRings(this.seenPlays, this.record).map((ring) => ({
         ...ring,
         r: grooveRadius(ring.groove),
         stroke: RING_STROKES[ring.size],

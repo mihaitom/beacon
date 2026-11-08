@@ -443,13 +443,13 @@ def test_an_admin_gets_the_accounts_sorted(client, signed_in):
 
 def test_a_client_without_the_step_does_not_lose_it(client, signed_in):
     body = {"plays": 1000, "hours": 0, "streak": 0}
-    client.put("/play-history/milestones", json={**body, "step": 500})
+    client.put("/play-history/milestones", json={**body, "records": 3})
     client.put("/play-history/milestones", json=body)
-    assert client.get("/play-history/summary").json()["milestones"]["step"] == 500
+    assert client.get("/play-history/summary").json()["milestones"]["records"] == 3
 
 
 def test_milestones_are_saved_for_the_session_and_returned(client, signed_in):
-    body = {"plays": 1000, "hours": 100, "streak": 7, "step": 50}
+    body = {"plays": 1000, "hours": 100, "streak": 7, "records": 1}
     assert client.put("/play-history/milestones", json=body).status_code == 200
     assert client.get("/play-history/summary").json()["milestones"] == body
     assert play_history.milestones(BOB) is None

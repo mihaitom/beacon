@@ -5,15 +5,15 @@ export interface MilestoneValues {
   plays: number
   hours: number
   streak: number
-  /** Plays one groove stands for. Absent on what was saved before it existed. */
-  step?: number
+  /** Records filled. Absent on what was saved before records were counted. */
+  records?: number
 }
 
 export type MilestoneKind = 'plays' | 'hours' | 'streak'
 export type MilestoneSize = 's' | 'm' | 'l'
 
 export interface Moment {
-  /** A pressing: the record has moved on to bigger grooves. */
+  /** A pressing: a record is full and goes on the shelf. */
   kind: MilestoneKind | 'pressing'
   value: number
   size: MilestoneSize
@@ -35,7 +35,7 @@ export function reachedMilestones(values: MilestoneValues): MilestoneValues {
     plays: Math.floor(values.plays / PLAYS_STEP) * PLAYS_STEP,
     hours: Math.floor(values.hours / HOURS_STEP) * HOURS_STEP,
     streak: reachedStreak(values.streak),
-    step: values.step,
+    records: values.records,
   }
 }
 
@@ -55,10 +55,12 @@ const KIND_ORDER: MilestoneKind[] = ['hours', 'plays', 'streak']
  * on years of plays that were already there. */
 export function nextMoment(seen: MilestoneValues | null, values: MilestoneValues): Moment | null {
   if (!seen) return null
-  // Ahead of any other: the record has just lost half its filled grooves, and
-  // this is what says why.
-  if (seen.step && values.step && values.step > seen.step) {
-    return { kind: 'pressing', value: values.step, size: 'l' }
+  // Ahead of any other: the turntable has just changed record, and this is
+  // what says why.
+  if (seen.records !== undefined && values.records !== undefined) {
+    if (values.records > seen.records) {
+      return { kind: 'pressing', value: values.records, size: 'l' }
+    }
   }
   const reached = reachedMilestones(values)
   let best: Moment | null = null
@@ -92,27 +94,88 @@ export function grooveAtRadius(radius: number): number | null {
 export interface RecordProgress {
   /** Plays one groove stands for. */
   step: number
+  /** The plays at which this record's first groove begins. */
+  base: number
   /** Grooves already finished, from the outer edge in. */
   done: number
-  /** How far along the next groove is, 0 to 1. */
   progress: number
   next: number
   remaining: number
+  /** Records already full, the ones on the shelf. */
+  finished: number
 }
 
-const RECORD_STEPS = [50, 100, 250, 500, 1000, 2500, 5000, 10000, 25000]
-const LARGEST_RECORD_STEP = 50000
-// Below the 40 grooves, so the record still has room left when a step ends.
-const MAX_FILLED_GROOVES = 34
+// Early records run on small grooves so a new listener sees them fill. Past
+// the largest step a groove stays the same and only the records add up: a
+// groove worth thousands of plays no longer moves.
+const LARGEST_STEP = 1000
+const RECORD_STEPS = [50, 100, 250, 500, LARGEST_STEP]
+const LARGEST_RECORD_PLAYS = LARGEST_STEP * RECORD_GROOVES
 
-/** The step grows with the listener, so a new one sees grooves fill and a
- * long-time one does not run off the end of the record. */
+function finishedRecords(plays: number): number {
+  if (plays >= LARGEST_RECORD_PLAYS) {
+    return RECORD_STEPS.length - 1 + Math.floor(plays / LARGEST_RECORD_PLAYS)
+  }
+  return RECORD_STEPS.findIndex((step) => plays < step * RECORD_GROOVES)
+}
+
+function stepOf(record: number): number {
+  return RECORD_STEPS[record] ?? LARGEST_STEP
+}
+
+/** The total plays at which a record, counted from zero, is full. */
+function endOf(record: number): number {
+  if (record < RECORD_STEPS.length) return stepOf(record) * RECORD_GROOVES
+  return (record - RECORD_STEPS.length + 2) * LARGEST_RECORD_PLAYS
+}
+
 export function recordProgress(plays: number): RecordProgress {
-  const step =
-    RECORD_STEPS.find((candidate) => plays / candidate < MAX_FILLED_GROOVES) ?? LARGEST_RECORD_STEP
-  const done = Math.min(Math.floor(plays / step), RECORD_GROOVES - 1)
-  const next = (Math.floor(plays / step) + 1) * step
-  return { step, done, progress: (plays % step) / step, next, remaining: next - plays }
+  const finished = finishedRecords(plays)
+  const step = stepOf(finished)
+  // The early records are the same plays on a finer scale, so their grooves
+  // count from zero; only the ones after them start empty.
+  const base = finished < RECORD_STEPS.length ? 0 : endOf(finished - 1)
+  const done = Math.floor((plays - base) / step)
+  const next = base + (done + 1) * step
+  return {
+    step,
+    base,
+    done,
+    progress: ((plays - base) % step) / step,
+    next,
+    remaining: next - plays,
+    finished,
+  }
+}
+
+export interface PressedRecord {
+  /** Counted from 1. */
+  number: number
+  plays: number
+  step: number
+  /** When it filled up, null when that lies before the log begins. */
+  earnedAt: number | null
+  /** How long it took after the one before, when both dates are known. */
+  tookSeconds: number | null
+}
+
+/** The full records, dated by counting back through the log: the play that
+ * filled one is as many from the end as plays have been added since. */
+export function pressedRecords(plays: number, timestamps: number[]): PressedRecord[] {
+  const records: PressedRecord[] = []
+  for (let record = 0; record < finishedRecords(plays); record++) {
+    const end = endOf(record)
+    const earnedAt = timestamps[timestamps.length - 1 - (plays - end)] ?? null
+    const previous = records.at(-1)?.earnedAt ?? null
+    records.push({
+      number: record + 1,
+      plays: end,
+      step: stepOf(record),
+      earnedAt,
+      tookSeconds: earnedAt !== null && previous !== null ? earnedAt - previous : null,
+    })
+  }
+  return records
 }
 
 export interface GrooveInfo {
@@ -127,11 +190,11 @@ export interface GrooveInfo {
 export function grooveInfo(record: RecordProgress, n: number): GrooveInfo {
   const current = record.done + 1
   const plays = record.next - record.remaining
-  const from = (n - 1) * record.step
+  const from = record.base + (n - 1) * record.step
   return {
     n,
     from,
-    to: n * record.step,
+    to: record.base + n * record.step,
     state: n < current ? 'played' : n === current ? 'current' : 'ahead',
     left: Math.max(0, from - plays),
   }
@@ -144,18 +207,17 @@ export interface MilestoneRing {
 }
 
 /** The plays milestones already celebrated, on the groove each happened in.
- * Hours and streaks have no place on a record measured in plays. With a large
- * step several share a groove, which then shows the biggest of them. */
-export function milestoneRings(seenPlays: number, step: number): MilestoneRing[] {
-  const rings = new Map<number, MilestoneRing>()
-  for (let value = PLAYS_STEP; value <= seenPlays; value += PLAYS_STEP) {
-    const groove = Math.ceil(value / step)
+ * Hours and streaks have no place on a record measured in plays. Once every
+ * groove holds a thousand plays only the rounder ones are marked, or each
+ * groove would be a ring. */
+export function milestoneRings(seenPlays: number, record: RecordProgress): MilestoneRing[] {
+  const { base, step } = record
+  const rings: MilestoneRing[] = []
+  for (let value = base + PLAYS_STEP; value <= seenPlays; value += PLAYS_STEP) {
+    const groove = Math.ceil((value - base) / step)
     if (groove > RECORD_GROOVES) break
     const size = sizeOf('plays', value)
-    const held = rings.get(groove)
-    if (!held || SIZE_RANK[size] >= SIZE_RANK[held.size]) {
-      rings.set(groove, { groove, value, size })
-    }
+    if (step < PLAYS_STEP || size !== 's') rings.push({ groove, value, size })
   }
-  return [...rings.values()]
+  return rings
 }

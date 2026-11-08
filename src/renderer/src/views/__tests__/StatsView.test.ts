@@ -511,7 +511,7 @@ describe('StatsView milestones', () => {
       plays: 1000,
       hours: 0,
       streak: 0,
-      step: 50,
+      records: 0,
     })
   })
 
@@ -525,13 +525,13 @@ describe('StatsView milestones', () => {
       plays: 1000,
       hours: 0,
       streak: 0,
-      step: 50,
+      records: 0,
     })
   })
 
   it('waits for the whole library before comparing', async () => {
     vi.mocked(playHistory.getPlayHistorySummary).mockResolvedValue(
-      summary({ milestones: { plays: 1000, hours: 0, streak: 0, step: 50 } }),
+      summary({ milestones: { plays: 1000, hours: 0, streak: 0, records: 0 } }),
     )
     const wrapper = mountView([makeSong('1', { playCount: 1800, duration: 60 })])
     useLibraryStore().allSongsLoaded = false
@@ -541,25 +541,25 @@ describe('StatsView milestones', () => {
     expect(playHistory.saveMilestones).not.toHaveBeenCalled()
   })
 
-  it('announces a new pressing when the grooves have grown', async () => {
+  it('announces a new pressing when another record is full', async () => {
     vi.mocked(playHistory.getPlayHistorySummary).mockResolvedValue(
-      summary({ milestones: { plays: 1000, hours: 0, streak: 0, step: 50 } }),
+      summary({ milestones: { plays: 1000, hours: 0, streak: 0, records: 0 } }),
     )
-    const wrapper = mountView([makeSong('1', { playCount: 1800, duration: 60 })])
+    const wrapper = mountView([makeSong('1', { playCount: 2500, duration: 60 })])
     await settle()
 
-    expect(moment(wrapper)).toMatchObject({ kind: 'pressing', value: 100 })
+    expect(moment(wrapper)).toMatchObject({ kind: 'pressing', value: 1 })
   })
 
-  it('takes on the step silently when what was saved has none', async () => {
+  it('takes on the count silently when what was saved has none', async () => {
     vi.mocked(playHistory.getPlayHistorySummary).mockResolvedValue(
-      summary({ milestones: { plays: 1000, hours: 0, streak: 0 } }),
+      summary({ milestones: { plays: 2000, hours: 0, streak: 0 } }),
     )
-    const wrapper = mountView([makeSong('1', { playCount: 1800, duration: 60 })])
+    const wrapper = mountView([makeSong('1', { playCount: 2500, duration: 60 })])
     await settle()
 
     expect(moment(wrapper)).toBeNull()
-    expect(playHistory.saveMilestones).toHaveBeenCalledWith(expect.objectContaining({ step: 100 }))
+    expect(playHistory.saveMilestones).toHaveBeenCalledWith(expect.objectContaining({ records: 1 }))
   })
 
   it('does not show it while looking at another account', async () => {

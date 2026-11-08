@@ -39,10 +39,12 @@
             :data-tip="`${entry.label}: ${entry.valueLabel}`"
           />
         </div>
-        <div v-for="(entry, index) in quality" :key="entry.id" class="stats-collection__legend">
-          <i :class="`stats-collection__step--${index}`" />
-          <span>{{ entry.label }}</span>
-          <b>{{ entry.valueLabel }}</b>
+        <div class="stats-collection__legends">
+          <div v-for="(entry, index) in quality" :key="entry.id" class="stats-collection__legend">
+            <i :class="`stats-collection__step--${index}`" />
+            <span>{{ entry.label }}</span>
+            <b>{{ entry.valueLabel }}</b>
+          </div>
         </div>
         <p
           v-if="formats.length"
@@ -208,5 +210,37 @@ export default {
 
 .stats-collection__formats {
   margin-top: 14px;
+}
+
+/* The same width at which the page goes to two columns. Three panels stretched
+ * over it left an orphaned row of facts and a label a screen away from its
+ * percentage. */
+@container stats-page (min-width: 2000px) {
+  .stats-collection {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.3fr) minmax(0, 1fr);
+  }
+
+  .stats-collection__facts {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .stats-collection__quality {
+    height: 22px;
+  }
+
+  .stats-collection__legends {
+    display: grid;
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
+    gap: 18px;
+  }
+
+  .stats-collection__legend {
+    margin-top: 0;
+  }
+
+  .stats-collection__legend b {
+    margin-left: 0;
+  }
 }
 </style>

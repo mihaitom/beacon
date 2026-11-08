@@ -49,16 +49,25 @@
           </div>
         </div>
         <div class="stats-hero__deck">
-          <stats-record
-            ref="record"
-            class="stats-hero__record"
-            :record="record"
-            :cover-url="backdropUrl"
-            :seen-plays="seenPlays"
-            @hover-line="grooveLine = $event"
-            :playing="playing"
-            :lit="lit"
-          />
+          <div class="stats-hero__turntable">
+            <stats-record
+              ref="record"
+              class="stats-hero__record"
+              :record="record"
+              :cover-url="backdropUrl"
+              :seen-plays="seenPlays"
+              :playing="playing"
+              :lit="lit"
+              @hover-line="grooveLine = $event"
+            />
+            <stats-shelf
+              ref="shelf"
+              class="stats-hero__shelf"
+              :records="pressed"
+              :seen="seenRecords"
+              :landed="fresh === 'pressing' ? record.finished : null"
+            />
+          </div>
         </div>
       </div>
     </v-theme-provider>
@@ -68,15 +77,14 @@
 <script lang="ts">
 import type { PropType } from 'vue'
 import { useAppearanceStore } from '@/stores/appearance'
-import { recordProgress, type MilestoneKind } from '@/services/library/statsMilestones'
+import { pressedRecords, recordProgress, type Moment } from '@/services/library/statsMilestones'
 import StatsRecord from './StatsRecord.vue'
+import StatsShelf from './StatsShelf.vue'
 
 const COUNT_UP_MS = 1300
 const SECONDS_PER_MINUTE = 60
 const SECONDS_PER_HOUR = 3600
 const SECONDS_PER_DAY = 86400
-// Frankfurt to New York, a flight most people have a feeling for.
-const FLIGHT_SECONDS = 8.5 * SECONDS_PER_HOUR
 
 function reducedMotion(): boolean {
   return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
@@ -84,7 +92,7 @@ function reducedMotion(): boolean {
 
 export default {
   name: 'StatsHero',
-  components: { StatsRecord },
+  components: { StatsRecord, StatsShelf },
   props: {
     listeningSeconds: { type: Number, default: 0 },
     plays: { type: Number, required: true },
@@ -99,7 +107,13 @@ export default {
     /** Someone else's page: the name and their log, no total listening time. */
     otherAccount: { type: String as PropType<string | null>, default: null },
     since: { type: String as PropType<string | null>, default: null },
-    fresh: { type: String as PropType<MilestoneKind | null>, default: null },
+    fresh: { type: String as PropType<Moment['kind'] | null>, default: null },
+    /** The sentence under the title. */
+    line: { type: String as PropType<string | null>, default: null },
+    /** The log the shelf's dates are counted back through, oldest first. */
+    timestamps: { type: Array as PropType<number[]>, default: () => [] },
+    /** Records already celebrated; null when there is nothing to hold back. */
+    seenRecords: { type: Number as PropType<number | null>, default: null },
   },
   data() {
     return { lit: false, reveal: 0, frame: 0, grooveLine: '' }
@@ -110,6 +124,9 @@ export default {
     },
     record() {
       return recordProgress(this.plays)
+    },
+    pressed() {
+      return pressedRecords(this.plays, this.timestamps)
     },
     /** The song that is on, or else the top album: backdrop and label alike. */
     nextLine(): string {
@@ -144,9 +161,7 @@ export default {
             )
           : null
       }
-      const flights = Math.round(this.listeningSeconds / FLIGHT_SECONDS)
-      if (flights < 1) return null
-      return this.$t('stats.heroFlights', { n: this.formatNumber(this.shown(flights)) }, flights)
+      return this.line
     },
   },
   mounted() {
@@ -189,6 +204,12 @@ export default {
     /** For a record flying in from elsewhere on the page. */
     labelRect(): { x: number; y: number; size: number } {
       return (this.$refs.record as InstanceType<typeof StatsRecord>).labelRect()
+    },
+    /** For a full record flying onto the shelf. */
+    shelfRect(record: number): { x: number; y: number; size: number } | null {
+      return (
+        (this.$refs.shelf as InstanceType<typeof StatsShelf> | undefined)?.rectOf(record) ?? null
+      )
     },
   },
 }
@@ -322,11 +343,22 @@ export default {
   min-width: 0;
 }
 
-.stats-hero__record {
+.stats-hero__turntable {
   /* By width, with a ceiling: the hero's height follows the record, and on
    * an ultrawide an uncapped one ran past the bottom of the screen. */
   width: clamp(420px, 48cqi, 780px);
   margin-right: 1%;
+}
+
+.stats-hero__record {
+  width: 100%;
+}
+
+/* The record's centre sits left of the middle of its picture, where the
+ * tonearm takes up the rest. */
+.stats-hero__shelf {
+  width: 84.4%;
+  padding-bottom: 22px;
 }
 
 .is-fresh {
@@ -352,7 +384,7 @@ export default {
     padding: 14px 14px 0;
   }
 
-  .stats-hero__record {
+  .stats-hero__turntable {
     width: min(100%, 420px);
     margin: 0;
   }

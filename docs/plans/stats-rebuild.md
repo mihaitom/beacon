@@ -155,7 +155,7 @@ separate mobile view.
 
 - **Hero:** the blurred backdrop of the most played album (300px cover, as
   everywhere), in the theme's night. 40 grooves, outermost first; one groove is
-  a number of plays that grows with the listener (50 up to 50,000), grooves
+  a number of plays that grows with the listener (50 up to 1,000), grooves
   already filled are quiet, the current one is an amber arc ending at the
   progress. Celebrated plays milestones stay on their groove as a ring of
   silver, gold or foil. Pointing anywhere on the record names the nearest
@@ -185,11 +185,25 @@ and so does the visit after an import: a streak arriving with a year of old
 plays is nothing to celebrate. What has been seen is stored per account in
 connect and only ever goes up, so a second device does not repeat it.
 
-The record gets one more: when a groove starts standing for more plays, half
-the filled grooves empty at once, and a "new pressing" says why. It goes ahead
-of any other moment, since the jump always lands on a round number of plays.
+The record gets one more. A record holds 40 grooves and runs to the last one:
+full at 2,000, 4,000, 10,000, 20,000 and 40,000 plays, with a groove worth 50,
+100, 250, 500 and 1,000 plays. A groove never grows past 1,000; after that an
+empty record starts every 40,000 plays. A full record is a "new pressing" and
+flies onto the shelf under the turntable, ahead of any other moment since it
+always lands on a round number of plays.
+
+The shelf needs no storage of its own: which records are full follows from the
+plays, and the date comes from counting back through the log, so it is unknown
+for a record older than the log. The tooltip says so.
+
 The comparison waits for the whole library: counted on the first pages, the
 baseline would be too low and the next visit would celebrate nothing.
+
+The sentence under the headline is one a day out of what the listener's own
+numbers can say (`services/library/statsLines.ts`). It started as a flight
+comparison, which read the same on every visit and meant nothing at 140 flights.
+A line only joins in when its figure is worth saying, and nothing comes from an
+outside service.
 
 ## Tests
 

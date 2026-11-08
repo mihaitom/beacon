@@ -43,7 +43,7 @@ class Milestones(BaseModel):
     plays: int = Field(ge=0)
     hours: int = Field(ge=0)
     streak: int = Field(ge=0)
-    step: int = Field(default=0, ge=0)
+    records: int = Field(default=0, ge=0)
 
 
 def _own(session: SessionState) -> Account | None:

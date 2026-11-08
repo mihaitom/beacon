@@ -29,6 +29,9 @@
         :other-account="viewedAccount"
         :since="sinceLabel"
         :fresh="fresh"
+        :line="heroLine"
+        :timestamps="history?.timestamps ?? []"
+        :seen-records="isOwnView ? (ownHistory?.milestones?.records ?? null) : null"
       />
 
       <div class="stats-page__columns">
@@ -93,7 +96,6 @@ import {
   PLAYS_STEP as PLAYS_MILESTONE,
   reachedMilestones,
   recordProgress,
-  type MilestoneKind,
   type MilestoneValues,
   type Moment,
 } from '@/services/library/statsMilestones'
@@ -109,6 +111,7 @@ import {
 } from '@/services/connect/playHistory'
 import { pollingAllowed } from '@/services/connect/pollGate'
 import type { Artist, Song } from '@/types/library'
+import { lineOfTheDay, statsLines } from '@/services/library/statsLines'
 
 const TOP_N = 8
 const TOP_FORMATS = 3
@@ -201,7 +204,7 @@ export default {
       moment: null as Moment | null,
       /** What the moment on screen will have made seen, once it has landed. */
       momentReached: null as MilestoneValues | null,
-      fresh: null as MilestoneKind | null,
+      fresh: null as Moment['kind'] | null,
       /** Whether this load of the log has been compared with the milestones. */
       milestonesChecked: false,
       momentTimer: 0,
@@ -457,7 +460,7 @@ export default {
         plays: this.totalPlays,
         hours: Math.floor(this.listeningTime / 3600),
         streak: streaks(this.ownHistory?.timestamps ?? [], this.today).current,
-        step: recordProgress(this.totalPlays).step,
+        records: recordProgress(this.totalPlays).finished,
       }
     },
     /** Both halves of a milestone have to be in: a comparison against a
@@ -470,6 +473,21 @@ export default {
         this.libraryStore.allSongsLoaded &&
         !this.loading
       )
+    },
+    /** Not until the library and the log are both in: it would change under
+     * the reader as each arrives. */
+    heroLine(): string | null {
+      if (!this.isOwnView || !this.libraryStore.allSongsLoaded || !this.ownHistory) return null
+      const line = lineOfTheDay(
+        statsLines({
+          songs: this.songs,
+          timestamps: this.ownHistory.timestamps,
+          today: this.today,
+          locale: this.$i18n.locale,
+        }),
+        this.today,
+      )
+      return line && this.$t(`stats.heroLines.${line.key}`, line.params)
     },
     momentSubtitle(): string {
       if (!this.moment) return ''
@@ -563,9 +581,9 @@ export default {
       const reached = reachedMilestones(this.milestoneValues)
       const moment = nextMoment(seen, this.milestoneValues)
       if (!moment) {
-        // Without a step yet: saved before pressings existed, and there is
-        // nothing to compare against.
-        if (!seen?.step) {
+        // Without a count yet: saved before records were counted, and there
+        // is nothing to compare against.
+        if (seen?.records === undefined) {
           this.ownHistory.milestones = reached
           void this.rememberMilestones(reached)
         }
@@ -588,11 +606,15 @@ export default {
       }
     },
     momentTarget(): { x: number; y: number; size: number } | null {
-      return (this.$refs.hero as InstanceType<typeof StatsHero> | undefined)?.labelRect() ?? null
+      const hero = this.$refs.hero as InstanceType<typeof StatsHero> | undefined
+      if (!hero) return null
+      if (this.moment?.kind === 'pressing') {
+        return hero.shelfRect(this.moment.value) ?? hero.labelRect()
+      }
+      return hero.labelRect()
     },
     onMomentClosed(): void {
-      const kind = this.moment?.kind
-      this.fresh = kind && kind !== 'pressing' ? kind : null
+      this.fresh = this.moment?.kind ?? null
       // Only now, so a new ring appears as the record lands in the hero.
       if (this.ownHistory && this.momentReached) this.ownHistory.milestones = this.momentReached
       this.moment = null

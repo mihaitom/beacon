@@ -4,6 +4,7 @@ import {
   grooveInfo,
   grooveRadius,
   milestoneRings,
+  pressedRecords,
   nextMoment,
   reachedMilestones,
   RECORD_GROOVES,
@@ -69,25 +70,31 @@ describe('nextMoment', () => {
 })
 
 describe('a new pressing', () => {
-  const at = (step: number | undefined) => ({ plays: 3000, hours: 0, streak: 0, step })
+  const at = (records: number | undefined, plays = 3000) => ({
+    plays,
+    hours: 0,
+    streak: 0,
+    records,
+  })
 
-  it('is announced when a groove stands for more plays', () => {
-    const moment = nextMoment(at(500), { ...at(1000), plays: 17000 })
-    expect(moment).toMatchObject({ kind: 'pressing', value: 1000 })
+  it('is announced when another record is full', () => {
+    expect(nextMoment(at(1), at(2))).toMatchObject({ kind: 'pressing', value: 2 })
+  })
+
+  it('is announced for the very first one', () => {
+    expect(nextMoment(at(0), at(1))?.kind).toBe('pressing')
   })
 
   it('goes ahead of the round number it always falls on', () => {
-    expect(nextMoment(at(500), { plays: 20000, hours: 0, streak: 0, step: 1000 })?.kind).toBe(
-      'pressing',
-    )
+    expect(nextMoment(at(2, 3000), at(3, 10000))?.kind).toBe('pressing')
   })
 
   it('is not announced again', () => {
-    expect(nextMoment(at(1000), at(1000))).toBeNull()
+    expect(nextMoment(at(2), at(2))).toBeNull()
   })
 
   it('needs something to compare against', () => {
-    expect(nextMoment(at(undefined), at(1000))).toBeNull()
+    expect(nextMoment(at(undefined), at(2))).toBeNull()
   })
 })
 
@@ -101,15 +108,64 @@ describe('recordProgress', () => {
     expect(recordProgress(120).progress).toBeCloseTo(0.4)
   })
 
-  it('moves to a bigger step before the grooves run out', () => {
-    expect(recordProgress(1699).step).toBe(50)
-    expect(recordProgress(1700).step).toBe(100)
+  it.each([
+    [1999, 50, 0],
+    [2000, 100, 1],
+    [3999, 100, 1],
+    [4000, 250, 2],
+    [10000, 500, 3],
+    [20000, 1000, 4],
+    [39999, 1000, 4],
+  ])('at %i plays a groove is %i, with %i on the shelf', (plays, step, finished) => {
+    expect(recordProgress(plays)).toMatchObject({ step, finished })
+  })
+
+  it('uses a record to the very last groove', () => {
+    expect(recordProgress(1999).done).toBe(RECORD_GROOVES - 1)
+  })
+
+  it('carries on through the scale when the step changes', () => {
+    // 2,000 plays at 100 a groove: half way in, not back at the start.
+    expect(recordProgress(2000)).toMatchObject({ base: 0, done: 20 })
+  })
+
+  it('stays at a thousand a groove and starts empty records from there', () => {
+    expect(recordProgress(40000)).toMatchObject({ step: 1000, base: 40000, done: 0, finished: 5 })
+    expect(recordProgress(80000)).toMatchObject({ step: 1000, base: 80000, done: 0, finished: 6 })
+    expect(recordProgress(41500)).toMatchObject({ done: 1, next: 42000, remaining: 500 })
   })
 
   it('never runs off the record, however much was played', () => {
     const huge = recordProgress(50_000_000)
     expect(huge.done).toBeLessThan(RECORD_GROOVES)
     expect(huge.remaining).toBeGreaterThan(0)
+  })
+})
+
+describe('pressedRecords', () => {
+  it('has one entry for each full record, at the plays it filled up', () => {
+    expect(pressedRecords(13478, []).map((record) => record.plays)).toEqual([2000, 4000, 10000])
+    expect(pressedRecords(1999, [])).toEqual([])
+    expect(
+      pressedRecords(85000, [])
+        .map((record) => record.plays)
+        .slice(-2),
+    ).toEqual([40000, 80000])
+  })
+
+  it('dates a record by counting back through the log', () => {
+    // Plays 11 to 14 are logged at 100, 200, 300 and 400; number 12 filled it.
+    const records = pressedRecords(2002, [100, 200, 300, 400])
+    expect(records[0]?.earnedAt).toBe(200)
+  })
+
+  it('has no date for what happened before the log begins', () => {
+    expect(pressedRecords(2500, [100, 200])[0]?.earnedAt).toBeNull()
+  })
+
+  it('says how long a record took only when both ends are known', () => {
+    const log = Array.from({ length: 3000 }, (_, index) => index)
+    expect(pressedRecords(4500, log).map((record) => record.tookSeconds)).toEqual([null, 2000])
   })
 })
 
@@ -150,23 +206,30 @@ describe('grooveInfo', () => {
 })
 
 describe('milestoneRings', () => {
+  const at500 = recordProgress(13000)
+
   it('puts a milestone on the groove it happened in', () => {
     // 1,000 plays at 500 a groove ends the second groove.
-    expect(milestoneRings(1000, 500)).toEqual([{ groove: 2, value: 1000, size: 's' }])
+    expect(milestoneRings(1000, at500)).toEqual([{ groove: 2, value: 1000, size: 's' }])
   })
 
   it('shows only what has been celebrated', () => {
-    expect(milestoneRings(999, 500)).toEqual([])
-    expect(milestoneRings(2000, 500)).toHaveLength(2)
+    expect(milestoneRings(999, at500)).toEqual([])
+    expect(milestoneRings(2000, at500)).toHaveLength(2)
   })
 
-  it('keeps the biggest when several share a groove', () => {
-    // 5,000 a groove: 1,000 to 5,000 all land on the first.
-    expect(milestoneRings(5000, 5000)).toEqual([{ groove: 1, value: 5000, size: 'm' }])
+  it('marks only the rounder ones once a groove holds a thousand', () => {
+    const rings = milestoneRings(10000, recordProgress(30000))
+    expect(rings.map((ring) => ring.value)).toEqual([5000, 10000])
+  })
+
+  it('counts from where a record starts', () => {
+    const rings = milestoneRings(45000, recordProgress(46000))
+    expect(rings).toEqual([{ groove: 5, value: 45000, size: 'm' }])
   })
 
   it('stops at the end of the record', () => {
-    const rings = milestoneRings(100000, 50)
+    const rings = milestoneRings(100000, recordProgress(100))
     expect(Math.max(...rings.map((ring) => ring.groove))).toBeLessThanOrEqual(RECORD_GROOVES)
   })
 })

@@ -125,7 +125,9 @@ eyebrow, a divider. It is not a fill - nothing large is amber.
 
 One exception to theme tokens: the record on the Stats page and its milestone
 disc are objects, not interface. Vinyl, silver, gold and foil keep their own
-colours on every theme, and only the grooves' markings use the accent.
+colours on every theme, and only the grooves' markings use the accent. The
+full records on the shelf below it are objects too, each in its own colour of
+vinyl.
 
 ## Type
 
