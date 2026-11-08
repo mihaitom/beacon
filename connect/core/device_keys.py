@@ -94,7 +94,13 @@ def create(
                 int(may_read_api_keys),
             ),
         )
-    return {"id": key_id, "key": f"{key_id}.{secret}", "label": label, "created_at": created_at}
+    return {
+        "id": key_id,
+        "key": f"{key_id}.{secret}",
+        "label": label,
+        "created_at": created_at,
+        "shares_api_keys": may_read_api_keys,
+    }
 
 
 def list_keys(account: Account, now: float | None = None) -> list[dict]:
@@ -103,7 +109,8 @@ def list_keys(account: Account, now: float | None = None) -> list[dict]:
     stamp = time.time() if now is None else now
     with play_history.transaction() as conn:
         rows = conn.execute(
-            "SELECT device_keys.id, label, created_at, last_used_at FROM device_keys"
+            "SELECT device_keys.id, label, created_at, last_used_at, may_read_api_keys"
+            " FROM device_keys"
             " JOIN accounts ON accounts.id = account_id"
             " WHERE server_type = ? AND server_url = ? AND username = ?"
             " ORDER BY created_at",
@@ -111,7 +118,11 @@ def list_keys(account: Account, now: float | None = None) -> list[dict]:
         ).fetchall()
     return [
         {
-            **dict(row),
+            "id": row["id"],
+            "label": row["label"],
+            "created_at": row["created_at"],
+            "last_used_at": row["last_used_at"],
+            "shares_api_keys": bool(row["may_read_api_keys"]),
             "active": row["last_used_at"] is not None
             and stamp - row["last_used_at"] < ACTIVE_WITHIN_SECONDS,
         }

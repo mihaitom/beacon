@@ -984,17 +984,17 @@ def test_custom_themes_are_shared_settings(public):
 # ── API keys ─────────────────────────────────────────────────────────────
 
 
-def admin_key() -> str:
+def sharing_key() -> str:
     return device_keys.create(ALICE, "Laptop", ALICE_SETTINGS, may_read_api_keys=True)["key"]
 
 
-def test_a_key_an_admin_made_gets_the_installations_keys(public):
+def test_a_device_confirmed_for_it_gets_the_installations_keys(public):
     api_keys.set("lastfm", "lastfm-secret")
-    answer = public.get("/device-link/api-keys", headers=auth(admin_key())).json()
+    answer = public.get("/device-link/api-keys", headers=auth(sharing_key())).json()
     assert answer == {"keys": {"lastfm": "lastfm-secret", "fanart": ""}}
 
 
-def test_a_listeners_key_does_not(public):
+def test_a_device_without_that_confirmation_does_not(public):
     api_keys.set("lastfm", "lastfm-secret")
     response = public.get("/device-link/api-keys", headers=auth(key_for()))
     assert response.json() == {"keys": {}}
@@ -1005,10 +1005,25 @@ def test_api_keys_need_a_device_key(public):
 
 
 @pytest.mark.parametrize("is_admin", [True, False])
-def test_the_right_is_taken_from_the_session(client, signed_in, is_admin):
+def test_only_the_confirmation_decides_not_the_role(client, signed_in, is_admin):
     signed_in.account_is_admin = is_admin
-    made = client.post("/device-keys", json={"label": "Laptop"}).json()
-    assert device_keys.resolve(made["key"]).may_read_api_keys is is_admin
+    without = client.post("/device-keys", json={"label": "Laptop"}).json()
+    confirmed = client.post(
+        "/device-keys", json={"label": "Desktop", "share_api_keys": True}
+    ).json()
+    assert device_keys.resolve(without["key"]).may_read_api_keys is False
+    assert device_keys.resolve(confirmed["key"]).may_read_api_keys is True
+
+
+def test_the_list_says_which_devices_have_the_keys(client, signed_in):
+    client.post("/device-keys", json={"label": "Laptop"})
+    made = client.post("/device-keys", json={"label": "Desktop", "share_api_keys": True}).json()
+    listed = {
+        entry["label"]: entry["shares_api_keys"]
+        for entry in client.get("/device-keys").json()["keys"]
+    }
+    assert made["shares_api_keys"] is True
+    assert listed == {"Laptop": False, "Desktop": True}
 
 
 def test_the_desktop_uses_the_servers_key(paired):

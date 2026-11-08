@@ -55,6 +55,7 @@ class SettingsPatch(BaseModel):
 
 class NewKey(BaseModel):
     label: str = Field(min_length=1, max_length=100)
+    share_api_keys: bool = False
 
 
 async def _require_key(
@@ -141,8 +142,8 @@ async def patch_settings(request: Request, owner: KeyOwner = Depends(_require_ke
 
 @router.get("/api-keys")
 def get_api_keys(owner: KeyOwner = Depends(_require_key)) -> dict:
-    """The installation's keys, for a device an administrator paired: the
-    same people who can see and change them in Settings here."""
+    """The installation's keys, for a device they were confirmed for when its
+    key was made. They end up in a file on that computer, hence one by one."""
     if not owner.may_read_api_keys:
         return {"keys": {}}
     return {"keys": {service: api_keys.get(service) for service in api_keys.SERVICES}}
@@ -182,7 +183,7 @@ def create_device_key(
             account,
             new_key.label.strip(),
             device_keys.settings_identity_of(session),
-            may_read_api_keys=session.account_is_admin,
+            may_read_api_keys=new_key.share_api_keys,
         )
     except device_keys.TooManyKeys as e:
         raise HTTPException(status_code=409, detail="Too many device keys") from e

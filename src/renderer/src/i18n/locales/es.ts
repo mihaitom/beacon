@@ -995,6 +995,11 @@ export default {
     deviceKeysConnected: 'Conectado',
     deviceKeysNeverUsed: 'Aún sin usar',
     deviceKeysLastUsed: 'Último uso {ago}',
+    deviceKeysShareApi:
+      'Dar también a este dispositivo las claves de Last.fm y Fanart del servidor',
+    deviceKeysShareApiHint:
+      'Quedarán guardadas en ese ordenador. Solo se aplica a este dispositivo.',
+    deviceKeysSharesApi: 'Tiene las claves de Last.fm y Fanart',
     deviceKeysFailed: 'No se ha podido cambiar la clave',
     advancedTitle: 'Avanzado',
     logLevel: 'Nivel de registro',

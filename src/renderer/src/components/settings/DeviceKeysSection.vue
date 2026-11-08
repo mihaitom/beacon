@@ -14,6 +14,9 @@
             <div class="device-keys__text">
               <span>{{ entry.label }}</span>
               <span class="setting__hint setting__hint--inline">{{ deviceStatus(entry) }}</span>
+              <span v-if="entry.shares_api_keys" class="setting__hint setting__hint--inline">
+                {{ $t('settings.deviceKeysSharesApi') }}
+              </span>
             </div>
             <v-spacer />
             <v-btn variant="text" :disabled="busy" @click="revoke(entry)">
@@ -61,6 +64,15 @@
           </v-btn>
         </div>
 
+        <v-switch
+          v-model="shareApiKeys"
+          :label="$t('settings.deviceKeysShareApi')"
+          color="primary"
+          density="compact"
+          hide-details
+        />
+        <p class="setting__hint">{{ $t('settings.deviceKeysShareApiHint') }}</p>
+
         <div class="device-keys__help">
           <v-btn
             variant="text"
@@ -99,6 +111,7 @@ export default {
     return {
       keys: [] as DeviceKey[],
       label: '',
+      shareApiKeys: false,
       busy: false,
       /** Only right after creating: the key is never sent again. */
       newKey: '',
@@ -148,11 +161,13 @@ export default {
       if (!this.canCreate) return
       this.busy = true
       try {
-        const { key, ...entry } = await createDeviceKey(this.label.trim())
+        const { key, ...entry } = await createDeviceKey(this.label.trim(), this.shareApiKeys)
         this.listVersion += 1
         this.newKey = key
         this.keys = [...this.keys, { ...entry, last_used_at: null, active: false }]
         this.label = ''
+        // Confirmed device by device, so it never carries over to the next.
+        this.shareApiKeys = false
       } catch (error) {
         this.toastError(error)
       } finally {

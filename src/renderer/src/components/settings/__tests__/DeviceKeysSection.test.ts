@@ -27,11 +27,14 @@ const EXISTING: DeviceKey = {
   created_at: 1,
   last_used_at: null,
   active: false,
+  shares_api_keys: false,
 }
 
 type Vm = {
   newKey: string
   keys: DeviceKey[]
+  label: string
+  shareApiKeys: boolean
   create(): Promise<void>
   revoke(entry: DeviceKey): Promise<void>
 }
@@ -74,6 +77,30 @@ describe('DeviceKeysSection', () => {
     wrapper.unmount()
   })
 
+  it('shares the API keys only for the device it was confirmed for', async () => {
+    vi.mocked(createDeviceKey).mockResolvedValue({ ...EXISTING, id: 'new', key: 'new.secret' })
+    const { vm } = await mountSection()
+
+    vm.label = 'Laptop'
+    await vm.create()
+    expect(createDeviceKey).toHaveBeenLastCalledWith('Laptop', false)
+
+    vm.label = 'Desktop'
+    vm.shareApiKeys = true
+    await vm.create()
+    expect(createDeviceKey).toHaveBeenLastCalledWith('Desktop', true)
+
+    vm.label = 'Tablet'
+    await vm.create()
+    expect(createDeviceKey).toHaveBeenLastCalledWith('Tablet', false)
+  })
+
+  it('says which devices have the API keys', async () => {
+    vi.mocked(listDeviceKeys).mockResolvedValue([{ ...EXISTING, shares_api_keys: true }])
+    const { wrapper } = await mountSection()
+    expect(wrapper.text()).toContain(i18n.global.t('settings.deviceKeysSharesApi'))
+  })
+
   it('stops asking once it is gone', async () => {
     vi.useFakeTimers()
     const { wrapper } = await mountSection()
@@ -113,6 +140,7 @@ describe('DeviceKeysSection', () => {
       created_at: 2,
       last_used_at: null,
       active: false,
+      shares_api_keys: false,
     })
     const { wrapper, vm } = await mountSection()
     await wrapper.setData({ label: 'Laptop' })

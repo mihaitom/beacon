@@ -114,11 +114,15 @@ device. A theme deleted elsewhere falls back to Beacon on this one.
 
 ## API keys
 
-The Last.fm and Fanart keys belong to the installation, and any listener can
-make a device key. So a key only reads them if a server administrator made it,
-noted when it is made. The desktop keeps them apart from a key entered there,
-which stays in charge, and gives them back on disconnecting or when its key is
-refused.
+The server's administrator enters the Last.fm and Fanart keys once for everyone
+on it, but each desktop app is an installation of its own. Any paired desktop
+can borrow them, confirmed device by device when its key is made, and off
+unless confirmed, because they end up in a file on that computer. The person
+making the key decides, not an administrator: those keys are free and quickly
+replaced, and whoever has an account already uses them on the server. Changing
+the answer takes a new key. The desktop keeps them apart from a key entered
+there, which stays in charge, and gives them back on disconnecting or when its
+key is refused.
 
 ## What the server decides about incoming rows
 
@@ -141,9 +145,6 @@ of the server's answer, so a song just played counts at once.
 
 ## Open
 
-- **Rights after the fact.** A device has no session, so an administrator who
-  loses that role keeps the API keys through an existing device key until it is
-  revoked.
 - **Admin view.** A key only speaks for its own account, so the desktop's admin
   picker stays as it was. Listing the server's accounts needs the admin flag
   noted on the key, and a way for it to end when the server stops considering

@@ -21,8 +21,8 @@ the computer and sent when it can be reached again.
   your Last.fm and ListenBrainz names and the like.
 - **Your own themes,** though which theme is on stays with each device.
 - **Lyrics timing you corrected,** song by song.
-- **The Last.fm and Fanart keys,** if a server administrator created the
-  device key. A key you entered in the desktop app stays in charge, and the
+- **The Last.fm and Fanart keys,** if you confirmed that when creating the
+  key for this device. A key you entered in the desktop app stays in charge, and the
   server's keys stop being used when you disconnect.
 
 Things that belong to one computer or one installation stay there: audio
@@ -33,7 +33,9 @@ server.
 
 1. Open Beacon on the server in a browser, signed in with your account, and
    go to Settings > Account > Desktop apps.
-2. Give the key a name and create it. It is shown once.
+2. Give the key a name, decide whether this device also gets the server's
+   Last.fm and Fanart keys, and create it. The key is shown once, and changing
+   that decision takes a new key.
 3. In the desktop app, signed in with the same account, go to Settings >
    Account > Beacon server and enter the server's address and the key.
 

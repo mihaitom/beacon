@@ -48,6 +48,8 @@ export interface DeviceKey {
   last_used_at: number | null
   /** The device has checked in recently, so it is connected right now. */
   active: boolean
+  /** Confirmed when the key was made; a different answer takes a new key. */
+  shares_api_keys: boolean
 }
 
 export async function listDeviceKeys(): Promise<DeviceKey[]> {
@@ -56,8 +58,14 @@ export async function listDeviceKeys(): Promise<DeviceKey[]> {
 }
 
 /** The one response that carries the key itself. */
-export function createDeviceKey(label: string): Promise<DeviceKey & { key: string }> {
-  return fetchConnect('/device-keys', { method: 'POST', body: { label } })
+export function createDeviceKey(
+  label: string,
+  shareApiKeys: boolean,
+): Promise<DeviceKey & { key: string }> {
+  return fetchConnect('/device-keys', {
+    method: 'POST',
+    body: { label, share_api_keys: shareApiKeys },
+  })
 }
 
 export function revokeDeviceKey(id: string): Promise<unknown> {

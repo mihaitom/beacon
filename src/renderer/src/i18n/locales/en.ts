@@ -984,6 +984,10 @@ export default {
     deviceKeysConnected: 'Connected',
     deviceKeysNeverUsed: 'Not used yet',
     deviceKeysLastUsed: 'Last used {ago}',
+    deviceKeysShareApi: "Also give this device the server's Last.fm and Fanart keys",
+    deviceKeysShareApiHint:
+      'They are then stored on that computer. This applies to this device only.',
+    deviceKeysSharesApi: 'Has the Last.fm and Fanart keys',
     deviceKeysFailed: 'The key could not be changed',
     advancedTitle: 'Advanced',
     logLevel: 'Log level',
