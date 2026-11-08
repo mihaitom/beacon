@@ -326,6 +326,22 @@ Beacon sees those there, and the app the automatic ones.
 - **Limit:** 120 requests a minute per key, on `v1` only: a desktop catching up
   sends more than that and is not somebody's loop.
 
+### For AI assistants
+
+Somebody writing such an app today has an assistant write it, so the routes
+describe themselves:
+
+- `GET /device-link/v1/openapi.json`, without a key, because an assistant has to
+  read it before anyone hands it one. Built from the `v1` routes alone; connect's
+  own OpenAPI stays off. The routes have real response models, so the description
+  cannot drift from what they answer.
+- `connect/tests/device_link_v1_contract.json` is what `v1` has promised: a test
+  fails when a route or field in it goes or changes. New ones are allowed.
+- Settings offers to copy instructions for a new app key. The function building
+  them does not take the key: a chat with an assistant leaves the house.
+
+Not built: `llms.txt` and an MCP server, which would say the same thing again.
+
 ### Documentation
 
 A new page, `docs/help/faq/apps-and-api.md`, linked from the Settings section:

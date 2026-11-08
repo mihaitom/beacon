@@ -8,6 +8,7 @@ import os
 import sqlite3
 import stat
 import time
+from pathlib import Path
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -2184,3 +2185,93 @@ def test_lyrics_need_their_own_right(public, default_session, at_position, sheet
     assert lyrics(public, key_for()).status_code == 403
     assert public.get("/device-link/v1/now-playing/lyrics").status_code == 401
     sheet.assert_not_awaited()
+
+
+# ── the published description ────────────────────────────────────────────
+
+
+CONTRACT = Path(__file__).parent / "device_link_v1_contract.json"
+
+
+def published(public) -> dict:
+    return public.get("/device-link/v1/openapi.json").json()
+
+
+def _shape(document: dict) -> dict:
+    """What an existing app relies on: never the wording."""
+
+    def without_words(value):
+        if isinstance(value, dict):
+            return {
+                k: without_words(v) for k, v in value.items() if k not in ("description", "title")
+            }
+        return [without_words(v) for v in value] if isinstance(value, list) else value
+
+    return {
+        "paths": sorted(document["paths"]),
+        "fields": {
+            name: without_words(model["properties"])
+            for name, model in document["components"]["schemas"].items()
+            if "properties" in model and name not in ("HTTPValidationError", "ValidationError")
+        },
+    }
+
+
+def test_the_description_is_readable_without_a_key(public):
+    response = public.get("/device-link/v1/openapi.json")
+    assert response.status_code == 200
+    assert response.json()["openapi"].startswith("3.")
+
+
+def test_a_page_anywhere_can_read_the_description(public):
+    response = public.get("/device-link/v1/openapi.json", headers=ELSEWHERE)
+    assert response.headers["access-control-allow-origin"] == "*"
+
+
+def test_only_the_public_routes_are_described(public):
+    assert all(path.startswith("/device-link/v1/") for path in published(public)["paths"])
+
+
+def test_it_says_how_to_send_the_key_and_not_as_a_parameter(public):
+    document = published(public)
+    assert document["components"]["securitySchemes"]["deviceKey"]["name"] == server_link.KEY_HEADER
+    assert document["security"] == [{"deviceKey": []}]
+    assert not document["paths"]["/device-link/v1/stats"]["get"]["parameters"]
+
+
+def test_each_route_describes_its_answer(public):
+    paths = published(public)["paths"]
+    for path, ref in (
+        ("me", "Me"),
+        ("history", "HistoryPage"),
+        ("stats", "Stats"),
+        ("now-playing/lyrics", "Lyrics"),
+    ):
+        answer = paths[f"/device-link/v1/{path}"]["get"]["responses"]["200"]
+        assert answer["content"]["application/json"]["schema"]["$ref"].endswith(f"/{ref}")
+
+
+def test_every_route_says_what_it_is_for(public):
+    for path in published(public)["paths"].values():
+        assert path["get"]["description"]
+
+
+def test_v1_only_ever_grows(public):
+    """A failure here means an app somebody wrote stops working. If that is
+    really what is wanted, it is a v2, not an edit to this file."""
+    now = _shape(published(public))
+    promised = json.loads(CONTRACT.read_text())
+    assert set(promised["paths"]) <= set(now["paths"])
+    for model, fields in promised["fields"].items():
+        assert model in now["fields"], model
+        for field, shape in fields.items():
+            assert now["fields"][model].get(field) == shape, f"{model}.{field}"
+
+
+def test_answers_match_what_is_described(public, default_session, at_position, sheet):
+    cast(default_session)
+    delivered(row("a" * 32, NOW - 10, album="B", genre="Rock"))
+    key = app_key("history", "stats", "now_playing", "lyrics")
+    assert public.get("/device-link/v1/me", headers=auth(key)).status_code == 200
+    for path in ("history", "stats", "now-playing", "now-playing/lyrics"):
+        assert public.get(f"/device-link/v1/{path}", headers=auth(key)).status_code == 200, path

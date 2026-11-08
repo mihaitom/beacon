@@ -988,6 +988,11 @@ export default {
     deviceKeysLabelHint: 'Zum Beispiel Laptop',
     deviceKeysCreate: 'Schlüssel erstellen',
     deviceKeysKey: 'Schlüssel',
+    deviceKeysForAi: 'Anleitung für KI kopieren',
+    deviceKeysForAiHint:
+      'Zum Schreiben einer App mit einem KI-Assistenten. Enthält die Adresse dieses Servers und was der Schlüssel lesen darf, nie den Schlüssel selbst.',
+    deviceKeysForAiFailed:
+      'Kopieren geht nur über https. Gib deinem Assistenten stattdessen diese Adresse: {url}',
     deviceKeysCopy: 'Schlüssel kopieren',
     deviceKeysOnce:
       'Wird nur jetzt angezeigt. Trage ihn in der Desktop-App ein. Geht er verloren, erstelle einen neuen.',

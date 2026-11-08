@@ -225,6 +225,74 @@ describe('DeviceKeysSection', () => {
     expect(vm.keys.map((k) => k.id)).toEqual(['one', 'two'])
   })
 
+  describe('instructions for an AI assistant', () => {
+    const writeText = vi.fn()
+    const copiedText = () => writeText.mock.lastCall?.[0]
+
+    async function withNewKey(scopes: DeviceKey['scopes']) {
+      vi.mocked(createDeviceKey).mockResolvedValue({
+        ...EXISTING,
+        id: 'new',
+        key: 'new.secret',
+        scopes,
+      })
+      const mounted = await mountSection()
+      mounted.vm.kind = scopes.includes('sync') ? 'desktop' : 'app'
+      mounted.vm.appScopes = scopes
+      mounted.vm.label = 'Display'
+      await mounted.vm.create()
+      await flushPromises()
+      return { ...mounted, button: mounted.wrapper.find('.device-keys__for-ai button') }
+    }
+
+    beforeEach(() => {
+      writeText.mockReset().mockResolvedValue(undefined)
+      vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
+    })
+
+    afterEach(() => {
+      vi.unstubAllGlobals()
+    })
+
+    it('never puts the key into them', async () => {
+      const { button } = await withNewKey(['history'])
+      await button.trigger('click')
+      await flushPromises()
+
+      expect(writeText).toHaveBeenCalledOnce()
+      expect(copiedText()).toContain('/device-link/v1/openapi.json')
+      expect(copiedText()).not.toContain('secret')
+    })
+
+    it('describes the key just made, not the switches as they are now', async () => {
+      const { button, vm } = await withNewKey(['stats'])
+      vm.appScopes = ['history']
+      await button.trigger('click')
+      await flushPromises()
+      expect(copiedText()).not.toContain('next_cursor')
+    })
+
+    it('are not offered for a desktop key', async () => {
+      const { button } = await withNewKey(['sync'])
+      expect(button.exists()).toBe(false)
+    })
+
+    it('says where to look when the browser refuses to copy', async () => {
+      vi.spyOn(console, 'error').mockImplementation(() => {})
+      writeText.mockRejectedValue(new Error('no clipboard on http'))
+      const { button, emit } = await withNewKey(['history'])
+      await button.trigger('click')
+      await flushPromises()
+      expect(emit).toHaveBeenCalledWith(
+        'toast',
+        expect.objectContaining({
+          level: 'error',
+          message: expect.stringContaining('/device-link/v1/openapi.json'),
+        }),
+      )
+    })
+  })
+
   it('does not create a key without a name', async () => {
     const { wrapper, vm } = await mountSection()
     await wrapper.setData({ label: '   ' })

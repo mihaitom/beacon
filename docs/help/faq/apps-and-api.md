@@ -144,6 +144,24 @@ A browser's `EventSource` cannot send the header. Read the stream with `fetch`, 
 
 These are the lyrics Beacon finds by itself. Lyrics somebody picked by hand in Beacon's own panel do not reach an app. There is no search, on purpose: every lookup tells the lyrics services what somebody listens to.
 
+## Can an AI assistant write the app for me?
+
+Yes. Everything above is also available as a machine-readable description, which needs no key and holds no data:
+
+```
+https://beacon.example/device-link/v1/openapi.json
+```
+
+The quickest way: right after creating a key, use **Copy instructions for an AI**. It copies your server's address, what this key may read and the rules below. It never copies the key: give that to your app yourself, and keep it out of the chat and the code.
+
+If you write the prompt yourself, these are the things a description does not say:
+
+- History comes in the order plays arrived, not the order they were played. On a 410, forget what you stored and start again.
+- Carry `position` forward from `at` while not paused, instead of asking every second.
+- A browser's `EventSource` cannot send the key: read `/now-playing/events` with `fetch`.
+- A lyric line is reached at `position - offset >= time`.
+- Ignore fields you do not know, and wait as long as `Retry-After` says after a 429.
+
 ## Will an update break my app?
 
 Not within `v1`: existing fields keep their meaning, and new ones may appear, so ignore what you do not know. The other addresses under `/device-link/` belong to the desktop app and can change with any release.

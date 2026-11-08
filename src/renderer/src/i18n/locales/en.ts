@@ -977,6 +977,10 @@ export default {
     deviceKeysLabelHint: 'For example, Laptop',
     deviceKeysCreate: 'Create key',
     deviceKeysKey: 'Key',
+    deviceKeysForAi: 'Copy instructions for an AI',
+    deviceKeysForAiHint:
+      "For writing an app with an AI assistant. Holds this server's address and what the key may read, never the key itself.",
+    deviceKeysForAiFailed: 'Copying needs https. Give your assistant this address instead: {url}',
     deviceKeysCopy: 'Copy key',
     deviceKeysOnce:
       'Shown only now. Enter it in the desktop app; if you lose it, create a new one.',

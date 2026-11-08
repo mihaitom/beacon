@@ -1,0 +1,308 @@
+{
+  "fields": {
+    "HistoryItem": {
+      "album": {
+        "type": "string"
+      },
+      "album_id": {
+        "type": "string"
+      },
+      "artist": {
+        "type": "string"
+      },
+      "artist_id": {
+        "type": "string"
+      },
+      "duration": {
+        "type": "number"
+      },
+      "genre": {
+        "type": "string"
+      },
+      "id": {
+        "type": "string"
+      },
+      "song_id": {
+        "type": "string"
+      },
+      "source": {
+        "type": "string"
+      },
+      "ts": {
+        "type": "integer"
+      }
+    },
+    "HistoryPage": {
+      "items": {
+        "items": {
+          "$ref": "#/components/schemas/HistoryItem"
+        },
+        "type": "array"
+      },
+      "more": {
+        "type": "boolean"
+      },
+      "next_cursor": {
+        "type": "string"
+      }
+    },
+    "LyricLine": {
+      "text": {
+        "type": "string"
+      },
+      "time": {
+        "type": "number"
+      }
+    },
+    "Lyrics": {
+      "lines": {
+        "items": {
+          "$ref": "#/components/schemas/LyricLine"
+        },
+        "type": "array"
+      },
+      "offset": {
+        "type": "number"
+      },
+      "song_id": {
+        "type": "string"
+      },
+      "synced": {
+        "type": "boolean"
+      }
+    },
+    "Me": {
+      "api_version": {
+        "type": "integer"
+      },
+      "beacon_version": {
+        "type": "string"
+      },
+      "scopes": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "username": {
+        "type": "string"
+      }
+    },
+    "Milestones": {
+      "hours": {
+        "minimum": 0.0,
+        "type": "integer"
+      },
+      "plays": {
+        "minimum": 0.0,
+        "type": "integer"
+      },
+      "records": {
+        "default": 0,
+        "minimum": 0.0,
+        "type": "integer"
+      },
+      "streak": {
+        "minimum": 0.0,
+        "type": "integer"
+      }
+    },
+    "NothingPlaying": {
+      "playing": {
+        "const": false,
+        "type": "boolean"
+      }
+    },
+    "Playing": {
+      "at": {
+        "type": "number"
+      },
+      "devices": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "kind": {
+        "enum": [
+          "song",
+          "radio"
+        ],
+        "type": "string"
+      },
+      "paused": {
+        "type": "boolean"
+      },
+      "playing": {
+        "const": true,
+        "type": "boolean"
+      },
+      "position": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "radio": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/PlayingRadio"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "song": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/PlayingSong"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "source": {
+        "enum": [
+          "cast",
+          "local"
+        ],
+        "type": "string"
+      }
+    },
+    "PlayingRadio": {
+      "station": {
+        "type": "string"
+      }
+    },
+    "PlayingSong": {
+      "album": {
+        "type": "string"
+      },
+      "artist": {
+        "type": "string"
+      },
+      "duration": {
+        "type": "number"
+      },
+      "id": {
+        "type": "string"
+      }
+    },
+    "Stats": {
+      "live_since": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "milestones": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/Milestones"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "timestamps": {
+        "items": {
+          "type": "integer"
+        },
+        "type": "array"
+      },
+      "top": {
+        "$ref": "#/components/schemas/Top"
+      },
+      "total": {
+        "type": "integer"
+      }
+    },
+    "Top": {
+      "albums": {
+        "items": {
+          "$ref": "#/components/schemas/TopAlbum"
+        },
+        "type": "array"
+      },
+      "artists": {
+        "items": {
+          "$ref": "#/components/schemas/TopArtist"
+        },
+        "type": "array"
+      },
+      "genres": {
+        "items": {
+          "$ref": "#/components/schemas/TopGenre"
+        },
+        "type": "array"
+      },
+      "songs": {
+        "items": {
+          "$ref": "#/components/schemas/TopSong"
+        },
+        "type": "array"
+      }
+    },
+    "TopAlbum": {
+      "album_id": {
+        "type": "string"
+      },
+      "artist": {
+        "type": "string"
+      },
+      "plays": {
+        "type": "integer"
+      }
+    },
+    "TopArtist": {
+      "artist_id": {
+        "type": "string"
+      },
+      "name": {
+        "type": "string"
+      },
+      "plays": {
+        "type": "integer"
+      }
+    },
+    "TopGenre": {
+      "name": {
+        "type": "string"
+      },
+      "plays": {
+        "type": "integer"
+      }
+    },
+    "TopSong": {
+      "album_id": {
+        "type": "string"
+      },
+      "artist": {
+        "type": "string"
+      },
+      "plays": {
+        "type": "integer"
+      }
+    }
+  },
+  "paths": [
+    "/device-link/v1/history",
+    "/device-link/v1/me",
+    "/device-link/v1/now-playing",
+    "/device-link/v1/now-playing/cover",
+    "/device-link/v1/now-playing/events",
+    "/device-link/v1/now-playing/lyrics",
+    "/device-link/v1/stats"
+  ]
+}

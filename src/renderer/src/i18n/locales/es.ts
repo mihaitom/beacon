@@ -988,6 +988,10 @@ export default {
     deviceKeysLabelHint: 'Por ejemplo, Portátil',
     deviceKeysCreate: 'Crear clave',
     deviceKeysKey: 'Clave',
+    deviceKeysForAi: 'Copiar instrucciones para una IA',
+    deviceKeysForAiHint:
+      'Para escribir una app con un asistente de IA. Incluye la dirección de este servidor y lo que la clave puede leer, nunca la clave.',
+    deviceKeysForAiFailed: 'Copiar requiere https. Dale a tu asistente esta dirección: {url}',
     deviceKeysCopy: 'Copiar clave',
     deviceKeysOnce:
       'Solo se muestra ahora. Introdúcela en la aplicación de escritorio; si la pierdes, crea otra.',

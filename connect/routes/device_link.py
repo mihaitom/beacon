@@ -30,6 +30,7 @@ from core.server_link import INVALID_KEY_DETAIL, KEY_HEADER
 from core.session import SessionState, require_authenticated_session
 from core.trusted_proxies import client_ip
 from lyrics.shared import CONNECT_VERSION
+from routes import device_link_schema as schema
 from routes.coverart import cover_image
 from routes.lyrics import auto_for_party
 from routes.lyrics_offsets import OffsetsPatch
@@ -44,12 +45,10 @@ keys_router = APIRouter(prefix="/device-keys", dependencies=[Depends(require_tok
 
 limiter = RateLimiter()
 _open_streams: Counter[str] = Counter()
+_openapi_document: dict | None = None
 # Keys are too long to guess; this keeps a broken client or a scanner from
 # turning into a database read per request.
 _KEY_FAILURES_PER_IP = (10, 300.0)
-
-# Raised only for a change an existing app could not cope with.
-API_VERSION = 1
 
 # Generous for a display refreshing every second; the bound is against a
 # loop nobody meant to write.
@@ -185,17 +184,51 @@ def get_info(owner: KeyOwner = Depends(_require_key)) -> dict:
     }
 
 
-@v1_router.get("/me")
+_REFUSALS = {
+    401: {"description": "Wrong or revoked key"},
+    403: {"description": "This key does not have the right for this route"},
+    429: {"description": "Too many requests or open streams"},
+}
+
+
+@v1_router.get("/openapi.json", include_in_schema=False)
+def get_openapi_document() -> dict:
+    """Without a key: an assistant has to be able to read this before anyone
+    hands it one. It holds no data, only the shape of the routes."""
+    global _openapi_document
+    if _openapi_document is None:
+        _openapi_document = schema.document(v1_router.routes)
+    return _openapi_document
+
+
+@v1_router.get(
+    "/me",
+    response_model=schema.Me,
+    responses=_REFUSALS,
+    description="Who this key belongs to and what it may read. Works with any key.",
+)
 def get_me(owner: KeyOwner = Depends(_public_caller)) -> dict:
     return {
         "username": owner.account.username,
         "scopes": sorted(owner.scopes),
         "beacon_version": CONNECT_VERSION,
-        "api_version": API_VERSION,
+        "api_version": schema.API_VERSION,
     }
 
 
-@v1_router.get("/history")
+@v1_router.get(
+    "/history",
+    response_model=schema.HistoryPage,
+    responses={
+        **_REFUSALS,
+        410: {"description": "The cursor has expired: forget what you have, start without one"},
+    },
+    description=(
+        "Plays in the order they arrived, not the order they were played: a desktop app that "
+        "was offline delivers plays days old. Keep `next_cursor` and ask with it later for what "
+        "is new. To show plays by date, sort by `ts` yourself."
+    ),
+)
 def get_history(
     owner: KeyOwner = _reading(device_keys.HISTORY),
     cursor: str | None = Query(default=None, pattern=r"^\d{1,18}\.\d{1,18}$"),
@@ -239,7 +272,15 @@ def _public_top(top: dict) -> dict:
     }
 
 
-@v1_router.get("/stats")
+@v1_router.get(
+    "/stats",
+    response_model=schema.Stats,
+    responses=_REFUSALS,
+    description=(
+        "Totals and top lists. There is no current streak, since a day depends on the "
+        "listener's time zone: work it out from `timestamps`."
+    ),
+)
 def get_stats(owner: KeyOwner = _reading(device_keys.STATS)) -> dict:
     summary = play_history.summary(owner.account)
     return {
@@ -251,7 +292,15 @@ def get_stats(owner: KeyOwner = _reading(device_keys.STATS)) -> dict:
     }
 
 
-@v1_router.get("/now-playing")
+@v1_router.get(
+    "/now-playing",
+    response_model=schema.NowPlaying,
+    responses=_REFUSALS,
+    description=(
+        "What this account is listening to, on a speaker or on one of its own devices. Carry "
+        "`position` forward from `at` instead of asking every second."
+    ),
+)
 def get_now_playing(owner: KeyOwner = _reading(device_keys.NOW_PLAYING)) -> dict:
     return now_playing.current(owner.account)
 
@@ -291,7 +340,22 @@ async def _now_playing_events(presented_key: str, owner: KeyOwner):
             del _open_streams[owner.key_id]
 
 
-@v1_router.get("/now-playing/events")
+@v1_router.get(
+    "/now-playing/events",
+    response_model=None,
+    responses={
+        **_REFUSALS,
+        200: {
+            "description": "Each `data:` line holds the same JSON as /now-playing",
+            "content": {"text/event-stream": {"schema": {"type": "string"}}},
+        },
+    },
+    description=(
+        "Server-sent events: the state at the start, then on a new song, pause, resume, seek or "
+        "stop. Lines starting with `:` are keepalives. Ends when the key is revoked. A browser's "
+        "EventSource cannot send the key header: read the stream with fetch instead."
+    ),
+)
 async def get_now_playing_events(
     owner: KeyOwner = _reading(device_keys.NOW_PLAYING),
     x_beacon_device_key: str = Header(max_length=200),
@@ -305,7 +369,22 @@ async def get_now_playing_events(
     )
 
 
-@v1_router.get("/now-playing/cover")
+@v1_router.get(
+    "/now-playing/cover",
+    response_model=None,
+    responses={
+        **_REFUSALS,
+        200: {
+            "description": "The image",
+            "content": {"image/*": {"schema": {"type": "string", "format": "binary"}}},
+        },
+        404: {"description": "Radio, nothing playing, or a song without a cover"},
+    },
+    description=(
+        "The cover of the song playing now. The address stays the same from song to song: "
+        "fetch it again when the song changes."
+    ),
+)
 async def get_now_playing_cover(owner: KeyOwner = _reading(device_keys.NOW_PLAYING)) -> Response:
     found = now_playing.cover_of(owner.account)
     if found is None:
@@ -316,7 +395,15 @@ async def get_now_playing_cover(owner: KeyOwner = _reading(device_keys.NOW_PLAYI
     return response
 
 
-@v1_router.get("/now-playing/lyrics")
+@v1_router.get(
+    "/now-playing/lyrics",
+    response_model=schema.Lyrics,
+    responses={**_REFUSALS, 404: {"description": "Radio, or nothing playing"}},
+    description=(
+        "The lyrics of the song playing now. A line is reached at `position - offset >= time`. "
+        "There is no search."
+    ),
+)
 async def get_now_playing_lyrics(owner: KeyOwner = _reading(device_keys.LYRICS)) -> dict:
     """Only for what is playing: a free search would turn a key into a way to
     query the lyrics providers, and each lookup tells them what somebody

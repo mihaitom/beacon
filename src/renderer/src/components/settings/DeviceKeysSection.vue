@@ -38,14 +38,24 @@
           >
             <template #append-inner>
               <v-icon
-                :icon="keyCopied ? 'mdi-check' : 'mdi-content-copy'"
-                :color="keyCopied ? 'success' : undefined"
+                :icon="copied === 'key' ? 'mdi-check' : 'mdi-content-copy'"
+                :color="copied === 'key' ? 'success' : undefined"
                 :title="$t('settings.deviceKeysCopy')"
-                @click="copy"
+                @click="copyKey"
               />
             </template>
           </v-text-field>
           <p class="setting__hint">{{ $t('settings.deviceKeysOnce') }}</p>
+          <div v-if="newKeyIsForApp" class="device-keys__for-ai">
+            <v-btn
+              variant="tonal"
+              :prepend-icon="copied === 'instructions' ? 'mdi-check' : 'mdi-robot-outline'"
+              @click="copyInstructions"
+            >
+              {{ $t('settings.deviceKeysForAi') }}
+            </v-btn>
+            <p class="setting__hint">{{ $t('settings.deviceKeysForAiHint') }}</p>
+          </div>
         </template>
 
         <v-btn-toggle
@@ -115,6 +125,7 @@
 
 <script lang="ts">
 import { pollingAllowed } from '@/services/connect/pollGate'
+import { appKeyInstructions } from '@/services/connect/appKeyInstructions'
 import { timeAgo } from '@/services/relativeTime'
 import {
   APP_SCOPES,
@@ -147,8 +158,9 @@ export default {
       busy: false,
       /** Only right after creating: the key is never sent again. */
       newKey: '',
-      keyCopied: false,
-      keyCopiedTimer: undefined as ReturnType<typeof setTimeout> | undefined,
+      newKeyScopes: [] as DeviceKeyScope[],
+      copied: '' as '' | 'key' | 'instructions',
+      copiedTimer: undefined as ReturnType<typeof setTimeout> | undefined,
       refreshTimer: undefined as ReturnType<typeof setInterval> | undefined,
       /** Bumped by every change, so a list asked for before it is dropped. */
       listVersion: 0,
@@ -171,6 +183,9 @@ export default {
     canCreate(): boolean {
       return !this.busy && !!this.label.trim() && this.chosenScopes.length > 0
     },
+    newKeyIsForApp(): boolean {
+      return !this.newKeyScopes.includes('sync')
+    },
   },
   created() {
     if (!this.visible) return
@@ -180,7 +195,7 @@ export default {
     }, REFRESH_MS)
   },
   beforeUnmount() {
-    clearTimeout(this.keyCopiedTimer)
+    clearTimeout(this.copiedTimer)
     clearInterval(this.refreshTimer)
   },
   methods: {
@@ -218,6 +233,7 @@ export default {
         const { key, ...entry } = await createDeviceKey(this.label.trim(), this.chosenScopes)
         this.listVersion += 1
         this.newKey = key
+        this.newKeyScopes = entry.scopes
         this.keys = [...this.keys, { ...entry, last_used_at: null, active: false }]
         this.label = ''
         // Confirmed key by key, so it never carries over to the next.
@@ -242,18 +258,35 @@ export default {
         this.busy = false
       }
     },
-    async copy() {
+    /** navigator.clipboard is absent on plain http, so this can fail there. */
+    async copy(text: string, what: 'key' | 'instructions'): Promise<boolean> {
       try {
-        await navigator.clipboard.writeText(this.newKey)
+        await navigator.clipboard.writeText(text)
       } catch (error) {
         console.error('[settings] Failed to copy:', error)
-        return
+        return false
       }
-      clearTimeout(this.keyCopiedTimer)
-      this.keyCopied = true
-      this.keyCopiedTimer = setTimeout(() => {
-        this.keyCopied = false
+      clearTimeout(this.copiedTimer)
+      this.copied = what
+      this.copiedTimer = setTimeout(() => {
+        this.copied = ''
       }, 2000)
+      return true
+    },
+    async copyKey() {
+      await this.copy(this.newKey, 'key')
+    },
+    async copyInstructions() {
+      const origin = window.location.origin
+      if (await this.copy(appKeyInstructions(origin, this.newKeyScopes), 'instructions')) return
+      // Unlike the key, there is no field on screen to copy this from by hand.
+      this.$emitter.emit('toast', {
+        level: 'error',
+        title: this.$t('settings.deviceKeysTitle'),
+        message: this.$t('settings.deviceKeysForAiFailed', {
+          url: `${origin}/device-link/v1/openapi.json`,
+        }),
+      })
     },
     toastError(error: unknown) {
       this.$emitter.emit('toast', {
@@ -293,6 +326,10 @@ export default {
 
 .device-keys__field {
   margin-top: 12px;
+}
+
+.device-keys__for-ai {
+  margin-top: 8px;
 }
 
 .device-keys__kind {
