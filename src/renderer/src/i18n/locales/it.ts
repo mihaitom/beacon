@@ -984,6 +984,7 @@ export default {
     deviceKeysOnce:
       "Mostrata solo ora. Inseriscila nell'app desktop; se la perdi, creane un'altra.",
     deviceKeysRevoke: 'Revoca',
+    deviceKeysConnected: 'Collegato',
     deviceKeysNeverUsed: 'Non ancora usata',
     deviceKeysLastUsed: 'Ultimo uso {ago}',
     deviceKeysFailed: 'Non è stato possibile modificare la chiave',

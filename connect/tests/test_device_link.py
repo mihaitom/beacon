@@ -153,6 +153,15 @@ def test_last_used_is_recorded_and_not_written_on_every_request():
     assert device_keys.list_keys(ALICE)[0]["last_used_at"] == NOW + 100
 
 
+def test_a_key_counts_as_active_only_while_its_device_checks_in():
+    created = device_keys.create(ALICE, "Laptop", None, now=NOW)
+    assert device_keys.list_keys(ALICE, now=NOW)[0]["active"] is False
+    device_keys.resolve(created["key"], now=NOW)
+    quiet_for = device_keys.ACTIVE_WITHIN_SECONDS
+    assert device_keys.list_keys(ALICE, now=NOW + quiet_for - 1)[0]["active"] is True
+    assert device_keys.list_keys(ALICE, now=NOW + quiet_for)[0]["active"] is False
+
+
 def test_settings_identity_needs_the_verified_name(signed_in):
     signed_in.settings_identity = ("subsonic", "https://music.example", "ALICE")
     assert device_keys.settings_identity_of(signed_in) is not None
@@ -582,7 +591,7 @@ def test_backoff_grows_and_has_a_ceiling(paired):
     assert delays[-1] == server_link._BACKOFF_MAX_SECONDS
     paired.fail = None
     server_link.send_once(now=NOW)
-    assert server_link._next_delay() == server_link._IDLE_SECONDS
+    assert server_link._next_delay() == server_link.IDLE_SECONDS
 
 
 async def _wait_for(condition) -> None:

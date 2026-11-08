@@ -21,7 +21,7 @@ import time
 import uuid
 from typing import NamedTuple
 
-from core import play_history
+from core import play_history, server_link
 from core.play_history import Account
 
 # More devices than anyone has; the bound is against a runaway script.
@@ -30,6 +30,10 @@ MAX_KEYS_PER_ACCOUNT = 20
 # last_used_at is shown in days and hours. Without this, every request would
 # be a database write.
 _LAST_USED_RESOLUTION_SECONDS = 60
+
+# A running desktop checks in every IDLE_SECONDS. Two of those can pass with
+# one missed, and last_used_at is only as exact as the resolution above.
+ACTIVE_WITHIN_SECONDS = int(2 * server_link.IDLE_SECONDS) + _LAST_USED_RESOLUTION_SECONDS
 
 _NO_SUCH_KEY_HASH = hashlib.sha256(b"").hexdigest()
 
@@ -90,7 +94,10 @@ def create(
     return {"id": key_id, "key": f"{key_id}.{secret}", "label": label, "created_at": created_at}
 
 
-def list_keys(account: Account) -> list[dict]:
+def list_keys(account: Account, now: float | None = None) -> list[dict]:
+    """`active` is worked out here so that a browser's wrong clock cannot
+    light up a device that has gone."""
+    stamp = time.time() if now is None else now
     with play_history.transaction() as conn:
         rows = conn.execute(
             "SELECT device_keys.id, label, created_at, last_used_at FROM device_keys"
@@ -99,7 +106,14 @@ def list_keys(account: Account) -> list[dict]:
             " ORDER BY created_at",
             account,
         ).fetchall()
-    return [dict(row) for row in rows]
+    return [
+        {
+            **dict(row),
+            "active": row["last_used_at"] is not None
+            and stamp - row["last_used_at"] < ACTIVE_WITHIN_SECONDS,
+        }
+        for row in rows
+    ]
 
 
 def revoke(account: Account, key_id: str) -> bool:

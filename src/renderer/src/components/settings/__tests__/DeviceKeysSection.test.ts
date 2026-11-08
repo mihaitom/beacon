@@ -21,7 +21,13 @@ vi.mock('@/services/connect/serverLink', () => ({
 }))
 
 const vuetify = createVuetify({ components, directives })
-const EXISTING: DeviceKey = { id: 'one', label: 'Old laptop', created_at: 1, last_used_at: null }
+const EXISTING: DeviceKey = {
+  id: 'one',
+  label: 'Old laptop',
+  created_at: 1,
+  last_used_at: null,
+  active: false,
+}
 
 type Vm = {
   newKey: string
@@ -50,7 +56,46 @@ describe('DeviceKeysSection', () => {
   })
 
   afterEach(() => {
+    vi.useRealTimers()
     delete (window as unknown as { api?: unknown }).api
+  })
+
+  it('shows a device connecting without a reload', async () => {
+    vi.useFakeTimers()
+    const { wrapper } = await mountSection()
+    expect(wrapper.text()).not.toContain(i18n.global.t('settings.deviceKeysConnected'))
+
+    vi.mocked(listDeviceKeys).mockResolvedValue([{ ...EXISTING, last_used_at: 5, active: true }])
+    await vi.advanceTimersByTimeAsync(10_000)
+    await flushPromises()
+
+    expect(wrapper.text()).toContain(i18n.global.t('settings.deviceKeysConnected'))
+    expect(wrapper.find('.status-dot--ok').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('stops asking once it is gone', async () => {
+    vi.useFakeTimers()
+    const { wrapper } = await mountSection()
+    wrapper.unmount()
+    vi.mocked(listDeviceKeys).mockClear()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(listDeviceKeys).not.toHaveBeenCalled()
+  })
+
+  it('does not bring a revoked key back from a list asked for earlier', async () => {
+    const { vm } = await mountSection()
+    let answer: (keys: DeviceKey[]) => void = () => {}
+    vi.mocked(listDeviceKeys).mockReturnValue(
+      new Promise((resolve) => {
+        answer = resolve
+      }),
+    )
+    const refresh = (vm as unknown as { load(): Promise<void> }).load()
+    await vm.revoke(EXISTING)
+    answer([EXISTING])
+    await refresh
+    expect(vm.keys).toEqual([])
   })
 
   it('is not offered in the desktop app', async () => {
@@ -67,6 +112,7 @@ describe('DeviceKeysSection', () => {
       label: 'Laptop',
       created_at: 2,
       last_used_at: null,
+      active: false,
     })
     const { wrapper, vm } = await mountSection()
     await wrapper.setData({ label: 'Laptop' })

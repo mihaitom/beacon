@@ -989,6 +989,7 @@ export default {
     deviceKeysOnce:
       "Affichée uniquement maintenant. Saisissez-la dans l'application de bureau ; si vous la perdez, créez-en une autre.",
     deviceKeysRevoke: 'Révoquer',
+    deviceKeysConnected: 'Connecté',
     deviceKeysNeverUsed: 'Pas encore utilisée',
     deviceKeysLastUsed: 'Dernière utilisation {ago}',
     deviceKeysFailed: "La clé n'a pas pu être modifiée",

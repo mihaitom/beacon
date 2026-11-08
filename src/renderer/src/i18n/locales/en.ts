@@ -976,6 +976,7 @@ export default {
     deviceKeysOnce:
       'Shown only now. Enter it in the desktop app; if you lose it, create a new one.',
     deviceKeysRevoke: 'Revoke',
+    deviceKeysConnected: 'Connected',
     deviceKeysNeverUsed: 'Not used yet',
     deviceKeysLastUsed: 'Last used {ago}',
     deviceKeysFailed: 'The key could not be changed',

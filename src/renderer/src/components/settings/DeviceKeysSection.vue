@@ -7,10 +7,15 @@
 
         <ul v-if="keys.length" class="device-keys__list">
           <li v-for="entry in keys" :key="entry.id" class="device-keys__row">
+            <span
+              class="status-dot"
+              :class="entry.active ? 'status-dot--ok' : 'device-keys__dot--idle'"
+            />
             <div class="device-keys__text">
               <span>{{ entry.label }}</span>
-              <span class="setting__hint setting__hint--inline">{{ lastUsed(entry) }}</span>
+              <span class="setting__hint setting__hint--inline">{{ deviceStatus(entry) }}</span>
             </div>
+            <v-spacer />
             <v-btn variant="text" :disabled="busy" @click="revoke(entry)">
               {{ $t('settings.deviceKeysRevoke') }}
             </v-btn>
@@ -71,6 +76,7 @@
 </template>
 
 <script lang="ts">
+import { pollingAllowed } from '@/services/connect/pollGate'
 import { timeAgo } from '@/services/relativeTime'
 import {
   createDeviceKey,
@@ -78,6 +84,10 @@ import {
   revokeDeviceKey,
   type DeviceKey,
 } from '@/services/connect/serverLink'
+
+// A device that was just connected should show up while someone is still
+// looking at this page.
+const REFRESH_MS = 10_000
 
 /**
  * The keys that let a desktop app send this account's listening history and
@@ -94,6 +104,9 @@ export default {
       newKey: '',
       keyCopied: false,
       keyCopiedTimer: undefined as ReturnType<typeof setTimeout> | undefined,
+      refreshTimer: undefined as ReturnType<typeof setInterval> | undefined,
+      /** Bumped by every change, so a list asked for before it is dropped. */
+      listVersion: 0,
     }
   },
   computed: {
@@ -105,20 +118,28 @@ export default {
     },
   },
   created() {
-    if (this.visible) void this.load()
+    if (!this.visible) return
+    void this.load()
+    this.refreshTimer = setInterval(() => {
+      if (pollingAllowed()) void this.load()
+    }, REFRESH_MS)
   },
   beforeUnmount() {
     clearTimeout(this.keyCopiedTimer)
+    clearInterval(this.refreshTimer)
   },
   methods: {
     async load() {
+      const version = this.listVersion
       try {
-        this.keys = await listDeviceKeys()
+        const keys = await listDeviceKeys()
+        if (version === this.listVersion) this.keys = keys
       } catch (error) {
         console.error('[settings] Failed to list device keys:', error)
       }
     },
-    lastUsed(entry: DeviceKey): string {
+    deviceStatus(entry: DeviceKey): string {
+      if (entry.active) return this.$t('settings.deviceKeysConnected')
       if (!entry.last_used_at) return this.$t('settings.deviceKeysNeverUsed')
       const ago = timeAgo(entry.last_used_at * 1000, Date.now(), this.$i18n.locale)
       return this.$t('settings.deviceKeysLastUsed', { ago })
@@ -128,8 +149,9 @@ export default {
       this.busy = true
       try {
         const { key, ...entry } = await createDeviceKey(this.label.trim())
+        this.listVersion += 1
         this.newKey = key
-        this.keys = [...this.keys, { ...entry, last_used_at: null }]
+        this.keys = [...this.keys, { ...entry, last_used_at: null, active: false }]
         this.label = ''
       } catch (error) {
         this.toastError(error)
@@ -141,6 +163,7 @@ export default {
       this.busy = true
       try {
         await revokeDeviceKey(entry.id)
+        this.listVersion += 1
         this.keys = this.keys.filter((other) => other.id !== entry.id)
         this.newKey = ''
       } catch (error) {
@@ -184,9 +207,12 @@ export default {
 .device-keys__row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
   padding: 4px 0;
+}
+
+.device-keys__dot--idle {
+  background: rgba(var(--v-theme-on-surface), 0.3);
 }
 
 .device-keys__text {

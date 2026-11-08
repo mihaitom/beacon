@@ -46,6 +46,8 @@ export interface DeviceKey {
   /** UTC seconds. */
   created_at: number
   last_used_at: number | null
+  /** The device has checked in recently, so it is connected right now. */
+  active: boolean
 }
 
 export async function listDeviceKeys(): Promise<DeviceKey[]> {

@@ -53,7 +53,7 @@ INVALID_URL = "invalid_url"
 INSECURE_URL = "insecure_url"
 
 _BATCH_SIZE = 500
-_IDLE_SECONDS = 300.0
+IDLE_SECONDS = 300.0
 _BACKOFF_BASE_SECONDS = 30.0
 _BACKOFF_MAX_SECONDS = 3600.0
 
@@ -400,7 +400,7 @@ def wake(force: bool = False) -> None:
 
 def _next_delay() -> float:
     if not _failures:
-        return _IDLE_SECONDS
+        return IDLE_SECONDS
     return min(_BACKOFF_BASE_SECONDS * 2 ** (_failures - 1), _BACKOFF_MAX_SECONDS)
 
 

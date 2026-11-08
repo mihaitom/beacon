@@ -987,6 +987,7 @@ export default {
     deviceKeysOnce:
       'Wird nur jetzt angezeigt. Trage ihn in der Desktop-App ein. Geht er verloren, erstelle einen neuen.',
     deviceKeysRevoke: 'Widerrufen',
+    deviceKeysConnected: 'Verbunden',
     deviceKeysNeverUsed: 'Noch nicht benutzt',
     deviceKeysLastUsed: 'Zuletzt benutzt {ago}',
     deviceKeysFailed: 'Der Schlüssel konnte nicht geändert werden',
