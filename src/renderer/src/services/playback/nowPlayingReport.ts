@@ -120,14 +120,21 @@ export function initNowPlayingReport(): void {
   )
 }
 
+/** A newly signed-in account has apps of its own and has been told nothing
+ * yet, even when the same song plays on. */
+export function forgetWhatWasReported(): void {
+  last = null
+  unwantedIdentity = null
+  newestReport++
+}
+
 /** For tests. */
 export function resetNowPlayingReport(): void {
   if (timer) clearInterval(timer)
   timer = null
   stopWatching?.()
   stopWatching = null
-  last = null
-  unwantedIdentity = null
+  forgetWhatWasReported()
 }
 
 export const _test = { tick }

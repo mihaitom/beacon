@@ -9,6 +9,7 @@ queue and stream diagnostics, and its cover_art_url has the media server's
 credentials in the query string on Subsonic.
 """
 
+import threading
 import time
 from typing import NamedTuple
 
@@ -39,6 +40,8 @@ class _Report(NamedTuple):
 
 
 _reports: dict[str, _Report] = {}
+# Written from worker threads, read from those and from the event loop.
+_reports_lock = threading.Lock()
 
 
 def _is_casting(session: SessionState, account: Account) -> bool:
@@ -60,15 +63,17 @@ def _is_casting(session: SessionState, account: Account) -> bool:
 
 def store_report(source: str, account: Account, report: dict, now: float | None = None) -> None:
     now = time.time() if now is None else now
-    for key in [key for key, kept in _reports.items() if now - kept.at > REPORT_TTL_SECONDS]:
-        del _reports[key]
-    before = _reports.get(source)
-    same = before is not None and _subject(before.report) == _subject(report)
-    _reports[source] = _Report(account, report, now, before.started if same else now)
+    with _reports_lock:
+        for key in [key for key, kept in _reports.items() if now - kept.at > REPORT_TTL_SECONDS]:
+            del _reports[key]
+        before = _reports.get(source)
+        same = before is not None and _subject(before.report) == _subject(report)
+        _reports[source] = _Report(account, report, now, before.started if same else now)
 
 
 def forget_report(source: str) -> None:
-    _reports.pop(source, None)
+    with _reports_lock:
+        _reports.pop(source, None)
 
 
 def _subject(report: dict) -> object:
@@ -78,6 +83,8 @@ def _subject(report: dict) -> object:
 def _candidates(account: Account, now: float) -> list[tuple[tuple, SessionState | _Report]]:
     """Each with what it is ranked by: what can be heard before what is
     paused, then a cast before a device playing by itself, then the newest."""
+    with _reports_lock:
+        reports = list(_reports.values())
     ranked: list[tuple[tuple, SessionState | _Report]] = [
         (
             (not session.state.clock.is_paused, True, session.state.clock.play_start_time or 0.0),
@@ -88,7 +95,7 @@ def _candidates(account: Account, now: float) -> list[tuple[tuple, SessionState 
     ]
     ranked += [
         ((not kept.report["paused"], bool(kept.report["devices"]), kept.started), kept)
-        for kept in _reports.values()
+        for kept in reports
         if kept.account == account and now - kept.at <= REPORT_TTL_SECONDS
     ]
     return ranked

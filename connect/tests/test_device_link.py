@@ -7,6 +7,8 @@ import json
 import os
 import sqlite3
 import stat
+import sys
+import threading
 import time
 from pathlib import Path
 from unittest.mock import AsyncMock, patch
@@ -242,7 +244,9 @@ def test_repeated_wrong_keys_are_slowed_down(public):
     limit = device_link._KEY_FAILURES_PER_IP[0]
     for _ in range(limit):
         assert public.get("/device-link/info", headers=auth("x.y")).status_code == 401
-    assert public.get("/device-link/info", headers=auth("x.y")).status_code == 429
+    refused = public.get("/device-link/info", headers=auth("x.y"))
+    assert refused.status_code == 429
+    assert int(refused.headers["retry-after"]) > 0
     # A correct key is refused too while locked: checking it would be the
     # lookup the limit is there to prevent.
     assert public.get("/device-link/info", headers=auth(key_for())).status_code == 429
@@ -588,8 +592,9 @@ def test_a_setting_changed_with_no_list_of_pending_ones_is_kept(server):
         lambda: server_link.pull_settings(ALICE_SETTINGS),
         lambda: server_link.summary_for(ALICE),
         lambda: server_link.pull_lyrics_offsets(ALICE),
+        lambda: server_link.charts_for(ALICE, "week"),
     ],
-    ids=["settings", "summary", "lyrics offsets"],
+    ids=["settings", "summary", "lyrics offsets", "charts"],
 )
 def test_a_pull_that_gets_through_ends_the_unreachable_state(paired, pull):
     paired.fail = httpx.ConnectError("down")
@@ -665,8 +670,9 @@ def test_addresses_that_are_refused(url, state):
     assert caught.value.state == state
 
 
-def test_plain_http_is_fine_at_home():
-    assert server_link.clean_url("http://10.0.0.5:7070/") == "http://10.0.0.5:7070"
+@pytest.mark.parametrize("host", ["10.0.0.5", "100.100.100.100"], ids=["home", "tailscale"])
+def test_plain_http_is_fine_off_the_internet(host):
+    assert server_link.clean_url(f"http://{host}:7070/") == f"http://{host}:7070"
 
 
 def test_https_is_accepted_anywhere():
@@ -2052,6 +2058,7 @@ def test_too_many_open_streams_are_refused(public):
     device_link._open_streams[key.split(".")[0]] = device_link._MAX_STREAMS_PER_KEY
     response = public.get("/device-link/v1/now-playing/events", headers=auth(key))
     assert response.status_code == 429
+    assert int(response.headers["retry-after"]) > 0
     device_link._open_streams.clear()
 
 
@@ -2177,6 +2184,41 @@ def test_old_reports_do_not_pile_up():
     stored(at=NOW, source="session:gone")
     stored(at=NOW + now_playing.REPORT_TTL_SECONDS + 1, source="session:new")
     assert set(now_playing._reports) == {"session:new"}
+
+
+def test_reports_can_arrive_while_others_are_read():
+    """Reports are stored from worker threads while the event loop reads them."""
+    interval = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+    done = threading.Event()
+    errors: list[Exception] = []
+
+    def repeat(step):
+        count = 0
+        while not done.is_set():
+            count += 1
+            try:
+                step(count)
+            except RuntimeError as e:
+                errors.append(e)
+                done.set()
+
+    steps = [
+        *[lambda n, w=w: stored(at=NOW, source=f"{w}:{n % 64}") for w in range(4)],
+        *[lambda n, w=w: now_playing.forget_report(f"{w}:{n % 64}") for w in range(4)],
+        *[lambda _: now_playing.current(ALICE, now=NOW) for _ in range(4)],
+    ]
+    threads = [threading.Thread(target=repeat, args=(step,)) for step in steps]
+    try:
+        for thread in threads:
+            thread.start()
+        done.wait(1.0)
+    finally:
+        done.set()
+        for thread in threads:
+            thread.join()
+        sys.setswitchinterval(interval)
+    assert not errors
 
 
 def test_another_accounts_report_is_not_shown():
@@ -2448,6 +2490,13 @@ def _shape(document: dict) -> dict:
 
     return {
         "paths": sorted(document["paths"]),
+        "operations": {
+            path: {
+                "parameters": {p["name"]: without_words(p) for p in item["get"]["parameters"]},
+                "responses": sorted(item["get"]["responses"]),
+            }
+            for path, item in document["paths"].items()
+        },
         "fields": {
             name: without_words(model["properties"])
             for name, model in document["components"]["schemas"].items()
@@ -2505,6 +2554,13 @@ def test_v1_only_ever_grows(public):
         assert model in now["fields"], model
         for field, shape in fields.items():
             assert now["fields"][model].get(field) == shape, f"{model}.{field}"
+    for path, operation in promised["operations"].items():
+        parameters = now["operations"][path]["parameters"]
+        for name, parameter in operation["parameters"].items():
+            assert parameters.get(name) == parameter, f"{path} {name}"
+        for name in parameters.keys() - operation["parameters"].keys():
+            assert not parameters[name].get("required"), f"{path} {name} is new and required"
+        assert set(operation["responses"]) <= set(now["operations"][path]["responses"]), path
 
 
 def test_answers_match_what_is_described(public, default_session, at_position, sheet):

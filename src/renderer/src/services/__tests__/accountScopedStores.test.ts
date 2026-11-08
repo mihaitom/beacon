@@ -15,6 +15,7 @@ import { pullLyricsOffsets } from '@/services/lyrics/lyricsOffsets'
 import type { Album } from '@/types/library'
 import { browserLocale, getLocale } from '@/i18n'
 import { setLocale } from '@/services/localeSetting'
+import { forgetWhatWasReported } from '@/services/playback/nowPlayingReport'
 
 vi.mock('@/services/connect/accountSettings', () => ({
   fetchAccountSettings: vi.fn(),
@@ -25,6 +26,8 @@ vi.mock('@/services/lyrics/lyricsOffsets', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/lyrics/lyricsOffsets')>()),
   pullLyricsOffsets: vi.fn().mockResolvedValue(undefined),
 }))
+
+vi.mock('@/services/playback/nowPlayingReport', () => ({ forgetWhatWasReported: vi.fn() }))
 
 function signIn(username = 'alice'): void {
   const auth = useAuthStore()
@@ -61,6 +64,17 @@ describe('accountScopedStores — pull on account change', () => {
     expect(useRecommendationsStore().enabled).toBe(false)
     expect(useLyricsProvidersStore().enabled).toEqual(['lrclib.net'])
     expect(useRadioSettingsStore().castDirectly).toBe(true)
+  })
+
+  it('starts the now-playing report over for the new account', async () => {
+    vi.mocked(fetchAccountSettings).mockResolvedValue({})
+    vi.mocked(forgetWhatWasReported).mockClear()
+    initAccountScopedStores()
+
+    signIn()
+    await nextTick()
+
+    expect(forgetWhatWasReported).toHaveBeenCalled()
   })
 
   it("swaps the self-made themes for the new account's", async () => {

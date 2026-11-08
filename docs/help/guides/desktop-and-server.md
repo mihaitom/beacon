@@ -42,7 +42,10 @@ server.
 
 The first time, plays already on the computer are sent over, and the server's
 settings replace the desktop app's wherever the server has one. A setting only
-the desktop app has goes to the server.
+the desktop app has goes to the server. Settings are only shared when you
+signed in on both sides with the name your media server knows you by. Signed
+in under another name, such as an email address, the listening history still
+connects and the settings stay separate.
 
 A key belongs to exactly one account, and connecting with a key made for a
 different account than the one signed in on the desktop is refused. Signed in
@@ -72,7 +75,7 @@ address, which needs `TRUSTED_PROXIES` set as described under
 [Client addresses](party-over-the-internet.md#client-addresses).
 
 A server on the internet has to be reached over https. Plain http is only
-accepted for addresses on your own network.
+accepted for addresses on your own network or a private one like Tailscale.
 
 ## Disconnecting
 

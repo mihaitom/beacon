@@ -157,7 +157,9 @@ def _is_private_host(host: str) -> bool:
     except OSError:
         return False
     return bool(infos) and all(
-        ipaddress.ip_address(str(info[4][0]).split("%")[0]).is_private for info in infos
+        # Not is_private: that leaves out 100.64.0.0/10, which is Tailscale's.
+        not ipaddress.ip_address(str(info[4][0]).split("%")[0]).is_global
+        for info in infos
     )
 
 
@@ -399,6 +401,7 @@ def charts_for(account: Account, period: str) -> dict | None:
     except LinkError as e:
         _note(e.state)
         return None
+    _note_answered()
     return play_history.with_unsent_charts(account, remote, period)
 
 

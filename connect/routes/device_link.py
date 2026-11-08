@@ -56,6 +56,8 @@ _KEY_FAILURES_PER_IP = (10, 300.0)
 _V1_REQUESTS_PER_KEY = (120, 60.0)
 
 _MAX_STREAMS_PER_KEY = 3
+# When another stream ends cannot be known; this keeps a client from hammering.
+_STREAM_RETRY_SECONDS = 15
 # Asked rather than subscribed to: playing can start in any of an account's
 # sessions, including one that does not exist yet when the stream opens.
 _NOW_PLAYING_POLL_SECONDS = 1.0
@@ -100,7 +102,11 @@ async def _require_key(
     ip = client_ip(peer, request.headers.get("x-forwarded-for"))
     failures = f"key-fail:{ip}"
     if limiter.exceeded(failures, *_KEY_FAILURES_PER_IP):
-        raise HTTPException(status_code=429, detail="Too many attempts - try again later")
+        raise HTTPException(
+            status_code=429,
+            detail="Too many attempts - try again later",
+            headers={"Retry-After": str(int(_KEY_FAILURES_PER_IP[1]))},
+        )
     owner = None
     if x_beacon_device_key:
         owner = await asyncio.to_thread(device_keys.resolve, x_beacon_device_key)
@@ -302,7 +308,7 @@ def get_stats(owner: KeyOwner = _reading(device_keys.STATS)) -> dict:
         "`position` forward from `at` instead of asking every second."
     ),
 )
-def get_now_playing(owner: KeyOwner = _reading(device_keys.NOW_PLAYING)) -> dict:
+async def get_now_playing(owner: KeyOwner = _reading(device_keys.NOW_PLAYING)) -> dict:
     return now_playing.current(owner.account)
 
 
@@ -371,7 +377,11 @@ async def get_now_playing_events(
     x_beacon_device_key: str = Header(max_length=200),
 ) -> StreamingResponse:
     if _open_streams[owner.key_id] >= _MAX_STREAMS_PER_KEY:
-        raise HTTPException(status_code=429, detail="Too many open streams")
+        raise HTTPException(
+            status_code=429,
+            detail="Too many open streams",
+            headers={"Retry-After": str(_STREAM_RETRY_SECONDS)},
+        )
     # With no await in between, concurrent opens cannot all pass the check.
     _open_streams[owner.key_id] += 1
     return _CountedStream(

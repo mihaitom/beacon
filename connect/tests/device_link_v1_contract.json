@@ -296,6 +296,141 @@
       }
     }
   },
+  "operations": {
+    "/device-link/v1/history": {
+      "parameters": {
+        "cursor": {
+          "in": "query",
+          "name": "cursor",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "pattern": "^\\d{1,18}\\.\\d{1,18}$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "limit": {
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 100,
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "since": {
+          "in": "query",
+          "name": "since",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "until": {
+          "in": "query",
+          "name": "until",
+          "required": false,
+          "schema": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "responses": [
+        "200",
+        "401",
+        "403",
+        "410",
+        "422",
+        "429"
+      ]
+    },
+    "/device-link/v1/me": {
+      "parameters": {},
+      "responses": [
+        "200",
+        "401",
+        "403",
+        "422",
+        "429"
+      ]
+    },
+    "/device-link/v1/now-playing": {
+      "parameters": {},
+      "responses": [
+        "200",
+        "401",
+        "403",
+        "422",
+        "429"
+      ]
+    },
+    "/device-link/v1/now-playing/cover": {
+      "parameters": {},
+      "responses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429"
+      ]
+    },
+    "/device-link/v1/now-playing/events": {
+      "parameters": {},
+      "responses": [
+        "200",
+        "401",
+        "403",
+        "422",
+        "429"
+      ]
+    },
+    "/device-link/v1/now-playing/lyrics": {
+      "parameters": {},
+      "responses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429"
+      ]
+    },
+    "/device-link/v1/stats": {
+      "parameters": {},
+      "responses": [
+        "200",
+        "401",
+        "403",
+        "422",
+        "429"
+      ]
+    }
+  },
   "paths": [
     "/device-link/v1/history",
     "/device-link/v1/me",

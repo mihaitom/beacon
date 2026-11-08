@@ -55,6 +55,7 @@ import { parseLocale } from '@/i18n'
 import { adoptLocale, reloadLocaleForAccount } from '@/services/localeSetting'
 import { fetchAccountSettings } from '@/services/connect/accountSettings'
 import { clearCoverArtCache } from '@/services/connect/coverArtBatch'
+import { forgetWhatWasReported } from '@/services/playback/nowPlayingReport'
 
 /** Pulls whatever this account has synced server-side (see
  * services/connect/accountSettings.ts) and applies it through each
@@ -183,6 +184,7 @@ export function initAccountScopedStores(): void {
     // this account is about to ask for must not be answered out of the
     // previous one's cache.
     clearCoverArtCache()
+    forgetWhatWasReported()
     usePlaylistSummariesStore().reset()
     useHomeStore().reset()
     useRadioStationInfoStore().reset()

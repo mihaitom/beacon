@@ -25,6 +25,7 @@ vi.mock('@/services/connect/nowPlaying', () => ({
 import { reportNowPlaying, stopNowPlayingReport } from '@/services/connect/nowPlaying'
 import {
   _test,
+  forgetWhatWasReported,
   HEARTBEAT_MS,
   initNowPlayingReport,
   resetNowPlayingReport,
@@ -221,6 +222,14 @@ describe('now playing report', () => {
       expect(report).toHaveBeenCalledTimes(2)
     })
 
+    it('asks again for another account, even about the same song', async () => {
+      play('a')
+      await _test.tick()
+      forgetWhatWasReported()
+      await _test.tick()
+      expect(report).toHaveBeenCalledTimes(2)
+    })
+
     it('has nothing to take back', async () => {
       play('a')
       await _test.tick()
@@ -230,12 +239,34 @@ describe('now playing report', () => {
     })
   })
 
+  it('tells another account at once about the song already playing', async () => {
+    play('a')
+    await _test.tick()
+    forgetWhatWasReported()
+    await _test.tick()
+    expect(report).toHaveBeenCalledTimes(2)
+  })
+
   it('survives connect being away and tries again', async () => {
     report.mockRejectedValueOnce(new Error('away'))
     play()
     await _test.tick()
     vi.advanceTimersByTime(HEARTBEAT_MS)
     await _test.tick()
+    expect(report).toHaveBeenCalledTimes(2)
+  })
+
+  it('ignores a late "not wanted" meant for the account before', async () => {
+    let answer: (wanted: boolean) => void = () => {}
+    report.mockImplementationOnce(() => new Promise((resolve) => (answer = resolve)))
+    play('a')
+    const older = _test.tick()
+    forgetWhatWasReported()
+    answer(false)
+    await older
+
+    await _test.tick()
+
     expect(report).toHaveBeenCalledTimes(2)
   })
 
