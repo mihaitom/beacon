@@ -88,7 +88,7 @@
       </div>
     </v-app-bar>
 
-    <v-main>
+    <v-main :class="{ 'is-following-queue': queueDrawerSliding }">
       <router-view />
     </v-main>
 
@@ -122,6 +122,7 @@
     <queue-drawer
       v-if="queueDrawerEverOpened"
       :model-value="queueDrawerFirstMountSettled && drawersStore.queueDrawerOpen"
+      :sliding="queueDrawerSliding"
       @update:model-value="drawersStore.setQueueDrawerOpen($event)"
     />
     <cast-takeover-confirm-dialog />
@@ -144,6 +145,10 @@ import { loadSidebarCollapsed, saveSidebarCollapsed } from '@/services/sidebarSe
 // comment in the template for where the number comes from.
 const SIDEBAR_WIDTH = 200
 
+// The drawer's 0.2s, plus frames that run late.
+const QUEUE_SLIDE_MS = 300
+let queueSlideTimer = -1
+
 export default {
   name: 'DefaultLayout',
   components: {
@@ -163,6 +168,7 @@ export default {
       // See the queue-drawer's own model-value comment above — released
       // one tick after queueDrawerEverOpened first flips true.
       queueDrawerFirstMountSettled: false,
+      queueDrawerSliding: false,
     }
   },
   computed: {
@@ -218,8 +224,9 @@ export default {
     // no drawer was ever mounted (#47).
     'drawersStore.queueDrawerOpen': {
       immediate: true,
-      handler(open: boolean) {
+      handler(open: boolean, before: boolean | undefined) {
         if (open) this.queueDrawerEverOpened = true
+        if (before !== undefined) this.holdSlideTransitions()
       },
     },
     // Fires exactly once, right after the mount this same tick's v-if
@@ -233,7 +240,15 @@ export default {
       },
     },
   },
+  beforeUnmount() {
+    window.clearTimeout(queueSlideTimer)
+  },
   methods: {
+    holdSlideTransitions() {
+      this.queueDrawerSliding = true
+      window.clearTimeout(queueSlideTimer)
+      queueSlideTimer = window.setTimeout(() => (this.queueDrawerSliding = false), QUEUE_SLIDE_MS)
+    },
     toggleSidebar() {
       this.sidebarCollapsed = !this.sidebarCollapsed
       saveSidebarCollapsed(this.sidebarCollapsed)
@@ -243,6 +258,13 @@ export default {
 </script>
 
 <style scoped>
+/* Against Vuetify's inline `transition: none`, set for 100ms whenever the app
+ * changes size. Meant for dragging the window, but a page whose height follows
+ * its width (Stats) changes size because of the slide, which then jumped. */
+.v-main.is-following-queue {
+  transition: padding 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
+}
+
 /* Equal outer columns keep the search centred on the bar, which spans the
  * same width as the player bar - so it stands over the transport controls.
  * Centring it on the whole window (rail included) or on the page left of an

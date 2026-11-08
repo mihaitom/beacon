@@ -38,6 +38,7 @@
     disable-resize-watcher
     color="chrome"
     class="beacon-drawer"
+    :class="{ 'is-sliding': sliding }"
     @update:model-value="$emit('update:modelValue', $event)"
     @pointerenter="drawersStore.cancelQueueDrawerAutoClose()"
   >
@@ -193,7 +194,13 @@
          - normally through the plain, non-appear enter path below — this
          - only costs the very first reveal of a session its slide-in; rows
          - just appear already in place instead. -->
-        <transition-group v-if="!virtualizeQueue" tag="div" name="queue-move" class="queue-scroll">
+        <transition-group
+          v-if="!virtualizeQueue"
+          tag="div"
+          name="queue-move"
+          :move-class="sliding ? 'queue-move-still' : undefined"
+          class="queue-scroll"
+        >
           <queue-row
             v-for="(song, index) in playbackStore.queue"
             :key="queueRowKey(song)"
@@ -450,6 +457,12 @@ export default {
     return { queueDrag: this.drag }
   },
   props: {
+    /** Mid-slide; see DefaultLayout. Every row is somewhere else on screen
+     * then, and a re-render would animate each of them there on its own. */
+    sliding: {
+      type: Boolean,
+      default: false,
+    },
     modelValue: {
       type: Boolean,
       default: false,
@@ -1038,6 +1051,13 @@ export default {
  * stagger that used to reach this by accident. */
 .queue-move-move {
   transition: transform 0.3s ease;
+}
+
+/* Vuetify's own values for the slide; see DefaultLayout for the !important. */
+.beacon-drawer.is-sliding {
+  transition:
+    transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    visibility 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 
 /* The entrance every genuinely-new row gets from Vue itself — reads as

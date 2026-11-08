@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { TransitionGroup } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
@@ -64,6 +65,23 @@ describe('QueueDrawer', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+  it('keeps the rows from animating on their own while the drawer slides', () => {
+    usePlaybackStore().queue = [makeSong('a')]
+    const moveClass = (sliding: boolean) => {
+      const host = mount(
+        {
+          components: { QueueDrawer },
+          data: () => ({ sliding }),
+          template: '<v-app><queue-drawer model-value :sliding="sliding" /></v-app>',
+        },
+        { global: { plugins: [vuetify, i18n] } },
+      )
+      return host.findComponent(TransitionGroup).props('moveClass')
+    }
+    expect(moveClass(false)).toBeUndefined()
+    expect(moveClass(true)).toBeDefined()
   })
 
   it('shows the empty state and no clear/save-as-playlist buttons with nothing queued', () => {
