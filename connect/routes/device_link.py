@@ -516,6 +516,10 @@ async def get_player(owner: KeyOwner = _reading(device_keys.CONTROL)) -> dict:
     return _player().state(owner)
 
 
+def _player_paused(state: dict) -> bool:
+    return state["state"] != "playing"
+
+
 async def _player_events(presented_key: str, owner: KeyOwner):
     """As _now_playing_events(): asked once a second, the key looked up again
     at every keepalive."""
@@ -527,7 +531,7 @@ async def _player_events(presented_key: str, owner: KeyOwner):
         await asyncio.sleep(_NOW_PLAYING_POLL_SECONDS)
         quiet += _NOW_PLAYING_POLL_SECONDS
         latest = _player().state(owner)
-        if now_playing.differs(shown, latest):
+        if now_playing.differs(shown, latest, paused=_player_paused):
             shown = latest
             yield _event(latest)
         if quiet >= _KEEPALIVE_SECONDS:
@@ -948,5 +952,9 @@ async def delete_device_key(
     revoked = await asyncio.to_thread(device_keys.revoke, _require_account(session), key_id)
     if not revoked:
         raise HTTPException(status_code=404, detail="No such key")
+    # Its decrypted login goes with it. Music it started plays on, as any
+    # cast does after its window closed.
+    _library_clients.pop(key_id, None)
+    player_server.forget_key(key_id)
     await mdns.sync()
     return {"status": "ok"}

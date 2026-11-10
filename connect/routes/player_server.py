@@ -30,7 +30,8 @@ from routes.devices import stop_device
 from routes.discovery import discover_all
 from routes.join import JoinRequest, join_stream
 from routes.player_commands import LIBRARY_COMMANDS, needs
-from routes.volume import VolumeRequest, _record_volume, set_device_volume
+from routes.radio import radio_favicon
+from routes.volume import VolumeRequest, record_volume, set_device_volume
 
 logger = logging.getLogger("connect.player_server")
 
@@ -283,7 +284,7 @@ async def command(owner: KeyOwner, cmd, library=None) -> None:
                 device_type, name, VolumeRequest(volume=level), session
             )
             _failed(answer)
-            _record_volume(session, device_type, name, level, None)
+            record_volume(session, device_type, name, level, None)
     elif kind == "shuffle":
         on = needs(cmd, "on")
         if on != st.shuffle:
@@ -339,6 +340,10 @@ def _key_session_id(owner: KeyOwner) -> str:
         session_id = f"key-{owner.key_id}-{secrets.token_urlsafe(16)}"
         _key_sessions[owner.key_id] = session_id
     return session_id
+
+
+def forget_key(key_id: str) -> None:
+    _key_sessions.pop(key_id, None)
 
 
 async def _key_session(owner: KeyOwner, library) -> SessionState:
@@ -487,8 +492,22 @@ async def devices(owner: KeyOwner, rescan: bool) -> dict:
 
 
 async def cover(owner: KeyOwner, size: int) -> Response:
+    """The song's cover, or the station's logo, looked up with the cast's
+    own login like the window does."""
     session = now_playing.audible_cast(owner.account)
-    track = session.state.current_track if session else None
-    if track is None or not track.cover_art_id:
-        raise HTTPException(status_code=404, detail="No cover for what is playing")
-    return await cover_image(session.media, track.cover_art_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Nothing is playing")
+    st = session.state
+    if st.current_track is not None and st.current_track.cover_art_id:
+        return await cover_image(session.media, st.current_track.cover_art_id)
+    if st.current_track is None and st.radio_info is not None:
+        try:
+            station = await app_library.station_playing(
+                session.media, st.radio_info["url"], st.radio_info["title"]
+            )
+        except Exception as e:
+            logger.debug(f"[player] No station list for the logo: {e}")
+            station = None
+        if station and station["home_page_url"]:
+            return await radio_favicon(url=station["home_page_url"], min_size=size, hint="")
+    raise HTTPException(status_code=404, detail="No cover for what is playing")

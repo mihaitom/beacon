@@ -3169,3 +3169,88 @@ def test_covers_do_not_use_up_what_an_app_may_ask(public, media_server):
             )
     media_server.answers["getPlaylists.view"] = {"playlists": {}}
     assert public.get("/device-link/v1/library/playlists", headers=auth(key)).status_code == 200
+
+
+def test_the_player_stream_follows_a_song_that_plays_on(quick_stream, as_server, default_session):
+    queued_cast(default_session)
+    key = control_key()
+    owner = device_keys.resolve(key)
+    stream = device_link._player_events(key, owner)
+
+    async def run():
+        with patch.object(player_server, "compute_position", return_value=10.0) as position:
+            await _drain(stream, 2)
+            # Time passing is not news; a seek is, and the stream outlives both.
+            position.return_value = 60.0
+            seek = await asyncio.wait_for(anext(stream), 5)
+            default_session.state.clock.is_paused = True
+            pause = await asyncio.wait_for(anext(stream), 5)
+        await stream.aclose()
+        return seek, pause
+
+    seek, pause = asyncio.run(run())
+    assert json.loads(seek.removeprefix("data: "))["position"] == 60.0
+    assert json.loads(pause.removeprefix("data: "))["state"] == "paused"
+
+
+def test_a_player_stream_hears_nothing_while_the_song_just_plays():
+    shown = {"state": "playing", "song": {"id": "s1"}, "position": 10.0, "at": 1000.0}
+    later = {**shown, "position": 15.0, "at": 1005.0}
+    assert not now_playing.differs(shown, later, paused=device_link._player_paused)
+    paused = {**shown, "state": "paused"}
+    assert not now_playing.differs(
+        paused, {**paused, "at": 1100.0}, paused=device_link._player_paused
+    )
+
+
+def test_a_party_on_the_desktop_says_what_guests_hear(public, default_session):
+    party = {"running": True, "guests": 3, "listeners": 2, "listen_kbps": 128}
+    window(default_session, playing=True, current_song={"id": "s1"}, party=party)
+    answer = public.get(PLAYER, headers=auth(control_key())).json()
+    assert answer["party"] == party
+
+
+def test_a_servers_station_shows_its_logo(public, as_server, default_session, media_server):
+    queued_cast(default_session)
+    default_session.state.current_track = None
+    default_session.state.radio_info = {"title": "Eins", "url": "http://radio.example/live"}
+    media_server.answers["getInternetRadioStations.view"] = {
+        "internetRadioStations": {
+            "internetRadioStation": [
+                {"id": "r1", "name": "Other", "streamUrl": "http://other.example"},
+                {
+                    "id": "r2",
+                    "name": "Renamed",
+                    "streamUrl": "http://radio.example/live",
+                    "homePageUrl": "https://eins.example",
+                },
+            ]
+        }
+    }
+    logo = AsyncMock(return_value=Response(b"png", media_type="image/png"))
+    with patch.object(player_server, "radio_favicon", logo):
+        response = public.get("/device-link/v1/player/cover", headers=auth(control_key()))
+    assert response.status_code == 200
+    assert logo.await_args.kwargs["url"] == "https://eins.example"
+
+
+def test_revoking_lets_go_of_the_keys_login(client, public, on_server, handlers, media_server):
+    key = library_key()
+    key_id = key.partition(".")[0]
+    send(public, key, type="play_song", song_id="s1", devices=[{"type": "sonos", "name": "Den"}])
+    assert key_id in device_link._library_clients
+    assert key_id in player_server._key_sessions
+    client.delete(f"/device-keys/{key_id}")
+    assert key_id not in device_link._library_clients
+    assert key_id not in player_server._key_sessions
+
+
+def test_volume_reaches_every_speaker_the_window_casts_to(public, default_session):
+    casting = [{"type": "sonos", "name": "Den"}, {"type": "dlna", "name": "Hall"}]
+    window(default_session, playing=True, current_song={"id": "s1"}, casting=casting)
+    with patch.object(player_desktop, "relay_command", AsyncMock()) as relayed:
+        send(public, control_key(), type="volume", volume=0.4)
+    assert [c.args for c in relayed.await_args_list] == [
+        ("set-device-volume", {"deviceType": "sonos", "name": "Den", "volume": 40}),
+        ("set-device-volume", {"deviceType": "dlna", "name": "Hall", "volume": 40}),
+    ]

@@ -385,8 +385,9 @@ these rights tells that app live what is playing.
 
 ## Control and home automation
 
-Not built yet. Replaces the integration key: Home Assistant becomes an app with
-a device key, and a key can be given the right to steer playback.
+Built; the hardware check is still open (see Open). Replaces the integration
+key: Home Assistant becomes an app with a device key, and a key can be given
+the right to steer playback.
 
 ### Why
 
@@ -420,14 +421,17 @@ any key with `control` exists.
 
 - **Desktop app.** Its one window, through the remote relay that home
   automation uses today (`relay_command`, the snapshot). Only while the window
-  is signed in as the key's account; otherwise 503, and Home Assistant shows
-  the player as unavailable.
+  is signed in as the key's account; otherwise `/v1/player` says
+  `"available": false`, commands answer 409 `not_available`, and Home
+  Assistant shows the player as unavailable. 503 is only for a window whose
+  relay dropped mid-command.
 - **Server.** Only casts. A browser tab is never steered: a tab is somebody
   sitting in front of it. The player is the account's cast that can be heard,
   else the paused one, else the newest, as `/now-playing` chooses. Commands go
   to its session directly, whether or not the tab that started it is still
-  open. Without a cast, `/v1/player` says `"available": false`; library
-  commands can start one (below), transport commands answer 409.
+  open. Without a cast, `/v1/player` is available and `idle`, offering only
+  the library commands, which can start one (below); transport commands
+  answer 409 `nothing_playing`.
 
 On the server, play, pause, seek, stop, volume, next, previous, shuffle and
 repeat act on the session itself. Next and previous step through
@@ -486,11 +490,12 @@ cover them.
 The state is a field list of its own, never the relay snapshot, which carries
 party internals, the theme and a session id:
 
-`available`, `source` (`window` or `cast`), `paused`, `kind`, `song`, `radio`,
-`position`, `at`, `volume` (0-1: the speaker's with exactly one, otherwise the
-window's), `shuffle`, `repeat` (`off`, `all`, `one`), `autoplay`, `queue`,
-`queue_index`, `devices`, `interrupted`, `party` (`running`, `guests`,
-`listeners`).
+`available`, `state` (`playing`, `paused`, `idle`), `source` (`local` or
+`cast`), `song`, `radio`, `position`, `at`, `volume` (0-1: the speaker's with
+exactly one, otherwise the window's), `shuffle`, `repeat` (`off`, `all`,
+`one`), `autoplay`, `queue`, `queue_index`, `devices`, `interrupted`, `party`
+(`running`, `guests`, `listeners`, `listen_kbps`), and `commands`, what the
+player takes right now.
 
 Commands are absolute where the app's own buttons toggle: `shuffle` takes
 `on`, `repeat` takes `mode`, `autoplay` takes `on`. The window turns them into

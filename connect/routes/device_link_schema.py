@@ -203,6 +203,7 @@ class PlayerParty(BaseModel):
     running: bool
     guests: int
     listeners: int = Field(description="Guests listening along online")
+    listen_kbps: int | None = Field(description="The bitrate guests listen along at")
 
 
 class Player(BaseModel):

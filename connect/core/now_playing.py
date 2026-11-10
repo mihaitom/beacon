@@ -11,6 +11,7 @@ credentials in the query string on Subsonic.
 
 import threading
 import time
+from collections.abc import Callable
 from typing import NamedTuple
 
 from core.play_history import Account
@@ -176,8 +177,13 @@ def current(account: Account, now: float | None = None) -> dict:
     return _from_report(best, now) if isinstance(best, _Report) else _from_session(best, now)
 
 
-def differs(shown: dict, latest: dict) -> bool:
-    """Whether an app following along has to hear about `latest`."""
+def _paused(state: dict) -> bool:
+    return state["paused"]
+
+
+def differs(shown: dict, latest: dict, paused: Callable[[dict], bool] = _paused) -> bool:
+    """Whether an app following along has to hear about `latest`. `paused`
+    reads a state's pause, for answers spelling it differently (/player)."""
     if any(
         shown.get(field) != latest.get(field)
         for field in {*shown, *latest}
@@ -186,7 +192,7 @@ def differs(shown: dict, latest: dict) -> bool:
         return True
     if shown.get("position") is None or latest.get("position") is None:
         return False
-    moved = 0.0 if shown["paused"] else latest["at"] - shown["at"]
+    moved = 0.0 if paused(shown) else latest["at"] - shown["at"]
     return abs(shown["position"] + moved - latest["position"]) > _SEEK_TOLERANCE_SECONDS
 
 

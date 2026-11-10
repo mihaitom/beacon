@@ -75,6 +75,7 @@ def snapshot_of(player: dict, now: float | None = None) -> dict:
             "running": party.get("running"),
             "guests": party.get("guests"),
             "listeners": party.get("listeners"),
+            "listen_kbps": party.get("listen_kbps"),
         }
         if party
         else None,

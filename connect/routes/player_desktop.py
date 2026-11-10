@@ -82,6 +82,7 @@ def state(owner: KeyOwner, now: float | None = None) -> dict:
             "running": bool(party.get("running")),
             "guests": party.get("guests") or 0,
             "listeners": party.get("listeners") or 0,
+            "listen_kbps": party.get("listen_kbps"),
         }
         if party
         else None,
@@ -104,7 +105,22 @@ async def command(owner: KeyOwner, cmd) -> None:
     elif kind == "seek":
         await relay_command("seek", {"position": needs(cmd, "position")})
     elif kind == "volume":
-        await relay_command("volume", {"volume": needs(cmd, "volume")})
+        volume = needs(cmd, "volume")
+        casting = snap.get("casting") or []
+        if len(casting) > 1:
+            # The window's own volume command leaves several speakers alone,
+            # having no one volume to set; v1 sets each, as on a server.
+            for target in casting:
+                await relay_command(
+                    "set-device-volume",
+                    {
+                        "deviceType": target.get("type"),
+                        "name": target.get("name"),
+                        "volume": round(volume * 100),
+                    },
+                )
+        else:
+            await relay_command("volume", {"volume": volume})
     elif kind == "shuffle":
         if bool(snap.get("shuffle")) != needs(cmd, "on"):
             await relay_command("shuffle", {})

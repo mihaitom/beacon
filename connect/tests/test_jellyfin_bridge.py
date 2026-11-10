@@ -406,6 +406,15 @@ def test_search3_maps_song_offset_to_start_index(client, jellyfin_session, monke
     assert calls[0][2]["StartIndex"] == "3000"
 
 
+def test_search3_pages_albums_searched_alone(client, jellyfin_session, monkeypatch):
+    # The app API pages an album search by albumOffset (core/app_library.py).
+    fake_client, calls = _fake_jf_client({"/Items": {"Items": []}})
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    client.get("/rest/search3.view?query=x&songCount=0&albumCount=50&artistCount=0&albumOffset=50")
+    assert calls[0][2]["StartIndex"] == "50"
+
+
 def test_search3_only_requests_nonzero_count_types(client, jellyfin_session, monkeypatch):
     # Regression test: fetchAllTracks() sets albumCount=artistCount=0 — Jellyfin
     # must not be asked for those types too, since they'd otherwise crowd

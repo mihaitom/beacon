@@ -515,6 +515,15 @@ async def get_artist(params: dict, media: JellyfinClient) -> dict:
     return {"artist": artist}
 
 
+def _search_offset(params: dict, song_count: int, album_count: int, artist_count: int) -> str:
+    asked = [
+        name for name, count in (("album", album_count), ("artist", artist_count)) if count > 0
+    ]
+    if song_count <= 0 and len(asked) == 1:
+        return params.get(f"{asked[0]}Offset", "0")
+    return params.get("songOffset", "0")
+
+
 async def search3(params: dict, media: JellyfinClient) -> dict:
     # An empty query is a well-known Subsonic trick meaning "match
     # everything" — stores/library.ts's fetchAllTracks() relies on exactly
@@ -551,10 +560,11 @@ async def search3(params: dict, media: JellyfinClient) -> dict:
         # roughly balanced counts) and exactly right for the common
         # single-type bulk-fetch case (the other two counts are 0 here).
         "Limit": str(max(song_count, album_count, artist_count)),
-        # songOffset is the only offset stores/library.ts's search3() ever
-        # sends (see its signature) — without mapping it to StartIndex, every
-        # "page" of a paginated bulk load re-fetched the exact same items.
-        "StartIndex": params.get("songOffset", "0"),
+        # Without mapping the offset to StartIndex, every "page" of a
+        # paginated load re-fetched the exact same items. The one shared
+        # StartIndex takes the offset of the one type asked for (the app
+        # API pages albums alone); a mixed search keeps songOffset.
+        "StartIndex": _search_offset(params, song_count, album_count, artist_count),
         # See _SONG_LIST_FIELDS for why this list is as short as it is -
         # it matters most here, where a bulk load asks for thousands of
         # items at once.

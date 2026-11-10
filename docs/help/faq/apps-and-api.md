@@ -175,7 +175,7 @@ These are the lyrics Beacon finds by itself. Lyrics somebody picked by hand in B
 | `queue`, `queue_index`          | The whole queue as songs, and where in it the player is                                    |
 | `devices`                       | The speakers playing, as `type` and `name`                                                 |
 | `interrupted`                   | A speaker dropped out; `resume_interrupted` picks it back up                               |
-| `party`                         | `running`, `guests`, `listeners` on the desktop app; null otherwise                        |
+| `party`                         | `running`, `guests`, `listeners`, `listen_kbps` on the desktop app; null otherwise         |
 | `commands`                      | What the player takes right now                                                            |
 
 On a server, a queue that was never shown in a browser fills its titles in over a few seconds; until then an entry has only its `id`.

@@ -76,10 +76,7 @@ async def _stations(media) -> list[dict]:
     return (data.get("internetRadioStations") or {}).get("internetRadioStation") or []
 
 
-async def radio_station(media, station_id: str) -> dict | None:
-    """With its stream address, which the list leaves out: that is only for
-    playing it."""
-    found = next((s for s in await _stations(media) if s.get("id") == station_id), None)
+def _station(found: dict | None) -> dict | None:
     if found is None or not found.get("streamUrl"):
         return None
     return {
@@ -88,6 +85,21 @@ async def radio_station(media, station_id: str) -> dict | None:
         "stream_url": found["streamUrl"],
         "home_page_url": found.get("homePageUrl") or None,
     }
+
+
+async def radio_station(media, station_id: str) -> dict | None:
+    """With its stream address, which the list leaves out: that is only for
+    playing it."""
+    return _station(next((s for s in await _stations(media) if s.get("id") == station_id), None))
+
+
+async def station_playing(media, stream_url: str, name: str) -> dict | None:
+    """The station a cast plays, by its address, else by its name: a cast
+    keeps only those two."""
+    stations = await _stations(media)
+    found = next((s for s in stations if s.get("streamUrl") == stream_url), None)
+    found = found or next((s for s in stations if s.get("name") == name), None)
+    return _station(found)
 
 
 async def radio_stations(media) -> dict:

@@ -736,8 +736,8 @@ async def search3(params: dict, media: PlexClient) -> dict:
         return data.get("MediaContainer", {}).get("Metadata", [])
 
     songs = await fetch("10", song_count, params.get("songOffset", "0"))
-    albums = await fetch("9", album_count, "0")
-    artists = await fetch("8", artist_count, "0")
+    albums = await fetch("9", album_count, params.get("albumOffset", "0"))
+    artists = await fetch("8", artist_count, params.get("artistOffset", "0"))
     logger.info(
         f"[plex-bridge] search3 query={query!r} -> {len(songs)} song(s), "
         f"{len(albums)} album(s), {len(artists)} artist(s)"

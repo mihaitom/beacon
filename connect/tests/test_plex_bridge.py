@@ -650,6 +650,23 @@ def test_search3_with_query_sets_title_filter(client, plex_session, monkeypatch)
     assert all_calls[0][2]["title"] == "beatles"
 
 
+def test_search3_pages_albums(client, plex_session, monkeypatch):
+    # The app API pages an album search by albumOffset (core/app_library.py).
+    fake_client, calls = _fake_px_client(
+        {
+            "/library/sections": {
+                "MediaContainer": {"Directory": [{"key": "5", "type": "artist"}]}
+            },
+            "/library/sections/5/all": {"MediaContainer": {"Metadata": []}},
+        }
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    client.get("/rest/search3.view?query=x&songCount=0&albumCount=50&artistCount=0&albumOffset=50")
+    [albums] = [c for c in calls if c[1].endswith("/library/sections/5/all")]
+    assert albums[2]["X-Plex-Container-Start"] == "50"
+
+
 # ── Ratings ───────────────────────────────────────────────────────────────────
 
 
