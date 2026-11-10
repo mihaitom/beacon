@@ -19,7 +19,7 @@ GUIDE_URL = "https://raw.githubusercontent.com/mihaitom/beacon/main/docs/help/fa
 
 class Me(BaseModel):
     username: str
-    scopes: list[str] = Field(description="What this key may read")
+    scopes: list[str] = Field(description="What this key may do")
     beacon_version: str
     api_version: int = Field(
         description="Raised only for a change an existing app cannot cope with"
@@ -124,6 +124,153 @@ class Playing(BaseModel):
 NowPlaying = Playing | NothingPlaying
 
 
+class LibrarySong(BaseModel):
+    id: str
+    title: str | None
+    artist: str | None
+    album: str | None
+    duration: float | None
+    cover_art_id: str | None = Field(description="For /library/cover/{id}")
+
+
+class LibraryAlbum(BaseModel):
+    id: str
+    name: str | None
+    artist: str | None
+    year: int | None
+    cover_art_id: str | None = Field(description="For /library/cover/{id}")
+
+
+class LibraryPlaylist(BaseModel):
+    id: str
+    name: str | None
+    song_count: int
+    cover_art_id: str | None = Field(description="For /library/cover/{id}")
+
+
+class LibraryStation(BaseModel):
+    id: str
+    name: str | None
+    home_page_url: str | None
+
+
+class SongList(BaseModel):
+    items: list[LibrarySong]
+
+
+class AlbumList(BaseModel):
+    items: list[LibraryAlbum]
+
+
+class AlbumWithSongs(BaseModel):
+    album: LibraryAlbum
+    songs: list[LibrarySong]
+
+
+class PlaylistList(BaseModel):
+    items: list[LibraryPlaylist]
+
+
+class PlaylistWithSongs(BaseModel):
+    playlist: LibraryPlaylist
+    songs: list[LibrarySong]
+
+
+class StationList(BaseModel):
+    items: list[LibraryStation]
+
+
+class PlayerSong(BaseModel):
+    id: str
+    title: str | None
+    artist: str | None
+    album: str | None
+    duration: float | None
+    cover_art_id: str | None = Field(description="For /library/cover/{id}, with the library right")
+
+
+class PlayerRadio(BaseModel):
+    station: str
+    title: str | None = Field(description='What the station sends, usually "Artist - Title"')
+
+
+class Device(BaseModel):
+    type: Literal["sonos", "airplay", "chromecast", "dlna"]
+    name: str
+
+
+class PlayerParty(BaseModel):
+    running: bool
+    guests: int
+    listeners: int = Field(description="Guests listening along online")
+
+
+class Player(BaseModel):
+    available: bool = Field(
+        description="Whether there is anything to steer. On the desktop app: its window is "
+        "open and signed in with this key's account"
+    )
+    state: Literal["playing", "paused", "idle"]
+    source: Literal["local", "cast"] | None = Field(
+        description="`cast` on speakers, `local` on the desktop app itself"
+    )
+    song: PlayerSong | None
+    radio: PlayerRadio | None
+    position: float | None = Field(
+        description="Seconds into the song, correct at `at`. Carry it forward while playing"
+    )
+    at: float = Field(description="UTC seconds")
+    volume: float | None = Field(
+        description="0 to 1: the speaker's with exactly one, otherwise the desktop app's own"
+    )
+    shuffle: bool | None
+    repeat: Literal["off", "all", "one"] | None
+    autoplay: bool | None
+    queue: list[PlayerSong]
+    queue_index: int | None
+    devices: list[Device] = Field(description="The speakers playing, empty when local or idle")
+    interrupted: bool = Field(description="A speaker dropped out; `resume_interrupted` carries on")
+    party: PlayerParty | None
+    commands: list[str] = Field(description="The commands this player takes right now")
+
+
+class PlayerCommand(BaseModel):
+    type: str = Field(description="One of the player's `commands`")
+    position: float | None = Field(default=None, ge=0, description="`seek`: seconds")
+    volume: float | None = Field(default=None, ge=0, le=1, description="`volume`: 0 to 1")
+    on: bool | None = Field(default=None, description="`shuffle`, `autoplay`")
+    mode: Literal["off", "all", "one"] | None = Field(default=None, description="`repeat`")
+    devices: list[Device] | None = Field(
+        default=None,
+        max_length=32,
+        description="`devices`: the speakers to play on, empty for the desktop app itself. "
+        "With a `play_*` command on a server: where to start when nothing plays yet",
+    )
+    song_id: str | None = Field(
+        default=None, max_length=200, description="`play_song`, `play_song_radio`, `queue_*`"
+    )
+    album_id: str | None = Field(default=None, max_length=200, description="`play_album`")
+    playlist_id: str | None = Field(default=None, max_length=200, description="`play_playlist`")
+    start_index: int | None = Field(default=None, ge=0, description="`play_playlist`")
+    station_id: str | None = Field(default=None, max_length=200, description="`play_radio`")
+    index: int | None = Field(default=None, ge=0, description="`queue_jump`")
+
+
+class DeviceChoice(BaseModel):
+    type: Literal["sonos", "airplay", "chromecast", "dlna"]
+    name: str
+    in_use_by: str | None = Field(description="Another listener playing on it")
+    needs_pairing: bool = Field(description="Has to be paired in Beacon first")
+
+
+class DeviceList(BaseModel):
+    items: list[DeviceChoice]
+
+
+class Done(BaseModel):
+    status: Literal["ok"]
+
+
 class LyricLine(BaseModel):
     time: float = Field(description="Seconds into the song. Always 0 when not synced")
     text: str
@@ -138,13 +285,14 @@ class Lyrics(BaseModel):
     )
 
 
-_DESCRIPTION = f"""Read access to one Beacon account, for apps of your own.
+_DESCRIPTION = f"""Access to one Beacon account, for apps of your own.
 
 A key is made in Beacon's Settings > Account > Apps and devices and is sent as
 the `{KEY_HEADER}` header. Never put it in source code.
 
-Any origin may call this from a browser. Limits per key: 120 requests a minute
-and 3 open event streams; a 429 says how long to wait in `Retry-After`.
+Any origin may call this from a browser. Limits per key: 120 requests a minute,
+images (covers and logos) 600 a minute apart from those, and 3 open event
+streams; a 429 says how long to wait in `Retry-After`.
 
 Fields keep their meaning within v1, and new ones may appear: ignore what you
 do not know.

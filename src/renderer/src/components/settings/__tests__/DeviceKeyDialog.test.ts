@@ -10,7 +10,7 @@ import DeviceKeyDialog from '../DeviceKeyDialog.vue'
 import { createDeviceKey, type DeviceKey } from '@/services/connect/serverLink'
 
 vi.mock('@/services/connect/serverLink', () => ({
-  APP_SCOPES: ['history', 'stats', 'now_playing', 'lyrics'],
+  APP_SCOPES: ['history', 'stats', 'now_playing', 'lyrics', 'control', 'library'],
   createDeviceKey: vi.fn(),
 }))
 
@@ -119,6 +119,29 @@ describe('DeviceKeyDialog', () => {
     vm.label = 'Display'
     await vm.create()
     expect(createDeviceKey).toHaveBeenCalledWith('Display', ['history'])
+  })
+
+  it('does not ask for the library without steering', async () => {
+    const { vm } = mountDialog()
+    vm.kind = 'app'
+    vm.appScopes = ['now_playing', 'library']
+    vm.label = 'Home Assistant'
+    await vm.create()
+    expect(createDeviceKey).toHaveBeenCalledWith('Home Assistant', ['now_playing'])
+  })
+
+  // A desktop app does not pair with another desktop app.
+  it('makes only app keys in the desktop app', async () => {
+    ;(window as unknown as { api: unknown }).api = {}
+    try {
+      const { vm } = mountDialog()
+      vm.appScopes = ['control', 'library']
+      vm.label = 'Home Assistant'
+      await vm.create()
+      expect(createDeviceKey).toHaveBeenCalledWith('Home Assistant', ['control', 'library'])
+    } finally {
+      delete (window as unknown as { api?: unknown }).api
+    }
   })
 
   it('never keeps app rights on a key for the desktop', async () => {

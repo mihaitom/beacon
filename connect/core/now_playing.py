@@ -61,6 +61,21 @@ def _is_casting(session: SessionState, account: Account) -> bool:
     return st.radio_info is not None
 
 
+def audible_cast(account: Account) -> SessionState | None:
+    """The account's cast an app steers: what can be heard before what is
+    paused, then the one that started last - as current() ranks them."""
+    casts = [session for session in registry.all() if _is_casting(session, account)]
+    if not casts:
+        return None
+    return max(
+        casts,
+        key=lambda session: (
+            not session.state.clock.is_paused,
+            session.state.clock.play_start_time or 0.0,
+        ),
+    )
+
+
 def store_report(source: str, account: Account, report: dict, now: float | None = None) -> None:
     now = time.time() if now is None else now
     with _reports_lock:

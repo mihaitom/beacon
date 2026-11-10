@@ -108,6 +108,10 @@ _HISTORY_EPOCH_SCHEMA = (
     "ALTER TABLE accounts ADD COLUMN history_epoch INTEGER NOT NULL DEFAULT 0",
 )
 
+# Sealed with the key's own secret (core/media_login.py), null for a key
+# without the library right.
+_KEY_MEDIA_LOGIN_SCHEMA = ("ALTER TABLE device_keys ADD COLUMN media_login BLOB",)
+
 _OWN_SOURCE = "beacon"
 _TEXT_FIELDS = (
     "song_id",
@@ -296,6 +300,11 @@ def _add_history_epoch(conn: sqlite3.Connection) -> None:
         conn.execute(statement)
 
 
+def _add_key_media_login(conn: sqlite3.Connection) -> None:
+    for statement in _KEY_MEDIA_LOGIN_SCHEMA:
+        conn.execute(statement)
+
+
 # PRAGMA user_version counts how many of these have run. Append only.
 _MIGRATIONS = (
     _create_log,
@@ -304,6 +313,7 @@ _MIGRATIONS = (
     _add_key_rights,
     _add_key_scopes,
     _add_history_epoch,
+    _add_key_media_login,
 )
 
 

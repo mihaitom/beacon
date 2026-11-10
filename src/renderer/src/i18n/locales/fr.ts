@@ -932,6 +932,8 @@ export default {
     apiKeyCleared: 'Clé supprimée',
     apiKeyFailed: "Impossible d'enregistrer la clé",
     homeAutomationTitle: 'Domotique',
+    homeAutomationRetiring:
+      "Cette clé va être retirée. Configurez à nouveau Home Assistant avec une clé sous Compte > Applications et appareils ; le guide explique comment. Ce qui utilise cette clé continue de fonctionner pour l'instant.",
     homeAutomationWhat:
       "Permet à Home Assistant ou à un autre outil d'automatisation de voir et de contrôler ce que Beacon joue, via la même interface que la télécommande sur téléphone. La clé reste valable après un redémarrage jusqu'à ce que vous la révoquiez. Tant qu'une clé existe, Beacon s'annonce sur votre réseau local pour que Home Assistant puisse le trouver.",
     homeAutomationKeyActive: 'Une clé est active',
@@ -986,7 +988,9 @@ export default {
     serverLinkFailed: "La connexion n'a pas pu être modifiée",
     deviceKeysTitle: 'Applications et appareils',
     deviceKeysWhat:
-      'Une clé permet à une application de bureau Beacon de partager son historique et ses réglages avec ce serveur, ou à une application personnelle de lire ce que vous choisissez. Pour ce compte uniquement.',
+      'Une clé permet à une application de bureau Beacon de partager son historique et ses réglages avec ce serveur, ou à une application personnelle, comme Home Assistant, de lire ou de piloter ce que vous autorisez. Pour ce compte uniquement.',
+    deviceKeysWhatDesktop:
+      'Une clé permet à une application personnelle, comme Home Assistant, de lire ou de piloter ce que vous autorisez dans cette application, depuis ailleurs sur votre réseau. Pour le compte connecté ici uniquement.',
     deviceKeysAdd: 'Nouvelle clé',
     deviceKeysLabel: 'Nom',
     deviceKeysLabelHint: 'Par exemple, Portable',
@@ -995,7 +999,7 @@ export default {
     deviceKeysKey: 'Clé',
     deviceKeysForAi: 'Copier les instructions pour une IA',
     deviceKeysForAiHint:
-      "Pour écrire une application avec un assistant IA. Contient l'adresse de ce serveur et ce que la clé peut lire, jamais la clé elle-même.",
+      "Pour écrire une application avec un assistant IA. Contient l'adresse de ce serveur et ce que la clé peut faire, jamais la clé elle-même.",
     deviceKeysForAiFailed:
       'La copie nécessite https. Donnez plutôt cette adresse à votre assistant : {url}',
     deviceKeysCopy: 'Copier la clé',
@@ -1012,12 +1016,16 @@ export default {
     deviceKeysKindDesktop: 'Application de bureau Beacon',
     deviceKeysKindDesktopHint: 'Partage historique et réglages avec ce serveur',
     deviceKeysKindApp: 'Application personnelle',
-    deviceKeysKindAppHint: 'Lit ce que vous autorisez, sans rien modifier',
-    deviceKeysAppRights: 'Peut lire',
+    deviceKeysKindAppHint: 'Lit ou pilote ce que vous autorisez',
+    deviceKeysAppRights: 'Autorisé',
     deviceKeysScope_history: "Historique d'écoute",
     deviceKeysScope_stats: 'Statistiques',
     deviceKeysScope_now_playing: 'Ce qui joue maintenant',
     deviceKeysScope_lyrics: 'Paroles de ce qui joue',
+    deviceKeysScope_control: 'Piloter la lecture',
+    deviceKeysScope_library: 'Parcourir la bibliothèque et lancer de la musique',
+    deviceKeysLibraryHint:
+      'La clé contient alors votre connexion au serveur multimédia, elle fonctionne donc même déconnecté. Après un changement de mot de passe, créez une nouvelle clé.',
     deviceKeysShareApi: 'Donner aussi à cet appareil les clés Last.fm et Fanart du serveur',
     deviceKeysShareApiHint:
       'Elles seront alors enregistrées sur cet ordinateur. Cela ne concerne que cet appareil.',

@@ -1,13 +1,15 @@
-"""Beacon: control the Beacon desktop app from Home Assistant."""
+"""Beacon: control Beacon, the desktop app or a server's casts, from Home Assistant."""
 
 from homeassistant.config_entries import SOURCE_IMPORT, ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT, Platform
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from . import dashboard
 from .api import BeaconClient
-from .const import CONF_KEY, CONF_SHOW_DASHBOARD, DOMAIN
+from .api_v1 import BeaconV1Client
+from .const import API_V1, CONF_API, CONF_KEY, CONF_SHOW_DASHBOARD, CONF_URL, DOMAIN
 from .coordinator import BeaconCoordinator
 from .entity import is_active
 from .hub import get_hub
@@ -36,12 +38,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.async_on_unload(lambda: dashboard.remove(hass))
         return True
 
-    client = BeaconClient(
-        async_get_clientsession(hass),
-        entry.data[CONF_HOST],
-        entry.data[CONF_PORT],
-        entry.data[CONF_KEY],
-    )
+    client = make_client(hass, entry.data)
+    _flag_integration_key(hass, entry)
     coordinator = BeaconCoordinator(hass, client)
     entry.runtime_data = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -59,6 +57,32 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return True
 
 
+def make_client(hass: HomeAssistant, data: dict) -> BeaconClient | BeaconV1Client:
+    session = async_get_clientsession(hass)
+    if data.get(CONF_API) == API_V1:
+        return BeaconV1Client(session, data[CONF_URL], data[CONF_KEY])
+    return BeaconClient(session, data[CONF_HOST], data[CONF_PORT], data[CONF_KEY])
+
+
+def _flag_integration_key(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Beacon retires the integration key: an entry still using it gets a
+    repair that switches it to a device key (repairs.py)."""
+    issue_id = f"integration_key_{entry.entry_id}"
+    if entry.data.get(CONF_API) == API_V1:
+        ir.async_delete_issue(hass, DOMAIN, issue_id)
+        return
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        issue_id,
+        is_fixable=True,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key="integration_key_retiring",
+        translation_placeholders={"name": entry.title},
+        data={"entry_id": entry.entry_id},
+    )
+
+
 def _apply_dashboard(hass: HomeAssistant, entry: ConfigEntry) -> None:
     if entry.options.get(CONF_SHOW_DASHBOARD, True):
         dashboard.register(hass)
@@ -72,3 +96,7 @@ async def _options_updated(hass: HomeAssistant, entry: ConfigEntry) -> None:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+async def async_remove_entry(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    ir.async_delete_issue(hass, DOMAIN, f"integration_key_{entry.entry_id}")

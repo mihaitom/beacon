@@ -22,7 +22,7 @@ import uuid
 from collections.abc import Iterable
 from typing import NamedTuple
 
-from core import play_history, server_link
+from core import media_login, play_history, server_link
 from core.play_history import Account
 
 # More devices than anyone has; the bound is against a runaway script.
@@ -44,7 +44,11 @@ HISTORY = "history"
 STATS = "stats"
 NOW_PLAYING = "now_playing"
 LYRICS = "lyrics"
-_APP_SCOPES = {HISTORY, STATS, NOW_PLAYING, LYRICS}
+CONTROL = "control"
+LIBRARY = "library"
+_APP_SCOPES = {HISTORY, STATS, NOW_PLAYING, LYRICS, CONTROL, LIBRARY}
+# What only a server hands out: a desktop does not pair with another desktop.
+SERVER_ONLY_SCOPES = frozenset({SYNC, API_KEYS})
 
 
 class TooManyKeys(Exception):
@@ -53,6 +57,10 @@ class TooManyKeys(Exception):
 
 class InvalidScopes(Exception):
     pass
+
+
+class MissingMediaLogin(Exception):
+    """The library right without a media login to browse with."""
 
 
 class KeyOwner(NamedTuple):
@@ -74,6 +82,9 @@ def _stored_scopes(scopes: Iterable[str]) -> str:
         raise InvalidScopes
     # Lyrics are only ever those of the song playing now.
     if LYRICS in chosen and NOW_PLAYING not in chosen:
+        raise InvalidScopes
+    # Browsing is for picking what to play.
+    if LIBRARY in chosen and CONTROL not in chosen:
         raise InvalidScopes
     return ",".join(sorted(chosen))
 
@@ -97,13 +108,20 @@ def create(
     settings_identity: tuple[str, str, str] | None,
     now: float | None = None,
     scopes: Iterable[str] = (SYNC,),
+    login: dict | None = None,
 ) -> dict:
     """The only time the key itself exists outside the device it goes to.
-    Raises InvalidScopes for a combination no key may have."""
+    Raises InvalidScopes for a combination no key may have. `login` is the
+    media login a key with the library right browses with, and is kept only
+    for such a key."""
     stored_scopes = _stored_scopes(scopes)
+    has_library = LIBRARY in stored_scopes.split(",")
+    if has_library and login is None:
+        raise MissingMediaLogin
     created_at = int(time.time() if now is None else now)
     key_id = uuid.uuid4().hex
     secret = secrets.token_urlsafe(32)
+    sealed = media_login.seal(login, key_id, secret) if has_library else None
     with play_history.transaction() as conn:
         account_id = play_history.account_row(conn, account)
         count = conn.execute(
@@ -113,8 +131,9 @@ def create(
             raise TooManyKeys
         conn.execute(
             "INSERT INTO device_keys"
-            " (id, account_id, key_hash, label, settings_identity, created_at, scopes)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?)",
+            " (id, account_id, key_hash, label, settings_identity, created_at, scopes,"
+            " media_login)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 key_id,
                 account_id,
@@ -123,6 +142,7 @@ def create(
                 None if settings_identity is None else json.dumps(settings_identity),
                 created_at,
                 stored_scopes,
+                sealed,
             ),
         )
     return {
@@ -179,6 +199,28 @@ def account_has_scope(account: Account, scope: str) -> bool:
             " WHERE server_type = ? AND server_url = ? AND username = ?",
             account,
         ).fetchall()
+    return any(scope in row["scopes"].split(",") for row in rows)
+
+
+def media_login_of(presented: str) -> dict | None:
+    """The media login a key carries, opened with its own secret. None for a
+    key without one, and for a wrong secret: nothing but the key opens it."""
+    key_id, _, secret = presented.partition(".")
+    with play_history.transaction() as conn:
+        row = conn.execute(
+            "SELECT key_hash, media_login FROM device_keys WHERE id = ?", (key_id,)
+        ).fetchone()
+    if row is None or row["media_login"] is None:
+        return None
+    if not secrets.compare_digest(_hash(secret), row["key_hash"]):
+        return None
+    return media_login.unseal(row["media_login"], key_id, secret)
+
+
+def any_key_has_scope(scope: str) -> bool:
+    """Whether any account on this installation has a key with `scope`."""
+    with play_history.transaction() as conn:
+        rows = conn.execute("SELECT scopes FROM device_keys").fetchall()
     return any(scope in row["scopes"].split(",") for row in rows)
 
 

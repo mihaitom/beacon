@@ -9,9 +9,11 @@ import { i18n } from '@/i18n'
 import DeviceKeyDialog from '../DeviceKeyDialog.vue'
 import DeviceKeysSection from '../DeviceKeysSection.vue'
 import { listDeviceKeys, revokeDeviceKey, type DeviceKey } from '@/services/connect/serverLink'
+import { createPinia, setActivePinia } from 'pinia'
+import { useRemoteControlStore } from '@/stores/remoteControl'
 
 vi.mock('@/services/connect/serverLink', () => ({
-  APP_SCOPES: ['history', 'stats', 'now_playing', 'lyrics'],
+  APP_SCOPES: ['history', 'stats', 'now_playing', 'lyrics', 'control', 'library'],
   listDeviceKeys: vi.fn(),
   revokeDeviceKey: vi.fn(),
 }))
@@ -37,7 +39,7 @@ async function mountSection() {
     global: {
       plugins: [vuetify, i18n],
       mocks: { $emitter: { emit, on: vi.fn(), off: vi.fn() } },
-      stubs: { DeviceKeyDialog: true },
+      stubs: { DeviceKeyDialog: true, ConnectPortSetting: true },
     },
   })
   await flushPromises()
@@ -130,11 +132,30 @@ describe('DeviceKeysSection', () => {
     expect(vm.keys.map((key) => key.id)).toEqual(['one', 'two'])
   })
 
-  it('is not offered in the desktop app', async () => {
+  // Apps on the network reach a desktop by its port, so it is set here.
+  it('lists the keys in the desktop app too, with the port they need', async () => {
     ;(window as unknown as { api: unknown }).api = {}
     const { wrapper } = await mountSection()
-    expect(wrapper.find('section').exists()).toBe(false)
-    expect(listDeviceKeys).not.toHaveBeenCalled()
+    expect(listDeviceKeys).toHaveBeenCalled()
+    expect(wrapper.findComponent({ name: 'ConnectPortSetting' }).exists()).toBe(true)
+  })
+
+  // An app that steers playback goes through the window's relay.
+  it('has the desktop window look again whether its relay is needed', async () => {
+    ;(window as unknown as { api: unknown }).api = {}
+    setActivePinia(createPinia())
+    const changed = vi.spyOn(useRemoteControlStore(), 'deviceKeysChanged').mockResolvedValue()
+    const { wrapper, vm } = await mountSection()
+
+    wrapper.findComponent(DeviceKeyDialog).vm.$emit('created', { ...EXISTING, id: 'two' })
+    expect(changed).toHaveBeenCalledTimes(1)
+    await vm.revoke(EXISTING)
+    expect(changed).toHaveBeenCalledTimes(2)
+  })
+
+  it('has no port setting on a server', async () => {
+    const { wrapper } = await mountSection()
+    expect(wrapper.findComponent({ name: 'ConnectPortSetting' }).exists()).toBe(false)
   })
 
   it('removes a revoked key', async () => {

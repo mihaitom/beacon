@@ -930,6 +930,8 @@ export default {
     apiKeyCleared: 'Clave eliminada',
     apiKeyFailed: 'No se ha podido guardar la clave',
     homeAutomationTitle: 'Domótica',
+    homeAutomationRetiring:
+      'Esta clave se va a retirar. Vuelve a configurar Home Assistant con una clave en Cuenta > Apps y dispositivos; la guía explica cómo. Lo que usa esta clave sigue funcionando por ahora.',
     homeAutomationWhat:
       'Permite que Home Assistant u otra herramienta de automatización vea y controle lo que reproduce Beacon, a través de la misma interfaz que el mando del móvil. La clave sigue siendo válida tras reiniciar hasta que la revoques. Mientras exista una clave, Beacon se anuncia en tu red local para que Home Assistant pueda encontrarlo.',
     homeAutomationKeyActive: 'Hay una clave activa',
@@ -985,7 +987,9 @@ export default {
     serverLinkFailed: 'No se ha podido cambiar la conexión',
     deviceKeysTitle: 'Aplicaciones y dispositivos',
     deviceKeysWhat:
-      'Una clave permite a una aplicación de escritorio de Beacon compartir su historial y sus ajustes con este servidor, o a una aplicación propia leer lo que elijas. Solo para esta cuenta.',
+      'Una clave permite a una aplicación de escritorio de Beacon compartir su historial y sus ajustes con este servidor, o a una aplicación propia, como Home Assistant, leer o controlar lo que permitas. Solo para esta cuenta.',
+    deviceKeysWhatDesktop:
+      'Una clave permite a una aplicación propia, como Home Assistant, leer o controlar lo que permitas en esta app, desde otro lugar de tu red. Solo para la cuenta con la que has iniciado sesión aquí.',
     deviceKeysAdd: 'Nueva clave',
     deviceKeysLabel: 'Nombre',
     deviceKeysLabelHint: 'Por ejemplo, Portátil',
@@ -994,7 +998,7 @@ export default {
     deviceKeysKey: 'Clave',
     deviceKeysForAi: 'Copiar instrucciones para una IA',
     deviceKeysForAiHint:
-      'Para escribir una app con un asistente de IA. Incluye la dirección de este servidor y lo que la clave puede leer, nunca la clave.',
+      'Para escribir una app con un asistente de IA. Incluye la dirección de este servidor y lo que la clave puede hacer, nunca la clave.',
     deviceKeysForAiFailed: 'Copiar requiere https. Dale a tu asistente esta dirección: {url}',
     deviceKeysCopy: 'Copiar clave',
     deviceKeysShownTitle: 'Clave para {name}',
@@ -1010,12 +1014,16 @@ export default {
     deviceKeysKindDesktop: 'Aplicación de escritorio de Beacon',
     deviceKeysKindDesktopHint: 'Comparte historial y ajustes con este servidor',
     deviceKeysKindApp: 'Aplicación propia',
-    deviceKeysKindAppHint: 'Lee lo que permitas y no cambia nada',
-    deviceKeysAppRights: 'Puede leer',
+    deviceKeysKindAppHint: 'Lee o controla lo que permitas',
+    deviceKeysAppRights: 'Permitido',
     deviceKeysScope_history: 'Historial de escucha',
     deviceKeysScope_stats: 'Estadísticas',
     deviceKeysScope_now_playing: 'Lo que suena ahora',
     deviceKeysScope_lyrics: 'Letra de lo que suena',
+    deviceKeysScope_control: 'Controlar la reproducción',
+    deviceKeysScope_library: 'Explorar la biblioteca e iniciar música',
+    deviceKeysLibraryHint:
+      'La clave lleva entonces tu inicio de sesión del servidor multimedia, así que funciona aunque hayas cerrado sesión. Si cambias la contraseña, crea una clave nueva.',
     deviceKeysShareApi:
       'Dar también a este dispositivo las claves de Last.fm y Fanart del servidor',
     deviceKeysShareApiHint:

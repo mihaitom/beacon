@@ -24,6 +24,7 @@ import json
 import logging
 import secrets
 import sys
+import time
 import uuid
 from pathlib import Path
 
@@ -147,8 +148,9 @@ async def remote_status():
         # without waiting for a phone to connect or drop off.
         "phone_count": remote.phone_count,
         # The renderer keeps its relay running while this is on, phones or
-        # not — see stores/remoteControl.ts.
-        "integration": integration_key.is_set(),
+        # not — see stores/remoteControl.ts. A device key's player
+        # (routes/player_desktop.py) goes through the same relay.
+        "integration": await asyncio.to_thread(mdns.steered_from_outside),
     }
 
 
@@ -196,6 +198,7 @@ class QueryResponseRequest(BaseModel):
 @router.post("/state", dependencies=[Depends(require_token)])
 async def push_state(req: StateSnapshotRequest):
     remote.snapshot = req.snapshot
+    remote.snapshot_at = time.time()
     await remote.event_bus.broadcast(req.snapshot)
     await party.receive_snapshot(req.snapshot)
     return {"success": True}

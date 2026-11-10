@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
 import httpx
@@ -24,17 +25,22 @@ from core import (
     api_keys,
     device_keys,
     lyrics_offsets,
+    media_login,
     now_playing,
     play_history,
     server_link,
 )
 from core import session as session_module
+from core.claims import claims
 from core.play_history import Account
+from core.remote import remote
 from core.session import SessionState
 from core.state import TEST_TONE_TRACK_ID
 from main import app
+from media import JellyfinClient, PlexClient, SubsonicClient
 from media.base import Track
-from routes import device_link
+from media.login_errors import SubsonicError
+from routes import device_link, playback, player_desktop, player_server, stream
 
 # Before the autouse fixture in conftest.py stands in for it.
 real_run = server_link.run
@@ -70,6 +76,13 @@ def signed_in(default_session):
     default_session.account_username = ALICE.username
     default_session.settings_identity = ALICE_SETTINGS
     return default_session
+
+
+@pytest.fixture
+def on_server(signed_in, monkeypatch):
+    """Signed in on a Docker server rather than in a desktop app."""
+    monkeypatch.setattr(server_link, "AVAILABLE", False)
+    return signed_in
 
 
 @pytest.fixture
@@ -191,13 +204,13 @@ def test_settings_identity_needs_the_verified_name(signed_in):
     assert device_keys.settings_identity_of(signed_in) is None
 
 
-def test_keys_are_made_for_the_signed_in_account(client, signed_in):
+def test_keys_are_made_for_the_signed_in_account(client, on_server):
     made = client.post("/device-keys", json={"label": "Laptop", "scopes": ["sync"]}).json()
     assert device_keys.resolve(made["key"]).account == ALICE
     assert device_keys.resolve(made["key"]).settings_identity == ALICE_SETTINGS
 
 
-def test_the_list_never_contains_a_key(client, signed_in):
+def test_the_list_never_contains_a_key(client, on_server):
     made = client.post("/device-keys", json={"label": "Laptop", "scopes": ["sync"]}).json()
     text = client.get("/device-keys").text
     assert made["key"] not in text
@@ -209,7 +222,7 @@ def test_making_a_key_needs_a_session(client):
     assert client.post("/device-keys", json={"label": "x"}).status_code == 401
 
 
-def test_a_key_can_be_revoked_over_http(client, signed_in):
+def test_a_key_can_be_revoked_over_http(client, on_server):
     made = client.post("/device-keys", json={"label": "Laptop", "scopes": ["sync"]}).json()
     assert client.delete(f"/device-keys/{made['id']}").status_code == 200
     assert client.delete(f"/device-keys/{made['id']}").status_code == 404
@@ -273,12 +286,12 @@ def test_a_play_only_counts_as_the_same_within_a_minute(apart, stored):
     assert play_history.receive_listens(ALICE, [second], now=NOW) == stored
 
 
-def test_a_label_of_only_spaces_is_refused(client, signed_in):
+def test_a_label_of_only_spaces_is_refused(client, on_server):
     made = client.post("/device-keys", json={"label": "   ", "scopes": ["sync"]})
     assert made.status_code == 422
 
 
-def test_a_label_is_stored_without_the_spaces_around_it(client, signed_in):
+def test_a_label_is_stored_without_the_spaces_around_it(client, on_server):
     client.post("/device-keys", json={"label": "  Laptop ", "scopes": ["sync"]})
     assert client.get("/device-keys").json()["keys"][0]["label"] == "Laptop"
 
@@ -1230,8 +1243,8 @@ def test_api_keys_need_a_device_key(public):
 
 
 @pytest.mark.parametrize("is_admin", [True, False])
-def test_only_the_confirmation_decides_not_the_role(client, signed_in, is_admin):
-    signed_in.account_is_admin = is_admin
+def test_only_the_confirmation_decides_not_the_role(client, on_server, is_admin):
+    on_server.account_is_admin = is_admin
     without = client.post("/device-keys", json={"label": "Laptop", "scopes": ["sync"]}).json()
     confirmed = client.post(
         "/device-keys", json={"label": "Desktop", "scopes": ["sync", "api_keys"]}
@@ -1240,7 +1253,7 @@ def test_only_the_confirmation_decides_not_the_role(client, signed_in, is_admin)
     assert "api_keys" in device_keys.resolve(confirmed["key"]).scopes
 
 
-def test_the_list_says_what_each_key_may_do(client, signed_in):
+def test_the_list_says_what_each_key_may_do(client, on_server):
     client.post("/device-keys", json={"label": "Laptop", "scopes": ["sync"]})
     made = client.post("/device-keys", json={"label": "Display", "scopes": ["history"]}).json()
     listed = {
@@ -1386,19 +1399,57 @@ def test_an_apps_key_stays_out_of_what_the_desktop_uses(public, method, path):
         ["nonsense"],
         ["api_keys"],
         ["lyrics"],
+        ["library"],
         ["sync", "history"],
+        ["sync", "control"],
     ],
 )
-def test_a_key_cannot_be_made_with_a_combination_nobody_should_have(client, signed_in, scopes):
+def test_a_key_cannot_be_made_with_a_combination_nobody_should_have(client, on_server, scopes):
     response = client.post("/device-keys", json={"label": "x", "scopes": scopes})
     assert response.status_code == 422
 
 
 @pytest.mark.parametrize(
-    "scopes", [["sync"], ["api_keys", "sync"], ["history"], ["lyrics", "now_playing"]]
+    "scopes",
+    [
+        ["sync"],
+        ["api_keys", "sync"],
+        ["history"],
+        ["lyrics", "now_playing"],
+        ["control"],
+        ["control", "library"],
+    ],
 )
-def test_the_combinations_the_form_offers_are_accepted(client, signed_in, scopes):
+def test_the_combinations_the_form_offers_are_accepted(client, on_server, scopes):
     assert client.post("/device-keys", json={"label": "x", "scopes": scopes}).status_code == 200
+
+
+@pytest.mark.parametrize("scopes", [["sync"], ["api_keys", "sync"]])
+def test_a_desktop_does_not_hand_out_what_pairs_a_desktop(client, signed_in, scopes):
+    response = client.post("/device-keys", json={"label": "x", "scopes": scopes})
+    assert response.status_code == 422
+    assert device_keys.list_keys(ALICE) == []
+
+
+@pytest.mark.parametrize("scopes", [["history", "stats"], ["control", "library"]])
+def test_a_desktop_hands_out_app_keys(client, signed_in, scopes):
+    made = client.post("/device-keys", json={"label": "Home Assistant", "scopes": scopes})
+    assert made.status_code == 200
+    assert device_keys.resolve(made.json()["key"]).account == ALICE
+
+
+def test_a_key_that_may_steer_announces_the_desktop(client, signed_in, fake_zeroconf):
+    client.post("/device-keys", json={"label": "Display", "scopes": ["now_playing"]})
+    assert fake_zeroconf.registered == []
+    made = client.post("/device-keys", json={"label": "Home Assistant", "scopes": ["control"]})
+    assert len(fake_zeroconf.registered) == 1
+    client.delete(f"/device-keys/{made.json()['id']}")
+    assert fake_zeroconf.registered == []
+
+
+def test_a_server_is_never_announced(client, on_server, fake_zeroconf):
+    client.post("/device-keys", json={"label": "Home Assistant", "scopes": ["control"]})
+    assert fake_zeroconf.registered == []
 
 
 def test_a_key_with_no_rights_at_all_is_not_made():
@@ -2491,11 +2542,13 @@ def _shape(document: dict) -> dict:
     return {
         "paths": sorted(document["paths"]),
         "operations": {
-            path: {
-                "parameters": {p["name"]: without_words(p) for p in item["get"]["parameters"]},
-                "responses": sorted(item["get"]["responses"]),
+            f"{method.upper()} {path}": {
+                "parameters": {p["name"]: without_words(p) for p in operation["parameters"]},
+                "body": without_words(operation.get("requestBody", {})),
+                "responses": sorted(operation["responses"]),
             }
             for path, item in document["paths"].items()
+            for method, operation in item.items()
         },
         "fields": {
             name: without_words(model["properties"])
@@ -2540,8 +2593,9 @@ def test_each_route_describes_its_answer(public):
 
 
 def test_every_route_says_what_it_is_for(public):
-    for path in published(public)["paths"].values():
-        assert path["get"]["description"]
+    for path, item in published(public)["paths"].items():
+        for method, operation in item.items():
+            assert operation.get("description"), f"{method.upper()} {path}"
 
 
 def test_v1_only_ever_grows(public):
@@ -2560,6 +2614,7 @@ def test_v1_only_ever_grows(public):
             assert parameters.get(name) == parameter, f"{path} {name}"
         for name in parameters.keys() - operation["parameters"].keys():
             assert not parameters[name].get("required"), f"{path} {name} is new and required"
+        assert operation["body"] == now["operations"][path]["body"], path
         assert set(operation["responses"]) <= set(now["operations"][path]["responses"]), path
 
 
@@ -2570,3 +2625,547 @@ def test_answers_match_what_is_described(public, default_session, at_position, s
     assert public.get("/device-link/v1/me", headers=auth(key)).status_code == 200
     for path in ("history", "stats", "now-playing", "now-playing/lyrics"):
         assert public.get(f"/device-link/v1/{path}", headers=auth(key)).status_code == 200, path
+
+
+# ── the library and the login it is browsed with ────────────────────────────
+
+
+SUBSONIC_LOGIN = {
+    "server_type": "subsonic",
+    "url": "https://music.example",
+    "credential": "u=alice&t=0123456789abcdef&s=salty",
+}
+
+
+def library_key(login: dict | None = None) -> str:
+    return device_keys.create(
+        ALICE,
+        "Home Assistant",
+        ALICE_SETTINGS,
+        scopes=("control", "library"),
+        login=login or SUBSONIC_LOGIN,
+    )["key"]
+
+
+def stored_login(key: str) -> bytes | None:
+    key_id = key.partition(".")[0]
+    with play_history.transaction() as conn:
+        return conn.execute(
+            "SELECT media_login FROM device_keys WHERE id = ?", (key_id,)
+        ).fetchone()["media_login"]
+
+
+def test_a_library_key_takes_the_login_of_the_session_that_made_it(client, on_server):
+    on_server.media = SubsonicClient(
+        "https://music.example", credential=SUBSONIC_LOGIN["credential"]
+    )
+    made = client.post(
+        "/device-keys", json={"label": "Home Assistant", "scopes": ["control", "library"]}
+    ).json()
+    assert device_keys.media_login_of(made["key"]) == SUBSONIC_LOGIN
+
+
+def test_the_login_is_never_stored_readable():
+    sealed = stored_login(library_key())
+    assert b"0123456789abcdef" not in sealed
+    assert b"music.example" not in sealed
+
+
+def test_a_key_without_the_library_keeps_no_login():
+    key = device_keys.create(
+        ALICE, "Display", ALICE_SETTINGS, scopes=("control",), login=SUBSONIC_LOGIN
+    )["key"]
+    assert stored_login(key) is None
+
+
+def test_the_library_right_needs_a_login():
+    with pytest.raises(device_keys.MissingMediaLogin):
+        device_keys.create(ALICE, "HA", ALICE_SETTINGS, scopes=("control", "library"))
+
+
+def test_only_its_own_key_opens_the_login():
+    key = library_key()
+    key_id = key.partition(".")[0]
+    other = library_key().partition(".")[2]
+    assert device_keys.media_login_of(key) == SUBSONIC_LOGIN
+    assert device_keys.media_login_of(f"{key_id}.{other}") is None
+    assert device_keys.media_login_of(f"{key_id}.wrong") is None
+
+
+def test_a_sealed_login_moved_to_another_key_does_not_open():
+    first, second = library_key(), library_key()
+    moved = stored_login(first)
+    with play_history.transaction() as conn:
+        conn.execute(
+            "UPDATE device_keys SET media_login = ? WHERE id = ?",
+            (moved, second.partition(".")[0]),
+        )
+    assert device_keys.media_login_of(second) is None
+
+
+@pytest.mark.parametrize(
+    "login, kind",
+    [
+        (SUBSONIC_LOGIN, SubsonicClient),
+        (
+            {
+                "server_type": "jellyfin",
+                "url": "https://jf.example",
+                "credential": "jf-token",
+                "user_id": "u-1",
+            },
+            JellyfinClient,
+        ),
+        (
+            {
+                "server_type": "plex",
+                "url": "https://plex.example",
+                "credential": "plex-token",
+                "machine_identifier": "m-1",
+            },
+            PlexClient,
+        ),
+    ],
+)
+def test_a_login_makes_the_same_client_again(login, kind):
+    client = media_login.client_for(login)
+    assert isinstance(client, kind)
+    assert media_login.capture(client) == login
+
+
+@pytest.fixture
+def media_server(monkeypatch):
+    """Answers Subsonic calls by endpoint and records the login they came with."""
+    answers: dict = {}
+    seen: list[str] = []
+
+    def fake_get(self, endpoint, **params):
+        seen.append(self._credential)
+        answer = answers[endpoint]
+        if isinstance(answer, Exception):
+            raise answer
+        return answer(params) if callable(answer) else answer
+
+    monkeypatch.setattr(SubsonicClient, "_get", fake_get)
+    device_link._library_clients.clear()
+    return SimpleNamespace(answers=answers, seen=seen)
+
+
+LIBRARY_PATHS = (
+    "/device-link/v1/library/songs?search=harbor",
+    "/device-link/v1/library/albums",
+    "/device-link/v1/library/albums/al-1",
+    "/device-link/v1/library/playlists",
+    "/device-link/v1/library/playlists/pl-1",
+    "/device-link/v1/library/radio-stations",
+    "/device-link/v1/library/radio-stations/st-1/logo",
+    "/device-link/v1/library/cover/al-1",
+)
+
+
+@pytest.mark.parametrize("path", LIBRARY_PATHS)
+def test_the_library_needs_its_right(public, path):
+    key = device_keys.create(ALICE, "Display", ALICE_SETTINGS, scopes=("control",))["key"]
+    assert public.get(path, headers=auth(key)).status_code == 403
+
+
+def test_playlists_come_from_the_media_server_with_the_keys_login(public, media_server):
+    media_server.answers["getPlaylists.view"] = {
+        "playlists": {"playlist": [{"id": "pl-1", "name": "Road", "songCount": 3}]}
+    }
+    response = public.get("/device-link/v1/library/playlists", headers=auth(library_key()))
+    assert response.json() == {
+        "items": [{"id": "pl-1", "name": "Road", "song_count": 3, "cover_art_id": None}]
+    }
+    assert media_server.seen == [SUBSONIC_LOGIN["credential"]]
+
+
+def test_a_playlist_comes_with_its_songs_in_order(public, media_server):
+    media_server.answers["getPlaylist.view"] = {
+        "playlist": {
+            "id": "pl-1",
+            "name": "Road",
+            "songCount": 2,
+            "entry": [{"id": "s2", "title": "B"}, {"id": "s1", "title": "A"}],
+        }
+    }
+    answer = public.get(
+        "/device-link/v1/library/playlists/pl-1", headers=auth(library_key())
+    ).json()
+    assert [song["id"] for song in answer["songs"]] == ["s2", "s1"]
+
+
+def test_albums_without_a_search_are_listed_by_name_page_by_page(public, media_server):
+    asked = []
+
+    def album_list(params):
+        asked.append(params)
+        return {"albumList2": {"album": [{"id": "al-1", "name": "Low"}]}}
+
+    media_server.answers["getAlbumList2.view"] = album_list
+    public.get("/device-link/v1/library/albums?offset=50&limit=25", headers=auth(library_key()))
+    assert asked == [{"type": "alphabeticalByName", "size": "25", "offset": "50"}]
+
+
+def test_an_unknown_playlist_is_a_404(public, media_server):
+    media_server.answers["getPlaylist.view"] = {}
+    response = public.get("/device-link/v1/library/playlists/x", headers=auth(library_key()))
+    assert response.status_code == 404
+
+
+def test_a_login_the_media_server_refuses_says_so(public, media_server):
+    media_server.answers["getPlaylists.view"] = SubsonicError(40, "Wrong username or password")
+    response = public.get("/device-link/v1/library/playlists", headers=auth(library_key()))
+    assert response.status_code == 409
+    assert response.json()["detail"] == "media_login_rejected"
+
+
+def test_a_media_server_that_does_not_answer_is_not_the_keys_fault(public, media_server):
+    media_server.answers["getPlaylists.view"] = httpx.ConnectError("refused")
+    response = public.get("/device-link/v1/library/playlists", headers=auth(library_key()))
+    assert response.status_code == 502
+
+
+def test_a_new_login_is_not_answered_with_an_old_client(public, media_server):
+    media_server.answers["getPlaylists.view"] = {"playlists": {}}
+    other = {**SUBSONIC_LOGIN, "credential": "u=alice&t=new&s=new"}
+    public.get("/device-link/v1/library/playlists", headers=auth(library_key()))
+    public.get("/device-link/v1/library/playlists", headers=auth(library_key(other)))
+    assert media_server.seen == [SUBSONIC_LOGIN["credential"], other["credential"]]
+
+
+# ── the player ───────────────────────────────────────────────────────────
+
+PLAYER = "/device-link/v1/player"
+COMMANDS = "/device-link/v1/player/commands"
+
+
+@pytest.fixture
+def as_server(monkeypatch):
+    monkeypatch.setattr(server_link, "AVAILABLE", False)
+    player_server._key_sessions.clear()
+    player_server._titles.clear()
+
+
+def control_key(account=ALICE) -> str:
+    return device_keys.create(account, "Home Assistant", ALICE_SETTINGS, scopes=("control",))["key"]
+
+
+def send(public, key, **command):
+    return public.post(COMMANDS, headers=auth(key), json=command)
+
+
+@pytest.fixture
+def handlers(monkeypatch):
+    """The playback handlers a server player calls, standing in for speakers."""
+    calls = SimpleNamespace(
+        pause=AsyncMock(return_value={"status": "paused"}),
+        resume=AsyncMock(return_value={"status": "resumed"}),
+        seek=AsyncMock(return_value={"status": "ok"}),
+        queue=AsyncMock(return_value={"status": "ok"}),
+        play=AsyncMock(return_value={"status": "playing"}),
+        play_url=AsyncMock(return_value={"status": "playing"}),
+        jump=AsyncMock(return_value=True),
+        volume=AsyncMock(return_value={"status": "ok"}),
+        join=AsyncMock(return_value={"status": "ok"}),
+        stop_device=AsyncMock(return_value={"status": "ok"}),
+    )
+    monkeypatch.setattr(playback, "pause_session", calls.pause)
+    monkeypatch.setattr(playback, "resume_playback", calls.resume)
+    monkeypatch.setattr(playback, "seek_playback", calls.seek)
+    monkeypatch.setattr(playback, "update_queue", calls.queue)
+    monkeypatch.setattr(playback, "play_tracks", calls.play)
+    monkeypatch.setattr(playback, "play_url", calls.play_url)
+    monkeypatch.setattr(stream, "jump_to", calls.jump)
+    monkeypatch.setattr(player_server, "set_device_volume", calls.volume)
+    monkeypatch.setattr(player_server, "join_stream", calls.join)
+    monkeypatch.setattr(player_server, "stop_device", calls.stop_device)
+    return calls
+
+
+class SonosDelivery:
+    """Named like the real one: the player reports the type from the class."""
+
+    target = "Living room"
+
+
+def queued_cast(session, queue=("s0", "s1", "s2"), index=1, **kwargs):
+    cast(session, song=queue[index], **kwargs)
+    session.state.active_delivery = SonosDelivery()
+    session.state.queue = list(queue)
+    session.state.queue_index = index
+    session.state.original_queue = list(queue)
+    return session
+
+
+def test_the_player_needs_the_control_right(public, as_server):
+    assert public.get(PLAYER, headers=auth(app_key())).status_code == 403
+    assert send(public, app_key(), type="pause").status_code == 403
+
+
+def test_a_server_with_nothing_cast_is_idle_but_can_start_with_the_library(public, as_server):
+    assert public.get(PLAYER, headers=auth(control_key())).json()["commands"] == []
+    answer = public.get(PLAYER, headers=auth(library_key())).json()
+    assert answer["available"] is True
+    assert answer["state"] == "idle"
+    assert "play_album" in answer["commands"]
+
+
+def test_another_accounts_cast_is_not_this_keys_player(public, as_server, default_session):
+    cast(default_session, account=BOB)
+    assert public.get(PLAYER, headers=auth(control_key())).json()["state"] == "idle"
+    assert send(public, control_key(), type="pause").status_code == 409
+
+
+def test_a_cast_is_the_servers_player(public, as_server, default_session):
+    queued_cast(default_session)
+    with patch.object(player_server, "compute_position", return_value=12.5):
+        answer = public.get(PLAYER, headers=auth(control_key())).json()
+    assert answer["state"] == "playing"
+    assert answer["source"] == "cast"
+    assert answer["song"]["id"] == "s1"
+    assert answer["position"] == 12.5
+    assert answer["queue_index"] == 1
+    assert [song["id"] for song in answer["queue"]] == ["s0", "s1", "s2"]
+    assert answer["queue"][1]["title"] == "Song"
+    assert answer["devices"] == [{"type": "sonos", "name": "Living room"}]
+
+
+def test_pause_and_play_act_on_the_cast(public, as_server, default_session, handlers):
+    queued_cast(default_session)
+    key = control_key()
+    assert send(public, key, type="pause").status_code == 200
+    handlers.pause.assert_awaited_once()
+    assert handlers.pause.await_args.args[0] is default_session
+    send(public, key, type="play")
+    handlers.resume.assert_not_awaited()  # already playing
+    default_session.state.clock.is_paused = True
+    send(public, key, type="play")
+    handlers.resume.assert_awaited_once()
+
+
+def test_nothing_cast_means_nothing_to_steer(public, as_server, handlers):
+    assert send(public, control_key(), type="pause").status_code == 409
+    handlers.pause.assert_not_awaited()
+
+
+def test_a_station_takes_only_what_a_station_can_do(public, as_server, default_session, handlers):
+    queued_cast(default_session)
+    default_session.state.current_track = None
+    default_session.state.radio_info = {"title": "Station", "url": "http://radio.example"}
+    key = control_key()
+    answer = public.get(PLAYER, headers=auth(key)).json()
+    assert answer["radio"]["station"] == "Station"
+    assert "next" not in answer["commands"]
+    assert send(public, key, type="shuffle", on=True).status_code == 409
+    handlers.queue.assert_not_awaited()
+
+
+def test_previous_restarts_a_song_well_under_way(public, as_server, default_session, handlers):
+    queued_cast(default_session)
+    with patch.object(player_server, "compute_position", return_value=40.0):
+        send(public, control_key(), type="previous")
+    assert handlers.seek.await_args.args[0].position == 0
+    handlers.jump.assert_not_awaited()
+
+
+def test_previous_goes_back_at_the_start_of_a_song(public, as_server, default_session, handlers):
+    queued_cast(default_session)
+    with patch.object(player_server, "compute_position", return_value=2.0):
+        send(public, control_key(), type="previous")
+    assert handlers.jump.await_args.args[:2] == (default_session, 0)
+
+
+def test_volume_reaches_every_speaker_of_the_cast(public, as_server, default_session, handlers):
+    queued_cast(default_session)
+    send(public, control_key(), type="volume", volume=0.42)
+    request = handlers.volume.await_args.args[2]
+    assert request.volume == 42
+    assert next(iter(default_session.state.device_volumes.values()))[0] == 42
+
+
+def test_a_queue_change_from_an_app_beats_what_a_window_sent(
+    public, as_server, default_session, handlers
+):
+    queued_cast(default_session)
+    default_session.play_seq = int(time.time() * 1000) + 60_000
+    send(public, control_key(), type="repeat", mode="all")
+    request = handlers.queue.await_args.args[0]
+    assert request.repeat_mode == "all"
+    assert request.seq > default_session.play_seq
+    assert request.song_ids == ["s0", "s1", "s2"]
+
+
+def test_shuffle_keeps_the_song_playing_where_the_listener_is():
+    queue, index = player_server.shuffled(
+        ["a", "b", "c", "d"], ["a", "b", "c", "d"], 2, True, False
+    )
+    assert queue[index] == "c"
+    assert sorted(queue) == ["a", "b", "c", "d"]
+    back, at = player_server.shuffled(queue, ["a", "b", "c", "d"], index, False, False)
+    assert (back, at) == (["a", "b", "c", "d"], 2)
+
+
+def test_shuffle_keeps_a_song_the_mix_has_lined_up_next():
+    for _ in range(20):
+        queue, index = player_server.shuffled(list("abcdef"), list("abcdef"), 1, True, True)
+        assert queue[index : index + 2] == ["b", "c"]
+
+
+def test_starting_needs_the_library_right(public, as_server, handlers):
+    response = send(public, control_key(), type="play_song", song_id="s1")
+    assert response.status_code == 403
+    handlers.play.assert_not_awaited()
+
+
+def test_starting_with_nothing_cast_needs_a_speaker(public, as_server, handlers, media_server):
+    response = send(public, library_key(), type="play_song", song_id="s1")
+    assert response.status_code == 409
+    assert response.json()["detail"] == "no_speaker"
+
+
+def test_an_album_starts_on_the_named_speaker_with_the_keys_own_login(
+    public, as_server, handlers, media_server
+):
+    media_server.answers["getAlbum.view"] = {
+        "album": {"id": "al-1", "name": "A", "song": [{"id": "x1"}, {"id": "x2"}]}
+    }
+    key = library_key()
+    response = send(
+        public, key, type="play_album", album_id="al-1", devices=[{"type": "sonos", "name": "Den"}]
+    )
+    assert response.status_code == 200
+    request, session = handlers.play.await_args.args
+    assert request.song_ids == ["x1", "x2"]
+    assert request.targets == [{"type": "sonos", "name": "Den"}]
+    assert media_login.capture(session.media) == SUBSONIC_LOGIN
+    account = (
+        session.account_server_type,
+        session.account_server_url,
+        session.account_username,
+    )
+    assert account == ALICE
+    assert session.authenticated
+    # Not one anybody could guess and send as X-Connect-Session.
+    assert len(session.session_id) > len(f"key-{key.partition('.')[0]}-") + 16
+    send(public, key, type="play_song", song_id="x2", devices=[{"type": "sonos", "name": "Den"}])
+    assert handlers.play.await_args.args[1] is session
+
+
+def test_starting_while_something_is_cast_plays_on_that_cast(
+    public, as_server, default_session, handlers, media_server
+):
+    queued_cast(default_session)
+    send(public, library_key(), type="play_song", song_id="x9")
+    request, session = handlers.play.await_args.args
+    assert session is default_session
+    assert request.song_ids == ["x9"]
+    assert request.targets == [{"type": "sonos", "name": "Living room"}]
+
+
+def test_a_speaker_somebody_else_uses_is_not_taken_over(public, as_server, handlers, media_server):
+    handlers.play.return_value = {"error": "device_in_use", "in_use_by": "Bob"}
+    response = send(
+        public,
+        library_key(),
+        type="play_song",
+        song_id="s1",
+        devices=[{"type": "sonos", "name": "Den"}],
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"] == "device_in_use"
+    assert handlers.play.await_args.args[0].force is False
+
+
+def test_play_next_comes_after_what_the_mix_has_lined_up(
+    public, as_server, default_session, handlers, media_server
+):
+    queued_cast(default_session)
+    send(public, library_key(), type="queue_next", song_id="new")
+    assert handlers.queue.await_args.args[0].song_ids == ["s0", "s1", "new", "s2"]
+    default_session.state.mix = object()
+    send(public, library_key(), type="queue_next", song_id="new")
+    assert handlers.queue.await_args.args[0].song_ids == ["s0", "s1", "s2", "new"]
+    send(public, library_key(), type="queue_add", song_id="last")
+    assert handlers.queue.await_args.args[0].song_ids[-1] == "last"
+
+
+def test_moving_a_cast_joins_before_it_lets_go(public, as_server, default_session, handlers):
+    queued_cast(default_session)
+    order = []
+    handlers.join.side_effect = lambda *a, **k: order.append("join") or {"status": "ok"}
+    handlers.stop_device.side_effect = lambda *a, **k: order.append("stop") or {"status": "ok"}
+    send(public, control_key(), type="devices", devices=[{"type": "sonos", "name": "Den"}])
+    assert handlers.join.await_args.args[0].target_name == "Den"
+    assert handlers.stop_device.await_args.args[:2] == ("sonos", "Living room")
+    assert order == ["join", "stop"]
+
+
+def test_the_device_list_says_who_holds_a_speaker(public, as_server, default_session):
+    from core.state import ctx
+
+    ctx.discovered = {"sonos": [{"name": "Den"}], "airplay": [], "chromecast": [], "dlna": []}
+    default_session.display_name = "Bob"
+    asyncio.run(claims.claim("sonos", "Den", default_session.session_id))
+    answer = public.get("/device-link/v1/player/devices", headers=auth(control_key())).json()
+    assert answer["items"] == [
+        {"type": "sonos", "name": "Den", "in_use_by": "Bob", "needs_pairing": False}
+    ]
+
+
+# On the desktop app
+
+
+def window(session, account=ALICE, **snapshot):
+    session.account_server_type, session.account_server_url, session.account_username = account
+    remote.renderer_connected = True
+    remote.snapshot = {"session_id": session.session_id, **snapshot}
+    remote.snapshot_at = time.time()
+
+
+def test_a_window_signed_in_as_somebody_else_is_not_there(public, default_session):
+    window(default_session, account=BOB, playing=True, current_song={"id": "s1"})
+    assert public.get(PLAYER, headers=auth(control_key())).json()["available"] is False
+    assert send(public, control_key(), type="pause").status_code == 409
+
+
+def test_the_windows_position_is_carried_forward_while_it_plays(public, default_session):
+    window(default_session, playing=True, current_song={"id": "s1"}, position=10.0)
+    remote.snapshot_at = time.time() - 5
+    answer = public.get(PLAYER, headers=auth(control_key())).json()
+    assert 14.9 < answer["position"] < 16
+
+
+def test_the_window_is_told_only_what_changes(public, default_session):
+    window(default_session, playing=True, current_song={"id": "s1"}, shuffle=True, repeat="off")
+    with patch.object(player_desktop, "relay_command", AsyncMock()) as relayed:
+        send(public, control_key(), type="shuffle", on=True)
+        relayed.assert_not_awaited()
+        send(public, control_key(), type="repeat", mode="one")
+    assert [c.args[0] for c in relayed.await_args_list] == ["repeat", "repeat"]
+
+
+def test_a_control_key_keeps_the_desktop_windows_relay_running(client, public):
+    assert client.get("/remote/status").json()["integration"] is False
+    app_key("now_playing")
+    assert client.get("/remote/status").json()["integration"] is False
+    key = control_key()
+    assert client.get("/remote/status").json()["integration"] is True
+    device_keys.revoke(ALICE, key.partition(".")[0])
+    assert client.get("/remote/status").json()["integration"] is False
+
+
+def test_a_server_has_no_window_to_keep_running(client, as_server):
+    control_key()
+    assert client.get("/remote/status").json()["integration"] is False
+
+
+def test_covers_do_not_use_up_what_an_app_may_ask(public, media_server):
+    key = library_key()
+    with patch.object(device_link, "cover_image", AsyncMock(return_value=Response(b"img"))):
+        for _ in range(device_link._V1_REQUESTS_PER_KEY[0] + 1):
+            assert (
+                public.get("/device-link/v1/library/cover/c1", headers=auth(key)).status_code == 200
+            )
+    media_server.answers["getPlaylists.view"] = {"playlists": {}}
+    assert public.get("/device-link/v1/library/playlists", headers=auth(key)).status_code == 200

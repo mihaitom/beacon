@@ -920,6 +920,8 @@ export default {
     apiKeyCleared: 'Key removed',
     apiKeyFailed: 'Could not save the key',
     homeAutomationTitle: 'Home automation',
+    homeAutomationRetiring:
+      'This key is being retired. Set Home Assistant up again with a key under Account > Apps and devices; the guide shows how. What uses this key keeps working for now.',
     homeAutomationWhat:
       'Lets Home Assistant or another automation tool see and control what Beacon plays, through the same interface as the phone remote. The key stays valid across restarts until you revoke it. While a key exists, Beacon announces itself on your local network so Home Assistant can find it.',
     homeAutomationKeyActive: 'A key is active',
@@ -974,7 +976,9 @@ export default {
     serverLinkFailed: 'The connection could not be changed',
     deviceKeysTitle: 'Apps and devices',
     deviceKeysWhat:
-      'A key lets a Beacon desktop app share its listening history and settings with this server, or an app of your own read what you choose. Only for this account.',
+      'A key lets a Beacon desktop app share its listening history and settings with this server, or an app of your own, such as Home Assistant, read or steer what you allow. Only for this account.',
+    deviceKeysWhatDesktop:
+      'A key lets an app of your own, such as Home Assistant, read or steer what you allow in this app, from elsewhere on your network. Only for the account signed in here.',
     deviceKeysAdd: 'New key',
     deviceKeysLabel: 'Name',
     deviceKeysLabelHint: 'For example, Laptop',
@@ -983,7 +987,7 @@ export default {
     deviceKeysKey: 'Key',
     deviceKeysForAi: 'Copy instructions for an AI',
     deviceKeysForAiHint:
-      "For writing an app with an AI assistant. Holds this server's address and what the key may read, never the key itself.",
+      "For writing an app with an AI assistant. Holds this server's address and what the key may do, never the key itself.",
     deviceKeysForAiFailed: 'Copying needs https. Give your assistant this address instead: {url}',
     deviceKeysCopy: 'Copy key',
     deviceKeysShownTitle: 'Key for {name}',
@@ -998,12 +1002,16 @@ export default {
     deviceKeysKindDesktop: 'Beacon desktop app',
     deviceKeysKindDesktopHint: 'Shares history and settings with this server',
     deviceKeysKindApp: 'Own app',
-    deviceKeysKindAppHint: 'Reads what you allow and changes nothing',
-    deviceKeysAppRights: 'May read',
+    deviceKeysKindAppHint: 'Reads or steers what you allow',
+    deviceKeysAppRights: 'Allowed',
     deviceKeysScope_history: 'Listening history',
     deviceKeysScope_stats: 'Statistics',
     deviceKeysScope_now_playing: 'What is playing now',
     deviceKeysScope_lyrics: 'Lyrics of what is playing',
+    deviceKeysScope_control: 'Steer playback',
+    deviceKeysScope_library: 'Browse the library and start music',
+    deviceKeysLibraryHint:
+      'The key then carries your media server login, so it works while you are signed out. After changing your password, make a new key.',
     deviceKeysShareApi: "Also give this device the server's Last.fm and Fanart keys",
     deviceKeysShareApiHint:
       'They are then stored on that computer. This applies to this device only.',

@@ -929,6 +929,8 @@ export default {
     apiKeyCleared: 'Schlüssel entfernt',
     apiKeyFailed: 'Schlüssel konnte nicht gespeichert werden',
     homeAutomationTitle: 'Hausautomation',
+    homeAutomationRetiring:
+      'Dieser Schlüssel wird abgelöst. Richte Home Assistant neu mit einem Schlüssel unter Konto > Apps und Geräte ein; die Anleitung zeigt, wie. Was diesen Schlüssel nutzt, funktioniert vorerst weiter.',
     homeAutomationWhat:
       'Damit können Home Assistant oder andere Automatisierungen sehen und steuern, was Beacon spielt, über dieselbe Schnittstelle wie die Handy-Fernbedienung. Der Schlüssel bleibt über Neustarts gültig, bis du ihn widerrufst. Solange ein Schlüssel besteht, kündigt sich Beacon im lokalen Netzwerk an, damit Home Assistant es findet.',
     homeAutomationKeyActive: 'Ein Schlüssel ist aktiv',
@@ -985,7 +987,9 @@ export default {
     serverLinkFailed: 'Die Verbindung konnte nicht geändert werden',
     deviceKeysTitle: 'Apps und Geräte',
     deviceKeysWhat:
-      'Mit einem Schlüssel teilt eine Beacon-Desktop-App ihren Hörverlauf und ihre Einstellungen mit diesem Server, oder eine eigene App liest, was du freigibst. Nur für dieses Konto.',
+      'Mit einem Schlüssel teilt eine Beacon-Desktop-App ihren Hörverlauf und ihre Einstellungen mit diesem Server, oder eine eigene App wie Home Assistant liest oder steuert, was du erlaubst. Nur für dieses Konto.',
+    deviceKeysWhatDesktop:
+      'Mit einem Schlüssel liest oder steuert eine eigene App wie Home Assistant, was du in dieser App erlaubst, von anderswo in deinem Netzwerk. Nur für das hier angemeldete Konto.',
     deviceKeysAdd: 'Neuer Schlüssel',
     deviceKeysLabel: 'Name',
     deviceKeysLabelHint: 'Zum Beispiel Laptop',
@@ -994,7 +998,7 @@ export default {
     deviceKeysKey: 'Schlüssel',
     deviceKeysForAi: 'Anleitung für KI kopieren',
     deviceKeysForAiHint:
-      'Zum Schreiben einer App mit einem KI-Assistenten. Enthält die Adresse dieses Servers und was der Schlüssel lesen darf, nie den Schlüssel selbst.',
+      'Zum Schreiben einer App mit einem KI-Assistenten. Enthält die Adresse dieses Servers und was der Schlüssel darf, nie den Schlüssel selbst.',
     deviceKeysForAiFailed:
       'Kopieren geht nur über https. Gib deinem Assistenten stattdessen diese Adresse: {url}',
     deviceKeysCopy: 'Schlüssel kopieren',
@@ -1011,12 +1015,16 @@ export default {
     deviceKeysKindDesktop: 'Beacon-Desktop-App',
     deviceKeysKindDesktopHint: 'Teilt Hörverlauf und Einstellungen mit diesem Server',
     deviceKeysKindApp: 'Eigene App',
-    deviceKeysKindAppHint: 'Liest, was du erlaubst, und ändert nichts',
-    deviceKeysAppRights: 'Darf lesen',
+    deviceKeysKindAppHint: 'Liest oder steuert, was du erlaubst',
+    deviceKeysAppRights: 'Erlaubt',
     deviceKeysScope_history: 'Hörverlauf',
     deviceKeysScope_stats: 'Statistik',
     deviceKeysScope_now_playing: 'Was gerade läuft',
     deviceKeysScope_lyrics: 'Lyrics zum aktuellen Song',
+    deviceKeysScope_control: 'Wiedergabe steuern',
+    deviceKeysScope_library: 'Bibliothek durchsuchen und Musik starten',
+    deviceKeysLibraryHint:
+      'Der Schlüssel trägt dann deinen Login zum Medienserver und funktioniert auch, wenn du abgemeldet bist. Nach einer Passwortänderung brauchst du einen neuen Schlüssel.',
     deviceKeysShareApi: 'Diesem Gerät auch die Last.fm- und Fanart-Schlüssel des Servers geben',
     deviceKeysShareApiHint: 'Sie liegen dann auf diesem Computer. Das gilt nur für dieses Gerät.',
     deviceKeysSharesApi: 'Hat die Last.fm- und Fanart-Schlüssel',

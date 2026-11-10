@@ -1,5 +1,79 @@
 {
   "fields": {
+    "AlbumList": {
+      "items": {
+        "items": {
+          "$ref": "#/components/schemas/LibraryAlbum"
+        },
+        "type": "array"
+      }
+    },
+    "AlbumWithSongs": {
+      "album": {
+        "$ref": "#/components/schemas/LibraryAlbum"
+      },
+      "songs": {
+        "items": {
+          "$ref": "#/components/schemas/LibrarySong"
+        },
+        "type": "array"
+      }
+    },
+    "Device": {
+      "name": {
+        "type": "string"
+      },
+      "type": {
+        "enum": [
+          "sonos",
+          "airplay",
+          "chromecast",
+          "dlna"
+        ],
+        "type": "string"
+      }
+    },
+    "DeviceChoice": {
+      "in_use_by": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "name": {
+        "type": "string"
+      },
+      "needs_pairing": {
+        "type": "boolean"
+      },
+      "type": {
+        "enum": [
+          "sonos",
+          "airplay",
+          "chromecast",
+          "dlna"
+        ],
+        "type": "string"
+      }
+    },
+    "DeviceList": {
+      "items": {
+        "items": {
+          "$ref": "#/components/schemas/DeviceChoice"
+        },
+        "type": "array"
+      }
+    },
+    "Done": {
+      "status": {
+        "const": "ok",
+        "type": "string"
+      }
+    },
     "HistoryItem": {
       "album": {
         "type": "string"
@@ -44,6 +118,149 @@
       },
       "next_cursor": {
         "type": "string"
+      }
+    },
+    "LibraryAlbum": {
+      "artist": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "cover_art_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "id": {
+        "type": "string"
+      },
+      "name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "year": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "LibraryPlaylist": {
+      "cover_art_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "id": {
+        "type": "string"
+      },
+      "name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "song_count": {
+        "type": "integer"
+      }
+    },
+    "LibrarySong": {
+      "album": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "artist": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "cover_art_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "duration": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "id": {
+        "type": "string"
+      }
+    },
+    "LibraryStation": {
+      "home_page_url": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "id": {
+        "type": "string"
+      },
+      "name": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
       }
     },
     "LyricLine": {
@@ -111,6 +328,213 @@
       "playing": {
         "const": false,
         "type": "boolean"
+      }
+    },
+    "Player": {
+      "at": {
+        "type": "number"
+      },
+      "autoplay": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "available": {
+        "type": "boolean"
+      },
+      "commands": {
+        "items": {
+          "type": "string"
+        },
+        "type": "array"
+      },
+      "devices": {
+        "items": {
+          "$ref": "#/components/schemas/Device"
+        },
+        "type": "array"
+      },
+      "interrupted": {
+        "type": "boolean"
+      },
+      "party": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/PlayerParty"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "position": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "queue": {
+        "items": {
+          "$ref": "#/components/schemas/PlayerSong"
+        },
+        "type": "array"
+      },
+      "queue_index": {
+        "anyOf": [
+          {
+            "type": "integer"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "radio": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/PlayerRadio"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "repeat": {
+        "anyOf": [
+          {
+            "enum": [
+              "off",
+              "all",
+              "one"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "shuffle": {
+        "anyOf": [
+          {
+            "type": "boolean"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "song": {
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/PlayerSong"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "source": {
+        "anyOf": [
+          {
+            "enum": [
+              "local",
+              "cast"
+            ],
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "state": {
+        "enum": [
+          "playing",
+          "paused",
+          "idle"
+        ],
+        "type": "string"
+      },
+      "volume": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "PlayerParty": {
+      "guests": {
+        "type": "integer"
+      },
+      "listeners": {
+        "type": "integer"
+      },
+      "running": {
+        "type": "boolean"
+      }
+    },
+    "PlayerRadio": {
+      "station": {
+        "type": "string"
+      }
+    },
+    "PlayerSong": {
+      "album": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "artist": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "cover_art_id": {
+        "anyOf": [
+          {
+            "type": "string"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "duration": {
+        "anyOf": [
+          {
+            "type": "number"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "id": {
+        "type": "string"
       }
     },
     "Playing": {
@@ -192,6 +616,41 @@
       },
       "id": {
         "type": "string"
+      }
+    },
+    "PlaylistList": {
+      "items": {
+        "items": {
+          "$ref": "#/components/schemas/LibraryPlaylist"
+        },
+        "type": "array"
+      }
+    },
+    "PlaylistWithSongs": {
+      "playlist": {
+        "$ref": "#/components/schemas/LibraryPlaylist"
+      },
+      "songs": {
+        "items": {
+          "$ref": "#/components/schemas/LibrarySong"
+        },
+        "type": "array"
+      }
+    },
+    "SongList": {
+      "items": {
+        "items": {
+          "$ref": "#/components/schemas/LibrarySong"
+        },
+        "type": "array"
+      }
+    },
+    "StationList": {
+      "items": {
+        "items": {
+          "$ref": "#/components/schemas/LibraryStation"
+        },
+        "type": "array"
       }
     },
     "Stats": {
@@ -297,7 +756,8 @@
     }
   },
   "operations": {
-    "/device-link/v1/history": {
+    "GET /device-link/v1/history": {
+      "body": {},
       "parameters": {
         "cursor": {
           "in": "query",
@@ -368,7 +828,227 @@
         "429"
       ]
     },
-    "/device-link/v1/me": {
+    "GET /device-link/v1/library/albums": {
+      "body": {},
+      "parameters": {
+        "limit": {
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 50,
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "offset": {
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "schema": {
+            "default": 0,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "search": {
+          "in": "query",
+          "name": "search",
+          "required": false,
+          "schema": {
+            "default": "",
+            "maxLength": 200,
+            "type": "string"
+          }
+        }
+      },
+      "responses": [
+        "200",
+        "401",
+        "403",
+        "409",
+        "422",
+        "429",
+        "502"
+      ]
+    },
+    "GET /device-link/v1/library/albums/{album_id}": {
+      "body": {},
+      "parameters": {
+        "album_id": {
+          "in": "path",
+          "name": "album_id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      },
+      "responses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "502"
+      ]
+    },
+    "GET /device-link/v1/library/cover/{cover_art_id}": {
+      "body": {},
+      "parameters": {
+        "cover_art_id": {
+          "in": "path",
+          "name": "cover_art_id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      },
+      "responses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "502"
+      ]
+    },
+    "GET /device-link/v1/library/playlists": {
+      "body": {},
+      "parameters": {},
+      "responses": [
+        "200",
+        "401",
+        "403",
+        "409",
+        "422",
+        "429",
+        "502"
+      ]
+    },
+    "GET /device-link/v1/library/playlists/{playlist_id}": {
+      "body": {},
+      "parameters": {
+        "playlist_id": {
+          "in": "path",
+          "name": "playlist_id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      },
+      "responses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "502"
+      ]
+    },
+    "GET /device-link/v1/library/radio-stations": {
+      "body": {},
+      "parameters": {},
+      "responses": [
+        "200",
+        "401",
+        "403",
+        "409",
+        "422",
+        "429",
+        "502"
+      ]
+    },
+    "GET /device-link/v1/library/radio-stations/{station_id}/logo": {
+      "body": {},
+      "parameters": {
+        "size": {
+          "in": "query",
+          "name": "size",
+          "required": false,
+          "schema": {
+            "default": 128,
+            "maximum": 512,
+            "minimum": 16,
+            "type": "integer"
+          }
+        },
+        "station_id": {
+          "in": "path",
+          "name": "station_id",
+          "required": true,
+          "schema": {
+            "type": "string"
+          }
+        }
+      },
+      "responses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "409",
+        "422",
+        "429",
+        "502"
+      ]
+    },
+    "GET /device-link/v1/library/songs": {
+      "body": {},
+      "parameters": {
+        "limit": {
+          "in": "query",
+          "name": "limit",
+          "required": false,
+          "schema": {
+            "default": 50,
+            "maximum": 500,
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "offset": {
+          "in": "query",
+          "name": "offset",
+          "required": false,
+          "schema": {
+            "default": 0,
+            "minimum": 0,
+            "type": "integer"
+          }
+        },
+        "search": {
+          "in": "query",
+          "name": "search",
+          "required": true,
+          "schema": {
+            "maxLength": 200,
+            "minLength": 1,
+            "type": "string"
+          }
+        }
+      },
+      "responses": [
+        "200",
+        "401",
+        "403",
+        "409",
+        "422",
+        "429",
+        "502"
+      ]
+    },
+    "GET /device-link/v1/me": {
+      "body": {},
       "parameters": {},
       "responses": [
         "200",
@@ -378,7 +1058,8 @@
         "429"
       ]
     },
-    "/device-link/v1/now-playing": {
+    "GET /device-link/v1/now-playing": {
+      "body": {},
       "parameters": {},
       "responses": [
         "200",
@@ -388,7 +1069,8 @@
         "429"
       ]
     },
-    "/device-link/v1/now-playing/cover": {
+    "GET /device-link/v1/now-playing/cover": {
+      "body": {},
       "parameters": {},
       "responses": [
         "200",
@@ -399,7 +1081,8 @@
         "429"
       ]
     },
-    "/device-link/v1/now-playing/events": {
+    "GET /device-link/v1/now-playing/events": {
+      "body": {},
       "parameters": {},
       "responses": [
         "200",
@@ -409,7 +1092,8 @@
         "429"
       ]
     },
-    "/device-link/v1/now-playing/lyrics": {
+    "GET /device-link/v1/now-playing/lyrics": {
+      "body": {},
       "parameters": {},
       "responses": [
         "200",
@@ -420,7 +1104,8 @@
         "429"
       ]
     },
-    "/device-link/v1/stats": {
+    "GET /device-link/v1/player": {
+      "body": {},
       "parameters": {},
       "responses": [
         "200",
@@ -428,16 +1113,112 @@
         "403",
         "422",
         "429"
+      ]
+    },
+    "GET /device-link/v1/player/cover": {
+      "body": {},
+      "parameters": {
+        "size": {
+          "in": "query",
+          "name": "size",
+          "required": false,
+          "schema": {
+            "default": 256,
+            "maximum": 1024,
+            "minimum": 16,
+            "type": "integer"
+          }
+        }
+      },
+      "responses": [
+        "200",
+        "401",
+        "403",
+        "404",
+        "422",
+        "429"
+      ]
+    },
+    "GET /device-link/v1/player/devices": {
+      "body": {},
+      "parameters": {
+        "rescan": {
+          "in": "query",
+          "name": "rescan",
+          "required": false,
+          "schema": {
+            "default": false,
+            "type": "boolean"
+          }
+        }
+      },
+      "responses": [
+        "200",
+        "401",
+        "403",
+        "409",
+        "422",
+        "429"
+      ]
+    },
+    "GET /device-link/v1/player/events": {
+      "body": {},
+      "parameters": {},
+      "responses": [
+        "200",
+        "401",
+        "403",
+        "422",
+        "429"
+      ]
+    },
+    "GET /device-link/v1/stats": {
+      "body": {},
+      "parameters": {},
+      "responses": [
+        "200",
+        "401",
+        "403",
+        "422",
+        "429"
+      ]
+    },
+    "POST /device-link/v1/player/commands": {
+      "body": {},
+      "parameters": {},
+      "responses": [
+        "200",
+        "401",
+        "403",
+        "409",
+        "422",
+        "429",
+        "502",
+        "503",
+        "504"
       ]
     }
   },
   "paths": [
     "/device-link/v1/history",
+    "/device-link/v1/library/albums",
+    "/device-link/v1/library/albums/{album_id}",
+    "/device-link/v1/library/cover/{cover_art_id}",
+    "/device-link/v1/library/playlists",
+    "/device-link/v1/library/playlists/{playlist_id}",
+    "/device-link/v1/library/radio-stations",
+    "/device-link/v1/library/radio-stations/{station_id}/logo",
+    "/device-link/v1/library/songs",
     "/device-link/v1/me",
     "/device-link/v1/now-playing",
     "/device-link/v1/now-playing/cover",
     "/device-link/v1/now-playing/events",
     "/device-link/v1/now-playing/lyrics",
+    "/device-link/v1/player",
+    "/device-link/v1/player/commands",
+    "/device-link/v1/player/cover",
+    "/device-link/v1/player/devices",
+    "/device-link/v1/player/events",
     "/device-link/v1/stats"
   ]
 }

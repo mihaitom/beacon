@@ -34,10 +34,6 @@ on a device, what is decided and what is not.
 - [Remote: "Play All" does not wait for the ack](remote-control/play-all-waits-for-ack.md) - small, the pattern is in `js/sheet.js`
 - [Remote: an album detail view](remote-control/album-detail-view.md) - four places, the last planned alignment with the mobile view
 
-## Integrations
-
-- [Home Assistant for Docker/web too](integrations/home-assistant-for-docker.md) - two ways, decided only once someone asks
-
 ## Packaging and dependencies
 
 - [Dependency majors: Vite 8 and TypeScript 7](packaging/dependency-majors.md) - Vite 8 unblocked, TypeScript 7 to check again

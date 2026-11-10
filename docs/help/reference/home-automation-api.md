@@ -5,6 +5,13 @@ order: 4
 
 # Home automation API
 
+> **Being retired.** This interface and its key, Settings > Advanced > Home
+> automation, keep working for now and will be removed in a later release.
+> New integrations use a key from Settings > Account > Apps and devices
+> with the right to control playback, and the
+> [app API](../faq/apps-and-api.md#how-do-i-control-playback), which works on
+> the desktop app and on a server alike.
+
 The HTTP interface Home Assistant and other tools use to watch and control
 Beacon's desktop app - the same one the phone remote uses. This page is for
 whoever writes such an integration; setting it up in Beacon is in
@@ -23,7 +30,8 @@ TXT properties:
 | --------- | --------------------------------------------------------------- |
 | `id`      | Stable per installation. Use it as the unique id of the device. |
 | `version` | Beacon's version                                                |
-| `path`    | Where the API lives: `/remote/`                                 |
+| `path`    | Where this API lives: `/remote/`                                |
+| `api`     | Where the app API lives: `/device-link/v1/`                     |
 
 An integration that follows the announcement keeps working when the port
 changed. mDNS does not cross subnets or VLANs; set a fixed port for those

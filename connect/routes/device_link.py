@@ -22,7 +22,18 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, R
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field, StringConstraints, ValidationError
 
-from core import account_settings, api_keys, device_keys, lyrics_offsets, now_playing, play_history
+from core import (
+    account_settings,
+    api_keys,
+    app_library,
+    device_keys,
+    lyrics_offsets,
+    mdns,
+    media_login,
+    now_playing,
+    play_history,
+    server_link,
+)
 from core.account_settings import LINKED_FIELDS
 from core.auth import require_token
 from core.device_keys import KeyOwner
@@ -31,12 +42,16 @@ from core.server_link import INVALID_KEY_DETAIL, KEY_HEADER
 from core.session import SessionState, require_authenticated_session
 from core.trusted_proxies import client_ip
 from lyrics.shared import CONNECT_VERSION
+from media.login_errors import REASON_FORBIDDEN, REASON_REJECTED, classify_login_error
 from routes import device_link_schema as schema
+from routes import player_desktop, player_server
 from routes.coverart import cover_image
 from routes.lyrics import auto_for_party
 from routes.lyrics_offsets import OffsetsPatch
 from routes.now_playing import NowPlayingReport, accept
 from routes.play_history import Listen, Milestones, Period, _own
+from routes.player_commands import LIBRARY_COMMANDS, TRANSPORT_COMMANDS
+from routes.radio import radio_favicon
 
 logger = logging.getLogger("connect.device_link")
 
@@ -54,6 +69,9 @@ _KEY_FAILURES_PER_IP = (10, 300.0)
 # Generous for a display refreshing every second; the bound is against a
 # loop nobody meant to write.
 _V1_REQUESTS_PER_KEY = (120, 60.0)
+# Images count apart: a media browser opening a list asks for every cover in
+# it at once.
+_V1_IMAGES_PER_KEY = (600, 60.0)
 
 _MAX_STREAMS_PER_KEY = 3
 # When another stream ends cannot be known; this keeps a client from hammering.
@@ -74,6 +92,7 @@ _MAX_SETTINGS_BODY = 64 * 1024
 _MAX_MILESTONES_BODY = 1024
 _MAX_OFFSETS_BODY = 256 * 1024
 _MAX_REPORT_BODY = 16 * 1024
+_MAX_COMMAND_BODY = 8 * 1024
 
 
 class IncomingListen(Listen):
@@ -117,14 +136,21 @@ async def _require_key(
     return owner
 
 
-async def _public_caller(owner: KeyOwner = Depends(_require_key)) -> KeyOwner:
-    if not limiter.hit(f"v1:{owner.key_id}", *_V1_REQUESTS_PER_KEY):
-        raise HTTPException(
-            status_code=429,
-            detail="Too many requests",
-            headers={"Retry-After": str(int(_V1_REQUESTS_PER_KEY[1]))},
-        )
-    return owner
+def _within(bucket: str, budget: tuple[int, float]):
+    async def caller(owner: KeyOwner = Depends(_require_key)) -> KeyOwner:
+        if not limiter.hit(f"{bucket}:{owner.key_id}", *budget):
+            raise HTTPException(
+                status_code=429,
+                detail="Too many requests",
+                headers={"Retry-After": str(int(budget[1]))},
+            )
+        return owner
+
+    return caller
+
+
+_public_caller = _within("v1", _V1_REQUESTS_PER_KEY)
+_image_caller = _within("v1-images", _V1_IMAGES_PER_KEY)
 
 
 def _with_scope(scope: str, caller=_require_key):
@@ -143,6 +169,10 @@ def _reading(scope: str):
     return Depends(_with_scope(scope, _public_caller))
 
 
+def _picturing(scope: str):
+    return Depends(_with_scope(scope, _image_caller))
+
+
 async def add_public_api_cors(request: Request, call_next):
     """Lets a page on any origin use /device-link/v1/. Safe as `*`: nothing
     there reads a cookie, only the key a page was given and sends itself.
@@ -157,8 +187,8 @@ async def add_public_api_cors(request: Request, call_next):
             status_code=204,
             headers={
                 "Access-Control-Allow-Origin": "*",
-                "Access-Control-Allow-Methods": "GET",
-                "Access-Control-Allow-Headers": KEY_HEADER,
+                "Access-Control-Allow-Methods": "GET, POST",
+                "Access-Control-Allow-Headers": f"{KEY_HEADER}, Content-Type",
                 "Access-Control-Max-Age": str(_PREFLIGHT_MAX_AGE_SECONDS),
             },
         )
@@ -212,7 +242,7 @@ def get_openapi_document() -> dict:
     "/me",
     response_model=schema.Me,
     responses=_REFUSALS,
-    description="Who this key belongs to and what it may read. Works with any key.",
+    description="Who this key belongs to and what it may do. Works with any key.",
 )
 def get_me(owner: KeyOwner = Depends(_public_caller)) -> dict:
     return {
@@ -356,6 +386,18 @@ class _CountedStream(StreamingResponse):
                 del _open_streams[self._key_id]
 
 
+def _take_stream_place(owner: KeyOwner) -> None:
+    """Released by _CountedStream. With no await between the check and the
+    count, concurrent opens cannot all pass."""
+    if _open_streams[owner.key_id] >= _MAX_STREAMS_PER_KEY:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many open streams",
+            headers={"Retry-After": str(_STREAM_RETRY_SECONDS)},
+        )
+    _open_streams[owner.key_id] += 1
+
+
 @v1_router.get(
     "/now-playing/events",
     response_model=None,
@@ -376,14 +418,7 @@ async def get_now_playing_events(
     owner: KeyOwner = _reading(device_keys.NOW_PLAYING),
     x_beacon_device_key: str = Header(max_length=200),
 ) -> StreamingResponse:
-    if _open_streams[owner.key_id] >= _MAX_STREAMS_PER_KEY:
-        raise HTTPException(
-            status_code=429,
-            detail="Too many open streams",
-            headers={"Retry-After": str(_STREAM_RETRY_SECONDS)},
-        )
-    # With no await in between, concurrent opens cannot all pass the check.
-    _open_streams[owner.key_id] += 1
+    _take_stream_place(owner)
     return _CountedStream(
         owner.key_id,
         _now_playing_events(x_beacon_device_key, owner),
@@ -408,7 +443,9 @@ async def get_now_playing_events(
         "fetch it again when the song changes."
     ),
 )
-async def get_now_playing_cover(owner: KeyOwner = _reading(device_keys.NOW_PLAYING)) -> Response:
+async def get_now_playing_cover(
+    owner: KeyOwner = _picturing(device_keys.NOW_PLAYING),
+) -> Response:
     found = now_playing.cover_of(owner.account)
     if found is None:
         raise HTTPException(status_code=404, detail="No cover for what is playing")
@@ -450,6 +487,333 @@ async def get_now_playing_lyrics(owner: KeyOwner = _reading(device_keys.LYRICS))
         ],
         "offset": offset,
     }
+
+
+# ── the player ───────────────────────────────────────────────────────────
+
+
+def _player():
+    """The desktop app steers its window, a server the account's casts."""
+    return player_desktop if server_link.AVAILABLE else player_server
+
+
+_PLAYER_REFUSALS = {
+    **_REFUSALS,
+    409: {"description": "Nothing to steer right now, or `media_login_rejected` (see /library)"},
+}
+
+
+@v1_router.get(
+    "/player",
+    response_model=schema.Player,
+    responses=_REFUSALS,
+    description=(
+        "The player this key steers: on a server the account's casts, on the desktop app its "
+        "window. Carry `position` forward from `at` instead of asking every second."
+    ),
+)
+async def get_player(owner: KeyOwner = _reading(device_keys.CONTROL)) -> dict:
+    return _player().state(owner)
+
+
+async def _player_events(presented_key: str, owner: KeyOwner):
+    """As _now_playing_events(): asked once a second, the key looked up again
+    at every keepalive."""
+    yield "retry: 2000\n\n"
+    shown = _player().state(owner)
+    yield _event(shown)
+    quiet = 0.0
+    while True:
+        await asyncio.sleep(_NOW_PLAYING_POLL_SECONDS)
+        quiet += _NOW_PLAYING_POLL_SECONDS
+        latest = _player().state(owner)
+        if now_playing.differs(shown, latest):
+            shown = latest
+            yield _event(latest)
+        if quiet >= _KEEPALIVE_SECONDS:
+            quiet = 0.0
+            still = await asyncio.to_thread(device_keys.resolve, presented_key)
+            if still is None or device_keys.CONTROL not in still.scopes:
+                return
+            yield ": keepalive\n\n"
+
+
+@v1_router.get(
+    "/player/events",
+    response_model=None,
+    responses={
+        **_REFUSALS,
+        200: {
+            "description": "Each `data:` line holds the same JSON as /player",
+            "content": {"text/event-stream": {"schema": {"type": "string"}}},
+        },
+    },
+    description=(
+        "Server-sent events: the state at the start, then on every change but the position "
+        "moving on. Lines starting with `:` are keepalives. Ends when the key is revoked."
+    ),
+)
+async def get_player_events(
+    owner: KeyOwner = _reading(device_keys.CONTROL),
+    x_beacon_device_key: str = Header(max_length=200),
+) -> StreamingResponse:
+    _take_stream_place(owner)
+    return _CountedStream(
+        owner.key_id,
+        _player_events(x_beacon_device_key, owner),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@v1_router.post(
+    "/player/commands",
+    response_model=schema.Done,
+    responses={
+        **_PLAYER_REFUSALS,
+        422: {"description": "An unknown command, or one missing what it needs"},
+        502: {"description": "The speaker or the desktop app did not carry it out"},
+        503: {"description": "The desktop app's window is not connected"},
+        504: {"description": "The desktop app did not answer in time"},
+    },
+    description=(
+        "One command, answered once it has been carried out. `play_*` and `queue_*` need the "
+        "library right."
+    ),
+)
+async def post_player_command(
+    request: Request,
+    owner: KeyOwner = _reading(device_keys.CONTROL),
+    x_beacon_device_key: str = Header(max_length=200),
+) -> dict:
+    cmd = await _parsed(request, schema.PlayerCommand, _MAX_COMMAND_BODY)
+    if cmd.type in LIBRARY_COMMANDS:
+        if device_keys.LIBRARY not in owner.scopes:
+            raise HTTPException(status_code=403, detail="This key may not do that")
+    elif cmd.type not in TRANSPORT_COMMANDS:
+        raise HTTPException(status_code=422, detail="Unknown command")
+    if server_link.AVAILABLE:
+        await player_desktop.command(owner, cmd)
+    else:
+        # A server starts what it plays itself, with the key's own login.
+        library = None
+        if cmd.type in LIBRARY_COMMANDS:
+            library = await _library_client(owner, x_beacon_device_key)
+        await player_server.command(owner, cmd, library)
+    return {"status": "ok"}
+
+
+@v1_router.get(
+    "/player/devices",
+    response_model=schema.DeviceList,
+    responses=_PLAYER_REFUSALS,
+    description=(
+        "The speakers this player can play on, for the `devices` command. `rescan=true` "
+        "searches the network again, which takes a few seconds."
+    ),
+)
+async def get_player_devices(
+    rescan: bool = False, owner: KeyOwner = _reading(device_keys.CONTROL)
+) -> dict:
+    return await _player().devices(owner, rescan)
+
+
+@v1_router.get(
+    "/player/cover",
+    response_model=None,
+    responses={
+        **_REFUSALS,
+        200: {
+            "description": "The image",
+            "content": {"image/*": {"schema": {"type": "string", "format": "binary"}}},
+        },
+        404: {"description": "Nothing playing, or nothing to show for it"},
+    },
+    description=(
+        "The cover of the song in the player, or the station's logo. The address stays the "
+        "same: fetch it again when the song changes."
+    ),
+)
+async def get_player_cover(
+    size: int = Query(default=256, ge=16, le=1024),
+    owner: KeyOwner = _picturing(device_keys.CONTROL),
+) -> Response:
+    response = await _player().cover(owner, size)
+    response.headers["Cache-Control"] = "no-store"
+    return response
+
+
+# ── library ──────────────────────────────────────────────────────────────
+
+# Per key, so a Plex client's looked-up music section is not looked up again
+# on every request. Keyed by the login too: a new key has a new one.
+_library_clients: dict[str, tuple[dict, object]] = {}
+
+_LIBRARY_REFUSALS = {
+    **_REFUSALS,
+    409: {
+        "description": "`media_login_rejected`: the media server no longer accepts the login "
+        "this key was made with. Make a new key"
+    },
+    502: {"description": "The media server could not be reached"},
+}
+
+
+async def _library_client(owner: KeyOwner, presented: str):
+    login = await asyncio.to_thread(device_keys.media_login_of, presented)
+    if login is None:
+        raise HTTPException(status_code=409, detail="media_login_rejected")
+    cached = _library_clients.get(owner.key_id)
+    if cached is not None and cached[0] == login:
+        return cached[1]
+    client = media_login.client_for(login)
+    _library_clients[owner.key_id] = (login, client)
+    return client
+
+
+async def _library_media(
+    owner: KeyOwner = _reading(device_keys.LIBRARY),
+    x_beacon_device_key: str = Header(max_length=200),
+):
+    return await _library_client(owner, x_beacon_device_key)
+
+
+async def _library_images(
+    owner: KeyOwner = _picturing(device_keys.LIBRARY),
+    x_beacon_device_key: str = Header(max_length=200),
+):
+    return await _library_client(owner, x_beacon_device_key)
+
+
+async def _asked(lookup):
+    """A refused login is the key's to fix; anything else is the server's."""
+    try:
+        return await lookup
+    except Exception as e:
+        if classify_login_error(e) in (REASON_REJECTED, REASON_FORBIDDEN):
+            raise HTTPException(status_code=409, detail="media_login_rejected") from e
+        logger.warning(f"[device-link] Library lookup failed: {e}")
+        raise HTTPException(status_code=502, detail="The media server did not answer") from e
+
+
+@v1_router.get(
+    "/library/songs",
+    response_model=schema.SongList,
+    responses=_LIBRARY_REFUSALS,
+    description="Songs matching `search`.",
+)
+async def get_library_songs(
+    search: str = Query(min_length=1, max_length=200),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=_MAX_BATCH),
+    media=Depends(_library_media),
+) -> dict:
+    return await _asked(app_library.songs(media, search, offset, limit))
+
+
+@v1_router.get(
+    "/library/albums",
+    response_model=schema.AlbumList,
+    responses=_LIBRARY_REFUSALS,
+    description="Albums matching `search`, or every album by name without one. Page with "
+    "`offset` until fewer than `limit` come back.",
+)
+async def get_library_albums(
+    search: str = Query(default="", max_length=200),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=50, ge=1, le=_MAX_BATCH),
+    media=Depends(_library_media),
+) -> dict:
+    return await _asked(app_library.albums(media, search, offset, limit))
+
+
+@v1_router.get(
+    "/library/albums/{album_id}",
+    response_model=schema.AlbumWithSongs,
+    responses={**_LIBRARY_REFUSALS, 404: {"description": "No such album"}},
+    description="An album and its songs, in order.",
+)
+async def get_library_album(album_id: str, media=Depends(_library_media)) -> dict:
+    found = await _asked(app_library.album(media, album_id))
+    if found is None:
+        raise HTTPException(status_code=404, detail="No such album")
+    return found
+
+
+@v1_router.get(
+    "/library/playlists",
+    response_model=schema.PlaylistList,
+    responses=_LIBRARY_REFUSALS,
+    description="The playlists this account can see.",
+)
+async def get_library_playlists(media=Depends(_library_media)) -> dict:
+    return await _asked(app_library.playlists(media))
+
+
+@v1_router.get(
+    "/library/playlists/{playlist_id}",
+    response_model=schema.PlaylistWithSongs,
+    responses={**_LIBRARY_REFUSALS, 404: {"description": "No such playlist"}},
+    description="A playlist and its songs, in order.",
+)
+async def get_library_playlist(playlist_id: str, media=Depends(_library_media)) -> dict:
+    found = await _asked(app_library.playlist(media, playlist_id))
+    if found is None:
+        raise HTTPException(status_code=404, detail="No such playlist")
+    return found
+
+
+@v1_router.get(
+    "/library/radio-stations",
+    response_model=schema.StationList,
+    responses=_LIBRARY_REFUSALS,
+    description="The radio stations kept on the media server, or on Beacon for one without.",
+)
+async def get_library_radio_stations(media=Depends(_library_media)) -> dict:
+    return await _asked(app_library.radio_stations(media))
+
+
+@v1_router.get(
+    "/library/radio-stations/{station_id}/logo",
+    response_model=None,
+    responses={
+        **_LIBRARY_REFUSALS,
+        200: {
+            "description": "The image",
+            "content": {"image/*": {"schema": {"type": "string", "format": "binary"}}},
+        },
+        404: {"description": "No such station, or no logo found for it"},
+    },
+    description="The station's logo, found from its home page, at least `size` pixels when "
+    "the station has one that large.",
+)
+async def get_library_station_logo(
+    station_id: str,
+    size: int = Query(default=128, ge=16, le=512),
+    media=Depends(_library_images),
+) -> Response:
+    stations = (await _asked(app_library.radio_stations(media)))["items"]
+    station = next((s for s in stations if s["id"] == station_id), None)
+    if station is None or not station["home_page_url"]:
+        raise HTTPException(status_code=404, detail="No logo for this station")
+    return await radio_favicon(url=station["home_page_url"], min_size=size, hint="")
+
+
+@v1_router.get(
+    "/library/cover/{cover_art_id}",
+    response_model=None,
+    responses={
+        **_LIBRARY_REFUSALS,
+        200: {
+            "description": "The image",
+            "content": {"image/*": {"schema": {"type": "string", "format": "binary"}}},
+        },
+        404: {"description": "No such cover"},
+    },
+    description="A cover by the `cover_art_id` of a song, album or playlist above.",
+)
+async def get_library_cover(cover_art_id: str, media=Depends(_library_images)) -> Response:
+    return await cover_image(media, cover_art_id)
 
 
 @router.put("/now-playing")
@@ -553,27 +917,36 @@ def list_device_keys(session: SessionState = Depends(require_authenticated_sessi
 
 
 @keys_router.post("")
-def create_device_key(
+async def create_device_key(
     new_key: NewKey, session: SessionState = Depends(require_authenticated_session)
 ) -> dict:
     account = _require_account(session)
+    # AVAILABLE means this is a desktop app, which pairs with a server itself.
+    if server_link.AVAILABLE and device_keys.SERVER_ONLY_SCOPES & set(new_key.scopes):
+        raise HTTPException(status_code=422, detail="Invalid scopes")
     try:
-        return device_keys.create(
+        made = await asyncio.to_thread(
+            device_keys.create,
             account,
             new_key.label,
             device_keys.settings_identity_of(session),
             scopes=new_key.scopes,
+            login=media_login.capture(session.media),
         )
     except device_keys.InvalidScopes as e:
         raise HTTPException(status_code=422, detail="Invalid scopes") from e
     except device_keys.TooManyKeys as e:
         raise HTTPException(status_code=409, detail="Too many device keys") from e
+    await mdns.sync()
+    return made
 
 
 @keys_router.delete("/{key_id}")
-def delete_device_key(
+async def delete_device_key(
     key_id: str, session: SessionState = Depends(require_authenticated_session)
 ) -> dict:
-    if not device_keys.revoke(_require_account(session), key_id):
+    revoked = await asyncio.to_thread(device_keys.revoke, _require_account(session), key_id)
+    if not revoked:
         raise HTTPException(status_code=404, detail="No such key")
+    await mdns.sync()
     return {"status": "ok"}

@@ -4,24 +4,24 @@
     "step": {
       "user": {
         "title": "Beacon",
-        "description": "Create a key in Beacon under Settings > Advanced > Home automation.",
+        "description": "Make a key in Beacon under Settings > Account > Apps and devices, with the right to control playback (and to browse the library, for the media browser). The address is the one you open Beacon at, or for the desktop app http://<its computer>:<port>.",
         "data": {
-          "host": "Host",
-          "port": "Port",
+          "url": "Address",
           "key": "Key"
         }
       },
       "zeroconf_confirm": {
         "title": "Beacon found",
-        "description": "{name} at {host}. Enter the key from Beacon's Settings > Advanced > Home automation.",
+        "description": "{name} at {host}. Enter a key from Beacon's Settings > Account > Apps and devices, made with the right to control playback.",
         "data": {
           "key": "Key"
         }
       }
     },
     "error": {
-      "cannot_connect": "Beacon is not reachable, or the app is not running.",
-      "invalid_auth": "The key was not accepted."
+      "cannot_connect": "Beacon is not reachable at this address, or the app is not running.",
+      "invalid_auth": "The key was not accepted.",
+      "no_control": "This key may not control playback. Make one with that right."
     },
     "abort": {
       "already_configured": "This Beacon is already set up.",
@@ -37,6 +37,31 @@
         },
         "data_description": {
           "show_dashboard": "A ready-made dashboard for the active Beacon. To change it, copy dashboard.yaml into a dashboard of your own."
+        }
+      }
+    }
+  },
+  "issues": {
+    "integration_key_retiring": {
+      "title": "{name} uses a key Beacon is retiring",
+      "fix_flow": {
+        "step": {
+          "key": {
+            "title": "Switch {name} to a device key",
+            "description": "Beacon replaces its Home automation key with keys made under Settings > Account > Apps and devices. Make one there with the right to control playback, and to browse the library for the media browser, then enter it here. The entities stay as they are.",
+            "data": {
+              "url": "Address",
+              "key": "Key"
+            }
+          }
+        },
+        "error": {
+          "cannot_connect": "Beacon is not reachable at this address, or the app is not running.",
+          "invalid_auth": "The key was not accepted.",
+          "no_control": "This key may not control playback. Make one with that right."
+        },
+        "abort": {
+          "entry_gone": "This Beacon is no longer set up."
         }
       }
     }

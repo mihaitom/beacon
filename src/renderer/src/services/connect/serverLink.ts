@@ -42,9 +42,16 @@ export function unpairServerLink(): Promise<ServerLinkStatus> {
 }
 
 export type DeviceKeyScope = 'sync' | 'api_keys' | AppScope
-export type AppScope = 'history' | 'stats' | 'now_playing' | 'lyrics'
+export type AppScope = 'history' | 'stats' | 'now_playing' | 'lyrics' | 'control' | 'library'
 
-export const APP_SCOPES: readonly AppScope[] = ['history', 'stats', 'now_playing', 'lyrics']
+export const APP_SCOPES: readonly AppScope[] = [
+  'history',
+  'stats',
+  'now_playing',
+  'lyrics',
+  'control',
+  'library',
+]
 
 export interface DeviceKey {
   id: string

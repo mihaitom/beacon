@@ -1,13 +1,13 @@
 # Beacon for Home Assistant
 
-Control the Beacon desktop app from Home Assistant: see what is playing,
-pause and skip, pick the speakers, start playlists and radio stations, and
-use all of it in automations. This folder holds a Home Assistant integration
+Control Beacon from Home Assistant: see what is playing, pause and skip,
+pick the speakers, start playlists and radio stations, and use all of it in
+automations. It works with the desktop app and with a Beacon server. This folder holds a Home Assistant integration
 and a ready-made dashboard for it.
 
-Tested with Home Assistant 2026.9. The interface underneath is described in
-[docs/help/reference/home-automation-api.md](../docs/help/reference/home-automation-api.md), for anyone who wants
-to build something of their own.
+Tested with Home Assistant 2026.9. The interface underneath is Beacon's app
+API, described in [docs/help/faq/apps-and-api.md](../docs/help/faq/apps-and-api.md),
+for anyone who wants to build something of their own.
 
 - [What you get](#what-you-get)
 - [Before you start](#before-you-start)
@@ -26,17 +26,17 @@ A device called **Beacon** with these entities. They always have these ids,
 whatever your computers are called, and follow the Beacon instance that is
 in use (see [More than one computer](#more-than-one-computer)):
 
-| Entity                            | What it does                                                                                                                          |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `media_player.beacon`             | What is playing, with cover, position and volume. Play, pause, skip, seek, shuffle, repeat, volume. The library in the media browser. |
-| `select.beacon_speaker`           | Where Beacon plays: `This computer` or one speaker.                                                                                   |
-| `switch.beacon_autoplay`          | Autoplay: keeps playing similar songs when the queue runs out.                                                                        |
-| `sensor.beacon_now_playing`       | "Artist – Title" as plain text, so the history and logbook list the songs.                                                            |
-| `sensor.beacon_queue`             | How many songs are queued; the next ones are in its `up_next` attribute.                                                              |
+| Entity                            | What it does                                                                                                                                                     |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `media_player.beacon`             | What is playing, with cover, position and volume. Play, pause, skip, seek, shuffle, repeat, volume. The library in the media browser.                            |
+| `select.beacon_speaker`           | Where Beacon plays: `This computer` or one speaker.                                                                                                              |
+| `switch.beacon_autoplay`          | Autoplay: keeps playing similar songs when the queue runs out.                                                                                                   |
+| `sensor.beacon_now_playing`       | "Artist – Title" as plain text, so the history and logbook list the songs.                                                                                       |
+| `sensor.beacon_queue`             | How many songs are queued; the next ones are in its `up_next` attribute.                                                                                         |
 | `sensor.beacon_party`             | Party mode: how many guests have joined as the state, with whether one is running, how many listen along online and the online bitrate as attributes. Read-only. |
-| `button.beacon_resume_cast`       | Picks a cast back up after a speaker dropped out. Only available while that is the case.                                              |
-| `button.beacon_scan_for_speakers` | Looks for speakers on the network again.                                                                                              |
-| `select.beacon_instance`          | Which Beacon instance the above follow: `Automatic`, or one pinned.                                                                   |
+| `button.beacon_resume_cast`       | Picks a cast back up after a speaker dropped out. Only available while that is the case.                                                                         |
+| `button.beacon_scan_for_speakers` | Looks for speakers on the network again.                                                                                                                         |
+| `select.beacon_instance`          | Which Beacon instance the above follow: `Automatic`, or one pinned.                                                                                              |
 
 Each Beacon instance also gets a device of its own, named after the
 computer ("Beacon on my-pc"), with the same entities for that instance
@@ -53,34 +53,51 @@ radio started from the current song. Songs can be played right away, played
 next or added to the end of the queue.
 
 While Beacon is closed, everything shows as unavailable, and comes back on
-its own when the app runs again.
+its own when the app runs again. The same while the desktop app is signed in
+with another account than the key's.
+
+### Desktop app or server
+
+On the **desktop app**, Home Assistant steers the app itself, including
+playing on the computer (`This computer`), and shows a running party.
+
+On a **server**, it steers the account's music on speakers. Something played
+in a browser tab is not steered from here. With nothing on a speaker yet,
+pick one under `select.beacon_speaker` first, then start a playlist, album
+or station: it begins there. A speaker somebody else is playing on stays
+theirs. `This computer` stops the music on the speakers.
 
 ## Before you start
 
-- **The Beacon desktop app**, on Windows, macOS or Linux. The Docker/web
-  version does not offer this yet.
-- **Home Assistant on the same network** as the computer running Beacon.
-  Home Assistant finds Beacon on its own when both are in the same subnet;
-  across subnets or VLANs it works too, with a fixed port (step 1).
+- **Beacon**: the desktop app on Windows, macOS or Linux, or a Beacon
+  server (Docker).
+- For the desktop app, **Home Assistant on the same network** as its
+  computer. Home Assistant finds the app on its own when both are in the
+  same subnet; across subnets or VLANs it works too, with a fixed port
+  (step 1). A server is entered by its address.
 - A way to copy files onto Home Assistant: the **Samba share**, **File
   editor**, **Studio Code Server** or **Terminal & SSH** add-on all work.
 
 ## 1. Create a key in Beacon
 
-In Beacon, open **Settings > Advanced > Home automation**.
+In Beacon, open **Settings > Account > Apps and devices**, in the desktop
+app or in a browser on the server, signed in with the account Home
+Assistant should steer.
 
-1. Click **Create key**. The key is shown **only this once**: copy it
-   somewhere for step 3. If you lose it, create a new one; the old one
-   stops working at that moment.
-2. **Fixed port** (optional). Beacon normally picks a free port on every
-   start, and Home Assistant follows it through the network announcement.
-   Set a fixed port (for example `7071`) if Home Assistant is in another
-   subnet or VLAN, or if you set the integration up by hand. It takes effect
-   after restarting Beacon.
+1. **New key**, **Own app**, a name such as "Home Assistant", and switch on
+   **Steer playback** and **Browse the library and start music** (the
+   media browser and starting playlists need that one). The key is shown
+   **only this once**: copy it somewhere for step 3. If you lose it, make a
+   new one and revoke the old one.
+2. **Desktop app only: fixed port** (optional), on the same page. The app
+   normally picks a free port on every start, and Home Assistant follows it
+   through the network announcement. Set a fixed port (for example `7071`)
+   if Home Assistant is in another subnet or VLAN, or if you set the
+   integration up by hand. It takes effect after restarting Beacon.
 
-While a key exists, Beacon announces itself on the local network, which is
-how Home Assistant finds it. Revoking the key ends the announcement and
-locks Home Assistant out.
+While such a key exists, the desktop app announces itself on the local
+network, which is how Home Assistant finds it. Revoking the key ends the
+announcement and locks Home Assistant out.
 
 ## 2. Install the integration
 
@@ -110,14 +127,22 @@ Assistant" is normal for every integration installed this way.
 
 With Beacon running and a key created:
 
-1. Open **Settings > Devices & services**. Under **Discovered**, Beacon
-   appears as "Beacon on _your computer's name_".
+1. Open **Settings > Devices & services**. Under **Discovered**, the
+   desktop app appears as "Beacon on _your computer's name_".
 2. Click **Add** and paste the key.
 
-That is all. If Beacon does not show up under Discovered, add it by hand:
-**Add integration** > **Beacon**, then enter the address and port and the
-key. Beacon shows the address and port under its fixed port setting, once
-one is set and in use.
+That is all. For a server, or if the desktop app does not show up under
+Discovered, add it by hand: **Add integration** > **Beacon**, then enter
+Beacon's address and the key. For a server that is the address you open it
+at, such as `https://beacon.example.com`; for the desktop app
+`http://<computer>:<port>`, which the key dialog shows.
+
+### Set up with the older key?
+
+An entry set up with a key from **Settings > Advanced > Home automation**
+keeps working, but Beacon is retiring that key. Home Assistant shows a
+repair under **Settings > System > Repairs**: make a key as in step 1, open
+the repair and paste it. The entities and their ids stay as they are.
 
 ## 4. The dashboard
 
@@ -213,27 +238,39 @@ nothing, so they are safe to fire from automations. The dashboard's
 
 ## Troubleshooting
 
-**Beacon is not listed under Discovered.** Home Assistant and the computer
-are probably in different subnets or VLANs, where the network announcement
-does not reach. Add the integration by hand with a fixed port (steps 1 and
-3). Also check that a key exists in Beacon: without one, Beacon does not
-announce itself.
+**Beacon is not listed under Discovered.** Only the desktop app announces
+itself, so a server is always added by hand. Otherwise Home Assistant and
+the computer are probably in different subnets or VLANs, where the network
+announcement does not reach. Add the integration by hand with a fixed port
+(steps 1 and 3). Also check that a key with **Steer playback** exists in
+Beacon: without one, the app does not announce itself.
 
 **"Beacon is not reachable" while setting up.** Beacon has to be running.
 On Windows, the firewall has to let Beacon accept connections on private
 networks; if Windows asked when Beacon first started and it was declined,
 allow **connect-server** under Windows Security > Firewall > Allow an app.
 
-**"The key was not accepted."** It was mistyped, or a newer key was created
-since. Create a new one in Beacon and use that.
+**"The key was not accepted."** It was mistyped or revoked. Make a new one
+in Beacon and use that.
 
-**Everything is unavailable.** The Beacon app is closed, or its key was
-revoked or replaced. A replaced key needs setting up again: remove the
-Beacon integration and add it with the new key.
+**"This key may not control playback."** The key was made without **Steer
+playback**. Make a new one with it.
 
-**Albums or playlists say "Beacon is still loading this list".** Beacon
-loads a large library from the music server the first time it is asked.
-Open the folder again a moment later.
+**Everything is unavailable.** The Beacon app is closed or signed in with
+another account, or its key was revoked. A revoked key needs setting up
+again: remove the Beacon integration and add it with a new key.
+
+**Playing from the media browser fails with `no_speaker`.** On a server,
+nothing was playing on a speaker yet: pick one under `select.beacon_speaker`
+first.
+
+**The library fails with `media_login_rejected`.** The music server no
+longer accepts the login the key was made with, for example after a
+password change. Make a new key.
+
+**Albums or playlists say "Beacon is still loading this list".** Only with
+the older key: the desktop app loads a large library from the music server
+the first time it is asked. Open the folder again a moment later.
 
 **The speaker list is empty or incomplete.** Press **Scan for speakers**.
 A speaker that needs pairing (AirPlay) has to be paired in the Beacon app

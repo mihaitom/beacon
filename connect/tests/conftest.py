@@ -1,5 +1,6 @@
 """Shared fixtures for Connect API tests."""
 
+import asyncio
 import os
 import tempfile
 
@@ -269,6 +270,8 @@ def fake_zeroconf(monkeypatch):
     monkeypatch.setattr(mdns, "AsyncZeroconf", _FakeZeroconf)
     monkeypatch.setattr(mdns, "_zeroconf", None)
     monkeypatch.setattr(mdns, "_info", None)
+    # A lock one test's event loop waited on cannot be used from the next one's.
+    monkeypatch.setattr(mdns, "_lock", asyncio.Lock())
     return _FakeZeroconf
 
 

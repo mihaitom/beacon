@@ -1,4 +1,5 @@
-"""Beacon's home automation API (docs/help/reference/home-automation-api.md in the Beacon repo)."""
+"""Beacon's home automation API (docs/help/reference/home-automation-api.md in
+the Beacon repo), with the integration key. Retiring: api_v1.py replaces it."""
 
 import asyncio
 import json
@@ -83,6 +84,29 @@ class BeaconClient:
         if hint:
             query["hint"] = hint
         return str(URL(f"{self.base}/radio-favicon").with_query(query))
+
+    def image_url(self, snapshot: dict) -> str | None:
+        song, radio = snapshot.get("current_song"), snapshot.get("radio")
+        if song and song.get("cover_art_id"):
+            return self.cover_url(song["cover_art_id"], snapshot.get("session_id"))
+        if radio:
+            return self.favicon_url(radio.get("home_page_url"), radio.get("favicon_hint"))
+        return None
+
+    def station_logo_url(self, station: dict | None) -> str | None:
+        if not station:
+            return None
+        return self.favicon_url(station.get("home_page_url"), station.get("favicon_hint"))
+
+    async def image(self, url: str) -> tuple[bytes | None, str | None]:
+        """The key is in the address itself here."""
+        try:
+            async with self._session.get(url, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                if resp.status != 200:
+                    return None, None
+                return await resp.read(), resp.headers.get("Content-Type")
+        except aiohttp.ClientError:
+            return None, None
 
     async def command(self, type_: str, payload: dict | None = None) -> None:
         try:

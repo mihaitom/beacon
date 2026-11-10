@@ -3,13 +3,15 @@ fake_zeroconf fixture (conftest.py) stands in for the network."""
 
 import pytest
 
-from core import integration_key, mdns
+from core import integration_key, mdns, play_history
 from core.state import PORT
 
 
 @pytest.fixture(autouse=True)
-def _fixed_address(monkeypatch):
+def _fixed_address(monkeypatch, tmp_path):
     monkeypatch.setattr(mdns, "get_local_ip", lambda: "192.0.2.10")
+    # Device keys decide too; none may be left over from another test.
+    monkeypatch.setattr(play_history, "_DIR", str(tmp_path / "history"))
 
 
 async def test_nothing_is_announced_without_a_key(fake_zeroconf):
@@ -26,6 +28,7 @@ async def test_announced_with_port_address_and_properties_once_a_key_exists(fake
     assert info.parsed_addresses() == ["192.0.2.10"]
     assert info.properties[b"id"] == mdns.instance_id().encode()
     assert info.properties[b"path"] == b"/remote/"
+    assert info.properties[b"api"] == b"/device-link/v1/"
 
 
 async def test_withdrawn_when_the_key_is_revoked(fake_zeroconf):

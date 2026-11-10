@@ -38,7 +38,6 @@ def album_letter(name: str) -> str:
         if char.isalnum():
             return "#"
     return "#"
-    return "#"
 
 
 _FEATURES = (
@@ -139,14 +138,12 @@ class BeaconPlayer(BeaconEntity, MediaPlayerEntity):
 
     @property
     def media_image_url(self) -> str | None:
-        client = self.coordinator.client
-        if self._song and self._song.get("cover_art_id"):
-            return client.cover_url(self._song["cover_art_id"], self._snapshot.get("session_id"))
-        if self._radio:
-            return client.favicon_url(
-                self._radio.get("home_page_url"), self._radio.get("favicon_hint")
-            )
-        return None
+        return self.coordinator.client.image_url(self._snapshot)
+
+    async def async_get_media_image(self) -> tuple[bytes | None, str | None]:
+        # Through the client: with a device key, the key goes in a header.
+        url = self.media_image_url
+        return await self.coordinator.client.image(url) if url else (None, None)
 
     @property
     def volume_level(self) -> float | None:
@@ -304,15 +301,12 @@ class BeaconPlayer(BeaconEntity, MediaPlayerEntity):
             station = next(
                 (s for s in self._stations if f"radio:{s['id']}" == media_content_id), None
             )
-            url = client.favicon_url(
-                station.get("home_page_url") if station else None,
-                station.get("favicon_hint") if station else None,
-            )
+            url = client.station_logo_url(station)
         else:
             url = client.cover_url(media_image_id, self._snapshot.get("session_id"))
         if not url:
             return None, None
-        return await self._async_fetch_image(url)
+        return await client.image(url)
 
     async def _query(self, path: str, params: dict | None = None) -> dict:
         try:

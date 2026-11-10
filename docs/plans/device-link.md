@@ -162,8 +162,6 @@ what is playing now.
   server login to do it with.
 - Reporting plays from outside. A play cannot be deleted, song ids differ per
   player, and players that scrobble can already be imported.
-- Steering playback. `/remote/*` with the integration key exists for home
-  automation.
 - The Last.fm and Fanart keys, the account's settings, cast permissions, Hue,
   and other accounts.
 
@@ -385,8 +383,197 @@ these rights tells that app live what is playing.
 - The nginx rule and an event stream through it on a real image, which needs
   the maintainer's build.
 
+## Control and home automation
+
+Not built yet. Replaces the integration key: Home Assistant becomes an app with
+a device key, and a key can be given the right to steer playback.
+
+### Why
+
+The integration key (`core/integration_key.py`) is one per installation, has no
+label, no rights and no last-used time, and only exists on the desktop app. A
+device key has all of that and belongs to an account, which is also what makes
+control possible on a Docker server: whoever holds the key steers that
+account's playback, never another listener's.
+
+### Scopes
+
+| Scope     | Allows                                                                          |
+| --------- | ------------------------------------------------------------------------------- |
+| `control` | `/v1/player`, its events, cover and devices, and the transport commands         |
+| `library` | `/v1/library/*` and the commands that start or queue something; needs `control` |
+
+A display with a pause button gets `control`; Home Assistant gets both. Both are
+app scopes: never together with `sync`.
+
+### The desktop app offers keys too
+
+Apps and devices shows on the desktop app as well, with Own app as the only
+kind: a desktop does not pair with another desktop, so `sync` and `api_keys` are
+refused there (`server_link.AVAILABLE`). All read scopes work there too; they
+answer from the desktop's own log. The key belongs to the account signed in on
+that desktop. An app reaches it on the LAN by the fixed port, which moves from
+the home automation section to Apps and devices, and mDNS announces it while
+any key with `control` exists.
+
+### Who answers: the player
+
+- **Desktop app.** Its one window, through the remote relay that home
+  automation uses today (`relay_command`, the snapshot). Only while the window
+  is signed in as the key's account; otherwise 503, and Home Assistant shows
+  the player as unavailable.
+- **Server.** Only casts. A browser tab is never steered: a tab is somebody
+  sitting in front of it. The player is the account's cast that can be heard,
+  else the paused one, else the newest, as `/now-playing` chooses. Commands go
+  to its session directly, whether or not the tab that started it is still
+  open. Without a cast, `/v1/player` says `"available": false`; library
+  commands can start one (below), transport commands answer 409.
+
+On the server, play, pause, seek, stop, volume, next, previous, shuffle and
+repeat act on the session itself. Next and previous step through
+`session.state.queue`, sharing the auto-advance's code; shuffle reorders it
+from `original_queue`. An open tab follows through `reconcileFromStatus()`, as
+it does after a reload, and that is the part to test hardest: its queue must
+not drift from the server's.
+
+### The media login
+
+Browsing and starting playback need the media server, and on a server nobody
+may be signed in: a session is in memory and ends 30 minutes after the last
+tab. So a key with `library` carries the media login of the session that made
+it (Jellyfin and Plex: the access token; Navidrome and Subsonic: the password,
+which their token auth needs).
+
+It is encrypted with a key derived from the device key's own secret (HKDF,
+AES-GCM). The server stores only the secret's hash, so it can open the login
+only while an app presents the key: the database, or a backup of it, gives
+nothing away. A login the media server refuses (password changed, token
+revoked) answers 409 `media_login_rejected`, and the listener makes a new key.
+
+The desktop app does the same, so one code path serves both; its player is
+still the window.
+
+### Starting playback
+
+`play_*` and `queue_*` on the desktop go to the window. On the server, connect
+builds the queue itself from the stored login and casts it:
+
+- to the speakers of the account's current cast, replacing its queue, or
+- to the speakers named in the command (`devices`), in a session of the key's
+  own (`key:<id>`), with the account's cast permissions and the usual claims: a
+  speaker another listener holds answers 409 rather than being taken over.
+
+Without either, 409 `no_speaker`. `GET /player/devices` lists what may be
+named.
+
+### Routes
+
+All under `/device-link/v1/`, so the contract test and the OpenAPI document
+cover them.
+
+| Route                           | Scope     |                                                        |
+| ------------------------------- | --------- | ------------------------------------------------------ |
+| `GET /player`                   | `control` | the state below                                        |
+| `GET /player/events`            | `control` | server-sent, on every change, as `/now-playing/events` |
+| `POST /player/commands`         | `control` | `{type, ...}`, answers once applied                    |
+| `GET /player/cover`             | `control` | cover of the song playing in the player                |
+| `GET /player/devices`           | `control` | speakers to cast to, `?rescan=true` for a sweep        |
+| `GET /library/playlists[/{id}]` | `library` |                                                        |
+| `GET /library/albums`           | `library` | paged, `?search=`                                      |
+| `GET /library/radio-stations`   | `library` |                                                        |
+| `GET /library/cover/{id}`       | `library` | a cover from these lists                               |
+
+The state is a field list of its own, never the relay snapshot, which carries
+party internals, the theme and a session id:
+
+`available`, `source` (`window` or `cast`), `paused`, `kind`, `song`, `radio`,
+`position`, `at`, `volume` (0-1: the speaker's with exactly one, otherwise the
+window's), `shuffle`, `repeat` (`off`, `all`, `one`), `autoplay`, `queue`,
+`queue_index`, `devices`, `interrupted`, `party` (`running`, `guests`,
+`listeners`).
+
+Commands are absolute where the app's own buttons toggle: `shuffle` takes
+`on`, `repeat` takes `mode`, `autoplay` takes `on`. The window turns them into
+toggles. Transport: `play`, `pause`, `next`, `previous`, `seek`, `volume`,
+`shuffle`, `repeat`, `autoplay`, `devices` (the speakers to play on, empty for
+this device), `queue_jump`, `resume_interrupted`. Library: `play_song`,
+`play_album`, `play_playlist`, `play_radio`, `play_song_radio`, `queue_next`,
+`queue_add`. An unknown command is a 422, so an app can tell a newer Beacon
+from a mistake.
+
+Commands count against the 120 a minute like any other request. Images
+(`/player/cover`, `/now-playing/cover`, `/library/cover/*`, station logos) have
+a budget of their own, 600 a minute: a media browser opening a list of albums
+asks for every cover in it at once.
+
+`devices` on the desktop goes through the window like the phone remote's
+picker, which takes a speaker over after the listener saw who holds it. On a
+server it joins the new speakers and then lets go of the others, and never
+takes one over.
+
+### Home Assistant
+
+The integration takes an address (`http://desktop:port` or
+`https://beacon.example`) and a device key. mDNS still finds a desktop and
+fills in the address. A new entry speaks only `v1` (`api_v1.py`), mapping its
+fields onto what the entities read today, so the entities stay as they are; an
+entry made with the integration key keeps its old client until it is switched.
+On a server, the player entity is the account's casts. A speaker picked while
+nothing plays is remembered by the client and named in the next `play_*`.
+
+### Retiring the integration key
+
+Announced, not removed. Nothing that works today stops working in this release:
+
+- `/remote/*` keeps taking the integration key, and a key can still be made.
+- The home automation section says the key is being retired and points to Apps
+  and devices and the guide.
+- Home Assistant entries set up with the old key keep running and get a repair
+  issue recommending to set the integration up again with an app key.
+- `CHANGELOG.md` gets a Deprecated entry, the API reference a notice at the top.
+
+Removal is a later release's decision: then `/remote/*` takes only the phone
+password, and `integration_key.py`, `integration_streams` and the old section go.
+
+### Order of work
+
+1. Scopes, the desktop showing Apps and devices, the fixed port and mDNS moved.
+2. The media login on the key, encrypted; `/v1/library/*` through it.
+3. `/v1/player*` on the desktop through the relay, contract and OpenAPI.
+4. `/v1/player*` on the server: choosing the cast, commands on the session,
+   next, previous and shuffle on the server, the tab following.
+5. Starting playback on the server.
+6. Home Assistant: the `v1` client, the config flow, the repair issue.
+7. Deprecation notices, docs (`apps-and-api.md`, the home automation guide and
+   reference), `CHANGELOG.md`.
+
+### How to check it
+
+- A key of account A never sees or steers B's casts, on one server; a desktop
+  key does nothing while the window is signed in as somebody else.
+- A key without `control` gets 403 on every player route, without `library` on
+  every library route and library command.
+- The stored login: absent from the database in clear, unreadable with another
+  key's secret, and a 409 once the media server refuses it.
+- Two casts of one account: the audible one is steered.
+- With the tab open and closed: pause, seek, next, previous and shuffle from
+  the key, and the tab showing the same queue and song afterwards.
+- Starting on a speaker another listener holds answers 409 and leaves it alone.
+- Revoking ends an open player stream.
+- Old Home Assistant entries keep working against this release unchanged.
+
 ## Open
 
+- **Repeat on a server without a window.** `repeat` only sets the flag there:
+  at the end of the queue the server stops, and only an open window starts
+  over or repeats the song. Doing it in connect means touching the
+  auto-advance path, which wants a hardware test on every speaker type first.
+- **Hardware check.** The control routes are tested against stand-in speakers
+  only; "How to check it" under Control and home automation still needs a run
+  on real speakers and a real Home Assistant.
+- **"This computer" on a server.** Home Assistant offers it there too, where it
+  stops the cast. `v1` does not say whether it talks to a desktop app or a
+  server; a field on `/me` would let it hide the option.
 - **Admin view.** A key only speaks for its own account, so the desktop's admin
   picker stays as it was. Listing the server's accounts needs the admin flag
   noted on the key, and a way for it to end when the server stops considering

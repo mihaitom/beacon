@@ -7,9 +7,11 @@ order: 2
 
 ## Can I build my own app on top of Beacon?
 
-Yes, if you run a Beacon server. A key gives an app of your own read access to one account: its listening history, its statistics, what is playing right now and the lyrics of that song. It works the same on Navidrome, Jellyfin and Plex.
+Yes. A key gives an app of your own access to one account: its listening history, its statistics, what is playing right now and the lyrics of that song, and, if you allow it, playback itself and the library to pick from. It works the same on Navidrome, Jellyfin and Plex.
 
-The app can only read. It cannot start music, change a setting or reach another account. A desktop app that is not connected to a server has no such interface, though what it plays reaches the server's once it [is connected](../guides/desktop-and-server.md).
+A key never reaches another account and never changes a setting. What it may do beyond reading is up to you when you make it.
+
+A Beacon server offers this, and so does the desktop app, for apps on its own network. The desktop app's player is its own window; a server's is the music the account casts to speakers.
 
 ## What could I build with it?
 
@@ -20,21 +22,27 @@ The app can only read. It cannot start music, change a setting or reach another 
 - A review of your year, or a Grafana dashboard
 - A backup of your listening history as a file of your own
 - A "listening to" box on your home page
+- Buttons by the door or on a tablet: pause, skip, start the morning playlist
+- Home automation: [Home Assistant](../guides/home-automation.md) has an integration of its own
 
 ## How do I get a key?
 
-Open Beacon on the server in a browser, go to Settings > Account > Apps and devices, choose **New key** and **Own app**, switch on what the app may read and create the key. It is shown once. Each app gets its own key, and revoking one in the same place cuts off only that app. What a key may read cannot be changed afterwards: make a new one.
+Open Settings > Account > Apps and devices, in a browser on the server or in the desktop app, choose **New key** and **Own app**, switch on what the app may do and create the key. It is shown once. Each app gets its own key, and revoking one in the same place cuts off only that app. What a key may do cannot be changed afterwards: make a new one.
 
-| Right               | Allows                                                        |
-| ------------------- | ------------------------------------------------------------- |
-| Listening history   | `/history`                                                    |
-| Statistics          | `/stats`                                                      |
-| What is playing now | `/now-playing`, `/now-playing/events`, `/now-playing/cover`   |
-| Lyrics              | `/now-playing/lyrics`, only together with what is playing now |
+| Right                              | Allows                                                                              |
+| ---------------------------------- | ----------------------------------------------------------------------------------- |
+| Listening history                  | `/history`                                                                          |
+| Statistics                         | `/stats`                                                                            |
+| What is playing now                | `/now-playing`, `/now-playing/events`, `/now-playing/cover`                         |
+| Lyrics                             | `/now-playing/lyrics`, only together with what is playing now                       |
+| Steer playback                     | `/player`, `/player/events`, `/player/commands`, `/player/devices`, `/player/cover` |
+| Browse the library and start music | `/library/...` and the `play_*` and `queue_*` commands, only together with control  |
+
+A key with the library right carries the login of whoever made it, sealed with the key itself: Beacon cannot read it without the key, and nobody can read it from the key alone. Signing out of Beacon does not end it; revoking the key does. When the media server stops accepting that login, for example after a password change, the library answers 409 `media_login_rejected`: make a new key.
 
 ## How does an app call it?
 
-Every address starts with `/device-link/v1` on your Beacon server, and every request carries the key as a header:
+Every address starts with `/device-link/v1`, and every request carries the key as a header:
 
 ```
 curl -H "X-Beacon-Device-Key: <key>" https://beacon.example/device-link/v1/me
@@ -42,18 +50,24 @@ curl -H "X-Beacon-Device-Key: <key>" https://beacon.example/device-link/v1/me
 
 `GET /me` works with any key and answers with `username`, `scopes`, `beacon_version` and `api_version`.
 
+On a server that is the address you open Beacon at. The desktop app is reached at `http://<its computer>:<port>`, both shown in the key dialog; set a fixed port under Settings > Account > Apps and devices so the address stays the same. Its routes answer only while the app runs.
+
 A web page on any address may call these routes directly. If Beacon sits behind a forward-auth such as Authentik, `/device-link/` has to be let past it, see [Behind a login](../guides/desktop-and-server.md#behind-a-login).
 
 ## What can go wrong?
 
-| Status | Meaning                                                                    |
-| ------ | -------------------------------------------------------------------------- |
-| 401    | Wrong or revoked key                                                       |
-| 403    | This key does not have the right for that route                            |
-| 404    | Nothing to show: no song is playing, or it has no cover                    |
-| 410    | The history cursor has expired, start again without one                    |
-| 422    | A parameter makes no sense                                                 |
-| 429    | More than 120 requests a minute, or more than 3 open streams, for this key |
+| Status | Meaning                                                                                                 |
+| ------ | ------------------------------------------------------------------------------------------------------- |
+| 401    | Wrong or revoked key                                                                                    |
+| 403    | This key does not have the right for that route or command, or the account may not cast                 |
+| 404    | Nothing to show: no song is playing, it has no cover, or no such album, playlist or station             |
+| 409    | The player cannot do that now (see [the player](#how-do-i-control-playback)), or `media_login_rejected` |
+| 410    | The history cursor has expired, start again without one                                                 |
+| 422    | A parameter makes no sense, or a command misses what it needs                                           |
+| 429    | More than 120 requests a minute, 600 images a minute, or 3 open streams, for this key                   |
+| 502    | The media server or a speaker did not do it                                                             |
+| 503    | The desktop app's window is not connected                                                               |
+| 504    | The desktop app did not answer in time                                                                  |
 
 After too many requests, `Retry-After` says how many seconds to wait.
 
@@ -145,6 +159,75 @@ A browser's `EventSource` cannot send the header. Read the stream with `fetch`, 
 
 These are the lyrics Beacon finds by itself. Lyrics somebody picked by hand in Beacon's own panel do not reach an app. There is no search, on purpose: every lookup tells the lyrics services what somebody listens to.
 
+## How do I control playback?
+
+`GET /player` describes the player this key steers. It is there when `available` is true: on a server always, on the desktop app while its window is open and signed in with the key's account.
+
+| Field                           | Meaning                                                                                    |
+| ------------------------------- | ------------------------------------------------------------------------------------------ |
+| `state`                         | `playing`, `paused` or `idle`                                                              |
+| `source`                        | `cast` on speakers, `local` on the desktop app itself, null when idle                      |
+| `song`                          | `id`, `title`, `artist`, `album`, `duration`, `cover_art_id`; null for radio               |
+| `radio`                         | `station` and `title` for a station                                                        |
+| `position`, `at`                | As for `/now-playing`: carry `position` forward from `at` while playing                    |
+| `volume`                        | 0 to 1: the speaker's when one plays, otherwise the desktop app's own; null when not known |
+| `shuffle`, `repeat`, `autoplay` | `repeat` is `off`, `all` or `one`                                                          |
+| `queue`, `queue_index`          | The whole queue as songs, and where in it the player is                                    |
+| `devices`                       | The speakers playing, as `type` and `name`                                                 |
+| `interrupted`                   | A speaker dropped out; `resume_interrupted` picks it back up                               |
+| `party`                         | `running`, `guests`, `listeners` on the desktop app; null otherwise                        |
+| `commands`                      | What the player takes right now                                                            |
+
+On a server, a queue that was never shown in a browser fills its titles in over a few seconds; until then an entry has only its `id`.
+
+`GET /player/events` streams the same answer at the start and on every change except the position moving on, like `/now-playing/events`.
+
+`POST /player/commands` takes one command as JSON and answers once it has been carried out:
+
+```
+curl -H "X-Beacon-Device-Key: <key>" -H "Content-Type: application/json" \
+  -d '{"type": "volume", "volume": 0.3}' https://beacon.example/device-link/v1/player/commands
+```
+
+| Command                             | Takes                                                                                                                 |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `play`, `pause`, `next`, `previous` | nothing                                                                                                               |
+| `seek`                              | `position` in seconds                                                                                                 |
+| `volume`                            | `volume`, 0 to 1, on every speaker playing                                                                            |
+| `shuffle`, `autoplay`               | `on`: what you want, not a toggle                                                                                     |
+| `repeat`                            | `mode`: `off`, `all` or `one`                                                                                         |
+| `queue_jump`                        | `index` in `queue`                                                                                                    |
+| `devices`                           | `devices`: the speakers to play on, the whole set. Empty plays on the desktop app itself, or stops a cast on a server |
+| `resume_interrupted`                | nothing, desktop app only                                                                                             |
+| `play_song`, `play_song_radio`      | `song_id`                                                                                                             |
+| `play_album`                        | `album_id`                                                                                                            |
+| `play_playlist`                     | `playlist_id`, optionally `start_index`                                                                               |
+| `play_radio`                        | `station_id`                                                                                                          |
+| `queue_next`, `queue_add`           | `song_id`                                                                                                             |
+
+`previous` starts the song again when it is more than five seconds in. `GET /player/devices` lists the speakers with `type`, `name`, `in_use_by` (somebody else playing on it) and `needs_pairing`; `?rescan=true` searches the network again, which takes a few seconds. `GET /player/cover` is the cover of the song in the player, or the station's logo.
+
+**On a server**, the player is the account's music on speakers, chosen like `/now-playing` chooses. Commands without something cast answer 409 `nothing_playing`. A `play_*` command plays on the speakers already playing, and with nothing cast it needs `devices` to start on, otherwise 409 `no_speaker`. A speaker somebody else plays on stays theirs: 409 `device_in_use`, no takeover. Shuffle, repeat and autoplay reach a browser open on that cast; repeat at the end of the queue is carried out only by a browser that is open.
+
+**On the desktop app**, commands go to its window, which acts on them as if clicked there.
+
+## How do I browse the library?
+
+With the library right, an app can look up what to play, through Beacon and with the login the key carries:
+
+| Route                                   | Answer                                                                               |
+| --------------------------------------- | ------------------------------------------------------------------------------------ |
+| `GET /library/songs?search=`            | `items`: songs; with `offset` and `limit`                                            |
+| `GET /library/albums`                   | `items`: albums by name, or matching `search`; with `offset` and `limit` (up to 500) |
+| `GET /library/albums/{id}`              | `album` and its `songs`                                                              |
+| `GET /library/playlists`                | `items`: playlists with `song_count`                                                 |
+| `GET /library/playlists/{id}`           | `playlist` and its `songs`                                                           |
+| `GET /library/radio-stations`           | `items`: stations with `home_page_url`                                               |
+| `GET /library/radio-stations/{id}/logo` | The station's logo, at least `size` pixels when it has one that large                |
+| `GET /library/cover/{cover_art_id}`     | A cover, at `size` pixels                                                            |
+
+Images have a limit of their own, so a list showing every cover at once does not use up the 120 requests.
+
 ## Can an AI assistant write the app for me?
 
 Yes. Everything above is also available as a machine-readable description, which needs no key and holds no data:
@@ -162,13 +245,14 @@ If you write the prompt yourself, these are the things a description does not sa
 - A browser's `EventSource` cannot send the key: read `/now-playing/events` with `fetch`.
 - A lyric line is reached at `position - offset >= time`.
 - Ignore fields you do not know, and wait as long as `Retry-After` says after a 429.
+- Commands say what is wanted (`"on": true`), they do not toggle. Check `commands` before offering one.
 
 ## Will an update break my app?
 
 Not within `v1`: existing fields keep their meaning, and new ones may appear, so ignore what you do not know. The other addresses under `/device-link/` belong to the desktop app and can change with any release.
 
-## Why does it not stream music or control Beacon?
+## Why does it not stream music?
 
 Music is better fetched straight from your media server. Navidrome, Jellyfin and Plex all have their own interface for that, and going through Beacon would only add a stop on the way.
 
-Control is left out so that a key can only ever read, which makes it safe to put in a script. To control the desktop app from home automation, there is the [Home automation API](../reference/home-automation-api.md).
+A key that only reads is still the safest to put in a script: give control and the library only to an app that needs them.

@@ -12,7 +12,7 @@ import os
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from core import cast_permissions
+from core import cast_permissions, media_login
 from core.auth import require_token
 from core.claims import claims
 from core.ffmpeg import ffmpeg_available
@@ -35,10 +35,8 @@ from delivery import (
 )
 from delivery.sonos import halt_if_possible
 from media import (
-    JellyfinClient,
     PlexClient,
     ResolvedAccount,
-    SubsonicClient,
     resolve_account,
     server_type_name,
 )
@@ -74,7 +72,7 @@ _LOCKED_URLS = {
 # to Navidrome through, not reachable from the browser directly in most
 # deployments) is a reasonable fallback over showing the user nothing at
 # all. For a locked Jellyfin deployment, set SERVER_URL — Jellyfin has no
-# internal-URL variable of its own (see configure()'s internal_url comment).
+# internal-URL variable of its own (see core/media_login.py's build_client()).
 _LOCKED_LOGIN_URL = os.getenv("SERVER_URL") or os.getenv("NAVIDROME_INTERNAL_URL", "")
 # What kind of server SERVER_LOCK points at — only meaningful together with
 # _LOCKED_LOGIN_URL above. Defaults to "subsonic" for backwards compatibility
@@ -137,24 +135,6 @@ async def _resolve_plex_name(
 @router.post("/config")
 async def configure(req: ConfigRequest, session: SessionState = Depends(get_session)):
     server_type = req.server_type.lower()
-    # NAVIDROME_INTERNAL_URL and JELLYFIN_INTERNAL_URL are deliberately separate
-    # env vars, not one shared between server types — that used to be a
-    # single NAVIDROME_INTERNAL_URL applied regardless of server_type, which
-    # meant a Jellyfin session's ping() call was hit with Navidrome's own
-    # LAN address instead, always failing since Navidrome has no /Users/Me
-    # endpoint. Plex has no equivalent var at all: its server address comes
-    # from Plex's own account-based discovery (list_resources()), which
-    # already prefers a local, LAN-reachable connection over a remote one
-    # when it finds one — there's no manually-typed URL for an override to
-    # even apply to. All three clients fall back to req.url (the login URL)
-    # when their own internal_url is empty either way.
-    if server_type == "jellyfin":
-        internal_url = os.getenv("JELLYFIN_INTERNAL_URL", "")
-    elif server_type == "plex":
-        internal_url = ""
-    else:
-        internal_url = os.getenv("NAVIDROME_INTERNAL_URL", "")
-
     if _SERVER_LOCK and _LOCKED_URLS and req.url.rstrip("/") not in _LOCKED_URLS:
         logger.warning(f"[config] Rejected — url outside SERVER_LOCK allow-list: {req.url}")
         raise HTTPException(
@@ -162,23 +142,9 @@ async def configure(req: ConfigRequest, session: SessionState = Depends(get_sess
             detail="Server URL does not match the locked server for this deployment",
         )
 
-    media: JellyfinClient | PlexClient | SubsonicClient
-    if server_type == "jellyfin":
-        media = JellyfinClient(
-            req.url,
-            token=req.credential,
-            user_id=req.user_id,
-            internal_url=internal_url,
-        )
-    elif server_type == "plex":
-        media = PlexClient(
-            req.url,
-            token=req.credential,
-            internal_url=internal_url,
-            machine_identifier=req.machine_identifier,
-        )
-    else:
-        media = SubsonicClient(req.url, credential=req.credential, internal_url=internal_url)
+    media = media_login.build_client(
+        server_type, req.url, req.credential, req.user_id, req.machine_identifier
+    )
 
     # See config_seq's own comment — claimed before the slow ping() below so
     # a second, newer /config call landing while this one is still verifying
@@ -248,14 +214,13 @@ async def configure(req: ConfigRequest, session: SessionState = Depends(get_sess
     if server_type == "jellyfin":
         logger.info(
             f"[config] Jellyfin configured & verified: {req.url} "
-            f"(internal: {internal_url or 'same'}, user_id: {req.user_id or 'missing'})"
+            f"(internal: {media.internal_url}, user_id: {req.user_id or 'missing'})"
         )
     elif server_type == "plex":
         logger.info(f"[config] Plex configured & verified: {req.url}")
     else:
         logger.info(
-            f"[config] Subsonic configured & verified: {req.url} "
-            f"(internal: {internal_url or 'same'})"
+            f"[config] Subsonic configured & verified: {req.url} (internal: {media.internal_url})"
         )
 
     # Where the verification request actually landed, if that isn't what was

@@ -33,6 +33,15 @@ class _NoClient:
     def favicon_url(self, *args, **kwargs) -> None:
         return None
 
+    def image_url(self, *args, **kwargs) -> None:
+        return None
+
+    def station_logo_url(self, *args, **kwargs) -> None:
+        return None
+
+    async def image(self, *args, **kwargs) -> tuple[None, None]:
+        return None, None
+
 
 class BeaconHub:
     def __init__(self, hass: HomeAssistant) -> None:

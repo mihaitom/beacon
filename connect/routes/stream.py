@@ -304,32 +304,43 @@ async def advance_now(session: SessionState) -> bool:
     False when there is nothing to skip to."""
     async with session.play_lock:
         st = session.state
-        if not st.active_delivery or not st.is_streaming:
-            return False
         next_index = st.queue_index + 1
-        if next_index >= len(st.queue):
+        if st.active_delivery and st.is_streaming and next_index >= len(st.queue):
             await _maybe_autoplay_topup(session)
-        if next_index >= len(st.queue):
+        return await _jump_locked(session, next_index, "Party skip")
+
+
+async def jump_to(session: SessionState, index: int, context: str) -> bool:
+    """Moves the cast to queue entry `index` from inside connect - an app
+    steering it with no window open. False when there is no such entry or
+    nothing is casting."""
+    async with session.play_lock:
+        return await _jump_locked(session, index, context)
+
+
+async def _jump_locked(session: SessionState, index: int, context: str) -> bool:
+    st = session.state
+    if not st.active_delivery or not st.is_streaming:
+        return False
+    if not 0 <= index < len(st.queue):
+        return False
+    if st.mix is not None:
+        if not await mix_cast.skip_to(session, index):
             return False
-        if st.mix is not None:
-            if not await mix_cast.skip_to(session, next_index):
-                return False
-            session.play_seq = max(session.play_seq, int(time.time() * 1000))
-            logger.info(f"[stream] Party skip to queue entry {next_index} (mix)")
-            return True
-        track = await _resolve_track(session, st.queue[next_index], "Party skip")
-        if track is None:
-            return False
-        if not await _dispatch_queued_track(
-            session, st.active_delivery, track, st.current_track_gain
-        ):
-            return False
-        st.queue_index = next_index
-        # A window that slept through this must not put the old track back.
         session.play_seq = max(session.play_seq, int(time.time() * 1000))
-        await session.event_bus.broadcast(build_status_dict(session))
-        logger.info(f"[stream] Party skip to {track.artist} — {track.title}")
+        logger.info(f"[stream] {context} to queue entry {index} (mix)")
         return True
+    track = await _resolve_track(session, st.queue[index], context)
+    if track is None:
+        return False
+    if not await _dispatch_queued_track(session, st.active_delivery, track, st.current_track_gain):
+        return False
+    st.queue_index = index
+    # A window that slept through this must not put the old track back.
+    session.play_seq = max(session.play_seq, int(time.time() * 1000))
+    await session.event_bus.broadcast(build_status_dict(session))
+    logger.info(f"[stream] {context} to {track.artist} — {track.title}")
+    return True
 
 
 # How long to wait, after a device closes its GET /stream connection mid-

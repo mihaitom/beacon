@@ -13,7 +13,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Every full record goes on a stack under the turntable, one stack each from bronze up to diamond, and gets its own moment; pointing at a stack or tapping it fans it out and shows when each record filled up
 - The Stats page's charts can be narrowed to the last week, month, three or six months, or year, showing what you played most in that window
 - The desktop app and a Beacon server of yours can now be connected, which you set up once in Settings on both sides: the two then show the same listening history and follow the same settings, your own themes come along and, if you confirm it for that device, the server's Last.fm and Fanart keys too, and what you play while the server is away is sent later
-- Apps you write yourself can read your listening history, statistics, what is playing and its lyrics from a Beacon server, each with its own key made in Settings; the FAQ has the details, and an AI assistant can be pointed at a description of it to write such an app for you
+- Apps you write yourself can read your listening history, statistics, what is playing and its lyrics, and if you allow it control playback and start music from your library, each with its own key made in Settings. A server offers this for its accounts and the desktop app for apps on its own network; the FAQ has the details, and an AI assistant can be pointed at a description of it to write such an app for you
+- Home Assistant now works with a Beacon server too, steering what an account plays on its speakers, and it is set up with the same kind of key as your own apps
 - Lyrics timing you corrected for a song now follows your account on the same server, and between the desktop app and a server once the two are connected
 - You can save several themes of your own instead of one; they follow your account on the same server, and between the desktop app and a server once the two are connected
 - A server administrator can look at the Stats page of the other accounts on the server
@@ -29,6 +30,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The Radio page is now a wall of station logos, each on a sleeve in the logo's own colours, with the list still one click away. It can be narrowed by your most common genres and sorted by last heard, name, country or bitrate, and a click on the playing station stops it
 - The Last.fm name is set in Settings next to ListenBrainz, and the playlist builder only starts from it instead of changing it
 - The help is sorted by topic, so that for example the desktop app, your own apps and home automation sit together, and its questions stand out from their answers
+
+### Deprecated
+
+- The Home automation key in Settings > Advanced is being retired and will be removed in a later release. It keeps working until then; Home Assistant points out an integration still using it and switches it to a new key in one step
 
 ### Fixed
 

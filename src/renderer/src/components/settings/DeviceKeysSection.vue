@@ -1,9 +1,11 @@
 <template>
-  <section v-if="visible" class="settings-section">
+  <section class="settings-section">
     <h2 class="section-title">{{ $t('settings.deviceKeysTitle') }}</h2>
     <div class="beacon-panel beacon-panel--flush">
       <div class="device-keys__head">
-        <p class="setting__description device-keys__intro">{{ $t('settings.deviceKeysWhat') }}</p>
+        <p class="setting__description device-keys__intro">
+          {{ $t(isElectron ? 'settings.deviceKeysWhatDesktop' : 'settings.deviceKeysWhat') }}
+        </p>
         <v-btn variant="tonal" prepend-icon="mdi-plus" @click="adding = true">
           {{ $t('settings.deviceKeysAdd') }}
         </v-btn>
@@ -41,11 +43,17 @@
         </li>
       </ul>
     </div>
+    <!-- An app reaches a desktop over the network, which needs a port that
+       - survives a restart. -->
+    <div v-if="isElectron" class="beacon-panel device-keys__port">
+      <connect-port-setting />
+    </div>
     <device-key-dialog v-model="adding" @created="onCreated" />
   </section>
 </template>
 
 <script lang="ts">
+import ConnectPortSetting from '@/components/settings/ConnectPortSetting.vue'
 import DeviceKeyDialog from '@/components/settings/DeviceKeyDialog.vue'
 import { pollingAllowed } from '@/services/connect/pollGate'
 import { timeAgo } from '@/services/relativeTime'
@@ -55,6 +63,7 @@ import {
   revokeDeviceKey,
   type DeviceKey,
 } from '@/services/connect/serverLink'
+import { useRemoteControlStore } from '@/stores/remoteControl'
 
 // A device that was just connected should show up while someone is still
 // looking at this page.
@@ -62,12 +71,13 @@ const REFRESH_MS = 10_000
 
 /**
  * The keys that let a desktop app send this account's listening history and
- * settings to this server, or an app of the listener's own read from it. The
- * server's side of ServerLinkSection.vue.
+ * settings to this server, or an app of the listener's own read from it or
+ * steer its playback. The server's side of ServerLinkSection.vue. A desktop
+ * app hands out app keys only, for apps on its own network.
  */
 export default {
   name: 'DeviceKeysSection',
-  components: { DeviceKeyDialog },
+  components: { ConnectPortSetting, DeviceKeyDialog },
   data() {
     return {
       keys: [] as DeviceKey[],
@@ -79,12 +89,11 @@ export default {
     }
   },
   computed: {
-    visible(): boolean {
-      return !window.api
+    isElectron(): boolean {
+      return !!window.api
     },
   },
   created() {
-    if (!this.visible) return
     void this.load()
     this.refreshTimer = setInterval(() => {
       if (pollingAllowed()) void this.load()
@@ -123,6 +132,12 @@ export default {
     onCreated(entry: DeviceKey) {
       this.listVersion += 1
       this.keys = [...this.keys, entry]
+      this.followRelay()
+    },
+    /** On the desktop app, a key that steers playback needs the window's
+     * relay running. */
+    followRelay() {
+      if (this.isElectron) void useRemoteControlStore().deviceKeysChanged()
     },
     async revoke(entry: DeviceKey) {
       this.busy = true
@@ -130,6 +145,7 @@ export default {
         await revokeDeviceKey(entry.id)
         this.listVersion += 1
         this.keys = this.keys.filter((other) => other.id !== entry.id)
+        this.followRelay()
       } catch (error) {
         this.$emitter.emit('toast', {
           level: 'error',
@@ -158,6 +174,10 @@ export default {
 .device-keys__intro.setting__description {
   flex: 1 1 280px;
   margin-bottom: 0;
+}
+
+.device-keys__port {
+  margin-top: 16px;
 }
 
 .device-keys__list {

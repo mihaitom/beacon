@@ -68,6 +68,7 @@
       </v-card-title>
       <v-card-text class="device-key-dialog__body">
         <choice-tiles
+          v-if="kinds.length > 1"
           v-model="kind"
           :options="kinds"
           :label="$t('settings.deviceKeysKind')"
@@ -110,8 +111,13 @@
               class="device-key-dialog__row"
               :class="{ 'device-key-dialog__row--locked': scopeLocked(scope) }"
             >
-              <span class="text-body-medium device-key-dialog__row-text">
-                {{ $t(`settings.deviceKeysScope_${scope}`) }}
+              <span class="device-key-dialog__row-text">
+                <span class="text-body-medium">{{ $t(`settings.deviceKeysScope_${scope}`) }}</span>
+                <!-- The key carries the media server login, which is worth
+                   - knowing before handing it out. -->
+                <span v-if="scope === 'library'" class="text-body-small text-medium-emphasis">
+                  {{ $t('settings.deviceKeysLibraryHint') }}
+                </span>
               </span>
               <v-switch
                 v-model="appScopes"
@@ -156,6 +162,26 @@ import {
   type AppScope,
   type DeviceKeyScope,
 } from '@/services/connect/serverLink'
+import { useRemoteControlStore } from '@/stores/remoteControl'
+
+// Lyrics are only those of the song playing now; browsing is for picking
+// what to play.
+const SCOPE_NEEDS: Partial<Record<AppScope, AppScope>> = {
+  lyrics: 'now_playing',
+  library: 'control',
+}
+
+function defaultKind(): 'desktop' | 'app' {
+  return window.api ? 'app' : 'desktop'
+}
+
+/** Where an app reaches this Beacon: a desktop app by its network address,
+ * since its own window is not served over the network. */
+function appOrigin(): string {
+  if (!window.api) return window.location.origin
+  const { lanIp, port } = useRemoteControlStore()
+  return `http://${lanIp}:${port}`
+}
 
 export default {
   name: 'DeviceKeyDialog',
@@ -167,7 +193,7 @@ export default {
   data() {
     return {
       label: '',
-      kind: 'desktop' as 'desktop' | 'app',
+      kind: defaultKind(),
       shareApiKeys: false,
       appScopes: [] as AppScope[],
       appScopeList: APP_SCOPES,
@@ -181,7 +207,15 @@ export default {
     }
   },
   computed: {
+    /** A desktop app does not pair with another desktop app. */
     kinds(): ChoiceTile[] {
+      const app: ChoiceTile = {
+        value: 'app',
+        icon: 'mdi-application-braces-outline',
+        name: this.$t('settings.deviceKeysKindApp'),
+        hint: this.$t('settings.deviceKeysKindAppHint'),
+      }
+      if (window.api) return [app]
       return [
         {
           value: 'desktop',
@@ -189,20 +223,13 @@ export default {
           name: this.$t('settings.deviceKeysKindDesktop'),
           hint: this.$t('settings.deviceKeysKindDesktopHint'),
         },
-        {
-          value: 'app',
-          icon: 'mdi-application-braces-outline',
-          name: this.$t('settings.deviceKeysKindApp'),
-          hint: this.$t('settings.deviceKeysKindAppHint'),
-        },
+        app,
       ]
     },
-    /** Lyrics are only those of the song playing now, so they go with it. */
+    /** A right that depends on another goes with it. */
     chosenScopes(): DeviceKeyScope[] {
       if (this.kind === 'desktop') return this.shareApiKeys ? ['sync', 'api_keys'] : ['sync']
-      return this.appScopes.includes('now_playing')
-        ? this.appScopes
-        : this.appScopes.filter((scope) => scope !== 'lyrics')
+      return this.appScopes.filter((scope) => !this.scopeLocked(scope))
     },
     helpPage(): string {
       return this.kind === 'app' ? 'faq/apps-and-api' : 'guides/desktop-and-server'
@@ -225,11 +252,12 @@ export default {
   },
   methods: {
     scopeLocked(scope: AppScope): boolean {
-      return scope === 'lyrics' && !this.appScopes.includes('now_playing')
+      const needs = SCOPE_NEEDS[scope]
+      return !!needs && !this.appScopes.includes(needs)
     },
     reset() {
       this.label = ''
-      this.kind = 'desktop'
+      this.kind = defaultKind()
       this.shareApiKeys = false
       this.appScopes = []
       this.newKey = ''
@@ -276,7 +304,7 @@ export default {
       await this.copy(this.newKey, 'key')
     },
     async copyInstructions() {
-      const origin = window.location.origin
+      const origin = appOrigin()
       if (await this.copy(appKeyInstructions(origin, this.newKeyScopes), 'instructions')) return
       // Unlike the key, there is nothing on screen to copy this from by hand.
       this.$emitter.emit('toast', {

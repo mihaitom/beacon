@@ -4,10 +4,12 @@ const GUIDE_URL =
   'https://raw.githubusercontent.com/mihaitom/beacon/main/docs/help/faq/apps-and-api.md'
 
 const READABLE: Partial<Record<DeviceKeyScope, string>> = {
-  history: 'the listening history',
-  stats: 'the statistics',
-  now_playing: 'what is playing now',
-  lyrics: 'the lyrics of the current song',
+  history: 'read the listening history',
+  stats: 'read the statistics',
+  now_playing: 'read what is playing now',
+  lyrics: 'read the lyrics of the current song',
+  control: 'see and steer playback',
+  library: 'browse the library and start music',
 }
 
 const RULES: Partial<Record<DeviceKeyScope, string[]>> = {
@@ -24,6 +26,13 @@ const RULES: Partial<Record<DeviceKeyScope, string[]>> = {
     'The cover address stays the same from song to song: fetch it again when the song changes.',
   ],
   lyrics: ['A lyric line is reached at `position - offset >= time`.'],
+  control: [
+    'Commands go to POST /player/commands and answer once applied. A 409 means there is nothing to steer right now, for example nothing playing on a speaker.',
+    'Follow the player with /player/events rather than polling /player.',
+  ],
+  library: [
+    'Starting music on a server needs a speaker: pass `devices` with names from /player/devices when nothing is playing yet.',
+  ],
 }
 
 /** Text to paste into an AI assistant. Takes no key on purpose: what is pasted
@@ -32,13 +41,13 @@ export function appKeyInstructions(origin: string, scopes: DeviceKeyScope[]): st
   const readable = scopes.flatMap((scope) => READABLE[scope] ?? [])
   const rules = scopes.flatMap((scope) => RULES[scope] ?? [])
   return [
-    'Help me write an app against the read-only API of my Beacon music server.',
+    'Help me write an app against the API of my Beacon music server.',
     '',
     `Server: ${origin}`,
     `API description (OpenAPI, no key needed): ${origin}/device-link/v1/openapi.json`,
     `Guide with examples: ${GUIDE_URL}`,
     '',
-    `My key may read: ${readable.join(', ')}. Anything else answers 403.`,
+    `My key may: ${readable.join(', ')}. Anything else answers 403.`,
     'Send it as the `X-Beacon-Device-Key` header. I will give it to you separately: read it from configuration, never write it into the code.',
     '',
     'Rules:',

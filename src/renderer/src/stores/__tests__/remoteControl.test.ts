@@ -368,6 +368,29 @@ describe('remoteControl store', () => {
       expect(store.needsRegenerate).toBe(false)
       expect(FakeAgent.instances).toHaveLength(1)
     })
+
+    it('runs the relay for a device key that steers playback, and stops it once that key is gone', async () => {
+      const status = {
+        enabled: false,
+        pin: null,
+        lan_ip: '10.0.0.9',
+        port: 9000,
+        phone_count: 0,
+        integration: true,
+      }
+      vi.mocked(remoteHttp.getRemoteControlStatus).mockResolvedValue(status)
+      const store = useRemoteControlStore()
+
+      await store.deviceKeysChanged()
+      expect(FakeAgent.instances[0]!.stopped).toBe(false)
+
+      vi.mocked(remoteHttp.getRemoteControlStatus).mockResolvedValue({
+        ...status,
+        integration: false,
+      })
+      await store.deviceKeysChanged()
+      expect(FakeAgent.instances[0]!.stopped).toBe(true)
+    })
   })
 
   describe('startAgent', () => {

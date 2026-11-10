@@ -1596,6 +1596,12 @@ async def play_url(
 async def pause_playback(
     request: Request, session: SessionState = Depends(require_authenticated_session)
 ):
+    return await pause_session(session, request.headers.get("user-agent", "no user agent"))
+
+
+async def pause_session(session: SessionState, who: str):
+    """`who` asked, for the log: a pause nobody remembers pressing is
+    otherwise indistinguishable from one the user did press."""
     if not session.media.base_url:
         # Same "session forgot everything" case /play guards against — a
         # reaped-then-recreated session has no active_delivery to actually
@@ -1620,12 +1626,7 @@ async def pause_playback(
         st.clock.pause(elapsed)
         if st.mix is not None:
             st.mix.freeze()
-        # Who asked: a pause nobody remembers pressing is otherwise
-        # indistinguishable from one the user did press.
-        logger.info(
-            f"[pause] ⏸ {elapsed:.1f}s into track "
-            f"[{request.headers.get('user-agent', 'no user agent')[:80]}]"
-        )
+        logger.info(f"[pause] ⏸ {elapsed:.1f}s into track [{who[:80]}]")
         await session.event_bus.broadcast(build_status_dict(session))
         return {"paused": True}
 
