@@ -116,6 +116,23 @@ def test_the_probe_says_why_the_app_did_not_answer(
     }
 
 
+@pytest.mark.parametrize(
+    "error, said",
+    [
+        (httpx.ConnectError("All connection attempts failed"), "All connection attempts failed"),
+        (httpx.ConnectTimeout(""), "ConnectTimeout"),
+    ],
+)
+def test_an_app_that_cannot_be_reached_says_only_why(
+    client, default_session, configured, app_requests, error, said
+):
+    def fail(request):
+        raise error
+
+    _respond(app_requests, fail)
+    assert client.get("/external-source/probe").json() == {"ok": False, "error": said}
+
+
 def test_on_a_shared_server_only_an_admin_may_set_it_up(client, default_session, monkeypatch):
     monkeypatch.setattr(external_routes, "_HOSTED", True)
     default_session.account_is_admin = False

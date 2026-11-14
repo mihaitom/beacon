@@ -110,7 +110,8 @@ async def _probe(config: dict) -> dict:
             f"{config['base_url']}/v1", headers=_auth_header(config), timeout=_PROBE_TIMEOUT
         )
     except Exception as e:
-        return {"ok": False, "error": f"Not reachable: {e}"}
+        # The page puts "Not reachable:" in front itself. A timeout's message is empty.
+        return {"ok": False, "error": str(e) or type(e).__name__}
     if response.status_code == 401 or response.status_code == 403:
         return {"ok": False, "error": "The app refused the token"}
     if response.status_code != 200:
