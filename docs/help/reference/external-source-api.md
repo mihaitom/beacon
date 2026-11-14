@@ -144,6 +144,13 @@ the sections above ask for: the token, signed song addresses that do not
 expire, `Range` requests, and a page that fits a phone. It is written in
 Python and runs in Docker or with `uv`; its README says how to connect it.
 
+[live-music-archive](https://github.com/mihaitom/beacon/tree/main/docs/examples/live-music-archive)
+shows the same for an online source: it browses an archive of live concerts
+on the internet and passes the audio through, so Beacon only ever talks to
+the app. It also shows how to treat such a service: say who is asking, keep
+answers instead of asking again, slow down when asked to, and leave out
+what may not be fetched.
+
 ### A quick one
 
 Your music folder as albums, with covers, search, "play album", play next and

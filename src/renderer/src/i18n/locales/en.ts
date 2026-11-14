@@ -1800,7 +1800,7 @@ export default {
     playFailed: 'Could not play it: {reason}',
     settingsTitle: 'External sources',
     settingsWhat:
-      'Apps you run yourself, each with its own page as a tab in Beacon, handing over songs to play - on the speakers too. Beacon itself includes none; the help has an example to run or build on.',
+      'Apps you run yourself, each with its own page as a tab in Beacon, handing over songs to play - on the speakers too. Beacon itself includes none; the help has examples to run or build on.',
     name: 'Tab name',
     namePlaceholder: 'e.g. Wishlist',
     add: 'Add source',

@@ -1,0 +1,872 @@
+/* Beacon's dark theme until Beacon sends the real colours (beacon.theme). */
+:root {
+  --bg: #121417;
+  --fg: #e8e8ea;
+  --surface: #1c1f24;
+  --primary: #f5a94e;
+  --on-primary: #1a1a1a;
+  --muted: color-mix(in srgb, var(--fg) 62%, transparent);
+  --line: color-mix(in srgb, var(--fg) 10%, transparent);
+  --hover: color-mix(in srgb, var(--fg) 7%, transparent);
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font:
+    15px/1.45 Inter,
+    system-ui,
+    sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+}
+
+svg {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+  flex: none;
+}
+
+/* ── Header ─────────────────────────────────────────────────────────── */
+
+.bar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 24px;
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(14px);
+  border-bottom: 1px solid var(--line);
+}
+
+.brand {
+  font-weight: 700;
+  font-size: 18px;
+  white-space: nowrap;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-right: auto;
+}
+
+.tabs a {
+  padding: 6px 14px;
+  border-radius: 999px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.tabs a.active {
+  background: var(--surface);
+  color: var(--fg);
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--muted);
+  width: 260px;
+}
+
+.search input {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 0;
+  border: 0;
+  outline: 0;
+  background: none;
+  color: var(--fg);
+  font: inherit;
+}
+
+.icon-button {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.icon-button:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+.notice {
+  margin: 16px 24px 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--muted);
+}
+
+main {
+  padding: 20px 24px 64px;
+}
+
+/* ── Sections ───────────────────────────────────────────────────────── */
+
+.section-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 8px 0 16px;
+}
+
+.section-head h1,
+.section-head h2 {
+  margin: 0;
+  font-size: 26px;
+  margin-right: auto;
+}
+
+.section-head h2 {
+  font-size: 19px;
+}
+
+.count {
+  color: var(--muted);
+}
+
+.chips {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.chip {
+  border: 1px solid var(--line);
+  background: none;
+  border-radius: 999px;
+  padding: 5px 12px;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.chip.active {
+  border-color: transparent;
+  background: var(--primary);
+  color: var(--on-primary);
+  font-weight: 600;
+}
+
+/* ── Covers ─────────────────────────────────────────────────────────── */
+
+.cover {
+  position: relative;
+  aspect-ratio: 1;
+  border-radius: 10px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  font-size: 44px;
+  font-weight: 800;
+  color: #fff9;
+  box-shadow: 0 8px 22px #0006;
+  transition: transform 0.2s ease;
+}
+
+.cover img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.name {
+  margin-top: 9px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sub {
+  color: var(--muted);
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Shows tab ──────────────────────────────────────────────────────── */
+
+.feature {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  margin-bottom: 32px;
+  padding: 28px;
+  border-radius: 18px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.feature-backdrop {
+  position: absolute;
+  inset: -40px;
+  background-size: cover;
+  background-position: center;
+  filter: blur(48px) saturate(1.4);
+  opacity: 0.5;
+}
+
+.feature::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--surface) 70%, transparent)
+  );
+}
+
+.feature > :not(.feature-backdrop) {
+  position: relative;
+  z-index: 1;
+}
+
+.feature-cover {
+  flex: none;
+  width: 200px;
+}
+
+.feature-cover .cover {
+  font-size: 64px;
+}
+
+.feature-text {
+  min-width: 0;
+}
+
+.feature h1 {
+  margin: 4px 0 8px;
+  font-size: clamp(26px, 4vw, 40px);
+  line-height: 1.1;
+}
+
+.feature .meta {
+  color: var(--muted);
+}
+
+.eyebrow {
+  color: var(--primary);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.shelf {
+  margin-bottom: 28px;
+}
+
+/* A row that scrolls sideways and stops at each card. */
+.shelf-track {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 160px;
+  gap: 18px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  padding-bottom: 8px;
+  scrollbar-width: thin;
+}
+
+.card {
+  min-width: 0;
+  scroll-snap-align: start;
+}
+
+.card .name {
+  display: block;
+}
+
+.cover-wrap {
+  position: relative;
+}
+
+.cover-wrap .play-fab {
+  position: absolute;
+  right: 10px;
+  bottom: 10px;
+  opacity: 0;
+  transform: translateY(6px);
+  transition: 0.2s ease;
+}
+
+.card:hover .play-fab,
+.card:focus-within .play-fab {
+  opacity: 1;
+  transform: none;
+}
+
+.play-fab {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--primary);
+  color: var(--on-primary);
+  cursor: pointer;
+  box-shadow: 0 6px 16px #0007;
+}
+
+/* ── Artists ────────────────────────────────────────────────────────── */
+
+.artists {
+  display: grid;
+  gap: 6px 18px;
+  grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
+}
+
+.artist-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px;
+  border-radius: 10px;
+}
+
+.artist-row:hover {
+  background: var(--hover);
+}
+
+/* Without min-width: 0 a long name widens the row instead of being cut. */
+.artist-text {
+  min-width: 0;
+}
+
+.artist-text .name {
+  margin: 0;
+}
+
+.artist-row .cover {
+  flex-shrink: 0;
+  width: 52px;
+  border-radius: 50%;
+  font-size: 20px;
+  box-shadow: none;
+}
+
+/* ── Shows ──────────────────────────────────────────────────────────── */
+
+.shows {
+  display: grid;
+  gap: 2px 18px;
+  grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr));
+}
+
+.show-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-right: 4px;
+  border-radius: 10px;
+}
+
+.show-row:hover {
+  background: var(--hover);
+}
+
+.show-link {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  padding: 8px;
+}
+
+/* A calendar sheet: the day and month, the year beneath. */
+.date {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 56px;
+  padding: 6px 0;
+  border-radius: 10px;
+  background: var(--surface);
+  line-height: 1.2;
+}
+
+.date b {
+  font-size: 13px;
+}
+
+.date span {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Without min-width: 0 a long venue widens the row instead of being cut. */
+.show-text {
+  min-width: 0;
+}
+
+.show-text .name {
+  margin: 0;
+}
+
+.section-head--spaced {
+  margin-top: 28px;
+}
+
+.more {
+  display: flex;
+  margin: 20px auto 0;
+}
+
+.hint {
+  margin: 24px 0 0;
+  color: var(--muted);
+  text-align: center;
+}
+
+/* ── Show page ──────────────────────────────────────────────────────── */
+
+.hero {
+  position: relative;
+  display: flex;
+  gap: 28px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin: -20px -24px 24px;
+  padding: 36px 24px 28px;
+  overflow: hidden;
+}
+
+.hero-backdrop {
+  position: absolute;
+  inset: -40px;
+  background-size: cover;
+  background-position: center;
+  filter: blur(48px) saturate(1.3);
+  opacity: 0.45;
+}
+
+.hero::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(transparent 30%, var(--bg));
+}
+
+.hero > :not(.hero-backdrop) {
+  position: relative;
+  z-index: 1;
+}
+
+.hero .cover {
+  width: 220px;
+  font-size: 72px;
+}
+
+.hero h1 {
+  margin: 4px 0 6px;
+  font-size: clamp(26px, 5vw, 44px);
+  line-height: 1.1;
+}
+
+.hero .meta {
+  color: var(--muted);
+}
+
+.hero .source {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+}
+
+.hero .source svg {
+  width: 14px;
+  height: 14px;
+}
+
+.hero .meta a:hover {
+  color: var(--fg);
+  text-decoration: underline;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 20px;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--primary);
+  color: var(--on-primary);
+}
+
+.pill.ghost {
+  background: var(--surface);
+  color: var(--fg);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 7px 10px;
+  border-radius: 8px;
+}
+
+.row:hover {
+  background: var(--hover);
+}
+
+.row.playing {
+  color: var(--primary);
+}
+
+.row.playing .title {
+  font-weight: 700;
+}
+
+.num {
+  text-align: right;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.title,
+.row-sub {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row-sub {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.time {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+}
+
+.row-actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0.35;
+  transition: opacity 0.15s;
+}
+
+.row:hover .row-actions,
+.row:focus-within .row-actions {
+  opacity: 1;
+}
+
+.row-actions button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+
+.row-actions button:hover {
+  background: var(--hover);
+}
+
+.bars {
+  display: inline-flex;
+  justify-content: flex-end;
+  align-items: flex-end;
+  gap: 2px;
+  height: 14px;
+  width: 100%;
+}
+
+.bars i {
+  width: 3px;
+  background: currentColor;
+  animation: bar 0.9s infinite ease-in-out alternate;
+}
+
+.bars i:nth-child(2) {
+  animation-delay: -0.3s;
+}
+
+.bars i:nth-child(3) {
+  animation-delay: -0.6s;
+}
+
+@keyframes bar {
+  from {
+    height: 20%;
+  }
+  to {
+    height: 100%;
+  }
+}
+
+.empty {
+  padding: 64px 16px;
+  text-align: center;
+  color: var(--muted);
+}
+
+/* ── Toast ──────────────────────────────────────────────────────────── */
+
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: 20px;
+  z-index: 10;
+  max-width: calc(100% - 32px);
+  transform: translate(-50%, 90px);
+  padding: 10px 18px;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px #0009;
+  transition: transform 0.25s ease;
+}
+
+#toast.show {
+  transform: translate(-50%, 0);
+}
+
+/* ── Phone ──────────────────────────────────────────────────────────── */
+
+/* Inside Beacon on a phone the page gets what is left between Beacon's own
+ * bars, a few hundred pixels: everything is denser here, and Beacon already
+ * shows the source's name above it. */
+@media (max-width: 640px) {
+  body {
+    font-size: 14px;
+  }
+  .bar {
+    flex-wrap: wrap;
+    gap: 8px;
+    padding: 10px 16px;
+  }
+  .brand {
+    display: none;
+  }
+  .tabs a {
+    padding: 5px 12px;
+  }
+  .icon-button {
+    width: 34px;
+    height: 34px;
+  }
+  .search {
+    order: 4;
+    width: 100%;
+  }
+  .search input {
+    padding: 7px 0;
+  }
+  .notice {
+    margin: 10px 16px 0;
+  }
+  main {
+    padding: 14px 16px 48px;
+  }
+  .section-head {
+    gap: 8px;
+    margin: 0 0 12px;
+  }
+  .section-head h1 {
+    font-size: 20px;
+  }
+  .section-head h2 {
+    font-size: 17px;
+  }
+  .chip {
+    padding: 4px 10px;
+    font-size: 12px;
+  }
+  .cover {
+    border-radius: 8px;
+    font-size: 28px;
+    box-shadow: 0 4px 12px #0005;
+  }
+  .name {
+    margin-top: 6px;
+    font-size: 13px;
+  }
+  .sub {
+    font-size: 12px;
+  }
+  .artist-row .cover {
+    width: 44px;
+    font-size: 17px;
+  }
+  .feature {
+    gap: 14px;
+    margin-bottom: 22px;
+    padding: 14px;
+    border-radius: 14px;
+  }
+  .feature-cover {
+    width: 96px;
+  }
+  .feature-cover .cover {
+    font-size: 36px;
+  }
+  .feature h1 {
+    margin: 2px 0 4px;
+    font-size: 20px;
+  }
+  .feature .meta {
+    font-size: 12px;
+  }
+  .eyebrow {
+    font-size: 11px;
+  }
+  .shelf {
+    margin-bottom: 20px;
+  }
+  .shelf-track {
+    grid-auto-columns: 112px;
+    gap: 12px;
+  }
+  /* Touch has no hover: the button stays, smaller. */
+  .cover-wrap .play-fab {
+    right: 6px;
+    bottom: 6px;
+    width: 34px;
+    height: 34px;
+    opacity: 1;
+    transform: none;
+  }
+  .play-fab svg {
+    width: 18px;
+    height: 18px;
+  }
+  .show-link {
+    gap: 10px;
+    padding: 6px 4px;
+  }
+  .date {
+    width: 48px;
+    padding: 4px 0;
+  }
+  .date b {
+    font-size: 12px;
+  }
+  .date span {
+    font-size: 11px;
+  }
+  .show-row .icon-button {
+    width: 34px;
+    height: 34px;
+  }
+  /* Cover beside the title instead of above it. */
+  .hero {
+    flex-wrap: nowrap;
+    align-items: center;
+    gap: 14px;
+    margin: -14px -16px 12px;
+    padding: 18px 16px 14px;
+  }
+  .hero > div:not([class]) {
+    min-width: 0;
+  }
+  .hero .cover {
+    flex: none;
+    width: 96px;
+    font-size: 36px;
+  }
+  .hero h1 {
+    margin: 2px 0 4px;
+    font-size: 20px;
+  }
+  .hero .meta {
+    font-size: 12px;
+  }
+  .actions {
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .pill {
+    gap: 6px;
+    padding: 7px 14px;
+    font-size: 13px;
+  }
+  .pill svg {
+    width: 18px;
+    height: 18px;
+  }
+  .row {
+    grid-template-columns: 22px minmax(0, 1fr) auto;
+    gap: 10px;
+    padding: 6px 2px;
+  }
+  .time {
+    display: none;
+  }
+  .row-actions {
+    opacity: 1;
+  }
+  .row-actions button {
+    width: 30px;
+    height: 30px;
+  }
+  .row-actions svg {
+    width: 18px;
+    height: 18px;
+  }
+}
+
+/* A small phone: the cover would crowd the title. */
+@media (max-width: 359px) {
+  .hero .cover {
+    width: 80px;
+  }
+}

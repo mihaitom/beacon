@@ -158,7 +158,7 @@ export function parsePlayMessage(
 
 const GUIDE_URL =
   'https://raw.githubusercontent.com/mihaitom/beacon/main/docs/help/reference/external-source-api.md'
-const EXAMPLE_URL = 'https://github.com/mihaitom/beacon/tree/main/docs/examples/folder-source'
+const EXAMPLES_URL = 'https://github.com/mihaitom/beacon/tree/main/docs/examples'
 
 /** Text to paste into an AI assistant, complete in itself: the contract is
  * short enough to give whole, and the guide it links to may not be online
@@ -168,7 +168,7 @@ export function externalSourceInstructions(): string {
     'Help me write a small web app that works as an "external source" for my Beacon music player.',
     'Beacon shows a page from my app in a tab and plays songs the page hands to it, on my speakers too.',
     `Full description: ${GUIDE_URL}`,
-    `A complete working example (Python): ${EXAMPLE_URL}`,
+    `Complete working examples (Python), one for local files and one for an online source: ${EXAMPLES_URL}`,
     '',
     'What my app must serve (all under one base URL, e.g. http://192.168.1.20:8800):',
     '- GET /v1 -> JSON {"name": "...", "version": "...", "capabilities": []}. Beacon calls it to check the connection.',

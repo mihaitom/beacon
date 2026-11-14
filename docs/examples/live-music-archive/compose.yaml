@@ -1,0 +1,14 @@
+services:
+  live-music-archive:
+    build: .
+    container_name: beacon-live-music-archive
+    restart: unless-stopped
+    volumes:
+      - ./data:/data
+    environment:
+      SOURCE_NAME: Live Music Archive
+      # Beacon sends it with every request for the page; set the same value
+      # in Beacon under Settings > Library > External sources.
+      TOKEN: change-me
+    ports:
+      - "8801:8801"
