@@ -195,6 +195,10 @@ class AppState:
         # setting mid-queue. Both None means no ceiling.
         self.max_lossy_format: str | None = None
         self.max_lossy_bitrate_kbps: int | None = None
+        # The app's ReplayGain setting ("off"/"song"/"album"), set by /play
+        # and /queue, for the gain of every song connect starts by itself
+        # (core/replay_gain.py).
+        self.replay_gain_mode: str = "off"
         # The *full* ordered queue as the frontend currently understands it —
         # already-played history included, not just what's left — with
         # queue[queue_index] == current_track. Set by /play (fresh dispatch)

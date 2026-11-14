@@ -30,6 +30,7 @@ from core.streamer import (
 )
 from delivery import ChromecastDelivery
 from media import Track
+from media.base import ReplayGain
 from routes.stream import (
     DisconnectSnapshot,
     _advance_or_end,
@@ -726,7 +727,7 @@ async def test_dispatch_queued_track_updates_state_and_schedules_background_task
         patch("routes.stream.resolve_output_format", AsyncMock(return_value=FALLBACK_FORMAT)),
         patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play_mock,
     ):
-        dispatched = await _dispatch_queued_track(default_session, target, next_track, gain=1.0)
+        dispatched = await _dispatch_queued_track(default_session, target, next_track)
 
     assert dispatched is True
     assert play_mock.await_count == 1
@@ -734,25 +735,58 @@ async def test_dispatch_queued_track_updates_state_and_schedules_background_task
     assert default_session.state.is_streaming is True
 
 
-async def test_dispatch_queued_track_passes_its_gain_to_resolve_output_format(default_session):
-    """Regression test: resolve_output_format() needs to know the
-    ReplayGain multiplier up front to rule out a stream-copy tier that
-    can't actually apply it (see that function's own comment) — the same
-    `gain` this reuses for the device dispatch itself (see this function's
-    own docstring) must also reach resolve_output_format()."""
+async def _dispatch_next(default_session, next_track):
+    """Auto-advances from song 1, started by the app at +6 dB, to
+    `next_track`. Returns the gain the next song's stream was resolved with."""
     target = ChromecastDelivery("TV")
     _playing_session(default_session, ["1", "2"], target=target)
-    next_track = Track(id="2", title="Next", artist="Artist", duration=200, cover_art_id="c")
-
+    default_session.state.current_track_gain = 2.0
     with (
         patch(
             "routes.stream.resolve_output_format", AsyncMock(return_value=FALLBACK_FORMAT)
         ) as resolve_mock,
         patch.object(ChromecastDelivery, "play", new=AsyncMock()),
     ):
-        await _dispatch_queued_track(default_session, target, next_track, gain=0.8)
+        await _dispatch_queued_track(default_session, target, next_track)
+    return resolve_mock.call_args.kwargs["gain"]
 
-    assert resolve_mock.call_args.kwargs["gain"] == 0.8
+
+def _song_with_gain(track_gain_db):
+    return Track(
+        id="2",
+        title="Next",
+        artist="Artist",
+        duration=200,
+        cover_art_id="c",
+        replay_gain=ReplayGain(track_gain=track_gain_db),
+    )
+
+
+async def test_dispatch_queued_track_applies_the_next_songs_own_replay_gain(default_session):
+    """Regression test: every song connect moved on to by itself used to
+    play at the first song's gain, so with ReplayGain on a whole queue cast
+    from a sleeping phone played at one volume. The gain has to reach
+    resolve_output_format() too - it rules out a stream copy, which can't
+    apply it - and the session, which the stream itself reads."""
+    default_session.state.replay_gain_mode = "song"
+
+    gain = await _dispatch_next(default_session, _song_with_gain(-6.0))
+
+    assert gain == pytest.approx(0.501, abs=1e-3)
+    assert default_session.state.current_track_gain == gain
+
+
+async def test_dispatch_queued_track_plays_flat_with_replay_gain_off(default_session):
+    default_session.state.replay_gain_mode = "off"
+
+    assert await _dispatch_next(default_session, _song_with_gain(-6.0)) == 1.0
+
+
+async def test_dispatch_queued_track_prefers_the_apps_own_gain_for_a_song(default_session):
+    default_session.state.replay_gain_mode = "song"
+    default_session.state.song_hints = {"2": {"gain": 0.7}}
+
+    assert await _dispatch_next(default_session, _song_with_gain(-6.0)) == 0.7
 
 
 async def test_dispatch_queued_track_judges_the_format_by_the_speakers_equalizer(
@@ -772,7 +806,7 @@ async def test_dispatch_queued_track_judges_the_format_by_the_speakers_equalizer
         ) as resolve_mock,
         patch.object(ChromecastDelivery, "play", new=AsyncMock()),
     ):
-        await _dispatch_queued_track(default_session, target, next_track, gain=1.0)
+        await _dispatch_queued_track(default_session, target, next_track)
 
     assert resolve_mock.call_args.kwargs["equalized"] is True
 
@@ -1411,7 +1445,7 @@ async def test_a_finished_track_that_auto_advanced_is_not_a_drop(
     default_session.media.get_cover_art_url = MagicMock(return_value=None)
     next_track = Track(id="2", title="Next", artist="A", duration=180, cover_art_id="")
 
-    assert await _dispatch_queued_track(default_session, delivery, next_track, 1.0) is True
+    assert await _dispatch_queued_track(default_session, delivery, next_track) is True
 
     q = default_session.event_bus.subscribe()
     await _mark_disconnected_if_not_reconnected(default_session, my_generation=finished_generation)

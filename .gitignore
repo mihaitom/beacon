@@ -46,6 +46,7 @@ connect/fanart_cache.json
 connect/fanart_images/
 connect/cast_permissions.json
 connect/hue_lights.json
+**/__pycache__/
 
 # Built by scripts/build-ffmpeg.sh, packaged into the desktop app
 build/ffmpeg/ffmpeg

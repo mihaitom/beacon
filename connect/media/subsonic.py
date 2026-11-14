@@ -6,7 +6,7 @@ import secrets
 from urllib.parse import parse_qs, urlencode
 
 from . import http_client
-from .base import Track
+from .base import ReplayGain, Track
 from .login_errors import SubsonicError, login_failed
 
 logger = logging.getLogger("connect.subsonic")
@@ -91,6 +91,7 @@ class SubsonicClient:
             duration=song.get("duration", 0),
             cover_art_id=song.get("coverArt", ""),
             album=song.get("album", ""),
+            replay_gain=ReplayGain.from_opensubsonic(song.get("replayGain")),
         )
 
     # Not part of the MediaClient Protocol — genuinely optional (Plex has no
@@ -115,6 +116,7 @@ class SubsonicClient:
                 duration=song.get("duration", 0),
                 cover_art_id=song.get("coverArt", ""),
                 album=song.get("album", ""),
+                replay_gain=ReplayGain.from_opensubsonic(song.get("replayGain")),
             )
             for song in songs
         ]

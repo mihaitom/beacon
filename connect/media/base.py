@@ -71,6 +71,35 @@ def split_artwork_id(cover_art_id: str) -> tuple[str, str | None]:
 
 
 @dataclass
+class ReplayGain:
+    """A song's loudness data in OpenSubsonic's terms: gains in dB, peaks as
+    linear amplitude. Any of them can be missing."""
+
+    track_gain: float | None = None
+    album_gain: float | None = None
+    track_peak: float | None = None
+    album_peak: float | None = None
+
+    @classmethod
+    def from_opensubsonic(cls, data: dict | None) -> "ReplayGain | None":
+        """From a song's `replayGain` object, as Navidrome and the bridges
+        send it. None when there is nothing in it."""
+        if not data:
+            return None
+        gain = cls(
+            track_gain=_number(data.get("trackGain")),
+            album_gain=_number(data.get("albumGain")),
+            track_peak=_number(data.get("trackPeak")),
+            album_peak=_number(data.get("albumPeak")),
+        )
+        return None if gain == cls() else gain
+
+
+def _number(value) -> float | None:
+    return float(value) if isinstance(value, int | float) and not isinstance(value, bool) else None
+
+
+@dataclass
 class Track:
     id: str
     title: str
@@ -78,6 +107,9 @@ class Track:
     duration: int  # seconds
     cover_art_id: str = field(default="")
     album: str = field(default="")
+    # Only what get_track() and the similar-songs lookups fill in: what
+    # connect needs to apply ReplayGain to a song it moves on to by itself.
+    replay_gain: ReplayGain | None = None
 
 
 @runtime_checkable

@@ -5,6 +5,7 @@ import type { TranscodeFormat } from '@/services/streamQuality'
 import type { SongHint } from '@/services/playback/castPayload'
 import type { TransitionsPayload } from '@/stores/transitions'
 import type { EqualizerBand } from '@/services/equalizer'
+import type { ReplayGainMode } from '@/services/replayGain'
 
 /** Transitions and song hints for a mix - see buildCastMixPayload().
  * Absent means one song at a time, as before transitions existed. */
@@ -13,7 +14,18 @@ interface MixOptions {
   song_hints?: Record<string, SongHint>
 }
 
-interface PlayOptions extends MixOptions {
+/** The ReplayGain setting `gain` was worked out with. connect needs it for
+ * every song after the first, which it starts by itself (see
+ * connect/core/replay_gain.py). */
+interface ReplayGainOptions {
+  replayGainMode?: ReplayGainMode
+}
+
+function replayGainBody(options: ReplayGainOptions): { replay_gain_mode?: ReplayGainMode } {
+  return options.replayGainMode ? { replay_gain_mode: options.replayGainMode } : {}
+}
+
+interface PlayOptions extends MixOptions, ReplayGainOptions {
   targets?: ConnectDeviceRef[]
   gain?: number
   startPosition?: number
@@ -148,6 +160,7 @@ export async function play(songId: string, options: PlayOptions = {}): Promise<P
           }
         : {}),
       ...mixBody(options),
+      ...replayGainBody(options),
       ...(options.equalizers ? { equalizers: options.equalizers } : {}),
     },
   })
@@ -257,14 +270,15 @@ export async function stop(): Promise<void> {
 export async function updateQueue(
   songIds: string[],
   queueIndex: number,
-  options: MixOptions & {
-    originalQueue?: string[]
-    shuffle?: boolean
-    repeatMode?: 'off' | 'all' | 'one'
-    autoplayEnabled?: boolean
-    autoplayBatchSize?: number
-    autoplayTopUp?: boolean
-  } = {},
+  options: MixOptions &
+    ReplayGainOptions & {
+      originalQueue?: string[]
+      shuffle?: boolean
+      repeatMode?: 'off' | 'all' | 'one'
+      autoplayEnabled?: boolean
+      autoplayBatchSize?: number
+      autoplayTopUp?: boolean
+    } = {},
 ): Promise<QueueResponse> {
   return fetchConnect<QueueResponse>('/queue', {
     method: 'POST',
@@ -279,6 +293,7 @@ export async function updateQueue(
       autoplay_topup: options.autoplayTopUp ?? false,
       seq: nextSeq(),
       ...(options.song_hints ? { song_hints: options.song_hints } : {}),
+      ...replayGainBody(options),
     },
   })
 }

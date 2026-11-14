@@ -48,7 +48,7 @@ from .base import (
     subsonic_error,
     update_internet_radio_station,
 )
-from .jellyfin import TICKS_PER_SECOND, JellyfinClient
+from .jellyfin import TICKS_PER_SECOND, JellyfinClient, replay_gain_of
 
 logger = logging.getLogger("connect.jellyfin_bridge")
 
@@ -173,7 +173,7 @@ def _map_song(item: dict) -> dict:
     # — omitted entirely when not favorited, never sent as false.
     if _is_favorite(item):
         song["starred"] = "true"
-    replay_gain = _map_replay_gain(item)
+    replay_gain = replay_gain_of(item)
     if replay_gain:
         song["replayGain"] = replay_gain
     return song
@@ -234,29 +234,6 @@ def _map_song_detail(item: dict) -> dict:
     _set(song, "displayArtist", ", ".join(item.get("Artists") or []))
     _set(song, "displayAlbumArtist", item.get("AlbumArtist"))
     return song
-
-
-def _map_replay_gain(item: dict) -> dict | None:
-    """Jellyfin exposes loudness-normalization data directly on the item
-    (NormalizationGain/AlbumNormalizationGain, dB — populated from the
-    file's own embedded ReplayGain tags when present) rather than nesting it
-    the way OpenSubsonic's `replayGain` object does — reshaped into that
-    same {trackGain, albumGain} shape here so the frontend only ever deals
-    with one format. LUFS is Jellyfin's own loudness-scan fallback for files
-    with no embedded ReplayGain tag, converted to a dB gain against
-    ReplayGain's -18 LUFS reference target."""
-    track_gain = item.get("NormalizationGain")
-    if track_gain is None and item.get("LUFS") is not None:
-        track_gain = -18 - item["LUFS"]
-    album_gain = item.get("AlbumNormalizationGain")
-    if track_gain is None and album_gain is None:
-        return None
-    gain: dict = {}
-    if track_gain is not None:
-        gain["trackGain"] = track_gain
-    if album_gain is not None:
-        gain["albumGain"] = album_gain
-    return gain
 
 
 def _map_album(item: dict) -> dict:

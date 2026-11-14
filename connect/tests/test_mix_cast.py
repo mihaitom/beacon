@@ -11,6 +11,7 @@ Decks are replaced with silent stand-ins: nothing here may start ffmpeg.
 """
 
 import asyncio
+from dataclasses import replace
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -22,6 +23,7 @@ from core.session import build_status_dict, compute_position
 from core.streamer import FALLBACK_FORMAT, REASON_TRANSITIONS, resolve_mix_format
 from delivery import ChromecastDelivery
 from media import Track
+from media.base import ReplayGain
 from routes import mix_cast
 from routes.playback import _finish_orphaned_track, _resync_position_once
 from routes.stream import _resume_after_interruption, advance_now
@@ -249,6 +251,20 @@ def test_a_queue_edit_reaches_the_mix(client, default_session, media):
         )
     changed.assert_called_once()
     assert default_session.state.song_hints["3"]["gain"] == 0.8
+
+
+def test_play_and_queue_remember_the_replay_gain_mode(client, default_session, media):
+    """For the songs connect starts by itself. A client that does not send
+    it leaves the mode alone rather than switching ReplayGain off."""
+    with patch.object(ChromecastDelivery, "play", new=AsyncMock()):
+        _play(client, replay_gain_mode="album")
+    assert default_session.state.replay_gain_mode == "album"
+    client.post("/queue", json={"song_ids": ["1", "3"], "queue_index": 0})
+    assert default_session.state.replay_gain_mode == "album"
+    client.post(
+        "/queue", json={"song_ids": ["1", "3"], "queue_index": 0, "replay_gain_mode": "song"}
+    )
+    assert default_session.state.replay_gain_mode == "song"
 
 
 async def test_a_party_skip_starts_a_new_mix_at_the_next_song(default_session):
@@ -498,6 +514,18 @@ async def test_the_next_song_carries_its_hint(default_session):
     default_session.state.song_hints = {"2": {"gain": 0.4, "album_id": "al", "track": 2}}
     item = await _next(default_session, MixItem("1", 0), queue=["1", "2"])
     assert (item.gain, item.album_id, item.track) == (0.4, "al", 2)
+
+
+async def test_a_song_past_the_hints_gets_its_own_replay_gain(default_session):
+    """The app only sends hints for the next few songs; a mix that plays on
+    past them must not carry the previous song's gain over."""
+    st = default_session.state
+    st.replay_gain_mode, st.current_track_gain = "song", 2.0
+    loud = replace(TRACKS["2"], replay_gain=ReplayGain(track_gain=-6.0))
+    with patch.object(default_session.media, "get_track", return_value=loud):
+        st.queue = ["1", "2"]
+        item = await mix_cast.next_item(default_session, MixItem("1", 0))
+    assert item.gain == pytest.approx(0.501, abs=1e-3)
 
 
 # ── The format ─────────────────────────────────────────────────────────────

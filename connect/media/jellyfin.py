@@ -11,7 +11,7 @@ from core.client_id import stable_id
 from lyrics.shared import CONNECT_VERSION
 
 from . import http_client
-from .base import Track, split_artwork_id
+from .base import ReplayGain, Track, split_artwork_id
 from .login_errors import login_failed
 
 logger = logging.getLogger("connect.jellyfin")
@@ -116,6 +116,30 @@ def authenticate_with_quick_connect(url: str, secret: str) -> dict:
     }
 
 
+def replay_gain_of(item: dict) -> dict | None:
+    """Jellyfin exposes loudness-normalization data directly on the item
+    (NormalizationGain/AlbumNormalizationGain, dB — populated from the
+    file's own embedded ReplayGain tags when present) rather than nesting it
+    the way OpenSubsonic's `replayGain` object does — reshaped into that
+    same {trackGain, albumGain} shape here, which is what the frontend reads
+    from the bridge and connect's own Track.replay_gain is built from. LUFS
+    is Jellyfin's own loudness-scan fallback for files with no embedded
+    ReplayGain tag, converted to a dB gain against ReplayGain's -18 LUFS
+    reference target."""
+    track_gain = item.get("NormalizationGain")
+    if track_gain is None and item.get("LUFS") is not None:
+        track_gain = -18 - item["LUFS"]
+    album_gain = item.get("AlbumNormalizationGain")
+    if track_gain is None and album_gain is None:
+        return None
+    gain: dict = {}
+    if track_gain is not None:
+        gain["trackGain"] = track_gain
+    if album_gain is not None:
+        gain["albumGain"] = album_gain
+    return gain
+
+
 class JellyfinClient:
     def __init__(
         self,
@@ -172,6 +196,7 @@ class JellyfinClient:
             # For Jellyfin the cover art id IS the item id (Primary image endpoint).
             cover_art_id=item["Id"],
             album=item.get("Album", ""),
+            replay_gain=ReplayGain.from_opensubsonic(replay_gain_of(item)),
         )
 
     # See SubsonicClient.get_similar_songs2's identical comment on why this
@@ -200,6 +225,7 @@ class JellyfinClient:
                     duration=int((item.get("RunTimeTicks") or 0) / TICKS_PER_SECOND),
                     cover_art_id=item["Id"],
                     album=item.get("Album", ""),
+                    replay_gain=ReplayGain.from_opensubsonic(replay_gain_of(item)),
                 )
             )
         return tracks

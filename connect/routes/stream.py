@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import Response, StreamingResponse
 
-from core import equalizer
+from core import equalizer, replay_gain
 from core.auth import require_token
 from core.icy_metadata import (
     DEVICE_METAINT,
@@ -64,21 +64,21 @@ logger = logging.getLogger("connect.stream")
 router = APIRouter()
 
 
-async def _dispatch_queued_track(session: SessionState, target, track, gain: float) -> bool:
+async def _dispatch_queued_track(session: SessionState, target, track) -> bool:
     """Server-side track dispatch for _advance_or_end()'s queue auto-advance
     below — the same device-call + state/background-task bookkeeping
     routes/playback.py's /play handler does, minus the claim/target-
     resolution logic that doesn't apply here: `target` is already owned by
     this session, continuing the exact cast /play started (see
-    AppState.queue's comment). Reuses `gain` as-is rather than recomputing
-    ReplayGain for `track` specifically — connect only has track ids here,
-    not the frontend's per-track gain values; a cosmetic volume mismatch
-    at worst, self-corrects next time the frontend dispatches a real /play.
+    AppState.queue's comment). With `track`'s own ReplayGain (see
+    core/replay_gain.py), not the previous song's: this is how a whole
+    queue plays while the phone that started it is asleep.
 
     Returns False (leaving session.state.is_streaming off) on delivery
     failure, so the caller falls back to the normal "nothing more to play"
     broadcast instead of leaving state stuck mid-transition."""
     st = session.state
+    gain = replay_gain.gain_for(st, track)
     track_url = await asyncio.to_thread(session.media.get_stream_url, track.id)
     max_rate, max_depth, max_channels = audio_capability_limits(target)
     output_format = await resolve_output_format(
@@ -97,6 +97,7 @@ async def _dispatch_queued_track(session: SessionState, target, track, gain: flo
     url = stream_url(session.session_id, output_format.content_type)
 
     st.current_track = track
+    st.current_track_gain = gain
     st.current_output_format = output_format
     st.is_streaming = True
     st.clock.start(0.0)
@@ -283,9 +284,7 @@ async def _advance_or_end(session: SessionState, my_generation: int) -> None:
         # device runs out of buffered audio" territory.
         next_track = await _resolve_track(session, next_track_id, "Auto-advance")
         if next_track is not None:
-            dispatched = await _dispatch_queued_track(
-                session, st.active_delivery, next_track, st.current_track_gain
-            )
+            dispatched = await _dispatch_queued_track(session, st.active_delivery, next_track)
             if dispatched:
                 st.queue_index = next_index
                 logger.info(f"[stream] Auto-advanced to {next_track.artist} — {next_track.title}")
@@ -333,7 +332,7 @@ async def _jump_locked(session: SessionState, index: int, context: str) -> bool:
     track = await _resolve_track(session, st.queue[index], context)
     if track is None:
         return False
-    if not await _dispatch_queued_track(session, st.active_delivery, track, st.current_track_gain):
+    if not await _dispatch_queued_track(session, st.active_delivery, track):
         return False
     st.queue_index = index
     # A window that slept through this must not put the old track back.

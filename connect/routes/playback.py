@@ -19,6 +19,7 @@ from core.playback_clock import MAX_PLAUSIBLE_POSITION_LEAD, POSITION_RESYNC_THR
 from core.playlist_url import resolve_stream_url
 from core.radio_position import RadioPositionTracker
 from core.radio_relay import relay_format_for_target
+from core.replay_gain import ReplayGainMode
 from core.session import (
     SessionState,
     build_status_dict,
@@ -865,6 +866,9 @@ class PlayRequest(BaseModel):
     transitions: TransitionSettings | None = None
     # ReplayGain and album order of the songs coming up, for the mix.
     song_hints: dict[str, SongHint] = {}
+    # The ReplayGain setting `gain` came from, for the songs after this one
+    # (see SessionState.replay_gain_mode). None leaves what the session has.
+    replay_gain_mode: ReplayGainMode | None = None
     # Each speaker's equalizer curve, keyed "type:name" (core/equalizer.py).
     # A standing preference like the quality ceiling, so it is remembered on
     # the session for auto-advance. None leaves what the session has.
@@ -985,6 +989,8 @@ async def play_tracks(
         session.state.max_lossy_bitrate_kbps = req.max_lossy_bitrate_kbps
         if req.equalizers is not None:
             session.state.equalizers = sanitize_curves(req.equalizers)
+        if req.replay_gain_mode is not None:
+            session.state.replay_gain_mode = req.replay_gain_mode
         output_format = await resolve_output_format(
             track_url,
             gain=req.gain,
@@ -1878,6 +1884,9 @@ class QueueRequest(BaseModel):
     autoplay_batch_size: int = 10
     # See PlayRequest.song_hints.
     song_hints: dict[str, SongHint] = {}
+    # See PlayRequest.replay_gain_mode - a mode switched mid-song reaches
+    # connect with the next queue push rather than the next /play.
+    replay_gain_mode: ReplayGainMode | None = None
     # Set by the frontend's own Autoplay top-up only. Only these are checked
     # against a racing second top-up (see _is_duplicate_queue_topup()): a
     # user's "Play next" right after a top-up is shaped exactly like such a
@@ -1933,6 +1942,8 @@ async def update_queue(
             st.autoplay_batch_size = req.autoplay_batch_size
             if req.song_hints:
                 st.song_hints.update({k: v.model_dump() for k, v in req.song_hints.items()})
+            if req.replay_gain_mode is not None:
+                st.replay_gain_mode = req.replay_gain_mode
             mix_cast.queue_changed(session)
             await session.event_bus.broadcast(build_status_dict(session))
         return {"status": "ok"}

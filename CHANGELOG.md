@@ -45,6 +45,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- ReplayGain now applies to every song while casting, not only to the one you started: the songs after it used to play at that first song's level, so the volume still changed from song to song (reported by [@ampcat3](https://github.com/ampcat3), [#91](https://github.com/mihaitom/beacon/discussions/91))
 - Home stays current while it is open: "Recently added" picks up new albums after a library scan, "Recently played" moves as soon as a song counts as played, and the top songs no longer disappear when a scan finishes
 - In the mobile layout, a song with a long artist line no longer lets the page slide sideways; the line ends in "..." like the title
 - The queue no longer twitches while it slides in or out, and the page next to it follows smoothly

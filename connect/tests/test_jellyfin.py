@@ -136,6 +136,19 @@ def test_get_track_parses_item(monkeypatch):
     assert track.album == "The Album"
     # Cover art id == item id for Jellyfin
     assert track.cover_art_id == "abc"
+    assert track.replay_gain is None
+
+
+def test_get_track_reads_the_items_normalization_gain(monkeypatch):
+    item = {"Id": "x", "Name": "T", "NormalizationGain": -3.5, "AlbumNormalizationGain": -2.0}
+
+    def fake_get(url, **kwargs):
+        return httpx.Response(200, json=item, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(http_client, "get", fake_get)
+    replay_gain = _client().get_track("x").replay_gain
+    assert replay_gain.track_gain == -3.5
+    assert replay_gain.album_gain == -2.0
 
 
 def test_get_track_falls_back_to_album_artist(monkeypatch):

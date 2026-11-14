@@ -1450,7 +1450,7 @@ async def test_advance_now_moves_the_cast_on(default_session, monkeypatch):
     async def resolve(session, track_id, context):
         return Track(id=track_id, title=f"Title {track_id}", artist="Artist", duration=200)
 
-    async def dispatch(session, target, track, gain):
+    async def dispatch(session, target, track):
         session.state.current_track = track
         return True
 

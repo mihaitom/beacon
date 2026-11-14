@@ -40,7 +40,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-from core import deezer, preview
+from core import deezer, preview, replay_gain
 from core.equalizer import Band
 from core.local_mixes import SongEntry
 from core.mix_engine import MixEngine, MixItem, song_label
@@ -90,12 +90,19 @@ def planner_settings(settings: TransitionSettings | None) -> Settings:
     return Settings(settings.mode, settings.crossfade_seconds, settings.beatmix_bars)
 
 
-def mix_item(session: SessionState, track: Track, queue_index: int, gain: float) -> MixItem:
+def mix_item(
+    session: SessionState, track: Track, queue_index: int, gain: float | None = None
+) -> MixItem:
+    """`gain` is for a song whose gain is already known (the one /play
+    started, or the one a preview interrupted); without it the song's own
+    is worked out. A hint from the app wins over both."""
     hint = session.state.song_hints.get(track.id, {})
+    if gain is None or "gain" in hint:
+        gain = replay_gain.gain_for(session.state, track)
     return MixItem(
         song_id=track.id,
         queue_index=queue_index,
-        gain=hint.get("gain", gain),
+        gain=gain,
         duration=float(track.duration or 0),
         album_id=hint.get("album_id"),
         disc=hint.get("disc"),
@@ -141,7 +148,7 @@ async def next_item(session: SessionState, current: MixItem) -> MixItem | None:
     track = await _resolve_track(session, st.queue[following], "Mix")
     if track is None:
         return None
-    return mix_item(session, track, following, st.current_track_gain)
+    return mix_item(session, track, following)
 
 
 async def _source_url(session: SessionState, item: MixItem) -> str | None:
@@ -384,7 +391,7 @@ async def skip_to(session: SessionState, queue_index: int) -> bool:
     track = await _resolve_track(session, st.queue[queue_index], "Party skip")
     if track is None:
         return False
-    item = mix_item(session, track, queue_index, st.current_track_gain)
+    item = mix_item(session, track, queue_index)
     return await restart(session, item, 0.0) is None
 
 

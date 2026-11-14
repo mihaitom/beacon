@@ -1589,6 +1589,7 @@ export const usePlaybackStore = defineStore('playback', {
             targets: connect.activeTargets,
             startPosition,
             gain: this.replayGainMultiplier,
+            replayGainMode: this.replayGainMode,
             ...this.castQualityPayload,
             ...this.castMixPayload,
             equalizers: useEqualizerStore().castPayload,
@@ -1969,13 +1970,15 @@ export const usePlaybackStore = defineStore('playback', {
      * ffmpeg's `volume` filter argument when the stream starts (see
      * core/streamer.py), not a value the running stream can be told to
      * change — so a mode switch while casting only takes effect from the
-     * next song start onward, same as any other cast-side setting would. */
+     * next song start onward, same as any other cast-side setting would.
+     * connect starts those songs itself, so it is told the new mode now. */
     setReplayGainMode(mode: ReplayGainMode): void {
       this.replayGainMode = mode
+      if (this.isCasting) this.syncCastQueue()
       // A mix applies gain per song itself and is told the new values for
       // the songs still to come; the element's own stays flat.
-      if (getLocalMix().active) this.syncLocalMixQueue()
-      else if (!this.isCasting) getAudioEngine().setReplayGain(this.replayGainMultiplier)
+      else if (getLocalMix().active) this.syncLocalMixQueue()
+      else getAudioEngine().setReplayGain(this.replayGainMultiplier)
     },
 
     /** The stream URL for `song`, recording what was actually decided.
@@ -2636,6 +2639,7 @@ export const usePlaybackStore = defineStore('playback', {
       void connectPlayback
         .updateQueue(fullQueue, queueIndex, {
           song_hints: this.castMixPayload.song_hints,
+          replayGainMode: this.replayGainMode,
           originalQueue,
           shuffle,
           repeatMode,
@@ -2858,6 +2862,7 @@ export const usePlaybackStore = defineStore('playback', {
             startPosition,
             force: f,
             gain,
+            replayGainMode: this.replayGainMode,
             // The same ceiling every other dispatch carries (startCurrent(),
             // and the radio branch above). Missing here, the track already
             // playing was handed to the speaker untouched however this
