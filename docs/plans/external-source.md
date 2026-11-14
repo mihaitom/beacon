@@ -18,7 +18,8 @@ change too:
   (recordings its bands allow to be shared, over the archive's public API),
   the second to show that an online source works too. Nothing for a service
   whose terms forbid fetching its audio, streaming services and video
-  platforms above all, not even "to demonstrate".
+  platforms above all, not even "to demonstrate". They live in `docs/examples/<name>/`,
+  each a project of its own with its own tests (`test-examples.yml`).
 - **No service names** in Beacon's own UI, docs, changelog or code. The tab
   shows the name the admin gave the source. Only an example app and its own
   README name what it plays from.

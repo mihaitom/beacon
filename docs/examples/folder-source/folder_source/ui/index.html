@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Music folder</title>
+    <!-- Relative addresses only: Beacon serves this page from its own
+         address, and only relative ones follow it there. -->
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <a class="brand" href="#/" id="brand">Music folder</a>
+      <nav class="tabs">
+        <a href="#/" data-tab="albums">Albums</a>
+        <a href="#/artists" data-tab="artists">Artists</a>
+      </nav>
+      <div class="search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 3a6.5 6.5 0 0 1 5.2 10.4l5.4 5.4-1.4 1.4-5.4-5.4A6.5 6.5 0 1 1 9.5 3m0 2a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9" /></svg>
+        <input id="search" type="search" placeholder="Search" autocomplete="off" />
+      </div>
+      <button class="icon-button" id="rescan" title="Look for new music">
+        <svg viewBox="0 0 24 24"><path d="M17.7 6.3A8 8 0 1 0 19.7 14h-2.1a6 6 0 1 1-1.3-6.3L13 11h7V4z" /></svg>
+      </button>
+    </header>
+    <!-- A later scan that finds new music shows how far it is here. -->
+    <div id="scan-bar" class="scan-bar" hidden></div>
+    <div id="standalone" class="notice" hidden>
+      Open this page from its tab in Beacon to play music. On its own it can only browse.
+    </div>
+    <main id="view"></main>
+    <div id="toast" role="status"></div>
+    <script src="app.js"></script>
+  </body>
+</html>

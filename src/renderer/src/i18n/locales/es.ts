@@ -1820,7 +1820,7 @@ export default {
     playFailed: 'No se pudo reproducir: {reason}',
     settingsTitle: 'Fuentes externas',
     settingsWhat:
-      'Apps que gestionas tú, cada una con su propia página como pestaña en Beacon, que le pasan canciones para reproducir, también en los altavoces. Beacon no incluye ninguna app de este tipo.',
+      'Apps que gestionas tú, cada una con su propia página como pestaña en Beacon, que le pasan canciones para reproducir, también en los altavoces. Beacon no incluye ninguna; la ayuda tiene un ejemplo para usar o adaptar.',
     name: 'Nombre de la pestaña',
     namePlaceholder: 'p. ej. Lista de deseos',
     add: 'Añadir fuente',

@@ -1821,7 +1821,7 @@ export default {
     playFailed: 'Lecture impossible : {reason}',
     settingsTitle: 'Sources externes',
     settingsWhat:
-      'Des apps que vous hébergez vous-même, chacune avec sa propre page dans un onglet de Beacon, qui lui transmettent des morceaux à lire, y compris sur les enceintes. Beacon ne fournit aucune app de ce genre.',
+      'Des apps que vous hébergez vous-même, chacune avec sa propre page dans un onglet de Beacon, qui lui transmettent des morceaux à lire, y compris sur les enceintes. Beacon n’en fournit aucune ; l’aide propose un exemple à utiliser ou à adapter.',
     name: "Nom de l'onglet",
     namePlaceholder: "p. ex. Liste d'envies",
     add: 'Ajouter une source',

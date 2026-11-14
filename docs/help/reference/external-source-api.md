@@ -134,7 +134,17 @@ Content`). Then a song can be seeked, gets a waveform and can go into a
   still plays. A song keeps its place in Beacon's queue by its `audioUrl`.
 - **No redirects**: Beacon does not follow them.
 
-## A complete example
+## Examples
+
+Beacon's repository has a full app to start from or to run as it is:
+[folder-source](https://github.com/mihaitom/beacon/tree/main/docs/examples/folder-source)
+plays a music folder as albums and artists, with covers, search, play now, next
+and queue, the song that is playing marked, and Beacon's colours. It shows what
+the sections above ask for: the token, signed song addresses that do not
+expire, `Range` requests, and a page that fits a phone. It is written in
+Python and runs in Docker or with `uv`; its README says how to connect it.
+
+### A quick one
 
 Your music folder as albums, with covers, search, "play album", play next and
 add to queue, the song that is playing marked, and Beacon's colours. Every
