@@ -34,6 +34,7 @@ async function mountPage(width: number): Promise<HTMLElement> {
   store.fetchAllSongs = vi.fn()
   store.fetchStarred = vi.fn()
   store.fetchArtists = vi.fn()
+  store.fetchAlbums = vi.fn()
   store.allSongs = Array.from({ length: 40 }, (_, i) =>
     makeSong(`s${i}`, {
       title: `A title long enough to have to give way ${i}`,
