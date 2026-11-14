@@ -46,6 +46,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Fixed
 
 - Home stays current while it is open: "Recently added" picks up new albums after a library scan, "Recently played" moves as soon as a song counts as played, and the top songs no longer disappear when a scan finishes
+- In the mobile layout, a song with a long artist line no longer lets the page slide sideways; the line ends in "..." like the title
 - The queue no longer twitches while it slides in or out, and the page next to it follows smoothly
 - In the help's contents, clicking one of the last questions of a page marks that question instead of one further up
 

@@ -325,7 +325,9 @@ export default {
 }
 
 /* The sheet names one song, on two single lines. */
+/* Block for the artist line's <span>, as .mobile-row__text in base.css. */
 .mobile-song-actions__labels > * {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

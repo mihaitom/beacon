@@ -227,8 +227,13 @@ body {
  * long title would push the second line out of it entirely. Set here, on
  * the primitive, rather than per row component - every list in the phone
  * UI wants the same thing and used to say so one `text-truncate` at a
- * time. */
+ * time.
+ *
+ * `display: block` because a line can be an inline element - a song's
+ * artist line is ArtistCredit's <span> - and overflow does nothing on one:
+ * a long credit ran past the row and let the whole page pan sideways. */
 .mobile-row__text > * {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
