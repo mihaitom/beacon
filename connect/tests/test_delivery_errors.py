@@ -11,6 +11,7 @@ from delivery.errors import (
     REASON_BUSY,
     REASON_NEEDS_PAIRING,
     REASON_REJECTED,
+    REASON_STREAM_UNREACHABLE,
     REASON_UNKNOWN,
     REASON_UNREACHABLE,
     DeviceNotFoundError,
@@ -58,6 +59,10 @@ class TestClassify:
     @pytest.mark.parametrize("code", ["705", "715"])
     def test_a_speaker_already_busy_is_told_apart(self, code):
         assert classify_delivery_error(_upnp(code)) == REASON_BUSY
+
+    @pytest.mark.parametrize("code", ["737", "738", "739"])
+    def test_a_speaker_that_cannot_reach_the_streams_address_is_told_apart(self, code):
+        assert classify_delivery_error(_upnp(code)) == REASON_STREAM_UNREACHABLE
 
     def test_an_unmapped_upnp_code_falls_back_to_unknown(self):
         # A fault code nobody has hit yet must not be guessed at - it still

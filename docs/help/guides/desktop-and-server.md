@@ -81,7 +81,9 @@ accepted for addresses on your own network or a private one like Tailscale.
 ## Disconnecting
 
 Disconnecting in the desktop app leaves everything on the computer as it is.
-Settings the server had already replaced do not come back. Revoking the key on
+Settings the server had already replaced do not come back. What only the
+server has stays there: plays from other devices or imported on the server,
+and settings, themes and lyrics corrections last changed there. Revoking the key on
 the server stops the desktop app from sending, and it says so in Settings.
 
 While connected, importing from Last.fm or ListenBrainz happens on the server,

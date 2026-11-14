@@ -295,6 +295,13 @@
       "beacon_version": {
         "type": "string"
       },
+      "player": {
+        "enum": [
+          "desktop",
+          "server"
+        ],
+        "type": "string"
+      },
       "scopes": {
         "items": {
           "type": "string"

@@ -448,6 +448,8 @@ export default {
         "L'emittente stessa ha rifiutato la connessione. Beacon non ha potuto né inoltrarla a «{device}» né convertirla: probabilmente il suo indirizzo non è più valido",
       source_failed:
         'Beacon non è riuscito a caricare questo brano dal server multimediale, quindi «{device}» non aveva nulla da riprodurre.',
+      stream_unreachable:
+        '«{device}» non è riuscito a raggiungere l’indirizzo da riprodurre. Per una stazione l’indirizzo potrebbe non funzionare più; altrimenti controlla che «{device}» raggiunga Beacon nella tua rete.',
       unknown: 'Riproduzione su «{device}» non riuscita.',
     },
     pairDeviceTitle: 'Associa "{name}"',
@@ -981,6 +983,8 @@ export default {
     serverLinkPairedWith: '{url}, come {name}',
     serverLinkLastSync: 'Ultima sincronizzazione {ago}',
     serverLinkUnsent: 'Non ancora inviati: {count}',
+    serverLinkUnpairKeeps:
+      'Disconnettendo, tutto ciò che è su questo computer resta. Gli ascolti di altri dispositivi e le modifiche fatte sul server restano sul server.',
     serverLinkFailed: 'Non è stato possibile modificare il collegamento',
     deviceKeysTitle: 'App e dispositivi',
     deviceKeysWhat:

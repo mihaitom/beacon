@@ -446,6 +446,8 @@ export default {
         "The station itself refused the connection. Beacon could neither pass it to “{device}” nor convert it - the station's address is most likely out of date",
       source_failed:
         "Beacon couldn't load this track from the media server, so “{device}” had nothing to play.",
+      stream_unreachable:
+        '“{device}” could not reach the address it was given to play. For a station that address may no longer work; otherwise check that “{device}” can reach Beacon on your network.',
       unknown: 'Playback on “{device}” failed.',
     },
     pairDeviceTitle: 'Pair "{name}"',
@@ -973,6 +975,8 @@ export default {
     serverLinkPairedWith: '{url}, as {name}',
     serverLinkLastSync: 'Last synced {ago}',
     serverLinkUnsent: 'Not sent yet: {count}',
+    serverLinkUnpairKeeps:
+      'Disconnecting keeps everything on this computer. Plays from other devices and changes made on the server stay on the server.',
     serverLinkFailed: 'The connection could not be changed',
     deviceKeysTitle: 'Apps and devices',
     deviceKeysWhat:

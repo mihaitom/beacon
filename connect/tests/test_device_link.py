@@ -1467,6 +1467,13 @@ def test_me_says_who_the_key_is_and_what_it_may_do(public):
     assert answer["beacon_version"]
 
 
+@pytest.mark.parametrize("desktop", [True, False])
+def test_me_says_whether_the_player_is_a_desktop_app_or_a_server(public, monkeypatch, desktop):
+    monkeypatch.setattr(server_link, "AVAILABLE", desktop)
+    answer = public.get("/device-link/v1/me", headers=auth(app_key("history"))).json()
+    assert answer["player"] == ("desktop" if desktop else "server")
+
+
 def test_me_needs_a_key(public):
     assert public.get("/device-link/v1/me").status_code == 401
 
@@ -3307,6 +3314,32 @@ def test_revoking_lets_go_of_the_keys_login(client, public, on_server, handlers,
     client.delete(f"/device-keys/{key_id}")
     assert key_id not in device_link._library_clients
     assert key_id not in player_server._key_sessions
+
+
+def test_the_desktop_does_not_take_over_a_speaker_somebody_else_holds(public, default_session):
+    window(default_session, playing=True, current_song={"id": "s1"})
+    asyncio.run(claims.claim("sonos", "Den", "somebody-else"))
+    with patch.object(player_desktop, "relay_command", AsyncMock()) as relayed:
+        response = send(
+            public, control_key(), type="devices", devices=[{"type": "sonos", "name": "Den"}]
+        )
+    assert response.status_code == 409
+    assert response.json()["detail"] == "device_in_use"
+    relayed.assert_not_awaited()
+
+
+def test_the_desktop_keeps_a_speaker_its_own_window_holds(public, default_session):
+    window(default_session, playing=True, current_song={"id": "s1"})
+    asyncio.run(claims.claim("sonos", "Den", default_session.session_id))
+    with patch.object(player_desktop, "relay_command", AsyncMock()) as relayed:
+        response = send(
+            public,
+            control_key(),
+            type="devices",
+            devices=[{"type": "sonos", "name": "Den"}, {"type": "dlna", "name": "Hall"}],
+        )
+    assert response.status_code == 200
+    assert relayed.await_args.args[0] == "cast-to-many"
 
 
 def test_volume_reaches_every_speaker_the_window_casts_to(public, default_session):

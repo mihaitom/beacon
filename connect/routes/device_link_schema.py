@@ -21,6 +21,10 @@ class Me(BaseModel):
     username: str
     scopes: list[str] = Field(description="What this key may do")
     beacon_version: str
+    player: Literal["desktop", "server"] = Field(
+        description="What `/player` steers: the desktop app itself, or the account's casts "
+        "on a server, which has no computer of its own to play on"
+    )
     api_version: int = Field(
         description="Raised only for a change an existing app cannot cope with"
     )

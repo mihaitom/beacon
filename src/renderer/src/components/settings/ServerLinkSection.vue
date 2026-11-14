@@ -17,6 +17,7 @@
           <p v-if="link.unsent" class="setting__hint">
             {{ $t('settings.serverLinkUnsent', { count: link.unsent }) }}
           </p>
+          <p class="setting__hint">{{ $t('settings.serverLinkUnpairKeeps') }}</p>
         </template>
 
         <template v-else>

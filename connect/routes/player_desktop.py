@@ -10,6 +10,7 @@ import time
 
 from fastapi import HTTPException, Response
 
+from core.claims import claims
 from core.device_keys import LIBRARY, KeyOwner
 from core.remote import remote
 from core.session import SessionState, registry
@@ -95,6 +96,17 @@ def _require_window(owner: KeyOwner) -> None:
         raise HTTPException(status_code=409, detail="not_available")
 
 
+def _refuse_held_speakers(owner: KeyOwner, wanted) -> None:
+    """An app never takes a speaker over, as on a server: unlike the phone
+    remote it may not have shown anybody who holds it. Checked here, since
+    the window's relay command always takes over (made for the phone)."""
+    window = _window(owner)
+    for device in wanted:
+        holder = claims.owner_of(device.type, device.name)
+        if holder is not None and (window is None or holder != window.session_id):
+            raise HTTPException(status_code=409, detail="device_in_use")
+
+
 async def command(owner: KeyOwner, cmd) -> None:
     """The window's relay commands, which toggle where v1 says what it wants."""
     _require_window(owner)
@@ -133,7 +145,9 @@ async def command(owner: KeyOwner, cmd) -> None:
         for _ in range((_REPEAT_ORDER.index(wanted) - _REPEAT_ORDER.index(current)) % 3):
             await relay_command("repeat", {})
     elif kind == "devices":
-        targets = [{"deviceType": d.type, "name": d.name} for d in needs(cmd, "devices")]
+        wanted = needs(cmd, "devices")
+        _refuse_held_speakers(owner, wanted)
+        targets = [{"deviceType": d.type, "name": d.name} for d in wanted]
         await relay_command("cast-to-many", {"targets": targets})
     elif kind == "queue_jump":
         await relay_command("queue-jump", {"index": needs(cmd, "index")})

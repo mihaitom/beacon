@@ -120,9 +120,7 @@ class BeaconConfigFlow(ConfigFlow, domain=DOMAIN):
                 return self.async_create_entry(title=f"Beacon on {host}", data=data)
         return self.async_show_form(
             step_id="user",
-            data_schema=vol.Schema(
-                {vol.Required(CONF_URL): str, vol.Required(CONF_KEY): str}
-            ),
+            data_schema=vol.Schema({vol.Required(CONF_URL): str, vol.Required(CONF_KEY): str}),
             errors=errors,
         )
 

@@ -114,18 +114,24 @@ class BeaconCoordinator:
 
     @property
     def sources(self) -> list[str]:
-        """This computer, then every speaker that can be cast to right away."""
-        return [LOCAL_SOURCE] + [d["name"] for d in self.devices if not d.get("needs_pairing")]
+        """This computer, then every speaker that can be cast to right away.
+        A server has no computer of its own to play on."""
+        speakers = [d["name"] for d in self.devices if not d.get("needs_pairing")]
+        return speakers if self.client.on_server else [LOCAL_SOURCE, *speakers]
 
     @property
-    def source(self) -> str:
-        if not self.casting:
+    def source(self) -> str | None:
+        if self.casting:
+            return " + ".join(t.get("name", "?") for t in self.casting)
+        if not self.client.on_server:
             return LOCAL_SOURCE
-        return " + ".join(t.get("name", "?") for t in self.casting)
+        # Idle on a server: the speaker picked for the next start, if any.
+        pending = self.client.pending_speakers
+        return " + ".join(d["name"] for d in pending) if pending else None
 
     async def select_source(self, source: str) -> None:
         """Plays on exactly this one: the computer, or a single speaker."""
-        if source == LOCAL_SOURCE:
+        if source == LOCAL_SOURCE and not self.client.on_server:
             await self.cast_to([])
             return
         device = next((d for d in self.devices if d["name"] == source), None)
@@ -140,3 +146,5 @@ class BeaconCoordinator:
             "cast-to-many",
             {"targets": [{"deviceType": t, "name": n} for t, n in targets]},
         )
+        # Idle on a server nothing else reports the speaker now picked.
+        self._notify()

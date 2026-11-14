@@ -29,7 +29,7 @@ in use (see [More than one computer](#more-than-one-computer)):
 | Entity                            | What it does                                                                                                                                                     |
 | --------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `media_player.beacon`             | What is playing, with cover, position and volume. Play, pause, skip, seek, shuffle, repeat, volume. The library in the media browser.                            |
-| `select.beacon_speaker`           | Where Beacon plays: `This computer` or one speaker.                                                                                                              |
+| `select.beacon_speaker`           | Where Beacon plays: `This computer` (desktop app only) or one speaker.                                                                                           |
 | `switch.beacon_autoplay`          | Autoplay: keeps playing similar songs when the queue runs out.                                                                                                   |
 | `sensor.beacon_now_playing`       | "Artist – Title" as plain text, so the history and logbook list the songs.                                                                                       |
 | `sensor.beacon_queue`             | How many songs are queued; the next ones are in its `up_next` attribute.                                                                                         |
@@ -64,8 +64,9 @@ playing on the computer (`This computer`), and shows a running party.
 On a **server**, it steers the account's music on speakers. Something played
 in a browser tab is not steered from here. With nothing on a speaker yet,
 pick one under `select.beacon_speaker` first, then start a playlist, album
-or station: it begins there. A speaker somebody else is playing on stays
-theirs. `This computer` stops the music on the speakers.
+or station: it begins there, and the speaker select shows it until then. A
+speaker somebody else is playing on stays theirs. There is no `This
+computer`: a server has no computer of its own to play on.
 
 ## Before you start
 

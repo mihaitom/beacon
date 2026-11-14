@@ -450,6 +450,8 @@ export default {
         "La station elle-même a refusé la connexion. Beacon n'a pu ni la transmettre à « {device} » ni la convertir - son adresse n'est probablement plus valable",
       source_failed:
         "Beacon n'a pas pu charger ce titre depuis le serveur multimédia, « {device} » n'avait donc rien à lire.",
+      stream_unreachable:
+        '« {device} » n’a pas pu joindre l’adresse qu’il devait lire. Pour une station, cette adresse ne fonctionne peut-être plus ; sinon, vérifiez que « {device} » peut joindre Beacon sur votre réseau.',
       unknown: 'La lecture sur « {device} » a échoué.',
     },
     pairDeviceTitle: 'Associer « {name} »',
@@ -985,6 +987,8 @@ export default {
     serverLinkPairedWith: '{url}, en tant que {name}',
     serverLinkLastSync: 'Dernière synchronisation {ago}',
     serverLinkUnsent: 'Pas encore envoyés : {count}',
+    serverLinkUnpairKeeps:
+      'La déconnexion conserve tout ce qui se trouve sur cet ordinateur. Les écoutes d’autres appareils et les modifications faites sur le serveur restent sur le serveur.',
     serverLinkFailed: "La connexion n'a pas pu être modifiée",
     deviceKeysTitle: 'Applications et appareils',
     deviceKeysWhat:

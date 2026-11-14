@@ -1,4 +1,4 @@
-import { fireCommand, fetchPlaylists, fetchPlaylist } from '../api.js';
+import { sendReportedCommand, fetchPlaylists, fetchPlaylist } from '../api.js';
 import { renderSongRow } from '../song-row.js';
 import { navigate, registerRoute } from '../router.js';
 import { createArt } from '../art.js';
@@ -48,21 +48,39 @@ export function renderPlaylistDetail(root, params) {
       // was a third heading size on top of the two the views used.
       header.innerHTML = `<h1 class="view-title">${escapeHtml(playlist.name)}</h1>`;
       const playAllBtn = document.createElement('button');
-      playAllBtn.className = 'btn btn-primary';
-      playAllBtn.textContent = t('action.playAll');
-      playAllBtn.style.marginBottom = '12px';
-      playAllBtn.addEventListener('click', () => fireCommand('play-playlist', { playlistId: playlist.id }));
+      playAllBtn.className = 'btn btn-primary play-all';
+      const playAllIcon = document.createElement('i');
+      playAllIcon.className = 'mdi mdi-play';
+      playAllBtn.append(playAllIcon, t('action.playAll'));
       header.appendChild(playAllBtn);
       container.appendChild(header);
+
+      // Acked only once playback has started, which with a speaker takes
+      // seconds (COMMAND_TIMEOUT in routes/remote.py): until then the button
+      // turns, and a second tap starts nothing.
+      let pending = false;
+      const play = (payload, busy) => {
+        if (pending) return;
+        pending = true;
+        playAllBtn.disabled = true;
+        playAllIcon.className = 'mdi mdi-loading mdi-spin';
+        busy?.classList.add('row--busy');
+        sendReportedCommand('play-playlist', { playlistId: playlist.id, ...payload })
+          .catch(() => {})
+          .finally(() => {
+            pending = false;
+            playAllBtn.disabled = false;
+            playAllIcon.className = 'mdi mdi-play';
+            busy?.classList.remove('row--busy');
+          });
+      };
+      playAllBtn.addEventListener('click', () => play({}));
 
       const list = document.createElement('div');
       list.className = 'list';
       songs.forEach((song, index) => {
-        list.appendChild(
-          renderSongRow(song, {
-            onPlay: () => fireCommand('play-playlist', { playlistId: playlist.id, startIndex: index }),
-          }),
-        );
+        const row = renderSongRow(song, { onPlay: () => play({ startIndex: index }, row) });
+        list.appendChild(row);
       });
       container.appendChild(list);
     })

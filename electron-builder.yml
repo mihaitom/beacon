@@ -56,10 +56,13 @@ extraResources:
 win:
     icon: build/icons/icon.ico
     target:
+        # x64 only, as on macOS for arm64: the bundled Connect backend and
+        # ffmpeg are built on the x64 runner and cannot cross-compile, so an
+        # arm64 package would carry x64 binaries anyway. Windows on ARM runs
+        # the x64 installer emulated.
         - target: nsis
           arch:
               - x64
-              - arm64
 
 nsis:
     allowToChangeInstallationDirectory: true

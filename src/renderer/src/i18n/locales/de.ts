@@ -447,6 +447,8 @@ export default {
         'Der Sender selbst hat die Verbindung abgelehnt. Beacon konnte ihn weder an „{device}“ weiterreichen noch umwandeln - die Adresse des Senders stimmt vermutlich nicht mehr',
       source_failed:
         'Beacon konnte diesen Titel nicht vom Medienserver laden, „{device}“ hatte deshalb nichts zum Abspielen.',
+      stream_unreachable:
+        '„{device}“ konnte die Adresse, die es abspielen sollte, nicht erreichen. Bei einem Sender gilt die Adresse vielleicht nicht mehr; sonst prüfe, ob „{device}“ Beacon in deinem Netzwerk erreicht.',
       unknown: 'Die Wiedergabe auf „{device}“ ist fehlgeschlagen.',
     },
     pairDeviceTitle: '„{name}“ koppeln',
@@ -984,6 +986,8 @@ export default {
     serverLinkPairedWith: '{url}, als {name}',
     serverLinkLastSync: 'Zuletzt abgeglichen {ago}',
     serverLinkUnsent: 'Noch nicht gesendet: {count}',
+    serverLinkUnpairKeeps:
+      'Beim Trennen bleibt alles auf diesem Computer erhalten. Wiedergaben anderer Geräte und Änderungen, die auf dem Server gemacht wurden, bleiben auf dem Server.',
     serverLinkFailed: 'Die Verbindung konnte nicht geändert werden',
     deviceKeysTitle: 'Apps und Geräte',
     deviceKeysWhat:

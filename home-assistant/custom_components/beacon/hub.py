@@ -26,6 +26,8 @@ class _NoClient:
         raise BeaconError("No Beacon is running")
 
     get_state = query = command = _fail
+    on_server = False
+    pending_speakers: tuple[dict, ...] = ()
 
     def cover_url(self, *args, **kwargs) -> None:
         return None

@@ -451,6 +451,8 @@ export default {
         'La propia emisora rechazó la conexión. Beacon no pudo ni pasarla a «{device}» ni convertirla; probablemente la dirección de la emisora ya no sea válida',
       source_failed:
         'Beacon no pudo cargar esta canción desde el servidor multimedia, así que «{device}» no tenía nada que reproducir.',
+      stream_unreachable:
+        '«{device}» no pudo llegar a la dirección que debía reproducir. En una emisora puede que esa dirección ya no funcione; si no, comprueba que «{device}» llega a Beacon en tu red.',
       unknown: 'Falló la reproducción en «{device}».',
     },
     pairDeviceTitle: 'Emparejar "{name}"',
@@ -984,6 +986,8 @@ export default {
     serverLinkPairedWith: '{url}, como {name}',
     serverLinkLastSync: 'Última sincronización {ago}',
     serverLinkUnsent: 'Sin enviar: {count}',
+    serverLinkUnpairKeeps:
+      'Al desconectar, todo lo de este ordenador se conserva. Las reproducciones de otros dispositivos y los cambios hechos en el servidor se quedan en el servidor.',
     serverLinkFailed: 'No se ha podido cambiar la conexión',
     deviceKeysTitle: 'Aplicaciones y dispositivos',
     deviceKeysWhat:

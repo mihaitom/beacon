@@ -23,6 +23,10 @@ class BeaconAuthError(BeaconError):
 
 
 class BeaconClient:
+    # The integration key only ever reached a desktop app.
+    on_server = False
+    pending_speakers: tuple[dict, ...] = ()
+
     def __init__(self, session: aiohttp.ClientSession, host: str, port: int, key: str):
         self._session = session
         self.host = host

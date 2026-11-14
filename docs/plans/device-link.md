@@ -512,9 +512,11 @@ a budget of their own, 600 a minute: a media browser opening a list of albums
 asks for every cover in it at once.
 
 `devices` on the desktop goes through the window like the phone remote's
-picker, which takes a speaker over after the listener saw who holds it. On a
+picker. That picker takes a speaker over after the listener saw who holds
+it; an app may not have shown anybody, so connect answers 409
+`device_in_use` for a speaker held by another session before relaying. On a
 server it joins the new speakers and then lets go of the others, and never
-takes one over.
+takes one over either.
 
 ### Home Assistant
 

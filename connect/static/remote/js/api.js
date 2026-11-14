@@ -88,12 +88,20 @@ export function sendCommand(type, payload = {}) {
  * Not silent: the banner keeps "that didn't happen" from looking like
  * "Beacon ignored me". */
 export function fireCommand(type, payload = {}) {
-  sendCommand(type, payload).catch((error) => {
+  sendReportedCommand(type, payload).catch(() => {});
+}
+
+/** sendCommand() for a button that waits for the ack to show it is busy:
+ * raises the same banner as fireCommand() on a failure, then rejects. */
+export function sendReportedCommand(type, payload = {}) {
+  return sendCommand(type, payload).catch((error) => {
     // Already handled globally — request() dispatches its own event and
     // app.js sends the user back to the login screen.
-    if (error instanceof UnauthorizedError) return;
-    console.error('[remote] Command failed:', type, error);
-    window.dispatchEvent(new CustomEvent('beacon-remote-command-failed'));
+    if (!(error instanceof UnauthorizedError)) {
+      console.error('[remote] Command failed:', type, error);
+      window.dispatchEvent(new CustomEvent('beacon-remote-command-failed'));
+    }
+    throw error;
   });
 }
 

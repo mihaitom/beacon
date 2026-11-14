@@ -91,6 +91,12 @@ class BeaconV1Client:
         self._player: dict = {}
         # Picked while nothing played: a server starts the next song there.
         self._speakers: list[dict] = []
+        # A server has no computer of its own to play on (/me's `player`).
+        self.on_server = False
+
+    @property
+    def pending_speakers(self) -> list[dict]:
+        return self._speakers
 
     @property
     def base(self) -> str:
@@ -246,6 +252,8 @@ class BeaconV1Client:
         is unavailable as when it is not running."""
         while True:
             try:
+                # Asked on every connect: the address may now lead elsewhere.
+                self.on_server = (await self.me()).get("player") == "server"
                 async with self._session.get(
                     f"{self.base}/player/events",
                     headers=self._headers,

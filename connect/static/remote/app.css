@@ -100,6 +100,10 @@ textarea {
 }
 
 .btn-primary { background: var(--accent); color: var(--accent-on); }
+.btn:disabled { opacity: 0.6; }
+
+/* Play All: icon beside the label; it turns while the start is on its way. */
+.play-all { display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 12px; }
 .btn-secondary { background: var(--surface-2); color: var(--text); }
 
 /* ── App shell ── */
@@ -637,6 +641,9 @@ input[type="range"]:disabled::-moz-range-thumb {
 }
 
 .row-main { flex: 1; min-width: 0; }
+
+/* A song a playlist start was sent for, until Beacon has acked it. */
+.row--busy { opacity: 0.5; pointer-events: none; }
 
 /* Pinned rather than inherited: without a size of its own this was
  * whatever the browser's default happened to be (16px), which is a large

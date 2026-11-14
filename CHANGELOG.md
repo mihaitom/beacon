@@ -30,10 +30,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The Radio page is now a wall of station logos, each on a sleeve in the logo's own colours, with the list still one click away. It can be narrowed by your most common genres and sorted by last heard, name, country or bitrate, and a click on the playing station stops it
 - The Last.fm name is set in Settings next to ListenBrainz, and the playlist builder only starts from it instead of changing it
 - The help is sorted by topic, so that for example the desktop app, your own apps and home automation sit together, and its questions stand out from their answers
+- A speaker that cannot reach the address it was given to play now says so, instead of a general "Playback failed"
+- In the Remote Control, Play All and the songs of a playlist show that the music is starting until it plays, and a second tap no longer starts it again
 
 ### Deprecated
 
 - The Home automation key in Settings > Advanced is being retired and will be removed in a later release. It keeps working until then; Home Assistant points out an integration still using it and switches it to a new key in one step
+
+### Removed
+
+- There is no separate Windows installer for ARM anymore: its backend ran emulated anyway. Windows on ARM uses the regular Windows installer
 
 ### Fixed
 

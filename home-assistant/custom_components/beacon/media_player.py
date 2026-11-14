@@ -166,7 +166,7 @@ class BeaconPlayer(BeaconEntity, MediaPlayerEntity):
         return self.coordinator.sources
 
     @property
-    def source(self) -> str:
+    def source(self) -> str | None:
         return self.coordinator.source
 
     @property

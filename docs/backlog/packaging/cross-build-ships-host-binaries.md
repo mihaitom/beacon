@@ -18,5 +18,6 @@ example in an electron-builder `afterPack` hook that checks the file format.
 `test-package.yml` already looks at the package, but only on native runners,
 where this cannot happen.
 
-Related: [the Windows arm64 installer carries x64 binaries](windows-arm64-installer-x64-binaries.md),
-which a check that also compares the architecture would catch too.
+A check that also compares the architecture would catch a package carrying
+another architecture's binaries too, which is why Windows ships x64 only
+(`electron-builder.yml`).

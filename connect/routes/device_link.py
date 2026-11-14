@@ -249,6 +249,8 @@ def get_me(owner: KeyOwner = Depends(_public_caller)) -> dict:
         "username": owner.account.username,
         "scopes": sorted(owner.scopes),
         "beacon_version": CONNECT_VERSION,
+        # AVAILABLE: this is a desktop app.
+        "player": "desktop" if server_link.AVAILABLE else "server",
         "api_version": schema.API_VERSION,
     }
 
