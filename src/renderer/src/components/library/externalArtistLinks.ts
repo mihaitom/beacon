@@ -27,7 +27,7 @@ export type ExternalLinkKey = ArtistLinkService | 'deezer'
 
 // Order these actually render in — real streaming/marketplace services
 // first, MusicBrainz itself last (it's the "raw metadata page" fallback,
-// same role it plays as HomeView.vue's own last-resort link used to play
+// same role it plays as Home's own last-resort link used to play
 // alone, before this). Typed as ExternalLinkKey[] (not `as const`, unlike
 // before this was derived from ArtistLinkService instead of defining its
 // own union) so EXTERNAL_LINK_META below is still required to cover every

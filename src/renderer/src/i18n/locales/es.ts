@@ -133,6 +133,7 @@ export default {
     layoutList: 'En lista',
     layoutGrid: 'En cuadrícula',
     layout: 'Vista',
+    favoritesOnly: 'Solo favoritos',
     sortBy: 'Ordenar por',
     albumColumnType: 'Tipo',
     albumSort: {

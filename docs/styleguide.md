@@ -532,6 +532,17 @@ the play count behind - five to a column, two columns once the section is
 Ranked down the first column and on into the next. A song table there
 brought column headings and sorting to a list that is only ever read.
 
+The phone's Home (`MobileHomeView.vue`) shows the same shelves, from the
+same code (`composables/homeShelves.ts`), laid out for one hand: a compact
+hero with the cover beside the text, the recently played as two columns of
+`MobileAlbumTile` tiles, songs as `.mobile-row` lists of five, and albums to
+browse as sideways rows (`v-slide-group`). A tile's cover carries a play
+mark and plays; its name opens the album. Home is for starting something,
+so playing is the bigger target - the library's rows, which are for
+picking, open on a tap instead. The desktop's "new artists" shelf is left
+out: those artists are not in the library, and every way to them leads out
+of the app.
+
 A tile that is a link does not lift or move on hover; only what is inside
 it may answer the pointer (the Genres page's crates flip through their
 records). Tiles that rose on hover flickered under a pointer swept across a
@@ -563,7 +574,10 @@ Everything in a filter row is a flat 40px pill on one surface
 inside the pill), a sort select, the view toggle. Exact spelling is an "Aa"
 toggle in the field's end (`<exact-match-switch />` in `#append-inner`),
 amber when on like a selected toggle segment - it belongs to the search, so
-it does not stand beside it as a labelled switch. The top bar's search
+it does not stand beside it as a labelled switch. The phone library's
+favourites filter is the same kind of toggle: a heart in the search field's
+end, which narrows the list showing to the favourites and renames the page
+"Favorites" while it is on, so a shorter list never reads as missing music. The top bar's search
 carries the same toggle; the results page has none of its own and searches
 again when the setting changes.
 

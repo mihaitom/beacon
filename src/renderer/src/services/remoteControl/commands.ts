@@ -499,8 +499,8 @@ export async function resolveRemoteQuery(
       }
     }
     case 'favorites-request': {
-      // Songs, albums and artists, as on the phone shell's own favourites
-      // tab (see MobileFavoritesView.vue).
+      // Songs, albums and artists, as the phone shell's library shows them
+      // with its heart filter on (see MobileLibraryView.vue).
       await library.fetchStarred()
       return {
         songs: library.starred.songs.map(toRemoteSong),

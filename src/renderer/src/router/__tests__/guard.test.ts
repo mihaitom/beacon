@@ -135,6 +135,16 @@ describe('the router auth guard', () => {
 
     await router.push('/')
 
-    expect(router.currentRoute.value.name).toBe('m-now-playing')
+    expect(router.currentRoute.value.name).toBe('m-home')
+  })
+
+  it('takes an old favourites link to the library with its heart filter on', async () => {
+    const router = await freshRouter()
+    useAuthStore().authenticated = true
+
+    await router.push('/m/favorites')
+
+    expect(router.currentRoute.value.name).toBe('m-library')
+    expect(router.currentRoute.value.query).toEqual({ favorites: '1' })
   })
 })

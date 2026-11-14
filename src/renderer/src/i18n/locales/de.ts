@@ -129,6 +129,7 @@ export default {
     layoutList: 'Als Liste',
     layoutGrid: 'Als Raster',
     layout: 'Ansicht',
+    favoritesOnly: 'Nur Favoriten',
     sortBy: 'Sortieren nach',
     albumColumnType: 'Typ',
     albumSort: {

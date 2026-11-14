@@ -131,6 +131,7 @@ export default {
     layoutList: 'En liste',
     layoutGrid: 'En grille',
     layout: 'Affichage',
+    favoritesOnly: 'Favoris uniquement',
     sortBy: 'Trier par',
     albumColumnType: 'Type',
     albumSort: {

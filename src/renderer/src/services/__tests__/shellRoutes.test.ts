@@ -34,10 +34,10 @@ describe('routeInOtherShell', () => {
 
   describe('into the desktop shell', () => {
     it.each([
+      ['m-home', 'home'],
       ['m-now-playing', 'now-playing'],
       ['m-playlists', 'playlists'],
       ['m-radio', 'radio'],
-      ['m-favorites', 'favorites'],
       ['m-library', 'songs'],
     ])('takes %s to %s', (from, to) => {
       expect(landing(route(from), false)?.name).toBe(to)
@@ -58,6 +58,10 @@ describe('routeInOtherShell', () => {
       expect(landing(route('m-library', {}, { tab: 'albums' }), false)?.name).toBe('albums')
     })
 
+    it('takes the library to Favorites while its heart filter is on', () => {
+      expect(landing(route('m-library', {}, { favorites: '1' }), false)?.name).toBe('favorites')
+    })
+
     /** The desktop has no queue page; the queue is the drawer beside Now
      * Playing. */
     it('takes the queue to Now Playing with the queue drawer open', () => {
@@ -75,11 +79,10 @@ describe('routeInOtherShell', () => {
 
   describe('into the phone shell', () => {
     it.each([
-      ['home', 'm-now-playing'],
+      ['home', 'm-home'],
       ['now-playing', 'm-now-playing'],
       ['playlists', 'm-playlists'],
       ['radio', 'm-radio'],
-      ['favorites', 'm-favorites'],
       ['songs', 'm-library'],
     ])('takes %s to %s', (from, to) => {
       expect(landing(route(from), true)?.name).toBe(to)
@@ -93,6 +96,13 @@ describe('routeInOtherShell', () => {
       expect(landing(route('album-detail', { id: 'a1' }), true)).toMatchObject({
         name: 'm-album-detail',
         params: { id: 'a1' },
+      })
+    })
+
+    it('opens the library with its heart filter on for Favorites', () => {
+      expect(landing(route('favorites'), true)).toMatchObject({
+        name: 'm-library',
+        query: { favorites: '1' },
       })
     })
 
@@ -119,6 +129,7 @@ describe('routeInOtherShell', () => {
 
   /** Turning a tablet back and forth must end up where it started. */
   it.each([
+    route('m-home'),
     route('m-now-playing'),
     route('m-playlists'),
     route('m-playlist-detail', { id: 'p1' }),
@@ -126,7 +137,7 @@ describe('routeInOtherShell', () => {
     route('m-library', {}, { tab: 'albums' }),
     route('m-album-detail', { id: 'a1' }),
     route('m-radio'),
-    route('m-favorites'),
+    route('m-library', {}, { favorites: '1' }),
   ])('round-trips $name', (start) => {
     const there = landing(start, false)!
     const back = landing(route(String(there.name), there.params as never, there.query), true)!

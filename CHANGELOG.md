@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The desktop app and a Beacon server of yours can now be connected, which you set up once in Settings on both sides: the two then show the same listening history and follow the same settings, your own themes come along and, if you confirm it for that device, the server's Last.fm and Fanart keys too, and what you play while the server is away is sent later. Each also sees which speakers the other is playing on and asks before taking one over
 - Apps you write yourself can read your listening history, statistics, what is playing and its lyrics, and if you allow it control playback and start music from your library, each with its own key made in Settings. A server offers this for its accounts and the desktop app for apps on its own network; the FAQ has the details, and an AI assistant can be pointed at a description of it to write such an app for you
 - Home Assistant now works with a Beacon server too, steering what an account plays on its speakers, and it is set up with the same kind of key as your own apps
+- Phones now have a Home page as their first tab: what you played last, your most played songs, new albums, songs you have not heard in a while and albums to discover from your library. Opening Beacon on a phone starts there (suggested by [@b-r-y](https://github.com/b-r-y), [#87](https://github.com/mihaitom/beacon/discussions/87))
 - Lyrics timing you corrected for a song now follows your account on the same server, and between the desktop app and a server once the two are connected
 - You can save several themes of your own instead of one; they follow your account on the same server, and between the desktop app and a server once the two are connected
 - A server administrator can look at the Stats page of the other accounts on the server
@@ -28,6 +29,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - A playlist's page can be searched, filtered and sorted like Songs, always starting in the playlist's own order, and Play and Preview take what is on screen. Its artwork is a stack of its albums that flips through on hover
 - The dialogs for creating and editing a playlist show its records beside the name and say who gets to see it
 - The Radio page is now a wall of station logos, each on a sleeve in the logo's own colours, with the list still one click away. It can be narrowed by your most common genres and sorted by last heard, name, country or bitrate, and a click on the playing station stops it
+- On phones, Favorites moved into the library: the heart in its search field narrows songs, albums or artists to your favourites, which can now be searched too
 - The Last.fm name is set in Settings next to ListenBrainz, and the playlist builder only starts from it instead of changing it
 - The help is sorted by topic, so that for example the desktop app, your own apps and home automation sit together, and its questions stand out from their answers
 - A speaker that cannot reach the address it was given to play now says so, instead of a general "Playback failed"

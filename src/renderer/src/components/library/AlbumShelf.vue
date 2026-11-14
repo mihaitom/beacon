@@ -112,7 +112,7 @@ export default {
       default: false,
     },
     // Parent-owned — fetching every shelf album's full song list (see
-    // HomeView.vue's playAllAlbums()) is a real network round-trip per
+    // homeShelves.ts's playAllAlbums()) is a real network round-trip per
     // album, worth showing feedback for rather than a silent multi-second
     // pause after the click.
     playAllLoading: {

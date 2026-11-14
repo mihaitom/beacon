@@ -99,7 +99,7 @@
               <!-- Secondary on purpose: the pill above is what this band is
                - for. Only shown when the hero is a *song* (the seed a mix is
                - built from) and the server can build one at all — see
-               - HomeView.vue's heroCanStartRadio. -->
+               - homeShelves.ts's heroCanStartRadio. -->
               <v-btn
                 v-if="canStartRadio"
                 prepend-icon="mdi-radio-tower"
@@ -162,7 +162,7 @@ export default {
     title: { type: String, default: '' },
     // Route for the title itself — only meaningful when `title` names an
     // album (the "nothing playing, here's your most recent album" fallback
-    // state; see HomeView.vue's heroTitle/heroTitleTo). When a song is
+    // state; see homeShelves.ts's heroTitle/heroTitleTo). When a song is
     // playing, `title` is the *song's* name instead, which has no page of
     // its own in this app to link to.
     titleTo: { type: String as PropType<string | null>, default: null },

@@ -21,6 +21,7 @@ export function routeInOtherShell(
   if (mobile) {
     switch (route.name) {
       case 'home':
+        return { to: { name: 'm-home' } }
       case 'now-playing':
         return { to: { name: 'm-now-playing' } }
       case 'playlists':
@@ -34,7 +35,7 @@ export function routeInOtherShell(
       case 'album-detail':
         return { to: { name: 'm-album-detail', params: { id } } }
       case 'favorites':
-        return { to: { name: 'm-favorites' } }
+        return { to: { name: 'm-library', query: { favorites: '1' } } }
       case 'radio':
         return { to: { name: 'm-radio' } }
       default:
@@ -42,6 +43,8 @@ export function routeInOtherShell(
     }
   }
   switch (route.name) {
+    case 'm-home':
+      return { to: { name: 'home' } }
     case 'm-now-playing':
       return { to: { name: 'now-playing' } }
     case 'm-queue':
@@ -51,11 +54,10 @@ export function routeInOtherShell(
     case 'm-playlist-detail':
       return { to: { name: 'playlist-detail', params: { id } } }
     case 'm-library':
+      if (route.query.favorites) return { to: { name: 'favorites' } }
       return { to: { name: route.query.tab === 'albums' ? 'albums' : 'songs' } }
     case 'm-album-detail':
       return { to: { name: 'album-detail', params: { id } } }
-    case 'm-favorites':
-      return { to: { name: 'favorites' } }
     case 'm-radio':
       return { to: { name: 'radio' } }
     default:

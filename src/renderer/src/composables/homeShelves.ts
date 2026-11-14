@@ -1,0 +1,804 @@
+import { defineComponent } from 'vue'
+import { useLibraryStore } from '@/stores/library'
+import { useAuthStore } from '@/stores/auth'
+import { usePlaybackStore } from '@/stores/playback'
+import { useRecommendationsStore } from '@/stores/recommendations'
+import { useListenbrainzStore } from '@/stores/listenbrainz'
+import {
+  getSimilarArtists,
+  getArtistImages,
+  getArtistLinksByMbid,
+  type SimilarArtist,
+} from '@/services/connect/recommendations'
+import { getListenbrainzArtists } from '@/services/connect/listenbrainz'
+import { type ExternalLinkKey } from '@/components/library/externalArtistLinks'
+import type { SimilarArtistDisplay } from '@/components/library/SimilarArtistsShelf.vue'
+import { useHomeStore, type HomeAlbumList } from '@/stores/home'
+import { accountScopedKey } from '@/services/accountKey'
+import { normalize } from '@/services/stringMatch'
+import { radioFaviconRequest, type RadioFaviconRequest } from '@/services/connect/radio'
+import type { Album, Artist, Song } from '@/types/library'
+
+// Below this many distinct seed artists, a similar-artist lookup isn't
+// worth the round trip (and the very-first-launch/near-empty-library case
+// would just seed from 1-2 artists, producing a "discover" shelf that's
+// really just "more of the one thing you have") — falls back to the
+// original random-albums behavior instead, same as the Settings toggle
+// being off does.
+const MIN_SEED_ARTISTS = 3
+const MAX_SEED_ARTISTS = 5
+// Same 30 as the plain shelves above (frequentAlbums/newestAlbums/
+// recentAlbums) — used to be a smaller 20 back when the albums half
+// (randomAlbums) rendered fitToScreen (see AlbumShelf.vue), which never
+// needed more than a screen-width's worth. It scrolls like every other
+// shelf now (see HomeView.vue's template — no more fit-to-screen there),
+// so there is no reason left for Discover to offer less to scroll through
+// than Home's own plain shelves do. Also what notOwnedCapped below is
+// capped to, so neither Discover shelf runs out before the other on a wide
+// window.
+const DISCOVER_SHELF_SIZE = 30
+// Below this many owned matches, padding the shelf out with random albums
+// reads better than a visibly sparse "discover" row.
+const MIN_OWNED_MATCHES = 8
+// How many of the listener's recommended artists to ask ListenBrainz for.
+// Its collaborative filtering mostly recommends acts the listener already
+// plays, so the top of the list is nearly all owned - measured on a real
+// profile, 30 left a single new artist. 200 reaches into the long tail
+// (the whole 1000-recording feed held ~600 artists) for about 2 s.
+const PERSONAL_ARTIST_POOL = 200
+// How often an open Home asks again for what can change without this app
+// hearing about it: a scan run by the server itself (or by an account that
+// may not ask about scans at all), a play on another device. Two small lists
+// a minute, and only while Home is actually on screen.
+const HOME_REFRESH_INTERVAL_MS = 60 * 1000
+
+// Persists pickSeedArtistNames()'s last random pick (see its own comment)
+// — localStorage, not just component state, since the whole point is
+// surviving a fresh mount (navigating away from Home and back, an app
+// restart), not just a reroll within one still-open session.
+const SEED_CACHE_KEY = 'beacon.discover-seed-cache'
+
+interface SeedCache {
+  // Sorted, lowercased distinct artist names the pick was drawn from —
+  // compared against the *current* pool to decide whether to reuse
+  // `seeds` as-is or pick fresh ones, order-insensitive on purpose (a
+  // frequent-albums re-ranking that doesn't change *which* artists are in
+  // the pool shouldn't by itself count as "genuinely new data").
+  pool: string[]
+  seeds: string[]
+}
+
+function loadSeedCache(): SeedCache | null {
+  try {
+    const raw = localStorage.getItem(accountScopedKey(SEED_CACHE_KEY))
+    return raw ? (JSON.parse(raw) as SeedCache) : null
+  } catch {
+    return null
+  }
+}
+
+function saveSeedCache(cache: SeedCache): void {
+  try {
+    localStorage.setItem(accountScopedKey(SEED_CACHE_KEY), JSON.stringify(cache))
+  } catch {
+    // Non-critical — worst case just re-randomizes next load instead of
+    // reusing this pick.
+  }
+}
+
+function sameArtistPool(a: string[], b: string[]): boolean {
+  return a.length === b.length && a.every((name, i) => name === b[i])
+}
+
+/** Options-API mixin: everything Home shows and how it is loaded, shared by
+ * the desktop page (views/HomeView.vue) and the phone's
+ * (views/mobile/MobileHomeView.vue), which differ only in how they lay it
+ * out. */
+export const homeShelvesMixin = defineComponent({
+  data() {
+    return {
+      rediscoverSongs: [] as Song[],
+      loadingRediscover: false,
+      // Spinner on the hero's own Song Radio button while the mix is being
+      // fetched — see onHeroSongRadio().
+      heroRadioLoading: false,
+      // Whether this visit's catalogue request has answered, so that an
+      // empty or failed catalogue ends the top songs' placeholders.
+      catalogSettled: false,
+      // Which of the two Discover shelves is currently waiting on a
+      // lookup, or null. One field rather than two booleans: the lookup
+      // fills both shelves in one go, so at most one of them can be the
+      // one that asked — and it is also the only one that shows the wait.
+      // Which of the two Discover shelves is waiting on the lookup.
+      // 'both' is the initial load, where neither has anything yet —
+      // without it the artists shelf had no loading state to show and
+      // simply wasn't rendered until its first data arrived, appearing
+      // out of nowhere below a page that had already settled.
+      loadingDiscover: null as 'albums' | 'artists' | 'both' | null,
+      // The half of a lookup the shelf that asked for it didn't use. One
+      // lookup produces both halves (see discoverFromSimilarArtists), and
+      // that whole chain — MusicBrainz, ListenBrainz, then Deezer photos
+      // and links per artist — takes seconds. Keeping the other half means
+      // the *other* shelf's next shuffle is instant, and it is still a
+      // genuinely fresh set: it came from the seeds that lookup picked.
+      // Used once, then gone, so a second shuffle of the same shelf is a
+      // real lookup again.
+      heldOverAlbums: null as Album[] | null,
+      heldOverArtists: null as SimilarArtistDisplay[] | null,
+      // Which shelf's "play all" is currently fetching album song lists —
+      // a single field (not one boolean per shelf) since only one of these
+      // can realistically be in flight at a time (each is a user click).
+      playingAllShelf: null as string | null,
+      refreshTimer: null as ReturnType<typeof setInterval> | null,
+    }
+  },
+  computed: {
+    libraryStore() {
+      return useLibraryStore()
+    },
+    authStore() {
+      return useAuthStore()
+    },
+    playbackStore() {
+      return usePlaybackStore()
+    },
+    recommendationsStore() {
+      return useRecommendationsStore()
+    },
+    listenbrainzStore() {
+      return useListenbrainzStore()
+    },
+    // What Home shows lives in stores/home.ts rather than here, so that a
+    // return visit starts from the last answer - see that store's comment.
+    homeStore() {
+      return useHomeStore()
+    },
+    frequentAlbums(): Album[] {
+      return this.homeStore.albums.frequent ?? []
+    },
+    newestAlbums(): Album[] {
+      return this.homeStore.albums.newest ?? []
+    },
+    recentAlbums(): Album[] {
+      return this.homeStore.albums.recent ?? []
+    },
+    // Placeholders only on a first visit; after that the last list stays
+    // up while the new one loads.
+    loadingNewest(): boolean {
+      return this.homeStore.albums.newest === null
+    },
+    loadingRecent(): boolean {
+      return this.homeStore.albums.recent === null
+    },
+    // The hero already offers the most recent album while nothing plays,
+    // so the tiles start with the one after it then.
+    recentTiles(): Album[] {
+      const heroShowsFirst = !this.playbackStore.currentSong && !this.playbackStore.radioStation
+      return heroShowsFirst ? this.recentAlbums.slice(1) : this.recentAlbums
+    },
+    topSongs(): Song[] {
+      return this.libraryStore.mostPlayedSongs
+    },
+    loadingTopSongs(): boolean {
+      return !this.catalogSettled && this.libraryStore.allSongs.length === 0
+    },
+    randomAlbums: {
+      get(): Album[] {
+        return this.homeStore.discoverAlbums
+      },
+      set(albums: Album[]) {
+        this.homeStore.discoverAlbums = albums
+      },
+    },
+    // Suggested artists that aren't in the library: the community
+    // similar-artist lookup by default (see rerollDiscover()), or the
+    // listener's own ListenBrainz recommendations when a name is set
+    // (see loadPersonalShelves()). Empty whenever the toggle's off, the
+    // lookup failed, or nothing new came back; the SimilarArtistsShelf
+    // component hides itself in all of those cases.
+    newArtistDiscoveries: {
+      get(): SimilarArtistDisplay[] {
+        return this.homeStore.discoverArtists
+      },
+      set(artists: SimilarArtistDisplay[]) {
+        this.homeStore.discoverArtists = artists
+      },
+    },
+    // Which kind of lookup the Discover shelves would come from right now.
+    // Shelves kept from an earlier visit are only shown again while this
+    // still matches: switching recommendations off, or setting another
+    // ListenBrainz name, has to show its effect on the next visit.
+    discoverSource(): string {
+      if (this.personalized) {
+        return `listenbrainz:${this.listenbrainzStore.username.trim().toLowerCase()}`
+      }
+      return this.recommendationsStore.enabled ? 'similar' : 'random'
+    },
+    heroCoverId() {
+      if (this.playbackStore.currentSong) return this.playbackStore.currentSong.coverArtId
+      // Radio has its own artwork (see heroImageUrl below), never the
+      // fallback album's — without this branch, HeroBand.vue's own
+      // coverId-before-imageUrl priority (see its coverUrl computed) would
+      // show whatever was playing before the station started, since
+      // heroImageUrl is only consulted when this is null.
+      if (this.playbackStore.radioStation) return null
+      return this.recentAlbums[0]?.coverArtId ?? null
+    },
+    // SongInfo.vue's radioFavicon, duplicated rather than shared: that
+    // one reads size 96 for its 48px box (headroom for high-DPI), this one
+    // wants size 96 for HeroBand's larger artwork under the same reasoning,
+    // and neither is a natural fit for the other's component. They resolve
+    // to the same request, so the two share one lookup and one answer.
+    heroRadioFavicon(): RadioFaviconRequest | null {
+      const station = this.playbackStore.radioStation
+      if (!station?.homePageUrl && !station?.favicon) return null
+      return radioFaviconRequest(station.homePageUrl ?? '', 96, station.favicon ?? '')
+    },
+    heroEyebrow() {
+      if (this.playbackStore.currentSong) {
+        return this.playbackStore.isPlaying ? this.$t('home.nowPlaying') : this.$t('home.paused')
+      }
+      if (this.playbackStore.radioStation) return this.$t('home.radioEyebrow')
+      return this.recentAlbums[0] ? this.$t('home.recentlyPlayed') : ''
+    },
+    heroTitle() {
+      if (this.playbackStore.currentSong) return this.playbackStore.currentSong.title
+      if (this.playbackStore.radioStation) return this.playbackStore.radioStation.name
+      return this.recentAlbums[0]?.name ?? ''
+    },
+    // Always null — this used to link the "nothing playing, here's your
+    // most recent album" fallback title to the album page, but that title
+    // sits right next to the hero's own dedicated play button (which
+    // already correctly starts that same album, see onHeroPlay()), so a
+    // click there read as "play this" and instead navigated away. The
+    // artist/album *subtitle* links (see HeroBand.vue) still navigate —
+    // just not the big heading, which is the one thing already doubling as
+    // "the thing the play button plays".
+    heroTitleTo(): string | null {
+      return null
+    },
+    // Where the hero's artwork leads. Now Playing whenever there is
+    // actually something playing — the same shortcut the player bar's own
+    // artwork already offers, and the artwork here is a picture of that
+    // exact thing. Null in the third state (nothing playing, showing the
+    // most recent album instead): the artwork there is a *suggestion*, so
+    // it keeps its older "click to play this" meaning, and Now Playing
+    // would have had nothing to show anyway.
+    heroCoverTo(): string | null {
+      const playing = this.playbackStore.currentSong || this.playbackStore.radioStation
+      return playing ? '/now-playing' : null
+    },
+    // Plain-text-only fallback (HeroBand.vue only falls back to this when
+    // heroArtistName is null, i.e. the radio case below).
+    heroSubtitle() {
+      if (this.playbackStore.radioStation) return this.$t('home.internetRadio')
+      return ''
+    },
+    heroArtistName(): string | null {
+      const song = this.playbackStore.currentSong
+      if (song) return song.artist
+      if (this.playbackStore.radioStation) return null
+      return this.recentAlbums[0]?.artist ?? null
+    },
+    heroArtistId(): string | null {
+      const song = this.playbackStore.currentSong
+      if (song) return song.artistId
+      if (this.playbackStore.radioStation) return null
+      return this.recentAlbums[0]?.artistId ?? null
+    },
+    // Only the currently-playing-song case has a distinct album to name
+    // alongside the artist (subtitle reads "Artist · Album") — the
+    // fallback case's subtitle is just the artist, since the album is
+    // already what the title itself names (and links to, see heroTitleTo).
+    heroAlbumName(): string | null {
+      return this.playbackStore.currentSong?.album ?? null
+    },
+    heroAlbumId(): string | null {
+      return this.playbackStore.currentSong?.albumId ?? null
+    },
+    heroIsPlaying() {
+      return this.playbackStore.isPlaying
+    },
+    // Song Radio needs an actual song to build the mix around, so this is
+    // deliberately narrower than heroHasContent: the "here's your most
+    // recent album" fallback has no single seed song, and an internet radio
+    // station isn't in the library at all. Same capability gate every other
+    // Song Radio entry point uses (SongRow.vue's menu, PlayerToolbar.vue's
+    // autoplay button).
+    heroCanStartRadio(): boolean {
+      return this.authStore.capabilities.songRadio && this.playbackStore.currentSongInLibrary
+    },
+    heroHasContent() {
+      return !!(
+        this.playbackStore.currentSong ||
+        this.playbackStore.radioStation ||
+        this.recentAlbums[0]
+      )
+    },
+    discoverAlbumsLoading() {
+      return this.loadingDiscover === 'albums' || this.loadingDiscover === 'both'
+    },
+    discoverArtistsLoading() {
+      return this.loadingDiscover === 'artists' || this.loadingDiscover === 'both'
+    },
+    // Both Discover shelves come from the listener's own ListenBrainz
+    // recommendations instead of the community similar-artist lookup
+    // whenever there's a name to ask for and recommendations are on. Only
+    // says whether to *try* the personal path: an empty feed falls back.
+    personalized() {
+      return this.recommendationsStore.enabled && !!this.listenbrainzStore.username.trim()
+    },
+    // Nothing to show yet either way — only true during the initial
+    // recentAlbums fetch, and only when there isn't already something
+    // playing (which the hero can show immediately, no fetch needed).
+    heroLoading() {
+      if (this.playbackStore.currentSong || this.playbackStore.radioStation) return false
+      return this.loadingRecent
+    },
+  },
+  watch: {
+    'libraryStore.playsNoted'() {
+      void this.refreshRecent()
+    },
+    'libraryStore.scansFinished'() {
+      void this.refreshNewest()
+    },
+  },
+  created() {
+    // No shelf of its own any more, only Discover's seeds.
+    const frequentPromise = this.refreshAlbums('frequent', () =>
+      this.libraryStore.fetchFrequentAlbums(30),
+    )
+    void this.refreshNewest()
+    void this.refreshRecent()
+
+    // fetchArtists() only to check which suggestions are already owned
+    // (see rerollDiscover()/loadPersonalShelves()) — own cached request, a
+    // no-op if some earlier view already populated it (matches
+    // StatsView.vue's identical reasoning for its own topArtists artwork).
+    this.libraryStore.fetchArtists()
+    // What an earlier visit found is shown again as it was - see
+    // stores/home.ts for why Discover is the one thing not redone.
+    if (this.homeStore.discoverSource !== this.discoverSource) {
+      // Nothing from another source carries over.
+      this.randomAlbums = []
+      this.newArtistDiscoveries = []
+      // A ListenBrainz name with recommendations on fills both Discover
+      // shelves from the listener's own recommendations at first. Those are
+      // fixed per listener, so Reroll goes to the community lookup with
+      // fresh seeds instead - something else to look at, until the next
+      // start brings the personal set back.
+      if (this.personalized) {
+        // Passed through so an empty personal set (a brand-new ListenBrainz
+        // account has no recommendations yet) can fall back to the same seed
+        // albums the community path would have used.
+        void this.loadPersonalShelves(frequentPromise)
+      } else {
+        // Reuses frequentPromise's own result to seed rerollDiscover()
+        // instead of each firing its own fetchFrequentAlbums() call — see
+        // that method's own `seedAlbums` param.
+        void frequentPromise.then((albums) => this.rerollDiscover(albums))
+      }
+    }
+
+    if (this.authStore.capabilities.playHistoryStats) {
+      this.loadingRediscover = true
+      this.loadRediscover()
+    }
+
+    // Top songs are read off the catalogue (see mostPlayedSongs), usually
+    // already in memory or in the library cache.
+    this.libraryStore
+      .fetchAllSongs()
+      .catch((error) => console.error('[home] Song catalogue failed:', error))
+      .finally(() => (this.catalogSettled = true))
+  },
+  mounted() {
+    this.refreshTimer = setInterval(this.refreshIfOnScreen, HOME_REFRESH_INTERVAL_MS)
+    document.addEventListener('visibilitychange', this.refreshIfOnScreen)
+  },
+  beforeUnmount() {
+    if (this.refreshTimer) clearInterval(this.refreshTimer)
+    document.removeEventListener('visibilitychange', this.refreshIfOnScreen)
+  },
+  methods: {
+    refreshNewest(): Promise<Album[]> {
+      return this.refreshAlbums('newest', () =>
+        this.libraryStore.client().getAlbumList2('newest', 30),
+      )
+    },
+    refreshRecent(): Promise<Album[]> {
+      return this.refreshAlbums('recent', () => this.libraryStore.fetchRecentlyPlayedAlbums(30))
+    },
+    refreshIfOnScreen(): void {
+      if (document.hidden) return
+      void this.refreshNewest()
+      void this.refreshRecent()
+    },
+    /** Asks for one of Home's album lists and keeps the answer in
+     * stores/home.ts. A failure leaves whatever was showing; on a first
+     * visit it ends the placeholders on an empty shelf instead of leaving
+     * them up for good. */
+    async refreshAlbums(list: HomeAlbumList, fetch: () => Promise<Album[]>): Promise<Album[]> {
+      try {
+        this.homeStore.albums[list] = await fetch()
+      } catch (error) {
+        console.error(`[home] Loading the ${list} albums failed:`, error)
+        this.homeStore.albums[list] ??= []
+      }
+      return this.homeStore.albums[list] ?? []
+    },
+    /** The Discover shelves are now worth showing again on the next visit. */
+    rememberDiscover(): void {
+      this.homeStore.discoverSource = this.discoverSource
+    },
+    // A random MAX_SEED_ARTISTS-sized sample of the distinct artist names
+    // in `albums` — the frontend-side half of "seed from what's actually
+    // been played", the backend half being core/recommendations.py's
+    // get_similar_artists() not knowing or caring where its seed names
+    // came from. Randomized (a shuffle-then-take, not just always the
+    // first N by frequent-album order, which is what this used to do) so
+    // the Reroll button can actually reroll into something different —
+    // but only a *new* random pick when `force` is set (an explicit Reroll
+    // click) or the underlying pool has genuinely changed since the last
+    // one (see SeedCache). Without that guard, every plain component
+    // mount (navigating away from Home and back, an app restart) picked
+    // its own fresh random seeds too, which defeated get_similar_artists()'s
+    // own 24h cache almost entirely — different seeds each time meant a
+    // real MusicBrainz/ListenBrainz round trip nearly every time, observed
+    // live as a burst of MusicBrainz 503s under that load.
+    pickSeedArtistNames(albums: Album[], force = false): string[] {
+      const seen = new Set<string>()
+      const names: string[] = []
+      for (const album of albums) {
+        const key = album.artist.toLowerCase()
+        if (seen.has(key)) continue
+        seen.add(key)
+        names.push(album.artist)
+      }
+      const pool = [...seen].sort()
+
+      if (!force) {
+        const cached = loadSeedCache()
+        if (cached && sameArtistPool(cached.pool, pool)) return cached.seeds
+      }
+
+      for (let i = names.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1))
+        ;[names[i], names[j]] = [names[j]!, names[i]!]
+      }
+      const seeds = names.slice(0, MAX_SEED_ARTISTS)
+      saveSeedCache({ pool, seeds })
+      return seeds
+    },
+    /** Discover shelf — real similar-artist suggestions (ListenBrainz, via
+     * connect) when there's enough to seed from and the user hasn't opted
+     * out (see stores/recommendations.ts), falling back to today's plain
+     * random albums otherwise (too few seed artists, the toggle's off, or
+     * the lookup itself failed — connect being unreachable shouldn't break
+     * Home). `seedAlbums`, given (only by created()'s own initial call),
+     * reuses frequentAlbums' already-in-flight fetch instead of this
+     * re-requesting it — the manual reroll button (template's own
+     * @click="rerollDiscover(undefined, true, 'albums')") calls this with
+     * no seedAlbums, falling back to this.frequentAlbums (already
+     * populated by then), and `force: true` so it actually picks something
+     * new instead of reusing the cached seeds from before — see
+     * pickSeedArtistNames()'s own comment.
+     *
+     * `only` is which shelf asked. One lookup fills both (see
+     * discoverFromSimilarArtists), but replacing the shelf somebody
+     * *didn't* touch is a surprise: they press shuffle under the new
+     * artists and the albums above them change too, for no reason they
+     * can see. The other half of the result is simply dropped. Null (the
+     * initial load) takes both, since neither is showing anything yet. */
+    async rerollDiscover(
+      seedAlbums?: Album[],
+      force = false,
+      only: 'albums' | 'artists' | null = null,
+    ): Promise<void> {
+      // Spend the half kept back from the other shelf's last shuffle
+      // before asking for anything new.
+      if (only === 'artists' && this.heldOverArtists) {
+        this.newArtistDiscoveries = this.heldOverArtists
+        this.heldOverArtists = null
+        return
+      }
+      if (only === 'albums' && this.heldOverAlbums) {
+        this.randomAlbums = this.heldOverAlbums
+        this.heldOverAlbums = null
+        return
+      }
+
+      this.loadingDiscover = only ?? 'both'
+      try {
+        const albums = seedAlbums ?? this.frequentAlbums
+        const seedNames = this.pickSeedArtistNames(albums, force)
+        let lookupFailed = false
+        if (this.recommendationsStore.enabled && seedNames.length >= MIN_SEED_ARTISTS) {
+          try {
+            await this.discoverFromSimilarArtists(seedNames, only)
+            this.rememberDiscover()
+            return
+          } catch (error) {
+            lookupFailed = true
+            console.error('[home] Similar-artist discover failed, falling back to random:', error)
+          }
+        }
+        // The fallback has no artists to offer at all, so it only ever
+        // touches the albums shelf — leaving whatever the artists shelf
+        // already had rather than emptying it because an unrelated lookup
+        // failed.
+        if (only !== 'artists') {
+          this.newArtistDiscoveries = only === null ? [] : this.newArtistDiscoveries
+          this.randomAlbums = await this.libraryStore.fetchRandomAlbums(DISCOVER_SHELF_SIZE)
+        }
+        // Stand-in albums for a failed lookup are not kept: the next visit
+        // tries the lookup again.
+        if (!lookupFailed) this.rememberDiscover()
+      } finally {
+        this.loadingDiscover = null
+      }
+    },
+    /** One album from each owned artist among the matches, for the Discover
+     * shelf. Resolved in parallel and only as far as the shelf can show:
+     * this used to await a getArtist call per match, one after the other,
+     * for a list that on a broad library routinely runs several times the
+     * length of the shelf — the single biggest part of how long Home sat
+     * on placeholders. An artist whose detail carries no albums simply
+     * doesn't contribute, so this keeps taking batches until the shelf is
+     * full or the matches run out. A match that fails to load is skipped
+     * rather than taking the whole shelf down with it. */
+    async albumsForOwnedArtists(matches: Artist[]): Promise<Album[]> {
+      const picked: Album[] = []
+      for (
+        let from = 0;
+        from < matches.length && picked.length < DISCOVER_SHELF_SIZE;
+        from += DISCOVER_SHELF_SIZE
+      ) {
+        const batch = matches.slice(from, from + DISCOVER_SHELF_SIZE)
+        const resolved = await Promise.allSettled(
+          batch.map((match) => this.libraryStore.fetchArtist(match.id)),
+        )
+        for (const result of resolved) {
+          if (result.status === 'rejected') {
+            console.error('[home] Discover: artist lookup failed:', result.reason)
+            continue
+          }
+          const albums = result.value.albums
+          if (!albums.length) continue
+          picked.push(albums[Math.floor(Math.random() * albums.length)]!)
+          if (picked.length === DISCOVER_SHELF_SIZE) break
+        }
+      }
+      return picked
+    },
+    /** Partitions `artists` against the library and resolves both Discover
+     * halves: one album per owned artist (albumsForOwnedArtists — an owned
+     * artist's own album, fetched via fetchArtist() since the list-level
+     * Artist entries fetchArtists() already loaded never carry a full album
+     * list, same "list vs. detail" split as fetchAlbum()'s own comment) and
+     * the not-owned ones enriched for the artists shelf. Shared by the
+     * community lookup and the listener's own recommendations, which differ
+     * only in where `artists` came from.
+     *
+     * Partitioning is pure bookkeeping against the list already in memory —
+     * the requests it implies come after, so that both halves can be
+     * fetched at once. */
+    async discoverHalves(artists: SimilarArtist[]): Promise<{
+      albums: Album[]
+      discoveries: SimilarArtistDisplay[]
+    }> {
+      // normalize(), not toLowerCase(): MusicBrainz spells "Ne‐Yo" with a
+      // Unicode hyphen, which would otherwise pass an owned artist off as new.
+      const library = new Map(this.libraryStore.artists.map((a) => [normalize(a.name), a]))
+      const ownedMatches: Artist[] = []
+      const notOwned: SimilarArtist[] = []
+      for (const artist of artists) {
+        const match = library.get(normalize(artist.name))
+        if (match) ownedMatches.push(match)
+        else notOwned.push(artist)
+      }
+
+      const [albums, discoveries] = await Promise.all([
+        this.albumsForOwnedArtists(ownedMatches),
+        this.enrichArtistDiscoveries(notOwned.slice(0, DISCOVER_SHELF_SIZE)),
+      ])
+      return { albums, discoveries }
+    },
+    /** The community Discover half of rerollDiscover() — split out so that
+     * method's own try/catch has one call to wrap, instead of this whole
+     * multi-step pipeline living inline inside it. */
+    async discoverFromSimilarArtists(
+      seedNames: string[],
+      only: 'albums' | 'artists' | null = null,
+    ): Promise<void> {
+      // Side by side rather than one after the other: the artist list feeds
+      // the partition and the lookup is the long pole (a MusicBrainz/
+      // ListenBrainz round trip whenever the backend's 24h cache misses),
+      // and neither needs anything from the other. Waiting out a cold
+      // artist cache first added its whole duration to how long the shelves
+      // sat empty.
+      //
+      // No explicit limit on the lookup — relies on getSimilarArtists()'s
+      // own default (100, matching the backend's), not a smaller number
+      // picked here. A broad library already owns most of the top-scoring
+      // matches, so the pool has to start wide for enough to survive the
+      // "not owned" partition below.
+      const [, similar] = await Promise.all([
+        this.libraryStore.fetchArtists(),
+        getSimilarArtists(seedNames),
+      ])
+
+      const { albums: owned, discoveries } = await this.discoverHalves(similar)
+      const capped = owned.slice(0, DISCOVER_SHELF_SIZE)
+      const albums =
+        capped.length >= MIN_OWNED_MATCHES
+          ? capped
+          : [
+              ...capped,
+              ...(await this.libraryStore.fetchRandomAlbums(DISCOVER_SHELF_SIZE - capped.length)),
+            ]
+
+      // Both halves are computed either way — one lookup produced them.
+      // The shelf that asked shows its half now; the other is kept for
+      // that shelf's next shuffle (see heldOverAlbums/heldOverArtists)
+      // rather than being thrown away or replacing a shelf nobody
+      // touched.
+      if (only !== 'albums') this.newArtistDiscoveries = discoveries
+      else this.heldOverArtists = discoveries
+      if (only !== 'artists') this.randomAlbums = albums
+      else this.heldOverAlbums = albums
+    },
+    /** Deezer photo plus MusicBrainz's own page and whichever of
+     * Spotify/Apple Music/TIDAL/YouTube/Discogs it has on file (the same
+     * set ArtistDetailView.vue shows for an owned artist) for each artist
+     * in `artists` — two independent lookups, Promise.allSettled so one
+     * failing doesn't blank out what the other found. getArtistLinksByMbid(),
+     * not getArtistLinks(): these artists already carry a trusted MBID
+     * (ListenBrainz Labs for the community lookup, ListenBrainz's
+     * recommendation feed for the personalized one), so a name-based lookup
+     * would just make the backend redundantly re-derive one it doesn't need
+     * to. */
+    async enrichArtistDiscoveries(artists: SimilarArtist[]): Promise<SimilarArtistDisplay[]> {
+      const [images, linksByMbid] = await Promise.allSettled([
+        getArtistImages(artists.map((a) => a.name)),
+        getArtistLinksByMbid(artists.map((a) => a.mbid)),
+      ])
+      if (images.status === 'rejected') {
+        console.error('[home] Artist image lookup failed:', images.reason)
+      }
+      if (linksByMbid.status === 'rejected') {
+        console.error('[home] Artist links lookup failed:', linksByMbid.reason)
+      }
+      return artists.map((artist) => {
+        const enrichment = images.status === 'fulfilled' ? images.value[artist.name] : undefined
+        const links: Partial<Record<ExternalLinkKey, string>> =
+          linksByMbid.status === 'fulfilled' ? { ...linksByMbid.value[artist.mbid] } : {}
+        if (enrichment?.link) links.deezer = enrichment.link
+        // Same last-resort fallback as before this existed — a plain
+        // MusicBrainz page link even when the by-mbid lookup above came
+        // back empty (a transient failure, or genuinely nothing on file),
+        // so there's always at least one way to reach the artist rather
+        // than a discovery card with zero working links.
+        if (!links.musicbrainz) links.musicbrainz = `https://musicbrainz.org/artist/${artist.mbid}`
+        return {
+          ...artist,
+          imageUrl: enrichment?.image ?? null,
+          largeImageUrl: enrichment?.imageLarge ?? null,
+          links,
+        }
+      })
+    },
+    /** Both Discover shelves, from the listener's own ListenBrainz
+     * recommendations instead of the community lookup: recommended artists
+     * already in the library contribute one of their albums, the rest fill
+     * "New artists to explore" — same partition as the community flow (see
+     * discoverHalves), just a different source list. Only called with a
+     * ListenBrainz name set and recommendations on (see `personalized`).
+     *
+     * An empty feed — a brand-new ListenBrainz account has no
+     * recommendations yet — falls back to the community lookup, seeded from
+     * `seedAlbums` (created()'s own frequent-albums fetch), so Home still
+     * shows something useful. A failure leaves both shelves empty rather
+     * than taking Home down (connect being unreachable is not a reason for
+     * the rest of the page to fail). */
+    async loadPersonalShelves(seedAlbums: Promise<Album[]>): Promise<void> {
+      const username = this.listenbrainzStore.username.trim()
+      if (!username) return
+      this.loadingDiscover = 'both'
+      try {
+        // The owned check below reads this list, so it has to be there
+        // first. Cached, and created() already started it, so this is
+        // usually free.
+        await this.libraryStore.fetchArtists()
+        const artists = await getListenbrainzArtists(username, PERSONAL_ARTIST_POOL)
+        if (!artists.length) {
+          await this.rerollDiscover(await seedAlbums)
+          return
+        }
+        const { albums, discoveries } = await this.discoverHalves(artists)
+        this.randomAlbums = albums
+        this.newArtistDiscoveries = discoveries
+        this.rememberDiscover()
+      } catch (error) {
+        console.error('[home] Personalized recommendations failed:', error)
+      } finally {
+        this.loadingDiscover = null
+      }
+    },
+    // Mirrors SongTable.vue's own startSongRadio() — same store action,
+    // same toast on failure. The spinner lives on the button because the
+    // mix is a real server round trip (getSimilarSongs2) that can take a
+    // moment, and nothing else on screen would show it happening.
+    async onHeroSongRadio() {
+      const song = this.playbackStore.currentSong
+      if (!song || this.heroRadioLoading) return
+      this.heroRadioLoading = true
+      try {
+        await this.playbackStore.startSongRadio(song)
+      } catch (error) {
+        this.$emitter.emit('toast', {
+          level: 'error',
+          title: this.$t('library.songRadio'),
+          message: this.$t('library.songRadioError'),
+        })
+        console.error('[song-radio]', error)
+      } finally {
+        this.heroRadioLoading = false
+      }
+    },
+    async onHeroPlay() {
+      // Radio has no currentSong (see routes/playback.py's /play-url) but
+      // is just as much "something already playing" as a song is — same
+      // check heroCoverTo()/heroHasContent() already make. Missing this
+      // branch fell through to the "nothing playing, here's your most
+      // recent album" case below and started that instead of toggling the
+      // station — reported live 2026-09-01.
+      if (this.playbackStore.currentSong || this.playbackStore.radioStation) {
+        await this.playbackStore.togglePlay()
+        return
+      }
+      const album = this.recentAlbums[0]
+      if (!album) return
+      const full = await this.libraryStore.fetchAlbum(album.id)
+      // pinFirst: false — see PlaylistDetailView.vue's identical comment.
+      await this.playbackStore.playSongList(full.songs, 0, false, full.songs.length > 1)
+    },
+    async playSongList(songs: Song[]) {
+      if (!songs.length) return
+      // pinFirst: false — see PlaylistDetailView.vue's identical comment.
+      // peek: replaces the queue with more than one song — see
+      // peekQueueDrawer()'s own comment for the rule.
+      await this.playbackStore.playSongList(songs, 0, false, songs.length > 1)
+    },
+    /** A fresh draw each time rather than cached: it comes from the
+     * catalogue already in memory, and a shelf that looks the same on
+     * every visit would defeat the point of it. */
+    async loadRediscover() {
+      try {
+        this.rediscoverSongs = await this.libraryStore.fetchRediscoverSongs(30)
+      } catch (error) {
+        console.error('[home] Rediscover shelf failed:', error)
+      } finally {
+        this.loadingRediscover = false
+      }
+    },
+    // AlbumShelf.vue's album cards only ever carry list-level Album data
+    // (no song list — see fetchAlbum()'s own comment), so "play all" for a
+    // shelf means fetching each album's full song list first. Concatenated
+    // in shelf order, album by album, rather than interleaved — that's the
+    // order the shelf itself already reads in.
+    async playAllAlbums(albums: Album[], shelfKey: string) {
+      if (!albums.length || this.playingAllShelf) return
+      this.playingAllShelf = shelfKey
+      try {
+        const fullAlbums = await Promise.all(
+          albums.map((album) => this.libraryStore.fetchAlbum(album.id)),
+        )
+        await this.playSongList(fullAlbums.flatMap((album) => album.songs))
+      } finally {
+        this.playingAllShelf = null
+      }
+    },
+  },
+})

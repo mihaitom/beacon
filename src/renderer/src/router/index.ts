@@ -143,6 +143,11 @@ const router = createRouter({
     // here automatically when isMobileWeb is true — see the 'home' redirect
     // in the guard below.
     {
+      path: '/m/home',
+      name: 'm-home',
+      component: () => import('../views/mobile/MobileHomeView.vue'),
+    },
+    {
       path: '/m/now-playing',
       name: 'm-now-playing',
       component: () => import('../views/mobile/MobileNowPlayingView.vue'),
@@ -185,11 +190,10 @@ const router = createRouter({
     // MobileLibraryView.vue), so the old path is kept as a redirect rather
     // than 404ing a bookmark or a link someone already has.
     { path: '/m/songs', redirect: { name: 'm-library' } },
-    {
-      path: '/m/favorites',
-      name: 'm-favorites',
-      component: () => import('../views/mobile/MobileFavoritesView.vue'),
-    },
+    // Favourites became the library's heart filter rather than a tab of
+    // their own (see MobileLibraryView.vue); kept as a redirect for a
+    // bookmark or a link someone already has.
+    { path: '/m/favorites', redirect: { name: 'm-library', query: { favorites: '1' } } },
     {
       path: '/m/radio',
       name: 'm-radio',
@@ -220,7 +224,6 @@ const CAPABILITY_ROUTES: Partial<
   'm-radio': 'internetRadio',
   stats: 'playHistoryStats',
   favorites: 'favorites',
-  'm-favorites': 'favorites',
   'smart-playlist-new': 'smartPlaylistEditor',
   'smart-playlist-rules': 'smartPlaylistEditor',
 }
@@ -252,7 +255,7 @@ function afterAuth(to: RouteLocationNormalizedGeneric): true | RouteLocationRaw 
     return withoutCapability(to)
   }
   if (to.name === 'home' && isMobileWebNow()) {
-    return { name: 'm-now-playing' }
+    return { name: 'm-home' }
   }
   return true
 }

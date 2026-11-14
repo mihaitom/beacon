@@ -192,12 +192,11 @@ describe('mobile tab bar', () => {
     await page.viewport(390, 844)
     setActivePinia(createPinia())
     useAuthStore().capabilities.internetRadio = true
-    useAuthStore().capabilities.favorites = true
     const route = reactive({ path: '/m/library', name: 'm-library' })
     const wrapper = mountShell(vi.fn(), route)
     await new Promise((resolve) => setTimeout(resolve, 80))
 
-    const tabs = ['/m/queue', '/m/library', '/m/favorites', '/m/playlists', '/m/radio']
+    const tabs = ['/m/home', '/m/queue', '/m/library', '/m/playlists', '/m/radio']
     /** The one tab rendered in a colour no other tab has, or -1 when they
      * all match and nothing is picked out. */
     const litTab = () => {
@@ -217,10 +216,10 @@ describe('mobile tab bar', () => {
     await settled()
     expect(litTab(), 'the tab left behind stayed lit').toBe(-1)
 
-    route.path = '/m/favorites'
-    route.name = 'm-favorites'
+    route.path = '/m/home'
+    route.name = 'm-home'
     await settled()
-    expect(tabs[litTab()], 'the open tab is not picked out at all').toBe('/m/favorites')
+    expect(tabs[litTab()], 'the open tab is not picked out at all').toBe('/m/home')
 
     // ...and what tapping the album cover on Now Playing does.
     route.path = '/m/albums/42'
