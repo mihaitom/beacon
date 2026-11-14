@@ -138,6 +138,7 @@ import NavHistoryControls from '@/components/NavHistoryControls.vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { useDrawersStore } from '@/stores/drawers'
 import { useAuthStore } from '@/stores/auth'
+import { useExternalSourceStore } from '@/stores/externalSource'
 import { useUpdateStore } from '@/stores/update'
 import { loadSidebarCollapsed, saveSidebarCollapsed } from '@/services/sidebarSetting'
 
@@ -188,6 +189,9 @@ export default {
     authStore() {
       return useAuthStore()
     },
+    externalSourceStore() {
+      return useExternalSourceStore()
+    },
     navItems() {
       const capabilities = this.authStore.capabilities
       return [
@@ -207,6 +211,10 @@ export default {
         { to: '/playlists', icon: 'mdi-playlist-play', title: this.$t('nav.playlists') },
         capabilities.internetRadio
           ? { to: '/radio', icon: 'mdi-radio', title: this.$t('nav.radio') }
+          : null,
+        // Named after the source, and only once one is set up.
+        this.externalSourceStore.configured
+          ? { to: '/external', icon: 'mdi-web', title: this.externalSourceStore.name }
           : null,
         capabilities.favorites
           ? { to: '/favorites', icon: 'mdi-heart', title: this.$t('nav.favorites') }
@@ -239,6 +247,9 @@ export default {
         if (everOpened) this.$nextTick(() => (this.queueDrawerFirstMountSettled = true))
       },
     },
+  },
+  created() {
+    void this.externalSourceStore.ensureLoaded()
   },
   beforeUnmount() {
     window.clearTimeout(queueSlideTimer)

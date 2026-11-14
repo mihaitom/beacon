@@ -110,6 +110,11 @@ const router = createRouter({
       component: () => import('../views/RadioView.vue'),
     },
     {
+      path: '/external',
+      name: 'external-source',
+      component: () => import('../views/ExternalSourceView.vue'),
+    },
+    {
       path: '/search',
       name: 'search',
       component: () => import('../views/SearchView.vue'),
@@ -198,6 +203,11 @@ const router = createRouter({
       path: '/m/radio',
       name: 'm-radio',
       component: () => import('../views/mobile/MobileRadioView.vue'),
+    },
+    {
+      path: '/m/external',
+      name: 'm-external-source',
+      component: () => import('../views/ExternalSourceView.vue'),
     },
   ],
 })

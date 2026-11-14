@@ -44,6 +44,7 @@
 
       <v-tabs-window-item value="library" eager>
         <library-section />
+        <external-source-section />
       </v-tabs-window-item>
 
       <v-tabs-window-item v-if="castingVisible" value="casting" eager>
@@ -69,6 +70,7 @@ import AccountSection from '@/components/settings/AccountSection.vue'
 import AppearanceSection from '@/components/settings/AppearanceSection.vue'
 import LibrarySection from '@/components/settings/LibrarySection.vue'
 import CastPermissionsSection from '@/components/settings/CastPermissionsSection.vue'
+import ExternalSourceSection from '@/components/settings/ExternalSourceSection.vue'
 import StorageSection from '@/components/settings/StorageSection.vue'
 import LyricsProvidersSection from '@/components/settings/LyricsProvidersSection.vue'
 import ApiKeysSection from '@/components/settings/ApiKeysSection.vue'
@@ -86,6 +88,7 @@ export default {
     AppearanceSection,
     LibrarySection,
     CastPermissionsSection,
+    ExternalSourceSection,
     StorageSection,
     LyricsProvidersSection,
     ApiKeysSection,

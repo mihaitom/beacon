@@ -17,6 +17,16 @@
         :title="$t('radio.discoverStations')"
         @click="discoverOpen = true"
       />
+      <!-- The external source has no tab of its own on the phone: the bar
+         - is full, and it sits next to radio as the other music that is not
+         - in the library. -->
+      <v-btn
+        v-if="externalSourceStore.configured"
+        icon="mdi-web"
+        variant="tonal"
+        :title="externalSourceStore.name"
+        to="/m/external"
+      />
     </div>
 
     <!-- Only worth offering once there is more than a handful to search
@@ -128,6 +138,7 @@
 // (sized for a wide detail page), the tile grid, and adding a station by
 // typing three URLs.
 import { useLibraryStore } from '@/stores/library'
+import { useExternalSourceStore } from '@/stores/externalSource'
 import EmptyState from '@/components/EmptyState.vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { matchesAllTerms } from '@/services/textSearch'
@@ -164,6 +175,9 @@ export default {
     libraryStore() {
       return useLibraryStore()
     },
+    externalSourceStore() {
+      return useExternalSourceStore()
+    },
     /** Only while there is genuinely nothing to show yet — the store's
      * loading flag is set by every library fetch, not just this list's. */
     showSkeletons(): boolean {
@@ -186,6 +200,7 @@ export default {
     },
   },
   created() {
+    void this.externalSourceStore.ensureLoaded()
     this.libraryStore.fetchRadioStations()
   },
   methods: {

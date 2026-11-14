@@ -1804,4 +1804,26 @@ export default {
     playOn: 'Riproduci su',
     needsPairing: "Deve prima essere associato nell'app Beacon",
   },
+  externalSource: {
+    notSetUpTitle: 'Nessuna fonte esterna configurata',
+    notSetUpText:
+      "Un'app tua può offrire qui brani che non sono nella libreria. Si configura in Impostazioni, sotto Libreria.",
+    openSettings: 'Apri le impostazioni',
+    playFailed: 'Impossibile riprodurlo: {reason}',
+    settingsTitle: 'Fonte esterna',
+    settingsWhat:
+      "Un'app che gestisci tu mostra la propria pagina come scheda in Beacon e le passa brani da riprodurre, anche sugli altoparlanti. Beacon non include nessuna app di questo tipo.",
+    name: 'Nome della scheda',
+    namePlaceholder: 'ad es. Lista dei desideri',
+    address: "Indirizzo dell'app",
+    token: 'Token (facoltativo)',
+    tokenKept: 'Salvato: lascia vuoto per mantenerlo',
+    tokenNone: 'Nessun token',
+    reachable: 'Connesso a {name}',
+    unreachable: 'Non raggiungibile: {reason}',
+    help: 'Come funziona',
+    copyInstructions: "Copia le istruzioni per un'IA",
+    remove: 'Rimuovi',
+    save: 'Salva',
+  },
 } satisfies typeof de
