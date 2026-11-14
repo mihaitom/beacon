@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.13"
 dependencies = [
     "mutagen>=1.47",
+    "pillow>=11",
     "starlette>=1.0",
     "uvicorn>=0.40",
 ]

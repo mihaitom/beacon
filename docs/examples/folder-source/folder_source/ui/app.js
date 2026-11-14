@@ -58,9 +58,10 @@ function tint(text) {
   return `linear-gradient(135deg, hsl(${hue} 55% 45%), hsl(${(hue + 50) % 360} 60% 26%))`
 }
 
-function cover(albumId, hasCover, name) {
+function cover(albumId, hasCover, name, { full = false } = {}) {
   const letter = esc((name || '?').trim().charAt(0).toUpperCase() || '?')
-  const image = hasCover ? `<img src="covers/${albumId}" alt="" loading="lazy" />` : ''
+  const src = full ? `covers/${albumId}` : `covers/${albumId}?size=thumb`
+  const image = hasCover ? `<img src="${src}" alt="" loading="lazy" />` : ''
   return `<div class="cover" style="background:${tint(name)}">${letter}${image}</div>`
 }
 
@@ -163,6 +164,150 @@ function markPlaying() {
   }
 }
 
+// ── Long lists ─────────────────────────────────────────────────────────
+
+// A folder of thousands of albums put every tile and cover in the page at
+// once, and took the browser down. Only the rows near the screen are in the
+// page; the rest is empty space of the right height. A row that scrolls away
+// leaves the page with its pictures, so the browser can let them go.
+
+// Rows kept in the page above and below the screen, so a fast scroll does
+// not show empty space.
+const AHEAD_PX = 1200
+
+let virtualList = null
+
+/** Lays `items` out in `container` (a .grid or .artists element, whose CSS
+ * decides the columns), one row of the grid at a time. With `headingOf`, a
+ * new heading starts a new row: the artists' letters. */
+function mountVirtual(container, items, { renderItem, headingOf, renderHeading }) {
+  unmountVirtual()
+  const list = { container, rows: [], offsets: [], heights: [], shown: new Map(), width: 0 }
+  container.classList.add('virtual')
+
+  function layout() {
+    list.width = container.clientWidth
+    const style = getComputedStyle(container)
+    const columns = Math.max(1, style.gridTemplateColumns.split(' ').length)
+    const rowGap = parseFloat(style.rowGap) || 0
+    list.columns = columns
+
+    list.rows = []
+    let heading = null
+    let row = null
+    for (const item of items) {
+      const next = headingOf ? headingOf(item) : null
+      if (next !== heading) {
+        heading = next
+        list.rows.push({ heading })
+        row = null
+      }
+      if (!row || row.items.length === columns) {
+        row = { items: [] }
+        list.rows.push(row)
+      }
+      row.items.push(item)
+    }
+
+    // Every row of items is as tall as every other (one line of name, one
+    // of detail), every heading too: measure one of each.
+    const measure = (row) => {
+      const el = rowElement(row, 0)
+      container.append(el)
+      const height = el.offsetHeight
+      el.remove()
+      return height
+    }
+    const itemRow = list.rows.find((r) => r.items)
+    const headingRow = list.rows.find((r) => r.heading !== undefined)
+    const itemHeight = itemRow ? measure(itemRow) : 0
+    const headingHeight = headingRow ? measure(headingRow) : 0
+
+    let top = 0
+    list.offsets = []
+    list.heights = []
+    for (const r of list.rows) {
+      const height = r.items ? itemHeight : headingHeight
+      list.offsets.push(top)
+      list.heights.push(height)
+      // Headings sit on their own margins; rows of items keep the grid's gap.
+      top += height + (r.items ? rowGap : 0)
+    }
+    container.style.height = `${Math.max(0, top - rowGap)}px`
+    for (const el of list.shown.values()) el.remove()
+    list.shown.clear()
+    update()
+  }
+
+  function rowElement(row, top) {
+    const el = document.createElement('div')
+    el.style.top = `${top}px`
+    if (row.items) {
+      el.className = 'vrow'
+      el.style.gridTemplateColumns = `repeat(${list.columns}, minmax(0, 1fr))`
+      el.innerHTML = row.items.map(renderItem).join('')
+    } else {
+      el.className = 'vrow vrow--heading'
+      el.innerHTML = renderHeading(row.heading)
+    }
+    return el
+  }
+
+  // The first row whose bottom is below `y`.
+  function rowAt(y) {
+    let low = 0
+    let high = list.rows.length - 1
+    while (low < high) {
+      const mid = (low + high) >> 1
+      if (list.offsets[mid] + list.heights[mid] < y) low = mid + 1
+      else high = mid
+    }
+    return low
+  }
+
+  function update() {
+    if (!container.isConnected) return unmountVirtual()
+    if (!list.rows.length) return
+    const top = -container.getBoundingClientRect().top
+    const first = rowAt(top - AHEAD_PX)
+    const last = rowAt(top + window.innerHeight + AHEAD_PX)
+    for (const [index, el] of list.shown) {
+      if (index < first || index > last) {
+        el.remove()
+        list.shown.delete(index)
+      }
+    }
+    for (let index = first; index <= last; index++) {
+      if (list.shown.has(index)) continue
+      const el = rowElement(list.rows[index], list.offsets[index])
+      container.append(el)
+      list.shown.set(index, el)
+    }
+  }
+
+  let frame = 0
+  list.onScroll = () => {
+    if (!frame) frame = requestAnimationFrame(() => ((frame = 0), update()))
+  }
+  // Only a change of width can change the columns.
+  list.resize = new ResizeObserver(() => {
+    if (container.isConnected && container.clientWidth !== list.width) layout()
+  })
+  list.resize.observe(container)
+  window.addEventListener('scroll', list.onScroll, { passive: true })
+  window.addEventListener('resize', list.onScroll)
+  virtualList = list
+  layout()
+}
+
+function unmountVirtual() {
+  if (!virtualList) return
+  window.removeEventListener('scroll', virtualList.onScroll)
+  window.removeEventListener('resize', virtualList.onScroll)
+  virtualList.resize.disconnect()
+  virtualList = null
+}
+
 // ── Rendering ──────────────────────────────────────────────────────────
 
 let rowsOnScreen = []
@@ -239,7 +384,8 @@ function renderAlbums() {
     : ''
   view.innerHTML = `
     <div class="section-head"><h1>Albums</h1>${tools}</div>
-    ${albums.length ? `<div class="grid">${albums.map(albumTile).join('')}</div>` : emptyLibrary()}`
+    ${albums.length ? '<div class="grid"></div>' : emptyLibrary()}`
+  if (albums.length) mountVirtual(view.querySelector('.grid'), albums, { renderItem: albumTile })
 }
 
 function emptyLibrary() {
@@ -306,24 +452,27 @@ function showScanProgress() {
   }
 }
 
+const artistLetter = (artist) => (artist.name[0] || '#').toUpperCase()
+
+function artistRow(artist) {
+  return `
+    <a class="artist-row" href="#/artist/${encodeURIComponent(artist.name)}">
+      ${cover(artist.cover, !!artist.cover, artist.name)}
+      <span class="artist-text"><div class="name">${esc(artist.name)}</div>
+      <div class="sub">${plural(artist.albums, 'album')}</div></span>
+    </a>`
+}
+
 function renderArtists() {
-  let letter = ''
-  const rows = state.artists
-    .map((artist) => {
-      const first = (artist.name[0] || '#').toUpperCase()
-      const heading = first !== letter ? `<div class="letter">${esc(first)}</div>` : ''
-      letter = first
-      return `${heading}
-        <a class="artist-row" href="#/artist/${encodeURIComponent(artist.name)}">
-          ${cover(artist.cover, !!artist.cover, artist.name)}
-          <span class="artist-text"><div class="name">${esc(artist.name)}</div>
-          <div class="sub">${plural(artist.albums, 'album')}</div></span>
-        </a>`
-    })
-    .join('')
   view.innerHTML = `
     <div class="section-head"><h1>Artists</h1><span class="count">${plural(state.artists.length, 'artist')}</span></div>
-    ${state.artists.length ? `<div class="artists">${rows}</div>` : emptyLibrary()}`
+    ${state.artists.length ? '<div class="artists"></div>' : emptyLibrary()}`
+  if (!state.artists.length) return
+  mountVirtual(view.querySelector('.artists'), state.artists, {
+    renderItem: artistRow,
+    headingOf: artistLetter,
+    renderHeading: (letter) => `<div class="letter">${esc(letter)}</div>`,
+  })
 }
 
 function renderArtist(name) {
@@ -333,7 +482,8 @@ function renderArtist(name) {
   view.innerHTML = `
     <div class="section-head"><h1>${esc(name)}</h1><span class="count">${plural(albums.length, 'album')}</span>
       <button class="pill" data-play-artist>${icon('play')} Play</button></div>
-    <div class="grid">${albums.map(albumTile).join('')}</div>`
+    <div class="grid"></div>`
+  mountVirtual(view.querySelector('.grid'), albums, { renderItem: albumTile })
 }
 
 async function renderAlbum(albumId) {
@@ -357,7 +507,7 @@ async function renderAlbum(albumId) {
     .join(' · ')
   view.innerHTML = `
     <section class="hero">${backdrop}
-      ${cover(album.id, album.cover, album.title)}
+      ${cover(album.id, album.cover, album.title, { full: true })}
       <div>
         <div class="sub">Album</div>
         <h1>${esc(album.title)}</h1>
@@ -391,6 +541,7 @@ async function renderSearch() {
 }
 
 function route() {
+  unmountVirtual()
   delete view.dataset.album
   const hash = decodeURIComponent(location.hash.slice(1) || '/')
   for (const tab of document.querySelectorAll('[data-tab]')) {

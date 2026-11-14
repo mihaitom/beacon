@@ -18,7 +18,7 @@ from starlette.staticfiles import StaticFiles
 
 from . import __version__
 from .config import Config
-from .covers import read_cover
+from .covers import read_cover, read_thumbnail
 from .library import Album, Library, Track
 from .signing import sign, verify
 
@@ -105,13 +105,13 @@ def create_app(config: Config, library: Library | None = None, scan_on_start: bo
             headers={"cache-control": _IMMUTABLE},
         )
 
-    def cover_response(album_id: str) -> Response:
+    def cover_response(album_id: str, thumb: bool = False) -> Response:
         album = library.albums.get(album_id)
         if not album or not album.cover:
             return Response(status_code=404)
         kind, relative = album.cover
         path = library.file(relative)
-        found = read_cover(kind, path) if path else None
+        found = (read_thumbnail if thumb else read_cover)(kind, path) if path else None
         if not found:
             return Response(status_code=404)
         data, content_type = found
@@ -126,7 +126,8 @@ def create_app(config: Config, library: Library | None = None, scan_on_start: bo
     # --- the page's own API ----------------------------------------------------
 
     async def page_cover(request: Request):
-        return await asyncio.to_thread(cover_response, request.path_params["album_id"])
+        thumb = request.query_params.get("size") == "thumb"
+        return await asyncio.to_thread(cover_response, request.path_params["album_id"], thumb)
 
     async def status(request: Request):
         return JSONResponse(

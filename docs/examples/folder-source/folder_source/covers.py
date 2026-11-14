@@ -1,11 +1,18 @@
 """Album covers: a picture file in the album's folder, or the one embedded in
 a track."""
 
+import io
 import mimetypes
 from functools import lru_cache
 from pathlib import Path
 
 import mutagen
+from PIL import Image
+
+# Twice the narrowest tile, for sharp covers on a high-density screen. The
+# originals run to 1400 px and several MB: thousands of them on the albums
+# page are what took the browser down.
+THUMB_SIZE = 320
 
 
 @lru_cache(maxsize=256)
@@ -56,3 +63,36 @@ def read_cover(kind: str, path: Path) -> tuple[bytes, str] | None:
     except OSError:
         return None
     return _embedded(str(path), mtime)
+
+
+def _shrink(data: bytes) -> bytes | None:
+    try:
+        with Image.open(io.BytesIO(data)) as image:
+            # A JPEG decodes straight at a fraction of its size: far quicker.
+            image.draft("RGB", (THUMB_SIZE, THUMB_SIZE))
+            image.thumbnail((THUMB_SIZE, THUMB_SIZE))
+            out = io.BytesIO()
+            image.convert("RGB").save(out, "JPEG", quality=85)
+            return out.getvalue()
+    except Exception:
+        return None
+
+
+@lru_cache(maxsize=4096)
+def _thumbnail(kind: str, path: str, mtime: float) -> tuple[bytes, str] | None:
+    # Small enough to keep a few thousand; mtime only keys the cache.
+    found = read_cover(kind, Path(path))
+    if not found:
+        return None
+    small = _shrink(found[0])
+    return (small, "image/jpeg") if small else found
+
+
+def read_thumbnail(kind: str, path: Path) -> tuple[bytes, str] | None:
+    """A small JPEG of a cover for the page's tiles; the cover itself when it
+    cannot be read as a picture."""
+    try:
+        mtime = path.stat().st_mtime
+    except OSError:
+        return None
+    return _thumbnail(kind, str(path), mtime)

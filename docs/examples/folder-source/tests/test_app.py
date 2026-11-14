@@ -77,6 +77,13 @@ def test_an_embedded_cover_is_served(client):
     assert client.get(f"/ui/covers/{album['id']}").content.startswith(b"\xff\xd8")
 
 
+def test_the_page_can_ask_for_a_small_cover(client):
+    album = _album(client, "Sommer")
+    response = client.get(f"/ui/covers/{album['id']}?size=thumb")
+    assert response.headers["content-type"] == "image/jpeg"
+    assert response.content.startswith(b"\xff\xd8")
+
+
 def test_an_album_without_a_cover_says_so(client):
     album = _album(client, "Best Of")
     assert album["cover"] is False

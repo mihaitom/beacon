@@ -275,6 +275,25 @@ main {
   text-overflow: ellipsis;
 }
 
+/* Long lists (mountVirtual in app.js): the container keeps its columns and
+ * its height, the rows near the screen are placed in it by hand. */
+.virtual {
+  position: relative;
+}
+
+.vrow {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: grid;
+  column-gap: inherit;
+}
+
+/* flow-root: the letter's margins count towards the measured height. */
+.vrow--heading {
+  display: flow-root;
+}
+
 /* ── Artists ────────────────────────────────────────────────────────── */
 
 .artists {
