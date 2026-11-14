@@ -1018,6 +1018,7 @@ export default {
       "Mostrata solo ora. Inseriscila nell'app desktop, in Account > Server Beacon; se la perdi, creane un'altra.",
     deviceKeysOnceApp:
       "Mostrata solo ora. Inseriscila nella tua app; se la perdi, creane un'altra.",
+    deviceKeysEmpty: 'Nessuna app né dispositivo ancora connesso.',
     deviceKeysRevoke: 'Revoca',
     deviceKeysConnected: 'Collegato',
     deviceKeysNeverUsed: 'Non ancora usata',

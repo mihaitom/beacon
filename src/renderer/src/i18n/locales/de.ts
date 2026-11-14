@@ -1021,6 +1021,7 @@ export default {
       'Wird nur jetzt angezeigt. Trage ihn in der Desktop-App unter Konto > Beacon-Server ein. Geht er verloren, erstelle einen neuen.',
     deviceKeysOnceApp:
       'Wird nur jetzt angezeigt. Trage ihn in deiner App ein. Geht er verloren, erstelle einen neuen.',
+    deviceKeysEmpty: 'Noch keine App und kein Gerät verbunden.',
     deviceKeysRevoke: 'Widerrufen',
     deviceKeysConnected: 'Verbunden',
     deviceKeysNeverUsed: 'Noch nicht benutzt',

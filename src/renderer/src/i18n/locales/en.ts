@@ -1008,6 +1008,7 @@ export default {
     deviceKeysOnce:
       'Shown only now. In the desktop app, enter it under Account > Beacon server; if you lose it, create a new one.',
     deviceKeysOnceApp: 'Shown only now. Give it to your app; if you lose it, create a new one.',
+    deviceKeysEmpty: 'No app or device connected yet.',
     deviceKeysRevoke: 'Revoke',
     deviceKeysConnected: 'Connected',
     deviceKeysNeverUsed: 'Not used yet',

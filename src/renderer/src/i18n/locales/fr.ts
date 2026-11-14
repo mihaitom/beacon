@@ -1022,6 +1022,7 @@ export default {
       "Affichée uniquement maintenant. Saisissez-la dans l'application de bureau, sous Compte > Serveur Beacon ; si vous la perdez, créez-en une autre.",
     deviceKeysOnceApp:
       'Affichée uniquement maintenant. Saisissez-la dans votre application ; si vous la perdez, créez-en une autre.',
+    deviceKeysEmpty: 'Aucune app ni aucun appareil connecté pour le moment.',
     deviceKeysRevoke: 'Révoquer',
     deviceKeysConnected: 'Connecté',
     deviceKeysNeverUsed: 'Pas encore utilisée',

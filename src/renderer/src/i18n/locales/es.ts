@@ -1020,6 +1020,7 @@ export default {
       'Solo se muestra ahora. Introdúcela en la aplicación de escritorio, en Cuenta > Servidor de Beacon; si la pierdes, crea otra.',
     deviceKeysOnceApp:
       'Solo se muestra ahora. Introdúcela en tu aplicación; si la pierdes, crea otra.',
+    deviceKeysEmpty: 'Todavía no hay ninguna app ni dispositivo conectado.',
     deviceKeysRevoke: 'Revocar',
     deviceKeysConnected: 'Conectado',
     deviceKeysNeverUsed: 'Aún sin usar',

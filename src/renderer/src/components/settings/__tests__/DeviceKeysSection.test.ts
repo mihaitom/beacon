@@ -81,6 +81,12 @@ describe('DeviceKeysSection', () => {
     expect(wrapper.text()).toContain(i18n.global.t('settings.deviceKeysScope_history'))
   })
 
+  it('says so when nothing is connected', async () => {
+    vi.mocked(listDeviceKeys).mockResolvedValue([])
+    const { wrapper } = await mountSection()
+    expect(wrapper.text()).toContain(i18n.global.t('settings.deviceKeysEmpty'))
+  })
+
   it('stops asking once it is gone', async () => {
     vi.useFakeTimers()
     const { wrapper } = await mountSection()
