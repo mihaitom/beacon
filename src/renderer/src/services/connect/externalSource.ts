@@ -120,40 +120,53 @@ export async function probeExternalSource(id: string): Promise<ExternalSourcePro
   return await fetchConnect<ExternalSourceProbe>(`/external-source/${encodeURIComponent(id)}/probe`)
 }
 
-export async function registerExternalItem(sourceId: string, item: ExternalItem): Promise<Song> {
-  const { song } = await fetchConnect<{ song: RawSong }>(
+export async function registerExternalItems(
+  sourceId: string,
+  items: ExternalItem[],
+): Promise<Song[]> {
+  const { songs } = await fetchConnect<{ songs: RawSong[] }>(
     `/external-source/${encodeURIComponent(sourceId)}/items`,
-    { method: 'POST', body: item },
+    { method: 'POST', body: { items } },
   )
-  return mapSong(song)
+  return songs.map(mapSong)
 }
 
-/** The page's `beacon.play` message, checked field by field: it comes from
- * code Beacon does not control. Null for anything else. */
-export function parsePlayMessage(
-  data: unknown,
-): { mode: 'now' | 'next' | 'queue'; item: ExternalItem } | null {
-  if (data === null || typeof data !== 'object') return null
-  const message = data as Record<string, unknown>
-  if (message.type !== 'beacon.play') return null
-  const mode = message.mode === 'next' || message.mode === 'queue' ? message.mode : 'now'
-  const raw = message.item
+/** connect's own limit (routes/external_source.py): an album or a show,
+ * rarely more, never a library. */
+export const MAX_PLAY_ITEMS = 500
+
+function parseItem(raw: unknown): ExternalItem | null {
   if (raw === null || typeof raw !== 'object') return null
   const fields = raw as Record<string, unknown>
   if (typeof fields.audioUrl !== 'string' || !fields.audioUrl) return null
   const text = (value: unknown) => (typeof value === 'string' ? value.slice(0, 500) : undefined)
   const duration = Number(fields.duration)
   return {
-    mode,
-    item: {
-      audioUrl: fields.audioUrl.slice(0, 2000),
-      title: text(fields.title),
-      artist: text(fields.artist),
-      album: text(fields.album),
-      coverUrl: text(fields.coverUrl),
-      duration: Number.isFinite(duration) && duration > 0 ? duration : undefined,
-    },
+    audioUrl: fields.audioUrl.slice(0, 2000),
+    title: text(fields.title),
+    artist: text(fields.artist),
+    album: text(fields.album),
+    coverUrl: text(fields.coverUrl),
+    duration: Number.isFinite(duration) && duration > 0 ? duration : undefined,
   }
+}
+
+/** The page's `beacon.play` message, checked field by field: it comes from
+ * code Beacon does not control. One song (`item`) or several in their order
+ * (`items`), all of them valid or the message is ignored. Null for anything
+ * else. */
+export function parsePlayMessage(
+  data: unknown,
+): { mode: 'now' | 'next' | 'queue'; items: ExternalItem[] } | null {
+  if (data === null || typeof data !== 'object') return null
+  const message = data as Record<string, unknown>
+  if (message.type !== 'beacon.play') return null
+  const mode = message.mode === 'next' || message.mode === 'queue' ? message.mode : 'now'
+  const raw = Array.isArray(message.items) ? message.items : [message.item]
+  if (!raw.length || raw.length > MAX_PLAY_ITEMS) return null
+  const items = raw.map(parseItem)
+  if (items.some((item) => item === null)) return null
+  return { mode, items: items as ExternalItem[] }
 }
 
 const GUIDE_URL =
@@ -186,13 +199,14 @@ export function externalSourceInstructions(): string {
     '- window.parent.postMessage({type: "beacon.play", mode: "now" | "next" | "queue", item: {audioUrl, title, artist, album, coverUrl, duration}}, "*")',
     '- audioUrl and coverUrl: relative to /ui/ (e.g. "../audio/123.m4a" or "/audio/123.m4a") or absolute on the app\'s own address. Anything else is refused.',
     '- duration in seconds. Everything except audioUrl is optional but makes the player look right.',
+    '- Several songs (an album, "play all") go in ONE message, in order: {type: "beacon.play", mode, items: [item, item, ...]} (up to 500). Never one message per song: the first would start a queue of one, and Beacon\'s Autoplay would fill it before the rest arrived.',
     '- Serve audio with Content-Length and support HTTP Range requests: then seeking, waveforms and transitions work. Common formats (mp3, m4a/aac, webm/opus, ogg, flac) all play.',
     '- Keep audio URLs working for at least a day, so a queue restored later still plays.',
     '',
     'Messages Beacon sends to the page (listen with window.addEventListener("message", ...)):',
     '- {type: "beacon.theme", dark: boolean, colors: {background, surface, text, primary, ...}} after the page sends {type: "beacon.ready"}, and again on a theme change. Use the colours to match Beacon\'s look.',
     '- {type: "beacon.nowPlaying", item: {title, artist, album} | null} when the song changes.',
-    '- {type: "beacon.played", ok: boolean, error?: string} after each beacon.play.',
+    '- {type: "beacon.played", ok: boolean, error?: string} after each beacon.play, for all its songs.',
     '',
     'Please write the app in <language of your choice>, with the page as plain HTML/CSS/JS without a build step.',
   ].join('\n')

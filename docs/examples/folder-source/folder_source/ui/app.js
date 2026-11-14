@@ -74,11 +74,14 @@ function toast(text) {
 
 // ── Talking to Beacon ──────────────────────────────────────────────────
 
-// Beacon answers every beacon.play with beacon.played, in order. Waiting for
-// the answer before the next request keeps an album in its order.
+// Beacon answers every beacon.play with beacon.played, in order.
 const waiting = []
 
-function send(item, mode) {
+// Several songs go in one message: sent one by one, an album would start as a
+// queue of one song, and Beacon's Autoplay would fill it before the rest came.
+const MAX_PER_MESSAGE = 500
+
+function send(items, mode) {
   return new Promise((resolve) => {
     if (!embedded) {
       resolve({ ok: false, error: 'Open this page in Beacon to play' })
@@ -92,14 +95,15 @@ function send(item, mode) {
       if (index >= 0) waiting.splice(index, 1)
       resolve({ ok: false, error: 'Beacon did not answer' })
     }, 10000)
-    window.parent.postMessage({ type: 'beacon.play', mode, item }, '*')
+    window.parent.postMessage({ type: 'beacon.play', mode, items }, '*')
   })
 }
 
 async function playRows(rows, { mode = 'now', label } = {}) {
   if (!rows.length) return
-  for (const [i, row] of rows.entries()) {
-    const result = await send(row.item, i === 0 ? mode : 'queue')
+  for (let start = 0; start < rows.length; start += MAX_PER_MESSAGE) {
+    const items = rows.slice(start, start + MAX_PER_MESSAGE).map((row) => row.item)
+    const result = await send(items, start === 0 ? mode : 'queue')
     if (!result.ok) {
       toast(result.error || 'Could not play that')
       return
@@ -411,7 +415,7 @@ view.addEventListener('click', async (event) => {
     renderAlbums()
   } else if (dataset.play !== undefined) {
     const row = rowsOnScreen[dataset.play]
-    const result = await send(row.item, dataset.mode)
+    const result = await send([row.item], dataset.mode)
     if (!result.ok) toast(result.error || 'Could not play that')
     else if (dataset.mode === 'next') toast(`${row.title} plays next`)
     else if (dataset.mode === 'queue') toast(`Added ${row.title}`)

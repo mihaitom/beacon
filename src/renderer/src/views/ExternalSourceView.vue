@@ -39,7 +39,7 @@ import { useExternalSourceStore } from '@/stores/externalSource'
 import { usePlaybackStore } from '@/stores/playback'
 import {
   parsePlayMessage,
-  registerExternalItem,
+  registerExternalItems,
   type ExternalSource,
 } from '@/services/connect/externalSource'
 import { connectErrorMessage } from '@/services/connect/errorMessage'
@@ -141,11 +141,13 @@ export default {
       const source = this.source
       if (!request || !source) return
       try {
-        const song = await registerExternalItem(source.id, request.item)
+        // All in one go: a queue started with the first song alone would
+        // have Autoplay fill it up before the rest arrived.
+        const songs = await registerExternalItems(source.id, request.items)
         const playback = usePlaybackStore()
-        if (request.mode === 'next') playback.queueNext([song])
-        else if (request.mode === 'queue') playback.addToQueue([song])
-        else await playback.playSongList([song], 0)
+        if (request.mode === 'next') playback.queueNext(songs)
+        else if (request.mode === 'queue') playback.addToQueue(songs)
+        else await playback.playSongList(songs, 0)
         this.post({ type: 'beacon.played', ok: true })
       } catch (error) {
         const { message } = connectErrorMessage(error)

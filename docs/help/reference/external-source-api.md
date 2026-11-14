@@ -92,11 +92,21 @@ window.parent.postMessage(
   },
   '*',
 )
+
+// An album, a show, a playlist: all of it in one message, in its order.
+window.parent.postMessage(
+  { type: 'beacon.play', mode: 'now', items: [song1, song2, song3] },
+  '*',
+)
 ```
 
 - `beacon.ready` once the page is set up, to get the messages below.
 - `beacon.play`: `now` replaces the queue and plays, `next` plays it after the
   current song, `queue` adds it at the end.
+- **Several songs go in one message**, as `items` (up to 500). Sent one by
+  one, the first would start a queue of one song, and with Autoplay on Beacon
+  fills that up with similar songs before the rest arrives. A message with
+  one song Beacon cannot take is refused whole.
 - `audioUrl` and `coverUrl` are relative to `/ui/` (`../audio/42.m4a` is
   `<base>/audio/42.m4a`), or absolute on the app's own address. **Beacon refuses
   any other address**, so a page cannot make it fetch from anywhere else.
@@ -262,25 +272,22 @@ PAGE = r"""<!doctype html>
     ? `<div class="cover"><img src="covers/${album.path}" alt=""></div>`
     : `<div class="cover" style="background:${tint(album.title)}">${esc(album.title[0] || '?')}</div>`
 
-  // Beacon answers every beacon.play with beacon.played: waiting for it keeps
-  // an album in order, since Beacon handles each request on its own.
+  // Beacon answers every beacon.play with beacon.played. Several songs go
+  // in one message, so an album starts as one queue.
   let answered = null
-  function play(album, track, mode) {
+  function play(album, tracks, mode) {
     return new Promise((resolve) => {
       answered = resolve
-      parent.postMessage({ type: 'beacon.play', mode, item: {
+      parent.postMessage({ type: 'beacon.play', mode, items: tracks.map((track) => ({
         audioUrl: '../audio/' + track.path, title: track.title,
         artist: album.artist, album: album.title, duration: track.duration,
         coverUrl: album.cover ? 'covers/' + album.path : undefined,
-      } }, '*')
+      })) }, '*')
     })
   }
   async function playAlbum(album) {
-    for (const [i, track] of album.tracks.entries()) {
-      const result = await play(album, track, i === 0 ? 'now' : 'queue')
-      if (!result.ok) break
-    }
-    toast(`Playing ${album.title}`)
+    const result = await play(album, album.tracks, 'now')
+    if (result.ok) toast(`Playing ${album.title}`)
   }
 
   function toast(text) {
@@ -343,7 +350,7 @@ PAGE = r"""<!doctype html>
     else if (el.dataset.album !== undefined) playAlbum(open)
     else if (el.dataset.track) {
       const track = open.tracks[el.dataset.track]
-      play(open, track, el.dataset.mode).then((r) => r.ok && el.dataset.mode !== 'now'
+      play(open, [track], el.dataset.mode).then((r) => r.ok && el.dataset.mode !== 'now'
         && toast(el.dataset.mode === 'next' ? `${track.title} plays next` : `Added ${track.title}`))
     }
   })

@@ -233,44 +233,43 @@ def _text(value, fallback: str = "") -> str:
     return (str(value).strip() if value is not None else "")[:_TEXT_LIMIT] or fallback
 
 
-def register(source_id: str, item: dict) -> Track:
-    """Stores a song a source's page asked to play and returns it with its
-    `ext:` id. The same audio URL always gets the same id, so playing a song
-    twice does not leave two of it in the history."""
+def register(source_id: str, items: list[dict]) -> list[Track]:
+    """Stores songs a source's page asked to play and returns them with their
+    `ext:` ids, in one go: a page hands over a whole album at once. The same
+    audio URL always gets the same id, so playing a song twice does not leave
+    two of it in the history. Nothing is stored when one of them is refused."""
     config = get_source(source_id)
     if config is None:
         raise ExternalSourceError("No such external source")
-    audio_url = resolve_app_url(config, item.get("audioUrl") or "")
-    cover_url = resolve_app_url(config, item["coverUrl"]) if item.get("coverUrl") else ""
-    try:
-        duration = max(0, int(float(item.get("duration") or 0)))
-    except (TypeError, ValueError):
-        duration = 0
-    track = Track(
-        id=ID_PREFIX + hashlib.sha256(audio_url.encode()).hexdigest()[:24],
-        title=_text(item.get("title"), "Unknown"),
-        artist=_text(item.get("artist"), "Unknown"),
-        duration=duration,
-        album=_text(item.get("album")),
-    )
-    track.cover_art_id = track.id if cover_url else ""
+    rows = []
+    tracks = []
+    for item in items:
+        audio_url = resolve_app_url(config, item.get("audioUrl") or "")
+        cover_url = resolve_app_url(config, item["coverUrl"]) if item.get("coverUrl") else ""
+        try:
+            duration = max(0, int(float(item.get("duration") or 0)))
+        except (TypeError, ValueError):
+            duration = 0
+        track = Track(
+            id=ID_PREFIX + hashlib.sha256(audio_url.encode()).hexdigest()[:24],
+            title=_text(item.get("title"), "Unknown"),
+            artist=_text(item.get("artist"), "Unknown"),
+            duration=duration,
+            album=_text(item.get("album")),
+        )
+        track.cover_art_id = track.id if cover_url else ""
+        tracks.append(track)
+        rows.append(
+            (track.id, track.title, track.artist, track.album, track.duration, audio_url, cover_url)
+        )
     now = time.time()
     with _lock, _connect() as conn:
-        conn.execute(
+        conn.executemany(
             "INSERT OR REPLACE INTO items VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                track.id,
-                track.title,
-                track.artist,
-                track.album,
-                track.duration,
-                audio_url,
-                cover_url,
-                now,
-            ),
+            [(*row, now) for row in rows],
         )
         conn.execute("DELETE FROM items WHERE used_at < ?", (now - _ITEM_MAX_AGE_SECONDS,))
-    return track
+    return tracks
 
 
 def _row(item_id: str) -> tuple | None:

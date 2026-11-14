@@ -234,6 +234,9 @@ async def probe_external_source(
     return await _probe(await _require_source(source_id))
 
 
+MAX_PLAY_ITEMS = 500
+
+
 class ExternalItem(BaseModel):
     # camelCase: the page's own spelling, as the docs give it.
     audioUrl: str = Field(max_length=2000)
@@ -244,19 +247,26 @@ class ExternalItem(BaseModel):
     duration: float | None = None
 
 
+class ExternalItems(BaseModel):
+    # An album or a show, rarely more: the cap only keeps one message from
+    # being a library.
+    items: list[ExternalItem] = Field(min_length=1, max_length=MAX_PLAY_ITEMS)
+
+
 @router.post("/{source_id}/items")
-async def register_item(
+async def register_items(
     source_id: str,
-    req: ExternalItem,
+    req: ExternalItems,
     session: SessionState = Depends(require_authenticated_session),
 ):
-    """A song the page asked to play, as a Subsonic song with an `ext:` id
-    the renderer can queue like any other."""
+    """Songs the page asked to play, as Subsonic songs with `ext:` ids the
+    renderer can queue like any other."""
+    items = [item.model_dump() for item in req.items]
     try:
-        track = await asyncio.to_thread(external_source.register, source_id, req.model_dump())
+        tracks = await asyncio.to_thread(external_source.register, source_id, items)
     except ExternalSourceError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
-    return {"song": external_source.subsonic_song(track)}
+    return {"songs": [external_source.subsonic_song(track) for track in tracks]}
 
 
 # --- the tab's page ----------------------------------------------------------
