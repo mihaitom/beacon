@@ -167,7 +167,13 @@ export default {
         { type: 'subheader', title: this.$t('settings.themeGroupLight') },
         preset('paper'),
         preset('glacier'),
-        ...(own.length ? [{ type: 'divider' as const }, ...own] : []),
+        ...(own.length
+          ? [
+              { type: 'divider' as const },
+              { type: 'subheader' as const, title: this.$t('settings.themeGroupCustom') },
+              ...own,
+            ]
+          : []),
       ]
     },
     colorFields(): { key: keyof CustomThemeColors; label: string }[] {

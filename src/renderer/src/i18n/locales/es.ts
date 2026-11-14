@@ -846,6 +846,7 @@ export default {
       'Mientras Reproducción está abierta, el visualizador y el acento de la app adoptan el color del fondo del artista, o de la portada si no lo hay. Desactivado, se quedan en el acento del tema.',
     themeGroupDark: 'Oscuros',
     themeGroupLight: 'Claros',
+    themeGroupCustom: 'Tus temas',
     customTheme: 'Tus colores',
     customThemeAdd: 'Tema nuevo',
     customThemeName: 'Nombre',

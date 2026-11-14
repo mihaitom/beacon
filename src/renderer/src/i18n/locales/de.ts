@@ -842,6 +842,7 @@ export default {
       'Solange „Läuft gerade“ offen ist, nehmen der Visualizer und der Akzent der App die Farbe des Künstlerhintergrunds an, ohne einen die des Covers. Aus, bleiben sie im Akzent des Themes.',
     themeGroupDark: 'Dunkel',
     themeGroupLight: 'Hell',
+    themeGroupCustom: 'Eigene',
     customTheme: 'Eigene Farben',
     customThemeAdd: 'Neues Theme',
     customThemeName: 'Name',

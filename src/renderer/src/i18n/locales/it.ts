@@ -841,6 +841,7 @@ export default {
       "Finché Riproduzione è aperta, il visualizzatore e l'accento dell'app assumono il colore dello sfondo dell'artista, o della copertina se manca. Disattivato, restano nell'accento del tema.",
     themeGroupDark: 'Scuri',
     themeGroupLight: 'Chiari',
+    themeGroupCustom: 'I tuoi temi',
     customTheme: 'I tuoi colori',
     customThemeAdd: 'Nuovo tema',
     customThemeName: 'Nome',

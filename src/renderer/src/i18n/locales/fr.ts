@@ -846,6 +846,7 @@ export default {
       "Tant que Lecture est ouverte, le visualiseur et l'accent de l'app prennent la couleur de l'arrière-plan de l'artiste, ou de la pochette à défaut. Désactivé, ils gardent l'accent du thème.",
     themeGroupDark: 'Sombres',
     themeGroupLight: 'Clairs',
+    themeGroupCustom: 'Vos thèmes',
     customTheme: 'Vos couleurs',
     customThemeAdd: 'Nouveau thème',
     customThemeName: 'Nom',

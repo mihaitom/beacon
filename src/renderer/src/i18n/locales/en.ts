@@ -836,6 +836,7 @@ export default {
       "While Now playing is open, the visualizer and the app's accent take on the colour of the artist background, or of the cover where there is none. Off, they stay in the theme's accent.",
     themeGroupDark: 'Dark',
     themeGroupLight: 'Light',
+    themeGroupCustom: 'Your themes',
     customTheme: 'Your colours',
     customThemeAdd: 'New theme',
     customThemeName: 'Name',
