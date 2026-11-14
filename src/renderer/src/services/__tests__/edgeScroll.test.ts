@@ -47,6 +47,9 @@ describe('EdgeScroller', () => {
     const element = document.createElement('div')
     element.style.paddingBottom = `${paddingBottom}px`
     element.getBoundingClientRect = () => ({ top: 0, bottom: 600 }) as DOMRect
+    // In the document, as in the app: a detached element has no computed
+    // style, so its padding would read as nothing.
+    document.body.append(element)
     return element
   }
 
@@ -66,6 +69,7 @@ describe('EdgeScroller', () => {
   afterEach(() => {
     vi.unstubAllGlobals()
     vi.restoreAllMocks()
+    document.body.innerHTML = ''
   })
 
   it('does nothing until a position is reported', () => {
@@ -138,7 +142,10 @@ describe('scrollParent', () => {
     const inner = document.createElement('div')
     outer.append(middle)
     middle.append(inner)
+    // A detached element has no computed style, so no overflow to find.
+    document.body.append(outer)
 
     expect(scrollParent(inner)).toBe(outer)
+    outer.remove()
   })
 })

@@ -195,10 +195,17 @@ describe('DetailHeader stored Fanart.tv backgrounds', () => {
   })
 
   it('stops cycling once it is gone', async () => {
+    // Its own interval rather than vi.getTimerCount(): jsdom keeps timers of
+    // its own running for the page, and those are not the header's to clear.
+    const started = vi.spyOn(globalThis, 'setInterval')
+    const cleared = vi.spyOn(globalThis, 'clearInterval')
     const wrapper = await mountHeader({ storedFanart: true })
+    const cycle = started.mock.results.at(-1)?.value
+    expect(cycle, 'the header never started cycling').toBeDefined()
+
     wrapper.unmount()
 
-    expect(vi.getTimerCount()).toBe(0)
+    expect(cleared).toHaveBeenCalledWith(cycle)
   })
 
   it('leaves the amber tint off Fanart.tv art', async () => {

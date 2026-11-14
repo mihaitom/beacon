@@ -21,6 +21,8 @@ async function mountDesktop() {
   await router.push('/')
   await router.isReady()
   const wrapper = mount(DefaultLayout, {
+    // Attached: isVisible() reads computed styles, which a detached tree has none of.
+    attachTo: document.body,
     global: {
       plugins: [vuetify, i18n, router],
       stubs: {
@@ -37,6 +39,7 @@ async function mountDesktop() {
 
 function mountMobile() {
   const wrapper = mount(MobileLayout, {
+    attachTo: document.body,
     global: {
       plugins: [vuetify, i18n],
       mocks: { $route: { name: 'm-library' }, $router: { push: () => {} } },

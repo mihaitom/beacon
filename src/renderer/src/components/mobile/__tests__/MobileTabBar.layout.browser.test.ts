@@ -36,6 +36,19 @@ function mountShell(push: () => void, route = reactive({ path: '/m/library', nam
   return wrapper
 }
 
+/** Lets a change finish drawing before it is measured. The bar animates
+ * both its height and the tab colours, so a reading straight after
+ * nextTick() lands mid-transition. Waits on the transitions themselves
+ * rather than on a fixed delay, and only on transitions: anything looping
+ * would never finish. */
+async function settled() {
+  await nextTick()
+  // Reading layout makes the browser start the transitions this change set off.
+  document.body.getBoundingClientRect()
+  const running = document.getAnimations().filter((a) => a instanceof CSSTransition)
+  await Promise.all(running.map((a) => a.finished.catch(() => undefined)))
+}
+
 describe('mobile tab bar', () => {
   afterEach(() => {
     while (wrappers.length) wrappers.pop()?.unmount()
@@ -118,7 +131,7 @@ describe('mobile tab bar', () => {
     await new Promise((resolve) => setTimeout(resolve, 80))
 
     wrapper.findComponent(MobileTabBar).vm.atScreenEdge = true
-    await nextTick()
+    await settled()
 
     const bar = wrapper.get('.mobile-tabbar').element.getBoundingClientRect()
     expect(Math.round(bar.bottom), 'the bar has left the bottom edge itself').toBe(844)
@@ -201,18 +214,18 @@ describe('mobile tab bar', () => {
     // What tapping the mini player does: Now Playing has no tab of its own.
     route.path = '/m/now-playing'
     route.name = 'm-now-playing'
-    await nextTick()
+    await settled()
     expect(litTab(), 'the tab left behind stayed lit').toBe(-1)
 
     route.path = '/m/favorites'
     route.name = 'm-favorites'
-    await nextTick()
+    await settled()
     expect(tabs[litTab()], 'the open tab is not picked out at all').toBe('/m/favorites')
 
     // ...and what tapping the album cover on Now Playing does.
     route.path = '/m/albums/42'
     route.name = 'm-album-detail'
-    await nextTick()
+    await settled()
     expect(litTab(), 'a tab is still lit on a sub-page').toBe(-1)
   })
 
