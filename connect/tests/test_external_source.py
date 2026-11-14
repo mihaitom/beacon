@@ -2,6 +2,8 @@
 the passthrough of its page (core/external_source.py, media/external_bridge.py,
 routes/external_source.py)."""
 
+import json
+
 import httpx
 import pytest
 
@@ -16,13 +18,14 @@ BASE = "http://10.9.9.9:8800"
 
 @pytest.fixture(autouse=True)
 def _isolated_storage(tmp_path, monkeypatch):
-    monkeypatch.setattr(external_source, "_CONFIG_PATH", str(tmp_path / "external_source.json"))
+    monkeypatch.setattr(external_source, "_CONFIG_PATH", str(tmp_path / "external_sources.json"))
+    monkeypatch.setattr(external_source, "_OLD_CONFIG_PATH", str(tmp_path / "external_source.json"))
     monkeypatch.setattr(external_source, "_ITEMS_PATH", str(tmp_path / "external_items.sqlite"))
 
 
 @pytest.fixture
 def configured():
-    return external_source.save_config("Wishlist", BASE, "s3cret")
+    return external_source.save_source(None, "Wishlist", "mdi-gift", BASE, "s3cret")
 
 
 class _AppRequests(list):
@@ -65,38 +68,99 @@ def test_the_address_is_normalized_and_must_be_http():
             external_source.normalize_base_url(bad)
 
 
-def test_a_source_needs_a_name():
+def test_a_source_needs_a_name_and_a_known_kind_of_icon():
     with pytest.raises(external_source.ExternalSourceError):
-        external_source.save_config("  ", BASE, "")
+        external_source.save_source(None, "  ", "", BASE, "")
+    for icon in ("<b>", "fa-music", "mdi-" + "x" * 50):
+        with pytest.raises(external_source.ExternalSourceError):
+            external_source.save_source(None, "X", icon, BASE, "")
 
 
-def test_nothing_set_up_reads_back_as_none():
-    assert external_source.load_config() is None
+def test_nothing_set_up_reads_back_as_no_sources():
+    assert external_source.load_sources() == []
 
 
 def test_saved_settings_read_back(configured):
-    assert external_source.load_config() == {
-        "name": "Wishlist",
-        "base_url": BASE,
-        "token": "s3cret",
-    }
+    assert external_source.load_sources() == [
+        {
+            "id": configured["id"],
+            "name": "Wishlist",
+            "icon": "mdi-gift",
+            "base_url": BASE,
+            "token": "s3cret",
+        }
+    ]
 
 
-def test_the_renderer_never_gets_the_token_back(client, default_session, configured):
+def test_several_sources_keep_their_order_and_ids(configured):
+    second = external_source.save_source(None, "Folder", "", "http://10.9.9.8:8800", "")
+    assert second["icon"] == external_source.DEFAULT_ICON
+    assert [s["name"] for s in external_source.load_sources()] == ["Wishlist", "Folder"]
+    external_source.save_source(configured["id"], "Wishes", "mdi-gift", BASE, "s3cret")
+    assert [s["name"] for s in external_source.load_sources()] == ["Wishes", "Folder"]
+    assert external_source.remove_source(configured["id"]) is True
+    assert [s["id"] for s in external_source.load_sources()] == [second["id"]]
+    assert external_source.remove_source(configured["id"]) is False
+
+
+def test_changing_a_source_that_is_gone_is_refused():
+    with pytest.raises(KeyError):
+        external_source.save_source("nothere", "X", "", BASE, "")
+
+
+def test_there_is_a_limit(monkeypatch):
+    monkeypatch.setattr(external_source, "MAX_SOURCES", 2)
+    external_source.save_source(None, "A", "", BASE, "")
+    external_source.save_source(None, "B", "", BASE, "")
+    with pytest.raises(external_source.ExternalSourceError):
+        external_source.save_source(None, "C", "", BASE, "")
+
+
+def test_the_single_source_of_before_becomes_the_first_of_the_list(tmp_path):
+    old = tmp_path / "external_source.json"
+    old.write_text(json.dumps({"name": "Imports", "base_url": BASE, "token": "t"}))
+    [source] = external_source.load_sources()
+    assert (source["name"], source["icon"], source["base_url"], source["token"]) == (
+        "Imports",
+        external_source.DEFAULT_ICON,
+        BASE,
+        "t",
+    )
+    assert not old.exists()
+    assert external_source.load_sources() == [source]
+
+
+def test_the_renderer_never_gets_a_token_back(client, default_session, configured):
     body = client.get("/external-source").json()
-    assert body["configured"] is True
-    assert body["has_token"] is True
+    assert body["may_configure"] is True
+    [source] = body["sources"]
+    assert source["has_token"] is True
+    assert source["icon"] == "mdi-gift"
     assert "s3cret" not in str(body)
-    assert body["ui_path"] == f"/external-ui/{external_source.ui_secret()}/"
+    assert source["ui_path"] == f"/external-ui/{external_source.ui_secret()}/{configured['id']}/"
+
+
+def test_adding_a_source_answers_with_the_list_and_a_probe(client, default_session, app_requests):
+    _respond(app_requests, lambda r: httpx.Response(200, json={"name": "Wish", "capabilities": []}))
+    response = client.post(
+        "/external-source", json={"name": "New", "icon": "mdi-folder-music", "base_url": BASE}
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert [s["name"] for s in body["sources"]] == ["New"]
+    assert body["source"]["id"] == body["sources"][0]["id"]
+    assert body["probe"]["ok"] is True
 
 
 def test_saving_without_a_token_keeps_the_stored_one(
     client, default_session, configured, app_requests
 ):
     _respond(app_requests, lambda r: httpx.Response(200, json={"name": "Wish", "capabilities": []}))
-    response = client.put("/external-source", json={"name": "Renamed", "base_url": BASE})
+    response = client.put(
+        f"/external-source/{configured['id']}", json={"name": "Renamed", "base_url": BASE}
+    )
     assert response.status_code == 200
-    assert external_source.load_config()["token"] == "s3cret"
+    assert external_source.get_source(configured["id"])["token"] == "s3cret"
     assert response.json()["probe"] == {
         "ok": True,
         "name": "Wish",
@@ -106,11 +170,26 @@ def test_saving_without_a_token_keeps_the_stored_one(
     assert app_requests[-1].headers["authorization"] == "Bearer s3cret"
 
 
+def test_an_unknown_source_is_a_404(client, default_session):
+    assert (
+        client.put("/external-source/nope", json={"name": "X", "base_url": BASE}).status_code == 404
+    )
+    assert client.delete("/external-source/nope").status_code == 404
+    assert client.get("/external-source/nope/probe").status_code == 404
+    assert client.post("/external-source/nope/items", json={"audioUrl": "a"}).status_code == 422
+
+
+def test_removing_a_source_answers_with_the_rest(client, default_session, configured):
+    response = client.delete(f"/external-source/{configured['id']}")
+    assert response.status_code == 200
+    assert response.json()["sources"] == []
+
+
 def test_the_probe_says_why_the_app_did_not_answer(
     client, default_session, configured, app_requests
 ):
     _respond(app_requests, lambda r: httpx.Response(401))
-    assert client.get("/external-source/probe").json() == {
+    assert client.get(f"/external-source/{configured['id']}/probe").json() == {
         "ok": False,
         "error": "The app refused the token",
     }
@@ -130,17 +209,24 @@ def test_an_app_that_cannot_be_reached_says_only_why(
         raise error
 
     _respond(app_requests, fail)
-    assert client.get("/external-source/probe").json() == {"ok": False, "error": said}
+    assert client.get(f"/external-source/{configured['id']}/probe").json() == {
+        "ok": False,
+        "error": said,
+    }
 
 
-def test_on_a_shared_server_only_an_admin_may_set_it_up(client, default_session, monkeypatch):
+def test_on_a_shared_server_only_an_admin_may_set_it_up(
+    client, default_session, configured, monkeypatch
+):
     monkeypatch.setattr(external_routes, "_HOSTED", True)
     default_session.account_is_admin = False
     assert client.get("/external-source").json()["may_configure"] is False
-    response = client.put("/external-source", json={"name": "X", "base_url": BASE})
-    assert response.status_code == 403
-    assert external_source.load_config() is None
-    assert client.delete("/external-source").status_code == 403
+    assert client.post("/external-source", json={"name": "X", "base_url": BASE}).status_code == 403
+    path = f"/external-source/{configured['id']}"
+    assert client.put(path, json={"name": "X", "base_url": BASE}).status_code == 403
+    assert client.delete(path).status_code == 403
+    assert client.get(f"{path}/probe").status_code == 403
+    assert [s["name"] for s in external_source.load_sources()] == ["Wishlist"]
 
 
 def test_a_listener_sees_the_tab_but_not_the_address(
@@ -148,9 +234,10 @@ def test_a_listener_sees_the_tab_but_not_the_address(
 ):
     monkeypatch.setattr(external_routes, "_HOSTED", True)
     default_session.account_is_admin = False
-    body = client.get("/external-source").json()
-    assert body["name"] == "Wishlist"
-    assert "base_url" not in body
+    [source] = client.get("/external-source").json()["sources"]
+    assert source["name"] == "Wishlist"
+    assert "base_url" not in source
+    assert "has_token" not in source
 
 
 def test_on_the_desktop_the_signed_in_person_may_set_it_up(
@@ -158,9 +245,9 @@ def test_on_the_desktop_the_signed_in_person_may_set_it_up(
 ):
     monkeypatch.setattr(external_routes, "_HOSTED", False)
     default_session.account_is_admin = False
-    response = client.put("/external-source", json={"name": "X", "base_url": BASE})
+    response = client.post("/external-source", json={"name": "X", "base_url": BASE})
     assert response.status_code == 200
-    assert external_source.load_config()["name"] == "X"
+    assert external_source.load_sources()[0]["name"] == "X"
 
 
 def test_an_unauthenticated_session_gets_nothing(client, reset_state):
@@ -171,7 +258,9 @@ def test_an_unauthenticated_session_gets_nothing(client, reset_state):
 
 
 def test_relative_urls_resolve_against_the_apps_ui_folder(configured):
-    track = external_source.register({"audioUrl": "../audio/1.m4a", "coverUrl": "/covers/1.jpg"})
+    track = external_source.register(
+        configured["id"], {"audioUrl": "../audio/1.m4a", "coverUrl": "/covers/1.jpg"}
+    )
     assert external_source.get_stream_url(track.id) == f"{BASE}/audio/1.m4a"
     assert external_source.get_cover_art_url(track.id) == f"{BASE}/covers/1.jpg"
     assert track.cover_art_id == track.id
@@ -189,29 +278,33 @@ def test_relative_urls_resolve_against_the_apps_ui_folder(configured):
 )
 def test_audio_from_anywhere_but_the_app_is_refused(configured, url):
     with pytest.raises(external_source.ExternalSourceError):
-        external_source.register({"audioUrl": url})
+        external_source.register(configured["id"], {"audioUrl": url})
 
 
 def test_a_cover_from_elsewhere_is_refused_too(configured):
     with pytest.raises(external_source.ExternalSourceError):
-        external_source.register({"audioUrl": "a.mp3", "coverUrl": "http://elsewhere/c.jpg"})
+        external_source.register(
+            configured["id"], {"audioUrl": "a.mp3", "coverUrl": "http://elsewhere/c.jpg"}
+        )
 
 
-def test_nothing_registers_without_a_source():
+def test_nothing_registers_for_a_source_that_is_not_there(configured):
     with pytest.raises(external_source.ExternalSourceError):
-        external_source.register({"audioUrl": "a.mp3"})
+        external_source.register("nope", {"audioUrl": "a.mp3"})
 
 
 def test_the_same_audio_keeps_its_id_and_takes_the_newest_metadata(configured):
-    first = external_source.register({"audioUrl": "a.mp3", "title": "Old"})
-    second = external_source.register({"audioUrl": "a.mp3", "title": "New", "duration": "201.6"})
+    first = external_source.register(configured["id"], {"audioUrl": "a.mp3", "title": "Old"})
+    second = external_source.register(
+        configured["id"], {"audioUrl": "a.mp3", "title": "New", "duration": "201.6"}
+    )
     assert first.id == second.id
     track = external_source.get_track(first.id)
     assert (track.title, track.duration) == ("New", 201)
 
 
 def test_missing_metadata_gets_harmless_defaults(configured):
-    track = external_source.register({"audioUrl": "a.mp3", "duration": "soon"})
+    track = external_source.register(configured["id"], {"audioUrl": "a.mp3", "duration": "soon"})
     assert (track.title, track.artist, track.duration, track.cover_art_id) == (
         "Unknown",
         "Unknown",
@@ -235,7 +328,7 @@ def test_an_unknown_id_raises_like_a_missing_library_song(configured):
 )
 def test_every_media_client_hands_external_ids_to_the_source(configured, media):
     track = external_source.register(
-        {"audioUrl": "a.mp3", "coverUrl": "c.jpg", "title": "T", "artist": "A"}
+        configured["id"], {"audioUrl": "a.mp3", "coverUrl": "c.jpg", "title": "T", "artist": "A"}
     )
     assert media.get_stream_url(track.id) == f"{BASE}/ui/a.mp3"
     assert media.get_track(track.id).title == "T"
@@ -249,7 +342,7 @@ def test_library_ids_still_go_to_the_media_server():
 
 def test_the_items_route_returns_a_subsonic_song(client, default_session, configured):
     response = client.post(
-        "/external-source/items",
+        f"/external-source/{configured['id']}/items",
         json={"audioUrl": "a.mp3", "title": "T", "artist": "A", "coverUrl": "c.jpg"},
     )
     assert response.status_code == 200
@@ -259,7 +352,9 @@ def test_the_items_route_returns_a_subsonic_song(client, default_session, config
 
 
 def test_the_items_route_refuses_a_foreign_address(client, default_session, configured):
-    response = client.post("/external-source/items", json={"audioUrl": "http://elsewhere/a.mp3"})
+    response = client.post(
+        f"/external-source/{configured['id']}/items", json={"audioUrl": "http://elsewhere/a.mp3"}
+    )
     assert response.status_code == 422
 
 
@@ -268,7 +363,9 @@ def test_the_items_route_refuses_a_foreign_address(client, default_session, conf
 
 @pytest.fixture
 def song(configured):
-    return external_source.register({"audioUrl": "a.mp3", "title": "T", "coverUrl": "c.jpg"})
+    return external_source.register(
+        configured["id"], {"audioUrl": "a.mp3", "title": "T", "coverUrl": "c.jpg"}
+    )
 
 
 @pytest.fixture
@@ -403,12 +500,12 @@ def test_an_unknown_external_song_is_a_404(client, default_session, configured, 
 # --- the page --------------------------------------------------------------------
 
 
-def _ui(path: str = "") -> str:
-    return f"/external-ui/{external_source.ui_secret()}/{path}"
+def _ui(source: dict, path: str = "") -> str:
+    return f"/external-ui/{external_source.ui_secret()}/{source['id']}/{path}"
 
 
 def test_the_page_needs_the_secret(client, configured, app_requests):
-    assert client.get("/external-ui/wrong/index.html").status_code == 404
+    assert client.get(f"/external-ui/wrong/{configured['id']}/index.html").status_code == 404
     assert app_requests == []
 
 
@@ -426,7 +523,7 @@ def test_the_page_is_sandboxed_and_stripped(client, configured, app_requests):
             },
         ),
     )
-    response = client.get(_ui(), headers={"cookie": "beacon=1", "x-connect-token": "t"})
+    response = client.get(_ui(configured), headers={"cookie": "beacon=1", "x-connect-token": "t"})
     assert response.status_code == 200
     csp = response.headers["content-security-policy"]
     assert csp.startswith("sandbox ")
@@ -443,7 +540,7 @@ def test_the_page_is_sandboxed_and_stripped(client, configured, app_requests):
 
 def test_the_pages_api_calls_pass_through_with_body_and_query(client, configured, app_requests):
     _respond(app_requests, lambda r: httpx.Response(200, json={"items": []}))
-    response = client.post(_ui("api/search?q=a+b"), json={"x": 1})
+    response = client.post(_ui(configured, "api/search?q=a+b"), json={"x": 1})
     assert response.json() == {"items": []}
     upstream = app_requests[-1]
     assert upstream.method == "POST"
@@ -453,7 +550,7 @@ def test_the_pages_api_calls_pass_through_with_body_and_query(client, configured
 
 
 def test_a_preflight_is_answered_by_connect(client, configured, app_requests):
-    response = client.options(_ui("api/search"))
+    response = client.options(_ui(configured, "api/search"))
     assert response.status_code == 204
     assert response.headers["access-control-allow-origin"] == "*"
     assert app_requests == []
@@ -464,13 +561,31 @@ def test_an_unreachable_app_is_a_502_still_sandboxed(client, configured, app_req
         raise httpx.ConnectError("refused")
 
     _respond(app_requests, fail)
-    response = client.get(_ui())
+    response = client.get(_ui(configured))
     assert response.status_code == 502
     assert response.headers["content-security-policy"].startswith("sandbox ")
 
 
-def test_no_page_without_a_source(client, app_requests):
-    assert client.get(_ui()).status_code == 404
+def test_no_page_for_a_source_that_is_not_there(client, app_requests):
+    assert client.get(_ui({"id": "nope"})).status_code == 404
+    assert app_requests == []
+
+
+def test_each_source_gets_its_own_page(client, configured, app_requests):
+    other = external_source.save_source(None, "Folder", "", "http://10.9.9.8:8800", "f")
+    _respond(app_requests, lambda r: httpx.Response(200, content=b"x"))
+    client.get(_ui(other, "app.js"))
+    assert str(app_requests[-1].url) == "http://10.9.9.8:8800/ui/app.js"
+    assert app_requests[-1].headers["authorization"] == "Bearer f"
+
+
+def test_a_removed_sources_songs_are_no_longer_fetched(
+    client, default_session, song, configured, app_requests
+):
+    external_source.remove_source(configured["id"])
+    assert client.get("/rest/stream.view", params={"id": song.id}).status_code == 404
+    assert external_source.get_cover_art_url(song.id) is None
+    assert app_requests == []
 
 
 # --- party ---------------------------------------------------------------------

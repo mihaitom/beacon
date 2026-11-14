@@ -110,7 +110,7 @@ const router = createRouter({
       component: () => import('../views/RadioView.vue'),
     },
     {
-      path: '/external',
+      path: '/external/:id',
       name: 'external-source',
       component: () => import('../views/ExternalSourceView.vue'),
     },
@@ -205,7 +205,7 @@ const router = createRouter({
       component: () => import('../views/mobile/MobileRadioView.vue'),
     },
     {
-      path: '/m/external',
+      path: '/m/external/:id',
       name: 'm-external-source',
       component: () => import('../views/ExternalSourceView.vue'),
     },

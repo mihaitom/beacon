@@ -1807,16 +1807,21 @@ export default {
     needsPairing: "Deve prima essere associato nell'app Beacon",
   },
   externalSource: {
-    notSetUpTitle: 'Nessuna fonte esterna configurata',
-    notSetUpText:
-      "Un'app tua può offrire qui brani che non sono nella libreria. Si configura in Impostazioni, sotto Libreria.",
+    goneTitle: 'Questa fonte non esiste più',
+    goneText:
+      'È stata rimossa da Beacon. Le fonti esterne si configurano in Impostazioni, sotto Libreria.',
     openSettings: 'Apri le impostazioni',
     playFailed: 'Impossibile riprodurlo: {reason}',
-    settingsTitle: 'Fonte esterna',
+    settingsTitle: 'Fonti esterne',
     settingsWhat:
-      "Un'app che gestisci tu mostra la propria pagina come scheda in Beacon e le passa brani da riprodurre, anche sugli altoparlanti. Beacon non include nessuna app di questo tipo.",
+      'App che gestisci tu, ognuna con la propria pagina come scheda in Beacon, che le passano brani da riprodurre, anche sugli altoparlanti. Beacon non include nessuna app di questo tipo.',
     name: 'Nome della scheda',
     namePlaceholder: 'ad es. Lista dei desideri',
+    add: 'Aggiungi fonte',
+    addTitle: 'Nuova fonte esterna',
+    editTitle: 'Fonte esterna',
+    icon: 'Icona della scheda',
+    menuTitle: 'Fonti esterne',
     address: "Indirizzo dell'app",
     token: 'Token della tua app (facoltativo)',
     tokenHint:

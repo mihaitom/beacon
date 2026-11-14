@@ -1,5 +1,5 @@
-"""routes/external_source.py - setting up the external source, registering
-its songs, and passing its tab's page through.
+"""routes/external_source.py - setting up the external sources, registering
+their songs, and passing each one's tab page through.
 
 Two routers on purpose. /external-source/ is the renderer's, behind the
 connect token and a signed-in session like every other route. /external-ui/
@@ -131,67 +131,107 @@ async def _probe(config: dict) -> dict:
     }
 
 
-def _describe(config: dict | None, session: SessionState) -> dict:
-    may_configure = _may_configure(session)
-    if config is None:
-        return {"configured": False, "may_configure": may_configure}
+def _describe(source: dict, session: SessionState) -> dict:
     described = {
-        "configured": True,
-        "may_configure": may_configure,
-        "name": config["name"],
-        "ui_path": f"/external-ui/{external_source.ui_secret()}/",
+        "id": source["id"],
+        "name": source["name"],
+        "icon": source["icon"],
+        "ui_path": f"/external-ui/{external_source.ui_secret()}/{source['id']}/",
     }
-    if may_configure:
-        described["base_url"] = config["base_url"]
-        described["has_token"] = bool(config["token"])
+    if _may_configure(session):
+        described["base_url"] = source["base_url"]
+        described["has_token"] = bool(source["token"])
     return described
 
 
+async def _sources(session: SessionState) -> dict:
+    sources = await asyncio.to_thread(external_source.load_sources)
+    return {
+        "may_configure": _may_configure(session),
+        "sources": [_describe(s, session) for s in sources],
+    }
+
+
+def _require_configure(session: SessionState) -> None:
+    if not _may_configure(session):
+        raise HTTPException(status_code=403, detail="Server administrator rights required")
+
+
+async def _require_source(source_id: str) -> dict:
+    source = await asyncio.to_thread(external_source.get_source, source_id)
+    if source is None:
+        raise HTTPException(status_code=404, detail="No such external source")
+    return source
+
+
 @router.get("")
-async def get_external_source(session: SessionState = Depends(require_authenticated_session)):
-    config = await asyncio.to_thread(external_source.load_config)
-    return _describe(config, session)
+async def get_external_sources(session: SessionState = Depends(require_authenticated_session)):
+    return await _sources(session)
 
 
 class ExternalSourceSettings(BaseModel):
     name: str = Field(max_length=60)
+    icon: str = Field(default="", max_length=60)
     base_url: str = Field(max_length=500)
     # None keeps the stored token, so the dialog never needs to show it.
     token: str | None = Field(default=None, max_length=500)
 
 
-@router.put("")
-async def put_external_source(
+async def _save(source_id: str | None, req: ExternalSourceSettings, session: SessionState):
+    _require_configure(session)
+    token = req.token
+    if token is None:
+        token = (await _require_source(source_id))["token"] if source_id else ""
+    try:
+        source = await asyncio.to_thread(
+            external_source.save_source, source_id, req.name, req.icon, req.base_url, token
+        )
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail="No such external source") from e
+    except ExternalSourceError as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    logger.info(f"[external-source] {source['name']} at {source['base_url']}")
+    return {
+        **await _sources(session),
+        "source": _describe(source, session),
+        "probe": await _probe(source),
+    }
+
+
+@router.post("")
+async def add_external_source(
     req: ExternalSourceSettings,
     session: SessionState = Depends(require_authenticated_session),
 ):
-    if not _may_configure(session):
-        raise HTTPException(status_code=403, detail="Server administrator rights required")
-    current = await asyncio.to_thread(external_source.load_config)
-    token = req.token if req.token is not None else (current or {}).get("token", "")
-    try:
-        config = await asyncio.to_thread(external_source.save_config, req.name, req.base_url, token)
-    except ExternalSourceError as e:
-        raise HTTPException(status_code=422, detail=str(e)) from e
-    logger.info(f"[external-source] Set to {config['base_url']} ({config['name']})")
-    return {**_describe(config, session), "probe": await _probe(config)}
+    return await _save(None, req, session)
 
 
-@router.delete("")
-async def delete_external_source(session: SessionState = Depends(require_authenticated_session)):
-    if not _may_configure(session):
-        raise HTTPException(status_code=403, detail="Server administrator rights required")
-    await asyncio.to_thread(external_source.clear_config)
-    logger.info("[external-source] Removed")
-    return _describe(None, session)
+@router.put("/{source_id}")
+async def change_external_source(
+    source_id: str,
+    req: ExternalSourceSettings,
+    session: SessionState = Depends(require_authenticated_session),
+):
+    return await _save(source_id, req, session)
 
 
-@router.get("/probe")
-async def probe_external_source(session: SessionState = Depends(require_authenticated_session)):
-    config = await asyncio.to_thread(external_source.load_config)
-    if config is None:
-        raise HTTPException(status_code=404, detail="No external source is set up")
-    return await _probe(config)
+@router.delete("/{source_id}")
+async def delete_external_source(
+    source_id: str, session: SessionState = Depends(require_authenticated_session)
+):
+    _require_configure(session)
+    if not await asyncio.to_thread(external_source.remove_source, source_id):
+        raise HTTPException(status_code=404, detail="No such external source")
+    logger.info(f"[external-source] Removed {source_id}")
+    return await _sources(session)
+
+
+@router.get("/{source_id}/probe")
+async def probe_external_source(
+    source_id: str, session: SessionState = Depends(require_authenticated_session)
+):
+    _require_configure(session)
+    return await _probe(await _require_source(source_id))
 
 
 class ExternalItem(BaseModel):
@@ -204,15 +244,16 @@ class ExternalItem(BaseModel):
     duration: float | None = None
 
 
-@router.post("/items")
+@router.post("/{source_id}/items")
 async def register_item(
+    source_id: str,
     req: ExternalItem,
     session: SessionState = Depends(require_authenticated_session),
 ):
     """A song the page asked to play, as a Subsonic song with an `ext:` id
     the renderer can queue like any other."""
     try:
-        track = await asyncio.to_thread(external_source.register, req.model_dump())
+        track = await asyncio.to_thread(external_source.register, source_id, req.model_dump())
     except ExternalSourceError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     return {"song": external_source.subsonic_song(track)}
@@ -231,23 +272,21 @@ def _page_headers(extra: dict | None = None) -> dict:
     }
 
 
-@ui_router.options("/{secret}/{path:path}")
-async def ui_preflight(secret: str, path: str):
+@ui_router.options("/{secret}/{source_id}/{path:path}")
+async def ui_preflight(secret: str, source_id: str, path: str):
     if not external_source.ui_secret_matches(secret):
         raise HTTPException(status_code=404)
     return Response(status_code=204, headers=_CORS)
 
 
 @ui_router.api_route(
-    "/{secret}/{path:path}", methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]
+    "/{secret}/{source_id}/{path:path}", methods=["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE"]
 )
-async def ui_passthrough(secret: str, path: str, request: Request):
-    """The app's `ui/` folder, page, assets and the page's own API alike."""
+async def ui_passthrough(secret: str, source_id: str, path: str, request: Request):
+    """A source's `ui/` folder, page, assets and the page's own API alike."""
     if not external_source.ui_secret_matches(secret):
         raise HTTPException(status_code=404)
-    config = await asyncio.to_thread(external_source.load_config)
-    if config is None:
-        raise HTTPException(status_code=404, detail="No external source is set up")
+    config = await _require_source(source_id)
 
     headers = {k: v for k, v in request.headers.items() if k.lower() in _UI_REQ_HEADERS}
     headers.update(_auth_header(config))

@@ -1,4 +1,4 @@
-// The external source's tab: a sandboxed page and the message bridge to it.
+// An external source's tab: a sandboxed page and the message bridge to it.
 // Covers who may talk to the bridge and what a play request does - not the
 // empty state's copy or the frame's size.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -10,13 +10,13 @@ import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { useExternalSourceStore } from '@/stores/externalSource'
 import { usePlaybackStore } from '@/stores/playback'
-import { getExternalSource, registerExternalItem } from '@/services/connect/externalSource'
+import { getExternalSources, registerExternalItem } from '@/services/connect/externalSource'
 import type { Song } from '@/types/library'
 import ExternalSourceView from '../ExternalSourceView.vue'
 
 vi.mock('@/services/connect/externalSource', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/connect/externalSource')>()),
-  getExternalSource: vi.fn(),
+  getExternalSources: vi.fn(),
   registerExternalItem: vi.fn(),
 }))
 
@@ -27,14 +27,21 @@ const SONG = { id: 'ext:1', title: 'T', artist: 'A' } as Song
 
 let wrapper: VueWrapper | null = null
 
-async function mountView() {
-  wrapper = mount(ExternalSourceView, {
-    attachTo: document.body,
+function mountAt(id: string, attach = true) {
+  return mount(ExternalSourceView, {
+    attachTo: attach ? document.body : undefined,
     global: {
       plugins: [vuetify, i18n],
-      mocks: { $emitter: { emit, on: vi.fn(), off: vi.fn() } },
+      mocks: {
+        $emitter: { emit, on: vi.fn(), off: vi.fn() },
+        $route: { params: { id } },
+      },
     },
   })
+}
+
+async function mountView(id = 'wish') {
+  wrapper = mountAt(id)
   await flushPromises()
   const frame = wrapper.find('iframe').element as HTMLIFrameElement
   return { frame, frameWindow: frame.contentWindow! }
@@ -48,11 +55,17 @@ function fromWindow(source: Window | null, data: unknown) {
 describe('ExternalSourceView', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
-    vi.mocked(getExternalSource).mockResolvedValue({
-      configured: true,
+    vi.mocked(getExternalSources).mockResolvedValue({
       may_configure: true,
-      name: 'Wishlist',
-      ui_path: '/external-ui/secret/',
+      sources: [
+        { id: 'wish', name: 'Wishlist', icon: 'mdi-gift', ui_path: '/external-ui/secret/wish/' },
+        {
+          id: 'dir',
+          name: 'Folder',
+          icon: 'mdi-folder-music',
+          ui_path: '/external-ui/secret/dir/',
+        },
+      ],
     })
     vi.mocked(registerExternalItem).mockResolvedValue(SONG)
   })
@@ -69,7 +82,7 @@ describe('ExternalSourceView', () => {
     expect(sandbox).toContain('allow-scripts')
     expect(sandbox).not.toContain('allow-same-origin')
     expect(sandbox).not.toContain('allow-top-navigation')
-    expect(frame.getAttribute('src')).toMatch(/\/external-ui\/secret\/$/)
+    expect(frame.getAttribute('src')).toMatch(/\/external-ui\/secret\/wish\/$/)
   })
 
   it('plays what the page asks for and tells it so', async () => {
@@ -81,6 +94,7 @@ describe('ExternalSourceView', () => {
     await fromWindow(frameWindow, { type: 'beacon.play', item: { audioUrl: 'a.mp3', title: 'T' } })
 
     expect(registerExternalItem).toHaveBeenCalledWith(
+      'wish',
       expect.objectContaining({ audioUrl: 'a.mp3', title: 'T' }),
     )
     expect(play).toHaveBeenCalledWith([SONG], 0)
@@ -133,16 +147,18 @@ describe('ExternalSourceView', () => {
     expect(theme.colors.primary).toMatch(/^#/)
   })
 
-  it('shows no frame while nothing is set up', async () => {
-    vi.mocked(getExternalSource).mockResolvedValue({ configured: false, may_configure: false })
-    wrapper = mount(ExternalSourceView, {
-      global: {
-        plugins: [vuetify, i18n],
-        mocks: { $emitter: { emit, on: vi.fn(), off: vi.fn() } },
-      },
-    })
+  it('shows the page of the source the route names', async () => {
+    const { frame, frameWindow } = await mountView('dir')
+    expect(frame.getAttribute('src')).toMatch(/\/external-ui\/secret\/dir\/$/)
+    vi.spyOn(usePlaybackStore(), 'playSongList').mockResolvedValue()
+    await fromWindow(frameWindow, { type: 'beacon.play', item: { audioUrl: 'a' } })
+    expect(registerExternalItem).toHaveBeenCalledWith('dir', expect.anything())
+  })
+
+  it('shows no frame for a source that is not there', async () => {
+    wrapper = mountAt('gone', false)
     await flushPromises()
-    expect(useExternalSourceStore().configured).toBe(false)
+    expect(useExternalSourceStore().loaded).toBe(true)
     expect(wrapper.find('iframe').exists()).toBe(false)
   })
 })

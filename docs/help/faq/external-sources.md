@@ -26,14 +26,17 @@ use sources you are allowed to play.
 
 1. Run the app somewhere Beacon can reach it: on the same machine, or on a
    computer in your network.
-2. In Beacon, open Settings > Library > External source. Give the tab a name,
-   enter the app's address (for example `http://192.168.1.20:8800`) and, if the
-   app asks for one, its token.
+2. In Beacon, open Settings > Library > External sources and choose **Add
+   source**. Give the tab a name and an icon, enter the app's address (for
+   example `http://192.168.1.20:8800`) and, if the app asks for one, its token.
 3. Save. Beacon checks the connection right away and says whether the app
    answered.
 
-On a Beacon server only an administrator can set this up, and the source is the
-same for everyone signed in. In the desktop app it is yours alone.
+Each app is a source of its own with its own tab, up to twelve. A click on one
+in the list changes or removes it.
+
+On a Beacon server only an administrator can set sources up, and they are the
+same for everyone signed in. In the desktop app they are yours alone.
 
 ## Is the token a key from Apps and devices?
 
@@ -47,8 +50,9 @@ not encrypt anything; for that the app needs an `https://` address.
 
 ## Where do I find the tab?
 
-On the desktop, in the sidebar under the name you gave it. On a phone, open
-Radio: the button next to Discover leads there.
+On the desktop, in the sidebar under the name and icon you gave it. On a
+phone, open Radio: the button next to Discover leads there, or with several
+sources, a menu of them.
 
 ## What works with these songs?
 
@@ -82,8 +86,8 @@ only to signed-in listeners, every request there is refused.
 
 ## How do I write such an app?
 
-Settings > Library > External source has a button **Copy instructions for an
-AI**. Paste them into an AI assistant and say what your app should do; they hold
+Settings > Library > External sources has a button **Copy instructions for
+an AI**. Paste them into an AI assistant and say what your app should do; they hold
 everything it needs to know about Beacon. The full description, with a small
 working example, is [the external source API](../reference/external-source-api.md).
 
@@ -96,4 +100,5 @@ working example, is [the external source API](../reference/external-source-api.m
 - **A song does not start**: the audio address must belong to the app itself.
   Beacon refuses audio from anywhere else and says so in a message.
 - **Songs from earlier no longer play**: the app stopped serving their audio.
-  Ask it to keep its audio addresses working for at least a day.
+  Ask it to keep its audio addresses working for at least a day. Songs from a
+  source that was removed in Beacon do not play any more either.

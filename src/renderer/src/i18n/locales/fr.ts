@@ -1814,16 +1814,21 @@ export default {
     needsPairing: "Doit d'abord être associé dans l'application Beacon",
   },
   externalSource: {
-    notSetUpTitle: 'Aucune source externe configurée',
-    notSetUpText:
-      'Une app à vous peut proposer ici des morceaux absents de la bibliothèque. Elle se configure dans Paramètres, sous Bibliothèque.',
+    goneTitle: "Cette source n'existe plus",
+    goneText:
+      'Elle a été retirée de Beacon. Les sources externes se configurent dans Paramètres, sous Bibliothèque.',
     openSettings: 'Ouvrir les paramètres',
     playFailed: 'Lecture impossible : {reason}',
-    settingsTitle: 'Source externe',
+    settingsTitle: 'Sources externes',
     settingsWhat:
-      'Une app que vous hébergez vous-même affiche sa propre page dans un onglet de Beacon et lui transmet des morceaux à lire, y compris sur les enceintes. Beacon ne fournit aucune app de ce genre.',
+      'Des apps que vous hébergez vous-même, chacune avec sa propre page dans un onglet de Beacon, qui lui transmettent des morceaux à lire, y compris sur les enceintes. Beacon ne fournit aucune app de ce genre.',
     name: "Nom de l'onglet",
     namePlaceholder: "p. ex. Liste d'envies",
+    add: 'Ajouter une source',
+    addTitle: 'Nouvelle source externe',
+    editTitle: 'Source externe',
+    icon: "Icône de l'onglet",
+    menuTitle: 'Sources externes',
     address: "Adresse de l'app",
     token: 'Jeton de votre app (facultatif)',
     tokenHint:

@@ -1,14 +1,15 @@
 <template>
   <div class="external-view">
-    <v-progress-circular v-if="!store.source" indeterminate class="external-view__loading" />
+    <v-progress-circular v-if="!store.loaded" indeterminate class="external-view__loading" />
 
+    <!-- A link to a source that has since been removed. -->
     <empty-state
-      v-else-if="!store.configured"
+      v-else-if="!source"
       icon="mdi-web"
-      :title="$t('externalSource.notSetUpTitle')"
-      :text="$t('externalSource.notSetUpText')"
+      :title="$t('externalSource.goneTitle')"
+      :text="$t('externalSource.goneText')"
     >
-      <v-btn v-if="store.source.may_configure" variant="tonal" to="/settings">
+      <v-btn v-if="store.mayConfigure" variant="tonal" to="/settings">
         {{ $t('externalSource.openSettings') }}
       </v-btn>
     </empty-state>
@@ -22,7 +23,7 @@
       ref="frame"
       :key="frameSrc"
       :src="frameSrc"
-      :title="store.name"
+      :title="source.name"
       class="external-view__frame"
       sandbox="allow-scripts allow-forms allow-popups allow-popups-to-escape-sandbox"
       referrerpolicy="no-referrer"
@@ -36,7 +37,11 @@ import EmptyState from '@/components/EmptyState.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useExternalSourceStore } from '@/stores/externalSource'
 import { usePlaybackStore } from '@/stores/playback'
-import { parsePlayMessage, registerExternalItem } from '@/services/connect/externalSource'
+import {
+  parsePlayMessage,
+  registerExternalItem,
+  type ExternalSource,
+} from '@/services/connect/externalSource'
 import { connectErrorMessage } from '@/services/connect/errorMessage'
 
 /** The colours a page may want, by the names it is told in the docs. */
@@ -52,8 +57,8 @@ const THEME_COLORS = [
 ] as const
 
 /**
- * The external source's tab (docs/plans/external-source.md): its own page in
- * a sandboxed frame, and a message bridge to it. The page asks to play,
+ * An external source's tab (docs/plans/external-source.md), the one the
+ * route names: its own page in a sandboxed frame, and a message bridge to it. The page asks to play,
  * Beacon decides; it learns the theme and what is playing, nothing else.
  */
 export default {
@@ -63,8 +68,11 @@ export default {
     store() {
       return useExternalSourceStore()
     },
+    source(): ExternalSource | undefined {
+      return this.store.byId(String(this.$route.params.id ?? ''))
+    },
     frameSrc(): string {
-      const path = this.store.source?.ui_path
+      const path = this.source?.ui_path
       return path ? `${useAuthStore().connectUrl}${path}` : ''
     },
     themeKey(): string {
@@ -130,9 +138,10 @@ export default {
         return
       }
       const request = parsePlayMessage(event.data)
-      if (!request) return
+      const source = this.source
+      if (!request || !source) return
       try {
-        const song = await registerExternalItem(request.item)
+        const song = await registerExternalItem(source.id, request.item)
         const playback = usePlaybackStore()
         if (request.mode === 'next') playback.queueNext([song])
         else if (request.mode === 'queue') playback.addToQueue([song])
@@ -143,7 +152,7 @@ export default {
         this.post({ type: 'beacon.played', ok: false, error: message })
         this.$emitter.emit('toast', {
           level: 'error',
-          title: this.store.name,
+          title: source.name,
           message: this.$t('externalSource.playFailed', { reason: message }),
         })
       }
