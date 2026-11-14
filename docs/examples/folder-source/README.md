@@ -34,14 +34,62 @@ Formats: MP3, AAC/M4A, FLAC, Ogg Vorbis, Opus, WAV and WebM audio.
 
 ### Docker
 
-In this folder, set the music folder and a token in `compose.yaml`, then:
+There is no ready-made image: you build it yourself from this folder. It is not part of
+Beacon's own image either.
+
+#### Getting the folder
+
+A clone of Beacon's repository has it at `docs/examples/folder-source`. To fetch only
+this folder instead of all of Beacon:
+
+```bash
+git clone --depth 1 --filter=blob:none --sparse https://github.com/mihaitom/beacon.git
+cd beacon
+git sparse-checkout set docs/examples/folder-source
+cd docs/examples/folder-source
+```
+
+#### Building and running on the same machine
+
+Set the music folder and a token in `compose.yaml`, then:
 
 ```bash
 docker compose up -d --build
 ```
 
-There is no ready-made image: Compose builds it from this folder. It is not part of
-Beacon's own image either.
+Compose builds the image and starts it. To update later, `git pull` and run the same
+command again; the index in `./data` stays.
+
+#### Building for another machine
+
+Build the image with a name of your choice:
+
+```bash
+docker build -t folder-source:1.0.0 .
+```
+
+Then get it to the server one of two ways:
+
+- **Through a registry of your own**: tag and push it, and in the server's
+  `compose.yaml` replace `build: .` with `image:` and that name.
+
+  ```bash
+  docker tag folder-source:1.0.0 registry.example.com/you/folder-source:latest
+  docker push registry.example.com/you/folder-source:latest
+  ```
+
+- **Without a registry**: copy it straight over SSH, and use `image: folder-source:1.0.0`
+  in the server's `compose.yaml`.
+
+  ```bash
+  docker save folder-source:1.0.0 | ssh server docker load
+  ```
+
+A server with another processor than the machine you build on, a Raspberry Pi built for
+on a PC say, needs the image for its platform: `docker buildx build --platform
+linux/arm64 -t registry.example.com/you/folder-source:latest --push .`
+
+#### The data folder
 
 `./data` holds the music index (`library.sqlite`) and the signing secret. Keep it: see
 [Songs keep their identity](#songs-keep-their-identity). The container runs as uid 1000;
