@@ -1814,7 +1814,7 @@ export default {
     playFailed: 'Impossibile riprodurlo: {reason}',
     settingsTitle: 'Fonti esterne',
     settingsWhat:
-      'App che gestisci tu, ognuna con la propria pagina come scheda in Beacon, che le passano brani da riprodurre, anche sugli altoparlanti. Beacon non include nessuna app di questo tipo.',
+      'App che gestisci tu, ognuna con la propria pagina come scheda in Beacon, che le passano brani da riprodurre, anche sugli altoparlanti. Beacon non ne include nessuna; la guida ha un esempio da usare o adattare.',
     name: 'Nome della scheda',
     namePlaceholder: 'ad es. Lista dei desideri',
     add: 'Aggiungi fonte',

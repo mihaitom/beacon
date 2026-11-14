@@ -1,0 +1,17 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Index cache and the signing secret
+data/
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json

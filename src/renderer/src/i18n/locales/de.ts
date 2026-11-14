@@ -1819,7 +1819,7 @@ export default {
     playFailed: 'Konnte nicht abgespielt werden: {reason}',
     settingsTitle: 'Externe Quellen',
     settingsWhat:
-      'Apps, die du selbst betreibst, zeigen jeweils ihre eigene Seite als Tab in Beacon und reichen Songs zum Abspielen herein - auch auf die Lautsprecher. Beacon bringt keine solche App mit.',
+      'Apps, die du selbst betreibst, zeigen jeweils ihre eigene Seite als Tab in Beacon und reichen Songs zum Abspielen herein - auch auf die Lautsprecher. Beacon selbst bringt keine mit; die Hilfe zeigt ein Beispiel zum Betreiben oder Weiterbauen.',
     name: 'Name des Tabs',
     namePlaceholder: 'z. B. Wunschliste',
     add: 'Quelle hinzufügen',
