@@ -7,7 +7,6 @@ scan cut short by a restart carries on where it stopped."""
 
 import hashlib
 import logging
-import random
 import re
 import sqlite3
 import threading
@@ -411,10 +410,6 @@ class Library:
         for index, track in enumerate(self.songs(sort)):
             firsts.setdefault(letter(name(track)), index)
         return firsts
-
-    def shuffled(self, count: int) -> list[Track]:
-        tracks = list(self.tracks.values())
-        return random.sample(tracks, min(count, len(tracks)))
 
     def search(self, query: str, album_limit: int = 24, track_limit: int = 100):
         words = [w for w in query.casefold().split() if w]

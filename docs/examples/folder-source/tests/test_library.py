@@ -199,13 +199,6 @@ def test_a_rescan_brings_new_songs_into_the_songs_list(music, tmp_path):
     assert len(library.songs("title")) == before + 1
 
 
-def test_a_shuffle_never_repeats_a_song(library):
-    picked = library.shuffled(100)
-    assert len(picked) == len(library.tracks)
-    assert len({t.id for t in picked}) == len(picked)
-    assert len(library.shuffled(2)) == 2
-
-
 def test_umlauts_sort_and_index_with_their_letter():
     # Sorted as "Arzte": before "Azure", not after it.
     assert library_module.sort_text("Ärzte") < library_module.sort_text("Azure")

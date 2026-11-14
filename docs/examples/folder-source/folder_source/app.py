@@ -31,8 +31,7 @@ UI_DIR = Path(__file__).parent / "ui"
 _IMMUTABLE = "private, max-age=86400"
 
 
-# Songs in one answer at most: a page of the songs list, or a shuffle, which
-# goes to Beacon in one message (the page's MAX_PER_MESSAGE).
+# Songs in one answer at most: a page of the songs list.
 _MAX_SONGS = 500
 
 
@@ -194,10 +193,6 @@ def create_app(config: Config, library: Library | None = None, scan_on_start: bo
         letters = await asyncio.to_thread(library.song_letters, sort) if offset == 0 else None
         return JSONResponse({"total": len(listed), "rows": rows, "letters": letters})
 
-    async def shuffle(request: Request):
-        count = _number(request.query_params.get("limit"), 1, _MAX_SONGS, default=_MAX_SONGS)
-        return JSONResponse([track_row(t) for t in library.shuffled(count)])
-
     async def search(request: Request):
         found_albums, found_tracks = library.search(request.query_params.get("q", ""))
         return JSONResponse(
@@ -238,7 +233,6 @@ def create_app(config: Config, library: Library | None = None, scan_on_start: bo
         Route("/ui/api/albums/{album_id}", album),
         Route("/ui/api/artists", artists),
         Route("/ui/api/songs", songs),
-        Route("/ui/api/songs/shuffle", shuffle),
         Route("/ui/api/search", search),
         Route("/ui/api/rescan", rescan, methods=["POST"]),
         Route("/ui/covers/{album_id}", page_cover),

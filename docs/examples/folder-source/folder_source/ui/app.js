@@ -22,8 +22,6 @@ const state = {
 const ICONS = {
   play: '<path d="M8 5v14l11-7z"/>',
   next: '<path d="M3 10h11v2H3zm0-4h11v2H3zm0 8h7v2H3zm13-1v8l6-4z"/>',
-  shuffle:
-    '<path d="M10.6 9.2 5.4 4 4 5.4l5.2 5.2zM14.5 4l2 2L4 18.6 5.4 20 18 7.5l2 2V4zm.3 9.4-1.4 1.4 3.1 3.1-2 2.1H20v-5.5l-2 2z"/>',
   queue: '<path d="M3 10h11v2H3zm0-4h11v2H3zm0 8h7v2H3zm16-1v-3h-2v3h-3v2h3v3h2v-3h3v-2z"/>',
 }
 const icon = (name) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]}</svg>`
@@ -727,7 +725,6 @@ async function renderSongs() {
     .join('')
   const tools = songs.total
     ? `<span class="count">${plural(songs.total, 'song')}</span>
-       <button class="pill" data-shuffle>${icon('shuffle')} Shuffle</button>
        <div class="chips">${chips}</div>`
     : ''
   view.innerHTML = `
@@ -835,8 +832,6 @@ view.addEventListener('click', async (event) => {
     resetSongs()
     window.scrollTo(0, 0)
     renderSongs()
-  } else if (dataset.shuffle !== undefined) {
-    await playRows(await api('songs/shuffle'), { label: 'Shuffling your music' })
   } else if (dataset.play !== undefined) {
     const row = rowsOnScreen[dataset.play]
     const result = await send([row.item], dataset.mode)

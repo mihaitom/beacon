@@ -157,12 +157,6 @@ def test_a_songs_page_out_of_range_is_empty_not_an_error(client):
     assert len(client.get("/ui/api/songs?limit=-5").json()["rows"]) == 1
 
 
-def test_shuffle_hands_over_playable_songs(client):
-    rows = client.get("/ui/api/songs/shuffle?limit=4").json()
-    assert len(rows) == 4
-    assert all(r["item"]["audioUrl"] for r in rows)
-
-
 def test_the_first_songs_page_carries_the_index(client):
     first = client.get("/ui/api/songs?sort=artist").json()
     rows, letters = first["rows"], first["letters"]
