@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Live Music Archive</title>
+    <!-- Relative addresses only: Beacon serves this page from its own
+         address, and only relative ones follow it there. -->
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <header class="bar">
+      <a class="brand" href="#/" id="brand">Live Music Archive</a>
+      <nav class="tabs">
+        <a href="#/" data-tab="shows">Shows</a>
+        <a href="#/artists" data-tab="artists">Artists</a>
+      </nav>
+      <div class="search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 3a6.5 6.5 0 0 1 5.2 10.4l5.4 5.4-1.4 1.4-5.4-5.4A6.5 6.5 0 1 1 9.5 3m0 2a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9" /></svg>
+        <input id="search" type="search" placeholder="Search artists, venues, cities" autocomplete="off" />
+      </div>
+    </header>
+    <div id="standalone" class="notice" hidden>
+      Open this page from its tab in Beacon to play music. On its own it can only browse.
+    </div>
+    <main id="view"></main>
+    <div id="toast" role="status"></div>
+    <script src="app.js"></script>
+  </body>
+</html>

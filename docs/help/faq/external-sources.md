@@ -11,12 +11,15 @@ An app you run yourself that brings songs your library does not have. Beacon
 shows the app's own page as a tab, and when you pick a song there, Beacon plays
 it like any other: on this device, or cast to your speakers.
 
-Beacon itself does not include such an app. Its repository has
-[an example](https://github.com/mihaitom/beacon/tree/main/docs/examples/folder-source)
-that plays a music folder, to run as it is or to build on; the
-[API reference](../reference/external-source-api.md#examples) says
-more. What an app offers and where its audio comes from is entirely up to
-whoever runs it. Only use sources you are allowed to play.
+Beacon itself does not include such an app. Its repository has two examples
+to run as they are or to build on:
+[one](https://github.com/mihaitom/beacon/tree/main/docs/examples/folder-source)
+plays a music folder,
+[the other](https://github.com/mihaitom/beacon/tree/main/docs/examples/live-music-archive)
+an online archive of live concerts whose bands allow them to be shared. The
+[API reference](../reference/external-source-api.md#examples) says more. What
+an app offers and where its audio comes from is entirely up to whoever runs
+it. Only use sources you are allowed to play.
 
 ## What could it be?
 
