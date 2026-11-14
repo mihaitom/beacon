@@ -12,10 +12,16 @@ user-facing side `docs/help/faq/external-sources.md`.
 These are what keep this a neutral feature, and they hold for every later
 change too:
 
-- **Beacon bundles no source app**, not as an example, not as an optional
-  download, not in a sibling repo. The docs' example serves a local folder.
-- **No service names** in the UI, the docs, the changelog or the code. The tab
-  shows the name the admin gave the source.
+- **Example apps only for audio that may plainly be played.** The repo carries
+  two, separate from the app and never part of a build or an image: a local
+  folder (the listener's own files) and the Live Music Archive at archive.org
+  (recordings its bands allow to be shared, over the archive's public API),
+  the second to show that an online source works too. Nothing for a service
+  whose terms forbid fetching its audio, streaming services and video
+  platforms above all, not even "to demonstrate".
+- **No service names** in Beacon's own UI, docs, changelog or code. The tab
+  shows the name the admin gave the source. Only an example app and its own
+  README name what it plays from.
 - **No links** to third-party source apps from anything Beacon publishes.
 - **No plugin system.** Beacon runs no foreign code in its own context; the
   source's page is sandboxed and talks to Beacon only through messages.
