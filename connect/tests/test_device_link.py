@@ -2845,6 +2845,7 @@ def as_server(monkeypatch):
     monkeypatch.setattr(server_link, "AVAILABLE", False)
     player_server._key_sessions.clear()
     player_server._titles.clear()
+    player_server._admin_checked.clear()
 
 
 def control_key(account=ALICE) -> str:
@@ -3111,6 +3112,67 @@ def test_the_device_list_says_who_holds_a_speaker(public, as_server, default_ses
     assert answer["items"] == [
         {"type": "sonos", "name": "Den", "in_use_by": "Bob", "needs_pairing": False}
     ]
+
+
+@pytest.fixture
+def admins_only(monkeypatch):
+    """Cast permissions as a server may set them: nobody but admins casts."""
+    from core import cast_permissions
+
+    monkeypatch.setattr(cast_permissions, "policy", lambda *_: ("blocklist", False))
+
+
+def admin_answer(admin: bool):
+    return {"user": {"username": "alice", "adminRole": admin}}
+
+
+@pytest.mark.parametrize("admin", [True, False])
+def test_where_only_admins_cast_the_device_list_asks_the_media_server(
+    public, as_server, media_server, admins_only, admin
+):
+    from core.state import ctx
+
+    ctx.discovered = {"sonos": [{"name": "Den"}], "airplay": [], "chromecast": [], "dlna": []}
+    media_server.answers["getUser.view"] = admin_answer(admin)
+    answer = public.get("/device-link/v1/player/devices", headers=auth(library_key())).json()
+    assert [d["name"] for d in answer["items"]] == (["Den"] if admin else [])
+
+
+def test_a_key_without_a_login_is_no_admin(public, as_server, admins_only):
+    from core.state import ctx
+
+    ctx.discovered = {"sonos": [{"name": "Den"}], "airplay": [], "chromecast": [], "dlna": []}
+    answer = public.get("/device-link/v1/player/devices", headers=auth(control_key())).json()
+    assert answer["items"] == []
+
+
+@pytest.mark.parametrize("admin", [True, False])
+def test_a_cast_started_from_a_key_carries_the_admin_role(
+    public, as_server, handlers, media_server, admin
+):
+    media_server.answers["getUser.view"] = admin_answer(admin)
+    send(
+        public,
+        library_key(),
+        type="play_song",
+        song_id="s1",
+        devices=[{"type": "sonos", "name": "Den"}],
+    )
+    assert handlers.play.await_args.args[1].account_is_admin is admin
+
+
+def test_the_admin_role_is_asked_again_after_a_while(public, as_server, media_server):
+    media_server.answers["getUser.view"] = admin_answer(True)
+    key = library_key()
+    public.get("/device-link/v1/player/devices", headers=auth(key))
+    public.get("/device-link/v1/player/devices", headers=auth(key))
+    assert media_server.seen.count(SUBSONIC_LOGIN["credential"]) == 1
+    media_server.answers["getUser.view"] = admin_answer(False)
+    key_id = key.partition(".")[0]
+    checked_at, admin = player_server._admin_checked[key_id]
+    player_server._admin_checked[key_id] = (checked_at - player_server._ADMIN_TTL_SECONDS, admin)
+    public.get("/device-link/v1/player/devices", headers=auth(key))
+    assert player_server._admin_checked[key_id][1] is False
 
 
 # On the desktop app

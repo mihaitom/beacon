@@ -24,6 +24,7 @@ from core.device_keys import LIBRARY, KeyOwner
 from core.session import SessionState, compute_position, registry
 from core.state import ctx, list_target_pairs
 from delivery import credentials
+from media import resolve_account
 from routes import playback, stream
 from routes.coverart import cover_image
 from routes.devices import stop_device
@@ -67,6 +68,12 @@ _SONG_RADIO_LENGTH = 100
 
 # key id -> the session of the casts that key started itself.
 _key_sessions: dict[str, str] = {}
+
+# key id -> (checked at, admin). A key does not know whether its account is
+# an admin; the media server is asked with the key's login, like /config
+# does, and asked again after this long so a revoked admin role ends.
+_ADMIN_TTL_SECONDS = 300
+_admin_checked: dict[str, tuple[float, bool]] = {}
 
 
 def _remember(server: str, song: dict) -> None:
@@ -344,6 +351,25 @@ def _key_session_id(owner: KeyOwner) -> str:
 
 def forget_key(key_id: str) -> None:
     _key_sessions.pop(key_id, None)
+    _admin_checked.pop(key_id, None)
+
+
+async def _is_admin(owner: KeyOwner, library) -> bool:
+    """Whether the media server calls the key's account an admin, which is
+    what lets it cast where the cast permissions allow only admins. Without
+    a login to ask with, or when the server does not answer: not an admin."""
+    if library is None:
+        return False
+    checked = _admin_checked.get(owner.key_id)
+    if checked is not None and time.monotonic() - checked[0] < _ADMIN_TTL_SECONDS:
+        return checked[1]
+    try:
+        account = await resolve_account(library, owner.account[2])
+    except Exception as e:
+        logger.warning(f"[player] Could not ask the media server about the key's account: {e}")
+        return False
+    _admin_checked[owner.key_id] = (time.monotonic(), account.is_admin)
+    return account.is_admin
 
 
 async def _key_session(owner: KeyOwner, library) -> SessionState:
@@ -353,6 +379,7 @@ async def _key_session(owner: KeyOwner, library) -> SessionState:
     session.account_server_type = server_type
     session.account_server_url = server_url
     session.account_username = username
+    session.account_is_admin = await _is_admin(owner, library)
     session.display_name = username or session.session_id
     session.authenticated = True
     session.touch()
@@ -463,13 +490,13 @@ async def _move(session: SessionState, targets: list[dict]) -> None:
         _refused(await stop_device(device_type, name, session))
 
 
-async def devices(owner: KeyOwner, rescan: bool) -> dict:
+async def devices(owner: KeyOwner, rescan: bool, library=None) -> dict:
     found = await discover_all(verbose=True) if rescan or not ctx.discovered else ctx.discovered
     account = SimpleNamespace(
         account_server_type=owner.account[0],
         account_server_url=owner.account[1],
         account_username=owner.account[2],
-        account_is_admin=False,
+        account_is_admin=await _is_admin(owner, library),
         display_name=owner.account[2],
     )
     if not await asyncio.to_thread(may_cast, account):

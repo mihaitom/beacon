@@ -617,9 +617,21 @@ async def post_player_command(
     ),
 )
 async def get_player_devices(
-    rescan: bool = False, owner: KeyOwner = _reading(device_keys.CONTROL)
+    rescan: bool = False,
+    owner: KeyOwner = _reading(device_keys.CONTROL),
+    x_beacon_device_key: str = Header(max_length=200),
 ) -> dict:
-    return await _player().devices(owner, rescan)
+    if server_link.AVAILABLE:
+        return await player_desktop.devices(owner, rescan)
+    # The login only tells whether the account is an admin, which may decide
+    # whether it can cast at all; a key without one gets the plain answer.
+    library = None
+    if device_keys.LIBRARY in owner.scopes:
+        try:
+            library = await _library_client(owner, x_beacon_device_key)
+        except HTTPException:
+            library = None
+    return await player_server.devices(owner, rescan, library)
 
 
 @v1_router.get(
