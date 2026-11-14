@@ -1809,4 +1809,26 @@ export default {
     playOn: 'Wiedergeben auf',
     needsPairing: 'Muss zuerst in der Beacon-App gepairt werden',
   },
+  externalSource: {
+    notSetUpTitle: 'Keine externe Quelle eingerichtet',
+    notSetUpText:
+      'Eine eigene App kann hier Songs anbieten, die nicht in der Bibliothek sind. Eingerichtet wird sie in den Einstellungen unter Bibliothek.',
+    openSettings: 'Zu den Einstellungen',
+    playFailed: 'Konnte nicht abgespielt werden: {reason}',
+    settingsTitle: 'Externe Quelle',
+    settingsWhat:
+      'Eine App, die du selbst betreibst, zeigt ihre eigene Seite als Tab in Beacon und reicht Songs zum Abspielen herein - auch auf die Lautsprecher. Beacon bringt keine solche App mit.',
+    name: 'Name des Tabs',
+    namePlaceholder: 'z. B. Wunschliste',
+    address: 'Adresse der App',
+    token: 'Token (optional)',
+    tokenKept: 'Gespeichert - leer lassen, um es zu behalten',
+    tokenNone: 'Kein Token',
+    reachable: 'Verbunden mit {name}',
+    unreachable: 'Nicht erreichbar: {reason}',
+    help: 'So funktioniert das',
+    copyInstructions: 'Anleitung für KI kopieren',
+    remove: 'Entfernen',
+    save: 'Speichern',
+  },
 }

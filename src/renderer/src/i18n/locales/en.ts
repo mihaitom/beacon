@@ -1790,4 +1790,26 @@ export default {
     playOn: 'Play on',
     needsPairing: 'Needs pairing in the Beacon app first',
   },
+  externalSource: {
+    notSetUpTitle: 'No external source set up',
+    notSetUpText:
+      'An app of your own can offer songs here that are not in the library. It is set up in Settings under Library.',
+    openSettings: 'Open Settings',
+    playFailed: 'Could not play it: {reason}',
+    settingsTitle: 'External source',
+    settingsWhat:
+      'An app you run yourself shows its own page as a tab in Beacon and hands songs over to play - on the speakers too. Beacon does not come with such an app.',
+    name: 'Tab name',
+    namePlaceholder: 'e.g. Wishlist',
+    address: 'App address',
+    token: 'Token (optional)',
+    tokenKept: 'Saved - leave empty to keep it',
+    tokenNone: 'No token',
+    reachable: 'Connected to {name}',
+    unreachable: 'Not reachable: {reason}',
+    help: 'How this works',
+    copyInstructions: 'Copy instructions for an AI',
+    remove: 'Remove',
+    save: 'Save',
+  },
 } satisfies typeof de

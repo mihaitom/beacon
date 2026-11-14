@@ -60,6 +60,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
+from core import external_source
 from core.auth import require_token
 from core.session import SessionState, require_authenticated_session
 from media import (
@@ -408,7 +409,12 @@ async def _fetch_cover(media: MediaClient, cover_id: str, size: int) -> str | No
     url = media.get_cover_art_url(cover_id, internal=True, size=size)
     if not url:
         return None
-    headers = media.auth_headers() if hasattr(media, "auth_headers") else {}
+    # Never the media server's credentials to the external source's app.
+    headers = (
+        media.auth_headers()
+        if hasattr(media, "auth_headers") and not external_source.is_external_id(cover_id)
+        else {}
+    )
     return await _get_data_url(client, url, headers, cover_id)
 
 

@@ -22,7 +22,7 @@ import httpx
 from core.client_id import stable_id
 
 from . import http_client
-from .base import Track, split_artwork_id
+from .base import Track, routes_external, split_artwork_id
 from .login_errors import login_failed
 
 logger = logging.getLogger("connect.plex")
@@ -225,6 +225,7 @@ class PlexClient:
         response.raise_for_status()
         return response.json() if response.content else {}
 
+    @routes_external
     def get_track(self, track_id: str) -> Track:
         data = self._get(f"/library/metadata/{quote(str(track_id), safe='')}")
         items = data.get("MediaContainer", {}).get("Metadata", [])
@@ -297,6 +298,7 @@ class PlexClient:
             for item in items
         ]
 
+    @routes_external
     def get_stream_url(self, track_id: str) -> str:
         # Direct play, not the universal transcode endpoint. Beacon
         # transcodes on its own side anyway when a device needs it (see
@@ -323,6 +325,7 @@ class PlexClient:
             raise RuntimeError(f"Plex track {track_id} has no playable Part")
         return f"{self.internal_url}{part_key}?X-Plex-Token={quote(self.token, safe='')}"
 
+    @routes_external
     def get_cover_art_url(
         self, cover_art_id: str, internal: bool = False, size: int = 300
     ) -> str | None:

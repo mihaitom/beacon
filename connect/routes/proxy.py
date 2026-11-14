@@ -23,12 +23,14 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.requests import ClientDisconnect
 
+from core import external_source
 from core.auth import require_token
 from core.session import SessionState, get_session
 from media import (
     JellyfinClient,
     PlexClient,
     apply_image_cache_control,
+    external_bridge,
     jellyfin_bridge,
     plex_bridge,
 )
@@ -219,6 +221,56 @@ async def _proxy(request: Request, target: str) -> StreamingResponse | JSONRespo
     )
 
 
+# What the browser may pass on to the external source's app: enough to seek
+# and to revalidate, and nothing that identifies the listener to it.
+_EXTERNAL_REQ_HEADERS = {"range", "if-range", "if-none-match", "if-modified-since", "accept"}
+
+
+async def _from_external_source(request: Request, path: str, item_id: str):
+    """Audio or cover of a song from the external source, fetched from the
+    user's app (core/external_source.py)."""
+    try:
+        if path.removesuffix(".view") == "getCoverArt":
+            url = external_source.get_cover_art_url(item_id)
+        else:
+            url = external_source.get_stream_url(item_id)
+    except KeyError:
+        url = None
+    if not url:
+        return JSONResponse({"error": "Unknown external song"}, status_code=404)
+    headers = {k: v for k, v in request.headers.items() if k.lower() in _EXTERNAL_REQ_HEADERS}
+    headers["accept-encoding"] = "identity"
+    try:
+        # No redirects: the address was checked against the app's own, a
+        # redirect would lead past that check.
+        response = await _get_client().send(
+            _get_client().build_request(request.method, url, headers=headers),
+            stream=True,
+            follow_redirects=False,
+        )
+    except httpx.TimeoutException as e:
+        return JSONResponse({"error": f"External source timeout: {e}"}, status_code=504)
+    except Exception as e:
+        return JSONResponse({"error": f"External source not reachable: {e}"}, status_code=502)
+
+    skip = _SKIP_RESP | {"set-cookie"}
+    resp_headers = {k: v for k, v in response.headers.items() if k.lower() not in skip}
+
+    async def streamed():
+        try:
+            async for chunk in response.aiter_bytes():
+                yield chunk
+        finally:
+            await response.aclose()
+
+    return StreamingResponse(
+        streamed(),
+        status_code=response.status_code,
+        headers=resp_headers,
+        media_type=response.headers.get("content-type"),
+    )
+
+
 @router.api_route("/rest/{path:path}", methods=_ALL_METHODS)
 async def proxy_subsonic(path: str, request: Request, session: SessionState = Depends(get_session)):
     # get_session (not require_authenticated_session): nothing calls this
@@ -227,6 +279,12 @@ async def proxy_subsonic(path: str, request: Request, session: SessionState = De
     # media.ping() check now, no separate client-side pre-flight — see its
     # comment) — kept as get_session anyway so a stray pre-/config request
     # 503s cleanly below instead of 401ing confusingly.
+    item_id = external_bridge.external_id(path, request)
+    if item_id:
+        return external_bridge.answer(path, item_id) or await _from_external_source(
+            request, path, item_id
+        )
+    request = external_bridge.without_external_ids(path, request)
     if isinstance(session.media, JellyfinClient):
         return await jellyfin_bridge.handle(path, request, session.media)
     if isinstance(session.media, PlexClient):

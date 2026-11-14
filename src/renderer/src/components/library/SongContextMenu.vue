@@ -16,13 +16,17 @@
       <template #prepend><v-icon icon="mdi-playlist-plus" size="small" /></template>
       <v-list-item-title>{{ $t('common.addToQueue') }}</v-list-item-title>
     </v-list-item>
-    <v-list-item v-if="authStore.capabilities.songRadio" @click="startSongRadio">
+    <v-list-item v-if="authStore.capabilities.songRadio && !external" @click="startSongRadio">
       <template #prepend><v-icon icon="mdi-radio-tower" size="small" /></template>
       <v-list-item-title>{{ $t('library.songRadio') }}</v-list-item-title>
     </v-list-item>
-    <context-menu-section :label="$t('library.menuLibrary')" />
-    <rating-item :item="song" />
-    <add-to-playlist-submenu @create="createPlaylist" @select="addToPlaylist" />
+    <!-- A song from the external source is not on the media server, so
+       - there is nothing to rate or put in a playlist there. -->
+    <template v-if="!external">
+      <context-menu-section :label="$t('library.menuLibrary')" />
+      <rating-item :item="song" />
+      <add-to-playlist-submenu @create="createPlaylist" @select="addToPlaylist" />
+    </template>
     <context-menu-section :label="$t('library.menuNavigation')" />
     <v-list-item v-if="song.albumId" :to="`/albums/${song.albumId}`">
       <template #prepend><v-icon icon="mdi-album" size="small" /></template>
@@ -34,7 +38,7 @@
       <template #prepend><v-icon icon="mdi-image-outline" size="small" /></template>
       <v-list-item-title>{{ $t('library.showArtwork') }}</v-list-item-title>
     </v-list-item>
-    <v-list-item @click="showInfo">
+    <v-list-item v-if="!external" @click="showInfo">
       <template #prepend><v-icon icon="mdi-information-outline" size="small" /></template>
       <v-list-item-title>{{ $t('library.songInfo') }}</v-list-item-title>
     </v-list-item>
@@ -55,6 +59,7 @@ import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
 import { emitter } from '@/emitter'
 import type { Song } from '@/types/library'
+import { isExternalSourceSong } from '@/services/connect/externalSource'
 
 export default {
   name: 'SongContextMenu',
@@ -72,6 +77,9 @@ export default {
   computed: {
     authStore() {
       return useAuthStore()
+    },
+    external(): boolean {
+      return isExternalSourceSong(this.song)
     },
   },
   methods: {

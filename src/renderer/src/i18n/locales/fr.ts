@@ -1811,4 +1811,26 @@ export default {
     playOn: 'Lire sur',
     needsPairing: "Doit d'abord être associé dans l'application Beacon",
   },
+  externalSource: {
+    notSetUpTitle: 'Aucune source externe configurée',
+    notSetUpText:
+      'Une app à vous peut proposer ici des morceaux absents de la bibliothèque. Elle se configure dans Paramètres, sous Bibliothèque.',
+    openSettings: 'Ouvrir les paramètres',
+    playFailed: 'Lecture impossible : {reason}',
+    settingsTitle: 'Source externe',
+    settingsWhat:
+      'Une app que vous hébergez vous-même affiche sa propre page dans un onglet de Beacon et lui transmet des morceaux à lire, y compris sur les enceintes. Beacon ne fournit aucune app de ce genre.',
+    name: "Nom de l'onglet",
+    namePlaceholder: "p. ex. Liste d'envies",
+    address: "Adresse de l'app",
+    token: 'Jeton (facultatif)',
+    tokenKept: 'Enregistré - laisser vide pour le conserver',
+    tokenNone: 'Aucun jeton',
+    reachable: 'Connecté à {name}',
+    unreachable: 'Injoignable : {reason}',
+    help: 'Comment ça marche',
+    copyInstructions: 'Copier les instructions pour une IA',
+    remove: 'Supprimer',
+    save: 'Enregistrer',
+  },
 } satisfies typeof de

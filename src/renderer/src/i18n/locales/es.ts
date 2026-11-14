@@ -1810,4 +1810,26 @@ export default {
     playOn: 'Reproducir en',
     needsPairing: 'Necesita emparejarse primero en la aplicación Beacon',
   },
+  externalSource: {
+    notSetUpTitle: 'No hay ninguna fuente externa configurada',
+    notSetUpText:
+      'Una app propia puede ofrecer aquí canciones que no están en la biblioteca. Se configura en Ajustes, en Biblioteca.',
+    openSettings: 'Abrir ajustes',
+    playFailed: 'No se pudo reproducir: {reason}',
+    settingsTitle: 'Fuente externa',
+    settingsWhat:
+      'Una app que gestionas tú muestra su propia página como pestaña en Beacon y le pasa canciones para reproducir, también en los altavoces. Beacon no incluye ninguna app de este tipo.',
+    name: 'Nombre de la pestaña',
+    namePlaceholder: 'p. ej. Lista de deseos',
+    address: 'Dirección de la app',
+    token: 'Token (opcional)',
+    tokenKept: 'Guardado: déjalo vacío para conservarlo',
+    tokenNone: 'Sin token',
+    reachable: 'Conectado con {name}',
+    unreachable: 'No disponible: {reason}',
+    help: 'Cómo funciona',
+    copyInstructions: 'Copiar instrucciones para una IA',
+    remove: 'Quitar',
+    save: 'Guardar',
+  },
 } satisfies typeof de

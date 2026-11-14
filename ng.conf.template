@@ -134,6 +134,21 @@ server {
     proxy_buffering off;
   }
 
+  # The external source's tab (connect/routes/external_source.py). It runs
+  # sandboxed in an origin of its own and stands on the secret in its path,
+  # so no injected token, and its own prefix for a reverse proxy to let past
+  # its login: the page's requests carry no login cookie.
+  location /external-ui/ {
+    proxy_pass http://127.0.0.1:${PORT}/external-ui/;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Connect-Token "";
+    client_max_body_size 4m;
+    proxy_http_version 1.1;
+    proxy_buffering off;
+  }
+
   location /stream {
     proxy_pass http://127.0.0.1:${PORT}/stream;
     proxy_set_header X-Connect-Token "${CONNECT_TOKEN}";

@@ -11,7 +11,7 @@ from core.client_id import stable_id
 from lyrics.shared import CONNECT_VERSION
 
 from . import http_client
-from .base import Track, split_artwork_id
+from .base import Track, routes_external, split_artwork_id
 from .login_errors import login_failed
 
 logger = logging.getLogger("connect.jellyfin")
@@ -156,6 +156,7 @@ class JellyfinClient:
         response.raise_for_status()
         return response.json()
 
+    @routes_external
     def get_track(self, track_id: str) -> Track:
         if not self.user_id:
             raise RuntimeError("Jellyfin user_id missing — re-send /config")
@@ -204,6 +205,7 @@ class JellyfinClient:
             )
         return tracks
 
+    @routes_external
     def get_stream_url(self, track_id: str) -> str:
         # `/Items/{id}/Download` returns the original file unchanged — FFmpeg
         # handles container/codec conversion downstream. quote() on the id
@@ -220,6 +222,7 @@ class JellyfinClient:
             f"?{urlencode({'api_key': self.token, 'ApiKey': self.token})}"
         )
 
+    @routes_external
     def get_cover_art_url(
         self, cover_art_id: str, internal: bool = False, size: int = 300
     ) -> str | None:

@@ -6,6 +6,7 @@ Both SubsonicClient and JellyfinClient implement MediaClient so the rest of the
 backend can stay agnostic about which music server is behind /config.
 """
 
+import functools
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
@@ -68,6 +69,23 @@ def split_artwork_id(cover_art_id: str) -> tuple[str, str | None]:
     if not separator or not item_id or not version:
         return cover_art_id, None
     return item_id, version
+
+
+def routes_external(method):
+    """Hands an `ext:` id to core/external_source.py instead of the media
+    server. Applied to every client's get_track/get_stream_url/
+    get_cover_art_url, so a song from the external source plays everywhere a
+    library song does, without each caller having to tell them apart."""
+
+    @functools.wraps(method)
+    def wrapper(self, item_id, *args, **kwargs):
+        from core import external_source
+
+        if external_source.is_external_id(item_id):
+            return getattr(external_source, method.__name__)(item_id, *args, **kwargs)
+        return method(self, item_id, *args, **kwargs)
+
+    return wrapper
 
 
 @dataclass

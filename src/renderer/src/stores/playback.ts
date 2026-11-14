@@ -44,6 +44,7 @@ import type { RepeatMode } from '@/services/playback/types'
 import { resolveRadioStation } from '@/services/playback/radioStation'
 import { getLocalMix, mixSong, STALE_PAUSE_MS, upcomingSongs } from '@/services/playback/localMix'
 import { isExternalSong, pickPreviewSongs } from '@/services/playback/preview'
+import { isExternalSourceSong } from '@/services/connect/externalSource'
 import { startRadioMetadataWatch, stopRadioMetadataWatch } from '@/services/connect/radioMetadata'
 import {
   localRadioStreamUrl,
@@ -535,10 +536,12 @@ export const usePlaybackStore = defineStore('playback', {
       if (state.radioStation) return null
       return state.currentIndex >= 0 ? (state.queue[state.currentIndex] ?? null) : null
     },
-    /** Whether what plays is a library song - not a station, and not a
-     * Deezer preview, which the media server knows nothing of. */
+    /** Whether what plays is a library song - not a station, not a
+     * Deezer preview and not a song from the external source, none of which
+     * the media server knows anything of. */
     currentSongInLibrary(): boolean {
-      return !!this.currentSong && !isExternalSong(this.currentSong)
+      const song = this.currentSong
+      return !!song && !isExternalSong(song) && !isExternalSourceSong(song)
     },
     /** Where the queue itself stands, station or no station — the song a
      * shuffle toggle re-pins around, "play next" inserts after and "clear

@@ -59,6 +59,9 @@ from routes.device_link import v1_router as device_link_v1_router
 from routes.devices import router as devices_router
 from routes.discovery import discover_all
 from routes.discovery import router as discovery_router
+from routes.external_source import close as close_external_source_client
+from routes.external_source import router as external_source_router
+from routes.external_source import ui_router as external_ui_router
 from routes.fanart import router as fanart_router
 from routes.jellyfin_auth import router as jellyfin_auth_router
 from routes.join import router as join_router
@@ -355,6 +358,7 @@ async def lifespan(_: FastAPI):
         await light_controller.stop()
         await mdns.shutdown()
         await close_proxy_client()
+        await close_external_source_client()
         await jellyfin_bridge.close()
         await plex_bridge.close()
         reset_hls_encodes()
@@ -514,6 +518,8 @@ app.include_router(device_link_router)
 app.include_router(device_link_v1_router)
 app.include_router(server_link_router)
 app.include_router(deezer_router)
+app.include_router(external_source_router)
+app.include_router(external_ui_router)
 app.include_router(coverart_router)
 app.include_router(upnp_router)
 # Diagnostic-only (routes/debug.py) — registered at Debug log level or

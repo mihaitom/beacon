@@ -34,7 +34,7 @@ from fastapi.responses import (
 )
 from pydantic import BaseModel
 
-from core import fanart, party_library, party_probe, party_queue, waveform
+from core import external_source, fanart, party_library, party_probe, party_queue, waveform
 from core.audio_fanout import send_sentinel
 from core.auth import require_token
 from core.party import (
@@ -339,7 +339,9 @@ def _limit(key: str, rule: tuple[int, int]) -> None:
 
 
 def _check_id(value: str) -> str:
-    if not _ID.match(value):
+    # External songs never reach guests: every guest would otherwise pull
+    # audio through the household's own app (core/external_source.py).
+    if not _ID.match(value) or external_source.is_external_id(value):
         raise HTTPException(status_code=400, detail="Invalid id")
     return value
 

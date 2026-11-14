@@ -6,7 +6,7 @@ import secrets
 from urllib.parse import parse_qs, urlencode
 
 from . import http_client
-from .base import Track
+from .base import Track, routes_external
 from .login_errors import SubsonicError, login_failed
 
 logger = logging.getLogger("connect.subsonic")
@@ -81,6 +81,7 @@ class SubsonicClient:
 
         return subsonic
 
+    @routes_external
     def get_track(self, track_id: str) -> Track:
         data = self._get("getSong.view", id=track_id)
         song = data.get("song", {})
@@ -119,6 +120,7 @@ class SubsonicClient:
             for song in songs
         ]
 
+    @routes_external
     def get_stream_url(self, track_id: str) -> str:
         # urlencode (not a naive f-string join) so auth param values with
         # reserved characters (e.g. a username containing '&' or a space)
@@ -128,6 +130,7 @@ class SubsonicClient:
         params = {"id": track_id, **self._auth_params()}
         return f"{self.internal_url}/rest/stream.view?{urlencode(params)}"
 
+    @routes_external
     def get_cover_art_url(
         self, cover_art_id: str, internal: bool = False, size: int = 300
     ) -> str | None:
