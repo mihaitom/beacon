@@ -139,7 +139,7 @@ import {
   type PlayHistoryTop,
 } from '@/services/connect/playHistory'
 import { pollingAllowed } from '@/services/connect/pollGate'
-import type { Artist, Song } from '@/types/library'
+import type { Album, Artist, Song } from '@/types/library'
 import { lineOfTheDay, statsLines } from '@/services/library/statsLines'
 
 const TOP_N = 8
@@ -410,6 +410,7 @@ export default {
             to: `/albums/${t.albumId}`,
             artistId: t.artistId,
             coverArtId: t.coverArtId,
+            song: t,
           })),
         (t) => t.id,
       )
@@ -418,6 +419,9 @@ export default {
     // be misleading, so artists draw from the artist list instead.
     artistsById(): Map<string, Artist> {
       return new Map(this.libraryStore.artists.map((a) => [a.id, a]))
+    },
+    albumsById(): Map<string, Album> {
+      return new Map(this.libraryStore.albums.map((a) => [a.id, a]))
     },
     libraryNames(): LibraryNames {
       return new LibraryNames(this.songs, this.libraryStore.artists)
@@ -436,6 +440,7 @@ export default {
           // and the rows do not reflow when it arrives.
           coverArtId: artist?.coverArtId ?? null,
           imageUrl: artist?.imageUrl ?? null,
+          artist,
         }
       })
       return this.withMovement(items, artistKey)
@@ -443,10 +448,11 @@ export default {
     topAlbums(): ChartItem[] {
       const albumKey = (t: Song): string | null => t.albumId || null
       const groups = aggregateByPlays(this.songs, albumKey, (t) => t.album)
-      return this.withMovement(
-        this.topFromGroups(groups, (id) => `/albums/${id}`, true),
-        albumKey,
-      )
+      const items = this.topFromGroups(groups, (id) => `/albums/${id}`, true).map((item) => ({
+        ...item,
+        album: this.albumsById.get(item.id),
+      }))
+      return this.withMovement(items, albumKey)
     },
     topGenres(): ChartItem[] {
       const genreKey = (t: Song): string | null => t.genre
@@ -616,6 +622,8 @@ export default {
     this.libraryStore.fetchStarred()
     // For the artists' own artwork, see artistsById. A no-op once loaded.
     this.libraryStore.fetchArtists()
+    // For the album chart's right-click menu, see albumsById.
+    void this.libraryStore.fetchAlbums()
     void this.loadOwn()
     void this.loadAccounts()
     void this.prepareImport()
@@ -822,13 +830,16 @@ export default {
           artistId,
           coverArtId: artist?.coverArtId ?? null,
           imageUrl: artist?.imageUrl ?? null,
+          artist,
         }
       }
+      // A song is looked up even where the log carries ids: its right-click
+      // menu acts on the library's own song, and the log has no song id.
       const owned =
-        item.album_id && item.cover_art_id
-          ? undefined
-          : kind === 'songs'
-            ? this.libraryNames.song(item.sublabel ?? '', item.label)
+        kind === 'songs'
+          ? this.libraryNames.song(item.sublabel ?? '', item.label)
+          : item.album_id && item.cover_art_id
+            ? undefined
             : this.libraryNames.album(item.sublabel ?? '', item.label)
       const albumId = item.album_id || owned?.albumId
       return {
@@ -836,6 +847,9 @@ export default {
         to: albumId ? `/albums/${albumId}` : undefined,
         artistId: owned?.artistId,
         coverArtId: item.cover_art_id || owned?.coverArtId || null,
+        ...(kind === 'songs'
+          ? { song: owned }
+          : { album: albumId ? this.albumsById.get(albumId) : undefined }),
       }
     },
     /** A genre has no picture, so its number one shows the records it is

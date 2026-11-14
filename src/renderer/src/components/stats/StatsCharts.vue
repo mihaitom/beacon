@@ -59,7 +59,12 @@
       {{ $t('stats.chartsEmptyPeriod') }}
     </p>
     <div v-if="first" class="beacon-panel stats-charts__panel">
-      <div class="stats-charts__first" @mouseenter="browsing = true" @mouseleave="browsing = false">
+      <div
+        class="stats-charts__first"
+        @mouseenter="browsing = true"
+        @mouseleave="browsing = false"
+        @contextmenu="openMenu($event, first)"
+      >
         <!-- Over the line rather than around it: the artist names in it are
            - links of their own, and a link cannot hold another. -->
         <router-link
@@ -107,6 +112,7 @@
             'stats-charts__row--bare': item.coverArtId === undefined,
             'stats-charts__row--linked': item.to,
           }"
+          @contextmenu="openMenu($event, item)"
         >
           <router-link
             v-if="item.to"
@@ -154,15 +160,24 @@
         </div>
       </div>
     </div>
+    <!-- One of each, filled with the line right-clicked: a chart of fifty
+       - lines needs no fifty menus. -->
+    <song-context-menu v-if="menuSong" ref="songMenu" :song="menuSong" />
+    <album-context-menu v-if="menuAlbum" ref="albumMenu" :album="menuAlbum" go-to-album />
+    <artist-context-menu v-if="menuArtist" ref="artistMenu" :artist="menuArtist" go-to-artist />
   </section>
 </template>
 
 <script lang="ts">
 import type { PropType } from 'vue'
+import AlbumContextMenu from '@/components/library/AlbumContextMenu.vue'
+import ArtistContextMenu from '@/components/library/ArtistContextMenu.vue'
 import ArtistCredit from '@/components/library/ArtistCredit.vue'
 import CoverArt from '@/components/library/CoverArt.vue'
 import RecordStack from '@/components/library/RecordStack.vue'
+import SongContextMenu from '@/components/library/SongContextMenu.vue'
 import type { PlayHistoryPeriod } from '@/services/connect/playHistory'
+import type { Album, Artist, Song } from '@/types/library'
 
 // With its rise as tall as the other tabs' cover. The rise has to clear the
 // 4% each record behind shrinks by, or only the front one shows.
@@ -188,13 +203,25 @@ export interface ChartItem {
   covers?: string[]
   /** Places climbed (negative: fallen) in the last 30 days. */
   move?: number
+  /** What the line is in the library, for its right-click menu. A line
+   * the library does not have (an imported play) gets none. */
+  song?: Song
+  album?: Album
+  artist?: Artist
 }
 
 export type ChartKind = 'songs' | 'artists' | 'albums' | 'genres'
 
 export default {
   name: 'StatsCharts',
-  components: { ArtistCredit, CoverArt, RecordStack },
+  components: {
+    AlbumContextMenu,
+    ArtistContextMenu,
+    ArtistCredit,
+    CoverArt,
+    RecordStack,
+    SongContextMenu,
+  },
   props: {
     charts: { type: Object as PropType<Record<ChartKind, ChartItem[]>>, required: true },
     /** The date a chart counted from the log starts at. */
@@ -212,6 +239,9 @@ export default {
       CRATE_SIZE,
       CRATE_RISE,
       browsing: false,
+      menuSong: null as Song | null,
+      menuAlbum: null as Album | null,
+      menuArtist: null as Artist | null,
       tab: 'songs' as ChartKind,
       tabs: ['songs', 'artists', 'albums', 'genres'] as ChartKind[],
     }
@@ -238,6 +268,23 @@ export default {
     },
   },
   methods: {
+    async openMenu(event: MouseEvent, item: ChartItem): Promise<void> {
+      const ref = item.song
+        ? 'songMenu'
+        : item.album
+          ? 'albumMenu'
+          : item.artist
+            ? 'artistMenu'
+            : null
+      if (!ref) return
+      event.preventDefault()
+      if (item.song) this.menuSong = item.song
+      else if (item.album) this.menuAlbum = item.album
+      else if (item.artist) this.menuArtist = item.artist
+      await this.$nextTick()
+      const menu = this.$refs[ref] as { open: (event: MouseEvent) => void } | undefined
+      menu?.open(event)
+    },
     share(item: ChartItem): number {
       return this.first ? (item.value / this.first.value) * 100 : 0
     },

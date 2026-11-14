@@ -6,7 +6,7 @@ import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { useLibraryStore } from '@/stores/library'
-import type { Artist, Song } from '@/types/library'
+import type { Album, Artist, Song } from '@/types/library'
 import type { ChartItem, ChartKind } from '@/components/stats/StatsCharts.vue'
 import * as playHistory from '@/services/connect/playHistory'
 import { useAuthStore } from '@/stores/auth'
@@ -99,6 +99,7 @@ function mountView(
   store.allSongsLoaded = true
   store.fetchStarred = vi.fn()
   store.fetchArtists = vi.fn()
+  store.fetchAlbums = vi.fn()
   store.allSongs = songs
   store.artists = artists
   return mount(StatsView, { global: { plugins: [vuetify, i18n], stubs } })
@@ -315,6 +316,44 @@ describe('StatsView chart period', () => {
       coverArtId: 'c',
       value: 4,
     })
+  })
+
+  it('hands a log line what the library has under it, for its right-click menu', async () => {
+    const song = makeSong('1', { title: 'Song', artist: 'Artist', album: 'Record', albumId: 'alb' })
+    const top = {
+      ...charts().top,
+      songs: [
+        {
+          id: 'x',
+          value: 4,
+          label: 'Song',
+          sublabel: 'Artist',
+          album_id: 'alb',
+          cover_art_id: 'c',
+        },
+        { id: 'y', value: 2, label: 'Elsewhere', sublabel: 'Nobody' },
+      ],
+      albums: [
+        {
+          id: 'z',
+          value: 4,
+          label: 'Record',
+          sublabel: 'Artist',
+          album_id: 'alb',
+          cover_art_id: 'c',
+        },
+      ],
+    }
+    vi.mocked(playHistory.getPlayHistoryCharts).mockResolvedValue(charts('week', { total: 6, top }))
+    const wrapper = mountView([song])
+    useLibraryStore().albums = [{ id: 'alb', name: 'Record' } as Album]
+    await wrapper.setData({ chartPeriod: 'week' })
+    await flushPromises()
+
+    const vm = wrapper.vm as unknown as PeriodVm
+    expect(vm.charts.songs[0]?.song?.id).toBe(song.id)
+    expect(vm.charts.songs[1]?.song).toBeUndefined()
+    expect(vm.charts.albums[0]?.album?.id).toBe('alb')
   })
 
   it("asks for the viewed account's own log", async () => {

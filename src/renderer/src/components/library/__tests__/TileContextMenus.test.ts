@@ -23,7 +23,9 @@ import CreatePlaylistDialog from '../CreatePlaylistDialog.vue'
 import ArtworkLightbox from '../ArtworkLightbox.vue'
 import DetailHeader from '../DetailHeader.vue'
 import AlbumCard from '../AlbumCard.vue'
+import AlbumContextMenu from '../AlbumContextMenu.vue'
 import ArtistCard from '../ArtistCard.vue'
+import ArtistContextMenu from '../ArtistContextMenu.vue'
 import PlaylistCard from '../PlaylistCard.vue'
 
 const vuetify = createVuetify({ components, directives })
@@ -48,6 +50,11 @@ function shown(run: () => void): ArtworkView[] {
 
 function rightClick(wrapper: { trigger: (event: string, payload?: object) => Promise<unknown> }) {
   return wrapper.trigger('contextmenu', { clientX: 120, clientY: 80 })
+}
+
+/** The actions live on the menu component the card carries. */
+function actionsOf<T>(wrapper: ReturnType<typeof mount>, menu: object): T {
+  return wrapper.findComponent(menu).vm as unknown as T
 }
 
 function menuOf(wrapper: ReturnType<typeof mount>) {
@@ -152,7 +159,7 @@ describe('tile context menus', () => {
       const wrapper = mountCard()
 
       await rightClick(wrapper)
-      await (wrapper.vm as unknown as { play(): Promise<void> }).play()
+      await actionsOf<{ play(): Promise<void> }>(wrapper, AlbumContextMenu).play()
 
       expect(fetchAlbum).toHaveBeenCalledWith('al-1')
       expect(play).toHaveBeenCalledWith(albumSongs, 0, false, true)
@@ -165,10 +172,10 @@ describe('tile context menus', () => {
       const queueNext = vi.spyOn(playback, 'queueNext').mockImplementation(() => {})
       const addToQueue = vi.spyOn(playback, 'addToQueue').mockImplementation(() => {})
       const wrapper = mountCard()
-      const vm = wrapper.vm as unknown as {
+      const vm = actionsOf<{
         playNext(): Promise<void>
         addToQueue(): Promise<void>
-      }
+      }>(wrapper, AlbumContextMenu)
 
       await vm.playNext()
       await vm.addToQueue()
@@ -186,7 +193,7 @@ describe('tile context menus', () => {
       emitter.on('toast', (toast) => toasts.push(toast))
       const wrapper = mountCard()
 
-      await (wrapper.vm as unknown as { addToQueue(): Promise<void> }).addToQueue()
+      await actionsOf<{ addToQueue(): Promise<void> }>(wrapper, AlbumContextMenu).addToQueue()
 
       expect(addToQueue).not.toHaveBeenCalled()
       expect(toasts).toHaveLength(1)
@@ -198,9 +205,10 @@ describe('tile context menus', () => {
       const add = vi.spyOn(library, 'addToPlaylist').mockResolvedValue()
       const wrapper = mountCard()
 
-      await (wrapper.vm as unknown as { addToPlaylist(id: string): Promise<void> }).addToPlaylist(
-        'p1',
-      )
+      await actionsOf<{ addToPlaylist(id: string): Promise<void> }>(
+        wrapper,
+        AlbumContextMenu,
+      ).addToPlaylist('p1')
 
       expect(add).toHaveBeenCalledWith('p1', ['a', 'b'])
     })
@@ -215,7 +223,10 @@ describe('tile context menus', () => {
       const create = vi.spyOn(library, 'createPlaylist').mockResolvedValue()
       const wrapper = mountCard()
 
-      await (wrapper.vm as unknown as { createPlaylist(): Promise<void> }).createPlaylist()
+      await actionsOf<{ createPlaylist(): Promise<void> }>(
+        wrapper,
+        AlbumContextMenu,
+      ).createPlaylist()
       const dialog = wrapper.findComponent(CreatePlaylistDialog).vm as unknown as {
         visible: boolean
         name: string
@@ -251,7 +262,10 @@ describe('tile context menus', () => {
       await rightClick(wrapper)
       expect(menuLabels()).toContain(i18n.global.t('library.artistRadio'))
 
-      await (wrapper.vm as unknown as { startArtistRadio(): Promise<void> }).startArtistRadio()
+      await actionsOf<{ startArtistRadio(): Promise<void> }>(
+        wrapper,
+        ArtistContextMenu,
+      ).startArtistRadio()
       expect(start).toHaveBeenCalledWith(artist)
     })
 
@@ -273,7 +287,10 @@ describe('tile context menus', () => {
       emitter.on('toast', (toast) => toasts.push(toast))
       const wrapper = mountCard()
 
-      await (wrapper.vm as unknown as { startArtistRadio(): Promise<void> }).startArtistRadio()
+      await actionsOf<{ startArtistRadio(): Promise<void> }>(
+        wrapper,
+        ArtistContextMenu,
+      ).startArtistRadio()
 
       expect(toasts).toHaveLength(1)
     })
@@ -284,7 +301,7 @@ describe('tile context menus', () => {
       const play = vi.spyOn(usePlaybackStore(), 'playSongList').mockResolvedValue()
       const wrapper = mountCard()
 
-      await (wrapper.vm as unknown as { play(): Promise<void> }).play()
+      await actionsOf<{ play(): Promise<void> }>(wrapper, ArtistContextMenu).play()
 
       expect(play).toHaveBeenCalledWith(albumSongs, 0, false, true)
     })

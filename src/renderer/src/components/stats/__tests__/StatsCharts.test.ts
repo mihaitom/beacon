@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest'
-import { mount, RouterLinkStub } from '@vue/test-utils'
+import { describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
@@ -7,6 +7,8 @@ import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { useLibraryStore } from '@/stores/library'
 import type { Artist } from '@/types/library'
+import { makeSong } from '@/stores/__tests__/fixtures'
+import SongContextMenu from '@/components/library/SongContextMenu.vue'
 import StatsCharts, { type ChartItem } from '../StatsCharts.vue'
 
 const vuetify = createVuetify({ components, directives })
@@ -81,6 +83,56 @@ describe('StatsCharts lines', () => {
 
     expect(targets(wrapper)).toEqual([])
     expect(wrapper.text()).toContain('Nobody')
+  })
+})
+
+describe('StatsCharts right-click menu', () => {
+  const line = (id: string, over: Partial<ChartItem> = {}): ChartItem => ({
+    id,
+    label: `Line ${id}`,
+    value: 1,
+    valueLabel: '1',
+    ...over,
+  })
+
+  function rightClick(target: Element): MouseEvent {
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true })
+    target.dispatchEvent(event)
+    return event
+  }
+
+  function mountMenus(songs: ChartItem[]) {
+    setActivePinia(createPinia())
+    vi.spyOn(useLibraryStore(), 'fetchPlaylists').mockResolvedValue()
+    return mount(StatsCharts, {
+      props: { charts: { ...EMPTY, songs } },
+      global: { plugins: [vuetify, i18n], stubs: { CoverArt: true, RouterLink: RouterLinkStub } },
+    })
+  }
+
+  it('opens the song menu on the line right-clicked, the number one included', async () => {
+    const first = makeSong('1')
+    const second = makeSong('2')
+    const wrapper = mountMenus([line('1', { song: first }), line('2', { song: second })])
+
+    const event = rightClick(wrapper.find('.stats-charts__row').element)
+    await flushPromises()
+    expect(event.defaultPrevented).toBe(true)
+    expect(wrapper.findComponent(SongContextMenu).props('song').id).toBe('2')
+
+    rightClick(wrapper.find('.stats-charts__first').element)
+    await flushPromises()
+    expect(wrapper.findComponent(SongContextMenu).props('song').id).toBe('1')
+  })
+
+  it('leaves a line the library does not have to the browser', async () => {
+    const wrapper = mountMenus([line('1'), line('2')])
+
+    const event = rightClick(wrapper.find('.stats-charts__row').element)
+    await flushPromises()
+
+    expect(event.defaultPrevented).toBe(false)
+    expect(wrapper.findComponent(SongContextMenu).exists()).toBe(false)
   })
 })
 
