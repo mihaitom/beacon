@@ -54,7 +54,20 @@
 
     <section v-if="loadingTopSongs || shownTopSongs.length" class="mobile-home__section">
       <div class="mobile-home__head">
-        <h2 class="section-title mobile-home__title">{{ $t('home.topSongs') }}</h2>
+        <h2 class="section-title mobile-home__title">
+          <button
+            v-if="topSongs.length > SONG_ROWS"
+            type="button"
+            class="mobile-home__expand"
+            :aria-expanded="expanded.top"
+            :title="expanded.top ? $t('library.showLess') : $t('library.showMore')"
+            @click="expanded.top = !expanded.top"
+          >
+            {{ $t('home.topSongs') }}
+            <v-icon :icon="expanded.top ? 'mdi-chevron-up' : 'mdi-chevron-down'" size="20" />
+          </button>
+          <template v-else>{{ $t('home.topSongs') }}</template>
+        </h2>
         <v-btn
           v-if="shownTopSongs.length"
           icon="mdi-play-circle-outline"
@@ -62,7 +75,7 @@
           size="small"
           :title="$t('home.playAll')"
           :aria-label="$t('home.playAll')"
-          @click="playSongList(shownTopSongs)"
+          @click="playSongList(topSongs)"
         />
       </div>
       <div v-if="loadingTopSongs" class="mobile-home__loading">
@@ -114,7 +127,20 @@
       class="mobile-home__section"
     >
       <div class="mobile-home__head">
-        <h2 class="section-title mobile-home__title">{{ $t('home.rediscover') }}</h2>
+        <h2 class="section-title mobile-home__title">
+          <button
+            v-if="rediscoverSongs.length > SONG_ROWS"
+            type="button"
+            class="mobile-home__expand"
+            :aria-expanded="expanded.rediscover"
+            :title="expanded.rediscover ? $t('library.showLess') : $t('library.showMore')"
+            @click="expanded.rediscover = !expanded.rediscover"
+          >
+            {{ $t('home.rediscover') }}
+            <v-icon :icon="expanded.rediscover ? 'mdi-chevron-up' : 'mdi-chevron-down'" size="20" />
+          </button>
+          <template v-else>{{ $t('home.rediscover') }}</template>
+        </h2>
         <v-btn
           icon="mdi-shuffle-variant"
           variant="text"
@@ -200,8 +226,8 @@ import type { Album, Song } from '@/types/library'
 /** Two columns of three: what fits above the fold under the hero on a
  * common phone. */
 const RECENT_TILES = 6
-/** A song list on a phone runs long quickly; the full list is one "play
- * all" away. */
+/** A song list on a phone runs long quickly; the rest is a tap on its
+ * heading away, and "play all" always plays the whole list. */
 const SONG_ROWS = 5
 
 /** The phone's Home: the desktop page's shelves (see homeShelvesMixin),
@@ -213,6 +239,9 @@ export default {
   data() {
     return {
       RECENT_TILES,
+      SONG_ROWS,
+      // The two song lists open to their full length from their heading.
+      expanded: { top: false, rediscover: false },
       actionsOpen: false,
       activeSong: null as Song | null,
     }
@@ -222,10 +251,12 @@ export default {
       return this.recentTiles.slice(0, RECENT_TILES)
     },
     shownTopSongs(): Song[] {
-      return this.topSongs.slice(0, SONG_ROWS)
+      return this.expanded.top ? this.topSongs : this.topSongs.slice(0, SONG_ROWS)
     },
     shownRediscover(): Song[] {
-      return this.rediscoverSongs.slice(0, SONG_ROWS)
+      return this.expanded.rediscover
+        ? this.rediscoverSongs
+        : this.rediscoverSongs.slice(0, SONG_ROWS)
     },
   },
   methods: {
@@ -262,6 +293,21 @@ export default {
 .mobile-home__title {
   flex: 1;
   min-width: 0;
+}
+
+/* The heading itself is the toggle, so it keeps the heading's type rather
+ * than a button's; the chevron says it opens. */
+.mobile-home__expand {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
 }
 
 .mobile-home__tiles {

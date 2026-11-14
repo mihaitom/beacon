@@ -86,6 +86,30 @@ describe('MobileHomeView', () => {
     expect(play).toHaveBeenCalledWith(top, 1)
   })
 
+  it('opens a long song list from its heading and closes it again', async () => {
+    const top = Array.from({ length: 12 }, (_, i) => makeSong(`t${i}`))
+    const { wrapper } = await mountHome({ topSongs: top })
+    const rows = () => wrapper.findAllComponents({ name: 'MobileSongRow' }).length
+    const collapsed = rows()
+    expect(collapsed).toBeLessThan(top.length)
+
+    await wrapper.find('.mobile-home__expand').trigger('click')
+    expect(rows()).toBe(top.length)
+
+    await wrapper.find('.mobile-home__expand').trigger('click')
+    expect(rows()).toBe(collapsed)
+  })
+
+  it('plays the whole list from "play all", not just the rows showing', async () => {
+    const top = Array.from({ length: 12 }, (_, i) => makeSong(`t${i}`))
+    const { wrapper } = await mountHome({ topSongs: top })
+    const play = vi.spyOn(usePlaybackStore(), 'playSongList').mockResolvedValue()
+
+    await wrapper.find(`[aria-label="${i18n.global.t('home.playAll')}"]`).trigger('click')
+
+    expect(play.mock.calls[0]![0]).toEqual(top)
+  })
+
   it('starts the most recent album from the hero while nothing plays', async () => {
     const { wrapper, library } = await mountHome({ recent: [album('last')] })
     const songs = [makeSong('s1')]
