@@ -16,7 +16,7 @@ import asyncio
 import json
 import logging
 from collections import Counter
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from fastapi.responses import StreamingResponse
@@ -33,6 +33,7 @@ from core import (
     now_playing,
     play_history,
     server_link,
+    shared_claims,
 )
 from core.account_settings import LINKED_FIELDS
 from core.auth import require_token
@@ -103,6 +104,21 @@ class IncomingListen(Listen):
 class ListenBatch(BaseModel):
     listens: list[IncomingListen] = Field(max_length=_MAX_BATCH)
     backfill: bool = False
+
+
+_SpeakerType = Literal["sonos", "airplay", "chromecast", "dlna"]
+_SpeakerName = Annotated[str, StringConstraints(min_length=1, max_length=200)]
+_MAX_CLAIMS_BODY = 32 * 1024
+
+
+class SpeakerRef(BaseModel):
+    type: _SpeakerType
+    name: _SpeakerName
+
+
+class ClaimSet(BaseModel):
+    host: Annotated[str, StringConstraints(max_length=64)] = ""
+    claims: list[SpeakerRef] = Field(max_length=shared_claims.MAX_CLAIMS)
 
 
 class SettingsPatch(BaseModel):
@@ -849,6 +865,62 @@ def delete_now_playing(owner: KeyOwner = _syncing) -> dict:
     return {"status": "ok"}
 
 
+# Speakers a desktop app plays on, and the server's (core/shared_claims.py).
+
+
+@router.put("/claims")
+async def put_claims(request: Request, owner: KeyOwner = _syncing) -> dict:
+    claim_set = await _parsed(request, ClaimSet, _MAX_CLAIMS_BODY)
+    shared_claims.receive(owner, claim_set.host, [c.model_dump() for c in claim_set.claims])
+    return {"status": "ok"}
+
+
+@router.post("/claims/taken")
+async def post_claims_taken(request: Request, owner: KeyOwner = _syncing) -> dict:
+    speaker = await _parsed(request, SpeakerRef, _MAX_CLAIMS_BODY)
+    await shared_claims.taken_by(owner, speaker.type, speaker.name)
+    return {"status": "ok"}
+
+
+async def _claims_events(presented_key: str, owner: KeyOwner):
+    """The server's claims and other desktops', whenever they change, and
+    takeovers of this desktop's speakers. The key is looked up again at
+    every keepalive, as on the other streams."""
+    yield "retry: 2000\n\n"
+    shown = shared_claims.snapshot_for(owner)
+    yield _event({"claims": shown})
+    quiet = 0.0
+    while True:
+        await asyncio.sleep(_NOW_PLAYING_POLL_SECONDS)
+        quiet += _NOW_PLAYING_POLL_SECONDS
+        for notice in shared_claims.take_notices(owner):
+            yield _event({"taken": notice})
+        latest = shared_claims.snapshot_for(owner)
+        if latest != shown:
+            shown = latest
+            yield _event({"claims": latest})
+        if quiet >= _KEEPALIVE_SECONDS:
+            quiet = 0.0
+            still = await asyncio.to_thread(device_keys.resolve, presented_key)
+            if still is None or device_keys.SYNC not in still.scopes:
+                return
+            yield ": keepalive\n\n"
+
+
+@router.get("/claims/events", response_model=None)
+async def get_claims_events(
+    owner: KeyOwner = _syncing,
+    x_beacon_device_key: str = Header(max_length=200),
+) -> StreamingResponse:
+    _take_stream_place(owner)
+    return _CountedStream(
+        owner.key_id,
+        _claims_events(x_beacon_device_key, owner),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 @router.post("/listens")
 async def post_listens(request: Request, owner: KeyOwner = _syncing) -> dict:
     batch = await _parsed(request, ListenBatch, _MAX_LISTENS_BODY)
@@ -971,5 +1043,6 @@ async def delete_device_key(
     # cast does after its window closed.
     _library_clients.pop(key_id, None)
     player_server.forget_key(key_id)
+    shared_claims.forget(key_id)
     await mdns.sync()
     return {"status": "ok"}

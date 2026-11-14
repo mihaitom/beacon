@@ -5,7 +5,7 @@ core/server_link.py."""
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
-from core import device_keys, server_link
+from core import device_keys, server_link, shared_claims
 from core.auth import require_token
 from core.server_link import LinkError
 from core.session import SessionState, require_authenticated_session
@@ -44,5 +44,6 @@ def pair(req: PairRequest, session: SessionState = Depends(require_authenticated
 
 @router.delete("", dependencies=[Depends(_require_available)])
 def unpair(_session: SessionState = Depends(require_authenticated_session)) -> dict:
+    shared_claims.withdraw()
     server_link.unpair()
     return {"available": True, "linked": False}

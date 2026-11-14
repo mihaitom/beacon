@@ -26,7 +26,7 @@ from fastapi.responses import JSONResponse
 # or exported manually), never via a plain .env file alone.
 load_dotenv()
 
-from core import local_mixes, mdns, server_link
+from core import local_mixes, mdns, server_link, shared_claims
 from core.auth import TOKEN as _CONNECT_TOKEN
 from core.auth import TOKEN_WAS_GENERATED as _CONNECT_TOKEN_GENERATED
 from core.device_volume import capture_main_loop
@@ -317,6 +317,7 @@ async def lifespan(_: FastAPI):
     upnp_renewal_task = asyncio.create_task(_renew_upnp_subscriptions())
     mdns_task = asyncio.create_task(mdns.keep_announced())
     server_link_task = asyncio.create_task(server_link.run())
+    shared_claims_task = asyncio.create_task(shared_claims.run())
     light_controller.start()
     background_tasks = (
         discovery_task,
@@ -328,6 +329,7 @@ async def lifespan(_: FastAPI):
         upnp_renewal_task,
         mdns_task,
         server_link_task,
+        shared_claims_task,
     )
     try:
         yield

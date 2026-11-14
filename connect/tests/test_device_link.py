@@ -3372,6 +3372,18 @@ def test_revoking_lets_go_of_the_keys_login(client, public, on_server, handlers,
     assert key_id not in player_server._key_sessions
 
 
+def test_revoking_a_desktops_key_frees_the_speakers_it_reported(client, public, on_server):
+    made = device_keys.create(ALICE, "Laptop", ALICE_SETTINGS)
+    public.put(
+        "/device-link/claims",
+        json={"claims": [{"type": "sonos", "name": "Den"}]},
+        headers=auth(made["key"]),
+    )
+    assert claims.holder_of("sonos", "Den") is not None
+    client.delete(f"/device-keys/{made['id']}")
+    assert claims.holder_of("sonos", "Den") is None
+
+
 def test_the_desktop_does_not_take_over_a_speaker_somebody_else_holds(public, default_session):
     window(default_session, playing=True, current_song={"id": "s1"})
     asyncio.run(claims.claim("sonos", "Den", "somebody-else"))

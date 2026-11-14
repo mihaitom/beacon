@@ -11,6 +11,7 @@ from core.cast_permissions import may_cast
 from core.claims import claims
 from core.session import (
     SessionState,
+    holder_name,
     registry,
     require_authenticated_session,
     track_label,
@@ -178,13 +179,13 @@ def _annotate_claims(discovered: dict, session: SessionState, permitted: bool) -
     for group_type, devices in discovered.items():
         annotated[group_type] = []
         for device in devices:
-            owner = claims.owner_of(group_type, device["name"])
+            owner = claims.holder_of(group_type, device["name"])
             if not permitted and owner != session.session_id:
                 continue
             owner_session = registry.get(owner) if owner else None
             entry = {
                 **device,
-                "in_use_by_name": owner_session.display_name if owner_session else None,
+                "in_use_by_name": holder_name(owner, group_type, device["name"]),
                 "in_use_by_session_id": owner,
                 "in_use_by_song": track_label(owner_session) if owner_session else None,
             }

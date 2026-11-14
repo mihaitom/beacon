@@ -20,7 +20,7 @@ from delivery import BaseDelivery, DeliveryManager
 from media import MediaClient, SubsonicClient
 
 from . import icy_metadata, local_mixes, radio_ads, radio_history, title_match
-from .claims import claims
+from .claims import claims, is_remote
 from .device_volume import pushes_volume
 from .local_address import on_default_address
 from .loop_health import peak_lag
@@ -650,6 +650,17 @@ class SessionRegistry:
 registry = SessionRegistry()
 
 
+def holder_name(holder: str | None, target_type: str, name: str) -> str | None:
+    """Who to show as holding a speaker: a local session's name, or the
+    label another connect gave its claim (core/claims.py)."""
+    if holder is None:
+        return None
+    if is_remote(holder):
+        return claims.remote_label(holder, target_type, name)
+    session = registry.get(holder)
+    return session.display_name if session else None
+
+
 async def get_session(
     x_connect_session: str | None = Header(default=None),
     session: str | None = Query(default=None),
@@ -1117,11 +1128,10 @@ async def check_claims(
     if conflict is None:
         return None, []
     target_type, name, owner = conflict
-    owner_session = registry.get(owner)
     return {
         "device": {"name": name, "type": target_type},
         "error": "device_in_use",
-        "owner": owner_session.display_name if owner_session else "another session",
+        "owner": holder_name(owner, target_type, name) or "another session",
     }, []
 
 
@@ -1131,14 +1141,13 @@ def check_ownership(target_type: str, name: str, session: SessionState) -> dict 
     device itself, it only rejects when a *different* session currently owns
     it. Returns the same device_in_use error shape as check_claims(), or None
     when the device is unclaimed or owned by this session."""
-    owner = claims.owner_of(target_type, name)
+    owner = claims.holder_of(target_type, name)
     if owner is None or owner == session.session_id:
         return None
-    owner_session = registry.get(owner)
     return {
         "device": {"name": name, "type": target_type},
         "error": "device_in_use",
-        "owner": owner_session.display_name if owner_session else "another session",
+        "owner": holder_name(owner, target_type, name) or "another session",
     }
 
 

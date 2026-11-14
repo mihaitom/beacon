@@ -1,6 +1,10 @@
 # Plan: speakers shared between a desktop app and its server
 
-Status: planned (2026-11-14), not built.
+Status: built (2026-11-14), not yet checked on real speakers: "Measure
+first" and "How to check it" below are still open
+([backlog](../backlog/device-link/control-hardware-check.md)). Code:
+`core/claims.py` (remote holders), `core/shared_claims.py` (moving them),
+the `/device-link/claims` routes in `routes/device_link.py`.
 
 ## Why
 
@@ -53,12 +57,12 @@ A claim is `(type, name, holder)`: the speaker, and who to show as holding
 it ("alice" on the server, "alice on desktop-a" from a desktop, the label
 built from the account and the desktop's host name).
 
-Speakers are matched by type and name. Two homes can both have a speaker
-called "Living room", so a desktop away from home could see a claim for a
-speaker that only has the same name. Where the scan already carries a stable
-id (Sonos UID, Chromecast UUID, DLNA UDN, AirPlay identifier), match on that
-instead and send it along; check what `_scan_devices()` keeps today before
-building. A desktop only applies remote claims to speakers it found itself.
+Speakers are matched by type and name, as the local claims are. Two homes
+can both have a speaker called "Living room", so a desktop away from home
+could see a claim for a speaker that only has the same name. **Not built:**
+matching on a stable id (Sonos UID, Chromecast UUID, DLNA UDN, AirPlay
+identifier) instead. It would have to change the local claims too, which
+are keyed by name throughout; worth it only if the case turns up.
 
 ### Desktop to server
 
@@ -68,7 +72,9 @@ building. A desktop only applies remote claims to speakers it found itself.
 - The server keeps them per key, in memory, and drops a set after 90 s
   without a refresh, so a laptop closed mid-cast does not hold a speaker
   forever.
-- Unpairing or revoking the key drops its set at once.
+- Revoking the key drops its set at once. Unpairing keeps the key on the
+  server, so the desktop sends an empty set just before, and stops
+  following the server's stream.
 
 ### Server to desktop
 
@@ -84,8 +90,9 @@ building. A desktop only applies remote claims to speakers it found itself.
 ### Using them
 
 `ClaimRegistry` learns a second kind of holder: a remote one, which has a
-label but no local session. `owner_of()` and the conflict checks in
-`claim()`/`claim_many()` see both, so every path that answers
+label but no local session. `holder_of()` and the conflict checks in
+`claim()`/`claim_many()` see both (`owner_of()` stays local: it routes a
+speaker's own events to the session playing on it), so every path that answers
 `device_in_use` today (the cast routes, the device list's `in_use_by`, the
 v1 player, the phone remote's device list) covers the other instance without
 changes of its own.
@@ -107,10 +114,14 @@ Each side only ever stops its own sessions. The message carries one fact,
 already report. It is not a way to steer the desktop from the server in
 general (which stays out, see `plans/device-link.md`).
 
-Cast permissions apply on the server's side: a desktop key whose account
-may not cast on the server cannot displace a server session either
-(`cast_permissions.authorize()` for the key's account). Otherwise a blocked
-account could empty the speakers through a desktop.
+**No cast-permission check on `taken`.** The plan had one: a desktop key
+whose account may not cast on the server could not displace a server
+session. Dropped while building: the desktop plays through its own connect,
+where the server's rules do not apply, so it takes the speaker over
+physically either way. A refused `taken` would only leave the server's
+session believing it still holds a speaker it has lost. And an account
+blocked from casting that has a desktop app can stop a speaker by playing
+on it already.
 
 ## Decided (2026-11-14)
 
@@ -129,7 +140,7 @@ account could empty the speakers through a desktop.
 - The routes: a sync key only, an app key refused; a set dropped on revoke
   and unpair; the events stream never sends a desktop its own claims.
 - Takeover in both directions, with `displace_target()` called on the
-  holding session only; refused for an account that may not cast.
+  holding session only.
 - The desktop's client: pushes on change and on the heartbeat, falls back to
   local-only while the server is away.
 
@@ -144,5 +155,5 @@ With a desktop paired to a server and a speaker of each type:
 - The same the other way round, and with two desktops on one server.
 - Close the laptop mid-cast; the server shows the speaker free within about
   90 s.
-- A desktop on another network with a speaker of the same name: no claim
-  shows up for it.
+- A desktop on another network with a speaker of the same name does see
+  the claim (matching by id is not built, see "What travels").

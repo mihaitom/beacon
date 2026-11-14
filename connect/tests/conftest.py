@@ -205,9 +205,15 @@ def _isolated_server_link(monkeypatch, tmp_path):
     # The app's lifespan would start the real sender, which then races each
     # test for the same unsent rows.
     monkeypatch.setattr(server_link, "run", not_running)
+    # The same for the claims it shares with its server.
+    from core import shared_claims
+
+    monkeypatch.setattr(shared_claims, "run", not_running)
     server_link.reset_for_tests()
+    shared_claims.reset_for_tests()
     yield
     server_link.reset_for_tests()
+    shared_claims.reset_for_tests()
 
 
 @pytest.fixture(autouse=True)
@@ -415,6 +421,7 @@ def reset_state():
     global device-discovery cache, and Remote Control state."""
     session_module.registry._sessions.clear()
     claims_module.claims._claims.clear()
+    claims_module.claims._remote.clear()
     state.ctx.discovered = {"airplay": [], "chromecast": [], "dlna": [], "sonos": []}
     # has_cache (GET /discover) is keyed off this, not off ctx.discovered's
     # contents above — a test leaving it at a real timestamp from an

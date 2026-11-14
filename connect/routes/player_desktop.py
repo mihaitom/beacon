@@ -102,7 +102,7 @@ def _refuse_held_speakers(owner: KeyOwner, wanted) -> None:
     the window's relay command always takes over (made for the phone)."""
     window = _window(owner)
     for device in wanted:
-        holder = claims.owner_of(device.type, device.name)
+        holder = claims.holder_of(device.type, device.name)
         if holder is not None and (window is None or holder != window.session_id):
             raise HTTPException(status_code=409, detail="device_in_use")
 

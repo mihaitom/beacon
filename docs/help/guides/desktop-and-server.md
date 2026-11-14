@@ -23,6 +23,12 @@ the computer and sent when it can be reached again.
   your Last.fm and ListenBrainz names and the like.
 - **Your own themes,** though which theme is on stays with each device.
 - **Lyrics timing you corrected,** song by song.
+- **Which speakers are in use.** A speaker the server or another connected
+  desktop app is playing on shows as in use, with the name of whoever is
+  listening, and playing to it asks first, as for a speaker in use on the
+  same installation. Taking it over stops only that speaker on the other
+  side. A desktop app that is closed mid-cast frees its speakers on the
+  server after about a minute and a half.
 - **The Last.fm and Fanart keys,** if you confirmed that when creating the
   key for this device. A key you entered in the desktop app stays in charge, and the
   server's keys stop being used when you disconnect.

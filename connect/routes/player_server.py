@@ -21,7 +21,7 @@ from core import app_library, now_playing
 from core.cast_permissions import may_cast
 from core.claims import claims
 from core.device_keys import LIBRARY, KeyOwner
-from core.session import SessionState, compute_position, registry
+from core.session import SessionState, compute_position, holder_name, registry
 from core.state import ctx, list_target_pairs
 from delivery import credentials
 from media import resolve_account
@@ -531,13 +531,12 @@ async def devices(owner: KeyOwner, rescan: bool, library=None) -> dict:
     items = []
     for device_type in ("sonos", "airplay", "chromecast", "dlna"):
         for device in found.get(device_type) or []:
-            holder_id = claims.owner_of(device_type, device["name"])
-            holder = registry.get(holder_id) if holder_id else None
+            holder = claims.holder_of(device_type, device["name"])
             items.append(
                 {
                     "type": device_type,
                     "name": device["name"],
-                    "in_use_by": holder.display_name if holder else None,
+                    "in_use_by": holder_name(holder, device_type, device["name"]),
                     "needs_pairing": bool(device.get("needs_pairing"))
                     and device["name"] not in credentials.list_paired(),
                 }

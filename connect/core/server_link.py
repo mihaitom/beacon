@@ -70,6 +70,7 @@ _TIMEOUT = httpx.Timeout(15.0, connect=3.0)
 
 _lock = threading.Lock()
 _transport: httpx.BaseTransport | None = None
+_async_transport: httpx.AsyncBaseTransport | None = None
 _state = CONNECTED
 _failures = 0
 _loop: asyncio.AbstractEventLoop | None = None
@@ -227,6 +228,43 @@ def _call(
     if not isinstance(answer, dict):
         raise LinkError(SERVER_TOO_OLD)
     return answer
+
+
+# For what core/shared_claims.py sends while the music is changing.
+SHORT_TIMEOUT = _SETTINGS_TIMEOUT
+
+
+def current() -> dict | None:
+    """The pairing, or None."""
+    return _read()
+
+
+def call(link: dict, method: str, path: str, body: dict | None, timeout: httpx.Timeout) -> dict:
+    """_call() for another module, against `link`'s server."""
+    return _call(link["url"], link["key"], method, path, body=body, timeout=timeout)
+
+
+def stream_target(link: dict, path: str) -> tuple[str, dict]:
+    return f"{link['url']}/device-link{path}", {KEY_HEADER: link["key"]}
+
+
+def async_transport() -> httpx.AsyncBaseTransport | None:
+    return _async_transport
+
+
+def check_stream_answer(response: httpx.Response) -> None:
+    """_call()'s refusals, for a stream whose body is not JSON."""
+    if response.is_redirect:
+        raise LinkError(BLOCKED)
+    if response.status_code in (401, 403):
+        raise LinkError(WRONG_KEY)
+    if response.status_code == 404:
+        raise LinkError(SERVER_TOO_OLD)
+    if not response.is_success:
+        raise LinkError(UNREACHABLE)
+    if not response.headers.get("content-type", "").startswith("text/event-stream"):
+        # An older Docker image answers unknown paths with its index.html.
+        raise LinkError(SERVER_TOO_OLD)
 
 
 def _detail(response: httpx.Response) -> object:

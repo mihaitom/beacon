@@ -62,6 +62,11 @@ In Home Assistant:
   stations, covers and station logos.
 - The party sensor's `listen_kbps` on the desktop.
 
+Speakers shared between a desktop app and its server: the measurement under
+"Measure first" and the list under "How to check it" in
+[plans/shared-speaker-claims.md](../../plans/shared-speaker-claims.md), per
+speaker type.
+
 Behind Traefik and Authentik: `/device-link/` passes the forward-auth (see
 `docs/help/guides/desktop-and-server.md#behind-a-login`).
 
