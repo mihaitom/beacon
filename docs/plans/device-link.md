@@ -463,9 +463,17 @@ still the window.
 builds the queue itself from the stored login and casts it:
 
 - to the speakers of the account's current cast, replacing its queue, or
-- to the speakers named in the command (`devices`), in a session of the key's
-  own (`key:<id>`), with the account's cast permissions and the usual claims: a
-  speaker another listener holds answers 409 rather than being taken over.
+- to the speakers named in the command (`devices`), with the account's cast
+  permissions and the usual claims: a speaker another listener holds answers
+  409 rather than being taken over.
+
+That cast goes into the account's own connect session, the one every browser
+of the account shares (`services/connect/session-id.ts`), so an open tab shows
+it and one opened later picks it up. The key remembers the session it was made
+in; a key from before that takes the account's session most recently in use.
+A browser signed in there keeps its own login. Only with no session of the
+account around does the key get one of its own (`key-<id>-...`), which no
+browser sees.
 
 Without either, 409 `no_speaker`. `GET /player/devices` lists what may be
 named.

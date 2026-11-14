@@ -207,7 +207,7 @@ curl -H "X-Beacon-Device-Key: <key>" -H "Content-Type: application/json" \
 
 `previous` starts the song again when it is more than five seconds in. A speaker somebody else plays on stays theirs, on the desktop app as on a server: picking it answers 409 `device_in_use`, no takeover. `GET /player/devices` lists the speakers with `type`, `name`, `in_use_by` (somebody else playing on it) and `needs_pairing`; `?rescan=true` searches the network again, which takes a few seconds. `GET /player/cover` is the cover of the song in the player, or the station's logo.
 
-**On a server**, the player is the account's music on speakers, chosen like `/now-playing` chooses. Commands without something cast answer 409 `nothing_playing`. A `play_*` command plays on the speakers already playing, and with nothing cast it needs `devices` to start on, otherwise 409 `no_speaker`. Shuffle, repeat and autoplay reach a browser open on that cast; repeat at the end of the queue is carried out only by a browser that is open.
+**On a server**, the player is the account's music on speakers, chosen like `/now-playing` chooses. Commands without something cast answer 409 `nothing_playing`. A `play_*` command plays on the speakers already playing, and with nothing cast it needs `devices` to start on, otherwise 409 `no_speaker`. Music started from an app plays in the account's own session, so a browser signed in with that account shows it. Shuffle, repeat and autoplay reach a browser open on that cast; repeat at the end of the queue is carried out only by a browser that is open.
 
 **On the desktop app**, commands go to its window, which acts on them as if clicked there.
 

@@ -340,8 +340,23 @@ def _refused(answer) -> None:
 
 
 def _key_session_id(owner: KeyOwner) -> str:
-    """One session per key for what it starts itself. Not guessable: an
-    authenticated session id is all the cast routes ask for."""
+    """Where a key starts a cast: the account's own session, which every
+    browser of that account shares, so they show it. A key made before keys
+    remembered it takes the account's session most recently in use, and
+    only without one a session of its own (not guessable: an authenticated
+    session id is all the cast routes ask for)."""
+    if owner.session_id:
+        stored = registry.get(owner.session_id)
+        # Never somebody else's: a browser signed in there as another account.
+        if stored is None or not stored.authenticated or _signed_in_as(stored, owner.account):
+            return owner.session_id
+    own = [
+        session
+        for session in registry.all()
+        if not session.session_id.startswith("key-") and _signed_in_as(session, owner.account)
+    ]
+    if own:
+        return max(own, key=lambda session: session.last_seen).session_id
     session_id = _key_sessions.get(owner.key_id)
     if session_id is None or registry.get(session_id) is None:
         session_id = f"key-{owner.key_id}-{secrets.token_urlsafe(16)}"
@@ -372,16 +387,28 @@ async def _is_admin(owner: KeyOwner, library) -> bool:
     return account.is_admin
 
 
+def _signed_in_as(session: SessionState, account) -> bool:
+    signed_in = (
+        session.account_server_type,
+        session.account_server_url,
+        session.account_username,
+    )
+    return session.authenticated and session.media is not None and signed_in == account
+
+
 async def _key_session(owner: KeyOwner, library) -> SessionState:
     session = await registry.get_or_create(_key_session_id(owner))
-    server_type, server_url, username = owner.account
-    session.media = library
-    session.account_server_type = server_type
-    session.account_server_url = server_url
-    session.account_username = username
-    session.account_is_admin = await _is_admin(owner, library)
-    session.display_name = username or session.session_id
-    session.authenticated = True
+    # A browser signed in there keeps its own, fresher login and the admin
+    # role /config found.
+    if not _signed_in_as(session, owner.account):
+        server_type, server_url, username = owner.account
+        session.media = library
+        session.account_server_type = server_type
+        session.account_server_url = server_url
+        session.account_username = username
+        session.account_is_admin = await _is_admin(owner, library)
+        session.display_name = username or session.session_id
+        session.authenticated = True
     session.touch()
     return session
 

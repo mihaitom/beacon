@@ -68,6 +68,9 @@ class KeyOwner(NamedTuple):
     account: Account
     settings_identity: tuple[str, str, str] | None
     scopes: frozenset[str] = frozenset({SYNC})
+    # The account's connect session the key was made in; None for a key
+    # older than that, or made outside one.
+    session_id: str | None = None
 
 
 def _stored_scopes(scopes: Iterable[str]) -> str:
@@ -109,6 +112,7 @@ def create(
     now: float | None = None,
     scopes: Iterable[str] = (SYNC,),
     login: dict | None = None,
+    session_id: str | None = None,
 ) -> dict:
     """The only time the key itself exists outside the device it goes to.
     Raises InvalidScopes for a combination no key may have. `login` is the
@@ -132,8 +136,8 @@ def create(
         conn.execute(
             "INSERT INTO device_keys"
             " (id, account_id, key_hash, label, settings_identity, created_at, scopes,"
-            " media_login)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            " media_login, session_id)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 key_id,
                 account_id,
@@ -143,6 +147,7 @@ def create(
                 created_at,
                 stored_scopes,
                 sealed,
+                session_id,
             ),
         )
     return {
@@ -246,4 +251,5 @@ def resolve(presented: str, now: float | None = None) -> KeyOwner | None:
         Account(row["server_type"], row["server_url"], row["username"]),
         None if identity is None else tuple(json.loads(identity)),
         frozenset(row["scopes"].split(",")),
+        row["session_id"],
     )

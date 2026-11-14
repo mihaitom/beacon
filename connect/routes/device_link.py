@@ -950,6 +950,7 @@ async def create_device_key(
             device_keys.settings_identity_of(session),
             scopes=new_key.scopes,
             login=media_login.capture(session.media),
+            session_id=session.session_id,
         )
     except device_keys.InvalidScopes as e:
         raise HTTPException(status_code=422, detail="Invalid scopes") from e

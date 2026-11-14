@@ -3062,6 +3062,60 @@ def test_an_album_starts_on_the_named_speaker_with_the_keys_own_login(
     assert handlers.play.await_args.args[1] is session
 
 
+def test_a_key_remembers_the_session_it_was_made_in(client, on_server):
+    made = client.post("/device-keys", json={"label": "HA", "scopes": ["control"]}).json()
+    assert device_keys.resolve(made["key"]).session_id == on_server.session_id
+
+
+def account_key(session_id: str | None) -> str:
+    return device_keys.create(
+        ALICE,
+        "Home Assistant",
+        ALICE_SETTINGS,
+        scopes=("control", "library"),
+        login=SUBSONIC_LOGIN,
+        session_id=session_id,
+    )["key"]
+
+
+DEN = [{"type": "sonos", "name": "Den"}]
+
+
+def test_a_cast_a_key_starts_lands_in_the_accounts_own_session(
+    public, as_server, handlers, media_server
+):
+    send(public, account_key("account-session"), type="play_song", song_id="s1", devices=DEN)
+    assert handlers.play.await_args.args[1].session_id == "account-session"
+
+
+def test_a_browser_signed_in_there_keeps_its_own_login(public, on_server, handlers, media_server):
+    own_login = on_server.media
+    send(public, account_key(on_server.session_id), type="play_song", song_id="s1", devices=DEN)
+    session = handlers.play.await_args.args[1]
+    assert session is on_server
+    assert session.media is own_login
+
+
+def test_a_key_older_than_that_takes_the_accounts_session_in_use(
+    public, on_server, handlers, media_server
+):
+    send(public, account_key(None), type="play_song", song_id="s1", devices=DEN)
+    assert handlers.play.await_args.args[1] is on_server
+
+
+def test_a_key_never_takes_a_session_signed_in_as_somebody_else(
+    public, as_server, default_session, handlers, media_server
+):
+    default_session.account_server_type, default_session.account_server_url = BOB[:2]
+    default_session.account_username = BOB.username
+    send(
+        public, account_key(default_session.session_id), type="play_song", song_id="s1", devices=DEN
+    )
+    session = handlers.play.await_args.args[1]
+    assert session is not default_session
+    assert default_session.account_username == BOB.username
+
+
 def test_starting_while_something_is_cast_plays_on_that_cast(
     public, as_server, default_session, handlers, media_server
 ):
@@ -3308,6 +3362,8 @@ def test_a_servers_station_shows_its_logo(public, as_server, default_session, me
 def test_revoking_lets_go_of_the_keys_login(client, public, on_server, handlers, media_server):
     key = library_key()
     key_id = key.partition(".")[0]
+    # No browser of the account has a login there, so the key needs its own session.
+    on_server.media = None
     send(public, key, type="play_song", song_id="s1", devices=[{"type": "sonos", "name": "Den"}])
     assert key_id in device_link._library_clients
     assert key_id in player_server._key_sessions

@@ -112,6 +112,11 @@ _HISTORY_EPOCH_SCHEMA = (
 # without the library right.
 _KEY_MEDIA_LOGIN_SCHEMA = ("ALTER TABLE device_keys ADD COLUMN media_login BLOB",)
 
+# The connect session the key was made in: every device of an account
+# computes the same one (services/connect/session-id.ts), so what a key
+# starts there is what a browser of that account sees.
+_KEY_SESSION_SCHEMA = ("ALTER TABLE device_keys ADD COLUMN session_id TEXT",)
+
 _OWN_SOURCE = "beacon"
 _TEXT_FIELDS = (
     "song_id",
@@ -305,6 +310,11 @@ def _add_key_media_login(conn: sqlite3.Connection) -> None:
         conn.execute(statement)
 
 
+def _add_key_session(conn: sqlite3.Connection) -> None:
+    for statement in _KEY_SESSION_SCHEMA:
+        conn.execute(statement)
+
+
 # PRAGMA user_version counts how many of these have run. Append only.
 _MIGRATIONS = (
     _create_log,
@@ -314,6 +324,7 @@ _MIGRATIONS = (
     _add_key_scopes,
     _add_history_epoch,
     _add_key_media_login,
+    _add_key_session,
 )
 
 
