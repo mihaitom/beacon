@@ -28,12 +28,22 @@ use sources you are allowed to play.
    computer in your network.
 2. In Beacon, open Settings > Library > External source. Give the tab a name,
    enter the app's address (for example `http://192.168.1.20:8800`) and, if the
-   app asks for one, a token.
+   app asks for one, its token.
 3. Save. Beacon checks the connection right away and says whether the app
    answered.
 
 On a Beacon server only an administrator can set this up, and the source is the
 same for everyone signed in. In the desktop app it is yours alone.
+
+## Is the token a key from Apps and devices?
+
+No, it goes the other way. A key from Apps and devices lets an app into Beacon.
+The token here lets Beacon into your app: you choose it in your app's settings
+and enter the same value in Beacon, which sends it along whenever it fetches
+the app's page. An app that does not ask for one needs none.
+
+It keeps others on your network from opening the app's page directly. It does
+not encrypt anything; for that the app needs an `https://` address.
 
 ## Where do I find the tab?
 

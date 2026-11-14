@@ -1824,7 +1824,9 @@ export default {
     name: 'Nombre de la pestaña',
     namePlaceholder: 'p. ej. Lista de deseos',
     address: 'Dirección de la app',
-    token: 'Token (opcional)',
+    token: 'Token de tu app (opcional)',
+    tokenHint:
+      'Solo si tu app lo pide: el valor que fijaste en ella. No es una clave de Aplicaciones y dispositivos: esas dejan entrar apps en Beacon, esto deja entrar a Beacon en tu app.',
     tokenKept: 'Guardado: déjalo vacío para conservarlo',
     tokenNone: 'Sin token',
     reachable: 'Conectado con {name}',

@@ -1818,7 +1818,9 @@ export default {
     name: 'Nome della scheda',
     namePlaceholder: 'ad es. Lista dei desideri',
     address: "Indirizzo dell'app",
-    token: 'Token (facoltativo)',
+    token: 'Token della tua app (facoltativo)',
+    tokenHint:
+      "Solo se la tua app ne chiede uno: il valore impostato nell'app. Non è una chiave di App e dispositivi: quelle fanno entrare le app in Beacon, questo fa entrare Beacon nella tua app.",
     tokenKept: 'Salvato: lascia vuoto per mantenerlo',
     tokenNone: 'Nessun token',
     reachable: 'Connesso a {name}',

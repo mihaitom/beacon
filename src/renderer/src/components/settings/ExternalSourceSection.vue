@@ -28,6 +28,8 @@
         <v-text-field
           v-model="token"
           :label="$t('externalSource.token')"
+          :hint="$t('externalSource.tokenHint')"
+          persistent-hint
           :placeholder="
             source?.has_token ? $t('externalSource.tokenKept') : $t('externalSource.tokenNone')
           "
