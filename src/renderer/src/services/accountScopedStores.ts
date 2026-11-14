@@ -56,6 +56,7 @@ import { adoptLocale, reloadLocaleForAccount } from '@/services/localeSetting'
 import { fetchAccountSettings } from '@/services/connect/accountSettings'
 import { clearCoverArtCache } from '@/services/connect/coverArtBatch'
 import { forgetWhatWasReported } from '@/services/playback/nowPlayingReport'
+import { useExternalSourceStore } from '@/stores/externalSource'
 
 /** Pulls whatever this account has synced server-side (see
  * services/connect/accountSettings.ts) and applies it through each
@@ -205,6 +206,9 @@ export function initAccountScopedStores(): void {
     useLastfmStore().reloadForAccount()
     useListenbrainzStore().reloadForAccount()
     useFanartStore().reloadForAccount()
+    // Needs the signed-in session, and which ones this session may
+    // configure differs per account.
+    void useExternalSourceStore().load()
     void syncWithAccount()
   })
 }

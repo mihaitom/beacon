@@ -250,9 +250,6 @@ export default {
       },
     },
   },
-  created() {
-    void this.externalSourceStore.ensureLoaded()
-  },
   beforeUnmount() {
     window.clearTimeout(queueSlideTimer)
   },

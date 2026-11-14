@@ -6,7 +6,9 @@ import {
 } from '@/services/connect/externalSource'
 
 /** The external sources that are set up, for the navigation and the tabs.
- * Loaded once a layout mounts, and replaced by the settings after a change. */
+ * Loaded on every sign-in (services/accountScopedStores.ts) - not when a
+ * layout mounts, which on a cold start happens before the session is
+ * restored - and replaced by the settings after a change. */
 export const useExternalSourceStore = defineStore('externalSource', {
   state: () => ({
     loaded: false,

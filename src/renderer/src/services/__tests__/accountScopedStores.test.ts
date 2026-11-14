@@ -16,6 +16,8 @@ import type { Album } from '@/types/library'
 import { browserLocale, getLocale } from '@/i18n'
 import { setLocale } from '@/services/localeSetting'
 import { forgetWhatWasReported } from '@/services/playback/nowPlayingReport'
+import { getExternalSources } from '@/services/connect/externalSource'
+import { useExternalSourceStore } from '@/stores/externalSource'
 
 vi.mock('@/services/connect/accountSettings', () => ({
   fetchAccountSettings: vi.fn(),
@@ -28,6 +30,10 @@ vi.mock('@/services/lyrics/lyricsOffsets', async (importOriginal) => ({
 }))
 
 vi.mock('@/services/playback/nowPlayingReport', () => ({ forgetWhatWasReported: vi.fn() }))
+
+vi.mock('@/services/connect/externalSource', () => ({
+  getExternalSources: vi.fn().mockResolvedValue({ may_configure: false, sources: [] }),
+}))
 
 function signIn(username = 'alice'): void {
   const auth = useAuthStore()
@@ -75,6 +81,20 @@ describe('accountScopedStores — pull on account change', () => {
     await nextTick()
 
     expect(forgetWhatWasReported).toHaveBeenCalled()
+  })
+
+  // The layout mounts before the session is restored, so loading them
+  // there got a refusal and the tabs only appeared after the settings.
+  it('loads the external sources once signed in', async () => {
+    vi.mocked(fetchAccountSettings).mockResolvedValue({})
+    const source = { id: 'a', name: 'Archive', icon: 'mdi-web', ui_path: '/external-ui/x/a/' }
+    vi.mocked(getExternalSources).mockResolvedValue({ may_configure: false, sources: [source] })
+    initAccountScopedStores()
+
+    signIn()
+    await nextTick()
+
+    await vi.waitFor(() => expect(useExternalSourceStore().sources).toEqual([source]))
   })
 
   it("swaps the self-made themes for the new account's", async () => {
