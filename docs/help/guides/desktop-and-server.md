@@ -77,7 +77,7 @@ labels:
 ```
 
 Everything under that path needs a device key, and a key can only reach its
-own account's history and settings. Failed attempts are rate limited by
+own account, and only what it was made for. Failed attempts are rate limited by
 address, which needs `TRUSTED_PROXIES` set as described under
 [Client addresses](party-over-the-internet.md#client-addresses).
 

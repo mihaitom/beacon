@@ -16,13 +16,12 @@ A Beacon server offers this, and so does the desktop app, for apps on its own ne
 ## What could I build with it?
 
 - A display on your desk, or an e-ink frame, showing the song and its cover
-- An overlay for a stream
-- A "listening to" status in Discord or a chat
-- Karaoke on a television, with the lyrics in time
-- A review of your year, or a Grafana dashboard
-- A backup of your listening history as a file of your own
-- A "listening to" box on your home page
-- Buttons by the door or on a tablet: pause, skip, start the morning playlist
+- A "listening to" status in Discord, on your home page or as a stream overlay
+- Your listening in a Grafana dashboard, or a backup of it as a file of your own
+- Buttons by the door, a Stream Deck or a knob on the shelf: pause, skip, volume, the morning playlist
+- Music that pauses when a call starts on your computer, and carries on when it ends
+- The song in your desktop's status bar or menu bar, with play and pause
+- "Hey Siri, morning playlist" with Apple Shortcuts, or a home screen widget showing what plays at home
 - Home automation: [Home Assistant](../guides/home-automation.md) has an integration of its own
 
 ## How do I get a key?
@@ -34,7 +33,7 @@ Open Settings > Account > Apps and devices, in a browser on the server or in the
 | Listening history                  | `/history`                                                                          |
 | Statistics                         | `/stats`                                                                            |
 | What is playing now                | `/now-playing`, `/now-playing/events`, `/now-playing/cover`                         |
-| Lyrics                             | `/now-playing/lyrics`, only together with what is playing now                       |
+| Lyrics of what is playing          | `/now-playing/lyrics`, only together with what is playing now                       |
 | Steer playback                     | `/player`, `/player/events`, `/player/commands`, `/player/devices`, `/player/cover` |
 | Browse the library and start music | `/library/...` and the `play_*` and `queue_*` commands, only together with control  |
 

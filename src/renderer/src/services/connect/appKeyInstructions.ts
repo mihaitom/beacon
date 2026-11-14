@@ -28,6 +28,7 @@ const RULES: Partial<Record<DeviceKeyScope, string[]>> = {
   lyrics: ['A lyric line is reached at `position - offset >= time`.'],
   control: [
     'Commands go to POST /player/commands and answer once applied. A 409 means there is nothing to steer right now, for example nothing playing on a speaker.',
+    'Commands say what is wanted (`"on": true`), they do not toggle. Check the player\'s `commands` before offering one.',
     'Follow the player with /player/events rather than polling /player.',
   ],
   library: [
@@ -52,7 +53,7 @@ export function appKeyInstructions(origin: string, scopes: DeviceKeyScope[]): st
     '',
     'Rules:',
     '- Ignore fields you do not know, new ones may appear.',
-    '- A 429 says how long to wait in `Retry-After`. Limits per key: 120 requests a minute, 3 open streams.',
+    '- A 429 says how long to wait in `Retry-After`. Limits per key: 120 requests a minute, 600 images a minute apart from those, 3 open streams.',
     ...rules.map((rule) => `- ${rule}`),
   ].join('\n')
 }

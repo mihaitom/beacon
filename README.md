@@ -57,7 +57,7 @@
 - **Internet radio** with a directory to find stations in and a running list of what each one played
 - **Navidrome, Subsonic, Jellyfin and Plex** in the same app, plus smart playlists for Navidrome
 - **Home Assistant** finds the desktop app on its own and gets playback, speakers and your library
-- **Your own apps** can read your listening history, statistics, what is playing and its lyrics from a Beacon server
+- **Your own apps** can read your listening history, statistics, what is playing and its lyrics, and if you allow it steer playback and start music from your library, on a Beacon server or the desktop app
 
 Everything you would expect is here too: a full library with filtering and search, a home page built from your own listening, a Stats page that a desktop app can share with your Beacon server, synced lyrics, a fullscreen Now Playing with a visualizer, themes of your own, keyboard shortcuts (press `?` in the app for the list) and a UI in German, English, Spanish, French and Italian.
 
