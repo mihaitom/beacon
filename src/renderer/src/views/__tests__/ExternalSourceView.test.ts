@@ -10,14 +10,14 @@ import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { useExternalSourceStore } from '@/stores/externalSource'
 import { usePlaybackStore } from '@/stores/playback'
-import { getExternalSources, registerExternalItem } from '@/services/connect/externalSource'
+import { getExternalSources, registerExternalItems } from '@/services/connect/externalSource'
 import type { Song } from '@/types/library'
 import ExternalSourceView from '../ExternalSourceView.vue'
 
 vi.mock('@/services/connect/externalSource', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/connect/externalSource')>()),
   getExternalSources: vi.fn(),
-  registerExternalItem: vi.fn(),
+  registerExternalItems: vi.fn(),
 }))
 
 const vuetify = createVuetify({ components, directives })
@@ -67,7 +67,7 @@ describe('ExternalSourceView', () => {
         },
       ],
     })
-    vi.mocked(registerExternalItem).mockResolvedValue(SONG)
+    vi.mocked(registerExternalItems).mockResolvedValue([SONG])
   })
 
   afterEach(() => {
@@ -93,12 +93,25 @@ describe('ExternalSourceView', () => {
 
     await fromWindow(frameWindow, { type: 'beacon.play', item: { audioUrl: 'a.mp3', title: 'T' } })
 
-    expect(registerExternalItem).toHaveBeenCalledWith(
-      'wish',
+    expect(registerExternalItems).toHaveBeenCalledWith('wish', [
       expect.objectContaining({ audioUrl: 'a.mp3', title: 'T' }),
-    )
+    ])
     expect(play).toHaveBeenCalledWith([SONG], 0)
     expect(reply).toHaveBeenCalledWith({ type: 'beacon.played', ok: true }, '*')
+  })
+
+  it('starts a whole album as one queue', async () => {
+    const second = { ...SONG, id: 'ext:2', title: 'Second' }
+    vi.mocked(registerExternalItems).mockResolvedValue([SONG, second])
+    const { frameWindow } = await mountView()
+    const play = vi.spyOn(usePlaybackStore(), 'playSongList').mockResolvedValue()
+    await fromWindow(frameWindow, {
+      type: 'beacon.play',
+      items: [{ audioUrl: 'a.mp3' }, { audioUrl: 'b.mp3' }],
+    })
+    expect(registerExternalItems).toHaveBeenCalledTimes(1)
+    expect(play).toHaveBeenCalledTimes(1)
+    expect(play).toHaveBeenCalledWith([SONG, second], 0)
   })
 
   it.each([
@@ -116,12 +129,12 @@ describe('ExternalSourceView', () => {
     const play = vi.spyOn(usePlaybackStore(), 'playSongList').mockResolvedValue()
     await fromWindow(window, { type: 'beacon.play', item: { audioUrl: 'a' } })
     await fromWindow(null, { type: 'beacon.play', item: { audioUrl: 'a' } })
-    expect(registerExternalItem).not.toHaveBeenCalled()
+    expect(registerExternalItems).not.toHaveBeenCalled()
     expect(play).not.toHaveBeenCalled()
   })
 
   it('says why when connect refuses the song', async () => {
-    vi.mocked(registerExternalItem).mockRejectedValue(new Error('not the app'))
+    vi.mocked(registerExternalItems).mockRejectedValue(new Error('not the app'))
     const { frameWindow } = await mountView()
     const play = vi.spyOn(usePlaybackStore(), 'playSongList').mockResolvedValue()
     const reply = vi.spyOn(frameWindow, 'postMessage')
@@ -152,7 +165,7 @@ describe('ExternalSourceView', () => {
     expect(frame.getAttribute('src')).toMatch(/\/external-ui\/secret\/dir\/$/)
     vi.spyOn(usePlaybackStore(), 'playSongList').mockResolvedValue()
     await fromWindow(frameWindow, { type: 'beacon.play', item: { audioUrl: 'a' } })
-    expect(registerExternalItem).toHaveBeenCalledWith('dir', expect.anything())
+    expect(registerExternalItems).toHaveBeenCalledWith('dir', expect.anything())
   })
 
   it('shows no frame for a source that is not there', async () => {

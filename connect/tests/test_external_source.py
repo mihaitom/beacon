@@ -2,6 +2,7 @@
 the passthrough of its page (core/external_source.py, media/external_bridge.py,
 routes/external_source.py)."""
 
+import hashlib
 import json
 
 import httpx
@@ -176,7 +177,10 @@ def test_an_unknown_source_is_a_404(client, default_session):
     )
     assert client.delete("/external-source/nope").status_code == 404
     assert client.get("/external-source/nope/probe").status_code == 404
-    assert client.post("/external-source/nope/items", json={"audioUrl": "a"}).status_code == 422
+    assert (
+        client.post("/external-source/nope/items", json={"items": [{"audioUrl": "a"}]}).status_code
+        == 422
+    )
 
 
 def test_removing_a_source_answers_with_the_rest(client, default_session, configured):
@@ -257,13 +261,28 @@ def test_an_unauthenticated_session_gets_nothing(client, reset_state):
 # --- songs ---------------------------------------------------------------------
 
 
-def test_relative_urls_resolve_against_the_apps_ui_folder(configured):
-    track = external_source.register(
-        configured["id"], {"audioUrl": "../audio/1.m4a", "coverUrl": "/covers/1.jpg"}
+def _one(source_id, item):
+    return external_source.register(source_id, [item])[0]
+
+
+def test_a_whole_album_registers_in_its_order(configured):
+    tracks = external_source.register(
+        configured["id"], [{"audioUrl": f"{n}.mp3", "title": f"Song {n}"} for n in (3, 1, 2)]
     )
-    assert external_source.get_stream_url(track.id) == f"{BASE}/audio/1.m4a"
-    assert external_source.get_cover_art_url(track.id) == f"{BASE}/covers/1.jpg"
-    assert track.cover_art_id == track.id
+    assert [t.title for t in tracks] == ["Song 3", "Song 1", "Song 2"]
+    assert len({t.id for t in tracks}) == 3
+    assert external_source.get_track(tracks[2].id).title == "Song 2"
+
+
+def test_one_refused_song_stores_none_of_the_album(configured):
+    with pytest.raises(external_source.ExternalSourceError):
+        external_source.register(
+            configured["id"], [{"audioUrl": "1.mp3"}, {"audioUrl": "http://elsewhere/2.mp3"}]
+        )
+    first = external_source.ID_PREFIX + hashlib.sha256(f"{BASE}/ui/1.mp3".encode()).hexdigest()[:24]
+    with pytest.raises(KeyError):
+        external_source.get_track(first)
+    assert _one(configured["id"], {"audioUrl": "1.mp3"}).id == first
 
 
 @pytest.mark.parametrize(
@@ -278,33 +297,29 @@ def test_relative_urls_resolve_against_the_apps_ui_folder(configured):
 )
 def test_audio_from_anywhere_but_the_app_is_refused(configured, url):
     with pytest.raises(external_source.ExternalSourceError):
-        external_source.register(configured["id"], {"audioUrl": url})
+        _one(configured["id"], {"audioUrl": url})
 
 
 def test_a_cover_from_elsewhere_is_refused_too(configured):
     with pytest.raises(external_source.ExternalSourceError):
-        external_source.register(
-            configured["id"], {"audioUrl": "a.mp3", "coverUrl": "http://elsewhere/c.jpg"}
-        )
+        _one(configured["id"], {"audioUrl": "a.mp3", "coverUrl": "http://elsewhere/c.jpg"})
 
 
 def test_nothing_registers_for_a_source_that_is_not_there(configured):
     with pytest.raises(external_source.ExternalSourceError):
-        external_source.register("nope", {"audioUrl": "a.mp3"})
+        _one("nope", {"audioUrl": "a.mp3"})
 
 
 def test_the_same_audio_keeps_its_id_and_takes_the_newest_metadata(configured):
-    first = external_source.register(configured["id"], {"audioUrl": "a.mp3", "title": "Old"})
-    second = external_source.register(
-        configured["id"], {"audioUrl": "a.mp3", "title": "New", "duration": "201.6"}
-    )
+    first = _one(configured["id"], {"audioUrl": "a.mp3", "title": "Old"})
+    second = _one(configured["id"], {"audioUrl": "a.mp3", "title": "New", "duration": "201.6"})
     assert first.id == second.id
     track = external_source.get_track(first.id)
     assert (track.title, track.duration) == ("New", 201)
 
 
 def test_missing_metadata_gets_harmless_defaults(configured):
-    track = external_source.register(configured["id"], {"audioUrl": "a.mp3", "duration": "soon"})
+    track = _one(configured["id"], {"audioUrl": "a.mp3", "duration": "soon"})
     assert (track.title, track.artist, track.duration, track.cover_art_id) == (
         "Unknown",
         "Unknown",
@@ -327,7 +342,7 @@ def test_an_unknown_id_raises_like_a_missing_library_song(configured):
     ],
 )
 def test_every_media_client_hands_external_ids_to_the_source(configured, media):
-    track = external_source.register(
+    track = _one(
         configured["id"], {"audioUrl": "a.mp3", "coverUrl": "c.jpg", "title": "T", "artist": "A"}
     )
     assert media.get_stream_url(track.id) == f"{BASE}/ui/a.mp3"
@@ -340,20 +355,36 @@ def test_library_ids_still_go_to_the_media_server():
     assert media.get_stream_url("123").startswith("http://navidrome/rest/stream.view?id=123")
 
 
-def test_the_items_route_returns_a_subsonic_song(client, default_session, configured):
+def test_the_items_route_returns_subsonic_songs(client, default_session, configured):
     response = client.post(
         f"/external-source/{configured['id']}/items",
-        json={"audioUrl": "a.mp3", "title": "T", "artist": "A", "coverUrl": "c.jpg"},
+        json={
+            "items": [
+                {"audioUrl": "a.mp3", "title": "T", "artist": "A", "coverUrl": "c.jpg"},
+                {"audioUrl": "b.mp3", "title": "U"},
+            ]
+        },
     )
     assert response.status_code == 200
-    song = response.json()["song"]
-    assert song["id"].startswith("ext:")
-    assert (song["title"], song["artist"], song["coverArt"]) == ("T", "A", song["id"])
+    first, second = response.json()["songs"]
+    assert first["id"].startswith("ext:")
+    assert (first["title"], first["artist"], first["coverArt"]) == ("T", "A", first["id"])
+    assert second["title"] == "U"
 
 
 def test_the_items_route_refuses_a_foreign_address(client, default_session, configured):
     response = client.post(
-        f"/external-source/{configured['id']}/items", json={"audioUrl": "http://elsewhere/a.mp3"}
+        f"/external-source/{configured['id']}/items",
+        json={"items": [{"audioUrl": "http://elsewhere/a.mp3"}]},
+    )
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize("count", [0, 501])
+def test_the_items_route_takes_an_album_not_a_library(client, default_session, configured, count):
+    response = client.post(
+        f"/external-source/{configured['id']}/items",
+        json={"items": [{"audioUrl": f"{n}.mp3"} for n in range(count)]},
     )
     assert response.status_code == 422
 
@@ -363,9 +394,7 @@ def test_the_items_route_refuses_a_foreign_address(client, default_session, conf
 
 @pytest.fixture
 def song(configured):
-    return external_source.register(
-        configured["id"], {"audioUrl": "a.mp3", "title": "T", "coverUrl": "c.jpg"}
-    )
+    return _one(configured["id"], {"audioUrl": "a.mp3", "title": "T", "coverUrl": "c.jpg"})
 
 
 @pytest.fixture
