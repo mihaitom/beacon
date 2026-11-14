@@ -263,6 +263,12 @@ playback**. Make a new one with it.
 another account, or its key was revoked. A revoked key needs setting up
 again: remove the Beacon integration and add it with a new key.
 
+**No speakers to pick on a server.** The account may not cast there
+(Settings > Casting on the server). If casting is left to administrators,
+an administrator's key also needs **Browse the library and start music**,
+since that is how the server learns the account is one. Make a new key
+with it.
+
 **Playing from the media browser fails with `no_speaker`.** On a server,
 nothing was playing on a speaker yet: pick one under `select.beacon_speaker`
 first.

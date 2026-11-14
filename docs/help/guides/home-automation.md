@@ -20,7 +20,10 @@ in a browser on the server:
 
 1. **New key**, **Own app**, with **Steer playback** switched on, and
    **Browse the library and start music** for picking playlists, albums and stations. The
-   key is shown once and belongs to the account it was made in.
+   key is shown once and belongs to the account it was made in. On a server
+   where only administrators may cast, the key needs that second right
+   either way: without it, the server cannot tell that the account is an
+   administrator and offers no speakers.
 2. **On the desktop app: a fixed port** (optional), in the same place.
    Without one, the app picks a free port on every start. With one, it uses
    that port, unless something else holds it at start, in which case it

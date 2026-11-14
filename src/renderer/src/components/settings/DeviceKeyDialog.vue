@@ -3,7 +3,7 @@
      - would take it away for good. -->
   <v-dialog
     :model-value="modelValue"
-    max-width="480"
+    max-width="600"
     scrollable
     :persistent="!!newKey"
     @update:model-value="$emit('update:modelValue', $event)"
