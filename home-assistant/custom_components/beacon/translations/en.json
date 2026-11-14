@@ -4,7 +4,7 @@
     "step": {
       "user": {
         "title": "Beacon",
-        "description": "Make a key in Beacon under Settings > Account > Apps and devices, with the right to control playback (and to browse the library, for the media browser). The address is the one you open Beacon at, or for the desktop app http://<its computer>:<port>.",
+        "description": "Make a key in Beacon under Settings > Account > Apps and devices, with the right to control playback (and to browse the library, for the media browser). The address is the one you open Beacon at, or for the desktop app its computer's address and port, such as http://192.168.1.20:7071.",
         "data": {
           "url": "Address",
           "key": "Key"
