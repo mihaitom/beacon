@@ -1813,16 +1813,21 @@ export default {
     needsPairing: 'Necesita emparejarse primero en la aplicación Beacon',
   },
   externalSource: {
-    notSetUpTitle: 'No hay ninguna fuente externa configurada',
-    notSetUpText:
-      'Una app propia puede ofrecer aquí canciones que no están en la biblioteca. Se configura en Ajustes, en Biblioteca.',
+    goneTitle: 'Esta fuente ya no existe',
+    goneText:
+      'Se ha quitado de Beacon. Las fuentes externas se configuran en Ajustes, en Biblioteca.',
     openSettings: 'Abrir ajustes',
     playFailed: 'No se pudo reproducir: {reason}',
-    settingsTitle: 'Fuente externa',
+    settingsTitle: 'Fuentes externas',
     settingsWhat:
-      'Una app que gestionas tú muestra su propia página como pestaña en Beacon y le pasa canciones para reproducir, también en los altavoces. Beacon no incluye ninguna app de este tipo.',
+      'Apps que gestionas tú, cada una con su propia página como pestaña en Beacon, que le pasan canciones para reproducir, también en los altavoces. Beacon no incluye ninguna app de este tipo.',
     name: 'Nombre de la pestaña',
     namePlaceholder: 'p. ej. Lista de deseos',
+    add: 'Añadir fuente',
+    addTitle: 'Nueva fuente externa',
+    editTitle: 'Fuente externa',
+    icon: 'Icono de la pestaña',
+    menuTitle: 'Fuentes externas',
     address: 'Dirección de la app',
     token: 'Token de tu app (opcional)',
     tokenHint:

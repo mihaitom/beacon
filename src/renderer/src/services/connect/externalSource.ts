@@ -5,19 +5,26 @@ import type { Song } from '@/types/library'
 
 /** An app of the user's own that brings songs the library does not have
  * (connect/core/external_source.py, docs/plans/external-source.md). Beacon
- * shows its page in a tab and plays what the page hands over. */
+ * shows its page in a tab and plays what the page hands over. There can be
+ * several, each with a tab of its own. */
 export interface ExternalSource {
-  configured: boolean
-  /** Whether this session may change it: an admin on a server, anyone on
-   * the desktop app. */
-  may_configure: boolean
-  name?: string
+  id: string
+  name: string
+  /** An `mdi-` icon name, one of EXTERNAL_SOURCE_ICONS when set here. */
+  icon: string
   /** The page, relative to connect's root. Carries its own credential,
    * since the sandboxed page cannot send the connect token. */
-  ui_path?: string
+  ui_path: string
   /** Only for a session that may configure it. */
   base_url?: string
   has_token?: boolean
+}
+
+export interface ExternalSources {
+  /** Whether this session may change them: an admin on a server, anyone
+   * on the desktop app. */
+  may_configure: boolean
+  sources: ExternalSource[]
 }
 
 export interface ExternalSourceProbe {
@@ -30,10 +37,41 @@ export interface ExternalSourceProbe {
 
 export interface ExternalSourceSettings {
   name: string
+  icon: string
   base_url: string
   /** Leave out to keep the stored token. */
   token?: string
 }
+
+export type ExternalSourceSaved = ExternalSources & {
+  source: ExternalSource
+  probe: ExternalSourceProbe
+}
+
+/** What a tab may wear: things that sound like music or like a place music
+ * comes from, and none of them a brand. */
+export const EXTERNAL_SOURCE_ICONS = [
+  'mdi-web',
+  'mdi-earth',
+  'mdi-cloud-outline',
+  'mdi-server',
+  'mdi-folder-music',
+  'mdi-inbox-arrow-down',
+  'mdi-album',
+  'mdi-music-box-multiple',
+  'mdi-playlist-music',
+  'mdi-headphones',
+  'mdi-record-player',
+  'mdi-cassette',
+  'mdi-microphone-variant',
+  'mdi-guitar-electric',
+  'mdi-piano',
+  'mdi-gift-outline',
+  'mdi-star-outline',
+  'mdi-heart-outline',
+] as const
+
+export const DEFAULT_EXTERNAL_SOURCE_ICON = 'mdi-web'
 
 /** What the page sends with `beacon.play`. URLs are relative to the app's
  * `ui/` folder, or absolute on the app's own address. */
@@ -52,29 +90,41 @@ export function isExternalSourceSong(song: Pick<Song, 'id'> | null | undefined):
   return !!song && song.id.startsWith(EXTERNAL_ID_PREFIX)
 }
 
-export async function getExternalSource(): Promise<ExternalSource> {
-  return await fetchConnect<ExternalSource>('/external-source')
+export async function getExternalSources(): Promise<ExternalSources> {
+  return await fetchConnect<ExternalSources>('/external-source')
 }
 
-export async function saveExternalSource(
+export async function addExternalSource(
   settings: ExternalSourceSettings,
-): Promise<ExternalSource & { probe: ExternalSourceProbe }> {
-  return await fetchConnect('/external-source', { method: 'PUT', body: settings })
+): Promise<ExternalSourceSaved> {
+  return await fetchConnect('/external-source', { method: 'POST', body: settings })
 }
 
-export async function removeExternalSource(): Promise<ExternalSource> {
-  return await fetchConnect<ExternalSource>('/external-source', { method: 'DELETE' })
-}
-
-export async function probeExternalSource(): Promise<ExternalSourceProbe> {
-  return await fetchConnect<ExternalSourceProbe>('/external-source/probe')
-}
-
-export async function registerExternalItem(item: ExternalItem): Promise<Song> {
-  const { song } = await fetchConnect<{ song: RawSong }>('/external-source/items', {
-    method: 'POST',
-    body: item,
+export async function changeExternalSource(
+  id: string,
+  settings: ExternalSourceSettings,
+): Promise<ExternalSourceSaved> {
+  return await fetchConnect(`/external-source/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body: settings,
   })
+}
+
+export async function removeExternalSource(id: string): Promise<ExternalSources> {
+  return await fetchConnect<ExternalSources>(`/external-source/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  })
+}
+
+export async function probeExternalSource(id: string): Promise<ExternalSourceProbe> {
+  return await fetchConnect<ExternalSourceProbe>(`/external-source/${encodeURIComponent(id)}/probe`)
+}
+
+export async function registerExternalItem(sourceId: string, item: ExternalItem): Promise<Song> {
+  const { song } = await fetchConnect<{ song: RawSong }>(
+    `/external-source/${encodeURIComponent(sourceId)}/items`,
+    { method: 'POST', body: item },
+  )
   return mapSong(song)
 }
 

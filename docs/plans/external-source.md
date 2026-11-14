@@ -2,8 +2,8 @@
 
 Built on `feature/external-source`, not released yet, from discussion #88: a
 song the library does not have, played on the speakers at home without leaving
-Beacon. The user runs a small app of their own that brings its own page and
-hands Beacon audio URLs; whatever that app does to produce the audio is its own
+Beacon. The user runs small apps of their own, each bringing its own page and
+handing Beacon audio URLs; whatever that app does to produce the audio is its own
 business. The contract is `docs/help/reference/external-source-api.md`, the
 user-facing side `docs/help/faq/external-sources.md`.
 
@@ -23,9 +23,9 @@ change too:
 ## Shape
 
 ```
-renderer  <-- postMessage -->  sandboxed iframe  <-- /external-ui/<secret>/ --> connect --> app /ui/
+renderer  <-- postMessage -->  sandboxed iframe  <-- /external-ui/<secret>/<id>/ --> connect --> app /ui/
    |
-   | POST /external-source/items {audioUrl, metadata}  ->  Subsonic song with an ext: id
+   | POST /external-source/<id>/items {audioUrl, metadata}  ->  Subsonic song with an ext: id
    v
 playback store, as for any song  ->  /rest/stream?id=ext:...  ->  connect --GET (Range)--> app
 ```
@@ -44,9 +44,14 @@ playback store, as for any song  ->  /rest/stream?id=ext:...  ->  connect --GET 
   songs empty, `ext:` ids taken out of createPlaylist/updatePlaylist/
   savePlayQueue. In the proxy, so the remote control and the app API get the
   same rules as the renderer.
+- **Several sources**, up to twelve, each `{id, name, icon, base_url, token}`
+  in `external_sources.json`; the single `external_source.json` of the first
+  build is moved into it on first read. The icon is any `mdi-` name to connect,
+  one of `EXTERNAL_SOURCE_ICONS` in the dialog.
 - **The id** is `ext:` plus a hash of the audio URL, so playing a song twice
-  keeps one history entry. One source only; a second would need the source in
-  the id.
+  keeps one history entry. It needs no source in it: the URL is absolute and
+  carries the source's address, and audio is fetched without the source's
+  token.
 - **The renderer** hides what cannot work (`isExternalSourceSong`,
   `currentSongInLibrary`): favourites, rating, playlists, Song Radio, file info.
 
@@ -60,7 +65,9 @@ playback store, as for any song  ->  /rest/stream?id=ext:...  ->  connect --GET 
   response, and the same `sandbox` attribute on the iframe. Its requests carry
   no cookie and no connect token; set-cookie and the app's own CSP/CORS headers
   are dropped.
-- **The page's address is the credential** (`/external-ui/<secret>/`, new on
+- **A removed source is no longer fetched from**: its songs stay in the
+  history, but stream and cover answer 404 once no source has their address.
+- **The page's address is the credential** (`/external-ui/<secret>/<id>/`, new on
   every connect start), because a sandboxed page cannot send a token. nginx
   gives the prefix its own location without the injected token, like `/party/`.
 - **Who may set it up**: an admin on Docker (`BEACON_HOSTED`), anyone signed in
@@ -76,7 +83,9 @@ playback store, as for any song  ->  /rest/stream?id=ext:...  ->  connect --GET 
   actions, so local playback and casting need nothing new.
 - Items are pruned after 90 days unused, not by checking queues and history.
 - Mobile has no tab of its own (the bar is full): a button in the Radio view's
-  header.
+  header, a menu of them with more than one source.
+- One source became several, set up in a dialog each, with an icon for the
+  tab.
 
 ## Not built yet
 
@@ -97,5 +106,5 @@ playback store, as for any song  ->  /rest/stream?id=ext:...  ->  connect --GET 
 - **Expired URLs**: a queue restored days later may hold audio the app no
   longer serves. Skipped like a deleted library song for now, without a word
   about why.
-- **Offline desktop app**: its bundled connect has no source unless one is
+- **Offline desktop app**: its bundled connect has no sources unless they are
   configured there too.

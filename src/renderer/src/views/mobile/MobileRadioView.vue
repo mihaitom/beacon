@@ -17,16 +17,36 @@
         :title="$t('radio.discoverStations')"
         @click="discoverOpen = true"
       />
-      <!-- The external source has no tab of its own on the phone: the bar
-         - is full, and it sits next to radio as the other music that is not
-         - in the library. -->
+      <!-- The external sources have no tabs of their own on the phone: the
+         - bar is full, and they sit next to radio as the other music that is
+         - not in the library. More than one become a menu, since this row
+         - has room for only a few buttons beside the title. -->
       <v-btn
-        v-if="externalSourceStore.configured"
-        icon="mdi-web"
+        v-if="soleExternalSource"
+        :icon="soleExternalSource.icon"
         variant="tonal"
-        :title="externalSourceStore.name"
-        to="/m/external"
+        :title="soleExternalSource.name"
+        :to="`/m/external/${soleExternalSource.id}`"
       />
+      <v-menu v-else-if="externalSources.length > 1" location="bottom end">
+        <template #activator="{ props: menuProps }">
+          <v-btn
+            v-bind="menuProps"
+            icon="mdi-web"
+            variant="tonal"
+            :title="$t('externalSource.menuTitle')"
+          />
+        </template>
+        <v-list density="compact">
+          <v-list-item
+            v-for="source in externalSources"
+            :key="source.id"
+            :prepend-icon="source.icon"
+            :title="source.name"
+            :to="`/m/external/${source.id}`"
+          />
+        </v-list>
+      </v-menu>
     </div>
 
     <!-- Only worth offering once there is more than a handful to search
@@ -177,6 +197,12 @@ export default {
     },
     externalSourceStore() {
       return useExternalSourceStore()
+    },
+    externalSources() {
+      return this.externalSourceStore.sources
+    },
+    soleExternalSource() {
+      return this.externalSources.length === 1 ? this.externalSources[0] : undefined
     },
     /** Only while there is genuinely nothing to show yet — the store's
      * loading flag is set by every library fetch, not just this list's. */

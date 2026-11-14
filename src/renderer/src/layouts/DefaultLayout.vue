@@ -212,10 +212,12 @@ export default {
         capabilities.internetRadio
           ? { to: '/radio', icon: 'mdi-radio', title: this.$t('nav.radio') }
           : null,
-        // Named after the source, and only once one is set up.
-        this.externalSourceStore.configured
-          ? { to: '/external', icon: 'mdi-web', title: this.externalSourceStore.name }
-          : null,
+        // One per external source, named and drawn as it was set up.
+        ...this.externalSourceStore.sources.map((source) => ({
+          to: `/external/${source.id}`,
+          icon: source.icon,
+          title: source.name,
+        })),
         capabilities.favorites
           ? { to: '/favorites', icon: 'mdi-heart', title: this.$t('nav.favorites') }
           : null,

@@ -1793,16 +1793,21 @@ export default {
     needsPairing: 'Needs pairing in the Beacon app first',
   },
   externalSource: {
-    notSetUpTitle: 'No external source set up',
-    notSetUpText:
-      'An app of your own can offer songs here that are not in the library. It is set up in Settings under Library.',
+    goneTitle: 'This source is gone',
+    goneText:
+      'It has been removed from Beacon. External sources are set up in Settings under Library.',
     openSettings: 'Open Settings',
     playFailed: 'Could not play it: {reason}',
-    settingsTitle: 'External source',
+    settingsTitle: 'External sources',
     settingsWhat:
-      'An app you run yourself shows its own page as a tab in Beacon and hands songs over to play - on the speakers too. Beacon does not come with such an app.',
+      'Apps you run yourself, each with its own page as a tab in Beacon, handing over songs to play - on the speakers too. Beacon does not come with such an app.',
     name: 'Tab name',
     namePlaceholder: 'e.g. Wishlist',
+    add: 'Add source',
+    addTitle: 'New external source',
+    editTitle: 'External source',
+    icon: 'Tab icon',
+    menuTitle: 'External sources',
     address: 'App address',
     token: "Your app's token (optional)",
     tokenHint:

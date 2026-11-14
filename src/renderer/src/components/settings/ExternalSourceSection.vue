@@ -1,58 +1,12 @@
 <template>
-  <section v-if="source?.may_configure" class="settings-section">
+  <section v-if="store.mayConfigure" class="settings-section">
     <h2 class="section-title">{{ $t('externalSource.settingsTitle') }}</h2>
-    <div class="beacon-panel">
-      <div class="setting">
-        <p class="setting__description">{{ $t('externalSource.settingsWhat') }}</p>
-
-        <v-text-field
-          v-model="name"
-          :label="$t('externalSource.name')"
-          :placeholder="$t('externalSource.namePlaceholder')"
-          variant="solo-filled"
-          density="compact"
-          maxlength="60"
-          hide-details="auto"
-          class="external-source__field"
-        />
-        <v-text-field
-          v-model="baseUrl"
-          :label="$t('externalSource.address')"
-          placeholder="http://192.168.1.20:8800"
-          variant="solo-filled"
-          density="compact"
-          spellcheck="false"
-          hide-details="auto"
-          class="external-source__field"
-        />
-        <v-text-field
-          v-model="token"
-          :label="$t('externalSource.token')"
-          :hint="$t('externalSource.tokenHint')"
-          persistent-hint
-          :placeholder="
-            source?.has_token ? $t('externalSource.tokenKept') : $t('externalSource.tokenNone')
-          "
-          type="password"
-          autocomplete="off"
-          variant="solo-filled"
-          density="compact"
-          hide-details="auto"
-          class="external-source__field"
-        />
-
-        <div v-if="probe" class="status-row">
-          <span class="status-dot" :class="probe.ok ? 'status-dot--ok' : 'status-dot--warn'" />
-          <span class="setting__hint setting__hint--inline">
-            {{
-              probe.ok
-                ? $t('externalSource.reachable', { name: probe.name || name })
-                : $t('externalSource.unreachable', { reason: probe.error })
-            }}
-          </span>
-        </div>
-
-        <div class="external-source__actions">
+    <div class="beacon-panel beacon-panel--flush external-sources">
+      <div class="external-sources__head">
+        <p class="setting__description external-sources__intro">
+          {{ $t('externalSource.settingsWhat') }}
+        </p>
+        <div class="external-sources__actions">
           <v-btn
             variant="text"
             prepend-icon="mdi-help-circle-outline"
@@ -67,106 +21,111 @@
           >
             {{ $t('externalSource.copyInstructions') }}
           </v-btn>
-          <v-btn v-if="source?.configured" variant="text" :disabled="busy" @click="remove">
-            {{ $t('externalSource.remove') }}
-          </v-btn>
-          <v-spacer />
-          <v-btn color="primary" :loading="busy" :disabled="busy || !canSave" @click="save">
-            {{ $t('externalSource.save') }}
+          <v-btn
+            color="primary"
+            variant="flat"
+            rounded="pill"
+            prepend-icon="mdi-plus"
+            :disabled="store.sources.length >= maxSources"
+            @click="open(null)"
+          >
+            {{ $t('externalSource.add') }}
           </v-btn>
         </div>
       </div>
+
+      <ul v-if="store.sources.length" class="external-sources__list">
+        <li v-for="source in store.sources" :key="source.id">
+          <button type="button" class="external-sources__row" @click="open(source)">
+            <span class="external-sources__art">
+              <v-icon :icon="source.icon" size="22" />
+            </span>
+            <span class="external-sources__text">
+              <span class="external-sources__name">{{ source.name }}</span>
+              <span class="external-sources__status">
+                <span class="status-dot" :class="dotClass(source.id)" />
+                <span class="setting__hint setting__hint--inline">{{ statusOf(source) }}</span>
+              </span>
+            </span>
+            <v-icon icon="mdi-chevron-right" class="external-sources__chevron" />
+          </button>
+        </li>
+      </ul>
     </div>
+    <external-source-dialog v-model="dialogOpen" :source="editing" @saved="onSaved" />
   </section>
 </template>
 
 <script lang="ts">
+import ExternalSourceDialog from '@/components/settings/ExternalSourceDialog.vue'
 import {
   externalSourceInstructions,
   probeExternalSource,
-  removeExternalSource,
-  saveExternalSource,
+  type ExternalSource,
   type ExternalSourceProbe,
 } from '@/services/connect/externalSource'
-import { connectErrorMessage } from '@/services/connect/errorMessage'
 import { useExternalSourceStore } from '@/stores/externalSource'
 
-/** Where the external source's app lives (docs/plans/external-source.md).
- * Only for whoever may change it: an admin on a server, anyone on the
- * desktop app - connect decides, this only follows `may_configure`. */
+/** connect's own limit (core/external_source.py), so the button says so
+ * before connect has to. */
+const MAX_SOURCES = 12
+
+/** The external sources (docs/plans/external-source.md), one row each, and
+ * a dialog to add or change one. Only for whoever may change them: an admin
+ * on a server, anyone on the desktop app - connect decides, this only
+ * follows `may_configure`. */
 export default {
   name: 'ExternalSourceSection',
+  components: { ExternalSourceDialog },
   data() {
     return {
-      name: '',
-      baseUrl: '',
-      /** Empty keeps the stored one; the stored token is never sent back. */
-      token: '',
-      busy: false,
-      probe: null as ExternalSourceProbe | null,
+      dialogOpen: false,
+      editing: null as ExternalSource | null,
+      /** What each app said when last asked, by source id. */
+      probes: {} as Record<string, ExternalSourceProbe>,
       instructionsCopied: false,
       copiedTimer: undefined as ReturnType<typeof setTimeout> | undefined,
+      maxSources: MAX_SOURCES,
     }
   },
   computed: {
     store() {
       return useExternalSourceStore()
     },
-    source() {
-      return this.store.source
-    },
-    canSave(): boolean {
-      return !!this.name.trim() && !!this.baseUrl.trim()
-    },
   },
   async created() {
     await this.store.load()
-    this.fill()
-    if (this.source?.configured && this.source.may_configure) {
-      try {
-        this.probe = await probeExternalSource()
-      } catch {
-        this.probe = null
-      }
-    }
+    if (!this.store.mayConfigure) return
+    await Promise.all(
+      this.store.sources.map(async (source) => {
+        try {
+          this.probes[source.id] = await probeExternalSource(source.id)
+        } catch {
+          // No dot then, rather than a wrong one.
+        }
+      }),
+    )
   },
   beforeUnmount() {
     clearTimeout(this.copiedTimer)
   },
   methods: {
-    fill() {
-      this.name = this.source?.name ?? ''
-      this.baseUrl = this.source?.base_url ?? ''
-      this.token = ''
+    open(source: ExternalSource | null) {
+      this.editing = source
+      this.dialogOpen = true
     },
-    async save() {
-      this.busy = true
-      try {
-        const { probe, ...source } = await saveExternalSource({
-          name: this.name,
-          base_url: this.baseUrl,
-          ...(this.token ? { token: this.token } : {}),
-        })
-        this.store.set(source)
-        this.probe = probe
-        this.fill()
-      } catch (error) {
-        this.toastError(error)
-      } finally {
-        this.busy = false
-      }
+    onSaved(source: ExternalSource, probe: ExternalSourceProbe) {
+      this.probes[source.id] = probe
     },
-    async remove() {
-      this.busy = true
-      try {
-        this.store.set(await removeExternalSource())
-        this.probe = null
-        this.fill()
-      } catch (error) {
-        this.toastError(error)
-      } finally {
-        this.busy = false
-      }
+    dotClass(id: string): string {
+      const probe = this.probes[id]
+      if (!probe) return 'external-sources__dot--idle'
+      return probe.ok ? 'status-dot--ok' : 'status-dot--warn'
+    },
+    statusOf(source: ExternalSource): string {
+      const probe = this.probes[source.id]
+      if (probe && !probe.ok) return this.$t('externalSource.unreachable', { reason: probe.error })
+      return source.base_url ?? ''
     },
     async copyInstructions() {
       try {
@@ -181,27 +140,123 @@ export default {
         this.instructionsCopied = false
       }, 2000)
     },
-    toastError(error: unknown) {
-      this.$emitter.emit('toast', {
-        level: 'error',
-        title: this.$t('externalSource.settingsTitle'),
-        message: connectErrorMessage(error).message,
-      })
-    },
   },
 }
 </script>
 
 <style scoped>
-.external-source__field {
-  margin-top: 12px;
+.external-sources {
+  container-type: inline-size;
 }
 
-.external-source__actions {
+.external-sources__head {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 20px;
+}
+
+.external-sources__intro.setting__description {
+  margin-bottom: 0;
+}
+
+.external-sources__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.external-sources__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--beacon-hairline);
+}
+
+.external-sources__list li + li {
+  border-top: 1px solid var(--beacon-hairline);
+}
+
+.external-sources__row {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 14px 20px;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.external-sources__row:hover {
+  background: rgba(var(--v-theme-on-surface), 0.04);
+}
+
+.external-sources__row:focus-visible {
+  outline: 2px solid rgb(var(--v-theme-primary));
+  outline-offset: -2px;
+}
+
+/* The same 48px tile as Apps and devices beside it. */
+.external-sources__art {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  border: 1px solid var(--beacon-hairline);
+  background: rgba(var(--v-theme-on-surface), 0.04);
+  color: rgb(var(--v-theme-primary));
+}
+
+.external-sources__text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.external-sources__name {
+  overflow: hidden;
+  font-size: 1rem;
+  font-weight: 600;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.external-sources__status {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
+  gap: 6px;
+  min-width: 0;
+}
+
+.external-sources__status .setting__hint {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.external-sources__dot--idle {
+  background: rgba(var(--v-theme-on-surface), 0.3);
+}
+
+.external-sources__chevron {
+  color: rgba(var(--v-theme-on-surface), 0.45);
+}
+
+@container (max-width: 480px) {
+  .external-sources__actions {
+    justify-content: stretch;
+  }
+
+  .external-sources__actions > * {
+    flex: 1 1 100%;
+  }
 }
 </style>

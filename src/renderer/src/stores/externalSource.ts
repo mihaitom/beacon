@@ -1,21 +1,28 @@
 import { defineStore } from 'pinia'
-import { getExternalSource, type ExternalSource } from '@/services/connect/externalSource'
+import {
+  getExternalSources,
+  type ExternalSource,
+  type ExternalSources,
+} from '@/services/connect/externalSource'
 
-/** Whether an external source is set up, for the navigation and the tab.
- * Loaded once a layout mounts, and replaced by the settings section after
- * a change. */
+/** The external sources that are set up, for the navigation and the tabs.
+ * Loaded once a layout mounts, and replaced by the settings after a change. */
 export const useExternalSourceStore = defineStore('externalSource', {
   state: () => ({
-    source: null as ExternalSource | null,
+    loaded: false,
+    mayConfigure: false,
+    sources: [] as ExternalSource[],
     loading: null as Promise<void> | null,
   }),
   getters: {
-    configured: (state): boolean => !!state.source?.configured,
-    name: (state): string => state.source?.name ?? '',
+    byId:
+      (state) =>
+      (id: string): ExternalSource | undefined =>
+        state.sources.find((source) => source.id === id),
   },
   actions: {
     ensureLoaded(): Promise<void> {
-      if (this.source) return Promise.resolve()
+      if (this.loaded) return Promise.resolve()
       this.loading ??= this.load().finally(() => {
         this.loading = null
       })
@@ -23,15 +30,17 @@ export const useExternalSourceStore = defineStore('externalSource', {
     },
     async load(): Promise<void> {
       try {
-        this.source = await getExternalSource()
+        this.set(await getExternalSources())
       } catch (error) {
         // An older connect without the route, or one that is restarting:
-        // no tab, nothing else breaks.
+        // no tabs, nothing else breaks.
         console.warn('[external-source] Could not load:', error)
       }
     },
-    set(source: ExternalSource): void {
-      this.source = source
+    set(state: ExternalSources): void {
+      this.mayConfigure = state.may_configure
+      this.sources = state.sources
+      this.loaded = true
     },
   },
 })
