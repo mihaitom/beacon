@@ -91,6 +91,10 @@ an AI**. Paste them into an AI assistant and say what your app should do; they h
 everything it needs to know about Beacon. The full description, with a small
 working example, is [the external source API](../reference/external-source-api.md).
 
+Plan the phone from the start. There the tab gets only the space between
+Beacon's bars, and a page that looks right on the desktop is far too big in it.
+The API page says what helps.
+
 ## Something does not work
 
 - **"Not reachable"** after saving: the address is wrong, or Beacon cannot reach

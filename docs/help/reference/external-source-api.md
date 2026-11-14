@@ -58,8 +58,15 @@ The page runs sandboxed, with an origin of its own that is not Beacon's:
   in a new window
 - no camera, microphone or the like
 
-It is shown full size in the tab, and on a phone at phone width: build it to
-cope with both.
+It is shown full size in the tab on the desktop. On a phone it gets only what
+is left between Beacon's own bars: the phone's width, and often not much more
+than 600 pixels of height. A layout made for the desktop and merely shrunk
+feels oversized there, a header alone can take a quarter of it. Give the phone
+a denser layout of its own: smaller type, an album's cover beside its title
+rather than above it, three covers to a row, and no name of the app in the
+header, since Beacon already shows it. Size it by the width of the page
+(`@media (max-width: 640px)`), which inside the tab is the frame's, not the
+phone's.
 
 ## Messages
 

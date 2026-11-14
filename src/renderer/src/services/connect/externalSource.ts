@@ -178,7 +178,7 @@ export function externalSourceInstructions(): string {
     '- Everything the page loads itself (scripts, styles, images such as covers it displays, its API) must live under /ui/: "../" leads out of what Beacon passes through.',
     '- The page runs in a sandboxed iframe with an opaque origin: no cookies, no localStorage, no sessionStorage, no navigating the top window. Keep state in memory or in the app.',
     '- The token is optional and my app defines it (e.g. from an environment variable); I enter the same value in Beacon. It is not a key from Beacon\'s "Apps and devices", which is for apps calling Beacon. If set, every request Beacon forwards to /v1 and /ui/ carries "Authorization: Bearer <token>". Audio and cover URLs get no header: make them unguessable or sign them, and keep them valid for at least a day.',
-    '- It must work at phone width as well.',
+    "- It must work on a phone too, where it gets only the space between Beacon's bars (phone width, often ~600px high): give narrow widths (@media (max-width: 640px)) a dense layout of their own with smaller type, a compact header without the app's name (Beacon shows it), and covers beside titles rather than above them.",
     '',
     'How the page plays a song:',
     '- window.parent.postMessage({type: "beacon.play", mode: "now" | "next" | "queue", item: {audioUrl, title, artist, album, coverUrl, duration}}, "*")',
