@@ -1,4 +1,7 @@
+import shutil
 import sqlite3
+
+from conftest import make_mp3
 
 from folder_source import library as library_module
 from folder_source.library import VARIOUS, Library
@@ -171,3 +174,53 @@ def test_a_rescan_has_only_the_changed_files_to_read(config, library, music):
     (music / "Intro.mp3").touch()
     library.scan()
     assert (library.progress.found, library.progress.to_read) == (9, 1)
+
+
+def test_songs_come_in_the_order_asked_for(library):
+    titles = [t.title for t in library.songs("title")]
+    assert titles == sorted(titles, key=str.casefold)
+    artists = [t.artist for t in library.songs("artist")]
+    assert artists == sorted(artists, key=str.casefold)
+    assert len(library.songs("added")) == len(library.tracks)
+
+
+def test_an_unknown_order_falls_back_to_titles(library):
+    assert library.songs("nonsense") == library.songs("title")
+
+
+def test_a_rescan_brings_new_songs_into_the_songs_list(music, tmp_path):
+    root = tmp_path / "music"
+    shutil.copytree(music, root)
+    library = Library(root, tmp_path / "index.sqlite")
+    library.scan()
+    before = len(library.songs("title"))
+    make_mp3(root / "Neu/Neu/01 Neu.mp3", title="Neu")
+    library.scan()
+    assert len(library.songs("title")) == before + 1
+
+
+def test_a_shuffle_never_repeats_a_song(library):
+    picked = library.shuffled(100)
+    assert len(picked) == len(library.tracks)
+    assert len({t.id for t in picked}) == len(picked)
+    assert len(library.shuffled(2)) == 2
+
+
+def test_umlauts_sort_and_index_with_their_letter():
+    # Sorted as "Arzte": before "Azure", not after it.
+    assert library_module.sort_text("Ärzte") < library_module.sort_text("Azure")
+    assert library_module.letter("Ärzte") == "A"
+    assert library_module.letter("Österreich") == "O"
+    assert library_module.letter("10cc") == "#"
+    assert library_module.letter("") == "#"
+
+
+def test_the_index_points_at_each_letter_first_song(library):
+    listed = library.songs("title")
+    for letter, first in library.song_letters("title").items():
+        assert library_module.letter(listed[first].title) == letter
+        assert all(library_module.letter(t.title) != letter for t in listed[:first])
+
+
+def test_recently_added_has_no_index(library):
+    assert library.song_letters("added") == {}

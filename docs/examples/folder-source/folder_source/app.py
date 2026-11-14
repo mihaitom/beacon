@@ -19,7 +19,7 @@ from starlette.staticfiles import StaticFiles
 from . import __version__
 from .config import Config
 from .covers import read_cover, read_thumbnail
-from .library import Album, Library, Track
+from .library import Album, Library, Track, sort_text
 from .signing import sign, verify
 
 logger = logging.getLogger("folder_source")
@@ -29,6 +29,19 @@ UI_DIR = Path(__file__).parent / "ui"
 # The cache headers for covers and audio: they never change under the same
 # address (a new file is a new track id), so the browser may keep them.
 _IMMUTABLE = "private, max-age=86400"
+
+
+# Songs in one answer at most: a page of the songs list, or a shuffle, which
+# goes to Beacon in one message (the page's MAX_PER_MESSAGE).
+_MAX_SONGS = 500
+
+
+def _number(text: str | None, low: int, high: int, default: int | None = None) -> int:
+    try:
+        value = int(text) if text is not None else (low if default is None else default)
+    except ValueError:
+        value = low if default is None else default
+    return max(low, min(high, value))
 
 
 def _album_summary(album: Album) -> dict:
@@ -65,12 +78,14 @@ def create_app(config: Config, library: Library | None = None, scan_on_start: bo
         return item
 
     def track_row(track: Track) -> dict:
+        album = library.album_of(track.id)
         return {
             "id": track.id,
             "title": track.title,
             "artist": track.artist,
             "album": track.album,
-            "albumId": library.track_album.get(track.id),
+            "albumId": album.id if album else None,
+            "cover": bool(album and album.cover),
             "track": track.track,
             "disc": track.disc,
             "duration": track.duration,
@@ -167,7 +182,21 @@ def create_app(config: Config, library: Library | None = None, scan_on_start: bo
             entry["albums"] += 1
             if entry["cover"] is None and a.cover:
                 entry["cover"] = a.id
-        return JSONResponse(sorted(counts.values(), key=lambda e: e["name"].casefold()))
+        return JSONResponse(sorted(counts.values(), key=lambda e: sort_text(e["name"])))
+
+    async def songs(request: Request):
+        sort = request.query_params.get("sort", "title")
+        listed = library.songs(sort)
+        offset = _number(request.query_params.get("offset"), 0, len(listed))
+        limit = _number(request.query_params.get("limit"), 1, _MAX_SONGS, default=_MAX_SONGS)
+        rows = [track_row(t) for t in listed[offset : offset + limit]]
+        # The index only with the first page: it does not change from page to page.
+        letters = await asyncio.to_thread(library.song_letters, sort) if offset == 0 else None
+        return JSONResponse({"total": len(listed), "rows": rows, "letters": letters})
+
+    async def shuffle(request: Request):
+        count = _number(request.query_params.get("limit"), 1, _MAX_SONGS, default=_MAX_SONGS)
+        return JSONResponse([track_row(t) for t in library.shuffled(count)])
 
     async def search(request: Request):
         found_albums, found_tracks = library.search(request.query_params.get("q", ""))
@@ -208,6 +237,8 @@ def create_app(config: Config, library: Library | None = None, scan_on_start: bo
         Route("/ui/api/albums", albums),
         Route("/ui/api/albums/{album_id}", album),
         Route("/ui/api/artists", artists),
+        Route("/ui/api/songs", songs),
+        Route("/ui/api/songs/shuffle", shuffle),
         Route("/ui/api/search", search),
         Route("/ui/api/rescan", rescan, methods=["POST"]),
         Route("/ui/covers/{album_id}", page_cover),

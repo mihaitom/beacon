@@ -7,10 +7,12 @@ scan cut short by a restart carries on where it stopped."""
 
 import hashlib
 import logging
+import random
 import re
 import sqlite3
 import threading
 import time
+import unicodedata
 from contextlib import closing
 from dataclasses import astuple, dataclass, field, fields
 from pathlib import Path
@@ -46,6 +48,33 @@ _SCHEMA_VERSION = 3
 _WRITE_EVERY = 200
 
 VARIOUS = "Various Artists"
+
+
+def sort_text(text: str) -> str:
+    """For sorting: "Ärzte" with the A's, not after the Z's."""
+    plain = "".join(c for c in unicodedata.normalize("NFD", text) if not unicodedata.combining(c))
+    return plain.casefold()
+
+
+def letter(text: str) -> str:
+    """The A-Z index's letter for a name; "#" for digits and anything else."""
+    first = sort_text(text)[:1].upper()
+    return first if "A" <= first <= "Z" else "#"
+
+
+# The orders of the songs page, and the name each one is indexed A-Z by.
+# Newest first for "added", like the albums; that one has no index.
+SONG_SORTS = {
+    "title": lambda t: (sort_text(t.title), sort_text(t.artist)),
+    "artist": lambda t: (sort_text(t.artist), sort_text(t.album), t.disc or 1, t.track or 0),
+    "album": lambda t: (sort_text(t.album), t.disc or 1, t.track or 0),
+    "added": lambda t: (-t.mtime, t.path),
+}
+SONG_SORT_NAMES = {
+    "title": lambda t: t.title,
+    "artist": lambda t: t.artist,
+    "album": lambda t: t.album,
+}
 
 
 @dataclass
@@ -270,6 +299,8 @@ class Library:
         self.albums: dict[str, Album] = {}
         self.tracks: dict[str, Track] = {}
         self.track_album: dict[str, str] = {}
+        # The songs in each order, made when first asked for after a scan.
+        self._sorted: dict[str, list[Track]] = {}
         self.scanning = False
         self.last_scan: float | None = None
         self.last_scan_seconds: float | None = None
@@ -332,6 +363,7 @@ class Library:
             self.albums = albums
             self.tracks = {t.id: t for t in tracks}
             self.track_album = {t.id: a.id for a in albums.values() for t in a.tracks}
+            self._sorted = {}
             self.last_scan = time.time()
             self.last_scan_seconds = round(time.monotonic() - started, 2)
             logger.info(
@@ -359,6 +391,30 @@ class Library:
     def album_of(self, track_id: str) -> Album | None:
         album_id = self.track_album.get(track_id)
         return self.albums.get(album_id) if album_id else None
+
+    def songs(self, sort: str) -> list[Track]:
+        """Every song in one of SONG_SORTS' orders (an unknown one: by title)."""
+        if sort not in SONG_SORTS:
+            sort = "title"
+        # Bound to the dict, not to self: a scan may replace both meanwhile.
+        cache, tracks = self._sorted, self.tracks
+        if sort not in cache:
+            cache[sort] = sorted(tracks.values(), key=SONG_SORTS[sort])
+        return cache[sort]
+
+    def song_letters(self, sort: str) -> dict[str, int]:
+        """Where each letter starts in songs(sort), for the A-Z index."""
+        name = SONG_SORT_NAMES.get(sort if sort in SONG_SORTS else "title")
+        if name is None:
+            return {}
+        firsts: dict[str, int] = {}
+        for index, track in enumerate(self.songs(sort)):
+            firsts.setdefault(letter(name(track)), index)
+        return firsts
+
+    def shuffled(self, count: int) -> list[Track]:
+        tracks = list(self.tracks.values())
+        return random.sample(tracks, min(count, len(tracks)))
 
     def search(self, query: str, album_limit: int = 24, track_limit: int = 100):
         words = [w for w in query.casefold().split() if w]

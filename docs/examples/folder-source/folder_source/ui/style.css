@@ -8,6 +8,8 @@
   --muted: color-mix(in srgb, var(--fg) 62%, transparent);
   --line: color-mix(in srgb, var(--fg) 10%, transparent);
   --hover: color-mix(in srgb, var(--fg) 7%, transparent);
+  /* A surface on a surface. Made here: Beacon sends only the four above. */
+  --raised: color-mix(in srgb, var(--fg) 8%, var(--surface));
   color-scheme: dark;
 }
 
@@ -49,8 +51,8 @@ svg {
   align-items: center;
   gap: 12px;
   padding: 14px 24px;
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
-  backdrop-filter: blur(14px);
+  background: color-mix(in srgb, var(--bg) 65%, transparent);
+  backdrop-filter: blur(20px) saturate(1.4);
   border-bottom: 1px solid var(--line);
 }
 
@@ -74,7 +76,7 @@ svg {
 }
 
 .tabs a.active {
-  background: var(--surface);
+  background: var(--raised);
   color: var(--fg);
 }
 
@@ -204,15 +206,18 @@ main {
 .cover {
   position: relative;
   aspect-ratio: 1;
-  border-radius: 10px;
+  border-radius: 12px;
   overflow: hidden;
   display: grid;
   place-items: center;
   font-size: 44px;
-  font-weight: 800;
-  color: #fff9;
-  box-shadow: 0 8px 22px #0006;
-  transition: transform 0.2s ease;
+  font-weight: 700;
+  /* The initial of a cover-less album: there, not loud. */
+  color: color-mix(in srgb, var(--fg) 35%, transparent);
+  box-shadow: 0 10px 28px #0006;
+  transition:
+    transform 0.25s ease,
+    box-shadow 0.25s ease;
 }
 
 .cover img {
@@ -224,7 +229,10 @@ main {
 }
 
 .tile:hover .cover {
-  transform: translateY(-4px);
+  transform: translateY(-6px) scale(1.02);
+  box-shadow:
+    0 18px 40px #0009,
+    0 0 0 1px var(--line);
 }
 
 .cover-wrap {
@@ -275,6 +283,91 @@ main {
   text-overflow: ellipsis;
 }
 
+/* ── Just added ─────────────────────────────────────────────────────── */
+
+/* The newest album, on a blur of its own cover. The blur is mixed into the
+ * page rather than darkened, so the theme's own text colour reads on it in a
+ * light theme too. */
+.feature {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 28px;
+  margin: 4px 0 34px;
+  padding: 32px;
+  border-radius: 22px;
+  overflow: hidden;
+  background: var(--surface);
+}
+
+.backdrop {
+  position: absolute;
+  inset: -60px;
+  background-size: cover;
+  background-position: center;
+  filter: blur(56px) saturate(1.6);
+  opacity: 0.55;
+}
+
+.feature > :not(.backdrop) {
+  position: relative;
+}
+
+.feature-cover {
+  flex: none;
+  width: 220px;
+}
+
+.feature-cover .cover {
+  border-radius: 14px;
+  box-shadow: 0 24px 60px #0009;
+}
+
+.feature-text {
+  min-width: 0;
+}
+
+.eyebrow {
+  color: var(--primary);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.feature-title {
+  display: block;
+  margin: 8px 0 6px;
+  font-size: clamp(28px, 4vw, 46px);
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.feature .meta {
+  color: var(--muted);
+}
+
+/* One row, scrolled sideways; snaps so a tile is never cut at the start. */
+.shelf {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 168px;
+  gap: 18px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  /* Room for the tiles' lift and shadow, which overflow would clip. */
+  margin: -10px -24px 30px;
+  padding: 10px 24px 14px;
+  scroll-padding-inline: 24px;
+  scrollbar-width: thin;
+}
+
+.shelf .tile {
+  scroll-snap-align: start;
+}
+
 /* Long lists (mountVirtual in app.js): the container keeps its columns and
  * its height, the rows near the screen are placed in it by hand. */
 .virtual {
@@ -292,6 +385,87 @@ main {
 /* flow-root: the letter's margins count towards the measured height. */
 .vrow--heading {
   display: flow-root;
+}
+
+/* One column; the rows come from mountVirtual too. */
+.songs {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+/* --num-width: as wide as the longest number, set in renderSongs(). */
+.songs .row {
+  grid-template-columns: var(--num-width, 32px) 40px minmax(0, 1fr) auto auto;
+}
+
+.row-cover .cover {
+  width: 40px;
+  border-radius: 6px;
+  font-size: 15px;
+  box-shadow: none;
+}
+
+.row--waiting .cover {
+  background: var(--surface);
+}
+
+/* ── A-Z index ──────────────────────────────────────────────────────── */
+
+.az {
+  position: fixed;
+  z-index: 4;
+  right: 8px;
+  /* Below the header, which is taller on a phone. */
+  top: calc(var(--bar-height, 68px) + 12px);
+  bottom: 12px;
+  width: 26px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  max-height: 640px;
+  padding: 8px 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--surface) 85%, transparent);
+  backdrop-filter: blur(12px);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  user-select: none;
+  /* A slide along it scrolls the list, not the page. */
+  touch-action: none;
+  cursor: pointer;
+}
+
+.az[hidden] {
+  display: none;
+}
+
+.az span.none {
+  opacity: 0.3;
+}
+
+.az span.on {
+  color: var(--primary);
+}
+
+.az.sliding {
+  background: var(--raised);
+}
+
+/* Keeps the last column clear of the index. */
+body.has-az main {
+  padding-right: 52px;
+}
+
+body.has-az .shelf {
+  margin-right: 0;
+  padding-right: 0;
+}
+
+.row--waiting {
+  opacity: 0.4;
 }
 
 /* ── Artists ────────────────────────────────────────────────────────── */
@@ -343,44 +517,38 @@ main {
 .hero {
   position: relative;
   display: flex;
-  gap: 28px;
+  gap: 32px;
   align-items: flex-end;
   flex-wrap: wrap;
   margin: -20px -24px 24px;
-  padding: 36px 24px 28px;
+  padding: 64px 24px 32px;
   overflow: hidden;
-}
-
-.hero-backdrop {
-  position: absolute;
-  inset: -40px;
-  background-size: cover;
-  background-position: center;
-  filter: blur(48px) saturate(1.3);
-  opacity: 0.45;
 }
 
 .hero::after {
   content: '';
   position: absolute;
   inset: 0;
-  background: linear-gradient(transparent 30%, var(--bg));
+  background: linear-gradient(transparent 35%, var(--bg));
 }
 
-.hero > :not(.hero-backdrop) {
+.hero > :not(.backdrop) {
   position: relative;
   z-index: 1;
 }
 
 .hero .cover {
-  width: 220px;
+  width: 240px;
   font-size: 72px;
+  border-radius: 14px;
+  box-shadow: 0 30px 70px #000a;
 }
 
 .hero h1 {
-  margin: 4px 0 6px;
-  font-size: clamp(26px, 5vw, 44px);
-  line-height: 1.1;
+  margin: 6px 0 10px;
+  font-size: clamp(28px, 5vw, 56px);
+  line-height: 1.02;
+  letter-spacing: -0.025em;
 }
 
 .hero .meta {
@@ -413,7 +581,7 @@ main {
 }
 
 .pill.ghost {
-  background: var(--surface);
+  background: var(--raised);
   color: var(--fg);
 }
 
@@ -711,6 +879,47 @@ main {
   .tile .play-fab {
     display: none;
   }
+  .tile:hover .cover {
+    transform: none;
+  }
+  /* Cover beside the text, as on the album page below. */
+  .feature {
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 22px;
+    padding: 14px;
+    border-radius: 16px;
+  }
+  .feature-cover {
+    width: 96px;
+  }
+  .feature-title {
+    margin: 4px 0 2px;
+    font-size: 20px;
+  }
+  .feature .meta {
+    font-size: 12px;
+  }
+  .shelf {
+    grid-auto-columns: 112px;
+    gap: 10px;
+    margin: -10px -16px 20px;
+    padding: 10px 16px 10px;
+    scroll-padding-inline: 16px;
+  }
+  .songs .row {
+    grid-template-columns: var(--num-width, 22px) 36px minmax(0, 1fr) auto;
+  }
+  .row-cover .cover {
+    width: 36px;
+  }
+  body.has-az main {
+    padding-right: 36px;
+  }
+  .az {
+    right: 4px;
+    width: 22px;
+  }
   .artist-row .cover {
     width: 44px;
     font-size: 17px;
@@ -721,7 +930,7 @@ main {
     align-items: center;
     gap: 14px;
     margin: -14px -16px 12px;
-    padding: 18px 16px 14px;
+    padding: 22px 16px 14px;
   }
   .hero > div:not([class]) {
     min-width: 0;

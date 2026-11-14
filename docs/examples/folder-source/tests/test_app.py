@@ -139,3 +139,41 @@ def test_odd_characters_are_refused_not_crashed_on(config, library):
 def test_the_status_tells_how_far_a_scan_is(client):
     progress = client.get("/ui/api/status").json()["progress"]
     assert progress == {"phase": "", "found": 9, "toRead": 9, "read": 9}
+
+
+def test_the_songs_list_comes_a_page_at_a_time(client):
+    everything = client.get("/ui/api/songs?sort=title").json()
+    assert everything["total"] == len(everything["rows"]) == 9
+    page = client.get("/ui/api/songs?sort=title&offset=3&limit=2").json()
+    assert page["total"] == 9
+    assert [r["id"] for r in page["rows"]] == [r["id"] for r in everything["rows"][3:5]]
+    # Each row can be played as it is.
+    assert page["rows"][0]["item"]["audioUrl"].startswith("../audio/")
+
+
+def test_a_songs_page_out_of_range_is_empty_not_an_error(client):
+    assert client.get("/ui/api/songs?offset=999").json()["rows"] == []
+    assert len(client.get("/ui/api/songs?limit=abc").json()["rows"]) == 9
+    assert len(client.get("/ui/api/songs?limit=-5").json()["rows"]) == 1
+
+
+def test_shuffle_hands_over_playable_songs(client):
+    rows = client.get("/ui/api/songs/shuffle?limit=4").json()
+    assert len(rows) == 4
+    assert all(r["item"]["audioUrl"] for r in rows)
+
+
+def test_the_first_songs_page_carries_the_index(client):
+    first = client.get("/ui/api/songs?sort=artist").json()
+    rows, letters = first["rows"], first["letters"]
+    assert letters["#"] == 0  # the loose song, which names no artist
+    assert rows[letters["A"]]["artist"] == "Anna"
+    assert rows[letters["N"]]["artist"] == "Nordlicht"
+    assert client.get("/ui/api/songs?sort=artist&offset=2").json()["letters"] is None
+
+
+def test_songs_say_whether_their_album_has_a_cover(client):
+    rows = client.get("/ui/api/songs").json()["rows"]
+    by_album = {r["album"]: r["cover"] for r in rows}
+    assert by_album["Polarnacht"] is True
+    assert by_album["Best Of"] is False

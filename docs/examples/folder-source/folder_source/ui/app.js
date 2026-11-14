@@ -22,6 +22,8 @@ const state = {
 const ICONS = {
   play: '<path d="M8 5v14l11-7z"/>',
   next: '<path d="M3 10h11v2H3zm0-4h11v2H3zm0 8h7v2H3zm13-1v8l6-4z"/>',
+  shuffle:
+    '<path d="M10.6 9.2 5.4 4 4 5.4l5.2 5.2zM14.5 4l2 2L4 18.6 5.4 20 18 7.5l2 2V4zm.3 9.4-1.4 1.4 3.1 3.1-2 2.1H20v-5.5l-2 2z"/>',
   queue: '<path d="M3 10h11v2H3zm0-4h11v2H3zm0 8h7v2H3zm16-1v-3h-2v3h-3v2h3v3h2v-3h3v-2z"/>',
 }
 const icon = (name) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]}</svg>`
@@ -47,15 +49,17 @@ function longDuration(seconds) {
   return `${Math.floor(minutes / 60)} h ${minutes % 60} min`
 }
 
-const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`
 const count = (n) => n.toLocaleString()
+const plural = (n, word) => `${count(n)} ${word}${n === 1 ? '' : 's'}`
 
-// One colour per name for anything without a cover, the same every time.
+// For anything without a cover: the theme's surface with a hint of one colour
+// per name, the same every time. Quiet on purpose, next to real covers.
 function tint(text) {
   let hash = 0
   for (const c of String(text)) hash = (hash * 31 + c.charCodeAt(0)) | 0
   const hue = Math.abs(hash) % 360
-  return `linear-gradient(135deg, hsl(${hue} 55% 45%), hsl(${(hue + 50) % 360} 60% 26%))`
+  const shade = (share) => `color-mix(in srgb, hsl(${hue} 40% 50%) ${share}%, var(--surface))`
+  return `linear-gradient(135deg, ${shade(22)}, ${shade(8)})`
 }
 
 function cover(albumId, hasCover, name, { full = false } = {}) {
@@ -195,19 +199,19 @@ function mountVirtual(container, items, { renderItem, headingOf, renderHeading }
     list.rows = []
     let heading = null
     let row = null
-    for (const item of items) {
+    items.forEach((item, index) => {
       const next = headingOf ? headingOf(item) : null
       if (next !== heading) {
         heading = next
-        list.rows.push({ heading })
+        list.rows.push({ heading, start: index })
         row = null
       }
       if (!row || row.items.length === columns) {
-        row = { items: [] }
+        row = { items: [], start: index }
         list.rows.push(row)
       }
       row.items.push(item)
-    }
+    })
 
     // Every row of items is as tall as every other (one line of name, one
     // of detail), every heading too: measure one of each.
@@ -245,7 +249,7 @@ function mountVirtual(container, items, { renderItem, headingOf, renderHeading }
     if (row.items) {
       el.className = 'vrow'
       el.style.gridTemplateColumns = `repeat(${list.columns}, minmax(0, 1fr))`
-      el.innerHTML = row.items.map(renderItem).join('')
+      el.innerHTML = row.items.map((item, i) => renderItem(item, row.start + i)).join('')
     } else {
       el.className = 'vrow vrow--heading'
       el.innerHTML = renderHeading(row.heading)
@@ -294,6 +298,37 @@ function mountVirtual(container, items, { renderItem, headingOf, renderHeading }
     if (container.isConnected && container.clientWidth !== list.width) layout()
   })
   list.resize.observe(container)
+  // Under the sticky header is not on screen.
+  const headerHeight = () => document.querySelector('.bar').offsetHeight
+
+  // The first item at the top of the screen, for the A-Z index.
+  list.indexAtTop = () => {
+    if (!list.rows.length) return 0
+    const top = headerHeight() - container.getBoundingClientRect().top
+    return list.rows[rowAt(Math.max(0, top))].start
+  }
+
+  list.scrollToIndex = (index) => {
+    let low = 0
+    let high = list.rows.length - 1
+    while (low < high) {
+      const mid = (low + high + 1) >> 1
+      if (list.rows[mid].start <= index) low = mid
+      else high = mid - 1
+    }
+    // Its letter's heading, where there is one, comes into view with it.
+    const before = list.rows[low - 1]
+    if (before && !before.items && before.start === list.rows[low].start) low--
+    const page = container.getBoundingClientRect().top + window.scrollY
+    window.scrollTo(0, page + list.offsets[low] - headerHeight() - 8)
+  }
+
+  // For items that arrive later: draws the rows on screen again.
+  list.refresh = () => {
+    for (const el of list.shown.values()) el.remove()
+    list.shown.clear()
+    update()
+  }
   window.addEventListener('scroll', list.onScroll, { passive: true })
   window.addEventListener('resize', list.onScroll)
   virtualList = list
@@ -301,12 +336,118 @@ function mountVirtual(container, items, { renderItem, headingOf, renderHeading }
 }
 
 function unmountVirtual() {
+  unmountIndex()
   if (!virtualList) return
   window.removeEventListener('scroll', virtualList.onScroll)
   window.removeEventListener('resize', virtualList.onScroll)
   virtualList.resize.disconnect()
   virtualList = null
 }
+
+// ── A-Z index ──────────────────────────────────────────────────────────
+
+// Along the right edge of a long list sorted by name: tap a letter, or slide
+// along it. Thousands of albums are not something to scroll through.
+
+const LETTERS = ['#', ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ']
+
+/** The same as the server's letter(): "Ärzte" under A, digits under #. */
+function letterOf(text) {
+  const first = String(text || '').normalize('NFD').charAt(0).toUpperCase()
+  return first >= 'A' && first <= 'Z' ? first : '#'
+}
+
+function firstIndexes(items, nameOf) {
+  const firsts = {}
+  items.forEach((item, index) => {
+    const letter = letterOf(nameOf(item))
+    if (!(letter in firsts)) firsts[letter] = index
+  })
+  return firsts
+}
+
+const azBar = document.getElementById('az')
+let azIndex = null
+
+// The index starts below the header, whose height depends on the width.
+new ResizeObserver(([entry]) => {
+  const height = entry.target.offsetHeight
+  document.documentElement.style.setProperty('--bar-height', `${height}px`)
+}).observe(document.querySelector('.bar'))
+
+/** `firsts`: each letter's first index in the virtual list on screen. */
+function mountIndex(firsts) {
+  azIndex = { firsts, order: Object.entries(firsts).sort((a, b) => a[1] - b[1]) }
+  azBar.innerHTML = LETTERS.map(
+    (letter) => `<span data-letter="${letter}" class="${letter in firsts ? '' : 'none'}">${letter}</span>`,
+  ).join('')
+  azBar.hidden = false
+  document.body.classList.add('has-az')
+  markLetter()
+}
+
+function unmountIndex() {
+  azIndex = null
+  azBar.hidden = true
+  document.body.classList.remove('has-az')
+}
+
+function markLetter() {
+  if (!azIndex || !virtualList) return
+  // The letter just tapped stays lit while nothing else moved the page: near
+  // the end of a list the page cannot scroll that letter to the top.
+  const jumped = azIndex.jumped
+  let current = jumped && Math.abs(window.scrollY - jumped.y) < 2 ? jumped.letter : null
+  if (!current) {
+    azIndex.jumped = null
+    const top = virtualList.indexAtTop()
+    for (const [letter, first] of azIndex.order) {
+      if (first > top) break
+      current = letter
+    }
+  }
+  for (const el of azBar.children) el.classList.toggle('on', el.dataset.letter === current)
+}
+
+function jumpTo(letter) {
+  if (!azIndex || !virtualList) return
+  // A letter with nothing under it goes to the next one that has something.
+  const target = LETTERS.slice(LETTERS.indexOf(letter)).find((l) => l in azIndex.firsts)
+  const [shown, first] = target ? [target, azIndex.firsts[target]] : azIndex.order.at(-1)
+  virtualList.scrollToIndex(first)
+  azIndex.jumped = { letter: shown, y: window.scrollY }
+  markLetter()
+}
+
+// From the position, not from the letter under the finger: on a short screen
+// the letters are close, and a slide must not skip any.
+function letterAt(y) {
+  const box = azBar.getBoundingClientRect()
+  const share = (y - box.top) / box.height
+  return LETTERS[Math.min(LETTERS.length - 1, Math.max(0, Math.floor(share * LETTERS.length)))]
+}
+
+azBar.addEventListener('pointerdown', (event) => {
+  event.preventDefault()
+  azBar.setPointerCapture(event.pointerId)
+  azBar.classList.add('sliding')
+  jumpTo(letterAt(event.clientY))
+})
+azBar.addEventListener('pointermove', (event) => {
+  if (azBar.hasPointerCapture(event.pointerId)) jumpTo(letterAt(event.clientY))
+})
+for (const type of ['pointerup', 'pointercancel']) {
+  azBar.addEventListener(type, () => azBar.classList.remove('sliding'))
+}
+
+let letterFrame = 0
+window.addEventListener(
+  'scroll',
+  () => {
+    if (azIndex && !letterFrame) letterFrame = requestAnimationFrame(() => ((letterFrame = 0), markLetter()))
+  },
+  { passive: true },
+)
 
 // ── Rendering ──────────────────────────────────────────────────────────
 
@@ -328,21 +469,26 @@ function trackRows(rows, { showAlbum = false, albumArtist = '' } = {}) {
         : row.artist && row.artist !== albumArtist
           ? row.artist
           : ''
-      return `${heading}
-        <div class="row" data-row="${i}" data-number="${esc(number)}">
-          <span class="num">${esc(number)}</span>
-          <span><div class="title">${esc(row.title)}</div>${
-            sub ? `<div class="row-sub">${esc(sub)}</div>` : ''
-          }</span>
-          <span class="time">${duration(row.duration)}</span>
-          <span class="row-actions">
-            <button title="Play" data-play="${i}" data-mode="now">${icon('play')}</button>
-            <button title="Play next" data-play="${i}" data-mode="next">${icon('next')}</button>
-            <button title="Add to queue" data-play="${i}" data-mode="queue">${icon('queue')}</button>
-          </span>
-        </div>`
+      return heading + trackRow(row, i, number, sub)
     })
     .join('')
+}
+
+function trackRow(row, i, number, sub, { withCover = false } = {}) {
+  const art = withCover ? `<span class="row-cover">${cover(row.albumId, row.cover, row.album)}</span>` : ''
+  return `
+    <div class="row" data-row="${i}" data-number="${esc(number)}">
+      <span class="num">${esc(number)}</span>${art}
+      <span><div class="title">${esc(row.title)}</div>${
+        sub ? `<div class="row-sub">${esc(sub)}</div>` : ''
+      }</span>
+      <span class="time">${duration(row.duration)}</span>
+      <span class="row-actions">
+        <button title="Play" data-play="${i}" data-mode="now">${icon('play')}</button>
+        <button title="Play next" data-play="${i}" data-mode="next">${icon('next')}</button>
+        <button title="Add to queue" data-play="${i}" data-mode="queue">${icon('queue')}</button>
+      </span>
+    </div>`
 }
 
 function albumTile(album) {
@@ -360,18 +506,47 @@ function albumTile(album) {
     </div>`
 }
 
+// [label, order, the name the A-Z index goes by (none: no index)]
 const SORTS = {
   added: ['Recently added', (a, b) => b.added - a.added],
-  title: ['Name', (a, b) => a.title.localeCompare(b.title)],
+  title: ['Name', (a, b) => a.title.localeCompare(b.title), (a) => a.title],
   artist: [
     'Artist',
     (a, b) => a.artist.localeCompare(b.artist) || (a.year ?? 0) - (b.year ?? 0),
+    (a) => a.artist,
   ],
   year: ['Year', (a, b) => (b.year ?? 0) - (a.year ?? 0) || a.title.localeCompare(b.title)],
 }
 
+// Newest album up front, the next ones in a shelf. Only for a library big
+// enough to have a "newest": with a handful, it would show them all twice.
+const SHELF_FROM = 8
+const SHELF_SIZE = 14
+
+function backdrop(album, { full = false } = {}) {
+  if (!album.cover) return `<div class="backdrop" style="background:${tint(album.title)}"></div>`
+  // Blurred beyond recognition: the small cover does as well as the big one.
+  const src = full ? `covers/${album.id}` : `covers/${album.id}?size=thumb`
+  return `<div class="backdrop" style="background-image:url('${src}')"></div>`
+}
+
+function feature(album) {
+  const meta = [album.artist, album.year, plural(album.songs, 'song')].filter(Boolean).map(esc)
+  return `
+    <section class="feature">${backdrop(album)}
+      <a class="feature-cover" href="#/album/${album.id}">${cover(album.id, album.cover, album.title)}</a>
+      <div class="feature-text">
+        <div class="eyebrow">Just added</div>
+        <a class="feature-title" href="#/album/${album.id}">${esc(album.title)}</a>
+        <div class="meta">${meta.join(' · ')}</div>
+        <div class="actions"><button class="pill" data-play-album="${album.id}">${icon('play')} Play</button></div>
+      </div>
+    </section>`
+}
+
 function renderAlbums() {
-  const albums = [...state.albums].sort(SORTS[state.sort][1])
+  const [, order, nameOf] = SORTS[state.sort]
+  const albums = [...state.albums].sort(order)
   const chips = Object.entries(SORTS)
     .map(
       ([key, [label]]) =>
@@ -382,10 +557,18 @@ function renderAlbums() {
   const tools = albums.length
     ? `<span class="count">${plural(albums.length, 'album')}</span><div class="chips">${chips}</div>`
     : ''
-  view.innerHTML = `
-    <div class="section-head"><h1>Albums</h1>${tools}</div>
+  const newest = albums.length >= SHELF_FROM ? [...state.albums].sort(SORTS.added[1]) : []
+  const top = newest.length
+    ? `${feature(newest[0])}
+       <div class="section-head"><h2>Recently added</h2></div>
+       <div class="shelf">${newest.slice(1, SHELF_SIZE + 1).map(albumTile).join('')}</div>`
+    : ''
+  view.innerHTML = `${top}
+    <div class="section-head"><h1>${top ? 'All albums' : 'Albums'}</h1>${tools}</div>
     ${albums.length ? '<div class="grid"></div>' : emptyLibrary()}`
-  if (albums.length) mountVirtual(view.querySelector('.grid'), albums, { renderItem: albumTile })
+  if (!albums.length) return
+  mountVirtual(view.querySelector('.grid'), albums, { renderItem: albumTile })
+  if (nameOf) mountIndex(firstIndexes(albums, nameOf))
 }
 
 function emptyLibrary() {
@@ -452,7 +635,7 @@ function showScanProgress() {
   }
 }
 
-const artistLetter = (artist) => (artist.name[0] || '#').toUpperCase()
+const artistLetter = (artist) => letterOf(artist.name)
 
 function artistRow(artist) {
   return `
@@ -473,6 +656,90 @@ function renderArtists() {
     headingOf: artistLetter,
     renderHeading: (letter) => `<div class="letter">${esc(letter)}</div>`,
   })
+  mountIndex(firstIndexes(state.artists, (artist) => artist.name))
+}
+
+// --- songs -------------------------------------------------------------------------
+
+// Thousands of songs, each with its signed addresses, are too much for one
+// answer: the list fetches them a page at a time as they come on screen.
+const SONGS_PAGE = 200
+
+const SONG_SORTS = { title: 'Title', artist: 'Artist', album: 'Album', added: 'Recently added' }
+
+const songs = { sort: 'title', total: 0, rows: [], letters: null, loading: new Set(), generation: 0 }
+
+function resetSongs() {
+  songs.rows = []
+  songs.letters = null
+  songs.loading.clear()
+  songs.generation++
+}
+
+async function loadSongPage(page) {
+  if (songs.loading.has(page)) return
+  songs.loading.add(page)
+  const generation = songs.generation
+  let result
+  try {
+    result = await api(`songs?sort=${songs.sort}&offset=${page * SONGS_PAGE}&limit=${SONGS_PAGE}`)
+  } finally {
+    // Loaded rows are not asked for again; a failed page is, when it next shows.
+    if (generation === songs.generation) songs.loading.delete(page)
+  }
+  // Sorted differently or rescanned meanwhile: the answer is for another list.
+  if (generation !== songs.generation) return
+  songs.total = result.total
+  if (result.letters) songs.letters = result.letters
+  result.rows.forEach((row, i) => (songs.rows[page * SONGS_PAGE + i] = row))
+  return result
+}
+
+function songRow(index) {
+  const row = songs.rows[index]
+  if (!row) {
+    loadSongPage(Math.floor(index / SONGS_PAGE))
+      .then((loaded) => {
+        if (loaded && virtualList) {
+          virtualList.refresh()
+          markPlaying()
+        }
+      })
+      .catch((error) => console.warn('Could not load songs:', error))
+    // Two lines, like a loaded row, so nothing moves when it arrives.
+    return `<div class="row row--waiting"><span class="num">${index + 1}</span>
+      <span class="row-cover"><div class="cover"></div></span>
+      <span><div class="title">&nbsp;</div><div class="row-sub">&nbsp;</div></span></div>`
+  }
+  return trackRow(row, index, index + 1, `${row.artist} · ${row.album}`, { withCover: true })
+}
+
+async function renderSongs() {
+  view.innerHTML = '<div class="empty">Loading…</div>'
+  if (!songs.rows.length) await loadSongPage(0)
+  if (location.hash !== '#/songs' || state.query) return
+  rowsOnScreen = songs.rows
+  const chips = Object.entries(SONG_SORTS)
+    .map(
+      ([key, label]) =>
+        `<button class="chip ${key === songs.sort ? 'active' : ''}" data-song-sort="${key}">${label}</button>`,
+    )
+    .join('')
+  const tools = songs.total
+    ? `<span class="count">${plural(songs.total, 'song')}</span>
+       <button class="pill" data-shuffle>${icon('shuffle')} Shuffle</button>
+       <div class="chips">${chips}</div>`
+    : ''
+  view.innerHTML = `
+    <div class="section-head"><h1>Songs</h1>${tools}</div>
+    ${songs.total ? '<div class="songs"></div>' : emptyLibrary()}`
+  if (!songs.total) return
+  const list = view.querySelector('.songs')
+  list.style.setProperty('--num-width', `${String(songs.total).length + 0.5}ch`)
+  const indexes = Array.from({ length: songs.total }, (_, i) => i)
+  mountVirtual(list, indexes, { renderItem: songRow })
+  if (songs.letters && Object.keys(songs.letters).length) mountIndex(songs.letters)
+  markPlaying()
 }
 
 function renderArtist(name) {
@@ -495,9 +762,6 @@ async function renderAlbum(albumId) {
     view.innerHTML = '<div class="empty">This album is gone. The folder may have changed.</div>'
     return
   }
-  const backdrop = album.cover
-    ? `<div class="hero-backdrop" style="background-image:url('covers/${album.id}')"></div>`
-    : `<div class="hero-backdrop" style="background:${tint(album.title)}"></div>`
   const artist = album.artist
     ? `<a href="#/artist/${encodeURIComponent(album.artist)}">${esc(album.artist)}</a> · `
     : ''
@@ -506,7 +770,7 @@ async function renderAlbum(albumId) {
     .map(esc)
     .join(' · ')
   view.innerHTML = `
-    <section class="hero">${backdrop}
+    <section class="hero">${backdrop(album, { full: true })}
       ${cover(album.id, album.cover, album.title, { full: true })}
       <div>
         <div class="sub">Album</div>
@@ -545,13 +809,15 @@ function route() {
   delete view.dataset.album
   const hash = decodeURIComponent(location.hash.slice(1) || '/')
   for (const tab of document.querySelectorAll('[data-tab]')) {
-    const active = tab.dataset.tab === (hash.startsWith('/artist') ? 'artists' : 'albums')
+    const section = hash.startsWith('/artist') ? 'artists' : hash === '/songs' ? 'songs' : 'albums'
+    const active = tab.dataset.tab === section
     tab.classList.toggle('active', active && !state.query)
   }
   if (state.query) return void renderSearch()
   if (hash.startsWith('/album/')) return void renderAlbum(hash.slice(7))
   if (hash.startsWith('/artist/')) return renderArtist(hash.slice(8))
   if (hash === '/artists') return renderArtists()
+  if (hash === '/songs') return void renderSongs()
   return renderAlbums()
 }
 
@@ -564,6 +830,13 @@ view.addEventListener('click', async (event) => {
   if (dataset.sort) {
     state.sort = dataset.sort
     renderAlbums()
+  } else if (dataset.songSort) {
+    songs.sort = dataset.songSort
+    resetSongs()
+    window.scrollTo(0, 0)
+    renderSongs()
+  } else if (dataset.shuffle !== undefined) {
+    await playRows(await api('songs/shuffle'), { label: 'Shuffling your music' })
   } else if (dataset.play !== undefined) {
     const row = rowsOnScreen[dataset.play]
     const result = await send([row.item], dataset.mode)
@@ -644,6 +917,7 @@ async function loadLibrary() {
   state.albums = albums
   state.artists = artists
   state.albumCache.clear()
+  resetSongs()
   route()
 }
 

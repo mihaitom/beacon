@@ -14,6 +14,7 @@
       <nav class="tabs">
         <a href="#/" data-tab="albums">Albums</a>
         <a href="#/artists" data-tab="artists">Artists</a>
+        <a href="#/songs" data-tab="songs">Songs</a>
       </nav>
       <div class="search">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 3a6.5 6.5 0 0 1 5.2 10.4l5.4 5.4-1.4 1.4-5.4-5.4A6.5 6.5 0 1 1 9.5 3m0 2a4.5 4.5 0 1 0 0 9 4.5 4.5 0 0 0 0-9" /></svg>
@@ -29,6 +30,8 @@
       Open this page from its tab in Beacon to play music. On its own it can only browse.
     </div>
     <main id="view"></main>
+    <!-- The A-Z index of a long list, filled by mountIndex() in app.js. -->
+    <nav id="az" class="az" aria-label="Jump to letter" hidden></nav>
     <div id="toast" role="status"></div>
     <script src="app.js"></script>
   </body>

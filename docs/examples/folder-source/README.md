@@ -3,7 +3,7 @@
 One of the example apps for Beacon's external sources, and a complete one: it is meant to be
 run, not only read. It plays a folder of music files in Beacon without
 adding them to your media server. It shows up as its own tab in Beacon with albums,
-artists and search. Every song plays like any other, on the speakers too, and Beacon's
+artists, songs and search. Every song plays like any other, on the speakers too, and Beacon's
 own queue does the rest, shuffle included.
 
 Handy for a folder that does not belong in the library: imports not sorted yet, DJ sets,
@@ -24,6 +24,9 @@ recordings, a friend's hard drive.
   and changed files are read again, so a large folder rescans in seconds. The first scan
   of a large folder takes a while; the page shows how many files are read and how many
   are still to go.
+- Stays quick with a big folder: tens of thousands of songs are fine. Albums, artists
+  and songs jump to a letter from the A-Z bar on the right, and the albums page opens on
+  what was added last.
 - Never writes to the music folder. Docker mounts it read-only.
 
 Formats: MP3, AAC/M4A, FLAC, Ogg Vorbis, Opus, WAV and WebM audio.
