@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
@@ -32,6 +32,22 @@ afterEach(() => {
 })
 
 describe('HelpDialog', () => {
+  it('copies a code block exactly as written', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
+    await openOn('reference/external-source-api')
+    const button = content().querySelector<HTMLButtonElement>(
+      '.help-code:has(.language-python) [data-help-copy]',
+    )!
+    button.click()
+    await flushPromises()
+    const copied = writeText.mock.calls[0]![0] as string
+    expect(copied.startsWith('#!/usr/bin/env python3\n')).toBe(true)
+    expect(copied).toContain('<!doctype html>')
+    expect(button.querySelector('.mdi-check')).not.toBeNull()
+    vi.unstubAllGlobals()
+  })
+
   it('opens on the doc it was asked for', async () => {
     await openOn('guides/party-over-the-internet')
     expect(content().querySelector('#example-setups')).not.toBeNull()

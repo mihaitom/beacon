@@ -770,6 +770,13 @@ quotes, in `base.css` rather than as `:deep()` rules in each dialog, since
 v-html content never gets a component's scope id. A dialog only adds what is
 its own, like the release notes' pill-shaped section headings.
 
+Code blocks in the help docs are highlighted when the fence names a language
+(` ```python `). The colours are the theme's own - keywords in primary,
+strings in success, numbers and built-ins in info, names in warning, comments
+in a faded on-surface - so a self-made theme gets matching code without
+anything extra. Only the languages the docs use are bundled
+(`services/help/codeHighlight.ts`); a new one goes there first.
+
 Headings between a `<!-- tabs -->` and a `<!-- /tabs -->` line in a bundled
 doc are shown as tabs, one per heading of the level the first one has: for
 alternatives of which a reader wants one, like one reverse proxy's setup out

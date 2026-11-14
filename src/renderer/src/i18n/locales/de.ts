@@ -1434,6 +1434,8 @@ export default {
     back: 'Zurück',
     contents: 'Inhalt',
     openOnGitHub: 'Auf GitHub öffnen',
+    copyCode: 'Kopieren',
+    codeCopied: 'Kopiert',
   },
   privacy: {
     title: 'Datenschutz',
