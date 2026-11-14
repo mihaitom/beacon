@@ -71,10 +71,10 @@ theirs. `This computer` stops the music on the speakers.
 
 - **Beacon**: the desktop app on Windows, macOS or Linux, or a Beacon
   server (Docker).
-- For the desktop app, **Home Assistant on the same network** as its
-  computer. Home Assistant finds the app on its own when both are in the
-  same subnet; across subnets or VLANs it works too, with a fixed port
-  (step 1). A server is entered by its address.
+- **Home Assistant on the same network** as Beacon. Home Assistant finds
+  the desktop app and a server on its own when they are in the same subnet;
+  across subnets or VLANs it works too, by entering the address (for the
+  desktop app with a fixed port, step 1).
 - A way to copy files onto Home Assistant: the **Samba share**, **File
   editor**, **Studio Code Server** or **Terminal & SSH** add-on all work.
 
@@ -127,12 +127,14 @@ Assistant" is normal for every integration installed this way.
 
 With Beacon running and a key created:
 
-1. Open **Settings > Devices & services**. Under **Discovered**, the
-   desktop app appears as "Beacon on _your computer's name_".
+1. Open **Settings > Devices & services**. Under **Discovered**, Beacon
+   appears as "Beacon on _the computer's name_", the desktop app as well as
+   a server.
 2. Click **Add** and paste the key.
 
-That is all. For a server, or if the desktop app does not show up under
-Discovered, add it by hand: **Add integration** > **Beacon**, then enter
+That is all. A server found this way is reached at its plain address in the
+local network. To go through your reverse proxy instead, or if Beacon does
+not show up under Discovered, add it by hand: **Add integration** > **Beacon**, then enter
 Beacon's address and the key. For a server that is the address you open it
 at, such as `https://beacon.example.com`; for the desktop app
 `http://<computer>:<port>`, which the key dialog shows.

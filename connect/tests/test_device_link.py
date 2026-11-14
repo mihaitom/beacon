@@ -1447,9 +1447,11 @@ def test_a_key_that_may_steer_announces_the_desktop(client, signed_in, fake_zero
     assert fake_zeroconf.registered == []
 
 
-def test_a_server_is_never_announced(client, on_server, fake_zeroconf):
-    client.post("/device-keys", json={"label": "Home Assistant", "scopes": ["control"]})
+def test_a_server_announces_itself_once_a_key_may_steer(client, on_server, fake_zeroconf):
+    client.post("/device-keys", json={"label": "Home Assistant", "scopes": ["history"]})
     assert fake_zeroconf.registered == []
+    client.post("/device-keys", json={"label": "Home Assistant", "scopes": ["control"]})
+    assert len(fake_zeroconf.registered) == 1
 
 
 def test_a_key_with_no_rights_at_all_is_not_made():

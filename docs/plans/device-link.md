@@ -519,8 +519,8 @@ takes one over.
 ### Home Assistant
 
 The integration takes an address (`http://desktop:port` or
-`https://beacon.example`) and a device key. mDNS still finds a desktop and
-fills in the address. A new entry speaks only `v1` (`api_v1.py`), mapping its
+`https://beacon.example`) and a device key. mDNS finds a desktop or a server
+and fills in the address; a server announces nginx's port. A new entry speaks only `v1` (`api_v1.py`), mapping its
 fields onto what the entities read today, so the entities stay as they are; an
 entry made with the integration key keeps its old client until it is switched.
 On a server, the player entity is the account's casts. A speaker picked while
@@ -569,21 +569,6 @@ password, and `integration_key.py`, `integration_streams` and the old section go
 
 ## Open
 
-- **Repeat on a server without a window.** `repeat` only sets the flag there:
-  at the end of the queue the server stops, and only an open window starts
-  over or repeats the song. Doing it in connect means touching the
-  auto-advance path, which wants a hardware test on every speaker type first.
-- **Hardware check.** The control routes are tested against stand-in speakers
-  only; "How to check it" under Control and home automation still needs a run
-  on real speakers and a real Home Assistant.
-- **"This computer" on a server.** Home Assistant offers it there too, where it
-  stops the cast. `v1` does not say whether it talks to a desktop app or a
-  server; a field on `/me` would let it hide the option.
-- **Admin view.** A key only speaks for its own account, so the desktop's admin
-  picker stays as it was. Listing the server's accounts needs the admin flag
-  noted on the key, and a way for it to end when the server stops considering
-  the account an admin.
-- **Leaving a server.** Unpairing keeps the local log. What only the server
-  knows is not copied down.
-- **Deleting.** There is no way to delete a single play today. If one comes, it
-  needs tombstones to survive a sync.
+What is still open from this plan, the control part included, is in
+[backlog/device-link/](../backlog/README.md#apps-and-home-automation), one file
+per item.

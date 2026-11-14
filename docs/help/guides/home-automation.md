@@ -35,12 +35,14 @@ browser tab, and can start something new on a speaker named in the command.
 
 ## Finding Beacon: mDNS
 
-While a key with the right to control playback exists, the desktop app
-announces itself as `_beacon._tcp.local.`, named "Beacon on _computer
-name_", with its current address and port. The announcement is withdrawn
-when the last such key is revoked or the app quits, and follows the machine
-to a new address within a minute. A server does not announce itself: enter
-its address by hand.
+While a key with the right to control playback exists, Beacon announces
+itself as `_beacon._tcp.local.`, named "Beacon on _computer name_", with its
+current address and port. The announcement is withdrawn when the last such
+key is revoked or Beacon quits, and follows the machine to a new address
+within a minute. A server announces itself the same way, while any account
+has such a key, with the port its web page answers on (7070 unless
+`WEB_PORT` says otherwise). That is the plain address in the local network;
+to go through a reverse proxy instead, enter its address by hand.
 
 Home Assistant picks that up by itself, and follows the app to a new port
 or address. mDNS does not cross subnets or VLANs; for those setups, set a

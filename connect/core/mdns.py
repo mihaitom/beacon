@@ -1,14 +1,15 @@
 """core/mdns.py — announces this Beacon on the LAN for home automation
 
 Advertised as `_beacon._tcp` while something exists that can use it - the
-retired integration key (core/integration_key.py), or on the desktop app a
-device key allowed to steer playback - and withdrawn once neither does: a
-laptop has no business advertising itself on every network it joins
-otherwise. The record carries the port, so an integration that follows it
-keeps working when the desktop app had to fall back to another one.
+retired integration key (core/integration_key.py), or a device key allowed
+to steer playback - and withdrawn once neither does: a laptop has no
+business advertising itself on every network it joins otherwise. The record
+carries the port, so an integration that follows it keeps working when the
+desktop app had to fall back to another one.
 
-A server is not announced: it sits behind an address somebody set up, and a
-container's multicast rarely reaches the LAN anyway.
+A server announces nginx's port (WEB_PORT, start.sh), the address its web
+page is opened at, rather than its own. The container runs in the host's
+network anyway, which its speaker discovery needs.
 
 TXT properties: `id` (stable across restarts, for telling instances apart),
 `version`, `api`, where the device-link API lives, and `path`, where the
@@ -17,6 +18,7 @@ retired one does. See docs/help/faq/apps-and-api.md.
 
 import asyncio
 import logging
+import os
 import socket
 
 from zeroconf import IPVersion
@@ -45,13 +47,19 @@ def instance_id() -> str:
     return stable_id(".beacon-instance-id")
 
 
+def _announced_port() -> int:
+    if not server_link.AVAILABLE and os.getenv("WEB_PORT"):
+        return int(os.environ["WEB_PORT"])
+    return PORT
+
+
 def _build_info(address: str) -> AsyncServiceInfo:
     ident = instance_id()
     host = socket.gethostname().split(".")[0] or "beacon"
     return AsyncServiceInfo(
         SERVICE_TYPE,
         f"Beacon on {host}.{SERVICE_TYPE}",
-        port=PORT,
+        port=_announced_port(),
         parsed_addresses=[address],
         # Its own host name rather than the machine's: the OS may already
         # answer for that one, and two responders disagreeing about it is
@@ -73,7 +81,7 @@ async def _register(address: str) -> None:
     info = _build_info(address)
     await _zeroconf.async_register_service(info, allow_name_change=True)
     _info = info
-    logger.info(f"[mdns] Announcing {info.name} at {address}:{PORT}")
+    logger.info(f"[mdns] Announcing {info.name} at {address}:{info.port}")
 
 
 async def _unregister() -> None:
@@ -86,25 +94,35 @@ async def _unregister() -> None:
 
 
 def steered_from_outside() -> bool:
-    """Whether something outside may steer this player: an integration key,
-    or on a desktop app a key with the control right. Announced then, and
-    the window keeps the remote relay running for it (routes/remote.py)."""
+    """Whether something outside may steer this player through the window:
+    an integration key, or on a desktop app a key with the control right.
+    The window keeps the remote relay running for it (routes/remote.py)."""
     if integration_key.is_set():
         return True
     # AVAILABLE: this is a desktop app.
     return server_link.AVAILABLE and device_keys.any_key_has_scope(device_keys.CONTROL)
 
 
+def announced() -> bool:
+    """steered_from_outside(), and on a server any account's key with the
+    control right: there it steers the casts, not a window."""
+    if steered_from_outside():
+        return True
+    return device_keys.any_key_has_scope(device_keys.CONTROL)
+
+
 async def sync() -> None:
     """Brings the announcement in line with the keys and the current
     address. Never raises: an announcement that failed costs discovery, not
     the API."""
-    try:
-        wanted = await asyncio.to_thread(steered_from_outside)
-    except Exception as e:
-        logger.warning(f"[mdns] Could not read the keys: {e}")
-        return
+    # Decided under the lock: a sync that read the keys before another one
+    # announced a new key would otherwise withdraw that announcement again.
     async with _lock:
+        try:
+            wanted = await asyncio.to_thread(announced)
+        except Exception as e:
+            logger.warning(f"[mdns] Could not read the keys: {e}")
+            return
         try:
             if not wanted:
                 await _unregister()

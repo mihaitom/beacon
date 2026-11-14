@@ -34,6 +34,18 @@ on a device, what is decided and what is not.
 - [Remote: "Play All" does not wait for the ack](remote-control/play-all-waits-for-ack.md) - small, the pattern is in `js/sheet.js`
 - [Remote: an album detail view](remote-control/album-detail-view.md) - four places, the last planned alignment with the mobile view
 
+## Apps and home automation
+
+- [Control and the library: never run against real speakers or a real Home Assistant](device-link/control-hardware-check.md) - built and unit-tested only; the full check list is in there
+- [/device-link/ through nginx on a real image](device-link/nginx-on-a-real-image.md) - config in place, never run; needs the maintainer's image
+- [Repeat on a server only works while a window is open](device-link/server-repeat-without-a-window.md) - only without transitions; touches auto-advance, needs every speaker type
+- [`devices` takes a speaker over on the desktop app, never on a server](device-link/desktop-devices-takes-speakers-over.md) - a decision: one rule for apps, or a `force` field
+- [Home Assistant offers "This computer" on a server](device-link/this-computer-on-a-server.md) - small: a field on `/me`
+- [Remove the old Home automation key](device-link/retire-the-integration-key.md) - deprecated, not before a release has carried the notice; the full list of what goes
+- [The desktop app's admin view of other accounts over a key](device-link/admin-view-with-a-key.md) - not designed; first whether anybody needs it
+- [Leaving a server: what only the server knows stays there](device-link/leaving-a-server.md) - offer a last copy, or say so
+- [Deleting a single play would need tombstones](device-link/deleting-single-plays.md) - only once deleting exists
+
 ## Packaging and dependencies
 
 - [Dependency majors: Vite 8 and TypeScript 7](packaging/dependency-majors.md) - Vite 8 unblocked, TypeScript 7 to check again

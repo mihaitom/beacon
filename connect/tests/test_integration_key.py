@@ -15,8 +15,9 @@ from main import app
 
 @pytest.fixture
 def unauthed():
-    with TestClient(app, raise_server_exceptions=False) as c:
-        yield c
+    # No lifespan of its own: a second one would run its own background
+    # tasks on another event loop, next to `client`'s, over shared locks.
+    return TestClient(app, raise_server_exceptions=False)
 
 
 def _restart():
