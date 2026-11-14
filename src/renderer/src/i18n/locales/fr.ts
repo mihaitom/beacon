@@ -1825,7 +1825,9 @@ export default {
     name: "Nom de l'onglet",
     namePlaceholder: "p. ex. Liste d'envies",
     address: "Adresse de l'app",
-    token: 'Jeton (facultatif)',
+    token: 'Jeton de votre app (facultatif)',
+    tokenHint:
+      "Seulement si votre app en demande un : la valeur définie dans votre app. Pas une clé d'Applications et appareils - celles-ci laissent entrer des apps dans Beacon, ceci laisse entrer Beacon dans votre app.",
     tokenKept: 'Enregistré - laisser vide pour le conserver',
     tokenNone: 'Aucun jeton',
     reachable: 'Connecté à {name}',

@@ -26,8 +26,10 @@ answered. `capabilities` is for later versions; send an empty list.
 
 ### The token
 
-If a token is set in Beacon, every request Beacon passes on to `/v1` and `/ui/`
-carries `Authorization: Bearer <token>`. Audio and cover requests do not: an app
+The app defines the token, if it wants one, and the listener enters the same
+value in Beacon. It is unrelated to the keys under Apps and devices, which let
+apps call Beacon. If a token is set, every request Beacon passes on to `/v1`
+and `/ui/` carries `Authorization: Bearer <token>`. Audio and cover requests do not: an app
 that wants to protect them puts an unguessable or signed part into their
 addresses.
 

@@ -1804,7 +1804,9 @@ export default {
     name: 'Tab name',
     namePlaceholder: 'e.g. Wishlist',
     address: 'App address',
-    token: 'Token (optional)',
+    token: "Your app's token (optional)",
+    tokenHint:
+      'Only if your app asks for one: the value set in your app. Not a key from Apps and devices - those let apps into Beacon, this lets Beacon into your app.',
     tokenKept: 'Saved - leave empty to keep it',
     tokenNone: 'No token',
     reachable: 'Connected to {name}',

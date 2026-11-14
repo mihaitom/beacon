@@ -1823,7 +1823,9 @@ export default {
     name: 'Name des Tabs',
     namePlaceholder: 'z. B. Wunschliste',
     address: 'Adresse der App',
-    token: 'Token (optional)',
+    token: 'Token deiner App (optional)',
+    tokenHint:
+      'Nur wenn deine App eines verlangt: der Wert, den du in der App festgelegt hast. Kein Schlüssel aus Apps und Geräte - die lassen Apps in Beacon, das hier lässt Beacon in deine App.',
     tokenKept: 'Gespeichert - leer lassen, um es zu behalten',
     tokenNone: 'Kein Token',
     reachable: 'Verbunden mit {name}',

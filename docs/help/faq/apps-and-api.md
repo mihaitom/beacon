@@ -254,4 +254,6 @@ Not within `v1`: existing fields keep their meaning, and new ones may appear, so
 
 Music is better fetched straight from your media server. Navidrome, Jellyfin and Plex all have their own interface for that, and going through Beacon would only add a stop on the way.
 
+The other way round works: an app of yours can hand songs to Beacon to play, as an [external source](external-sources.md). That needs no key from here; if the app wants a token, it is one you choose in the app.
+
 A key that only reads is still the safest to put in a script: give control and the library only to an app that needs them.

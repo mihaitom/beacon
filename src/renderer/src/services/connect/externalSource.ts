@@ -127,7 +127,7 @@ export function externalSourceInstructions(): string {
     '- Beacon passes /ui/ through its own server, so use only RELATIVE URLs in the page ("app.js", "api/search?q=x"), never absolute ones and never a leading slash.',
     '- Everything the page loads itself (scripts, styles, images such as covers it displays, its API) must live under /ui/: "../" leads out of what Beacon passes through.',
     '- The page runs in a sandboxed iframe with an opaque origin: no cookies, no localStorage, no sessionStorage, no navigating the top window. Keep state in memory or in the app.',
-    '- If I set a token in Beacon, every request Beacon forwards to /v1 and /ui/ carries "Authorization: Bearer <token>". Audio and cover URLs get no header: make them unguessable or put a short-lived signature in them.',
+    '- The token is optional and my app defines it (e.g. from an environment variable); I enter the same value in Beacon. It is not a key from Beacon\'s "Apps and devices", which is for apps calling Beacon. If set, every request Beacon forwards to /v1 and /ui/ carries "Authorization: Bearer <token>". Audio and cover URLs get no header: make them unguessable or sign them, and keep them valid for at least a day.',
     '- It must work at phone width as well.',
     '',
     'How the page plays a song:',
