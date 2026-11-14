@@ -312,7 +312,7 @@ function renderArtists() {
       return `${heading}
         <a class="artist-row" href="#/artist/${encodeURIComponent(artist.name)}">
           ${cover(artist.cover, !!artist.cover, artist.name)}
-          <span><div class="name" style="margin:0">${esc(artist.name)}</div>
+          <span class="artist-text"><div class="name">${esc(artist.name)}</div>
           <div class="sub">${plural(artist.albums, 'album')}</div></span>
         </a>`
     })

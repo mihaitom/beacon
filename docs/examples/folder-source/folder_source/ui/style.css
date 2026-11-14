@@ -280,7 +280,7 @@ main {
 .artists {
   display: grid;
   gap: 6px 18px;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
 }
 
 .artist-row {
@@ -295,7 +295,17 @@ main {
   background: var(--hover);
 }
 
+/* Without min-width: 0 a long name widens the row instead of being cut. */
+.artist-text {
+  min-width: 0;
+}
+
+.artist-text .name {
+  margin: 0;
+}
+
 .artist-row .cover {
+  flex-shrink: 0;
   width: 52px;
   border-radius: 50%;
   font-size: 20px;
