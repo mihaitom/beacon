@@ -1433,6 +1433,8 @@ export default {
     back: 'Atrás',
     contents: 'Contenido',
     openOnGitHub: 'Abrir en GitHub',
+    copyCode: 'Copiar',
+    codeCopied: 'Copiado',
   },
   privacy: {
     title: 'Privacidad',

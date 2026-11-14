@@ -43,6 +43,10 @@ under https. Two consequences:
 - **The page's own requests** (`fetch('api/search?q=x')`) arrive at the app as
   `/ui/api/search?q=x`, with the method, the body and the `Content-Type` they
   were sent with.
+- **Everything the page loads itself lives under `/ui/`**, its pictures too.
+  `../` leads out of what Beacon passes through and ends in a 404. Only
+  addresses the page hands to Beacon (`audioUrl`, `coverUrl`) may point
+  elsewhere on the app's address, since Beacon fetches those itself.
 
 The page runs sandboxed, with an origin of its own that is not Beacon's:
 
@@ -123,72 +127,279 @@ Content`). Then a song can be seeked, gets a waveform and can go into a
 
 ## A complete example
 
-A page that lists the audio files in a folder and plays them. Python 3,
-nothing to install: `python3 folder_source.py /path/to/music`, then enter
-`http://<this computer>:8800` in Beacon.
+Your music folder as albums, with covers, search, "play album", play next and
+add to queue, the song that is playing marked, and Beacon's colours. Every
+folder with music in it is an album; a layout of `Artist/Album/` gives the songs
+their artist and album, and a `cover.jpg` or `folder.jpg` in the folder its
+cover. Python 3, nothing to install:
+
+```sh
+python3 folder_source.py /path/to/music
+```
+
+Then enter `http://<this computer>:8800` in Beacon (another port:
+`PORT=9000 python3 ...`).
 
 ```python
 #!/usr/bin/env python3
-"""A minimal external source for Beacon: the audio files in one folder."""
+"""An example external source for Beacon: the music in a folder and its
+subfolders, shown as albums. Python 3, nothing to install."""
 
 import json
 import mimetypes
 import os
+import re
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import quote, unquote
 
-FOLDER = os.path.abspath(sys.argv[1] if len(sys.argv) > 1 else ".")
+FOLDER = os.path.realpath(sys.argv[1] if len(sys.argv) > 1 else ".")
+PORT = int(os.environ.get("PORT", 8800))
 AUDIO = (".mp3", ".m4a", ".flac", ".ogg", ".opus", ".wav", ".webm")
+COVERS = ("cover.jpg", "cover.png", "folder.jpg", "folder.png", "front.jpg", "front.png")
+TRACK_NUMBER = re.compile(r"^(\d{1,3})[\s._-]+")
 
-PAGE = """<!doctype html>
+PAGE = r"""<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width">
 <style>
-  body { font: 15px system-ui, sans-serif; margin: 16px; background: var(--bg); color: var(--fg); }
-  button { display: block; width: 100%; text-align: left; padding: 10px; margin: 4px 0;
-           border: 0; border-radius: 8px; background: var(--surface); color: inherit; cursor: pointer; }
-  button:hover { outline: 2px solid var(--primary); }
+  :root { --bg: #121417; --fg: #e8e8ea; --surface: #1c1f24; --primary: #f5a94e;
+          --on-primary: #1a1a1a; color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 20px; font: 15px/1.4 system-ui, sans-serif;
+         background: var(--bg); color: var(--fg); }
+  header { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 20px; }
+  h1 { font-size: 24px; margin: 0; flex: 1; }
+  input { padding: 10px 14px; border-radius: 999px; border: 0; min-width: 0; width: 240px;
+          background: var(--surface); color: inherit; font: inherit; }
+  .grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  .album { cursor: pointer; border: 0; padding: 0; background: none; color: inherit;
+           text-align: left; font: inherit; }
+  .cover { aspect-ratio: 1; border-radius: 10px; overflow: hidden; display: grid;
+           place-items: center; font-size: 42px; font-weight: 700; color: #fff8;
+           box-shadow: 0 6px 18px #0006; transition: transform .2s; }
+  .cover img { width: 100%; height: 100%; object-fit: cover; }
+  .album:hover .cover { transform: translateY(-4px) scale(1.02); }
+  .name { margin-top: 8px; font-weight: 600; white-space: nowrap; overflow: hidden;
+          text-overflow: ellipsis; }
+  .sub { opacity: .65; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .hero { display: flex; gap: 24px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 20px; }
+  .hero .cover { width: 200px; font-size: 64px; }
+  .hero h2 { font-size: 30px; margin: 4px 0; }
+  .pill { border: 0; border-radius: 999px; padding: 10px 20px; font: inherit; font-weight: 600;
+          cursor: pointer; background: var(--primary); color: var(--on-primary); }
+  .ghost { background: var(--surface); color: inherit; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 8px 12px; border-radius: 8px; }
+  .row:hover { background: var(--surface); }
+  .row.playing { color: var(--primary); font-weight: 600; }
+  .num { width: 24px; text-align: right; opacity: .6; font-variant-numeric: tabular-nums; }
+  .title { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row button { border: 0; background: none; color: inherit; cursor: pointer; padding: 6px;
+                border-radius: 50%; opacity: .7; display: grid; }
+  .row button:hover { opacity: 1; background: var(--bg); }
+  svg { width: 20px; height: 20px; fill: currentColor; }
+  .bars { display: inline-flex; gap: 2px; align-items: flex-end; height: 14px; width: 24px;
+          justify-content: flex-end; }
+  .bars i { width: 3px; background: var(--primary); animation: bar .9s infinite ease-in-out alternate; }
+  .bars i:nth-child(2) { animation-delay: -.3s; } .bars i:nth-child(3) { animation-delay: -.6s; }
+  @keyframes bar { from { height: 20%; } to { height: 100%; } }
+  #toast { position: fixed; left: 50%; bottom: 20px; transform: translate(-50%, 80px);
+           background: var(--surface); padding: 10px 18px; border-radius: 999px;
+           box-shadow: 0 6px 18px #0008; transition: transform .25s; }
+  #toast.show { transform: translate(-50%, 0); }
+  @media (max-width: 500px) {
+    body { padding: 14px; } input { width: 100%; }
+    .grid { grid-template-columns: repeat(2, 1fr); gap: 12px; }
+    .hero .cover { width: 140px; }
+  }
 </style></head>
-<body><h2>Folder</h2><div id="list"></div>
+<body><div id="app"></div><div id="toast"></div>
 <script>
-  const list = document.getElementById('list')
-  fetch('api/files').then((r) => r.json()).then((files) => {
-    for (const file of files) {
-      const button = document.createElement('button')
-      button.textContent = file.title
-      button.onclick = () => parent.postMessage({ type: 'beacon.play', mode: 'now',
-        item: { audioUrl: '../audio/' + file.path, title: file.title, artist: 'Folder' } }, '*')
-      list.append(button)
+  const ICONS = {
+    play: '<path d="M8 5v14l11-7z"/>',
+    next: '<path d="M3 10h11v2H3zm0-4h11v2H3zm0 8h7v2H3zm13-1v8l6-4z"/>',
+    queue: '<path d="M3 10h11v2H3zm0-4h11v2H3zm0 8h7v2H3zm16-1v-3h-2v3h-3v2h3v3h2v-3h3v-2z"/>',
+    back: '<path d="M20 11H7.8l5.6-5.6L12 4l-8 8 8 8 1.4-1.4L7.8 13H20z"/>',
+  }
+  const icon = (name) => `<svg viewBox="0 0 24 24">${ICONS[name]}</svg>`
+  const esc = (text) => String(text).replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`)
+  const app = document.getElementById('app')
+  let albums = [], query = '', open = null, nowPlaying = null
+
+  // One colour per album for those without a cover, the same every time.
+  function tint(text) {
+    let hash = 0
+    for (const c of text) hash = (hash * 31 + c.charCodeAt(0)) | 0
+    const hue = Math.abs(hash) % 360
+    return `linear-gradient(135deg, hsl(${hue} 55% 45%), hsl(${(hue + 50) % 360} 60% 28%))`
+  }
+  const cover = (album) => album.cover
+    ? `<div class="cover"><img src="covers/${album.path}" alt=""></div>`
+    : `<div class="cover" style="background:${tint(album.title)}">${esc(album.title[0] || '?')}</div>`
+
+  // Beacon answers every beacon.play with beacon.played: waiting for it keeps
+  // an album in order, since Beacon handles each request on its own.
+  let answered = null
+  function play(album, track, mode) {
+    return new Promise((resolve) => {
+      answered = resolve
+      parent.postMessage({ type: 'beacon.play', mode, item: {
+        audioUrl: '../audio/' + track.path, title: track.title,
+        artist: album.artist, album: album.title, duration: track.duration,
+        coverUrl: album.cover ? 'covers/' + album.path : undefined,
+      } }, '*')
+    })
+  }
+  async function playAlbum(album) {
+    for (const [i, track] of album.tracks.entries()) {
+      const result = await play(album, track, i === 0 ? 'now' : 'queue')
+      if (!result.ok) break
+    }
+    toast(`Playing ${album.title}`)
+  }
+
+  function toast(text) {
+    const el = document.getElementById('toast')
+    el.textContent = text
+    el.classList.add('show')
+    clearTimeout(toast.timer)
+    toast.timer = setTimeout(() => el.classList.remove('show'), 2200)
+  }
+
+  const songs = (album) => `${album.tracks.length} song${album.tracks.length === 1 ? '' : 's'}`
+  const isPlaying = (album, track) => nowPlaying
+    && nowPlaying.title === track.title && nowPlaying.album === album.title
+
+  function render() {
+    if (open) {
+      const album = open
+      app.innerHTML = `
+        <header><button class="pill ghost" data-back>${icon('back')}</button></header>
+        <div class="hero">${cover(album)}<div>
+          <div class="sub">${esc(album.artist || 'Album')}</div><h2>${esc(album.title)}</h2>
+          <div class="sub">${songs(album)}</div><br>
+          <button class="pill" data-album>Play album</button></div></div>
+        ${album.tracks.map((t, i) => `
+          <div class="row ${isPlaying(album, t) ? 'playing' : ''}">
+            ${isPlaying(album, t) ? '<span class="bars"><i></i><i></i><i></i></span>'
+                                  : `<span class="num">${t.number ?? i + 1}</span>`}
+            <span class="title">${esc(t.title)}</span>
+            <button title="Play" data-track="${i}" data-mode="now">${icon('play')}</button>
+            <button title="Play next" data-track="${i}" data-mode="next">${icon('next')}</button>
+            <button title="Add to queue" data-track="${i}" data-mode="queue">${icon('queue')}</button>
+          </div>`).join('')}`
+      return
+    }
+    const words = query.toLowerCase().split(/\s+/).filter(Boolean)
+    const shown = albums.filter((a) => words.every((w) =>
+      `${a.title} ${a.artist} ${a.tracks.map((t) => t.title).join(' ')}`.toLowerCase().includes(w)))
+    app.innerHTML = `
+      <header><h1>Music folder</h1>
+        <input id="search" placeholder="Search" value="${esc(query)}"></header>
+      <div class="grid">${shown.map((a) => `
+        <button class="album" data-open="${albums.indexOf(a)}">${cover(a)}
+          <div class="name">${esc(a.title)}</div>
+          <div class="sub">${esc(a.artist || songs(a))}</div></button>`).join('')}
+      </div>`
+    const search = document.getElementById('search')
+    search.oninput = () => { query = search.value; render(); restoreFocus() }
+  }
+  function restoreFocus() {
+    const search = document.getElementById('search')
+    search.focus()
+    search.setSelectionRange(query.length, query.length)
+  }
+
+  app.addEventListener('click', (event) => {
+    const el = event.target.closest('button')
+    if (!el) return
+    if (el.dataset.open) { open = albums[el.dataset.open]; render(); scrollTo(0, 0) }
+    else if (el.dataset.back !== undefined) { open = null; render() }
+    else if (el.dataset.album !== undefined) playAlbum(open)
+    else if (el.dataset.track) {
+      const track = open.tracks[el.dataset.track]
+      play(open, track, el.dataset.mode).then((r) => r.ok && el.dataset.mode !== 'now'
+        && toast(el.dataset.mode === 'next' ? `${track.title} plays next` : `Added ${track.title}`))
     }
   })
+
   addEventListener('message', (event) => {
-    if (event.source !== parent || event.data.type !== 'beacon.theme') return
-    const c = event.data.colors, s = document.body.style
-    s.setProperty('--bg', c.background); s.setProperty('--fg', c['on-background'])
-    s.setProperty('--surface', c.surface); s.setProperty('--primary', c.primary)
+    if (event.source !== parent) return
+    const message = event.data
+    if (message.type === 'beacon.played') {
+      if (!message.ok) toast(message.error || 'Could not play that')
+      answered?.(message)
+      answered = null
+    } else if (message.type === 'beacon.nowPlaying') {
+      nowPlaying = message.item
+      if (open) render()
+    } else if (message.type === 'beacon.theme') {
+      const c = message.colors, s = document.documentElement.style
+      s.setProperty('--bg', c.background); s.setProperty('--fg', c['on-background'])
+      s.setProperty('--surface', c.surface); s.setProperty('--primary', c.primary)
+      s.setProperty('--on-primary', c['on-primary'])
+      s.colorScheme = message.dark ? 'dark' : 'light'
+    }
   })
+
+  fetch('api/library').then((r) => r.json()).then((list) => { albums = list; render() })
   parent.postMessage({ type: 'beacon.ready' }, '*')
 </script></body></html>"""
 
 
-def audio_files():
-    for name in sorted(os.listdir(FOLDER)):
-        if name.lower().endswith(AUDIO):
-            yield {"path": quote(name), "title": os.path.splitext(name)[0]}
+def library():
+    """One album per folder that holds music. Artist/Album/ gives both names."""
+    albums = []
+    for root, dirs, names in os.walk(FOLDER):
+        dirs.sort()
+        tracks = []
+        for name in sorted(names):
+            if not name.lower().endswith(AUDIO):
+                continue
+            stem = os.path.splitext(name)[0]
+            number = TRACK_NUMBER.match(stem)
+            tracks.append({
+                "path": quote(os.path.relpath(os.path.join(root, name), FOLDER).replace(os.sep, "/")),
+                "title": TRACK_NUMBER.sub("", stem) or stem,
+                "number": int(number.group(1)) if number else None,
+            })
+        if not tracks:
+            continue
+        folder = os.path.relpath(root, FOLDER).replace(os.sep, "/")
+        parts = [] if folder == "." else folder.split("/")
+        albums.append({
+            "path": quote("" if folder == "." else folder),
+            "title": parts[-1] if parts else "Loose songs",
+            "artist": parts[-2] if len(parts) > 1 else "",
+            "cover": any(os.path.isfile(os.path.join(root, c)) for c in COVERS),
+            "tracks": tracks,
+        })
+    return albums
+
+
+def inside(relative):
+    """The path in the folder, or None. realpath catches "../" and symlinks."""
+    path = os.path.realpath(os.path.join(FOLDER, relative))
+    return path if path == FOLDER or path.startswith(FOLDER + os.sep) else None
 
 
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?")[0]
         if path == "/v1":
-            self.send_body(json.dumps({"name": "Folder", "version": "1", "capabilities": []}),
+            self.send_body(json.dumps({"name": "Music folder", "version": "2", "capabilities": []}),
                            "application/json")
         elif path == "/ui/":
             self.send_body(PAGE, "text/html; charset=utf-8")
-        elif path == "/ui/api/files":
-            self.send_body(json.dumps(list(audio_files())), "application/json")
+        elif path == "/ui/api/library":
+            self.send_body(json.dumps(library()), "application/json")
+        elif path.startswith("/ui/covers/"):
+            # Under /ui/: the page shows these itself, and only /ui/ reaches it.
+            folder = inside(unquote(path[len("/ui/covers/"):]))
+            candidates = [os.path.join(folder, c) for c in COVERS] if folder else []
+            self.send_file(next((c for c in candidates if os.path.isfile(c)), None))
         elif path.startswith("/audio/"):
-            self.send_audio(os.path.basename(unquote(path[len("/audio/"):])))
+            file = inside(unquote(path[len("/audio/"):]))
+            self.send_file(file if file and file.lower().endswith(AUDIO) else None)
         else:
             self.send_error(404)
 
@@ -200,9 +411,9 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def send_audio(self, name):
-        file = os.path.join(FOLDER, name)
-        if not name.lower().endswith(AUDIO) or not os.path.isfile(file):
+    def send_file(self, file):
+        """The file, with Range support: Beacon can then seek in it."""
+        if not file or not os.path.isfile(file):
             return self.send_error(404)
         size = os.path.getsize(file)
         start, end = 0, size - 1
@@ -219,7 +430,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Content-Range", f"bytes */{size}")
                 return self.end_headers()
         self.send_response(206 if ranged else 200)
-        self.send_header("Content-Type", mimetypes.guess_type(name)[0] or "application/octet-stream")
+        self.send_header("Content-Type", mimetypes.guess_type(file)[0] or "application/octet-stream")
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("Content-Length", str(end - start + 1))
         if ranged:
@@ -237,8 +448,8 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    print(f"Serving {FOLDER} on port 8800")
-    ThreadingHTTPServer(("0.0.0.0", 8800), Handler).serve_forever()
+    print(f"Serving {FOLDER} on port {PORT}")
+    ThreadingHTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
 ```
 
 ## Letting an AI write it

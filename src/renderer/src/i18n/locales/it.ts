@@ -1430,6 +1430,8 @@ export default {
     back: 'Indietro',
     contents: 'Indice',
     openOnGitHub: 'Apri su GitHub',
+    copyCode: 'Copia',
+    codeCopied: 'Copiato',
   },
   privacy: {
     title: 'Privacy',

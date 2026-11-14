@@ -175,6 +175,32 @@ function showTab(tab: HTMLElement): void {
   }
 }
 
+// How long a copy button shows its checkmark.
+const COPIED_MS = 2000
+
+/** Copies the code block `button` belongs to, and shows a checkmark on the
+ * button for a moment - a toast is too much for something this small. */
+async function copyCode(button: HTMLButtonElement, copied: string, copy: string): Promise<void> {
+  const code = button.closest('.help-code')?.querySelector('code')?.textContent ?? ''
+  try {
+    await navigator.clipboard.writeText(code)
+  } catch (error) {
+    console.error('[help] Failed to copy:', error)
+    return
+  }
+  const icon = button.querySelector('.mdi')
+  icon?.classList.replace('mdi-content-copy', 'mdi-check')
+  button.classList.add('help-code__copy--done')
+  button.title = copied
+  button.setAttribute('aria-label', copied)
+  setTimeout(() => {
+    icon?.classList.replace('mdi-check', 'mdi-content-copy')
+    button.classList.remove('help-code__copy--done')
+    button.title = copy
+    button.setAttribute('aria-label', copy)
+  }, COPIED_MS)
+}
+
 // How far below the top of the text a heading may sit and still count as
 // the one being read - about a line, so a heading just scrolled to is it.
 const SCROLL_SPY_OFFSET = 32
@@ -349,6 +375,11 @@ export default {
     /** Links between the bundled docs and within one stay in the dialog;
      * everything else was given target="_blank" when it was rendered. */
     onContentClick(event: MouseEvent) {
+      const copy = (event.target as Element | null)?.closest<HTMLButtonElement>('[data-help-copy]')
+      if (copy) {
+        void copyCode(copy, this.$t('help.codeCopied'), this.$t('help.copyCode'))
+        return
+      }
       const tab = (event.target as Element | null)?.closest<HTMLElement>('[data-help-tab]')
       if (tab) {
         showTab(tab)

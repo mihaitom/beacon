@@ -1,6 +1,8 @@
 import MarkdownIt from 'markdown-it'
 import type { Token } from 'markdown-it'
 import packageJson from '../../../../../package.json'
+import { highlightCode } from './codeHighlight'
+import { i18n } from '@/i18n'
 
 /** Everything under docs/help/, bundled at build time like CHANGELOG.md in
  * releaseNotes.vue: one file, one page. English only - they are the repo's
@@ -80,7 +82,7 @@ function headingIds() {
   }
 }
 
-const md = new MarkdownIt({ html: false, linkify: true })
+const md = new MarkdownIt({ html: false, linkify: true, highlight: highlightCode })
 
 function anchorsOf(body: string): Set<string> {
   const nextId = headingIds()
@@ -159,6 +161,18 @@ function targetPage(link: HelpLink, page: HelpPage): HelpPage | null {
 type RenderEnv = {
   page: HelpPage
   nextId: (text: string) => string
+}
+
+// Every code block gets a copy button; HelpDialog.vue's onContentClick
+// does the copying, since v-html content has no handlers of its own.
+const renderFence = md.renderer.rules.fence!
+md.renderer.rules.fence = (tokens, idx, options, env, self) => {
+  const label = md.utils.escapeHtml(i18n.global.t('help.copyCode'))
+  return (
+    `<div class="help-code">${renderFence(tokens, idx, options, env, self)}` +
+    `<button type="button" class="help-code__copy" data-help-copy title="${label}" aria-label="${label}">` +
+    '<i class="mdi mdi-content-copy" aria-hidden="true"></i></button></div>'
+  )
 }
 
 md.renderer.rules.heading_open = (tokens, idx, options, env, self) => {

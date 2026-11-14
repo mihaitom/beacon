@@ -741,6 +741,76 @@ body {
   white-space: pre;
 }
 
+/* A code block in the help docs, with its copy button in the corner. The
+   button stays visible rather than appearing on hover: a phone has none. */
+.beacon-markdown .help-code {
+  position: relative;
+}
+
+.beacon-markdown .help-code pre {
+  padding-right: 48px;
+}
+
+.beacon-markdown .help-code__copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: color-mix(in srgb, rgb(var(--v-theme-surface)) 80%, transparent);
+  color: rgb(var(--v-theme-on-surface), 0.7);
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.beacon-markdown .help-code__copy:hover,
+.beacon-markdown .help-code__copy:focus-visible {
+  color: rgb(var(--v-theme-on-surface));
+}
+
+.beacon-markdown .help-code__copy--done {
+  color: rgb(var(--v-theme-success));
+}
+
+/* Code highlighting (services/help/codeHighlight.ts), in the theme's own
+   colours so it follows light, dark and self-made themes alike. */
+.beacon-markdown .hljs-comment,
+.beacon-markdown .hljs-quote {
+  color: rgb(var(--v-theme-on-surface), 0.55);
+  font-style: italic;
+}
+
+.beacon-markdown .hljs-keyword,
+.beacon-markdown .hljs-selector-tag,
+.beacon-markdown .hljs-section {
+  color: rgb(var(--v-theme-primary));
+}
+
+.beacon-markdown .hljs-string,
+.beacon-markdown .hljs-regexp,
+.beacon-markdown .hljs-symbol {
+  color: rgb(var(--v-theme-success));
+}
+
+.beacon-markdown .hljs-number,
+.beacon-markdown .hljs-literal,
+.beacon-markdown .hljs-built_in,
+.beacon-markdown .hljs-type {
+  color: rgb(var(--v-theme-info));
+}
+
+.beacon-markdown .hljs-title,
+.beacon-markdown .hljs-attr,
+.beacon-markdown .hljs-attribute,
+.beacon-markdown .hljs-variable,
+.beacon-markdown .hljs-meta {
+  color: rgb(var(--v-theme-warning));
+}
+
 .beacon-markdown table {
   display: block;
   max-width: 100%;

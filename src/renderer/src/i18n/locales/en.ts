@@ -1419,6 +1419,8 @@ export default {
     back: 'Back',
     contents: 'Contents',
     openOnGitHub: 'Open on GitHub',
+    copyCode: 'Copy',
+    codeCopied: 'Copied',
   },
   privacy: {
     title: 'Privacy',
