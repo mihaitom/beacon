@@ -1677,7 +1677,8 @@ button.album-artist {
 }
 
 /* Readable over any photo, and settling into the page's own background
- * where the controls begin. */
+ * where the controls begin. The ramp starts above the track text, not
+ * below it: a bright photo behind the title left it unreadable. */
 .np-scrim {
   position: absolute;
   inset: -16px -16px calc(-16px - env(safe-area-inset-bottom));
@@ -1686,8 +1687,9 @@ button.album-artist {
   background: linear-gradient(
     180deg,
     rgba(0, 0, 0, 0.3) 0%,
-    rgba(0, 0, 0, 0.45) 55%,
-    var(--bg) 100%
+    rgba(0, 0, 0, 0.4) 35%,
+    rgba(0, 0, 0, 0.72) 60%,
+    var(--bg) 82%
   );
 }
 
@@ -1881,6 +1883,16 @@ button.album-artist {
   .now-playing__info {
     grid-area: info;
     align-self: end;
+  }
+  /* Sideways the track text sits halfway up, so the darkening has to
+   * start higher than upright. */
+  .np-scrim {
+    background: linear-gradient(
+      180deg,
+      rgba(0, 0, 0, 0.55) 0%,
+      rgba(0, 0, 0, 0.75) 30%,
+      var(--bg) 85%
+    );
   }
   .np-controls {
     grid-area: controls;
