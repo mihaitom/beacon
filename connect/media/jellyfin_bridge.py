@@ -273,11 +273,42 @@ def _map_artist(item: dict) -> dict:
         "id": item["Id"],
         "name": item.get("Name", "Unknown"),
         "coverArt": _cover_art_id(item),
-        "albumCount": item.get("ChildCount") or 0,
     }
     if _is_favorite(item):
         artist["starred"] = "true"
     return artist
+
+
+async def _map_artists(
+    media: JellyfinClient, items: list[dict], *, every: bool = False
+) -> list[dict]:
+    """Artists with a real albumCount. An artist's own ChildCount can't give
+    one: on the item itself it counts albums *and* songs, and in a listing it
+    is only there when asked for and still misses albums the artist is a
+    track artist on. Counting the albums instead, by the same rule as
+    get_artist()'s ArtistIds lookup, keeps a card and its page in agreement.
+    `every` tallies the whole library in one listing instead of naming the
+    artists, for getArtists, where the id list would be the library."""
+    artists = _map_all(_map_artist, items)
+    if not artists:
+        return artists
+    scope = {} if every else {"ArtistIds": ",".join(a["id"] for a in artists)}
+    albums = await _jf_get_items(
+        media,
+        IncludeItemTypes="MusicAlbum",
+        Recursive="true",
+        EnableImages="false",
+        EnableUserData="false",
+        **scope,
+    )
+    counts: dict[str, int] = {}
+    for album in albums.get("Items", []):
+        credited = (album.get("ArtistItems") or []) + (album.get("AlbumArtists") or [])
+        for artist_id in {a.get("Id") for a in credited}:
+            counts[artist_id] = counts.get(artist_id, 0) + 1
+    for artist in artists:
+        artist["albumCount"] = counts.get(artist["id"], 0)
+    return artists
 
 
 def _map_playlist(item: dict) -> dict:
@@ -436,10 +467,10 @@ async def get_artists(_params: dict, media: JellyfinClient) -> dict:
     # Jellyfin has no native indexed-by-letter grouping (unlike Subsonic's
     # own getArtists.view shape) — bucket client(python)-side.
     buckets: dict[str, list[dict]] = {}
-    for item in data.get("Items", []):
-        name = item.get("Name") or ""
+    for artist in await _map_artists(media, data.get("Items", []), every=True):
+        name = artist["name"]
         letter = name[0].upper() if name else "#"
-        buckets.setdefault(letter, []).append(_map_artist(item))
+        buckets.setdefault(letter, []).append(artist)
     index = [{"name": letter, "artist": artists} for letter, artists in sorted(buckets.items())]
     return {"artists": {"index": index}}
 
@@ -455,6 +486,7 @@ async def get_artist(params: dict, media: JellyfinClient) -> dict:
     )
     artist = _map_artist(item)
     artist["album"] = [_map_album(a) for a in albums.get("Items", [])]
+    artist["albumCount"] = len(artist["album"])
     return {"artist": artist}
 
 
@@ -532,7 +564,7 @@ async def search3(params: dict, media: JellyfinClient) -> dict:
         "searchResult3": {
             "song": _map_all(_map_song, by_type["Audio"]),
             "album": _map_all(_map_album, by_type["MusicAlbum"]),
-            "artist": _map_all(_map_artist, by_type["MusicArtist"]),
+            "artist": await _map_artists(media, by_type["MusicArtist"]),
             # Not part of the base Subsonic API (a real Subsonic/Navidrome
             # server never sends this) — an additive extra field so
             # stores/library.ts's paginated bulk-load can show real
@@ -576,7 +608,7 @@ async def get_starred2(_params: dict, media: JellyfinClient) -> dict:
         "starred2": {
             "song": _map_all(_map_song, songs.get("Items", [])),
             "album": _map_all(_map_album, albums.get("Items", [])),
-            "artist": _map_all(_map_artist, artists.get("Items", [])),
+            "artist": await _map_artists(media, artists.get("Items", [])),
         }
     }
 

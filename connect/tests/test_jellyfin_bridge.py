@@ -36,14 +36,20 @@ def _fake_jf_client(json_by_path: dict[str, dict] | None = None):
     (typically a POST/DELETE mutation, which handlers don't parse a body
     from — see _jf_request's comment) succeeds with an empty body. Returns
     (mock_client, calls) — calls is a list of (method, url, params, json)
-    tuples, for asserting what a mutation actually sent."""
+    tuples, for asserting what a mutation actually sent. A key may end in
+    "?Param=Value" to tell apart two calls to the same path, which the real
+    URL can't do: params travel separately."""
     json_by_path = json_by_path or {}
     calls: list[tuple] = []
 
     async def fake_request(method, url, headers=None, params=None, json=None):
         calls.append((method, url, params, json))
         for path, payload in json_by_path.items():
-            if url.endswith(path):
+            base_path, _, condition = path.partition("?")
+            name, _, value = condition.partition("=")
+            if condition and (params or {}).get(name) != value:
+                continue
+            if url.endswith(base_path):
                 response = MagicMock()
                 response.raise_for_status = MagicMock()
                 response.content = b"1"
@@ -609,6 +615,68 @@ def test_get_artists_buckets_by_first_letter(client, jellyfin_session, monkeypat
     assert [entry["name"] for entry in index] == ["A", "B"]
     a_names = {a["name"] for a in index[0]["artist"]}
     assert a_names == {"ABBA", "Air"}
+
+
+def test_artist_album_counts_come_from_their_albums(client, jellyfin_session, monkeypatch):
+    """An artist's own ChildCount is albums plus songs on the item itself and
+    absent from a listing (#93): the cards showed 0 albums, the artist page
+    16 for 3. Albums count by album artist or track artist, like getArtist's
+    own album list, and once each."""
+    albums = {
+        "Items": [
+            {"Id": "al1", "AlbumArtists": [{"Id": "a1"}], "ArtistItems": [{"Id": "a1"}]},
+            {"Id": "al2", "AlbumArtists": [{"Id": "a1"}], "ArtistItems": []},
+            {"Id": "al3", "AlbumArtists": [{"Id": "va"}], "ArtistItems": [{"Id": "a1"}]},
+        ]
+    }
+    artists = {
+        "Items": [
+            {"Id": "a1", "Name": "ABBA", "Type": "MusicArtist", "ChildCount": 16},
+            {"Id": "b1", "Name": "B", "Type": "MusicArtist"},
+        ]
+    }
+    fake_client, calls = _fake_jf_client(
+        {"/Items?IncludeItemTypes=MusicAlbum": albums, "/Items": artists}
+    )
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    def album_counts(url: str, key: str) -> dict[str, int]:
+        body = client.get(url).json()["subsonic-response"][key]
+        found = (
+            [a for entry in body["index"] for a in entry["artist"]]
+            if "index" in body
+            else body["artist"]
+        )
+        return {a["id"]: a["albumCount"] for a in found}
+
+    assert album_counts("/rest/getArtists.view", "artists") == {"a1": 3, "b1": 0}
+    # One listing for the whole library, not one per artist.
+    album_calls = [c for c in calls if (c[2] or {}).get("IncludeItemTypes") == "MusicAlbum"]
+    assert len(album_calls) == 1 and "ArtistIds" not in album_calls[0][2]
+
+    for url, key in (
+        ("/rest/search3.view?query=a", "searchResult3"),
+        ("/rest/getStarred2.view", "starred2"),
+    ):
+        calls.clear()
+        assert album_counts(url, key) == {"a1": 3, "b1": 0}, url
+        # One listing scoped to just these artists.
+        scoped = [c[2]["ArtistIds"] for c in calls if "ArtistIds" in (c[2] or {})]
+        assert scoped == ["a1,b1"], url
+
+
+def test_get_artist_counts_the_albums_it_lists(client, jellyfin_session, monkeypatch):
+    fake_client, _ = _fake_jf_client(
+        {
+            "/Items/artist-1": {"Id": "artist-1", "Name": "Radiohead", "ChildCount": 16},
+            "/Items": {"Items": [{"Id": "album-1", "Name": "OK Computer", "RunTimeTicks": 0}]},
+        }
+    )
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    artist = client.get("/rest/getArtist.view?id=artist-1").json()["subsonic-response"]["artist"]
+
+    assert artist["albumCount"] == 1
 
 
 def test_get_artist_includes_its_albums(client, jellyfin_session, monkeypatch):

@@ -54,6 +54,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Fixed
 
 - ReplayGain applies to every song while casting, not only to the one you started, so the volume no longer changes from song to song (reported by [@ampcat3](https://github.com/ampcat3), [#91](https://github.com/mihaitom/beacon/discussions/91))
+- With Jellyfin, artists show their real number of albums: the artist page no longer counts the songs in, and artist cards no longer show 0 albums (reported by [@jolny](https://github.com/jolny), [#93](https://github.com/mihaitom/beacon/issues/93))
 - Home stays current while it is open: new albums show up after a library scan, "Recently played" moves as soon as a song counts as played, and the top songs no longer disappear when a scan finishes
 - The queue no longer twitches while it slides in or out
 - On phones, a long artist line no longer lets the page slide sideways
