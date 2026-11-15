@@ -841,6 +841,94 @@ def radio_is_buffering(session: SessionState) -> bool:
 STATUS_EXTRAS: list = []
 
 
+def _current_song_status(session: SessionState) -> dict | None:
+    t = session.state.current_track
+    if t is None:
+        return None
+    return {
+        "id": t.id,
+        "artist": t.artist,
+        "album": t.album,
+        "cover_art_url": session.media.get_cover_art_url(t.cover_art_id),
+        "duration": t.duration,
+        "title": t.title,
+    }
+
+
+def _targets_status(session: SessionState) -> list[dict]:
+    st = session.state
+    targets = []
+    # What a device would be handed for the station playing right now — the
+    # Sonos half of supports_radio_position() depends on it (see
+    # core/state.py). Empty when no station is playing, which is also when
+    # the flag it feeds means nothing to anybody.
+    radio_url = radio_dispatch_url(session.session_id, st.radio_info) if st.radio_info else ""
+    for target_type, name in list_target_pairs(st.active_delivery):
+        key = f"{target_type}:{name}"
+        volume, muted = st.device_volumes.get(key, (None, None))
+        targets.append(
+            {
+                "name": name,
+                "type": target_type,
+                "volume": volume,
+                "muted": muted,
+                # Whether this device reports its own volume changes, so a
+                # client can stop asking it every few seconds — per device,
+                # not per type: two DLNA renderers differ on whether they
+                # accept a subscription at all. See core/device_volume.py.
+                "volume_push": pushes_volume(target_type, name),
+                # Whether this device's own reported position is worth
+                # watching for a *station* — what makes the radio
+                # visualizer and the buffering indicator possible for a
+                # cast (see core/radio_position.py). Reported rather than
+                # left to the client to work out: the frontend used to keep
+                # its own copy of the delivery-type list in
+                # stores/connect.ts, hand-synced with core/state.py's, with
+                # nothing to catch the two drifting apart — and the copy
+                # could not have known about the Sonos-while-relayed
+                # exception at all, since that depends on the URL this
+                # session is dispatching.
+                "supports_radio_position": supports_radio_position(target_type, radio_url),
+                # The device's own repeat setting, None where unknown - see
+                # routes/upnp.py's _REPEATING_PLAY_MODES.
+                "device_repeat": st.device_repeat.get(key),
+            }
+        )
+    return targets
+
+
+def _stream_info(st) -> dict:
+    fmt = st.current_output_format
+    return {
+        # "transcoding" is derived rather than a stored flag: every copy-tier
+        # label ends in "(copy)" (see core/streamer.py's resolve_output_format())
+        # and nothing else ever does, so this can't drift out of sync with the
+        # label text the way a second, hand-set boolean could.
+        "label": fmt.label,
+        "content_type": fmt.content_type,
+        "transcoding": "copy" not in fmt.label,
+        "source_codec": fmt.source_codec,
+        "source_sample_rate": fmt.source_sample_rate,
+        "source_bit_depth": fmt.source_bit_depth,
+        "source_bitrate_kbps": fmt.source_bitrate_kbps,
+        "source_channels": fmt.source_channels,
+        # Only set where the output is actually forced away from the
+        # source's own numbers, and why this track is being transcoded at
+        # all — see OutputFormat's own comment on both.
+        "target_sample_rate": fmt.target_sample_rate,
+        "target_bit_depth": fmt.target_bit_depth,
+        "target_channels": fmt.target_channels,
+        "target_bitrate_kbps": fmt.target_bitrate_kbps,
+        "transcode_reason": fmt.transcode_reason,
+        "active_connections": st.active_stream_connections,
+        # Process-wide, not session-scoped — see core/loop_health.py. A short
+        # window (30s) rather than the module's full 120s history: this is
+        # meant to answer "is anything wrong *right now*", not carry a stall
+        # from ten minutes ago forward on every status tick after it.
+        "loop_lag": peak_lag(30.0),
+    }
+
+
 def build_status_dict(
     session: SessionState,
     displaced: bool = False,
@@ -885,89 +973,9 @@ def build_status_dict(
     elapsed = compute_position(session)
     st = session.state
 
-    current_track = None
-    if st.current_track:
-        t = st.current_track
-        current_track = {
-            "id": t.id,
-            "artist": t.artist,
-            "album": t.album,
-            "cover_art_url": session.media.get_cover_art_url(t.cover_art_id),
-            "duration": t.duration,
-            "title": t.title,
-        }
-
-    targets = []
-    # What a device would be handed for the station playing right now — the
-    # Sonos half of supports_radio_position() depends on it (see
-    # core/state.py). Empty when no station is playing, which is also when
-    # the flag it feeds means nothing to anybody.
-    radio_url = radio_dispatch_url(session.session_id, st.radio_info) if st.radio_info else ""
-    for target_type, name in list_target_pairs(st.active_delivery):
-        key = f"{target_type}:{name}"
-        volume, muted = st.device_volumes.get(key, (None, None))
-        targets.append(
-            {
-                "name": name,
-                "type": target_type,
-                "volume": volume,
-                "muted": muted,
-                # Whether this device reports its own volume changes, so a
-                # client can stop asking it every few seconds — per device,
-                # not per type: two DLNA renderers differ on whether they
-                # accept a subscription at all. See core/device_volume.py.
-                "volume_push": pushes_volume(target_type, name),
-                # Whether this device's own reported position is worth
-                # watching for a *station* — what makes the radio
-                # visualizer and the buffering indicator possible for a
-                # cast (see core/radio_position.py). Reported rather than
-                # left to the client to work out: the frontend used to keep
-                # its own copy of the delivery-type list in
-                # stores/connect.ts, hand-synced with core/state.py's, with
-                # nothing to catch the two drifting apart — and the copy
-                # could not have known about the Sonos-while-relayed
-                # exception at all, since that depends on the URL this
-                # session is dispatching.
-                "supports_radio_position": supports_radio_position(target_type, radio_url),
-                # The device's own repeat setting, None where unknown - see
-                # routes/upnp.py's _REPEATING_PLAY_MODES.
-                "device_repeat": st.device_repeat.get(key),
-            }
-        )
-
-    fmt = st.current_output_format
-    stream_info = {
-        # "transcoding" is derived rather than a stored flag: every copy-tier
-        # label ends in "(copy)" (see core/streamer.py's resolve_output_format())
-        # and nothing else ever does, so this can't drift out of sync with the
-        # label text the way a second, hand-set boolean could.
-        "label": fmt.label,
-        "content_type": fmt.content_type,
-        "transcoding": "copy" not in fmt.label,
-        "source_codec": fmt.source_codec,
-        "source_sample_rate": fmt.source_sample_rate,
-        "source_bit_depth": fmt.source_bit_depth,
-        "source_bitrate_kbps": fmt.source_bitrate_kbps,
-        "source_channels": fmt.source_channels,
-        # Only set where the output is actually forced away from the
-        # source's own numbers, and why this track is being transcoded at
-        # all — see OutputFormat's own comment on both.
-        "target_sample_rate": fmt.target_sample_rate,
-        "target_bit_depth": fmt.target_bit_depth,
-        "target_channels": fmt.target_channels,
-        "target_bitrate_kbps": fmt.target_bitrate_kbps,
-        "transcode_reason": fmt.transcode_reason,
-        "active_connections": st.active_stream_connections,
-        # Process-wide, not session-scoped — see core/loop_health.py. A short
-        # window (30s) rather than the module's full 120s history: this is
-        # meant to answer "is anything wrong *right now*", not carry a stall
-        # from ten minutes ago forward on every status tick after it.
-        "loop_lag": peak_lag(30.0),
-    }
-
     status = {
-        "current_song": current_track,
-        "stream_info": stream_info,
+        "current_song": _current_song_status(session),
+        "stream_info": _stream_info(st),
         # The full queue (history included) and where current_track sits in
         # it — see AppState.queue's comment. Lets every client sharing this
         # session (not just whichever one dispatched it) mirror the same
@@ -1014,7 +1022,7 @@ def build_status_dict(
         # ways of knowing that, and why the second one had to be added.
         "radio_buffering": radio_is_buffering(session),
         "streaming": st.is_streaming,
-        "targets": targets,
+        "targets": _targets_status(session),
         "total_songs": len(st.queue),
         "displaced": displaced,
         "interrupted": interrupted,
