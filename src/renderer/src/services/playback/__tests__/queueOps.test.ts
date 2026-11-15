@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { dedupeForQueue, shuffledExcept } from '../playback'
-import { makeSong } from './fixtures'
+import { dedupeForQueue, keptAfter, sameIds, shuffledExcept } from '../queueOps'
+import { makeSong } from '@/stores/__tests__/fixtures'
 
 describe('dedupeForQueue', () => {
   it('passes through distinct songs by reference, unchanged', () => {
@@ -64,5 +64,30 @@ describe('shuffledExcept', () => {
 
     expect(result).toHaveLength(3)
     expect(result.map((s) => s.id).sort()).toEqual(['a', 'b', 'c'])
+  })
+})
+
+describe('keptAfter', () => {
+  const [a, b, c, d] = ['a', 'b', 'c', 'd'].map((id) => makeSong(id))
+
+  it('moves a song from before the current one to right after it', () => {
+    expect(keptAfter([a!, b!, c!, d!], 2, a!)).toEqual([b, c, a, d])
+  })
+
+  it('moves a song from further back to right after the current one', () => {
+    expect(keptAfter([a!, b!, c!, d!], 0, d!)).toEqual([a, d, b, c])
+  })
+
+  it('inserts a song that was not queued at all', () => {
+    const e = makeSong('e')
+    expect(keptAfter([a!, b!, c!, d!], 2, e)).toEqual([a, b, c, e, d])
+  })
+})
+
+describe('sameIds', () => {
+  it('compares order and length, not just membership', () => {
+    expect(sameIds(['a', 'b'], ['a', 'b'])).toBe(true)
+    expect(sameIds(['a', 'b'], ['b', 'a'])).toBe(false)
+    expect(sameIds(['a'], ['a', 'a'])).toBe(false)
   })
 })

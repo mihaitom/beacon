@@ -1,10 +1,16 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import { nextTick } from 'vue'
 import { useConnectStore } from '../connect'
 import { clearPersistedPlayback, usePlaybackStore } from '../playback'
+import { getAudioEngine } from '@/services/audioEngine'
 import { makeSong, makeStatus } from './fixtures'
 
 vi.mock('@/services/audioEngine', () => ({ getAudioEngine: vi.fn() }))
+vi.mock('@/services/mediaSession', () => ({
+  initMediaSession: vi.fn(),
+  reassertActionHandlers: vi.fn(),
+}))
 
 const PERSIST_KEY = 'beacon.playback'
 const SESSION_KEY = 'beacon.playback.session-was-playing'
@@ -166,6 +172,29 @@ describe('playback persistence', () => {
 
       expect(() => playback.restoreFromStorage()).not.toThrow()
       expect(playback.queue).toEqual([])
+    })
+  })
+
+  describe('once init() has run', () => {
+    it('saves a change on its own, so a reload finds the latest queue', async () => {
+      vi.useFakeTimers()
+      try {
+        vi.mocked(getAudioEngine).mockReturnValue({
+          setVolume: vi.fn(),
+          setEqualizer: vi.fn(),
+        } as unknown as ReturnType<typeof getAudioEngine>)
+        const playback = usePlaybackStore()
+        playback.init()
+
+        playback.setQueue([makeSong('a'), makeSong('b')], 1)
+        await nextTick()
+        vi.advanceTimersByTime(1000)
+
+        expect((persisted().queue as { id: string }[]).map((s) => s.id)).toEqual(['a', 'b'])
+        expect(persisted().currentIndex).toBe(1)
+      } finally {
+        vi.useRealTimers()
+      }
     })
   })
 

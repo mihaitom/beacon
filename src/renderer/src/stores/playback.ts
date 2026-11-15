@@ -40,6 +40,7 @@ import { shuffled } from '@/services/shuffle'
 import { createLock } from '@/services/playback/lock'
 import { createEdgeDetector } from '@/services/playback/edgeDetector'
 import { diffCastQueue } from '@/services/playback/queueReconcile'
+import { dedupeForQueue, keptAfter, sameIds, shuffledExcept } from '@/services/playback/queueOps'
 import type { RepeatMode } from '@/services/playback/types'
 import { resolveRadioStation } from '@/services/playback/radioStation'
 import { getLocalMix, mixSong, STALE_PAUSE_MS, upcomingSongs } from '@/services/playback/localMix'
@@ -263,7 +264,7 @@ const switchToIndexGuard = createSequenceGuard()
 // Guards togglePlay() against a second call landing while the connect
 // branch's first one is still awaiting its pause()/resume() round trip —
 // this.isPlaying isn't updated optimistically there (only the next SSE
-// status tick does that, see the $subscribe callback in init()), so a
+// status tick does that, see applyCastStatus()), so a
 // rapid double-click/double-tap otherwise reads the same stale isPlaying
 // twice and fires the *same* action again instead of alternating (observed
 // live 2026-08-20 as two /pause calls 66ms apart, no /resume between).
@@ -338,10 +339,6 @@ let mixBufferedEnd = 0
 // which leaves the preview alone meanwhile.
 let castPreviewRequests = 0
 
-function sameIds(a: readonly string[], b: readonly string[]): boolean {
-  return a.length === b.length && a.every((id, i) => id === b[i])
-}
-
 /** The songs for `ids`, in that order: from `known` (this client's own
  * objects - rows are keyed by them), the library, or the server. Null when
  * any lookup fails, rather than a list with a hole in it. */
@@ -397,11 +394,11 @@ let localResumeDecided = false
 // Tracks connect.isActive across SSE ticks so a live true→false transition
 // (user hit "Stop casting"/disconnected the last device mid-session) can be
 // told apart from merely observing "not casting" on app boot, which
-// decideLocalResume() already owns — see the $subscribe handler in init().
+// decideLocalResume() already owns — see applyCastStatus().
 const castingActiveEdge = createEdgeDetector()
 
 // The last status payload whose `interrupted` flag was already acted on.
-// The $subscribe handler below runs on *every* mutation of the connect
+// applyCastStatus() runs on *every* mutation of the connect
 // store, not only when a new payload lands, and it re-reads the same
 // `state.status` object each time — so a payload carrying interrupted=true
 // raised its toast again on every unrelated mutation (device list refresh,
@@ -666,6 +663,34 @@ export const usePlaybackStore = defineStore('playback', {
 
       this.restoreFromStorage()
 
+      this.wireAudioEngine()
+
+      // OS media keys / lock-screen / GNOME-KDE media widget — see that
+      // service's own comment. Works the same whether casting or playing
+      // locally (both keep currentSong/isPlaying current either way), so
+      // this needs no isCasting branch of its own the way
+      // wireAudioEngine()'s callbacks do.
+      initMediaSession()
+
+      // detached: true, same reason as persistOnChange()'s —
+      // init() runs from App.vue's created(), so without it Pinia ties this
+      // subscription to that component instance and drops it when the
+      // instance goes away (an HMR round reloading App.vue does exactly
+      // that). The `initialized` guard above then keeps it from ever being
+      // set up again, leaving the store deaf to every further status tick
+      // while the backend keeps a cast playing — observed live 2026-09-07 as
+      // a player bar stuck at one track's end for the rest of the queue.
+      useConnectStore().$subscribe((_mutation, state) => this.applyCastStatus(state.status), {
+        detached: true,
+      })
+
+      this.startBackgroundTimers()
+      this.persistOnChange()
+    },
+
+    /** Routes the shared AudioEngine's events into this store - each one
+     * only while playing locally, since casting reports through connect. */
+    wireAudioEngine(): void {
       const engine = getAudioEngine()
       engine.setVolume(this.volume)
       useEqualizerStore().applyLocal()
@@ -712,7 +737,7 @@ export const usePlaybackStore = defineStore('playback', {
         this.isPlaying = false
       }
       // Radio only, same as radioBuffering's own cast-side source (SSE
-      // status.radio_buffering, set above) — a song's own reconnect stays
+      // status.radio_buffering, see applyCastStatus()) — a song's own reconnect stays
       // silent on purpose (see audioEngine.ts's reconnectOnDrop() comment),
       // so this leaves radioBuffering alone whenever there's no station to
       // report it for. Without this, a dropped local radio connection kept
@@ -738,101 +763,90 @@ export const usePlaybackStore = defineStore('playback', {
           reportRadioSilence(radioConnectionId, seconds)
         }
       }
+    },
 
-      // OS media keys / lock-screen / GNOME-KDE media widget — see that
-      // service's own comment. Works the same whether casting or playing
-      // locally (both keep currentSong/isPlaying current either way), so
-      // this needs no isCasting branch of its own the way the engine
-      // callbacks above do.
-      initMediaSession()
+    /** Mirrors one connect status tick: the cast/local handover, an
+     * interruption, and - while casting - what plays, where it is, and
+     * whether it ended. Runs on every connect store mutation, so anything
+     * per-payload is guarded by payload identity. */
+    applyCastStatus(status: ConnectStatus | null): void {
+      // As soon as we know for sure whether a cast session already owns
+      // playback (the first real status tick), decide whether local
+      // <audio> should resume instead — see decideLocalResume().
+      if (status) this.decideLocalResume()
 
       const connect = useConnectStore()
-      // detached: true, same reason as the persistence subscription below —
-      // init() runs from App.vue's created(), so without it Pinia ties this
-      // subscription to that component instance and drops it when the
-      // instance goes away (an HMR round reloading App.vue does exactly
-      // that). The `initialized` guard above then keeps it from ever being
-      // set up again, leaving the store deaf to every further status tick
-      // while the backend keeps a cast playing — observed live 2026-09-07 as
-      // a player bar stuck at one track's end for the rest of the queue.
-      connect.$subscribe(
-        (_mutation, state) => {
-          // As soon as we know for sure whether a cast session already owns
-          // playback (the first real status tick), decide whether local
-          // <audio> should resume instead — see decideLocalResume().
-          if (state.status) this.decideLocalResume()
+      const activeNow = connect.isActive
+      // Both directions of the cast/local switch, and each has to be a
+      // transition rather than the current value: "wasn't casting at
+      // boot" is decideLocalResume()'s above, and local audio has to
+      // stop however it came to be playing, which is why the rising side
+      // carries no localResumeDecided guard of its own. On the falling
+      // side this.localPosition still holds the last position reported
+      // while casting — this same tick's early return (right below)
+      // skips overwriting it from a now-inactive status — which is where
+      // the local element is then loaded at.
+      const castingEdge = castingActiveEdge.update(activeNow)
+      if (castingEdge === 'rising') this.yieldToCastPlayback()
+      if (localResumeDecided && castingEdge === 'falling') this.prepareLocalPlayback()
 
-          const status = state.status
-          const activeNow = connect.isActive
-          // Both directions of the cast/local switch, and each has to be a
-          // transition rather than the current value: "wasn't casting at
-          // boot" is decideLocalResume()'s above, and local audio has to
-          // stop however it came to be playing, which is why the rising side
-          // carries no localResumeDecided guard of its own. On the falling
-          // side this.localPosition still holds the last position reported
-          // while casting — this same tick's early return (right below)
-          // skips overwriting it from a now-inactive status — which is where
-          // the local element is then loaded at.
-          const castingEdge = castingActiveEdge.update(activeNow)
-          if (castingEdge === 'rising') this.yieldToCastPlayback()
-          if (localResumeDecided && castingEdge === 'falling') this.prepareLocalPlayback()
+      // Once per payload, not once per mutation — see
+      // interruptedPayloadHandled. Checked before the guard below, since
+      // that returns early whenever targets are already gone.
+      if (status?.interrupted && status !== interruptedPayloadHandled) {
+        interruptedPayloadHandled = status
+        this.notifyCastInterrupted()
+      }
 
-          // Once per payload, not once per mutation — see
-          // interruptedPayloadHandled. Checked before the guard below, since
-          // that returns early whenever targets are already gone.
-          if (status?.interrupted && status !== interruptedPayloadHandled) {
-            interruptedPayloadHandled = status
-            this.notifyCastInterrupted()
-          }
+      if (!status || !activeNow) return
 
-          if (!status || !activeNow) return
+      this.isPlaying = status.streaming && !status.paused
+      this.radioBuffering = status.radio_buffering
+      // A tick still carrying a song while this client is mid-switch to
+      // a station was built before /play-url reached the backend, and
+      // everything it says about position belongs to the track that is
+      // already over — see localRadioChangeGuard. Left in, it wrote the
+      // old track's length and elapsed onto a station that has neither,
+      // so the "Live · {elapsed}" readout started at wherever the track
+      // had got to and counted on from there.
+      const supersededByPendingRadio = !!status.current_song && localRadioChangeGuard.hasAny()
+      if (status.current_song && !supersededByPendingRadio) {
+        this.duration = status.current_song.duration
+      }
+      // Through the tracker, never straight from status.elapsed: the
+      // smoothing interval below reads that same tracker, so writing the
+      // raw value here as well put two disagreeing numbers on screen in
+      // turn — the raw one for the ~200ms until the next interval tick,
+      // the smoothed one for the rest of the ~2s until the next status
+      // tick. As long as the two agreed to within a second that stayed
+      // invisible behind formatTime()'s rounding; once the tracker was
+      // carrying any real lead (see positionTracker.ts's CATCH_UP_SECONDS)
+      // it read as the counter jumping a second or two backwards and
+      // forwards, twice per status tick, with the lyrics highlight
+      // following it. Ordered after the duration above so a tick that
+      // brings a new song's length clamps against that one, not the
+      // previous song's. Once per payload, same as the interruption above
+      // — see positionPayloadHandled for what re-recording a stale
+      // elapsed does to the tracker.
+      if (status !== positionPayloadHandled && !supersededByPendingRadio) {
+        positionPayloadHandled = status
+        const now = performance.now()
+        positionTracker.record(status.elapsed, now)
+        this.localPosition = positionTracker.extrapolate(now, this.positionClamp)
+      }
+      // Not over a preview, whose positions are mid-song - before this
+      // client may even have taken it up (adoptCastPreview()).
+      if (!status.preview) this.checkScrobbleThreshold()
 
-          this.isPlaying = status.streaming && !status.paused
-          this.radioBuffering = status.radio_buffering
-          // A tick still carrying a song while this client is mid-switch to
-          // a station was built before /play-url reached the backend, and
-          // everything it says about position belongs to the track that is
-          // already over — see localRadioChangeGuard. Left in, it wrote the
-          // old track's length and elapsed onto a station that has neither,
-          // so the "Live · {elapsed}" readout started at wherever the track
-          // had got to and counted on from there.
-          const supersededByPendingRadio = !!status.current_song && localRadioChangeGuard.hasAny()
-          if (status.current_song && !supersededByPendingRadio) {
-            this.duration = status.current_song.duration
-          }
-          // Through the tracker, never straight from status.elapsed: the
-          // smoothing interval below reads that same tracker, so writing the
-          // raw value here as well put two disagreeing numbers on screen in
-          // turn — the raw one for the ~200ms until the next interval tick,
-          // the smoothed one for the rest of the ~2s until the next status
-          // tick. As long as the two agreed to within a second that stayed
-          // invisible behind formatTime()'s rounding; once the tracker was
-          // carrying any real lead (see positionTracker.ts's CATCH_UP_SECONDS)
-          // it read as the counter jumping a second or two backwards and
-          // forwards, twice per status tick, with the lyrics highlight
-          // following it. Ordered after the duration above so a tick that
-          // brings a new song's length clamps against that one, not the
-          // previous song's. Once per payload, same as the interruption above
-          // — see positionPayloadHandled for what re-recording a stale
-          // elapsed does to the tracker.
-          if (status !== positionPayloadHandled && !supersededByPendingRadio) {
-            positionPayloadHandled = status
-            const now = performance.now()
-            positionTracker.record(status.elapsed, now)
-            this.localPosition = positionTracker.extrapolate(now, this.positionClamp)
-          }
-          // Not over a preview, whose positions are mid-song - before this
-          // client may even have taken it up (adoptCastPreview()).
-          if (!status.preview) this.checkScrobbleThreshold()
+      void this.reconcileFromStatus(status)
 
-          void this.reconcileFromStatus(status)
+      if (endedEdge.update(status.ended) === 'rising') void this.advanceOnSongEnd()
+    },
 
-          if (endedEdge.update(status.ended) === 'rising') void this.advanceOnSongEnd()
-        },
-        { detached: true },
-      )
-
-      // Smooths the ~2s-stepped position above into something that moves
+    /** App-lifetime timers. Each is a no-op while it has nothing to do, so
+     * they are simply left running. */
+    startBackgroundTimers(): void {
+      // Smooths the ~2s-stepped position applyCastStatus() records into something that moves
       // every 200ms instead — see positionTracker.ts's own comment. A no-op
       // whenever not actively cast-playing, so this is cheap to just leave
       // running for the app's whole lifetime rather than starting/stopping
@@ -862,7 +876,9 @@ export const usePlaybackStore = defineStore('playback', {
       document.addEventListener('visibilitychange', () => {
         if (pollingAllowed()) useRadioMetadataStore().poll()
       })
+    },
 
+    persistOnChange(): void {
       // Keeps the persisted snapshot fresh so a reload always has something
       // recent to resume from. Debounced — this fires on every playback
       // mutation, including the ~4x/sec local position tick, so writing on
@@ -969,7 +985,7 @@ export const usePlaybackStore = defineStore('playback', {
      * (unreachable, or this build has no casting support), so a restored
      * queue doesn't just sit there forever waiting to learn whether a cast
      * session already owns playback. The normal case (the backend does
-     * answer) is handled by init()'s own connect subscription calling
+     * answer) is handled by applyCastStatus() calling
      * decideLocalResume() as soon as the first status tick arrives —
      * whichever of the two happens first wins, decideLocalResume() is
      * idempotent either way. */
@@ -1012,7 +1028,7 @@ export const usePlaybackStore = defineStore('playback', {
     },
 
     /** Makes this device's own player usable again once a cast has ended —
-     * called from init()'s connect $subscribe handler, and the live-session
+     * called from applyCastStatus(), and the live-session
      * counterpart to resumeLocalPlayback() at app boot.
      *
      * Loads, never plays, whoever ended the cast and however it ended. A
@@ -1065,7 +1081,7 @@ export const usePlaybackStore = defineStore('playback', {
      * castTo()). Every *other* client in the session hears of it from a
      * status tick alone, and its `<audio>` element used to play on
      * underneath the cast with nothing able to reach it: every engine
-     * callback in init() goes quiet once isCasting turns true, and pause()
+     * callback in wireAudioEngine() goes quiet once isCasting turns true, and pause()
      * addresses the cast from then on.
      *
      * stop() rather than pause(), so the src and the reconnect ladder
@@ -1084,7 +1100,7 @@ export const usePlaybackStore = defineStore('playback', {
       // Both belonged to the element that just let go, and nothing refills
       // either while casting: reconnectRadio() (which is what
       // radioConnectionLost offers a button for) refuses to run then, and
-      // init()'s onBufferedChange has already gone quiet.
+      // wireAudioEngine()'s onBufferedChange has already gone quiet.
       this.bufferedPosition = 0
       this.radioConnectionLost = false
     },
@@ -2968,48 +2984,3 @@ export const usePlaybackStore = defineStore('playback', {
     },
   },
 })
-
-/** Clones any song in `songs` that's already the same object reference as
- * something in `existingQueue` (or repeated within `songs` itself), so
- * addToQueue()/queueNext() never push the literal same Song object into
- * the queue twice. Two queue slots sharing one object reference is what let
- * QueueDrawer.vue's per-row identity (keyed off the object, not `id` —
- * needed since the same *song* can legitimately be queued more than once)
- * collide between unrelated rows. Only clones on an actual collision — the
- * overwhelmingly common case (no repeats) still pushes the original
- * reference unchanged, same as before this existed. */
-export function dedupeForQueue(songs: Song[], existingQueue: Song[]): Song[] {
-  const seen = new Set<Song>(existingQueue)
-  return songs.map((t) => {
-    if (seen.has(t)) return { ...t }
-    seen.add(t)
-    return t
-  })
-}
-
-/** `queue` with `song` moved to right after `index` - a locked next song
- * kept in place across a reshuffle (see lockedNextIndex). */
-function keptAfter(queue: Song[], index: number, song: Song): Song[] {
-  const rest = [...queue]
-  const at = rest.indexOf(song)
-  if (at >= 0) rest.splice(at, 1)
-  const after = at >= 0 && at <= index ? index - 1 : index
-  rest.splice(after + 1, 0, song)
-  return rest
-}
-
-export function shuffledExcept(songs: Song[], keepFirst: Song | null | undefined): Song[] {
-  // Removes only the one `keepFirst` instance, not every song sharing its
-  // id — a plain .filter() by id would drop *every* occurrence, silently
-  // shrinking the queue whenever the same song appears twice in it.
-  const rest = [...songs]
-  if (keepFirst) {
-    const keepIndex = rest.findIndex((t) => t.id === keepFirst.id)
-    if (keepIndex >= 0) rest.splice(keepIndex, 1)
-  }
-  for (let i = rest.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[rest[i], rest[j]] = [rest[j]!, rest[i]!]
-  }
-  return keepFirst ? [keepFirst, ...rest] : rest
-}
