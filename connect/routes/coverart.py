@@ -15,8 +15,8 @@ prompted this).
 
 Dispatches per backend rather than going through a single shared client: the
 existing per-backend browser-facing cover-art paths (routes/proxy.py's
-_proxy() for Subsonic, media/jellyfin_bridge.py's and media/plex_bridge.py's
-own _handle_binary()) already each have a working, pooled httpx client and
+_proxy() for Subsonic, the bridges' shared passthrough in media/bridge.py)
+already each have a working, pooled httpx client and
 URL-construction for exactly this fetch — reusing those instead of adding a
 fourth connection pool of this endpoint's own.
 

@@ -10,7 +10,7 @@ import pytest
 from core import radio_stations
 from core.session import DEFAULT_SESSION_ID, SessionState
 from core.session import registry as session_registry
-from media import JellyfinClient, SubsonicClient, jellyfin_bridge
+from media import JellyfinClient, SubsonicClient, bridge, jellyfin_bridge
 
 
 @pytest.fixture
@@ -1160,15 +1160,15 @@ def test_stream_view_requires_id(client, jellyfin_session):
 def test_binary_handler_exception_returns_failed_envelope_not_500(
     client, jellyfin_session, monkeypatch
 ):
-    """Unlike every JSON handler, _handle_binary()/_stream_binary() had no
+    """Unlike every JSON handler, the binary passthrough had no
     try/except of their own — a Jellyfin connectivity blip mid cover-art-
     load or mid-stream used to propagate as a raw 500 instead of degrading
     like every other endpoint here."""
 
-    async def broken_stream_binary(request, url, media):
+    async def broken_stream_binary(*args, **kwargs):
         raise RuntimeError("connection reset")
 
-    monkeypatch.setattr(jellyfin_bridge, "_stream_binary", broken_stream_binary)
+    monkeypatch.setattr(bridge, "stream_binary", broken_stream_binary)
 
     r = client.get("/rest/getCoverArt.view?id=item-1")
 
@@ -1724,7 +1724,7 @@ def test_stream_view_drops_the_length_of_a_compressed_body(client, jellyfin_sess
 
 def test_cover_art_never_forwards_a_length(client, jellyfin_session, monkeypatch):
     """The reason content-length is skipped at all: an image endpoint whose
-    length and body disagreed crashed the response (see _SKIP_RESP_HEADERS)."""
+    length and body disagreed crashed the response (see bridge.py's SKIP_RESP_HEADERS)."""
     fake_client, _ = _mock_binary_httpx_client({"content-length": "999"})
     monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
 

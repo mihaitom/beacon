@@ -151,7 +151,7 @@ class MediaClient(Protocol):
         and Jellyfin; PlexClient accepts and ignores it, always returning
         its one fixed thumbnail size — its browser-facing single-cover path
         never plumbed a size through either (see media/plex_bridge.py's
-        _handle_binary), so this isn't a regression, just not (yet)
+        _cover_url()), so this isn't a regression, just not (yet)
         implemented there. Accepting the parameter anyway means a caller
         that treats every MediaClient the same doesn't need to special-case
         Plex just to avoid a TypeError."""

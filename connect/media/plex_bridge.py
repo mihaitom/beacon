@@ -51,24 +51,20 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
-from urllib.parse import quote
 
 import httpx
 from fastapi import Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from . import apply_image_cache_control
+from . import bridge
 from .base import (
     artwork_id,
     create_internet_radio_station,
     delete_internet_radio_station,
     get_internet_radio_stations,
-    match_entries_to_song_ids,
-    reorder_moves,
-    subsonic_envelope,
-    subsonic_error,
     update_internet_radio_station,
 )
+from .bridge import PlaylistEditor, map_all, quote_id, set_field, set_playlist_songs
 from .plex import PlexClient
 
 logger = logging.getLogger("connect.plex_bridge")
@@ -92,10 +88,6 @@ async def close() -> None:
     if _client is not None:
         await _client.aclose()
         _client = None
-
-
-def _quote_id(value: str) -> str:
-    return quote(str(value), safe="")
 
 
 async def _px_request(
@@ -229,21 +221,14 @@ def _map_song(item: dict) -> dict:
     # stream's own figures) stays where it is - those are bytes per entry
     # for fields only the track-info sheet shows.
     parts = media0.get("Part") or []
-    _set(song, "size", (parts[0] if parts else {}).get("size"))
-    _set(song, "created", _epoch_to_iso(item.get("addedAt")))
-    _set(song, "played", _epoch_to_iso(item.get("lastViewedAt")))
+    set_field(song, "size", (parts[0] if parts else {}).get("size"))
+    set_field(song, "created", _epoch_to_iso(item.get("addedAt")))
+    set_field(song, "played", _epoch_to_iso(item.get("lastViewedAt")))
     user_rating = _map_user_rating(item)
     if user_rating is not None:
         song["userRating"] = user_rating
     _set_starred(song, item)
     return song
-
-
-def _set(target: dict, key: str, value) -> None:
-    """Omit rather than send an empty field — see the identical helper in
-    jellyfin_bridge.py for why presence is the signal on the other side."""
-    if value not in (None, "", [], {}):
-        target[key] = value
 
 
 def _epoch_to_iso(seconds) -> str | None:
@@ -282,18 +267,18 @@ def _map_song_detail(item: dict) -> dict:
     audio = next((stream for stream in streams if stream.get("streamType") == 2), {})
 
     # Size, added and last played are already on the list mapping above.
-    _set(song, "path", part0.get("file"))
-    _set(song, "bitDepth", audio.get("bitDepth"))
-    _set(song, "samplingRate", audio.get("samplingRate"))
-    _set(song, "channelCount", media0.get("audioChannels") or audio.get("channels"))
-    _set(song, "sortName", item.get("titleSort"))
-    _set(song, "musicBrainzId", _musicbrainz_id(item))
-    _set(song, "genres", [{"name": genre} for genre in _tags(item, "Genre")])
-    _set(song, "moods", _tags(item, "Mood"))
+    set_field(song, "path", part0.get("file"))
+    set_field(song, "bitDepth", audio.get("bitDepth"))
+    set_field(song, "samplingRate", audio.get("samplingRate"))
+    set_field(song, "channelCount", media0.get("audioChannels") or audio.get("channels"))
+    set_field(song, "sortName", item.get("titleSort"))
+    set_field(song, "musicBrainzId", _musicbrainz_id(item))
+    set_field(song, "genres", [{"name": genre} for genre in _tags(item, "Genre")])
+    set_field(song, "moods", _tags(item, "Mood"))
     # originalTitle is where Plex keeps a track's own artist when it differs
     # from the album's — a compilation's individual performers, say.
-    _set(song, "displayArtist", item.get("originalTitle") or item.get("grandparentTitle"))
-    _set(song, "displayAlbumArtist", item.get("grandparentTitle"))
+    set_field(song, "displayArtist", item.get("originalTitle") or item.get("grandparentTitle"))
+    set_field(song, "displayAlbumArtist", item.get("grandparentTitle"))
     if item.get("grandparentRatingKey"):
         song["albumArtists"] = [
             {
@@ -315,10 +300,10 @@ def _map_album(item: dict) -> dict:
     }
     # The key get_album_list2 sorts by, so the frontend's A-Z jump bar can
     # file the album where it actually sits (see indexLetterFor).
-    _set(album, "sortName", item.get("titleSort"))
+    set_field(album, "sortName", item.get("titleSort"))
     # When it entered the library, for the album list's "recently added"
     # order - the same field a song's `created` comes from.
-    _set(album, "created", _epoch_to_iso(item.get("addedAt")))
+    set_field(album, "created", _epoch_to_iso(item.get("addedAt")))
     if item.get("parentRatingKey"):
         album["artistId"] = str(item["parentRatingKey"])
     if item.get("year") is not None:
@@ -329,10 +314,10 @@ def _map_album(item: dict) -> dict:
     # OpenSubsonic's album extras, for the album page's header. Plex keeps
     # the record label as `studio`, the release type ("Album", "Single",
     # "EP") as a Format tag, and the MusicBrainz id among the item's Guids.
-    _set(album, "genres", [{"name": g} for g in genres])
-    _set(album, "recordLabels", [{"name": item["studio"]}] if item.get("studio") else [])
-    _set(album, "releaseTypes", [f.lower() for f in _tags(item, "Format")])
-    _set(album, "musicBrainzId", _mbid(item))
+    set_field(album, "genres", [{"name": g} for g in genres])
+    set_field(album, "recordLabels", [{"name": item["studio"]}] if item.get("studio") else [])
+    set_field(album, "releaseTypes", [f.lower() for f in _tags(item, "Format")])
+    set_field(album, "musicBrainzId", _mbid(item))
     user_rating = _map_user_rating(item)
     if user_rating is not None:
         album["userRating"] = user_rating
@@ -364,17 +349,7 @@ def _map_artist(item: dict) -> dict:
 
 
 def _map_all(mapper: Callable[[dict], dict], items: list[dict]) -> list[dict]:
-    """Same "skip one bad item, keep the rest" reasoning as
-    jellyfin_bridge.py's own _map_all."""
-    result = []
-    for item in items:
-        try:
-            result.append(mapper(item))
-        except Exception as e:
-            logger.warning(
-                f"[plex-bridge] Skipping malformed item {item.get('ratingKey', '?')}: {e}"
-            )
-    return result
+    return map_all(mapper, items, id_field="ratingKey", log=logger, label="plex-bridge")
 
 
 # ── JSON handlers ─────────────────────────────────────────────────────────────
@@ -407,12 +382,12 @@ async def get_album_list2(params: dict, media: PlexClient) -> dict:
 
 async def get_album(params: dict, media: PlexClient) -> dict:
     album_id = params["id"]
-    item_data = await _px_get(media, f"/library/metadata/{_quote_id(album_id)}")
+    item_data = await _px_get(media, f"/library/metadata/{quote_id(album_id)}")
     items = item_data.get("MediaContainer", {}).get("Metadata", [])
     if not items:
         raise ValueError(f"Album {album_id} not found")
     album = _map_album(items[0])
-    children = await _px_get(media, f"/library/metadata/{_quote_id(album_id)}/children")
+    children = await _px_get(media, f"/library/metadata/{quote_id(album_id)}/children")
     songs = children.get("MediaContainer", {}).get("Metadata", [])
     mapped_songs = _map_all(_map_song, songs)
     # Confirmed live (2026-08-17): /children's per-track Metadata entries
@@ -439,7 +414,7 @@ async def get_album(params: dict, media: PlexClient) -> dict:
 
 
 async def get_song(params: dict, media: PlexClient) -> dict:
-    data = await _px_get(media, f"/library/metadata/{_quote_id(params['id'])}")
+    data = await _px_get(media, f"/library/metadata/{quote_id(params['id'])}")
     items = data.get("MediaContainer", {}).get("Metadata", [])
     if not items:
         raise ValueError(f"Song {params['id']} not found")
@@ -495,7 +470,7 @@ async def start_scan(_params: dict, media: PlexClient) -> dict:
     Scoped to the music section rather than the whole server: everything
     else in a Plex library (films, series) is none of Beacon's business."""
     section = await _music_section(media)
-    await _px_request("GET", media, f"/library/sections/{_quote_id(section)}/refresh")
+    await _px_request("GET", media, f"/library/sections/{quote_id(section)}/refresh")
     return {"scanStatus": {"scanning": True}}
 
 
@@ -556,7 +531,7 @@ async def get_lyrics_by_song_id(params: dict, media: PlexClient) -> dict:
     item_id = params.get("id", "")
     if not item_id:
         raise ValueError("getLyricsBySongId.view requires id")
-    data = await _px_get(media, f"/library/metadata/{_quote_id(item_id)}")
+    data = await _px_get(media, f"/library/metadata/{quote_id(item_id)}")
     stream_key = next(
         (
             stream["key"]
@@ -626,7 +601,7 @@ async def get_similar_songs2(params: dict, media: PlexClient) -> dict:
     try:
         data = await _px_get(
             media,
-            f"/library/metadata/{_quote_id(item_id)}/nearest",
+            f"/library/metadata/{quote_id(item_id)}/nearest",
             excludeFields="summary",
             limit=count,
             maxDistance="0.25",
@@ -672,12 +647,12 @@ async def get_artists(_params: dict, media: PlexClient) -> dict:
 
 async def get_artist(params: dict, media: PlexClient) -> dict:
     artist_id = params["id"]
-    item_data = await _px_get(media, f"/library/metadata/{_quote_id(artist_id)}")
+    item_data = await _px_get(media, f"/library/metadata/{quote_id(artist_id)}")
     items = item_data.get("MediaContainer", {}).get("Metadata", [])
     if not items:
         raise ValueError(f"Artist {artist_id} not found")
     artist = _map_artist(items[0])
-    children = await _px_get(media, f"/library/metadata/{_quote_id(artist_id)}/children")
+    children = await _px_get(media, f"/library/metadata/{quote_id(artist_id)}/children")
     albums = _map_all(_map_album, children.get("MediaContainer", {}).get("Metadata", []))
     # childCount (artist["albumCount"], from _map_artist above) and
     # leafCount (each album's songCount, from _map_album above) turned out
@@ -689,7 +664,7 @@ async def get_artist(params: dict, media: PlexClient) -> dict:
     # allLeaves (every track under this artist, in one call) — sidesteps
     # needing either summary field to be populated at all.
     artist["albumCount"] = len(albums)
-    leaves_data = await _px_get(media, f"/library/metadata/{_quote_id(artist_id)}/allLeaves")
+    leaves_data = await _px_get(media, f"/library/metadata/{quote_id(artist_id)}/allLeaves")
     leaves = leaves_data.get("MediaContainer", {}).get("Metadata", [])
     track_counts: dict[str, int] = {}
     for leaf in leaves:
@@ -880,7 +855,7 @@ def _map_playlist(item: dict) -> dict:
         # missing altogether.
         "owned": True,
     }
-    _set(playlist, "changed", _epoch_to_iso(item.get("updatedAt") or item.get("addedAt")))
+    set_field(playlist, "changed", _epoch_to_iso(item.get("updatedAt") or item.get("addedAt")))
     # The OpenSubsonic fields Navidrome sends for its own smart playlists.
     # Plex works the songs out from the filter on every request, so they are
     # valid as of now; and the filter, not the user, decides what is in it.
@@ -898,12 +873,12 @@ async def get_playlists(_params: dict, media: PlexClient) -> dict:
 
 async def get_playlist(params: dict, media: PlexClient) -> dict:
     playlist_id = params["id"]
-    item_data = await _px_get(media, f"/playlists/{_quote_id(playlist_id)}")
+    item_data = await _px_get(media, f"/playlists/{quote_id(playlist_id)}")
     items = item_data.get("MediaContainer", {}).get("Metadata", [])
     if not items:
         raise ValueError(f"Playlist {playlist_id} not found")
     playlist = _map_playlist(items[0])
-    songs = await _px_get(media, f"/playlists/{_quote_id(playlist_id)}/items")
+    songs = await _px_get(media, f"/playlists/{quote_id(playlist_id)}/items")
     playlist["entry"] = _map_all(_map_song, songs.get("MediaContainer", {}).get("Metadata", []))
     return {"playlist": playlist}
 
@@ -955,7 +930,7 @@ async def _playlist_entries(playlist_id: str, media: PlexClient) -> list[tuple[s
     two-id shape jellyfin_bridge.py's own _playlist_entries returns, and for
     the same reason: only the per-entry id addresses one specific copy of a
     song that appears twice."""
-    items = await _px_get(media, f"/playlists/{_quote_id(playlist_id)}/items")
+    items = await _px_get(media, f"/playlists/{quote_id(playlist_id)}/items")
     entries = items.get("MediaContainer", {}).get("Metadata", [])
     return [
         (str(entry["playlistItemID"]), str(entry.get("ratingKey", "")))
@@ -965,43 +940,26 @@ async def _playlist_entries(playlist_id: str, media: PlexClient) -> list[tuple[s
 
 
 async def _set_playlist_songs(playlist_id: str, song_ids: list[str], media: PlexClient) -> None:
-    """Makes the playlist hold exactly `song_ids`, in that order — see
-    jellyfin_bridge.py's own _set_playlist_songs for the shape of this;
-    only the calls differ. Plex moves an entry by naming the entry it should
+    """See bridge.py's set_playlist_songs(). Plex has no bulk delete — one
+    request per entry — and moves an entry by naming the entry it should
     follow, so a move to the front sends no `after` at all."""
-    entries = await _playlist_entries(playlist_id, media)
-    matched = match_entries_to_song_ids([song_id for _, song_id in entries], song_ids)
+    items_path = f"/playlists/{quote_id(playlist_id)}/items"
 
-    keep = {entries[position][0] for position in matched if position is not None}
-    stale = [entry_id for entry_id, _ in entries if entry_id not in keep]
-    missing = [
-        song_id for song_id, position in zip(song_ids, matched, strict=True) if position is None
-    ]
-    for entry_id in stale:
-        # No bulk delete here, unlike Jellyfin — one request per entry.
-        await _px_request(
-            "DELETE",
-            media,
-            f"/playlists/{_quote_id(playlist_id)}/items/{_quote_id(entry_id)}",
-        )
-    if missing:
-        await _add_to_playlist(playlist_id, missing, media)
-    if stale or missing:
-        entries = await _playlist_entries(playlist_id, media)
-        matched = match_entries_to_song_ids([song_id for _, song_id in entries], song_ids)
+    async def remove(entry_ids: list[str]) -> None:
+        for entry_id in entry_ids:
+            await _px_request("DELETE", media, f"{items_path}/{quote_id(entry_id)}")
 
-    current = [entry_id for entry_id, _ in entries]
-    target = [entries[position][0] for position in matched if position is not None]
-    for entry_id, _index, after in reorder_moves(current, target):
-        # No `after` at all means "move to the front" — Plex's own way of
-        # saying it.
+    async def add(ids: list[str]) -> None:
+        await _add_to_playlist(playlist_id, ids, media)
+
+    async def move(entry_id: str, _index: int, after: str | None) -> None:
         params = {} if after is None else {"after": after}
-        await _px_request(
-            "PUT",
-            media,
-            f"/playlists/{_quote_id(playlist_id)}/items/{_quote_id(entry_id)}/move",
-            params=params,
-        )
+        await _px_request("PUT", media, f"{items_path}/{quote_id(entry_id)}/move", params=params)
+
+    editor = PlaylistEditor(
+        entries=lambda: _playlist_entries(playlist_id, media), remove=remove, add=add, move=move
+    )
+    await set_playlist_songs(editor, song_ids)
 
 
 async def _add_to_playlist(playlist_id: str, song_ids: list[str], media: PlexClient) -> None:
@@ -1011,7 +969,7 @@ async def _add_to_playlist(playlist_id: str, song_ids: list[str], media: PlexCli
     await _px_request(
         "PUT",
         media,
-        f"/playlists/{_quote_id(playlist_id)}/items",
+        f"/playlists/{quote_id(playlist_id)}/items",
         params={"uri": _playlist_item_uri(media, song_ids)},
     )
 
@@ -1022,7 +980,7 @@ async def _remove_from_playlist(playlist_id: str, indexes: list[int], media: Ple
     # position, Plex needs each entry's own playlistItemID, obtainable only
     # by listing the playlist first. Unlike Jellyfin, Plex has no
     # bulk-delete-by-ids call, so this is one DELETE per removed entry.
-    items = await _px_get(media, f"/playlists/{_quote_id(playlist_id)}/items")
+    items = await _px_get(media, f"/playlists/{quote_id(playlist_id)}/items")
     entries = items.get("MediaContainer", {}).get("Metadata", [])
     entry_ids = [
         entries[i]["playlistItemID"]
@@ -1033,37 +991,28 @@ async def _remove_from_playlist(playlist_id: str, indexes: list[int], media: Ple
         await _px_request(
             "DELETE",
             media,
-            f"/playlists/{_quote_id(playlist_id)}/items/{_quote_id(str(entry_id))}",
+            f"/playlists/{quote_id(playlist_id)}/items/{quote_id(str(entry_id))}",
         )
 
 
 async def update_playlist(params, media: PlexClient) -> dict:
-    playlist_id = params.get("playlistId") or params["id"]
-    song_ids_to_add = params.getlist("songIdToAdd")
-    indexes_to_remove = params.getlist("songIndexToRemove")
-    if song_ids_to_add:
-        await _add_to_playlist(playlist_id, song_ids_to_add, media)
-        return {}
-    if indexes_to_remove:
-        await _remove_from_playlist(playlist_id, [int(i) for i in indexes_to_remove], media)
-        return {}
-    # The only remaining reason client.ts calls updatePlaylist.view is a
-    # rename/visibility change — unlike Jellyfin (see jellyfin_bridge.py's
-    # own update_playlist), Plex's playlist endpoint does support renaming
-    # directly; visibility (public/private) has no Plex equivalent and is
-    # silently ignored, same as it's silently unused for Subsonic's own
-    # `public` param in practice (Beacon has no sharing UI).
-    name = params.get("name")
-    if name is not None:
+    async def rename(playlist_id: str, name: str) -> None:
+        # Visibility (Subsonic's `public`) has no Plex equivalent and is
+        # left alone, same as on Jellyfin.
         await _px_request(
-            "PUT", media, f"/playlists/{_quote_id(playlist_id)}", params={"title": name}
+            "PUT", media, f"/playlists/{quote_id(playlist_id)}", params={"title": name}
         )
-        return {}
-    raise ValueError("updatePlaylist.view requires songIdToAdd, songIndexToRemove, or name")
+
+    return await bridge.update_playlist(
+        params,
+        add=lambda playlist_id, ids: _add_to_playlist(playlist_id, ids, media),
+        remove=lambda playlist_id, indexes: _remove_from_playlist(playlist_id, indexes, media),
+        rename=rename,
+    )
 
 
 async def delete_playlist(params: dict, media: PlexClient) -> dict:
-    await _px_request("DELETE", media, f"/playlists/{_quote_id(params['id'])}")
+    await _px_request("DELETE", media, f"/playlists/{quote_id(params['id'])}")
     return {}
 
 
@@ -1096,117 +1045,37 @@ _HANDLERS: dict[str, Callable[[dict, PlexClient], Awaitable[dict]]] = {
 }
 
 
-# ── Binary handlers (getCoverArt.view, stream.view) ──────────────────────────
-
-_BINARY_PATHS = {"getCoverArt.view", "stream.view"}
-# content-length included: blindly forwarding the upstream value crashes
-# uvicorn ("Response content longer than Content-Length") whenever the
-# actual streamed byte count doesn't match it exactly — confirmed live
-# (2026-08-17) against Plex's thumb endpoint, which apparently doesn't
-# always keep the two in sync for on-the-fly-generated images. Dropping it
-# lets Starlette's StreamingResponse fall back to chunked transfer
-# encoding, which makes no such promise to violate.
-# date included for the same reason as in routes/proxy.py: uvicorn writes
-# its own, and a second one makes a reverse proxy in front of this log a
-# warning per request.
-_SKIP_RESP_HEADERS = {
-    "transfer-encoding",
-    "connection",
-    "content-encoding",
-    "content-length",
-    "date",
-}
-
-
-async def _stream_binary(
-    request: Request, url: str, media: PlexClient, keep_length: bool = False
-) -> StreamingResponse:
-    """`keep_length` forwards the upstream Content-Length after all, for a
-    track's original file: Safari only plays a media response through when it
-    knows the length
-    (docs/investigations/phone-and-browser/safari-transcode-jumps-to-start.md). Never
-    for a compressed body, which httpx decompresses and so makes longer than
-    the header says."""
-    client = _get_client()
-    headers = media.auth_headers()
-    range_header = request.headers.get("range")
-    if range_header:
-        headers["Range"] = range_header
-    req = client.build_request(request.method, url, headers=headers)
-    response = await client.send(req, stream=True)
-
-    async def streamed():
-        try:
-            async for chunk in response.aiter_bytes():
-                yield chunk
-        finally:
-            await response.aclose()
-
-    skip = set(_SKIP_RESP_HEADERS)
-    if keep_length and "content-encoding" not in response.headers:
-        skip.discard("content-length")
-    resp_headers = {k: v for k, v in response.headers.items() if k.lower() not in skip}
-    content_type = response.headers.get("content-type")
-    apply_image_cache_control(resp_headers, content_type)
-    return StreamingResponse(
-        streamed(),
-        status_code=response.status_code,
-        headers=resp_headers,
-        media_type=content_type,
-    )
-
-
-async def _handle_binary(
-    path: str, request: Request, media: PlexClient
-) -> StreamingResponse | JSONResponse:
-    params = dict(request.query_params)
-    if path == "getCoverArt.view":
-        cover_id = params.get("id", "")
-        if not cover_id:
-            return subsonic_error(70, "No cover art id supplied")
-        url = media.get_cover_art_url(cover_id, internal=True)
-        if not url:
-            return subsonic_error(70, "No cover art available")
-    else:  # stream.view
-        track_id = params.get("id", "")
-        if not track_id:
-            return subsonic_error(70, "No track id supplied")
-        # to_thread: get_stream_url() needs a real network lookup for Plex
-        # (see media/plex.py's docstring) — without this it would block
-        # the whole event loop, not just this one request.
-        url = await asyncio.to_thread(media.get_stream_url, track_id)
-    return await _stream_binary(request, url, media, keep_length=path == "stream.view")
-
-
 # ── Entry point ────────────────────────────────────────────────────────────
 
 
+async def _cover_url(cover_id: str, _params: dict, media: PlexClient) -> str | None:
+    return media.get_cover_art_url(cover_id, internal=True)
+
+
+async def _stream_url(track_id: str, media: PlexClient) -> str:
+    # to_thread: get_stream_url() needs a real network lookup for Plex
+    # (see media/plex.py's docstring) — without this it would block
+    # the whole event loop, not just this one request.
+    return await asyncio.to_thread(media.get_stream_url, track_id)
+
+
+_BRIDGE = bridge.Bridge(
+    label="plex-bridge",
+    unsupported="is not supported on Plex yet",
+    handlers=_HANDLERS,
+    log=logger,
+    client=lambda: _get_client(),
+    cover_url=_cover_url,
+    stream_url=_stream_url,
+)
+
+
 async def call(endpoint: str, params: dict, media: PlexClient) -> dict:
-    """One Subsonic endpoint answered from inside connect rather than for a
-    request - core/party_library.py asks this while the party's host
-    window sleeps. Same answer handle() wraps in the Subsonic envelope."""
-    handler = _HANDLERS.get(endpoint)
-    if handler is None:
-        raise ValueError(f"{endpoint} is not bridged")
-    return await handler(params, media)
+    """See bridge.py's call()."""
+    return await bridge.call(_BRIDGE, endpoint, params, media)
 
 
 async def handle(
     path: str, request: Request, media: PlexClient
 ) -> JSONResponse | StreamingResponse:
-    if path in _BINARY_PATHS:
-        try:
-            return await _handle_binary(path, request, media)
-        except Exception as e:
-            logger.warning(f"[plex-bridge] {path} failed: {e}")
-            return subsonic_error(0, str(e))
-
-    handler = _HANDLERS.get(path)
-    if handler is None:
-        return subsonic_error(70, f"{path} is not supported on Plex yet")
-    try:
-        result = await handler(request.query_params, media)
-    except Exception as e:
-        logger.warning(f"[plex-bridge] {path} failed: {e}")
-        return subsonic_error(0, str(e))
-    return subsonic_envelope(result)
+    return await bridge.handle(_BRIDGE, path, request, media)

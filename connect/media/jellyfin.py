@@ -237,7 +237,7 @@ class JellyfinClient:
         # handles container/codec conversion downstream. quote() on the id
         # (not a naive f-string join) so a malformed/adversarial track_id
         # can't escape the /Items/{id}/ path segment — see get_cover_art_url
-        # below and jellyfin_bridge.py's _quote_id for the same reasoning.
+        # below and media/bridge.py's quote_id() for the same reasoning.
         # Both spellings of the token parameter, because the two Jellyfin
         # generations share none: 10.x reads `api_key`, 12 reads `ApiKey`
         # (case-insensitively, but the underscore keeps them apart) and

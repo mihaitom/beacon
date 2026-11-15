@@ -110,9 +110,8 @@ def apply_image_cache_control(headers: dict[str, str], content_type: str | None)
     is an image and the origin didn't already send its own directive —
     left alone otherwise, including a deliberate "no-store" for e.g. a
     just-changed avatar. Shared by routes/proxy.py (Subsonic) and
-    jellyfin_bridge.py's/plex_bridge.py's own binary-response paths — all
-    three build their own response-headers dict from an upstream response
-    the same way, none of them through a single shared streaming helper."""
+    media/bridge.py's stream_binary() (Jellyfin, Plex) — both build their
+    own response-headers dict from an upstream response the same way."""
     if not content_type or not content_type.startswith("image/"):
         return
     if any(k.lower() == "cache-control" for k in headers):

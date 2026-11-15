@@ -1059,7 +1059,7 @@ def _assert_streams_audio(response, body: bytes) -> None:
     )
     assert body, "no audio bytes came back"
     # Unlike cover art, a track keeps its length: Safari only plays a media
-    # response through when it knows it (see _stream_binary's keep_length).
+    # response through when it knows it (see bridge.py's stream_binary() keep_length).
     assert response.headers.get("content-length") == "1024", (
         "the ranged slice lost its Content-Length - Safari stops playing it"
     )
@@ -1122,7 +1122,7 @@ async def test_plex_streams_a_ranged_slice_of_a_track(plex):
     # Also covers the part that has no Jellyfin equivalent: Plex can only
     # name a track's real file after fetching its metadata, so this path
     # makes a blocking lookup that the handler has to keep off the event
-    # loop (see plex_bridge._handle_binary's to_thread).
+    # loop (see plex_bridge._stream_url's to_thread).
     from media.plex_bridge import get_album, get_album_list2, handle
 
     track_id = await _first_track_id(get_album_list2, get_album, plex)
