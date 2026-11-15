@@ -237,3 +237,11 @@ that nobody has to ask again.
   `source.ts` instead of the app's stores. A component there that imports a
   store directly works in the app and breaks on the guest page, which has
   none - see `docs/plans/now-playing-shared-with-party.md`.
+- **The playback store's actions live in `stores/playback/*.ts`,** one file
+  per concern, typed through the hand-written `PlaybackContext`
+  (`stores/playback/context.ts`). A new action needs its signature in its
+  group's interface too. Deriving the type from the store instead
+  (`ReturnType<typeof usePlaybackStore>`) is circular and does not fail:
+  TypeScript quietly turns the whole store into `unknown` for every
+  component. `StoreMatchesContext` in `stores/playback.ts` fails type-check
+  when the two drift apart.
