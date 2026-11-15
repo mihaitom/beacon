@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Highlights
 
-- **Stats, built anew:** Beacon keeps its own record of what you play on Navidrome, Jellyfin and Plex, and the Stats page shows your year of it on a record that fills up with your plays, with streaks, milestones and charts for any time window. Your Last.fm or ListenBrainz history fills in the past year
+- **Stats, rebuilt from scratch:** Beacon keeps its own record of what you play on Navidrome, Jellyfin and Plex, and the Stats page shows your year of it on a record that fills up with your plays, with streaks, milestones and charts for any time window. Your Last.fm or ListenBrainz history fills in the past year
 - **Desktop app and server together:** connect the two once in Settings and they share your listening history, settings, themes and lyrics timing, and see which speakers the other is playing on
 - **Music from outside your library:** an app of your own can bring songs into Beacon as a tab of their own, played like the rest, on your speakers too. Two examples are included, one for local music folders and one for live concerts from archive.org, and an AI assistant can write one for whatever else you have in mind, even something a command-line downloader fetches from the web
 - **Your own apps:** apps you write, or have an AI assistant write, can read your history and what is playing and control playback. Think of an e-ink display by the speaker showing the song and its cover, or your Discord status showing what you are listening to
@@ -30,7 +30,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
-- The Stats page is built anew: your listening time on a record that fills up with your plays, a small display that moves with the music, charts for songs, artists, albums and genres that show what moved up and have the library's right-click menu, and a look at what your collection is made of
+- The Stats page is rebuilt from scratch: your listening time on a record that fills up with your plays, a small display that moves with the music, charts for songs, artists, albums and genres that show what moved up and have the library's right-click menu, and a look at what your collection is made of
 - The Playlists page is a wall of large record stacks that flip through on hover and tint the page with the cover in front, or a list as on Albums. It sorts by last edited, name, number of songs or length and can be narrowed to your own, smart, shared or shared-with-you playlists; "Global playlists" are now "Shared by me" and "Shared with me"
 - A playlist's page can be searched, filtered and sorted like Songs, starting in the playlist's own order, and Play and Preview take what is on screen. Its artwork is a stack of its albums, and the create and edit dialogs show it too and say who gets to see the playlist
 - The Radio page is a wall of station logos, each on a sleeve in the logo's own colours, with the list one click away. It can be narrowed by your most common genres and sorted by last heard, name, country or bitrate, and clicking the playing station stops it
