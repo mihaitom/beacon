@@ -67,6 +67,41 @@ docker compose up -d --build
 Compose builds the image and starts it. To update later, `git pull` and run the same
 command again; the index in `./data` stays.
 
+#### A complete example
+
+Two folders, each its own tab, with every setting written out:
+
+```yaml
+services:
+  folder-source:
+    build: . # or image: <your registry>/folder-source:latest, see below
+    container_name: beacon-folder-source
+    restart: unless-stopped
+    volumes:
+      # Each folder under /music becomes a tab, named after its mount point.
+      - /mnt/nas/music-imports:/music/Imports:ro
+      - /mnt/nas/dj-sets:/music/DJ Sets:ro
+      # The music index and the signing secret: keep this folder.
+      - ./data:/data
+    environment:
+      # Mounting is not enough: list every folder here too, separated by ":".
+      # Left out, the app takes all of /music as one folder, one tab.
+      MUSIC_DIR: /music/Imports:/music/DJ Sets
+      # The same token goes into Beacon, under Settings > Library > External sources.
+      TOKEN: change-me
+      # The name in the page's header, when it is opened outside Beacon.
+      SOURCE_NAME: Music folder
+      # How often to look for new music; 0: only at start and on the refresh button.
+      RESCAN_MINUTES: 30
+    ports:
+      # Only Beacon's server has to reach this; do not forward it to the internet.
+      - "8800:8800"
+```
+
+In Beacon the address is then `http://<this host>:8800`. When Beacon runs in the same
+compose file on its default network (not with `network_mode: host`), it is
+`http://folder-source:8800` instead, and `ports:` can go.
+
 #### Building for another machine
 
 Build the image with a name of your choice:
@@ -167,7 +202,10 @@ environment:
   MUSIC_DIR: /music/Imports:/music/DJ Sets
 ```
 
-The tabs keep the order of `MUSIC_DIR`. Two folders of the same name are refused at start:
+Mounting a folder under `/music` without listing it in `MUSIC_DIR` leaves it out of the
+tabs (and `MUSIC_DIR` left at `/music` makes everything one tab). There is a whole
+`compose.yaml` under [A complete example](#a-complete-example). The tabs keep the order of
+`MUSIC_DIR`. Two folders of the same name are refused at start:
 mount one under another name. Search looks only in the folder whose tab is open.
 
 ## Security
