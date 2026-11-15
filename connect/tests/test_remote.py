@@ -365,6 +365,81 @@ def test_home_query_is_relayed_to_the_renderer(client, monkeypatch):
     assert seen == {"event": "home-request", "payload": {}}
 
 
+def test_backdrop_query_relays_the_song_id(client, monkeypatch):
+    client.post("/remote/enable")
+    remote.renderer_connected = True
+    seen = {}
+
+    async def capture(event, payload):
+        seen["event"] = event
+        seen["payload"] = payload
+        return {"source": None, "backgrounds": [], "is_artist": False}
+
+    monkeypatch.setattr(remote_routes, "relay_query", capture)
+    resp = client.get(
+        "/remote/backdrop?song=s1",
+        headers={"X-Remote-Password": remote.password},
+    )
+
+    assert resp.status_code == 200
+    assert seen == {"event": "backdrop-request", "payload": {"songId": "s1"}}
+
+
+def test_lyrics_query_relays_the_song_id(client, monkeypatch):
+    client.post("/remote/enable")
+    remote.renderer_connected = True
+    seen = {}
+
+    async def capture(event, payload):
+        seen["event"] = event
+        seen["payload"] = payload
+        return {"song_id": "s1", "synced": False, "lines": [], "loading": False}
+
+    monkeypatch.setattr(remote_routes, "relay_query", capture)
+    resp = client.get(
+        "/remote/lyrics?song=s1",
+        headers={"X-Remote-Password": remote.password},
+    )
+
+    assert resp.status_code == 200
+    assert seen == {"event": "lyrics-request", "payload": {"songId": "s1"}}
+
+
+def test_equalizer_query_is_relayed_to_the_renderer(client, monkeypatch):
+    client.post("/remote/enable")
+    remote.renderer_connected = True
+    seen = {}
+
+    async def capture(event, payload):
+        seen["event"] = event
+        seen["payload"] = payload
+        return {"targets": [], "settings": {}, "presets": [], "built_in": []}
+
+    monkeypatch.setattr(remote_routes, "relay_query", capture)
+    resp = client.get("/remote/equalizer", headers={"X-Remote-Password": remote.password})
+
+    assert resp.status_code == 200
+    assert seen == {"event": "equalizer-request", "payload": {}}
+
+
+def test_remote_fanart_404s_when_the_image_is_not_allowed(client, monkeypatch):
+    from core import fanart
+
+    async def no_image(_url):
+        return None
+
+    client.post("/remote/enable")
+    monkeypatch.setattr(fanart, "get_cached_image", lambda _url: None)
+    monkeypatch.setattr(fanart, "fetch_image", no_image)
+
+    resp = client.get(
+        "/remote/fanart?url=https://example.com/nope.jpg",
+        headers={"X-Remote-Password": remote.password},
+    )
+
+    assert resp.status_code == 404
+
+
 def test_discover_query_is_relayed_to_the_renderer(client, monkeypatch):
     client.post("/remote/enable")
     remote.renderer_connected = True
@@ -380,23 +455,6 @@ def test_discover_query_is_relayed_to_the_renderer(client, monkeypatch):
 
     assert resp.status_code == 200
     assert seen == {"event": "discover-request", "payload": {}}
-
-
-def test_party_query_is_relayed_to_the_renderer(client, monkeypatch):
-    client.post("/remote/enable")
-    remote.renderer_connected = True
-    seen = {}
-
-    async def capture(event, payload):
-        seen["event"] = event
-        seen["payload"] = payload
-        return {"enabled": False, "guests": []}
-
-    monkeypatch.setattr(remote_routes, "relay_query", capture)
-    resp = client.get("/remote/party", headers={"X-Remote-Password": remote.password})
-
-    assert resp.status_code == 200
-    assert seen == {"event": "party-request", "payload": {}}
 
 
 def test_favorites_query_is_relayed_to_the_renderer(client, monkeypatch):

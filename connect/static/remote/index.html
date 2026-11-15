@@ -45,6 +45,9 @@
       <header class="app-bar">
         <i class="mdi mdi-lighthouse-on app-bar__icon"></i>
         <span class="app-bar__title">Beacon</span>
+        <!-- Where a view hangs its own actions, the same way MobileLayout.vue
+             gives Now Playing's toolbar a home in the app bar. -->
+        <span id="app-bar-actions" class="app-bar__actions"></span>
       </header>
       <main id="view-root"></main>
       <!-- The strip MobilePlayerBar.vue shows on every mobile route but Now

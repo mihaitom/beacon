@@ -136,8 +136,18 @@ export function fetchDiscover() {
   return request('/remote/discover');
 }
 
-export function fetchParty() {
-  return request('/remote/party');
+export function fetchBackdrop(songId) {
+  const params = new URLSearchParams({ song: songId });
+  return request(`/remote/backdrop?${params}`);
+}
+
+export function fetchLyrics(songId) {
+  const params = new URLSearchParams({ song: songId });
+  return request(`/remote/lyrics?${params}`);
+}
+
+export function fetchEqualizer() {
+  return request('/remote/equalizer');
 }
 
 export function fetchPlaylists() {

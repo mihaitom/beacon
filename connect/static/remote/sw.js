@@ -17,6 +17,7 @@ const SHELL_PATHS = [
   './js/api.js',
   './js/art.js',
   './js/devices.js',
+  './js/equalizer.js',
   './js/mini-player.js',
   './js/range.js',
   './js/state.js',
@@ -45,7 +46,6 @@ const SHELL_PATHS = [
   './js/views/radio.js',
   './js/views/artist.js',
   './js/views/more.js',
-  './js/views/party.js',
 ]
 
 self.addEventListener('install', (event) => {

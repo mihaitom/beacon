@@ -9,7 +9,12 @@ import { useConnectStore } from '@/stores/connect'
 import { useRemoteControlStore } from '@/stores/remoteControl'
 import { useAuthStore } from '@/stores/auth'
 import { useAutoplayStore } from '@/stores/autoplay'
+import { useFanartStore } from '@/stores/fanart'
+import { useLyricsStore } from '@/stores/lyrics'
+import { speakerKey, useEqualizerStore } from '@/stores/equalizer'
 import { PartyRefusal, usePartyStore } from '@/stores/party'
+import { getArtistArt, fanartSource } from '@/services/connect/fanart'
+import { EQ_PRESET_NAMES, EQ_PRESETS, sanitizeSetting } from '@/services/equalizer'
 import type { Album, Artist, Playlist, Song } from '@/types/library'
 import type { DeviceType, DiscoveredDevice } from '@/services/connect/types'
 import { faviconSizeStep, RADIO_FAVICON_CACHE_VERSION } from '@/services/connect/radio'
@@ -81,6 +86,15 @@ export function remoteRadioFaviconUrl(
   // Same handler, so the same stale-cache problem — see RADIO_FAVICON_CACHE_VERSION.
   params.set('v', RADIO_FAVICON_CACHE_VERSION)
   return `/remote/radio-favicon?${params.toString()}`
+}
+
+/** A Fanart.tv image for the phone, under its own password. The app's copy
+ * of the URL carries CONNECT_TOKEN (see services/connect/fanart.ts), which
+ * the phone must never receive - routes/remote.py's /fanart serves the
+ * bytes under the phone credential instead. */
+function remoteFanartUrl(proxiedUrl: string | null): string | null {
+  const source = proxiedUrl ? fanartSource(proxiedUrl) : null
+  return source ? `/remote/fanart?url=${encodeURIComponent(source)}` : null
 }
 
 export function toRemoteSong(song: Song): RemoteSong {
@@ -281,23 +295,26 @@ export async function handleRemoteCommand(
     case 'party-withdraw':
       usePartyStore().withdraw(String(payload.requestId), String(payload.guestId))
       return
-    // The host's side of the party, from the phone's More tab. The invite
-    // link itself never rides along in a snapshot - see party-request.
-    case 'party-enable':
-      await usePartyStore().enable()
+    // The speaker's curve, from the phone's Now Playing. `target` is the
+    // speaker being cast to; null would mean this device's own curve.
+    case 'set-equalizer': {
+      const setting = sanitizeSetting(payload.setting)
+      const target = payload.target as { type: DeviceType; name: string } | null | undefined
+      if (target?.type && target.name) {
+        useEqualizerStore().setSpeaker({ type: target.type, name: target.name }, setting)
+      } else {
+        useEqualizerStore().setLocal(setting)
+      }
       return
-    case 'party-disable':
-      await usePartyStore().disable()
+    }
+    // The app's "Hear it now": restart the current song where it is, so a
+    // curve that would otherwise wait for the next track is heard.
+    case 'equalizer-apply': {
+      if (playback.currentSong && !playback.radioStation) {
+        await playback.startCurrent(playback.localPosition)
+      }
       return
-    case 'party-rotate':
-      await usePartyStore().rotate()
-      return
-    case 'party-takeover':
-      await usePartyStore().takeOver()
-      return
-    case 'party-kick':
-      await usePartyStore().kick(String(payload.guestId))
-      return
+    }
     // Set rather than toggled: the phone says what it saw and wants, so a
     // second tap arriving late cannot undo the first one.
     case 'set-favorite': {
@@ -497,6 +514,7 @@ export async function resolveRemoteQuery(
   payload: Record<string, unknown>,
 ): Promise<unknown> {
   const library = useLibraryStore()
+  const playback = usePlaybackStore()
 
   switch (type) {
     case 'songs-request': {
@@ -611,23 +629,76 @@ export async function resolveRemoteQuery(
       const albums = await library.fetchRandomAlbums(15)
       return { items: albums.map(toRemoteAlbum) }
     }
-    case 'party-request': {
-      // The invite link is sent here rather than in the snapshot, which is
-      // also pushed to Home Assistant (see stores/remoteControl.ts).
-      const party = usePartyStore()
-      await party.refreshStatus()
+    case 'backdrop-request': {
+      // The artist photo Now Playing shows behind everything. Off when the
+      // installation switched Fanart.tv off; null when this artist has none,
+      // which leaves the phone showing the blurred cover instead.
+      const songId = String(payload.songId ?? '')
+      const song = songId ? await resolveSong(songId) : playback.currentSong
+      if (!song || !useFanartStore().enabled) {
+        return { source: null, backgrounds: [], is_artist: false }
+      }
+      try {
+        const art = await getArtistArt(song.artist)
+        const source = remoteFanartUrl(art?.background ?? null)
+        if (!source) return { source: null, backgrounds: [], is_artist: false }
+        return {
+          source,
+          backgrounds: (art?.backgrounds ?? [])
+            .map(remoteFanartUrl)
+            .filter((url): url is string => url !== null),
+          is_artist: true,
+        }
+      } catch {
+        return { source: null, backgrounds: [], is_artist: false }
+      }
+    }
+    case 'lyrics-request': {
+      // The same store the app's own Now Playing panel reads, so a song
+      // already looked at there costs the phone nothing.
+      const songId = String(payload.songId ?? '')
+      const song = songId ? await resolveSong(songId) : playback.currentSong
+      if (!song) {
+        return {
+          song_id: null,
+          synced: false,
+          lines: [],
+          credits: [],
+          source: null,
+          offset: 0,
+          loading: false,
+          error: false,
+        }
+      }
+      const lyrics = useLyricsStore()
+      // Started, not awaited: a provider lookup takes longer than the
+      // phone's query budget, so this answers "still loading" and the
+      // phone asks again shortly (see routes/remote.py's QUERY_TIMEOUT).
+      if (lyrics.songId !== song.id && !lyrics.loading) void lyrics.ensureLoaded(song)
+      const ready = lyrics.songId === song.id
       return {
-        enabled: party.enabled,
-        hosted_here: party.hostedHere,
-        server_hosted: party.serverHosted,
-        invite_url: party.inviteUrl,
-        guests: party.guests.map((guest) => ({
-          id: guest.guest_id,
-          name: guest.name,
-          connected: guest.connected,
-        })),
-        listeners: party.listeners,
-        listen_kbps: party.listenKbps,
+        song_id: song.id,
+        synced: ready && lyrics.synced,
+        lines: ready ? lyrics.lines : [],
+        credits: ready ? lyrics.credits : [],
+        source: ready ? lyrics.source : null,
+        offset: ready ? lyrics.offset : 0,
+        loading: ready ? lyrics.loading : true,
+        error: ready && lyrics.error,
+      }
+    }
+    case 'equalizer-request': {
+      // Only the speakers being cast to: the phone cannot hear this
+      // device's own curve, and the button is only offered while casting.
+      const equalizer = useEqualizerStore()
+      const targets = useConnectStore().activeTargets.map(({ type, name }) => ({ type, name }))
+      return {
+        targets,
+        settings: Object.fromEntries(
+          targets.map((target) => [speakerKey(target), equalizer.speaker(target)]),
+        ),
+        presets: equalizer.presets,
+        built_in: EQ_PRESET_NAMES.map((name) => ({ name, gains: EQ_PRESETS[name] })),
       }
     }
     case 'playlists-request': {

@@ -6,6 +6,9 @@ import { useConnectStore } from '@/stores/connect'
 import { useRemoteControlStore } from '@/stores/remoteControl'
 import { useAutoplayStore } from '@/stores/autoplay'
 import { useAuthStore } from '@/stores/auth'
+import { useFanartStore } from '@/stores/fanart'
+import { useEqualizerStore } from '@/stores/equalizer'
+import { useLyricsStore } from '@/stores/lyrics'
 import { PartyRefusal, usePartyStore } from '@/stores/party'
 import {
   handleRemoteCommand,
@@ -578,6 +581,50 @@ describe('handleRemoteCommand', () => {
     })
   })
 
+  describe('equalizer', () => {
+    it('sets the curve for the speaker the phone names', async () => {
+      const equalizer = useEqualizerStore()
+      const setSpeaker = vi.spyOn(equalizer, 'setSpeaker').mockImplementation(() => {})
+
+      await handleRemoteCommand('set-equalizer', {
+        target: { type: 'sonos', name: 'Kitchen' },
+        setting: { enabled: true, gains: [1, 2] },
+      })
+
+      expect(setSpeaker).toHaveBeenCalledWith(
+        { type: 'sonos', name: 'Kitchen' },
+        expect.objectContaining({ enabled: true, gains: expect.arrayContaining([1, 2]) }),
+      )
+      const setting = setSpeaker.mock.calls[0]![1]
+      expect(setting.gains).toHaveLength(10)
+    })
+
+    it('restarts the current song where it is for "apply now"', async () => {
+      const playback = usePlaybackStore()
+      playback.setQueue([makeSong('a')], 0)
+      const restart = vi.spyOn(playback, 'startCurrent').mockResolvedValue(false)
+
+      await handleRemoteCommand('equalizer-apply', {})
+
+      expect(restart).toHaveBeenCalledWith(playback.localPosition)
+    })
+
+    it('does not restart a radio stream, which is never equalized', async () => {
+      const playback = usePlaybackStore()
+      playback.radioStation = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example',
+        homePageUrl: null,
+      }
+      const restart = vi.spyOn(playback, 'startCurrent').mockResolvedValue(false)
+
+      await handleRemoteCommand('equalizer-apply', {})
+
+      expect(restart).not.toHaveBeenCalled()
+    })
+  })
+
   describe('party', () => {
     it('party-wish hands the resolved song and the guest to the party store', async () => {
       const library = useLibraryStore()
@@ -613,27 +660,6 @@ describe('handleRemoteCommand', () => {
       await handleRemoteCommand('party-withdraw', { requestId: 'r1', guestId: 'g1' })
 
       expect(withdraw).toHaveBeenCalledWith('r1', 'g1')
-    })
-
-    it.each([
-      ['party-enable', 'enable'],
-      ['party-disable', 'disable'],
-      ['party-rotate', 'rotate'],
-      ['party-takeover', 'takeOver'],
-    ] as const)('%s calls the party store\u2019s %s()', async (type, action) => {
-      const spy = vi.spyOn(usePartyStore(), action).mockResolvedValue()
-
-      await handleRemoteCommand(type, {})
-
-      expect(spy).toHaveBeenCalledOnce()
-    })
-
-    it('party-kick names the guest to remove', async () => {
-      const kick = vi.spyOn(usePartyStore(), 'kick').mockResolvedValue()
-
-      await handleRemoteCommand('party-kick', { guestId: 'g1' })
-
-      expect(kick).toHaveBeenCalledWith('g1')
     })
   })
 
@@ -1041,35 +1067,91 @@ describe('resolveRemoteQuery', () => {
     })
   })
 
-  describe('party-request', () => {
-    it('refreshes the status and returns the invitation and guests', async () => {
-      const party = usePartyStore()
-      const refresh = vi.spyOn(party, 'refreshStatus').mockResolvedValue()
-      party.enabled = true
-      party.hostedHere = true
-      party.inviteToken = 'tok'
-      party.lanIp = '192.0.2.10'
-      party.port = 9181
-      party.guests = [{ guest_id: 'g1', name: 'Anna', joined_at: 0, connected: true }]
-      party.listeners = 2
-      party.settings.listenKbps = 128
+  describe('backdrop-request', () => {
+    it('answers null when Fanart.tv is switched off', async () => {
+      const library = useLibraryStore()
+      library.allSongs = [makeSong('a')]
+      useFanartStore().enabled = false
 
-      const result = (await resolveRemoteQuery('party-request', {})) as {
-        enabled: boolean
-        hosted_here: boolean
-        invite_url: string
-        guests: { id: string; name: string; connected: boolean }[]
-        listeners: number
-        listen_kbps: number
+      const result = await resolveRemoteQuery('backdrop-request', { songId: 'a' })
+
+      expect(result).toEqual({ source: null, backgrounds: [], is_artist: false })
+    })
+  })
+
+  describe('lyrics-request', () => {
+    it('returns the lyrics already loaded for the song, with their offset', async () => {
+      const library = useLibraryStore()
+      library.allSongs = [makeSong('a')]
+      const lyrics = useLyricsStore()
+      lyrics.songId = 'a'
+      lyrics.synced = true
+      lyrics.lines = [{ time: 1, text: 'Hello' }]
+      lyrics.credits = ['Written by Someone']
+      lyrics.offset = 0.4
+      lyrics.loading = false
+      lyrics.error = false
+
+      const result = (await resolveRemoteQuery('lyrics-request', { songId: 'a' })) as {
+        song_id: string
+        synced: boolean
+        lines: { time: number; text: string }[]
+        credits: string[]
+        offset: number
+        loading: boolean
       }
 
-      expect(refresh).toHaveBeenCalledOnce()
-      expect(result.enabled).toBe(true)
-      expect(result.hosted_here).toBe(true)
-      expect(result.invite_url).toContain('#t=tok')
-      expect(result.guests).toEqual([{ id: 'g1', name: 'Anna', connected: true }])
-      expect(result.listeners).toBe(2)
-      expect(result.listen_kbps).toBe(128)
+      expect(result.song_id).toBe('a')
+      expect(result.synced).toBe(true)
+      expect(result.lines).toEqual([{ time: 1, text: 'Hello' }])
+      expect(result.credits).toEqual(['Written by Someone'])
+      expect(result.offset).toBe(0.4)
+      expect(result.loading).toBe(false)
+    })
+
+    it('answers "still loading" instead of the previous song\u2019s lines', async () => {
+      const library = useLibraryStore()
+      library.allSongs = [makeSong('b')]
+      const lyrics = useLyricsStore()
+      lyrics.songId = 'a'
+      lyrics.lines = [{ time: 0, text: 'Old song' }]
+      lyrics.loading = false
+      vi.spyOn(lyrics, 'ensureLoaded').mockResolvedValue()
+
+      const result = (await resolveRemoteQuery('lyrics-request', { songId: 'b' })) as {
+        lines: unknown[]
+        loading: boolean
+      }
+
+      expect(result.lines).toEqual([])
+      expect(result.loading).toBe(true)
+    })
+  })
+
+  describe('equalizer-request', () => {
+    it('returns the cast targets, their curves and the presets', async () => {
+      const connect = useConnectStore()
+      vi.spyOn(connect, 'activeTargets', 'get').mockReturnValue([
+        { type: 'sonos', name: 'Kitchen' },
+      ] as never)
+      const equalizer = useEqualizerStore()
+      const gains = [6, 5, 4, 2, 0, 0, 0, 0, 0, 0]
+      equalizer.speakers['sonos:Kitchen'] = { enabled: true, gains }
+      equalizer.presets = [{ name: 'Mine', gains }]
+
+      const result = (await resolveRemoteQuery('equalizer-request', {})) as {
+        targets: { type: string; name: string }[]
+        settings: Record<string, { enabled: boolean; gains: number[] }>
+        presets: { name: string }[]
+        built_in: { name: string; gains: number[] }[]
+      }
+
+      expect(result.targets).toEqual([{ type: 'sonos', name: 'Kitchen' }])
+      expect(result.settings['sonos:Kitchen']!.gains).toEqual(gains)
+      expect(result.presets.map((preset) => preset.name)).toEqual(['Mine'])
+      expect(result.built_in.find((preset) => preset.name === 'bass')!.gains).toEqual([
+        6, 5, 4, 2, 0, 0, 0, 0, 0, 0,
+      ])
     })
   })
 

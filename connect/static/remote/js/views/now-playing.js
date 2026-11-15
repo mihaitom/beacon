@@ -1,7 +1,8 @@
-import { fireCommand } from '../api.js';
+import { fetchBackdrop, fetchLyrics, fireCommand } from '../api.js';
 import { navigate, registerRoute } from '../router.js';
 import { state, subscribe } from '../state.js';
 import { openDevicePicker } from '../devices.js';
+import { openEqualizer } from '../equalizer.js';
 import { setArt } from '../art.js';
 import { paintRange } from '../range.js';
 import { createWaveform } from '../waveform.js';
@@ -13,6 +14,10 @@ import { t } from '../i18n.js';
 // services/connect/volumeGuard.ts — the same race, on the other side of
 // the wire: a cast device also takes a moment to report a new level.
 const VOLUME_SETTLE_MS = 2500;
+// The lyrics lookup can take a few seconds at a third-party provider. The
+// phone asks again after this rather than sitting on its first answer.
+const LYRICS_RETRY_MS = 1200;
+const LYRICS_MAX_RETRIES = 15;
 
 function formatTime(seconds) {
   if (!Number.isFinite(seconds)) return '0:00';
@@ -37,7 +42,37 @@ function formatLiveTime(seconds) {
 export function renderNowPlaying(root) {
   root.innerHTML = `
     <div class="now-playing">
-      <div class="cover-art" id="np-art"></div>
+      <div class="np-backdrop" id="np-backdrop"></div>
+      <div class="np-scrim"></div>
+      <div class="np-toolbar" id="np-toolbar">
+        <button type="button" class="np-tool hidden" id="np-tool-lyrics"
+                title="${t('lyrics.title')}" aria-label="${t('lyrics.title')}">
+          <i class="mdi mdi-script-text-outline"></i>
+        </button>
+        <button type="button" class="np-tool hidden" id="np-tool-artwork"
+                title="${t('nowPlaying.hideArtwork')}" aria-label="${t('nowPlaying.hideArtwork')}">
+          <i class="mdi mdi-album"></i>
+        </button>
+        <button type="button" class="np-tool hidden" id="np-tool-background"
+                title="${t('nowPlaying.nextBackground')}" aria-label="${t('nowPlaying.nextBackground')}">
+          <i class="mdi mdi-wallpaper"></i>
+        </button>
+        <button type="button" class="np-tool hidden" id="np-tool-equalizer"
+                title="${t('equalizer.title')}" aria-label="${t('equalizer.title')}">
+          <i class="mdi mdi-tune-vertical"></i>
+        </button>
+      </div>
+      <div class="np-stage">
+        <div class="cover-art" id="np-art"></div>
+        <div class="np-lyrics hidden" id="np-lyrics-panel">
+          <div class="np-lyrics__scroll" id="np-lyrics-scroll"></div>
+          <div class="np-lyrics__credits" id="np-lyrics-credits"></div>
+          <button type="button" class="np-lyrics__resume hidden" id="np-lyrics-resume"
+                  title="${t('lyrics.resumeAutoscroll')}" aria-label="${t('lyrics.resumeAutoscroll')}">
+            <i class="mdi mdi-format-vertical-align-center"></i>
+          </button>
+        </div>
+      </div>
       <div class="now-playing__info">
         <div class="now-playing__eyebrow" id="np-eyebrow"></div>
         <div class="song-title" id="np-title">${t('nowPlaying.nothing')}</div>
@@ -90,8 +125,38 @@ export function renderNowPlaying(root) {
     </div>
   `;
 
+  const backdropEl = root.querySelector('#np-backdrop');
+  const toolbar = root.querySelector('#np-toolbar');
+  // The app bar is the shell's, not this view's, so the buttons are moved
+  // into it rather than laid out above the artwork - the same place the
+  // app's own phone Now Playing puts its toolbar. Removed again on the way
+  // out (see the cleanup below), since the bar survives route changes.
+  let appBarActions = document.getElementById('app-bar-actions');
+  if (!appBarActions) {
+    const appBar = document.querySelector('.app-bar');
+    if (appBar) {
+      appBarActions = document.createElement('span');
+      appBarActions.id = 'app-bar-actions';
+      appBarActions.className = 'app-bar__actions';
+      appBar.appendChild(appBarActions);
+    }
+  }
+  if (appBarActions) {
+    // A view left behind by a re-login can have left its own toolbar here.
+    appBarActions.innerHTML = '';
+    appBarActions.appendChild(toolbar);
+  }
+  // From the toolbar itself, not the view: it lives in the app bar by now.
+  const lyricsBtn = toolbar.querySelector('#np-tool-lyrics');
+  const artworkBtn = toolbar.querySelector('#np-tool-artwork');
+  const backgroundBtn = toolbar.querySelector('#np-tool-background');
+  const equalizerBtn = toolbar.querySelector('#np-tool-equalizer');
+  const stageArt = root.querySelector('#np-art');
+  const lyricsPanel = root.querySelector('#np-lyrics-panel');
+  const lyricsScroll = root.querySelector('#np-lyrics-scroll');
+  const lyricsCredits = root.querySelector('#np-lyrics-credits');
+  const lyricsResume = root.querySelector('#np-lyrics-resume');
   const castBtn = root.querySelector('#np-cast');
-  const art = root.querySelector('#np-art');
   const eyebrow = root.querySelector('#np-eyebrow');
   const title = root.querySelector('#np-title');
   const artist = root.querySelector('#np-artist');
@@ -164,15 +229,301 @@ export function renderNowPlaying(root) {
   // e.g. switching from a song to radio while neither has art) changed.
   let lastArtKey;
 
+  // ── Backdrop, artwork and lyrics ──────────────────────────────────────
+  let currentSongId = null;
+  let lastCoverUrl = null;
+  let backdropSource = null;
+  let backdropUrls = [];
+  let backdropIndex = 0;
+  let lastBackdropKey;
+  let artworkHidden = false;
+  // The artist lookup goes through MusicBrainz, which can outlast the
+  // backend's query budget on a cold cache. The renderer keeps working on
+  // it, so a later ask finds the answer waiting.
+  let backdropRetries = 0;
+  let backdropRetryTimer = null;
+
+  let lyricsOpen = false;
+  let lyricsPaused = false;
+  let lyricsForSongId = null;
+  let lyricsState = null;
+  let lyricsLoading = false;
+  let lyricsRetries = 0;
+  let lyricsActiveIndex = -1;
+  let lyricElements = [];
+  let lyricsRetryTimer = null;
+
+  /** The artist photo once it arrives, the blurred cover until then (or
+   * where the artist has none) - the app's own two backdrops. */
+  function applyBackdrop(coverUrl) {
+    const url = backdropSource || coverUrl;
+    const fallback = !backdropSource;
+    const key = `${url ?? ''}|${fallback ? 1 : 0}`;
+    if (key === lastBackdropKey) return;
+    lastBackdropKey = key;
+    setArt(backdropEl, url, null);
+    backdropEl.classList.toggle('np-backdrop--fallback', fallback);
+  }
+
+  function loadBackdrop(songId) {
+    clearTimeout(backdropRetryTimer);
+    fetchBackdrop(songId)
+      .then((answer) => {
+        if (currentSongId !== songId) return;
+        backdropRetries = 0;
+        backdropSource = answer?.source ?? null;
+        backdropUrls = Array.isArray(answer?.backgrounds) ? answer.backgrounds : [];
+        backdropIndex = Math.max(0, backdropUrls.indexOf(backdropSource));
+        lastBackdropKey = undefined;
+        applyBackdrop(lastCoverUrl);
+        updateToolbar(state.snapshot);
+      })
+      .catch(() => {
+        // The cover stays the backdrop while the renderer finishes the
+        // lookup; ask once more after a moment.
+        if (currentSongId !== songId || backdropRetries >= 2) return;
+        backdropRetries += 1;
+        backdropRetryTimer = setTimeout(() => {
+          if (currentSongId === songId) loadBackdrop(songId);
+        }, 3000);
+      });
+  }
+
+  function setArtworkVisible() {
+    stageArt.classList.toggle('hidden', lyricsOpen || artworkHidden);
+  }
+
+  function setLyricsOpen(open) {
+    lyricsOpen = open;
+    lyricsPanel.classList.toggle('hidden', !lyricsOpen);
+    setArtworkVisible();
+    lyricsBtn.classList.toggle('active', lyricsOpen);
+    if (!lyricsOpen) {
+      lyricsPaused = false;
+      lyricsResume.classList.add('hidden');
+      return;
+    }
+    const songId = state.snapshot.current_song?.id ?? null;
+    if (!songId) return;
+    if (!lyricsState && !lyricsLoading) loadLyrics(songId);
+    else {
+      renderLyrics();
+      updateLyricsPosition(state.snapshot, true);
+    }
+  }
+
+  function resetLyrics(songId) {
+    clearTimeout(lyricsRetryTimer);
+    lyricsRetryTimer = null;
+    lyricsForSongId = songId;
+    lyricsState = null;
+    lyricsLoading = false;
+    lyricsRetries = 0;
+    lyricsPaused = false;
+    lyricsActiveIndex = -1;
+    lyricElements = [];
+    lyricsScroll.innerHTML = '';
+    lyricsCredits.textContent = '';
+    lyricsScroll.scrollTop = 0;
+    lyricsResume.classList.add('hidden');
+  }
+
+  function loadLyrics(songId) {
+    if (lyricsForSongId !== songId) return;
+    lyricsLoading = true;
+    lyricsState = null;
+    lyricsActiveIndex = -1;
+    lyricElements = [];
+    renderLyrics();
+    fetchLyrics(songId)
+      .then((answer) => {
+        if (lyricsForSongId !== songId) return;
+        lyricsState = answer;
+        lyricsLoading = false;
+        renderLyrics();
+        updateLyricsPosition(state.snapshot, true);
+        if (answer?.loading && lyricsRetries < LYRICS_MAX_RETRIES) {
+          lyricsRetries += 1;
+          lyricsRetryTimer = setTimeout(() => {
+            if (lyricsOpen && lyricsForSongId === songId) loadLyrics(songId);
+          }, LYRICS_RETRY_MS);
+        } else {
+          lyricsRetries = 0;
+        }
+      })
+      .catch(() => {
+        if (lyricsForSongId !== songId) return;
+        lyricsLoading = false;
+        lyricsState = { error: true, lines: [], synced: false };
+        renderLyrics();
+      });
+  }
+
+  function renderLyrics() {
+    lyricsScroll.innerHTML = '';
+    lyricElements = [];
+    if (!lyricsOpen) return;
+    lyricsCredits.textContent = '';
+
+    const status = (text) => {
+      const div = document.createElement('div');
+      div.className = 'np-lyrics__status';
+      div.textContent = text;
+      lyricsScroll.appendChild(div);
+    };
+
+    if (lyricsLoading || lyricsState?.loading) {
+      status(t('common.loading'));
+      return;
+    }
+    if (lyricsState?.error) {
+      status(t('lyrics.failed'));
+      return;
+    }
+    const lines = lyricsState?.lines ?? [];
+    if (!lines.length) {
+      status(t('lyrics.none'));
+      return;
+    }
+
+    if (!lyricsState.synced) {
+      const plain = document.createElement('div');
+      plain.className = 'np-lyrics__plain';
+      plain.textContent = lines.map((line) => line.text).join('\n');
+      lyricsScroll.appendChild(plain);
+    } else {
+      const pad = document.createElement('div');
+      pad.className = 'np-lyrics__pad';
+      lyricsScroll.appendChild(pad);
+      lines.forEach((line) => {
+        const element = document.createElement('div');
+        element.className = 'np-lyric';
+        element.textContent = line.text || '♪';
+        element.addEventListener('click', () => {
+          lyricsPaused = false;
+          lyricsResume.classList.add('hidden');
+          fireCommand('seek', { position: line.time + (lyricsState.offset ?? 0) });
+        });
+        lyricsScroll.appendChild(element);
+        lyricElements.push(element);
+      });
+      const endPad = document.createElement('div');
+      endPad.className = 'np-lyrics__pad';
+      lyricsScroll.appendChild(endPad);
+    }
+
+    lyricsCredits.textContent = (lyricsState.credits ?? []).filter(Boolean).join(' · ');
+    lyricsActiveIndex = -1;
+    updateLyricsPosition(state.snapshot, true);
+  }
+
+  function activeLyricIndex(position, offset) {
+    let index = -1;
+    for (let i = 0; i < lyricElements.length; i++) {
+      if ((lyricsState.lines[i]?.time ?? 0) > position - offset) break;
+      index = i;
+    }
+    return index;
+  }
+
+  function scrollToActiveLyric() {
+    const element = lyricElements[lyricsActiveIndex];
+    if (!element) return;
+    const top = element.offsetTop - lyricsScroll.clientHeight / 2 + element.clientHeight / 2;
+    lyricsScroll.scrollTo({ top: Math.max(0, top), behavior: 'smooth' });
+  }
+
+  function updateLyricsPosition(snapshot, force = false) {
+    if (!lyricsOpen || !lyricsState?.synced || !lyricElements.length) return;
+    const index = activeLyricIndex(snapshot.position || 0, lyricsState.offset ?? 0);
+    if (!force && index === lyricsActiveIndex) return;
+    lyricsActiveIndex = index;
+    lyricElements.forEach((element, at) => {
+      element.classList.toggle('np-lyric--active', at === index);
+      element.classList.toggle('np-lyric--past', at < index);
+    });
+    if (!lyricsPaused) scrollToActiveLyric();
+  }
+
+  function onSongChanged(songId, isRadio) {
+    currentSongId = songId;
+    clearTimeout(backdropRetryTimer);
+    backdropRetries = 0;
+    backdropSource = null;
+    backdropUrls = [];
+    backdropIndex = 0;
+    lastBackdropKey = undefined;
+    artworkHidden = false;
+    resetLyrics(songId);
+    if (!songId || isRadio) {
+      if (lyricsOpen) setLyricsOpen(false);
+      return;
+    }
+    loadBackdrop(songId);
+    if (lyricsOpen) loadLyrics(songId);
+  }
+
+  function updateToolbar(snapshot) {
+    const hasSong = Boolean(snapshot.current_song);
+    if (!backdropSource) artworkHidden = false;
+    lyricsBtn.classList.toggle('hidden', !hasSong);
+    lyricsBtn.classList.toggle('active', lyricsOpen);
+    artworkBtn.classList.toggle('hidden', !backdropSource);
+    artworkBtn.classList.toggle('active', artworkHidden && Boolean(backdropSource));
+    const artworkLabel = t(artworkHidden ? 'nowPlaying.showArtwork' : 'nowPlaying.hideArtwork');
+    artworkBtn.title = artworkLabel;
+    artworkBtn.setAttribute('aria-label', artworkLabel);
+    backgroundBtn.classList.toggle('hidden', backdropUrls.length < 2);
+    equalizerBtn.classList.toggle('hidden', !(snapshot.casting?.length));
+    setArtworkVisible();
+  }
+
+  lyricsBtn.addEventListener('click', () => setLyricsOpen(!lyricsOpen));
+  artworkBtn.addEventListener('click', () => {
+    if (!backdropSource) return;
+    artworkHidden = !artworkHidden;
+    updateToolbar(state.snapshot);
+  });
+  backgroundBtn.addEventListener('click', () => {
+    if (backdropUrls.length < 2) return;
+    backdropIndex = (backdropIndex + 1) % backdropUrls.length;
+    backdropSource = backdropUrls[backdropIndex] ?? null;
+    lastBackdropKey = undefined;
+    applyBackdrop(lastCoverUrl);
+  });
+  equalizerBtn.addEventListener('click', () => openEqualizer());
+  lyricsResume.addEventListener('click', () => {
+    lyricsPaused = false;
+    lyricsResume.classList.add('hidden');
+    lyricsActiveIndex = -1;
+    updateLyricsPosition(state.snapshot, true);
+  });
+  // Scrolling by hand hands the list to the reader: it stays where it was
+  // put until the resume button above hands it back.
+  const pauseLyrics = () => {
+    if (!lyricsOpen || lyricsPaused) return;
+    lyricsPaused = true;
+    lyricsResume.classList.remove('hidden');
+  };
+  lyricsScroll.addEventListener('wheel', pauseLyrics, { passive: true });
+  lyricsScroll.addEventListener('touchmove', pauseLyrics, { passive: true });
+
   function render(s) {
     const snapshot = s.snapshot;
     const song = snapshot.current_song;
+    const radio = snapshot.radio;
+    const songId = song?.id ?? null;
+    if (songId !== currentSongId) onSongChanged(songId, Boolean(radio));
+
     const artUrl = song?.cover_art_url || snapshot.radio?.favicon_url || null;
+    lastCoverUrl = artUrl;
     const artKey = `${artUrl ?? ''}|${snapshot.radio ? 1 : 0}`;
     if (artKey !== lastArtKey) {
       lastArtKey = artKey;
-      setArt(art, artUrl, snapshot.radio ? 'mdi-radio' : null);
+      setArt(stageArt, artUrl, snapshot.radio ? 'mdi-radio' : null);
     }
+    applyBackdrop(artUrl);
+    updateToolbar(snapshot);
     // Same "Now playing"/"Pause" distinction as NowPlayingView.vue's own
     // eyebrow computed (home.nowPlaying/home.paused) — empty once there's
     // nothing loaded at all, matching the title's own "Nothing playing".
@@ -264,6 +615,7 @@ export function renderNowPlaying(root) {
       }
       durationLabel.textContent = formatTime(snapshot.duration || 0);
     }
+    updateLyricsPosition(snapshot);
     // The value this snapshot would put on the slider — read before the
     // hold below, so a snapshot that already agrees with what was sent
     // ends the hold early rather than sitting it out.
@@ -327,6 +679,13 @@ export function renderNowPlaying(root) {
   return () => {
     unsubscribe();
     waveform.destroy();
+    // Stops an answer still on its way (and its retry) from landing on a
+    // view that is no longer on screen.
+    currentSongId = null;
+    lyricsForSongId = null;
+    clearTimeout(lyricsRetryTimer);
+    clearTimeout(backdropRetryTimer);
+    toolbar.remove();
   };
 }
 

@@ -38,7 +38,7 @@ from fastapi.responses import (
 )
 from pydantic import BaseModel
 
-from core import integration_key, mdns
+from core import fanart, integration_key, mdns
 from core.auth import require_token
 from core.party import party
 from core.remote import remote
@@ -410,19 +410,34 @@ async def get_home():
     return await relay_query("home-request", {})
 
 
+@router.get("/backdrop", dependencies=[Depends(require_remote_password)])
+async def get_backdrop(song: str = ""):
+    """Now Playing's artist background for one song, answered by the desktop
+    out of Fanart.tv (see routes/fanart.py). Empty when the artist has none
+    or Fanart.tv is switched off."""
+    return await relay_query("backdrop-request", {"songId": song})
+
+
+@router.get("/lyrics", dependencies=[Depends(require_remote_password)])
+async def get_lyrics(song: str = ""):
+    """The current song's lyrics for the phone's Now Playing panel, loaded
+    through the same store the app's own panel uses. `loading` in the answer
+    means the phone should ask again shortly."""
+    return await relay_query("lyrics-request", {"songId": song})
+
+
+@router.get("/equalizer", dependencies=[Depends(require_remote_password)])
+async def get_equalizer():
+    """The equalizer for the speakers being cast to: their curves and the
+    presets, as the app's own EqualizerDialog reads them."""
+    return await relay_query("equalizer-request", {})
+
+
 @router.get("/discover", dependencies=[Depends(require_remote_password)])
 async def get_discover():
     """A fresh draw for Home's Discover shelf, so its shuffle button does
     not replace the shelves around it."""
     return await relay_query("discover-request", {})
-
-
-@router.get("/party", dependencies=[Depends(require_remote_password)])
-async def get_party():
-    """The phone's Party page: whether a party runs, its guest list and the
-    invitation link. Kept out of the shared snapshot, which integrations
-    also receive."""
-    return await relay_query("party-request", {})
 
 
 @router.get("/artists", dependencies=[Depends(require_remote_password)])
@@ -494,6 +509,27 @@ async def remote_cover_art(id: str, session: SessionState = Depends(get_session)
     carries the server's own credentials, which a phone has no business
     holding either (see cover_image)."""
     return await cover_image(session.media, id)
+
+
+@router.get("/fanart", dependencies=[Depends(require_remote_password)])
+async def remote_fanart(url: str = Query(...)):
+    """A Fanart.tv image under the phone's own auth, the counterpart of
+    /fanart/image for the app. The URL is Fanart.tv's own; core.fanart
+    refuses anything else, and the bytes come from its disk cache where
+    possible. The app's own route carries CONNECT_TOKEN in the URL, which a
+    phone must never receive (see cover-art above)."""
+    data = fanart.get_cached_image(url)
+    if data is None:
+        fetched = await fanart.fetch_image(url)
+        if fetched is None:
+            raise HTTPException(status_code=404, detail="Image not available")
+        data, _content_type = fetched
+        fanart.store_image(url, data)
+    return Response(
+        content=data,
+        media_type=fanart.content_type_for(url),
+        headers={"Cache-Control": "public, max-age=2592000"},
+    )
 
 
 @router.get("/radio-favicon", dependencies=[Depends(require_remote_password)])
