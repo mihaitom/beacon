@@ -519,7 +519,9 @@ export function renderNowPlaying(root) {
     lyricsBtn.classList.toggle('hidden', !hasSong);
     lyricsBtn.classList.toggle('active', lyricsOpen);
     artworkBtn.classList.toggle('hidden', !backdropSource);
-    artworkBtn.classList.toggle('active', artworkHidden && Boolean(backdropSource));
+    // Lit while the artwork is on screen, like the lyrics button while its
+    // panel is open.
+    artworkBtn.classList.toggle('active', !artworkHidden && Boolean(backdropSource));
     const artworkLabel = t(artworkHidden ? 'nowPlaying.showArtwork' : 'nowPlaying.hideArtwork');
     artworkBtn.title = artworkLabel;
     artworkBtn.setAttribute('aria-label', artworkLabel);
