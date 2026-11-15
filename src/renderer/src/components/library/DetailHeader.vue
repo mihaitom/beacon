@@ -443,7 +443,7 @@ export default {
   background: rgb(var(--v-theme-background));
   /* What the picture is shaded towards behind the text: black, or a pale
    * accent on a light card (--light below). */
-  --shade: #000;
+  --hero-shade: #000;
   color: rgb(var(--v-theme-on-background));
   /* Where the scrim behind the text has cleared - and so, wherever there
    * is room, where Fanart.tv art starts at the earliest. The scrim eases
@@ -610,7 +610,7 @@ export default {
     linear-gradient(to top, rgba(var(--v-theme-background), 0.55), transparent 55%);
 }
 
-/* Over Fanart.tv art the scrim is plain --shade: the amber wash would read
+/* Over Fanart.tv art the scrim is plain --hero-shade: the amber wash would read
  * as a colour cast on a sharp photo (over the blurred cover it reads as the
  * app's own light), and the app's blue-grey as a blue tint. Strong and even
  * behind the text, the art under it still just visible, then clear where
@@ -619,47 +619,47 @@ export default {
   background:
     linear-gradient(
       to right,
-      color-mix(in srgb, var(--shade) 85%, transparent) var(--text-end, 40%),
-      color-mix(in srgb, var(--shade) 82.6%, transparent)
+      color-mix(in srgb, var(--hero-shade) 85%, transparent) var(--text-end, 40%),
+      color-mix(in srgb, var(--hero-shade) 82.6%, transparent)
         calc(var(--text-end, 40%) + var(--scrim-fade) * 0.1),
-      color-mix(in srgb, var(--shade) 76.2%, transparent)
+      color-mix(in srgb, var(--hero-shade) 76.2%, transparent)
         calc(var(--text-end, 40%) + var(--scrim-fade) * 0.2),
-      color-mix(in srgb, var(--shade) 66.6%, transparent)
+      color-mix(in srgb, var(--hero-shade) 66.6%, transparent)
         calc(var(--text-end, 40%) + var(--scrim-fade) * 0.3),
-      color-mix(in srgb, var(--shade) 55.1%, transparent)
+      color-mix(in srgb, var(--hero-shade) 55.1%, transparent)
         calc(var(--text-end, 40%) + var(--scrim-fade) * 0.4),
-      color-mix(in srgb, var(--shade) 42.5%, transparent)
+      color-mix(in srgb, var(--hero-shade) 42.5%, transparent)
         calc(var(--text-end, 40%) + var(--scrim-fade) * 0.5),
-      color-mix(in srgb, var(--shade) 29.9%, transparent)
+      color-mix(in srgb, var(--hero-shade) 29.9%, transparent)
         calc(var(--text-end, 40%) + var(--scrim-fade) * 0.6),
-      color-mix(in srgb, var(--shade) 18.4%, transparent)
+      color-mix(in srgb, var(--hero-shade) 18.4%, transparent)
         calc(var(--text-end, 40%) + var(--scrim-fade) * 0.7),
-      color-mix(in srgb, var(--shade) 8.8%, transparent)
+      color-mix(in srgb, var(--hero-shade) 8.8%, transparent)
         calc(var(--text-end, 40%) + var(--scrim-fade) * 0.8),
-      color-mix(in srgb, var(--shade) 2.4%, transparent)
+      color-mix(in srgb, var(--hero-shade) 2.4%, transparent)
         calc(var(--text-end, 40%) + var(--scrim-fade) * 0.9),
-      color-mix(in srgb, var(--shade) 0%, transparent) var(--text-clearance)
+      color-mix(in srgb, var(--hero-shade) 0%, transparent) var(--text-clearance)
     ),
-    linear-gradient(to top, color-mix(in srgb, var(--shade) 55%, transparent), transparent 55%);
+    linear-gradient(to top, color-mix(in srgb, var(--hero-shade) 55%, transparent), transparent 55%);
 }
 
 /* A light card: in a pale accent rather than the theme's background, which
  * it would otherwise melt into on a light page wherever the picture is light
  * too. Scrims and all, so the dark text reads on it. */
 .detail-header--light {
-  --shade: color-mix(in srgb, rgb(var(--v-theme-primary)) 12%, rgb(var(--v-theme-background)));
-  background: var(--shade);
+  --hero-shade: color-mix(in srgb, rgb(var(--v-theme-primary)) 12%, rgb(var(--v-theme-background)));
+  background: var(--hero-shade);
 }
 
 .detail-header--light .detail-header__scrim:not(.detail-header__scrim--photo) {
   background:
     linear-gradient(
       120deg,
-      color-mix(in srgb, var(--shade) 94%, transparent) 0%,
-      color-mix(in srgb, var(--shade) 75%, transparent) 45%,
+      color-mix(in srgb, var(--hero-shade) 94%, transparent) 0%,
+      color-mix(in srgb, var(--hero-shade) 75%, transparent) 45%,
       rgba(var(--v-theme-primary), 0.2) 100%
     ),
-    linear-gradient(to top, color-mix(in srgb, var(--shade) 55%, transparent), transparent 55%);
+    linear-gradient(to top, color-mix(in srgb, var(--hero-shade) 55%, transparent), transparent 55%);
 }
 
 /* The cover wash brightened rather than darkened, for the same reason. */
@@ -668,6 +668,33 @@ export default {
     .detail-header__backdrop--banner
   ) {
   filter: blur(38px) saturate(1.2) brightness(1.25);
+}
+
+/* A card switching between light and dark with its art (see
+ * services/artworkHeaderTheme.ts) fades over with the art rather than its
+ * colours cutting: the shade and the card under it, the text, and the
+ * buttons - Vuetify's own transitions for those kept, with the colours
+ * added at the art's pace. */
+.detail-header {
+  transition:
+    --hero-shade 0.6s ease,
+    background-color 0.6s ease,
+    color 0.6s ease;
+}
+
+.detail-header__info :deep(:not(.v-btn, .v-btn *)),
+.detail-header__top-right :deep(:not(.v-btn, .v-btn *)) {
+  transition: color 0.6s ease;
+}
+
+.detail-header :deep(.v-btn) {
+  transition:
+    box-shadow 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+    transform 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+    opacity 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+    border-radius 0.28s cubic-bezier(0.4, 0, 0.2, 1),
+    background 0.6s ease,
+    color 0.6s ease;
 }
 
 .detail-header__top-right {

@@ -1030,3 +1030,13 @@ body {
     animation: none;
   }
 }
+
+/* A hero card's shade (DetailHeader.vue, HeroBand.vue), registered as a
+ * colour so that a card switching between light and dark with its art
+ * fades its scrims over rather than cutting: an unregistered custom
+ * property can't be transitioned. */
+@property --hero-shade {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #000;
+}
