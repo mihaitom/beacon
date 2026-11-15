@@ -1,7 +1,7 @@
 <template>
   <v-container fluid>
-    <!-- The same flat title row every other Mobile* view uses, with the two
-       - actions as icon buttons beside it — none of those views has a
+    <!-- The same flat title row every other Mobile* view uses, with its
+       - action as an icon button beside it — none of those views has a
        - header-level action whose labelled, pill-shaped desktop treatment
        - this could match against. -->
     <div class="mobile-header">
@@ -17,36 +17,6 @@
         :title="$t('radio.discoverStations')"
         @click="discoverOpen = true"
       />
-      <!-- The external sources have no tabs of their own on the phone: the
-         - bar is full, and they sit next to radio as the other music that is
-         - not in the library. More than one become a menu, since this row
-         - has room for only a few buttons beside the title. -->
-      <v-btn
-        v-if="soleExternalSource"
-        :icon="soleExternalSource.icon"
-        variant="tonal"
-        :title="soleExternalSource.name"
-        :to="`/m/external/${soleExternalSource.id}`"
-      />
-      <v-menu v-else-if="externalSources.length > 1" location="bottom end">
-        <template #activator="{ props: menuProps }">
-          <v-btn
-            v-bind="menuProps"
-            icon="mdi-web"
-            variant="tonal"
-            :title="$t('externalSource.menuTitle')"
-          />
-        </template>
-        <v-list density="compact">
-          <v-list-item
-            v-for="source in externalSources"
-            :key="source.id"
-            :prepend-icon="source.icon"
-            :title="source.name"
-            :to="`/m/external/${source.id}`"
-          />
-        </v-list>
-      </v-menu>
     </div>
 
     <!-- Only worth offering once there is more than a handful to search
@@ -158,7 +128,6 @@
 // (sized for a wide detail page), the tile grid, and adding a station by
 // typing three URLs.
 import { useLibraryStore } from '@/stores/library'
-import { useExternalSourceStore } from '@/stores/externalSource'
 import EmptyState from '@/components/EmptyState.vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { matchesAllTerms } from '@/services/textSearch'
@@ -195,15 +164,6 @@ export default {
     libraryStore() {
       return useLibraryStore()
     },
-    externalSourceStore() {
-      return useExternalSourceStore()
-    },
-    externalSources() {
-      return this.externalSourceStore.sources
-    },
-    soleExternalSource() {
-      return this.externalSources.length === 1 ? this.externalSources[0] : undefined
-    },
     /** Only while there is genuinely nothing to show yet — the store's
      * loading flag is set by every library fetch, not just this list's. */
     showSkeletons(): boolean {
@@ -226,7 +186,6 @@ export default {
     },
   },
   created() {
-    void this.externalSourceStore.ensureLoaded()
     this.libraryStore.fetchRadioStations()
   },
   methods: {

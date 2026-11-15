@@ -1810,6 +1810,7 @@ export default {
   },
   mobile: {
     tabQueue: "File d'attente",
+    tabMore: 'Plus',
     playOn: 'Lire sur',
     needsPairing: "Doit d'abord être associé dans l'application Beacon",
   },
@@ -1828,7 +1829,6 @@ export default {
     addTitle: 'Nouvelle source externe',
     editTitle: 'Source externe',
     icon: "Icône de l'onglet",
-    menuTitle: 'Sources externes',
     address: "Adresse de l'app",
     token: 'Jeton de votre app (facultatif)',
     tokenHint:

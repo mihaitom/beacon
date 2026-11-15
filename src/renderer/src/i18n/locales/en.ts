@@ -1789,6 +1789,7 @@ export default {
   },
   mobile: {
     tabQueue: 'Queue',
+    tabMore: 'More',
     playOn: 'Play on',
     needsPairing: 'Needs pairing in the Beacon app first',
   },
@@ -1807,7 +1808,6 @@ export default {
     addTitle: 'New external source',
     editTitle: 'External source',
     icon: 'Tab icon',
-    menuTitle: 'External sources',
     address: 'App address',
     token: "Your app's token (optional)",
     tokenHint:

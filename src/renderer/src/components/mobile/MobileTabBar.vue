@@ -11,14 +11,23 @@
     class="mobile-tabbar"
   >
     <v-btn v-for="item in items" :key="item.to" :value="item.to" @click="$router.push(item.to)">
-      <v-icon :icon="item.icon" />
+      <!-- The update dot sits on More, where Settings is (see
+         - DefaultLayout.vue's settings entry). -->
+      <v-badge
+        dot
+        color="primary"
+        :model-value="item.to === '/m/more' && updateStore.unseen"
+        :label="$t('settings.updateBadge')"
+      >
+        <v-icon :icon="item.icon" />
+      </v-badge>
       <span class="mobile-tabbar__label">{{ item.label }}</span>
     </v-btn>
   </v-bottom-navigation>
 </template>
 
 <script lang="ts">
-import { useAuthStore } from '@/stores/auth'
+import { useUpdateStore } from '@/stores/update'
 
 // Vuetify's own default for this bar. `density="comfortable"` takes 8 off
 // whatever is passed, so the buttons themselves sit in 48px either way.
@@ -72,8 +81,8 @@ export default {
     }
   },
   computed: {
-    authStore() {
-      return useAuthStore()
+    updateStore() {
+      return useUpdateStore()
     },
     gestureGap(): number {
       return this.atScreenEdge ? GESTURE_GAP : 0
@@ -84,15 +93,15 @@ export default {
         // there whenever there is anything to show. Home first, as the
         // start; the queue next to it as the tab about what is playing;
         // then the library (favourites are its heart filter) and what is
-        // picked out of it, and radio, which is not part of it, last.
+        // picked out of it. Everything else - radio, the external sources,
+        // party, stats, settings - waits behind More, which is always
+        // there, so the bar no longer changes with what a server can do.
         { to: '/m/home', icon: 'mdi-home-variant', label: this.$t('nav.home') },
         { to: '/m/queue', icon: 'mdi-playlist-music', label: this.$t('mobile.tabQueue') },
         { to: '/m/library', icon: 'mdi-music-note', label: this.$t('nav.library') },
         { to: '/m/playlists', icon: 'mdi-playlist-play', label: this.$t('nav.playlists') },
-        this.authStore.capabilities.internetRadio
-          ? { to: '/m/radio', icon: 'mdi-radio', label: this.$t('nav.radio') }
-          : null,
-      ].filter((item): item is { to: string; icon: string; label: string } => item !== null)
+        { to: '/m/more', icon: 'mdi-dots-horizontal', label: this.$t('mobile.tabMore') },
+      ]
     },
     /** Which tab is lit, or null on a sub-page like /m/albums/:id - only
      * the exact tab routes light up, rather than guessing which parent tab

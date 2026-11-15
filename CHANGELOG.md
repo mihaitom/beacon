@@ -31,6 +31,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The dialogs for creating and editing a playlist show its records beside the name and say who gets to see it
 - The Radio page is now a wall of station logos, each on a sleeve in the logo's own colours, with the list still one click away. It can be narrowed by your most common genres and sorted by last heard, name, country or bitrate, and a click on the playing station stops it
 - On phones, Favorites moved into the library: the heart in its search field narrows songs, albums or artists to your favourites, which can now be searched too
+- On phones, Radio moved into a new More tab, together with the pages of your own apps, party mode, Stats and Settings, which used to sit in the menu at the top
 - The Last.fm name is set in Settings next to ListenBrainz, and the playlist builder only starts from it instead of changing it
 - The help is sorted by topic, so that for example the desktop app, your own apps and home automation sit together, and its questions stand out from their answers
 - A speaker that cannot reach the address it was given to play now says so, instead of a general "Playback failed"

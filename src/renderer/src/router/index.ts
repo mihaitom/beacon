@@ -204,6 +204,13 @@ const router = createRouter({
       name: 'm-radio',
       component: () => import('../views/mobile/MobileRadioView.vue'),
     },
+    // Radio, the external sources, party, stats and settings: what is not
+    // one of the four tabs for getting to music.
+    {
+      path: '/m/more',
+      name: 'm-more',
+      component: () => import('../views/mobile/MobileMoreView.vue'),
+    },
     {
       path: '/m/external/:id',
       name: 'm-external-source',

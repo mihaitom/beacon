@@ -1809,6 +1809,7 @@ export default {
   },
   mobile: {
     tabQueue: 'Cola',
+    tabMore: 'Más',
     playOn: 'Reproducir en',
     needsPairing: 'Necesita emparejarse primero en la aplicación Beacon',
   },
@@ -1827,7 +1828,6 @@ export default {
     addTitle: 'Nueva fuente externa',
     editTitle: 'Fuente externa',
     icon: 'Icono de la pestaña',
-    menuTitle: 'Fuentes externas',
     address: 'Dirección de la app',
     token: 'Token de tu app (opcional)',
     tokenHint:

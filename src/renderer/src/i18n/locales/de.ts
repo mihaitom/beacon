@@ -1808,6 +1808,7 @@ export default {
     // ist auf einem 320px-Display 60px breit, das Wort braucht 95px und
     // stünde dort dauerhaft abgeschnitten.
     tabQueue: 'Nächste',
+    tabMore: 'Mehr',
     playOn: 'Wiedergeben auf',
     needsPairing: 'Muss zuerst in der Beacon-App gepairt werden',
   },
@@ -1826,7 +1827,6 @@ export default {
     addTitle: 'Neue externe Quelle',
     editTitle: 'Externe Quelle',
     icon: 'Icon des Tabs',
-    menuTitle: 'Externe Quellen',
     address: 'Adresse der App',
     token: 'Token deiner App (optional)',
     tokenHint:

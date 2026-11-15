@@ -1803,6 +1803,7 @@ export default {
   },
   mobile: {
     tabQueue: 'Coda',
+    tabMore: 'Altro',
     playOn: 'Riproduci su',
     needsPairing: "Deve prima essere associato nell'app Beacon",
   },
@@ -1821,7 +1822,6 @@ export default {
     addTitle: 'Nuova fonte esterna',
     editTitle: 'Fonte esterna',
     icon: 'Icona della scheda',
-    menuTitle: 'Fonti esterne',
     address: "Indirizzo dell'app",
     token: 'Token della tua app (facoltativo)',
     tokenHint:
