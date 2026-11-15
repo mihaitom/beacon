@@ -28,10 +28,6 @@ on a device, what is decided and what is not.
 
 - [Deezer lookups fail or go wrong when an artist was renamed](library/deezer-lookup-with-renamed-artists.md) - seen with one artist only, deliberately not built; ISRC lookup is the smallest step
 
-## Remote Control
-
-- [Remote: an album detail view](remote-control/album-detail-view.md) - four places, the last planned alignment with the mobile view
-
 ## Apps and home automation
 
 - [Control and the library: what is still to be run on real speakers and Home Assistant](device-link/control-hardware-check.md) - setup, discovery and nginx done; the rest of the check list is in there

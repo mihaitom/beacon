@@ -31,6 +31,7 @@
         <p class="setting__hint">{{ $t('settings.themeHint') }}</p>
         <v-btn
           variant="text"
+          rounded="pill"
           prepend-icon="mdi-plus"
           :disabled="atThemeLimit"
           class="custom-themes__add"
@@ -75,7 +76,7 @@
             location="bottom start"
           >
             <template #activator="{ props: menuProps }">
-              <v-btn v-bind="menuProps" variant="tonal" class="custom-color">
+              <v-btn v-bind="menuProps" variant="tonal" rounded="pill" class="custom-color">
                 <span class="custom-color__chip" :style="{ background: selected[field.key] }" />
                 <span class="custom-color__text">
                   <span>{{ field.label }}</span>
@@ -96,7 +97,7 @@
           {{ $t('settings.customThemeLowContrast') }}
         </p>
         <div class="custom-themes__actions">
-          <v-btn variant="text" @click="appearance.deleteCustomTheme(selected.id)">
+          <v-btn variant="text" rounded="pill" @click="appearance.deleteCustomTheme(selected.id)">
             {{ $t('settings.customThemeDelete') }}
           </v-btn>
         </div>

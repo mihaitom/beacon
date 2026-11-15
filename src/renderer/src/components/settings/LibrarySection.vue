@@ -22,6 +22,7 @@
         <div class="setting__control-row">
           <v-btn
             color="primary"
+            rounded="pill"
             prepend-icon="mdi-refresh"
             :loading="scanning"
             :disabled="scanning"
@@ -63,6 +64,7 @@
            - button. -->
         <v-btn
           color="primary"
+          rounded="pill"
           prepend-icon="mdi-refresh"
           :loading="refreshingLibrary"
           :disabled="refreshingLibrary"

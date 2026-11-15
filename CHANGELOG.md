@@ -36,6 +36,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - The help is sorted by topic, so that for example the desktop app, your own apps and home automation sit together, and its questions stand out from their answers
 - A speaker that cannot reach the address it was given to play now says so, instead of a general "Playback failed"
 - In the Remote Control, Play All and the songs of a playlist show that the music is starting until it plays, and a second tap no longer starts it again
+- The Remote Control follows the phone app now: it has the same Home tab and a Radio tab of its own, favourites are the heart in the library's search field, albums open on their own page, and playlists are grouped into your own and shared ones. Now Playing shows the artist's photo with the album artwork, the song's lyrics, the equalizer of the speaker being cast to, and the room's Hue lights
 
 ### Deprecated
 

@@ -20,6 +20,7 @@
       <v-btn
         v-if="portInfo.port !== null && !portInfo.fromEnvironment"
         variant="text"
+        rounded="pill"
         :disabled="busy"
         @click="store(null)"
       >
@@ -27,6 +28,7 @@
       </v-btn>
       <v-btn
         color="primary"
+        rounded="pill"
         :disabled="portInfo.fromEnvironment || busy || invalid || !changed"
         @click="save"
       >

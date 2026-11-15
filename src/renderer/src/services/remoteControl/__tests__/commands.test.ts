@@ -6,6 +6,10 @@ import { useConnectStore } from '@/stores/connect'
 import { useRemoteControlStore } from '@/stores/remoteControl'
 import { useAutoplayStore } from '@/stores/autoplay'
 import { useAuthStore } from '@/stores/auth'
+import { useFanartStore } from '@/stores/fanart'
+import { useEqualizerStore } from '@/stores/equalizer'
+import { useLightsStore } from '@/stores/lights'
+import { useLyricsStore } from '@/stores/lyrics'
 import { PartyRefusal, usePartyStore } from '@/stores/party'
 import {
   handleRemoteCommand,
@@ -356,6 +360,42 @@ describe('handleRemoteCommand', () => {
     })
   })
 
+  describe('set-favorite-album and -artist', () => {
+    it('flips an album from the library cache', async () => {
+      const library = useLibraryStore()
+      const album = { id: 'al1', name: 'Harbor', starred: false } as never
+      library.albums = [album]
+      const toggleFavorite = vi.spyOn(library, 'toggleFavorite').mockResolvedValue()
+
+      await handleRemoteCommand('set-favorite-album', { albumId: 'al1', favorite: true })
+
+      expect(toggleFavorite).toHaveBeenCalledWith('album', album)
+    })
+
+    it('leaves an album alone that already is what the phone asks for', async () => {
+      const library = useLibraryStore()
+      library.albums = [{ id: 'al1', name: 'Harbor', starred: true } as never]
+      const toggleFavorite = vi.spyOn(library, 'toggleFavorite').mockResolvedValue()
+
+      await handleRemoteCommand('set-favorite-album', { albumId: 'al1', favorite: true })
+
+      expect(toggleFavorite).not.toHaveBeenCalled()
+    })
+
+    it('flips an artist fetched from the server', async () => {
+      const library = useLibraryStore()
+      const artist = { id: 'ar1', name: 'The Tide', starred: false }
+      vi.spyOn(library, 'client').mockReturnValue(
+        fakeClient({ getArtist: vi.fn().mockResolvedValue(artist) }),
+      )
+      const toggleFavorite = vi.spyOn(library, 'toggleFavorite').mockResolvedValue()
+
+      await handleRemoteCommand('set-favorite-artist', { artistId: 'ar1', favorite: true })
+
+      expect(toggleFavorite).toHaveBeenCalledWith('artist', artist)
+    })
+  })
+
   describe('play-favorites', () => {
     function stubFavorites(songs: ReturnType<typeof makeSong>[]) {
       const library = useLibraryStore()
@@ -455,6 +495,152 @@ describe('handleRemoteCommand', () => {
       await handleRemoteCommand('play-album', { albumId: 'al1' })
 
       expect(playSongList).toHaveBeenCalledWith(songs, 0, false, false)
+    })
+
+    it('starts a track from the album page at the position the phone names', async () => {
+      const library = useLibraryStore()
+      const playback = usePlaybackStore()
+      const songs = [makeSong('x'), makeSong('y'), makeSong('z')]
+      vi.spyOn(library, 'fetchAlbum').mockResolvedValue({ id: 'al1', songs } as never)
+      const playSongList = vi.spyOn(playback, 'playSongList').mockResolvedValue()
+
+      await handleRemoteCommand('play-album', { albumId: 'al1', startIndex: 2 })
+
+      expect(playSongList).toHaveBeenCalledWith(songs, 2, false, true)
+    })
+  })
+
+  describe('play-songs', () => {
+    function stubLibrary() {
+      const library = useLibraryStore()
+      const songs = [makeSong('a'), makeSong('b'), makeSong('c')]
+      library.allSongs = songs
+      vi.spyOn(library, 'fetchAllSongs').mockResolvedValue()
+      return songs
+    }
+
+    it('plays the ids the phone showed, from the tapped one, keeping it first', async () => {
+      const songs = stubLibrary()
+      const playSongList = vi.spyOn(usePlaybackStore(), 'playSongList').mockResolvedValue()
+
+      await handleRemoteCommand('play-songs', {
+        songIds: songs.map((song) => song.id),
+        startIndex: 1,
+      })
+
+      expect(playSongList).toHaveBeenCalledWith(songs, 1, true, true)
+    })
+
+    it('plays all in the list\u2019s own order for "play all"', async () => {
+      const songs = stubLibrary()
+      const playSongList = vi.spyOn(usePlaybackStore(), 'playSongList').mockResolvedValue()
+
+      await handleRemoteCommand('play-songs', {
+        songIds: songs.map((song) => song.id),
+        startIndex: 0,
+        pinFirst: false,
+      })
+
+      expect(playSongList).toHaveBeenCalledWith(songs, 0, false, true)
+    })
+
+    it('drops an id it can no longer resolve instead of playing an empty list', async () => {
+      const songs = stubLibrary()
+      const playSongList = vi.spyOn(usePlaybackStore(), 'playSongList').mockResolvedValue()
+
+      await handleRemoteCommand('play-songs', { songIds: ['gone', 'b'], startIndex: 1 })
+
+      expect(playSongList).toHaveBeenCalledWith([songs[1]], 0, true, false)
+    })
+
+    it('does nothing when the phone sent no playable songs', async () => {
+      stubLibrary()
+      const playSongList = vi.spyOn(usePlaybackStore(), 'playSongList').mockResolvedValue()
+
+      await handleRemoteCommand('play-songs', { songIds: ['gone'] })
+
+      expect(playSongList).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('play-albums', () => {
+    it('plays a Home shelf album by album, in the shelf\u2019s own order', async () => {
+      const library = useLibraryStore()
+      const playSongList = vi.spyOn(usePlaybackStore(), 'playSongList').mockResolvedValue()
+      vi.spyOn(library, 'fetchAlbum').mockImplementation(
+        async (id: string) => ({ id, songs: [makeSong(`${id}-1`), makeSong(`${id}-2`)] }) as never,
+      )
+
+      await handleRemoteCommand('play-albums', { albumIds: ['a1', 'a2'] })
+
+      expect(playSongList).toHaveBeenCalledWith(
+        [makeSong('a1-1'), makeSong('a1-2'), makeSong('a2-1'), makeSong('a2-2')],
+        0,
+        false,
+        true,
+      )
+    })
+  })
+
+  describe('equalizer', () => {
+    it('sets the curve for the speaker the phone names', async () => {
+      const equalizer = useEqualizerStore()
+      const setSpeaker = vi.spyOn(equalizer, 'setSpeaker').mockImplementation(() => {})
+
+      await handleRemoteCommand('set-equalizer', {
+        target: { type: 'sonos', name: 'Kitchen' },
+        setting: { enabled: true, gains: [1, 2] },
+      })
+
+      expect(setSpeaker).toHaveBeenCalledWith(
+        { type: 'sonos', name: 'Kitchen' },
+        expect.objectContaining({ enabled: true, gains: expect.arrayContaining([1, 2]) }),
+      )
+      const setting = setSpeaker.mock.calls[0]![1]
+      expect(setting.gains).toHaveLength(10)
+    })
+
+    it('restarts the current song where it is for "apply now"', async () => {
+      const playback = usePlaybackStore()
+      playback.setQueue([makeSong('a')], 0)
+      const restart = vi.spyOn(playback, 'startCurrent').mockResolvedValue(false)
+
+      await handleRemoteCommand('equalizer-apply', {})
+
+      expect(restart).toHaveBeenCalledWith(playback.localPosition)
+    })
+
+    it('does not restart a radio stream, which is never equalized', async () => {
+      const playback = usePlaybackStore()
+      playback.radioStation = {
+        id: 'r1',
+        name: 'Chill FM',
+        streamUrl: 'https://stream.example',
+        homePageUrl: null,
+      }
+      const restart = vi.spyOn(playback, 'startCurrent').mockResolvedValue(false)
+
+      await handleRemoteCommand('equalizer-apply', {})
+
+      expect(restart).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('lights', () => {
+    it('pairs the bridge the phone names', async () => {
+      const pair = vi.spyOn(useLightsStore(), 'pair').mockResolvedValue()
+
+      await handleRemoteCommand('lights-pair', { host: '192.0.2.10' })
+
+      expect(pair).toHaveBeenCalledWith('192.0.2.10')
+    })
+
+    it('forgets the bridge when asked', async () => {
+      const forget = vi.spyOn(useLightsStore(), 'forget').mockResolvedValue()
+
+      await handleRemoteCommand('lights-forget', {})
+
+      expect(forget).toHaveBeenCalledOnce()
     })
   })
 
@@ -738,7 +924,7 @@ describe('resolveRemoteQuery', () => {
       expect(fetchSpy).not.toHaveBeenCalled()
     })
 
-    it('sends what a row needs and nothing more', async () => {
+    it('sends what a row and the album page need', async () => {
       const library = useLibraryStore()
       library.albums = [makeAlbum('a', { name: 'Harbor Lights', artist: 'The Tide' })] as never
 
@@ -750,7 +936,9 @@ describe('resolveRemoteQuery', () => {
         id: 'a',
         name: 'Harbor Lights',
         artist: 'The Tide',
+        artist_id: 'ar',
         year: 1999,
+        starred: false,
         cover_art_url: null,
         cover_art_id: null,
       })
@@ -770,7 +958,7 @@ describe('resolveRemoteQuery', () => {
     })
   })
 
-  it('playlists-request maps each playlist, including its cover art url', async () => {
+  it('playlists-request maps each playlist, including what its section and row need', async () => {
     const library = useLibraryStore()
     library.playlists = [
       {
@@ -792,7 +980,218 @@ describe('resolveRemoteQuery', () => {
     const result = await resolveRemoteQuery('playlists-request', {})
 
     expect(result).toEqual({
-      items: [{ id: 'p1', name: 'Chill', song_count: 3, cover_art_url: null, cover_art_id: null }],
+      // The phone groups them into "mine / shared by me / shared with me"
+      // next to the signed-in account's name, as the app's own page does.
+      username: '',
+      items: [
+        {
+          id: 'p1',
+          name: 'Chill',
+          song_count: 3,
+          duration: 100,
+          owner: 'me',
+          public: false,
+          smart: false,
+          owned_by_user: null,
+          changed: null,
+          comment: null,
+          cover_art_url: null,
+          cover_art_id: null,
+        },
+      ],
+    })
+  })
+
+  describe('home-request', () => {
+    function makeAlbum(id: string) {
+      return {
+        id,
+        name: `Album ${id}`,
+        artist: 'Nobody',
+        artistId: 'ar',
+        coverArtId: null,
+        songCount: 1,
+        duration: 1,
+        year: 2000,
+        genre: null,
+        starred: false,
+        rating: 0,
+        songs: [],
+      }
+    }
+
+    it('answers all five shelves in one query', async () => {
+      const library = useLibraryStore()
+      const recent = [makeAlbum('recent')]
+      const newest = [makeAlbum('newest')]
+      const discover = [makeAlbum('discover')]
+      const rediscover = [makeSong('rediscover')]
+      library.allSongs = [makeSong('top', { playCount: 9 })]
+      vi.spyOn(library, 'fetchRecentlyPlayedAlbums').mockResolvedValue(recent as never)
+      vi.spyOn(library, 'fetchRandomAlbums').mockResolvedValue(discover as never)
+      vi.spyOn(library, 'fetchAllSongs').mockResolvedValue()
+      vi.spyOn(library, 'fetchRediscoverSongs').mockResolvedValue(rediscover)
+      vi.spyOn(library, 'client').mockReturnValue(
+        fakeClient({ getAlbumList2: vi.fn().mockResolvedValue(newest) }),
+      )
+
+      const result = (await resolveRemoteQuery('home-request', {})) as {
+        recent: { id: string }[]
+        newest: { id: string }[]
+        discover: { id: string }[]
+        top_songs: { id: string }[]
+        rediscover: { id: string }[]
+      }
+
+      expect(result.recent.map((album) => album.id)).toEqual(['recent'])
+      expect(result.newest.map((album) => album.id)).toEqual(['newest'])
+      expect(result.discover.map((album) => album.id)).toEqual(['discover'])
+      expect(result.top_songs.map((song) => song.id)).toEqual(['top'])
+      expect(result.rediscover.map((song) => song.id)).toEqual(['rediscover'])
+    })
+
+    it('draws a fresh Discover shelf without replacing the others', async () => {
+      const library = useLibraryStore()
+      const fetchSpy = vi
+        .spyOn(library, 'fetchRandomAlbums')
+        .mockResolvedValue([makeAlbum('fresh')] as never)
+
+      const result = (await resolveRemoteQuery('discover-request', {})) as {
+        items: { id: string }[]
+      }
+
+      expect(fetchSpy).toHaveBeenCalledWith(15)
+      expect(result.items.map((album) => album.id)).toEqual(['fresh'])
+    })
+
+    it('keeps the shelves that answered when one of them fails', async () => {
+      const library = useLibraryStore()
+      vi.spyOn(library, 'fetchRecentlyPlayedAlbums').mockRejectedValue(new Error('offline'))
+      vi.spyOn(library, 'fetchRandomAlbums').mockResolvedValue([makeAlbum('discover')] as never)
+      vi.spyOn(library, 'fetchAllSongs').mockResolvedValue()
+      vi.spyOn(library, 'fetchRediscoverSongs').mockResolvedValue([])
+      vi.spyOn(library, 'client').mockReturnValue(
+        fakeClient({ getAlbumList2: vi.fn().mockResolvedValue([makeAlbum('newest')]) }),
+      )
+
+      const result = (await resolveRemoteQuery('home-request', {})) as {
+        recent: unknown[]
+        newest: { id: string }[]
+        discover: { id: string }[]
+      }
+
+      expect(result.recent).toEqual([])
+      expect(result.newest.map((album) => album.id)).toEqual(['newest'])
+      expect(result.discover.map((album) => album.id)).toEqual(['discover'])
+    })
+  })
+
+  describe('backdrop-request', () => {
+    it('answers null when Fanart.tv is switched off', async () => {
+      const library = useLibraryStore()
+      library.allSongs = [makeSong('a')]
+      useFanartStore().enabled = false
+
+      const result = await resolveRemoteQuery('backdrop-request', { songId: 'a' })
+
+      expect(result).toEqual({ source: null, backgrounds: [], is_artist: false })
+    })
+  })
+
+  describe('lyrics-request', () => {
+    it('returns the lyrics already loaded for the song, with their offset', async () => {
+      const library = useLibraryStore()
+      library.allSongs = [makeSong('a')]
+      const lyrics = useLyricsStore()
+      lyrics.songId = 'a'
+      lyrics.synced = true
+      lyrics.lines = [{ time: 1, text: 'Hello' }]
+      lyrics.credits = ['Written by Someone']
+      lyrics.offset = 0.4
+      lyrics.loading = false
+      lyrics.error = false
+
+      const result = (await resolveRemoteQuery('lyrics-request', { songId: 'a' })) as {
+        song_id: string
+        synced: boolean
+        lines: { time: number; text: string }[]
+        credits: string[]
+        offset: number
+        loading: boolean
+      }
+
+      expect(result.song_id).toBe('a')
+      expect(result.synced).toBe(true)
+      expect(result.lines).toEqual([{ time: 1, text: 'Hello' }])
+      expect(result.credits).toEqual(['Written by Someone'])
+      expect(result.offset).toBe(0.4)
+      expect(result.loading).toBe(false)
+    })
+
+    it('answers "still loading" instead of the previous song\u2019s lines', async () => {
+      const library = useLibraryStore()
+      library.allSongs = [makeSong('b')]
+      const lyrics = useLyricsStore()
+      lyrics.songId = 'a'
+      lyrics.lines = [{ time: 0, text: 'Old song' }]
+      lyrics.loading = false
+      vi.spyOn(lyrics, 'ensureLoaded').mockResolvedValue()
+
+      const result = (await resolveRemoteQuery('lyrics-request', { songId: 'b' })) as {
+        lines: unknown[]
+        loading: boolean
+      }
+
+      expect(result.lines).toEqual([])
+      expect(result.loading).toBe(true)
+    })
+  })
+
+  describe('equalizer-request', () => {
+    it('returns the cast targets, their curves and the presets', async () => {
+      const connect = useConnectStore()
+      vi.spyOn(connect, 'activeTargets', 'get').mockReturnValue([
+        { type: 'sonos', name: 'Kitchen' },
+      ] as never)
+      const equalizer = useEqualizerStore()
+      const gains = [6, 5, 4, 2, 0, 0, 0, 0, 0, 0]
+      equalizer.speakers['sonos:Kitchen'] = { enabled: true, gains }
+      equalizer.presets = [{ name: 'Mine', gains }]
+
+      const result = (await resolveRemoteQuery('equalizer-request', {})) as {
+        targets: { type: string; name: string }[]
+        settings: Record<string, { enabled: boolean; gains: number[] }>
+        presets: { name: string }[]
+        built_in: { name: string; gains: number[] }[]
+      }
+
+      expect(result.targets).toEqual([{ type: 'sonos', name: 'Kitchen' }])
+      expect(result.settings['sonos:Kitchen']!.gains).toEqual(gains)
+      expect(result.presets.map((preset) => preset.name)).toEqual(['Mine'])
+      expect(result.built_in.find((preset) => preset.name === 'bass')!.gains).toEqual([
+        6, 5, 4, 2, 0, 0, 0, 0, 0, 0,
+      ])
+    })
+  })
+
+  describe('lights-update-request', () => {
+    it('applies the setting through the store and answers with the new state', async () => {
+      const lights = useLightsStore()
+      const update = vi.spyOn(lights, 'update').mockImplementation(async (next) => {
+        lights.lights = { ...(lights.lights ?? ({} as never)), ...next }
+      })
+      lights.lights = {
+        paired: true,
+        enabled: false,
+        area_id: 'area-1',
+      } as never
+
+      const result = (await resolveRemoteQuery('lights-update-request', {
+        update: { enabled: true },
+      })) as { enabled: boolean }
+
+      expect(update).toHaveBeenCalledWith({ enabled: true })
+      expect(result.enabled).toBe(true)
     })
   })
 

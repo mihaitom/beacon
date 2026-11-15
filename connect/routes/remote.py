@@ -38,7 +38,7 @@ from fastapi.responses import (
 )
 from pydantic import BaseModel
 
-from core import integration_key, mdns
+from core import fanart, integration_key, mdns
 from core.auth import require_token
 from core.party import party
 from core.remote import remote
@@ -396,6 +396,92 @@ async def list_albums(search: str = "", offset: int = 0, limit: int = 50):
     return await relay_query("albums-request", {"search": search, "offset": offset, "limit": limit})
 
 
+@router.get("/albums/{album_id}", dependencies=[Depends(require_remote_password)])
+async def get_album(album_id: str):
+    """The phone's album page: the album and its tracks in album order,
+    answered by the desktop like an artist's page."""
+    return await relay_query("album-request", {"albumId": album_id})
+
+
+@router.get("/home", dependencies=[Depends(require_remote_password)])
+async def get_home():
+    """The phone's Home page: recent, newest, top, rediscover and discover
+    shelves in one answer, the same lists the app's own Home builds."""
+    return await relay_query("home-request", {})
+
+
+@router.get("/backdrop", dependencies=[Depends(require_remote_password)])
+async def get_backdrop(song: str = ""):
+    """Now Playing's artist background for one song, answered by the desktop
+    out of Fanart.tv (see routes/fanart.py). Empty when the artist has none
+    or Fanart.tv is switched off."""
+    return await relay_query("backdrop-request", {"songId": song})
+
+
+@router.get("/lyrics", dependencies=[Depends(require_remote_password)])
+async def get_lyrics(song: str = ""):
+    """The current song's lyrics for the phone's Now Playing panel, loaded
+    through the same store the app's own panel uses. `loading` in the answer
+    means the phone should ask again shortly."""
+    return await relay_query("lyrics-request", {"songId": song})
+
+
+@router.get("/equalizer", dependencies=[Depends(require_remote_password)])
+async def get_equalizer():
+    """The equalizer for the speakers being cast to: their curves and the
+    presets, as the app's own EqualizerDialog reads them."""
+    return await relay_query("equalizer-request", {})
+
+
+@router.get("/lights", dependencies=[Depends(require_remote_password)])
+async def get_lights():
+    """The Hue setup for the phone's lights dialog: the bridge, its areas
+    and the current setting, answered by the desktop against connect."""
+    return await relay_query("lights-request", {})
+
+
+@router.post("/lights/discover", dependencies=[Depends(require_remote_password)])
+async def discover_lights():
+    """A fresh search for Hue bridges on the network (connect's own)."""
+    return await relay_query("lights-discover-request", {})
+
+
+class LightsPairRequest(BaseModel):
+    host: str
+
+
+@router.post("/lights/pair", dependencies=[Depends(require_remote_password)])
+async def pair_lights(req: LightsPairRequest):
+    """Waits for the bridge's button and pairs it, like the app's own
+    dialog. The command budget is what covers the wait (COMMAND_TIMEOUT)."""
+    await relay_command("lights-pair", {"host": req.host})
+    return {"success": True}
+
+
+class LightsUpdateRequest(BaseModel):
+    update: dict
+
+
+@router.post("/lights/update", dependencies=[Depends(require_remote_password)])
+async def update_lights(req: LightsUpdateRequest):
+    """Applies one setting and answers with the resulting state, so the
+    phone does not have to ask the bridge again just to see it."""
+    return await relay_query("lights-update-request", {"update": req.update})
+
+
+@router.delete("/lights", dependencies=[Depends(require_remote_password)])
+async def forget_lights():
+    await relay_command("lights-forget", {})
+    return {"success": True}
+
+
+@router.get("/discover", dependencies=[Depends(require_remote_password)])
+async def get_discover():
+    """A fresh draw for Home's Discover shelf, so its shuffle button does
+    not replace the shelves around it."""
+    return await relay_query("discover-request", {})
+
+
 @router.get("/artists", dependencies=[Depends(require_remote_password)])
 async def list_artists(search: str = "", offset: int = 0, limit: int = 50):
     """The artists half of the phone's library view, paged like /albums."""
@@ -465,6 +551,27 @@ async def remote_cover_art(id: str, session: SessionState = Depends(get_session)
     carries the server's own credentials, which a phone has no business
     holding either (see cover_image)."""
     return await cover_image(session.media, id)
+
+
+@router.get("/fanart", dependencies=[Depends(require_remote_password)])
+async def remote_fanart(url: str = Query(...)):
+    """A Fanart.tv image under the phone's own auth, the counterpart of
+    /fanart/image for the app. The URL is Fanart.tv's own; core.fanart
+    refuses anything else, and the bytes come from its disk cache where
+    possible. The app's own route carries CONNECT_TOKEN in the URL, which a
+    phone must never receive (see cover-art above)."""
+    data = fanart.get_cached_image(url)
+    if data is None:
+        fetched = await fanart.fetch_image(url)
+        if fetched is None:
+            raise HTTPException(status_code=404, detail="Image not available")
+        data, _content_type = fetched
+        fanart.store_image(url, data)
+    return Response(
+        content=data,
+        media_type=fanart.content_type_for(url),
+        headers={"Cache-Control": "public, max-age=2592000"},
+    )
 
 
 @router.get("/radio-favicon", dependencies=[Depends(require_remote_password)])

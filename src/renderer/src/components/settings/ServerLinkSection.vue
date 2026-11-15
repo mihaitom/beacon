@@ -117,6 +117,7 @@
       <div class="server-link__actions">
         <v-btn
           variant="text"
+          rounded="pill"
           prepend-icon="mdi-help-circle-outline"
           @click="$emitter.emit('openHelp', 'guides/desktop-and-server')"
         >
@@ -126,6 +127,7 @@
         <v-btn
           v-if="link?.linked"
           variant="tonal"
+          rounded="pill"
           prepend-icon="mdi-link-variant-off"
           :disabled="busy"
           @click="unpair"

@@ -92,10 +92,11 @@ only to signed-in listeners, every request there is refused.
 
 ## How do I write such an app?
 
-Settings > Library > External sources has a button **Copy instructions for
-an AI**. Paste them into an AI assistant and say what your app should do; they hold
-everything it needs to know about Beacon. The full description, with a small
-working example, is [the external source API](../reference/external-source-api.md).
+Settings > Library > External sources has an **AI instructions** button. It
+shows the prompt before you copy it; paste it into an AI assistant and say what
+your app should do. It holds everything the assistant needs to know about
+Beacon. The full description, with a small working example, is
+[the external source API](../reference/external-source-api.md).
 
 Plan the phone from the start. There the tab gets only the space between
 Beacon's bars, and a page that looks right on the desktop is far too big in it.

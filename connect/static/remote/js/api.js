@@ -124,6 +124,52 @@ export function fetchArtist(id) {
   return request(`/remote/artists/${encodeURIComponent(id)}`);
 }
 
+export function fetchAlbum(id) {
+  return request(`/remote/albums/${encodeURIComponent(id)}`);
+}
+
+export function fetchHome() {
+  return request('/remote/home');
+}
+
+export function fetchDiscover() {
+  return request('/remote/discover');
+}
+
+export function fetchBackdrop(songId) {
+  const params = new URLSearchParams({ song: songId });
+  return request(`/remote/backdrop?${params}`);
+}
+
+export function fetchLyrics(songId) {
+  const params = new URLSearchParams({ song: songId });
+  return request(`/remote/lyrics?${params}`);
+}
+
+export function fetchEqualizer() {
+  return request('/remote/equalizer');
+}
+
+export function fetchLights() {
+  return request('/remote/lights');
+}
+
+export function fetchLightBridges() {
+  return request('/remote/lights/discover', { method: 'POST' });
+}
+
+export function pairLights(host) {
+  return request('/remote/lights/pair', { method: 'POST', body: { host } });
+}
+
+export function updateLights(update) {
+  return request('/remote/lights/update', { method: 'POST', body: { update } });
+}
+
+export function forgetLights() {
+  return request('/remote/lights', { method: 'DELETE' });
+}
+
 export function fetchPlaylists() {
   return request('/remote/playlists');
 }

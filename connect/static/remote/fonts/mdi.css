@@ -67,6 +67,25 @@
 .mdi-skip-next-outline::before { content: "\F0F27"; }
 .mdi-arrow-collapse-down::before { content: "\F0792"; }
 .mdi-playlist-remove::before { content: "\F0413"; }
+.mdi-home-variant::before { content: "\F02DE"; }
+.mdi-dots-horizontal::before { content: "\F01D8"; }
+.mdi-chevron-down::before { content: "\F0140"; }
+.mdi-chevron-up::before { content: "\F0143"; }
+.mdi-chevron-right::before { content: "\F0142"; }
+.mdi-play-circle::before { content: "\F040C"; }
+.mdi-play-circle-outline::before { content: "\F040D"; }
+.mdi-shuffle-variant::before { content: "\F049F"; }
+.mdi-party-popper::before { content: "\F1056"; }
+.mdi-account-remove::before { content: "\F0015"; }
+.mdi-circle::before { content: "\F0765"; }
+.mdi-circle-outline::before { content: "\F0766"; }
+.mdi-content-copy::before { content: "\F018F"; }
+.mdi-script-text-outline::before { content: "\F0BC3"; }
+.mdi-tune-vertical::before { content: "\F066A"; }
+.mdi-wallpaper::before { content: "\F0E09"; }
+.mdi-format-vertical-align-center::before { content: "\F0622"; }
+.mdi-lightbulb-outline::before { content: "\F0336"; }
+.mdi-lightbulb-on::before { content: "\F06E8"; }
 
 /* mdi-spin — sheet.js's in-flight action indicator. Codepoint/animation
  * copied the same way as the glyphs above (node_modules/@mdi/font). */
@@ -78,3 +97,8 @@
   0% { transform: rotate(0deg); }
   100% { transform: rotate(359deg); }
 }
+.mdi-pulse::before { content: "\F0430"; }
+.mdi-weather-night::before { content: "\F0594"; }
+.mdi-chevron-triple-right::before { content: "\F0DBB"; }
+.mdi-brightness-5::before { content: "\F00DE"; }
+.mdi-brightness-7::before { content: "\F00E0"; }

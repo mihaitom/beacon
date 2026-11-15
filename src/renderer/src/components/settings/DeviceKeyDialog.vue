@@ -20,7 +20,7 @@
             color="primary"
             variant="flat"
             rounded="pill"
-            :prepend-icon="copied === 'key' ? 'mdi-check' : 'mdi-content-copy'"
+            :prepend-icon="copied ? 'mdi-check' : 'mdi-content-copy'"
             @click="copyKey"
           >
             {{ $t('settings.deviceKeysCopy') }}
@@ -36,10 +36,10 @@
           <v-btn
             variant="tonal"
             rounded="pill"
-            :prepend-icon="copied === 'instructions' ? 'mdi-check' : 'mdi-robot-outline'"
-            @click="copyInstructions"
+            prepend-icon="mdi-robot-outline"
+            @click="openAiInstructions"
           >
-            {{ $t('settings.deviceKeysForAi') }}
+            {{ $t('settings.aiInstructions.title') }}
           </v-btn>
           <p class="text-body-small text-medium-emphasis">
             {{ $t('settings.deviceKeysForAiHint') }}
@@ -151,9 +151,15 @@
       </v-card-actions>
     </v-card>
   </v-dialog>
+  <ai-instructions-dialog
+    v-model="aiInstructionsOpen"
+    :title="$t('settings.aiInstructions.title')"
+    :text="aiInstructions"
+  />
 </template>
 
 <script lang="ts">
+import AiInstructionsDialog from '@/components/settings/AiInstructionsDialog.vue'
 import ChoiceTiles, { type ChoiceTile } from '@/components/ChoiceTiles.vue'
 import { appKeyInstructions } from '@/services/connect/appKeyInstructions'
 import {
@@ -185,7 +191,7 @@ function appOrigin(): string {
 
 export default {
   name: 'DeviceKeyDialog',
-  components: { ChoiceTiles },
+  components: { AiInstructionsDialog, ChoiceTiles },
   props: {
     modelValue: { type: Boolean, required: true },
   },
@@ -202,8 +208,10 @@ export default {
       newKey: '',
       newKeyLabel: '',
       newKeyScopes: [] as DeviceKeyScope[],
-      copied: '' as '' | 'key' | 'instructions',
+      copied: false,
       copiedTimer: undefined as ReturnType<typeof setTimeout> | undefined,
+      aiInstructions: '',
+      aiInstructionsOpen: false,
     }
   },
   computed: {
@@ -263,7 +271,9 @@ export default {
       this.newKey = ''
       this.newKeyLabel = ''
       this.newKeyScopes = []
-      this.copied = ''
+      this.copied = false
+      this.aiInstructions = ''
+      this.aiInstructionsOpen = false
     },
     async create() {
       if (!this.canCreate) return
@@ -285,35 +295,23 @@ export default {
         this.busy = false
       }
     },
+    openAiInstructions() {
+      this.aiInstructions = appKeyInstructions(appOrigin(), this.newKeyScopes)
+      this.aiInstructionsOpen = true
+    },
     /** navigator.clipboard is absent on plain http, so this can fail there. */
-    async copy(text: string, what: 'key' | 'instructions'): Promise<boolean> {
+    async copyKey() {
       try {
-        await navigator.clipboard.writeText(text)
+        await navigator.clipboard.writeText(this.newKey)
       } catch (error) {
         console.error('[settings] Failed to copy:', error)
-        return false
+        return
       }
       clearTimeout(this.copiedTimer)
-      this.copied = what
+      this.copied = true
       this.copiedTimer = setTimeout(() => {
-        this.copied = ''
+        this.copied = false
       }, 2000)
-      return true
-    },
-    async copyKey() {
-      await this.copy(this.newKey, 'key')
-    },
-    async copyInstructions() {
-      const origin = appOrigin()
-      if (await this.copy(appKeyInstructions(origin, this.newKeyScopes), 'instructions')) return
-      // Unlike the key, there is nothing on screen to copy this from by hand.
-      this.$emitter.emit('toast', {
-        level: 'error',
-        title: this.$t('settings.deviceKeysTitle'),
-        message: this.$t('settings.deviceKeysForAiFailed', {
-          url: `${origin}/device-link/v1/openapi.json`,
-        }),
-      })
     },
   },
 }

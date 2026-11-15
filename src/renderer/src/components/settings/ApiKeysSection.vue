@@ -42,6 +42,7 @@
         <div class="api-key-actions">
           <v-btn
             variant="text"
+            rounded="pill"
             :href="service.getUrl"
             target="_blank"
             rel="noopener noreferrer"
@@ -59,6 +60,7 @@
               !statusFor(service.id).fromServer
             "
             variant="text"
+            rounded="pill"
             :disabled="busy[service.id]"
             @click="clearKey(service.id)"
           >
@@ -67,6 +69,7 @@
           <v-spacer />
           <v-btn
             color="primary"
+            rounded="pill"
             :disabled="busy[service.id] || !keyInput[service.id].trim()"
             @click="saveKey(service.id)"
           >

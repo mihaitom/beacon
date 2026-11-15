@@ -487,6 +487,6 @@ if __name__ == "__main__":
 
 ## Letting an AI write it
 
-Settings > Library > External sources > **Copy instructions for an AI** copies
-a prompt with everything above that matters for writing an app. Add what the
-app should do and in which language.
+Settings > Library > External sources > **AI instructions** shows a prompt with
+everything above that matters for writing an app. Copy it, add what the app
+should do and in which language.

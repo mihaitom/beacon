@@ -129,6 +129,7 @@
         <div class="setting__control-row">
           <v-btn
             variant="text"
+            rounded="pill"
             prepend-icon="mdi-help-circle-outline"
             @click="$emitter.emit('openHelp', 'reference/transcoding-decisions')"
           >

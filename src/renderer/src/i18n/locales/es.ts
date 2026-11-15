@@ -1012,10 +1012,13 @@ export default {
     deviceKeysLabelHintApp: 'Por ejemplo, Pantalla del salón',
     deviceKeysCreate: 'Crear clave',
     deviceKeysKey: 'Clave',
-    deviceKeysForAi: 'Copiar instrucciones para una IA',
     deviceKeysForAiHint:
       'Para escribir una app con un asistente de IA. Incluye la dirección de este servidor y lo que la clave puede hacer, nunca la clave.',
-    deviceKeysForAiFailed: 'Copiar requiere https. Dale a tu asistente esta dirección: {url}',
+    aiInstructions: {
+      title: 'Instrucciones para IA',
+      copy: 'Copiar',
+      copied: 'Copiado',
+    },
     deviceKeysCopy: 'Copiar clave',
     deviceKeysShownTitle: 'Clave para {name}',
     deviceKeysOnce:
@@ -1836,8 +1839,7 @@ export default {
     tokenNone: 'Sin token',
     reachable: 'Conectado con {name}',
     unreachable: 'No disponible: {reason}',
-    help: 'Cómo funciona',
-    copyInstructions: 'Copiar instrucciones para una IA',
+    help: 'Ayuda',
     remove: 'Quitar',
     save: 'Guardar',
   },

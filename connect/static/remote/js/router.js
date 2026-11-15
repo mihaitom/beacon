@@ -11,7 +11,7 @@ export function registerRoute(path, render) {
 }
 
 function matchRoute(hash) {
-  const path = (hash.replace(/^#/, '') || '/now-playing').split('?')[0];
+  const path = (hash.replace(/^#/, '') || '/home').split('?')[0];
   const params = new URLSearchParams(hash.split('?')[1] || '');
   for (const [pattern, render] of routes) {
     const patternParts = pattern.split('/').filter(Boolean);

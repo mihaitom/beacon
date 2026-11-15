@@ -9,6 +9,7 @@
         <div class="external-sources__actions">
           <v-btn
             variant="text"
+            rounded="pill"
             prepend-icon="mdi-help-circle-outline"
             @click="$emitter.emit('openHelp', 'faq/external-sources')"
           >
@@ -16,10 +17,12 @@
           </v-btn>
           <v-btn
             variant="text"
-            :prepend-icon="instructionsCopied ? 'mdi-check' : 'mdi-robot-outline'"
-            @click="copyInstructions"
+            rounded="pill"
+            prepend-icon="mdi-robot-outline"
+            class="external-sources__ai"
+            @click="aiInstructionsOpen = true"
           >
-            {{ $t('externalSource.copyInstructions') }}
+            {{ $t('settings.aiInstructions.title') }}
           </v-btn>
           <v-btn
             color="primary"
@@ -27,6 +30,7 @@
             rounded="pill"
             prepend-icon="mdi-plus"
             :disabled="store.sources.length >= maxSources"
+            class="external-sources__add"
             @click="open(null)"
           >
             {{ $t('externalSource.add') }}
@@ -53,10 +57,16 @@
       </ul>
     </div>
     <external-source-dialog v-model="dialogOpen" :source="editing" @saved="onSaved" />
+    <ai-instructions-dialog
+      v-model="aiInstructionsOpen"
+      :title="$t('settings.aiInstructions.title')"
+      :text="aiInstructions"
+    />
   </section>
 </template>
 
 <script lang="ts">
+import AiInstructionsDialog from '@/components/settings/AiInstructionsDialog.vue'
 import ExternalSourceDialog from '@/components/settings/ExternalSourceDialog.vue'
 import {
   externalSourceInstructions,
@@ -76,21 +86,23 @@ const MAX_SOURCES = 12
  * follows `may_configure`. */
 export default {
   name: 'ExternalSourceSection',
-  components: { ExternalSourceDialog },
+  components: { AiInstructionsDialog, ExternalSourceDialog },
   data() {
     return {
       dialogOpen: false,
       editing: null as ExternalSource | null,
       /** What each app said when last asked, by source id. */
       probes: {} as Record<string, ExternalSourceProbe>,
-      instructionsCopied: false,
-      copiedTimer: undefined as ReturnType<typeof setTimeout> | undefined,
+      aiInstructionsOpen: false,
       maxSources: MAX_SOURCES,
     }
   },
   computed: {
     store() {
       return useExternalSourceStore()
+    },
+    aiInstructions(): string {
+      return externalSourceInstructions()
     },
   },
   async created() {
@@ -105,9 +117,6 @@ export default {
         }
       }),
     )
-  },
-  beforeUnmount() {
-    clearTimeout(this.copiedTimer)
   },
   methods: {
     open(source: ExternalSource | null) {
@@ -126,19 +135,6 @@ export default {
       const probe = this.probes[source.id]
       if (probe && !probe.ok) return this.$t('externalSource.unreachable', { reason: probe.error })
       return source.base_url ?? ''
-    },
-    async copyInstructions() {
-      try {
-        await navigator.clipboard.writeText(externalSourceInstructions())
-      } catch (error) {
-        console.error('[settings] Failed to copy:', error)
-        return
-      }
-      clearTimeout(this.copiedTimer)
-      this.instructionsCopied = true
-      this.copiedTimer = setTimeout(() => {
-        this.instructionsCopied = false
-      }, 2000)
     },
   },
 }
@@ -163,8 +159,15 @@ export default {
 .external-sources__actions {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
+  align-items: center;
   gap: 8px;
+}
+
+/* The two help actions stay together on the left; the one thing this
+ * section is for sits at the far right, where the other sections' primary
+ * action sits too (ServerLinkSection, ApiKeysSection). */
+.external-sources__add {
+  margin-left: auto;
 }
 
 .external-sources__list {
