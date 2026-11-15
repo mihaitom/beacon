@@ -116,7 +116,7 @@ export default {
     // "drag-over" indicator can't tell the user which side of a boundary
     // row they're actually about to land on, and picking the wrong side is
     // exactly what made "swap with the very next track" so easy to
-    // overshoot by one — see QueueDrawer.vue's insertBeforeIndex().
+    // overshoot by one — see services/rowReorder.ts.
     drag(this: { queueDrag: QueueDragState | null }): QueueDragState | null {
       return this.queueDrag
     },

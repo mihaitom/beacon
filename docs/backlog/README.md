@@ -40,5 +40,5 @@ on a device, what is decided and what is not.
 
 ## Packaging and dependencies
 
-- [Dependency majors: Vite 8 and TypeScript 7](packaging/dependency-majors.md) - Vite 8 unblocked, TypeScript 7 to check again
+- [Dependency majors: TypeScript 7](packaging/dependency-majors.md) - waits on a stable Vue Language Tools v4
 - [A Windows or Mac build made on Linux ships Linux binaries](packaging/cross-build-ships-host-binaries.md) - exits 0 and reports nothing; the build should refuse

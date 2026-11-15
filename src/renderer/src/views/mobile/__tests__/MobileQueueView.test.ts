@@ -167,6 +167,19 @@ describe('MobileQueueView', () => {
       expect(reorderQueue).toHaveBeenCalledWith(0, 1)
     })
 
+    it('drops a row moved up behind the row it was released on', async () => {
+      const playback = usePlaybackStore()
+      playback.setQueue([makeSong('a'), makeSong('b'), makeSong('c')], 0)
+      const wrapper = mountView()
+      const reorderQueue = vi.spyOn(playback, 'reorderQueue')
+
+      // 'c' onto the lower half of 'a': it lands between 'a' and 'b'.
+      dragRowOnto(wrapper, 2, 0)
+      window.dispatchEvent(new Event('pointerup'))
+
+      expect(reorderQueue).toHaveBeenCalledWith(2, 1)
+    })
+
     /** The list rides the shell's pane, and a finger held still near its
      * bottom keeps it scrolling - with the drop target following the rows
      * that pass under it, without the finger moving at all. */

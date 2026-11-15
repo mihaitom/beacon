@@ -260,6 +260,7 @@ import type { PropType } from 'vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { useLibraryStore } from '@/stores/library'
 import { firstIndexByLetter, letterForName } from '@/services/alphabetIndex'
+import { dragEventHalf, reorderTarget } from '@/services/rowReorder'
 import { observeActiveLetter, type ActiveLetterHandle } from '@/services/activeLetter'
 import SongRow from './SongRow.vue'
 import MissingSongRow from './MissingSongRow.vue'
@@ -869,16 +870,6 @@ export default {
     dragOverPosition(index: number): 'before' | 'after' | null {
       return this.dragOverIndex === index ? this.dragOverHalf : null
     },
-    insertBeforeIndex(index: number, event: DragEvent): number {
-      const row = event.currentTarget as HTMLElement
-      const rect = row.getBoundingClientRect()
-      const isBottomHalf = event.clientY > rect.top + rect.height / 2
-      return isBottomHalf ? index + 1 : index
-    },
-    dropIndex(index: number, event: DragEvent): number {
-      const insertBefore = this.insertBeforeIndex(index, event)
-      return insertBefore > (this.dragIndex ?? 0) ? insertBefore - 1 : insertBefore
-    },
     onRowDragStart(index: number) {
       this.dragIndex = index
     },
@@ -891,7 +882,7 @@ export default {
         return
       }
       this.dragOverIndex = index
-      this.dragOverHalf = this.insertBeforeIndex(index, event) > index ? 'after' : 'before'
+      this.dragOverHalf = dragEventHalf(event)
     },
     onRowDragLeave(index: number) {
       if (this.dragOverIndex === index) {
@@ -901,11 +892,9 @@ export default {
     },
     onRowDrop({ index, event }: { index: number; event: DragEvent }) {
       const from = this.dragIndex
-      // Read before clearing: dropIndex() works off dragIndex to convert
-      // the drop boundary into a post-removal position.
-      const to = from === null ? null : this.dropIndex(index, event)
       this.clearDragState()
-      if (from === null || to === null) return
+      if (from === null) return
+      const to = reorderTarget(from, index, dragEventHalf(event))
       if (to === from) return
       // The owning view persists this and owns the songs array — with a
       // column sort impossible here (see canReorder), both indices are
