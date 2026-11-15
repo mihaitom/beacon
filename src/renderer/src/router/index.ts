@@ -212,6 +212,11 @@ const router = createRouter({
       component: () => import('../views/mobile/MobileMoreView.vue'),
     },
     {
+      path: '/m/party',
+      name: 'm-party',
+      component: () => import('../views/mobile/MobilePartyView.vue'),
+    },
+    {
       path: '/m/external/:id',
       name: 'm-external-source',
       component: () => import('../views/ExternalSourceView.vue'),

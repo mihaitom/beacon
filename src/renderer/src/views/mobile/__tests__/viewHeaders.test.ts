@@ -9,6 +9,7 @@ import { i18n } from '@/i18n'
 import { useLibraryStore } from '@/stores/library'
 import MobileLibraryView from '../MobileLibraryView.vue'
 import MobileMoreView from '../MobileMoreView.vue'
+import MobilePartyView from '../MobilePartyView.vue'
 import MobilePlaylistsView from '../MobilePlaylistsView.vue'
 import MobileQueueView from '../MobileQueueView.vue'
 import MobileRadioView from '../MobileRadioView.vue'
@@ -26,6 +27,7 @@ const VIEWS = [
   { name: 'MobileQueueView', component: MobileQueueView },
   { name: 'MobileRadioView', component: MobileRadioView },
   { name: 'MobileMoreView', component: MobileMoreView },
+  { name: 'MobilePartyView', component: MobilePartyView },
 ] as const
 
 function mountView(component: (typeof VIEWS)[number]['component']) {

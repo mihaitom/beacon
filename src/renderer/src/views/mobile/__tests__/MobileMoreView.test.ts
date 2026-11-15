@@ -1,5 +1,5 @@
-// The phone's More tab: radio and the external sources, party, the
-// equalizer while casting, stats and settings.
+// The phone's More tab: radio and the external sources, party, stats and
+// settings.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
@@ -9,9 +9,8 @@ import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { useAuthStore } from '@/stores/auth'
-import { useConnectStore } from '@/stores/connect'
+import { usePartyStore } from '@/stores/party'
 import { useExternalSourceStore } from '@/stores/externalSource'
-import { makeStatus } from '@/stores/__tests__/fixtures'
 import MobileMoreView from '../MobileMoreView.vue'
 
 const vuetify = createVuetify({ components, directives })
@@ -27,7 +26,6 @@ async function mountView() {
   const wrapper = mount(MobileMoreView, {
     global: {
       plugins: [vuetify, i18n, router],
-      stubs: { PartyModeDialog: true, EqualizerDialog: true },
     },
   })
   await flushPromises()
@@ -67,26 +65,19 @@ describe('MobileMoreView', () => {
     expect(item('Concerts')?.attributes('href')).toBe('/m/external/b')
   })
 
-  it('offers the equalizer only while casting', async () => {
-    const equalizer = i18n.global.t('equalizer.title')
-    expect((await mountView()).item(equalizer)).toBeUndefined()
+  it('leads to the party page, showing how many guests are there', async () => {
+    const party = usePartyStore()
+    party.enabled = true
+    party.hostedHere = true
+    party.guests = [
+      { guest_id: 'g1', name: 'Ana', connected: true },
+      { guest_id: 'g2', name: 'Ben', connected: true },
+    ] as typeof party.guests
+    const { wrapper } = await mountView()
 
-    setActivePinia(createPinia())
-    useConnectStore().status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
-    expect((await mountView()).item(equalizer)).toBeDefined()
-  })
-
-  it('opens the party and equalizer dialogs, the equalizer fullscreen', async () => {
-    useConnectStore().status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
-    const { wrapper, item } = await mountView()
-
-    await item(i18n.global.t('party.title'))!.trigger('click')
-    await item(i18n.global.t('equalizer.title'))!.trigger('click')
-
-    expect(wrapper.findComponent({ name: 'PartyModeDialog' }).props('modelValue')).toBe(true)
-    const equalizer = wrapper.findComponent({ name: 'EqualizerDialog' })
-    expect(equalizer.props('modelValue')).toBe(true)
-    expect(equalizer.props('compact')).toBe(true)
+    const row = wrapper.get('a[href="/m/party"]')
+    expect(row.text()).toContain(i18n.global.t('party.title'))
+    expect(row.get('.v-badge').text()).toBe('2')
   })
 
   it('leads to Stats where the server keeps them, and always to Settings', async () => {

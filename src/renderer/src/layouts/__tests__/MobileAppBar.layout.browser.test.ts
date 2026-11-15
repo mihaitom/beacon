@@ -78,10 +78,10 @@ describe('mobile app bar', () => {
     expect(logo.width).toBeCloseTo(icon.width, 0)
   })
 
-  // Now Playing hangs up to four buttons of its own in here (lyrics,
-  // visualizer, artwork, background). The app's own menu sat beside them
-  // once, and each of its entries as an icon of its own had cut the name
-  // down to "B..." on a phone.
+  // Now Playing hangs up to five buttons of its own in here while casting
+  // (lyrics, visualizer, artwork, background, equalizer). The app's own
+  // menu sat beside them once, and each of its entries as an icon of its
+  // own had cut the name down to "B..." on a phone.
   it("keeps the app's name whole on a narrow phone, casting, with Now Playing's buttons in", async () => {
     await page.viewport(360, 740)
     setActivePinia(createPinia())
@@ -95,11 +95,17 @@ describe('mobile app bar', () => {
       },
     })
     wrappers.push(wrapper)
-    const slot = wrapper.get('#mobile-app-bar-actions').element
-    for (let i = 0; i < 4; i++) {
-      const button = document.createElement('button')
-      button.style.cssText = 'width: 40px; flex: none; margin-right: 4px'
-      slot.appendChild(button)
+    // Real buttons as the toolbar docks them: comfortable icon buttons,
+    // side by side with no gap (NowPlayingToolbar's docked row).
+    const slot = wrapper.get('#mobile-app-bar-actions').element as HTMLElement
+    for (let i = 0; i < 5; i++) {
+      wrappers.push(
+        mount(VBtn, {
+          attachTo: slot,
+          props: { icon: 'mdi-tune-vertical', variant: 'text', density: 'comfortable' },
+          global: { plugins: [vuetify] },
+        }),
+      )
     }
     await new Promise((resolve) => setTimeout(resolve, 60))
 

@@ -99,6 +99,13 @@
         :title="$t('nowPlaying.nextBackground')"
         @click="source.cycleBackground()"
       />
+      <!-- The phone's only way to the speaker's equalizer; the desktop has
+       - its own button in the player bar. -->
+      <component
+        :is="source.equalizerComponent"
+        v-if="compact && source.capabilities.equalizer && source.equalizerComponent"
+        compact
+      />
       <!-- Not a mobile feature — MobileTransportControls.vue/the tab bar
        - already own the phone's actual full screen; hiding *that* app chrome
        - behind the Fullscreen API here wouldn't gain anything and isn't what
