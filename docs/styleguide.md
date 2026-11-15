@@ -263,6 +263,13 @@ weight and case (`text-transform: none`, no letter-spacing) because the
 default wide-tracked, capitalised treatment reads as stock Material next to
 the app's headings.
 
+Every button on the Settings page is a pill, whatever its variant: the filled
+primary action, a tonal Reset or Revoke, a text Help link. The page puts those
+three in the same panel, and on the default 4px square they read as three
+different button systems - which is how one section ended up with a pill Add
+beside a square Revoke. Icon-only buttons are circles already. A dialog opened
+from the page keeps the app-wide footer (text Close, filled pill confirm).
+
 ## Surfaces
 
 ```html

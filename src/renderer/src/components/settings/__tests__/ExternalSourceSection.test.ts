@@ -18,6 +18,12 @@ vi.mock('@/services/connect/externalSource', async (importOriginal) => ({
 
 const vuetify = createVuetify({ components, directives })
 
+// Teleported otherwise, out of the wrapper's reach.
+const INLINE_DIALOG = {
+  props: ['persistent'],
+  template: '<div class="stub-dialog"><slot /></div>',
+}
+
 const SOURCES = [
   { id: 'a', name: 'Wishlist', icon: 'mdi-gift', ui_path: '/x/a/', base_url: 'http://app:8800' },
   { id: 'b', name: 'Folder', icon: 'mdi-web', ui_path: '/x/b/', base_url: 'http://dir:8800' },
@@ -28,7 +34,7 @@ async function mountSection() {
     global: {
       plugins: [vuetify, i18n],
       mocks: { $emitter: { emit: vi.fn(), on: vi.fn(), off: vi.fn() } },
-      stubs: { ExternalSourceDialog: true },
+      stubs: { ExternalSourceDialog: true, VDialog: INLINE_DIALOG },
     },
   })
   await flushPromises()
@@ -60,6 +66,13 @@ describe('ExternalSourceSection', () => {
     const rows = wrapper.findAll('.external-sources__row')
     expect(rows[0]!.text()).toContain('http://app:8800')
     expect(rows[1]!.text()).toContain('refused')
+  })
+
+  it('shows the AI instructions before they are copied', async () => {
+    const wrapper = await mountSection()
+    await wrapper.get('.external-sources__ai').trigger('click')
+    const area = wrapper.get('.ai-instructions__text textarea')
+    expect((area.element as HTMLTextAreaElement).value).toContain('beacon.play')
   })
 
   it('opens the dialog for the row that was clicked', async () => {

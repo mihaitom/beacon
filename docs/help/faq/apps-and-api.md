@@ -235,7 +235,7 @@ Yes. Everything above is also available as a machine-readable description, which
 https://beacon.example/device-link/v1/openapi.json
 ```
 
-The quickest way: right after creating a key, use **Copy instructions for an AI**. It copies your server's address, what this key may read and the rules below. It never copies the key: give that to your app yourself, and keep it out of the chat and the code.
+The quickest way: right after creating a key, open **AI instructions**. It shows your server's address, what this key may read and the rules below, ready to copy into your assistant. It never includes the key: give that to your app yourself, and keep it out of the chat and the code.
 
 If you write the prompt yourself, these are the things a description does not say:
 

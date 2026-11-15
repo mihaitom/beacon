@@ -56,6 +56,7 @@
         <div class="home-automation__actions">
           <v-btn
             variant="text"
+            rounded="pill"
             prepend-icon="mdi-help-circle-outline"
             @click="$emitter.emit('openHelp', 'guides/home-automation')"
           >
@@ -64,13 +65,20 @@
           <v-btn
             v-if="remoteControlStore.integration"
             variant="text"
+            rounded="pill"
             :disabled="busy"
             @click="revokeKey"
           >
             {{ $t('settings.homeAutomationRevoke') }}
           </v-btn>
           <v-spacer />
-          <v-btn color="primary" :loading="busy" :disabled="busy" @click="generateKey">
+          <v-btn
+            color="primary"
+            rounded="pill"
+            :loading="busy"
+            :disabled="busy"
+            @click="generateKey"
+          >
             {{
               remoteControlStore.integration
                 ? $t('settings.homeAutomationRegenerate')

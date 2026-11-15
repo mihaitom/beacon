@@ -27,6 +27,7 @@
         <p class="setting__description">{{ $t('settings.resetAirplayHint') }}</p>
         <v-btn
           variant="tonal"
+          rounded="pill"
           prepend-icon="mdi-cast-off"
           :loading="resettingAirplay"
           @click="resetAirplayPairings"

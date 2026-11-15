@@ -1012,11 +1012,13 @@ export default {
     deviceKeysLabelHintApp: 'Zum Beispiel Wohnzimmer-Display',
     deviceKeysCreate: 'Schlüssel erstellen',
     deviceKeysKey: 'Schlüssel',
-    deviceKeysForAi: 'Anleitung für KI kopieren',
     deviceKeysForAiHint:
       'Zum Schreiben einer App mit einem KI-Assistenten. Enthält die Adresse dieses Servers und was der Schlüssel darf, nie den Schlüssel selbst.',
-    deviceKeysForAiFailed:
-      'Kopieren geht nur über https. Gib deinem Assistenten stattdessen diese Adresse: {url}',
+    aiInstructions: {
+      title: 'KI-Anleitung',
+      copy: 'Kopieren',
+      copied: 'Kopiert',
+    },
     deviceKeysCopy: 'Schlüssel kopieren',
     deviceKeysShownTitle: 'Schlüssel für {name}',
     deviceKeysOnce:
@@ -1835,8 +1837,7 @@ export default {
     tokenNone: 'Kein Token',
     reachable: 'Verbunden mit {name}',
     unreachable: 'Nicht erreichbar: {reason}',
-    help: 'So funktioniert das',
-    copyInstructions: 'Anleitung für KI kopieren',
+    help: 'Hilfe',
     remove: 'Entfernen',
     save: 'Speichern',
   },

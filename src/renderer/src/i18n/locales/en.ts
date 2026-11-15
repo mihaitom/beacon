@@ -1001,10 +1001,13 @@ export default {
     deviceKeysLabelHintApp: 'For example, Living room display',
     deviceKeysCreate: 'Create key',
     deviceKeysKey: 'Key',
-    deviceKeysForAi: 'Copy instructions for an AI',
     deviceKeysForAiHint:
       "For writing an app with an AI assistant. Holds this server's address and what the key may do, never the key itself.",
-    deviceKeysForAiFailed: 'Copying needs https. Give your assistant this address instead: {url}',
+    aiInstructions: {
+      title: 'AI instructions',
+      copy: 'Copy',
+      copied: 'Copied',
+    },
     deviceKeysCopy: 'Copy key',
     deviceKeysShownTitle: 'Key for {name}',
     deviceKeysOnce:
@@ -1816,8 +1819,7 @@ export default {
     tokenNone: 'No token',
     reachable: 'Connected to {name}',
     unreachable: 'Not reachable: {reason}',
-    help: 'How this works',
-    copyInstructions: 'Copy instructions for an AI',
+    help: 'Help',
     remove: 'Remove',
     save: 'Save',
   },

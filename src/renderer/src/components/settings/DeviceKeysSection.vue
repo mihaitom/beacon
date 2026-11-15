@@ -38,6 +38,7 @@
           </div>
           <v-btn
             variant="tonal"
+            rounded="pill"
             prepend-icon="mdi-key-remove"
             :disabled="busy"
             class="device-keys__revoke"

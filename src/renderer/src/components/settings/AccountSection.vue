@@ -12,7 +12,7 @@
           <p class="account-info__url">{{ serverUrl }}</p>
           <p class="account-info__user text-medium-emphasis">{{ username }}</p>
         </div>
-        <v-btn variant="text" color="error" size="small" @click="logout">
+        <v-btn variant="text" rounded="pill" color="error" size="small" @click="logout">
           {{ $t('settings.logout') }}
         </v-btn>
       </div>

@@ -220,8 +220,8 @@ describe('DeviceKeyDialog', () => {
   })
 
   describe('instructions for an AI assistant', () => {
-    const writeText = vi.fn()
-    const copiedText = () => writeText.mock.lastCall?.[0]
+    const shownText = (wrapper: ReturnType<typeof mountDialog>['wrapper']) =>
+      (wrapper.get('.ai-instructions__text textarea').element as HTMLTextAreaElement).value
 
     async function withNewKey(scopes: DeviceKey['scopes']) {
       vi.mocked(createDeviceKey).mockResolvedValue({ ...CREATED, scopes })
@@ -234,51 +234,26 @@ describe('DeviceKeyDialog', () => {
       return { ...mounted, button: mounted.wrapper.find('.device-key-dialog__for-ai button') }
     }
 
-    beforeEach(() => {
-      writeText.mockReset().mockResolvedValue(undefined)
-      vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
-    })
-
-    afterEach(() => {
-      vi.unstubAllGlobals()
-    })
-
-    it('never puts the key into them', async () => {
-      const { button } = await withNewKey(['history'])
+    it('shows them before they are copied', async () => {
+      const { button, wrapper } = await withNewKey(['history'])
       await button.trigger('click')
       await flushPromises()
 
-      expect(writeText).toHaveBeenCalledOnce()
-      expect(copiedText()).toContain('/device-link/v1/openapi.json')
-      expect(copiedText()).not.toContain('secret')
+      expect(shownText(wrapper)).toContain('/device-link/v1/openapi.json')
+      expect(shownText(wrapper)).not.toContain('secret')
     })
 
-    it('describes the key just made, not the switches as they are now', async () => {
-      const { button, vm } = await withNewKey(['stats'])
+    it('describe the key just made, not the switches as they are now', async () => {
+      const { button, wrapper, vm } = await withNewKey(['stats'])
       vm.appScopes = ['history']
       await button.trigger('click')
       await flushPromises()
-      expect(copiedText()).not.toContain('next_cursor')
+      expect(shownText(wrapper)).not.toContain('next_cursor')
     })
 
     it('are not offered for a desktop key', async () => {
       const { button } = await withNewKey(['sync'])
       expect(button.exists()).toBe(false)
-    })
-
-    it('says where to look when the browser refuses to copy', async () => {
-      vi.spyOn(console, 'error').mockImplementation(() => {})
-      writeText.mockRejectedValue(new Error('no clipboard on http'))
-      const { button, emit } = await withNewKey(['history'])
-      await button.trigger('click')
-      await flushPromises()
-      expect(emit).toHaveBeenCalledWith(
-        'toast',
-        expect.objectContaining({
-          level: 'error',
-          message: expect.stringContaining('/device-link/v1/openapi.json'),
-        }),
-      )
     })
   })
 })
