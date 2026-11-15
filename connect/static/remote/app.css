@@ -26,20 +26,29 @@
   --hover: rgba(var(--accent-rgb), 0.07);
 }
 
-* { box-sizing: border-box; }
+* {
+  box-sizing: border-box;
+}
 
-html, body {
+html,
+body {
   margin: 0;
   height: 100%;
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   -webkit-tap-highlight-color: transparent;
 }
 
-.hidden { display: none !important; }
-.muted { color: var(--text-muted); }
-.error { color: var(--error); }
+.hidden {
+  display: none !important;
+}
+.muted {
+  color: var(--text-muted);
+}
+.error {
+  color: var(--error);
+}
 
 button {
   font-family: inherit;
@@ -70,13 +79,30 @@ textarea {
 
 /* ── Login ── */
 
-.screen { min-height: 100dvh; display: flex; flex-direction: column; }
+.screen {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
 
-#login-screen { align-items: center; justify-content: center; padding: 24px; }
+#login-screen {
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
 
-.login-card { width: 100%; max-width: 320px; text-align: center; }
-.login-card h1 { font-size: 1.4rem; margin-bottom: 4px; }
-.login-card p { margin-top: 0; }
+.login-card {
+  width: 100%;
+  max-width: 320px;
+  text-align: center;
+}
+.login-card h1 {
+  font-size: 1.4rem;
+  margin-bottom: 4px;
+}
+.login-card p {
+  margin-top: 0;
+}
 
 .pin-input {
   width: 100%;
@@ -99,16 +125,34 @@ textarea {
   font-weight: 600;
 }
 
-.btn-primary { background: var(--accent); color: var(--accent-on); }
-.btn:disabled { opacity: 0.6; }
+.btn-primary {
+  background: var(--accent);
+  color: var(--accent-on);
+}
+.btn:disabled {
+  opacity: 0.6;
+}
 
 /* Play All: icon beside the label; it turns while the start is on its way. */
-.play-all { display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 12px; }
-.btn-secondary { background: var(--surface-2); color: var(--text); }
+.play-all {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.btn-secondary {
+  background: var(--surface-2);
+  color: var(--text);
+}
 
 /* ── App shell ── */
 
-#app-screen { display: flex; flex-direction: column; height: 100dvh; }
+#app-screen {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+}
 
 #view-root {
   flex: 1;
@@ -138,7 +182,10 @@ textarea {
  * it was written against the web app's mini bar rather than against the
  * rows next to it. Only the things a fixed bar genuinely needs differently
  * are left here. */
-.mini-player__labels { flex: 1; min-width: 0; }
+.mini-player__labels {
+  flex: 1;
+  min-width: 0;
+}
 
 .mini-player__btn {
   background: none;
@@ -152,7 +199,10 @@ textarea {
   justify-content: center;
 }
 
-.mini-player__btn:disabled { color: var(--text-muted); opacity: 0.4; }
+.mini-player__btn:disabled {
+  color: var(--text-muted);
+  opacity: 0.4;
+}
 
 .tabbar {
   display: flex;
@@ -173,8 +223,12 @@ textarea {
   font-size: 0.68rem;
 }
 
-.tabbar a.active { color: var(--accent); }
-.tabbar .icon { font-size: 1.2rem; }
+.tabbar a.active {
+  color: var(--accent);
+}
+.tabbar .icon {
+  font-size: 1.2rem;
+}
 
 .banner {
   position: fixed;
@@ -234,7 +288,13 @@ textarea {
 
 /* ── Now Playing ── */
 
-.now-playing { display: flex; flex-direction: column; align-items: center; gap: 16px; padding-top: 8px; }
+.now-playing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+  padding-top: 8px;
+}
 
 .cover-art {
   width: min(70vw, 280px);
@@ -274,9 +334,14 @@ textarea {
   line-height: 1.2;
   text-align: center;
 }
-.song-artist { color: var(--text-muted); text-align: center; }
+.song-artist {
+  color: var(--text-muted);
+  text-align: center;
+}
 /* Leads to the artist's page - the cursor says so, the colour stays. */
-.song-artist--link { cursor: pointer; }
+.song-artist--link {
+  cursor: pointer;
+}
 
 /* Room for the heart on both sides, so the title stays centred. */
 .now-playing__info {
@@ -297,7 +362,9 @@ textarea {
   height: 44px;
 }
 
-.now-playing__favorite.active { color: var(--accent); }
+.now-playing__favorite.active {
+  color: var(--accent);
+}
 
 /* Elapsed, bar, total - one row, the same shape
  * MobileTransportControls.vue's own seek row has. */
@@ -318,12 +385,18 @@ textarea {
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
-.seek-time:last-child { text-align: right; }
+.seek-time:last-child {
+  text-align: right;
+}
 
 /* min-width: 0 so the canvas inside can be narrower than its own intrinsic
  * 300px default - see SongWaveform.vue's own note on that, which is the
  * same trap on the same element. */
-.seek-bar { flex: 1 1 auto; min-width: 0; display: flex; }
+.seek-bar {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+}
 
 .waveform {
   display: block;
@@ -336,7 +409,10 @@ textarea {
   cursor: pointer;
 }
 
-.waveform--disabled { opacity: 0.4; cursor: default; }
+.waveform--disabled {
+  opacity: 0.4;
+  cursor: default;
+}
 
 /* What a station gets in place of the seek row — see now-playing.js.
  * Mirrors the app's own RadioLiveStatus.vue. Its own fixed height so that
@@ -349,7 +425,11 @@ textarea {
   align-items: center;
   justify-content: center;
 }
-.live-readout { display: flex; align-items: center; gap: 6px; }
+.live-readout {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 .live-buffering {
   width: 100%;
   height: 4px;
@@ -369,8 +449,12 @@ textarea {
   animation: live-buffering-sweep 1.4s ease-in-out infinite;
 }
 @keyframes live-buffering-sweep {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(250%); }
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
 }
 
 /* box-shadow, not size: the ring grows past the dot without taking any
@@ -382,11 +466,19 @@ textarea {
   background: var(--accent);
   flex-shrink: 0;
 }
-.live-dot--on-air { animation: live-ping 2.4s ease-out infinite; }
+.live-dot--on-air {
+  animation: live-ping 2.4s ease-out infinite;
+}
 @keyframes live-ping {
-  0% { box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0.45); }
-  70% { box-shadow: 0 0 0 7px rgba(var(--accent-rgb), 0); }
-  100% { box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0); }
+  0% {
+    box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0.45);
+  }
+  70% {
+    box-shadow: 0 0 0 7px rgba(var(--accent-rgb), 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(var(--accent-rgb), 0);
+  }
 }
 .live-label {
   color: var(--accent);
@@ -396,7 +488,11 @@ textarea {
   text-transform: uppercase;
   line-height: 1;
 }
-.live-sep { color: var(--accent); opacity: 0.4; line-height: 1; }
+.live-sep {
+  color: var(--accent);
+  opacity: 0.4;
+  line-height: 1;
+}
 /* Proportional digits change width as they tick, which shuffles the whole
  * centred row sideways once a second. */
 .live-time {
@@ -413,12 +509,20 @@ textarea {
   box-shadow: inset 0 0 0 1.5px var(--text-muted);
 }
 .live-readout--off-air .live-label,
-.live-readout--off-air .live-sep { color: var(--text-muted); opacity: 1; }
+.live-readout--off-air .live-sep {
+  color: var(--text-muted);
+  opacity: 1;
+}
 
 /* A static dot still says everything it means to say. */
 @media (prefers-reduced-motion: reduce) {
-  .live-dot--on-air { animation: none; }
-  .live-buffering::after { animation: none; width: 100%; }
+  .live-dot--on-air {
+    animation: none;
+  }
+  .live-buffering::after {
+    animation: none;
+    width: 100%;
+  }
 }
 
 /* One row — autoplay, shuffle, previous, play/pause, next, repeat, cast —
@@ -436,8 +540,14 @@ textarea {
   align-items: center;
 }
 /* Both sides hug play, so the gap around it is the same either side. */
-.transport-side { display: flex; align-items: center; gap: 6px; }
-.transport-side:first-child { justify-content: flex-end; }
+.transport-side {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.transport-side:first-child {
+  justify-content: flex-end;
+}
 .transport-row button {
   background: none;
   color: var(--text);
@@ -449,8 +559,13 @@ textarea {
   align-items: center;
   justify-content: center;
 }
-.transport-row button.active { color: var(--accent); }
-.transport-row button:disabled { color: var(--text-muted); opacity: 0.4; }
+.transport-row button.active {
+  color: var(--accent);
+}
+.transport-row button:disabled {
+  color: var(--text-muted);
+  opacity: 0.4;
+}
 
 /* Filled amber circle with a dark icon — same treatment as
  * MobileTransportControls.vue's own .mobile-transport__play-btn
@@ -469,7 +584,12 @@ textarea {
 /* The volume row (see now-playing.js) — matches
  * MobileTransportControls.vue, where the volume slider has the row below
  * the transport buttons to itself. */
-.volume-row { width: 100%; display: flex; align-items: center; gap: 10px; }
+.volume-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
 .volume-row button {
   background: none;
   color: var(--text-muted);
@@ -478,8 +598,12 @@ textarea {
   flex-shrink: 0;
   display: flex;
 }
-.volume-row button.active { color: var(--accent); }
-.volume-row input[type="range"] { flex: 1; }
+.volume-row button.active {
+  color: var(--accent);
+}
+.volume-row input[type='range'] {
+  flex: 1;
+}
 
 /* Themed range sliders (seek, volume, per-device volume) — matches
  * Vuetify's own v-slider look: a thin amber-filled track up to the current
@@ -498,7 +622,7 @@ textarea {
  * it was being dragged. The thumb looked bigger than the target because it
  * overhangs on a negative margin. 32px is what the app's own phone slider
  * uses (components/mobile/TouchVolumeSlider.vue). */
-input[type="range"] {
+input[type='range'] {
   -webkit-appearance: none;
   appearance: none;
   width: 100%;
@@ -508,7 +632,7 @@ input[type="range"] {
   margin: 0;
 }
 
-input[type="range"]::-webkit-slider-runnable-track {
+input[type='range']::-webkit-slider-runnable-track {
   height: 4px;
   border-radius: 2px;
   background: linear-gradient(
@@ -518,19 +642,19 @@ input[type="range"]::-webkit-slider-runnable-track {
   );
 }
 
-input[type="range"]::-moz-range-track {
+input[type='range']::-moz-range-track {
   height: 4px;
   border-radius: 2px;
   background: var(--surface-2);
 }
 
-input[type="range"]::-moz-range-progress {
+input[type='range']::-moz-range-progress {
   height: 4px;
   border-radius: 2px;
   background: var(--accent);
 }
 
-input[type="range"]::-webkit-slider-thumb {
+input[type='range']::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   width: 16px;
@@ -542,7 +666,7 @@ input[type="range"]::-webkit-slider-thumb {
   cursor: pointer;
 }
 
-input[type="range"]::-moz-range-thumb {
+input[type='range']::-moz-range-thumb {
   width: 16px;
   height: 16px;
   border: none;
@@ -552,12 +676,12 @@ input[type="range"]::-moz-range-thumb {
   cursor: pointer;
 }
 
-input[type="range"]:disabled {
+input[type='range']:disabled {
   opacity: 0.35;
 }
 
-input[type="range"]:disabled::-webkit-slider-thumb,
-input[type="range"]:disabled::-moz-range-thumb {
+input[type='range']:disabled::-webkit-slider-thumb,
+input[type='range']:disabled::-moz-range-thumb {
   background: var(--text-muted);
   box-shadow: none;
 }
@@ -640,10 +764,16 @@ input[type="range"]:disabled::-moz-range-thumb {
   object-fit: cover;
 }
 
-.row-main { flex: 1; min-width: 0; }
+.row-main {
+  flex: 1;
+  min-width: 0;
+}
 
 /* A song a playlist start was sent for, until Beacon has acked it. */
-.row--busy { opacity: 0.5; pointer-events: none; }
+.row--busy {
+  opacity: 0.5;
+  pointer-events: none;
+}
 
 /* Pinned rather than inherited: without a size of its own this was
  * whatever the browser's default happened to be (16px), which is a large
@@ -675,17 +805,27 @@ input[type="range"]:disabled::-moz-range-thumb {
   flex-shrink: 0;
 }
 
-.row.playing .row-title { color: var(--accent); }
+.row.playing .row-title {
+  color: var(--accent);
+}
 
 /* Held long enough to be picked up (see long-press.js). Stronger than
  * :active's --hover, which is already showing while the finger is down. */
-.row.lifted { background: rgba(var(--accent-rgb), 0.16); }
+.row.lifted {
+  background: rgba(var(--accent-rgb), 0.16);
+}
 
-.row.dragging { opacity: 0.5; }
+.row.dragging {
+  opacity: 0.5;
+}
 /* Where the dragged song would land. Inset shadows rather than borders, so
  * the line doesn't shift the rows under the finger. */
-.row.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
-.row.drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
+.row.drop-before {
+  box-shadow: inset 0 2px 0 var(--accent);
+}
+.row.drop-after {
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
 
 /* Every view opens with its own name, at one size and one spacing. Queue
  * and Library had no heading at all, Playlists and Radio each had an h2 at
@@ -718,10 +858,18 @@ input[type="range"]:disabled::-moz-range-thumb {
   font-size: 0.85rem;
 }
 
-.segmented button + button { border-left: 1px solid var(--border); }
-.segmented button.active { background: var(--accent); color: var(--accent-on); font-weight: 600; }
+.segmented button + button {
+  border-left: 1px solid var(--border);
+}
+.segmented button.active {
+  background: var(--accent);
+  color: var(--accent-on);
+  font-weight: 600;
+}
 
-.search-field { position: relative; }
+.search-field {
+  position: relative;
+}
 
 .search-input {
   width: 100%;
@@ -734,11 +882,15 @@ input[type="range"]:disabled::-moz-range-thumb {
 }
 
 /* Room for the clear button, so a long query never runs underneath it. */
-.search-field .search-input { padding-right: 40px; }
+.search-field .search-input {
+  padding-right: 40px;
+}
 
 /* WebKit draws its own inside type="search"; this one is always there, so
  * hide that to avoid two of them side by side on iOS. */
-.search-field .search-input::-webkit-search-cancel-button { display: none; }
+.search-field .search-input::-webkit-search-cancel-button {
+  display: none;
+}
 
 .search-clear {
   position: absolute;
@@ -754,9 +906,20 @@ input[type="range"]:disabled::-moz-range-thumb {
   font-size: 1.1rem;
 }
 
-.load-more { width: 100%; margin-top: 12px; padding: 10px; border-radius: 10px; background: var(--surface); color: var(--text); }
+.load-more {
+  width: 100%;
+  margin-top: 12px;
+  padding: 10px;
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+}
 
-.empty-state { color: var(--text-muted); text-align: center; padding: 40px 0; }
+.empty-state {
+  color: var(--text-muted);
+  text-align: center;
+  padding: 40px 0;
+}
 
 .back-link {
   display: inline-flex;
@@ -765,10 +928,17 @@ input[type="range"]:disabled::-moz-range-thumb {
   color: var(--accent);
   text-decoration: none;
 }
-.back-link i { font-size: 1.1rem; margin-right: 2px; }
+.back-link i {
+  font-size: 1.1rem;
+  margin-right: 2px;
+}
 /* The artist page's is a button (it goes back, wherever from), drawn as the
  * same link. */
-button.back-link { background: none; padding: 0; font-size: inherit; }
+button.back-link {
+  background: none;
+  padding: 0;
+  font-size: inherit;
+}
 
 /* The artist page: photo beside name and album count, like the app's own
  * phone header (MobileArtistDetailView.vue), then the radio button. */
@@ -791,15 +961,23 @@ button.back-link { background: none; padding: 0; font-size: inherit; }
   color: var(--text-muted);
   font-size: 2rem;
 }
-.artist-header__art img { width: 100%; height: 100%; object-fit: cover; }
-.artist-header__text { min-width: 0; }
+.artist-header__art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.artist-header__text {
+  min-width: 0;
+}
 .artist-header__text .view-title {
   margin: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.artist-radio { margin-bottom: 8px; }
+.artist-radio {
+  margin-bottom: 8px;
+}
 
 /* A section of a page, with the lit mark the app's .section-title has. */
 .section-heading {
@@ -824,31 +1002,51 @@ button.back-link { background: none; padding: 0; font-size: inherit; }
 /* ── Action sheet ── */
 
 .sheet-backdrop {
-  position: fixed; inset: 0; background: rgba(0, 0, 0, 0.5); z-index: 200;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 200;
 }
 
 .sheet {
-  position: fixed; left: 0; right: 0; bottom: 0; z-index: 201;
-  background: var(--surface); border-radius: 16px 16px 0 0;
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 201;
+  background: var(--surface);
+  border-radius: 16px 16px 0 0;
   padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
 }
 
 .sheet button {
   display: flex;
   align-items: center;
-  width: 100%; text-align: left; padding: 14px 20px;
-  background: none; color: var(--text); font-size: 1rem;
+  width: 100%;
+  text-align: left;
+  padding: 14px 20px;
+  background: none;
+  color: var(--text);
+  font-size: 1rem;
 }
 
-.sheet button:active { background: var(--surface-2); }
+.sheet button:active {
+  background: var(--surface-2);
+}
 
 /* Every button in the sheet is disabled while one action's onSelect() is
  * in flight (sheet.js) — the default disabled styling for a plain
  * unstyled <button> here (background: none, no border) is otherwise
  * indistinguishable from enabled. */
-.sheet button:disabled { opacity: 0.5; }
+.sheet button:disabled {
+  opacity: 0.5;
+}
 
-.sheet-icon { font-size: 1.2rem; margin-right: 14px; color: var(--text-muted); }
+.sheet-icon {
+  font-size: 1.2rem;
+  margin-right: 14px;
+  color: var(--text-muted);
+}
 
 /* The sheet's own title. Distinct from .sheet-header below, which is the
  * small uppercase label a *group* of rows gets — with both using that, a
@@ -875,7 +1073,11 @@ button.back-link { background: none; padding: 0; font-size: inherit; }
 /* The standalone .sheet-title carries its own gap to the list below; in
  * this row that spacing belongs to the row, or the title sits off-centre
  * against the buttons beside it. */
-.sheet-title-row .sheet-title { flex: 1; padding-bottom: 0; white-space: nowrap; }
+.sheet-title-row .sheet-title {
+  flex: 1;
+  padding-bottom: 0;
+  white-space: nowrap;
+}
 
 /* Scoped like the two action buttons below, and for the same reason: the
  * generic ".sheet button" rule's width:100% otherwise makes each of these
@@ -894,15 +1096,22 @@ button.back-link { background: none; padding: 0; font-size: inherit; }
   color: var(--text-muted);
 }
 
-.btn-sheet-icon:disabled { opacity: 0.5; }
+.btn-sheet-icon:disabled {
+  opacity: 0.5;
+}
 
 /* Turns while a sweep runs - the only feedback a sweep of several seconds
  * gets, since the list underneath deliberately keeps showing the previous
  * result until the new one arrives. */
-.btn-sheet-icon--busy i { animation: sheet-icon-spin 1s linear infinite; display: inline-block; }
+.btn-sheet-icon--busy i {
+  animation: sheet-icon-spin 1s linear infinite;
+  display: inline-block;
+}
 
 @keyframes sheet-icon-spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .sheet-header {
@@ -913,25 +1122,53 @@ button.back-link { background: none; padding: 0; font-size: inherit; }
   color: var(--text-muted);
 }
 
-.device-list { display: flex; flex-direction: column; max-height: 50vh; overflow-y: auto; }
+.device-list {
+  display: flex;
+  flex-direction: column;
+  max-height: 50vh;
+  overflow-y: auto;
+}
 
-.device-list button i:first-child { font-size: 1.2rem; margin-right: 14px; color: var(--text-muted); flex-shrink: 0; }
-.device-row-check { margin-left: auto; color: var(--accent) !important; font-size: 1.1rem !important; flex-shrink: 0; }
+.device-list button i:first-child {
+  font-size: 1.2rem;
+  margin-right: 14px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.device-row-check {
+  margin-left: auto;
+  color: var(--accent) !important;
+  font-size: 1.1rem !important;
+  flex-shrink: 0;
+}
 
 /* Local playback while it *is* where the sound goes — the same accent the
  * checked speakers get, so the list has one way of saying "this one".
  * Out-specifies .device-list button i:first-child above, which would
  * otherwise grey the icon out. */
-.device-list .device-row-local--active { color: var(--text); }
-.device-list .device-row-local--active i:first-child { color: var(--accent); }
+.device-list .device-row-local--active {
+  color: var(--text);
+}
+.device-list .device-row-local--active i:first-child {
+  color: var(--accent);
+}
 
-.device-row-disabled { opacity: 0.45; cursor: default; }
-.device-row-disabled .device-row-check { color: var(--text-muted) !important; }
-.device-row-hint { font-size: 0.72rem; }
+.device-row-disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.device-row-disabled .device-row-check {
+  color: var(--text-muted) !important;
+}
+.device-row-hint {
+  font-size: 0.72rem;
+}
 
 /* Belongs to the row above it, not between two devices — the pair is
  * indented past the device icon and closed up so it reads as one block. */
-.device-list .device-row-has-volume { padding-bottom: 6px; }
+.device-list .device-row-has-volume {
+  padding-bottom: 6px;
+}
 
 .device-volume-row {
   display: flex;
@@ -942,10 +1179,19 @@ button.back-link { background: none; padding: 0; font-size: inherit; }
   padding: 0 20px 4px 54px;
   color: var(--text-muted);
 }
-.device-volume-row i { font-size: 1rem; flex-shrink: 0; }
-.device-volume-row input[type="range"] { flex: 1; }
+.device-volume-row i {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+.device-volume-row input[type='range'] {
+  flex: 1;
+}
 
-.sheet-loading { padding: 20px; color: var(--text-muted); text-align: center; }
+.sheet-loading {
+  padding: 20px;
+  color: var(--text-muted);
+  text-align: center;
+}
 
 /* base.css's own .eyebrow-label, copied value for value: the small accent
  * heading the app gives a section of its own. Deliberately not .sheet-header
@@ -992,9 +1238,16 @@ button.back-link { background: none; padding: 0; font-size: inherit; }
   gap: 4px;
 }
 
-.stream-info-icon { font-size: 1rem; flex-shrink: 0; }
-.stream-info-icon--warn { color: var(--warning); }
-.stream-info-icon--ok { color: var(--success); }
+.stream-info-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+.stream-info-icon--warn {
+  color: var(--warning);
+}
+.stream-info-icon--ok {
+  color: var(--success);
+}
 
 .sheet-title-row button.btn-sheet-stop {
   padding: 8px 8px;
@@ -1022,6 +1275,507 @@ button.back-link { background: none; padding: 0; font-size: inherit; }
   white-space: nowrap;
   background: var(--surface-2);
   color: var(--text-muted);
-  transition: background 0.15s ease, color 0.15s ease;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
 }
-.sheet-title-row button.btn-sheet-action.btn-sheet-action--active { background: var(--accent); color: var(--accent-on); }
+.sheet-title-row button.btn-sheet-action.btn-sheet-action--active {
+  background: var(--accent);
+  color: var(--accent-on);
+}
+
+/* A view's own title with an action beside it (Party's refresh). */
+.view-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+.view-head .view-title {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+/* ── Home ── */
+
+.home-hero {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+}
+
+.home-hero__art {
+  width: 72px;
+  height: 72px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 2rem;
+  cursor: pointer;
+}
+
+.home-hero__art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.home-hero__text {
+  flex: 1;
+  min-width: 0;
+}
+.home-hero__text > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-hero__title {
+  font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', serif;
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin-top: 2px;
+}
+
+.home-hero__subtitle {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.home-hero__play {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--accent-on);
+  font-size: 1.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.home-section {
+  margin-bottom: 28px;
+}
+
+.home-section__head {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+
+/* The heading carries the app's section mark; inside a head its own
+ * vertical margins have no room to spare. */
+.home-section__head .section-heading {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.home-section__action {
+  padding: 6px;
+  font-size: 1.35rem;
+}
+
+.home-section__action:disabled {
+  opacity: 0.4;
+}
+
+.home-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+/* Two columns of three under the hero, as on the app's own Home. */
+.home-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+/* Out to the screen's edges, so a cover scrolls off the side rather than
+ * vanishing at the page's padding. */
+.home-shelf {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  margin: 0 -16px;
+  padding: 0 16px 4px;
+  scrollbar-width: none;
+}
+.home-shelf::-webkit-scrollbar {
+  display: none;
+}
+
+.album-tile {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 4px 8px 4px 4px;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: var(--hover);
+}
+
+.album-tile--shelf {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  width: 132px;
+  flex-shrink: 0;
+  padding: 0;
+  border: none;
+  background: none;
+}
+
+.album-tile__cover {
+  position: relative;
+  flex-shrink: 0;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 1.6rem;
+  cursor: pointer;
+}
+
+.album-tile--shelf .album-tile__cover {
+  width: 132px;
+  height: 132px;
+  border-radius: 10px;
+}
+
+.album-tile__art {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.album-tile__art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* A dark pill behind the mark rather than a scrim over the whole cover,
+ * the same reasoning as MobileAlbumTile.vue. */
+.album-tile__play {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  font-size: 18px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.album-tile--shelf .album-tile__play {
+  width: 40px;
+  height: 40px;
+  font-size: 26px;
+}
+
+.album-tile__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.album-tile__text > * {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.album-tile__name {
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.3;
+}
+.album-tile__artist {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+
+/* ── Library's favourites filter ── */
+
+/* Two buttons share the field's end: the heart and, once there is text,
+ * the clear button beside it. */
+#library-search {
+  padding-right: 84px;
+}
+#library-search-clear {
+  right: 40px;
+}
+
+.search-favorite {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  border-radius: 9999px;
+}
+
+.search-favorite.active {
+  color: var(--accent);
+}
+
+/* ── Album / artist pages ── */
+
+.album-artist {
+  display: block;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.75rem;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+button.album-artist {
+  color: var(--accent);
+  cursor: pointer;
+}
+
+.artist-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.artist-actions .btn {
+  flex: 1;
+}
+.album-actions {
+  display: flex;
+  margin-bottom: 8px;
+}
+.album-actions .play-all {
+  width: auto;
+  margin-bottom: 0;
+  padding-inline: 24px;
+}
+
+.header-favorite {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: none;
+  color: var(--text-muted);
+  font-size: 1.4rem;
+}
+
+.header-favorite.active {
+  color: var(--accent);
+}
+
+.playlist-description {
+  margin: 0 0 12px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+/* ── More ── */
+
+.more-list {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid var(--border);
+}
+
+.more-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 56px;
+  padding: 0 4px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.more-item:active {
+  background: var(--hover);
+}
+.more-item__icon {
+  font-size: 1.3rem;
+  color: var(--text-muted);
+}
+.more-item__label {
+  flex: 1;
+  min-width: 0;
+}
+
+.more-item__badge {
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 9999px;
+  background: var(--accent);
+  color: var(--accent-on);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.more-item__chevron {
+  color: var(--text-muted);
+}
+
+/* ── Party ── */
+
+.party-intro {
+  margin: -4px 0 16px;
+  font-size: 0.85rem;
+}
+
+.party-notice {
+  margin: 0 0 16px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  font-size: 0.85rem;
+}
+
+.party-notice--ok {
+  color: var(--success);
+}
+.party-notice--warn {
+  color: var(--warning);
+}
+
+.party-invitation {
+  margin-bottom: 20px;
+}
+
+.party-link {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 4px 4px 4px 12px;
+  border-radius: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+}
+
+.party-link__url {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.party-link__copy {
+  font-size: 1.2rem;
+}
+
+.party-guests {
+  margin-bottom: 20px;
+}
+.party-guests .eyebrow-label {
+  display: block;
+  margin-bottom: 6px;
+}
+.party-listeners {
+  margin: 0 0 6px;
+  font-size: 0.8rem;
+}
+
+.party-guest {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  border-bottom: 1px solid var(--border);
+}
+
+.party-guest__dot {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+}
+.party-guest__dot--on {
+  color: var(--success);
+}
+.party-guest__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.party-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.party-action {
+  width: auto;
+  padding: 12px 18px;
+  background: var(--surface-2);
+  color: var(--text);
+}
+.party-action--danger {
+  color: var(--error);
+}
+
+/* The album line under the artist on Now Playing. */
+.song-album {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  text-align: center;
+}
+.song-album--link {
+  cursor: pointer;
+}

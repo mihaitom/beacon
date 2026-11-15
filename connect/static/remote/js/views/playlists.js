@@ -4,33 +4,172 @@ import { navigate, registerRoute } from '../router.js';
 import { createArt } from '../art.js';
 import { n, t } from '../i18n.js';
 
+/** Whether a playlist is the signed-in account's own — the same rule as
+ * the app's isOwnedBy(): the bridges say so outright, a Subsonic server
+ * only names an owner. */
+function isOwnedBy(playlist, username) {
+  return playlist.owned_by_user ?? playlist.owner === username;
+}
+
+/** The groups the app's own Playlists page lists, each playlist in exactly
+ * one (see services/library/playlistBrowse.ts). */
+function sectionsFor(items, username) {
+  const sharedByMe = (playlist) => isOwnedBy(playlist, username) && playlist.public;
+  const mine = (playlist) => isOwnedBy(playlist, username);
+  return [
+    {
+      key: 'mine',
+      title: t('playlists.personal'),
+      playlists: items.filter((playlist) => mine(playlist) && !sharedByMe(playlist)),
+    },
+    {
+      key: 'sharedByMe',
+      title: t('playlists.sharedByMe'),
+      playlists: items.filter(sharedByMe),
+    },
+    {
+      key: 'sharedWithMe',
+      title: t('playlists.sharedWithMe'),
+      playlists: items.filter((playlist) => !mine(playlist)),
+    },
+  ].filter((section) => section.playlists.length);
+}
+
+function formatDuration(seconds) {
+  if (!seconds) return '';
+  const total = Math.round(seconds);
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.round((total % 3600) / 60);
+  if (hours > 0) return t('playlists.durationHours', { hours, minutes });
+  return t('playlists.durationMinutes', { minutes });
+}
+
+function playlistMeta(playlist, { showOwner = false } = {}) {
+  const parts = [
+    t('playlists.songCount', { count: n(playlist.song_count ?? 0) }),
+    formatDuration(playlist.duration),
+    playlist.smart ? t('playlists.smart') : '',
+  ].filter(Boolean);
+  if (showOwner && playlist.owner) {
+    parts.push(t('playlists.byOwner', { owner: playlist.owner }));
+  }
+  return parts.join(' · ');
+}
+
 export function renderPlaylists(root) {
-  root.innerHTML = `<h1 class="view-title">${t('playlists.title')}</h1><div class="list" id="playlist-list">${t('common.loading')}</div>`;
+  root.innerHTML = `
+    <h1 class="view-title">${t('playlists.title')}</h1>
+    <div class="search-field">
+      <input type="search" class="search-input" id="playlist-search" placeholder="${t('search.label')}" />
+      <button type="button" class="search-clear hidden" id="playlist-search-clear"
+              aria-label="${t('common.clearSearch')}"><i class="mdi mdi-close"></i></button>
+    </div>
+    <div id="playlist-list"><div class="empty-state">${t('common.loading')}</div></div>
+  `;
   const list = root.querySelector('#playlist-list');
+  const searchInput = root.querySelector('#playlist-search');
+  const searchClear = root.querySelector('#playlist-search-clear');
+
+  let all = [];
+  let username = '';
+  let query = '';
+
+  function render() {
+    list.innerHTML = '';
+    if (!all.length) {
+      list.innerHTML = `<div class="empty-state">${t('playlists.empty')}</div>`;
+      return;
+    }
+    const matching = query
+      ? all.filter((playlist) => playlist.name.toLowerCase().includes(query.toLowerCase()))
+      : all;
+    if (!matching.length) {
+      list.innerHTML = `<div class="empty-state">${t('playlists.noPlaylistsForQuery', { query })}</div>`;
+      return;
+    }
+    for (const section of sectionsFor(matching, username)) {
+      const heading = document.createElement('h2');
+      heading.className = 'section-heading';
+      heading.textContent = section.title;
+      list.appendChild(heading);
+      const rows = document.createElement('div');
+      rows.className = 'list';
+      for (const playlist of section.playlists) {
+        rows.appendChild(
+          renderPlaylistRow(playlist, {
+            showOwner: section.key === 'sharedWithMe',
+          }),
+        );
+      }
+      list.appendChild(rows);
+    }
+  }
+
+  function renderPlaylistRow(playlist, { showOwner }) {
+    const row = document.createElement('div');
+    row.className = 'row';
+    row.appendChild(createArt(playlist.cover_art_url, 'mdi-playlist-music'));
+
+    const main = document.createElement('div');
+    main.className = 'row-main';
+    main.addEventListener('click', () => navigate(`/playlists/${encodeURIComponent(playlist.id)}`));
+    const title = document.createElement('div');
+    title.className = 'row-title';
+    title.textContent = playlist.name;
+    const subtitle = document.createElement('div');
+    subtitle.className = 'row-subtitle';
+    subtitle.textContent = playlistMeta(playlist, { showOwner });
+    main.append(title, subtitle);
+    row.appendChild(main);
+
+    // A row that stands for a collection leads to it; the button plays it
+    // (see MobilePlaylistRow.vue's own split).
+    const play = document.createElement('button');
+    play.type = 'button';
+    play.className = 'row-action row-play';
+    play.title = t('library.play');
+    play.setAttribute('aria-label', t('library.play'));
+    play.innerHTML = '<i class="mdi mdi-play-circle"></i>';
+    play.addEventListener('click', (event) => {
+      event.stopPropagation();
+      sendReportedCommand('play-playlist', { playlistId: playlist.id }).catch(() => {});
+    });
+    row.appendChild(play);
+    return row;
+  }
+
+  let debounceTimer = null;
+  function syncClear() {
+    searchClear.classList.toggle('hidden', searchInput.value === '');
+  }
+  searchInput.addEventListener('input', () => {
+    syncClear();
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => {
+      query = searchInput.value.trim();
+      render();
+    }, 200);
+  });
+  searchClear.addEventListener('click', () => {
+    clearTimeout(debounceTimer);
+    searchInput.value = '';
+    syncClear();
+    query = '';
+    render();
+    searchInput.focus();
+  });
 
   fetchPlaylists()
-    .then(({ items }) => {
-      list.innerHTML = '';
-      if (!items.length) {
-        list.innerHTML = `<div class="empty-state">${t('playlists.empty')}</div>`;
-        return;
-      }
-      for (const playlist of items) {
-        const row = document.createElement('div');
-        row.className = 'row';
-        row.appendChild(createArt(playlist.cover_art_url, 'mdi-playlist-music'));
-        row.insertAdjacentHTML(
-          'beforeend',
-          `<div class="row-main"><div class="row-title">${escapeHtml(playlist.name)}</div>
-          <div class="row-subtitle">${t('playlists.songCount', { count: n(playlist.song_count ?? 0) })}</div></div>`,
-        );
-        row.addEventListener('click', () => navigate(`/playlists/${encodeURIComponent(playlist.id)}`));
-        list.appendChild(row);
-      }
+    .then((answer) => {
+      all = answer.items ?? [];
+      username = answer.username ?? '';
+      render();
     })
     .catch(() => {
       list.innerHTML = `<div class="empty-state">${t('playlists.failed')}</div>`;
     });
+
+  return () => clearTimeout(debounceTimer);
 }
 
 export function renderPlaylistDetail(root, params) {
@@ -47,6 +186,12 @@ export function renderPlaylistDetail(root, params) {
       // every other view's — the last .section-title in the remote, which
       // was a third heading size on top of the two the views used.
       header.innerHTML = `<h1 class="view-title">${escapeHtml(playlist.name)}</h1>`;
+      if (playlist.comment) {
+        const description = document.createElement('p');
+        description.className = 'playlist-description';
+        description.textContent = playlist.comment;
+        header.appendChild(description);
+      }
       const playAllBtn = document.createElement('button');
       playAllBtn.className = 'btn btn-primary play-all';
       const playAllIcon = document.createElement('i');

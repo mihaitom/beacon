@@ -67,6 +67,19 @@
 .mdi-skip-next-outline::before { content: "\F0F27"; }
 .mdi-arrow-collapse-down::before { content: "\F0792"; }
 .mdi-playlist-remove::before { content: "\F0413"; }
+.mdi-home-variant::before { content: "\F02DE"; }
+.mdi-dots-horizontal::before { content: "\F01D8"; }
+.mdi-chevron-down::before { content: "\F0140"; }
+.mdi-chevron-up::before { content: "\F0143"; }
+.mdi-chevron-right::before { content: "\F0142"; }
+.mdi-play-circle::before { content: "\F040C"; }
+.mdi-play-circle-outline::before { content: "\F040D"; }
+.mdi-shuffle-variant::before { content: "\F049F"; }
+.mdi-party-popper::before { content: "\F1056"; }
+.mdi-account-remove::before { content: "\F0015"; }
+.mdi-circle::before { content: "\F0765"; }
+.mdi-circle-outline::before { content: "\F0766"; }
+.mdi-content-copy::before { content: "\F018F"; }
 
 /* mdi-spin — sheet.js's in-flight action indicator. Codepoint/animation
  * copied the same way as the glyphs above (node_modules/@mdi/font). */

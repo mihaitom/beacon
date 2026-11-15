@@ -42,6 +42,7 @@ export function renderNowPlaying(root) {
         <div class="now-playing__eyebrow" id="np-eyebrow"></div>
         <div class="song-title" id="np-title">${t('nowPlaying.nothing')}</div>
         <div class="song-artist" id="np-artist"></div>
+        <div class="song-album" id="np-album"></div>
         <!-- Out of the flow and mirrored by the padding on the left, so the
              text stays centred - the app's NowPlayingTrackPanels.vue. -->
         <button id="np-favorite" class="now-playing__favorite hidden" aria-label="${t('favorite.add')}">
@@ -94,6 +95,7 @@ export function renderNowPlaying(root) {
   const eyebrow = root.querySelector('#np-eyebrow');
   const title = root.querySelector('#np-title');
   const artist = root.querySelector('#np-artist');
+  const album = root.querySelector('#np-album');
   const seekRow = root.querySelector('#np-seek-row');
   const liveRow = root.querySelector('#np-live-row');
   const liveBuffering = root.querySelector('#np-live-buffering');
@@ -114,6 +116,11 @@ export function renderNowPlaying(root) {
   artist.addEventListener('click', () => {
     const artistId = state.snapshot.current_song?.artist_id;
     if (artistId) navigate(`/artists/${encodeURIComponent(artistId)}`);
+  });
+  // The album line leads to its page, as on the app's Now Playing.
+  album.addEventListener('click', () => {
+    const albumId = state.snapshot.current_song?.album_id;
+    if (albumId) navigate(`/albums/${encodeURIComponent(albumId)}`);
   });
 
   favoriteBtn.addEventListener('click', () => {
@@ -184,6 +191,8 @@ export function renderNowPlaying(root) {
         : t('nowPlaying.nothing');
     artist.textContent = song ? song.artist || '' : nowPlaying ? snapshot.radio.name : '';
     artist.classList.toggle('song-artist--link', !!song?.artist_id);
+    album.textContent = song?.album || '';
+    album.classList.toggle('song-album--link', !!song?.album_id);
     favoriteBtn.classList.toggle('hidden', !song || !snapshot.favorites_supported);
     favoriteBtn.classList.toggle('active', !!song?.starred);
     favoriteBtn.querySelector('i').className = song?.starred ? 'mdi mdi-heart' : 'mdi mdi-heart-outline';

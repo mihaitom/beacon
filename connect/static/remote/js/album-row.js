@@ -1,14 +1,16 @@
 // album-row.js — row renderer for the library view's albums half, the
 // counterpart to song-row.js.
 //
-// Tapping the row plays the album, matching both song-row.js's own
-// tap-is-play and the mobile web UI's MobileAlbumRow.vue. No action sheet:
-// everything song-row.js offers in one ("Play Next", "Add to Queue", "Song
-// Radio") is a per-song action, and none of them has an album-level command
-// behind it on the desktop side.
+// Tapping the row opens the album, the same split MobileAlbumRow.vue makes:
+// a row that stands for a collection leads to it, and its own play button
+// is what plays it. No action sheet: everything song-row.js offers in one
+// ("Play Next", "Add to Queue", "Song Radio") is a per-song action, and
+// none of them has an album-level command behind it on the desktop side.
 
 import { fireCommand } from './api.js';
+import { navigate } from './router.js';
 import { createArt } from './art.js';
+import { t } from './i18n.js';
 
 export function renderAlbumRow(album) {
   const row = document.createElement('div');
@@ -18,7 +20,7 @@ export function renderAlbumRow(album) {
 
   const main = document.createElement('div');
   main.className = 'row-main';
-  main.addEventListener('click', () => fireCommand('play-album', { albumId: album.id }));
+  main.addEventListener('click', () => navigate(`/albums/${encodeURIComponent(album.id)}`));
 
   const title = document.createElement('div');
   title.className = 'row-title';
@@ -33,5 +35,21 @@ export function renderAlbumRow(album) {
   main.appendChild(subtitle);
 
   row.appendChild(main);
+  row.appendChild(playButton(album));
   return row;
+}
+
+/** The album's own play button — the row's tap goes to the album page. */
+export function playButton(album) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'row-action row-play';
+  button.title = t('library.play');
+  button.setAttribute('aria-label', t('library.play'));
+  button.innerHTML = '<i class="mdi mdi-play-circle"></i>';
+  button.addEventListener('click', (event) => {
+    event.stopPropagation();
+    fireCommand('play-album', { albumId: album.id });
+  });
+  return button;
 }

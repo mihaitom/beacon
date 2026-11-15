@@ -2,11 +2,12 @@
 // albums, newest first. The same page as the app's own on a phone
 // (MobileArtistDetailView.vue), answered by the desktop out of its library.
 
-import { fetchArtist, fireCommand } from '../api.js';
+import { fetchArtist, fireCommand, sendCommand } from '../api.js';
 import { registerRoute } from '../router.js';
 import { renderAlbumRow } from '../album-row.js';
 import { renderSongRow } from '../song-row.js';
 import { createArt } from '../art.js';
+import { state } from '../state.js';
 import { n, t } from '../i18n.js';
 
 export function renderArtist(root, params) {
@@ -42,12 +43,39 @@ export function renderArtist(root, params) {
       header.appendChild(text);
       container.appendChild(header);
 
+      const actions = document.createElement('div');
+      actions.className = 'artist-actions';
       const radio = document.createElement('button');
       radio.type = 'button';
       radio.className = 'btn btn-primary artist-radio';
       radio.innerHTML = `<i class="mdi mdi-radio-tower"></i> ${t('artist.radio')}`;
       radio.addEventListener('click', () => fireCommand('play-artist-radio', { artistId: artist.id }));
-      container.appendChild(radio);
+      actions.appendChild(radio);
+
+      // The heart the app's own artist page carries, where the server has
+      // favourites at all.
+      if (state.snapshot.favorites_supported) {
+        const heart = document.createElement('button');
+        heart.type = 'button';
+        heart.className = 'header-favorite artist-favorite';
+        const paint = () => {
+          heart.innerHTML = `<i class="mdi ${artist.starred ? 'mdi-heart' : 'mdi-heart-outline'}"></i>`;
+          heart.classList.toggle('active', Boolean(artist.starred));
+          heart.title = t(artist.starred ? 'favorite.remove' : 'favorite.add');
+          heart.setAttribute('aria-label', heart.title);
+        };
+        paint();
+        heart.addEventListener('click', () => {
+          sendCommand('set-favorite-artist', { artistId: artist.id, favorite: !artist.starred })
+            .then(() => {
+              artist.starred = !artist.starred;
+              paint();
+            })
+            .catch(() => window.dispatchEvent(new CustomEvent('beacon-remote-command-failed')));
+        });
+        actions.appendChild(heart);
+      }
+      container.appendChild(actions);
 
       if (songs.length) {
         container.insertAdjacentHTML('beforeend', `<h2 class="section-heading">${t('artist.mostPlayed')}</h2>`);

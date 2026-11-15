@@ -124,6 +124,22 @@ export function fetchArtist(id) {
   return request(`/remote/artists/${encodeURIComponent(id)}`);
 }
 
+export function fetchAlbum(id) {
+  return request(`/remote/albums/${encodeURIComponent(id)}`);
+}
+
+export function fetchHome() {
+  return request('/remote/home');
+}
+
+export function fetchDiscover() {
+  return request('/remote/discover');
+}
+
+export function fetchParty() {
+  return request('/remote/party');
+}
+
 export function fetchPlaylists() {
   return request('/remote/playlists');
 }

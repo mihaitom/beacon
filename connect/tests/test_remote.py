@@ -331,6 +331,74 @@ def test_artist_queries_401_with_a_wrong_password(client):
         assert resp.status_code == 401
 
 
+def test_album_query_relays_the_album_id(client, monkeypatch):
+    client.post("/remote/enable")
+    remote.renderer_connected = True
+    seen = {}
+
+    async def capture(event, payload):
+        seen["event"] = event
+        seen["payload"] = payload
+        return {"album": None, "songs": []}
+
+    monkeypatch.setattr(remote_routes, "relay_query", capture)
+    resp = client.get("/remote/albums/al-1", headers={"X-Remote-Password": remote.password})
+
+    assert resp.status_code == 200
+    assert seen == {"event": "album-request", "payload": {"albumId": "al-1"}}
+
+
+def test_home_query_is_relayed_to_the_renderer(client, monkeypatch):
+    client.post("/remote/enable")
+    remote.renderer_connected = True
+    seen = {}
+
+    async def capture(event, payload):
+        seen["event"] = event
+        seen["payload"] = payload
+        return {"recent": [], "newest": [], "discover": [], "top_songs": [], "rediscover": []}
+
+    monkeypatch.setattr(remote_routes, "relay_query", capture)
+    resp = client.get("/remote/home", headers={"X-Remote-Password": remote.password})
+
+    assert resp.status_code == 200
+    assert seen == {"event": "home-request", "payload": {}}
+
+
+def test_discover_query_is_relayed_to_the_renderer(client, monkeypatch):
+    client.post("/remote/enable")
+    remote.renderer_connected = True
+    seen = {}
+
+    async def capture(event, payload):
+        seen["event"] = event
+        seen["payload"] = payload
+        return {"items": []}
+
+    monkeypatch.setattr(remote_routes, "relay_query", capture)
+    resp = client.get("/remote/discover", headers={"X-Remote-Password": remote.password})
+
+    assert resp.status_code == 200
+    assert seen == {"event": "discover-request", "payload": {}}
+
+
+def test_party_query_is_relayed_to_the_renderer(client, monkeypatch):
+    client.post("/remote/enable")
+    remote.renderer_connected = True
+    seen = {}
+
+    async def capture(event, payload):
+        seen["event"] = event
+        seen["payload"] = payload
+        return {"enabled": False, "guests": []}
+
+    monkeypatch.setattr(remote_routes, "relay_query", capture)
+    resp = client.get("/remote/party", headers={"X-Remote-Password": remote.password})
+
+    assert resp.status_code == 200
+    assert seen == {"event": "party-request", "payload": {}}
+
+
 def test_favorites_query_is_relayed_to_the_renderer(client, monkeypatch):
     client.post("/remote/enable")
     remote.renderer_connected = True

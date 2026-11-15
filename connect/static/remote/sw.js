@@ -5,7 +5,7 @@
 // this scope match makes that exclusion automatic rather than a maintained
 // list of paths to skip.
 
-const CACHE_NAME = 'beacon-remote-v1';
+const CACHE_NAME = 'beacon-remote-v2'
 const SHELL_PATHS = [
   './',
   './index.html',
@@ -24,6 +24,7 @@ const SHELL_PATHS = [
   './js/router.js',
   './js/sheet.js',
   './js/album-row.js',
+  './js/album-tile.js',
   './js/artist-row.js',
   './js/song-row.js',
   './js/favorite.js',
@@ -36,13 +37,16 @@ const SHELL_PATHS = [
   './js/locales/fr.js',
   './js/locales/it.js',
   './js/views/now-playing.js',
-  './js/views/favorites.js',
+  './js/views/home.js',
   './js/views/queue.js',
   './js/views/playlists.js',
   './js/views/library.js',
+  './js/views/album.js',
   './js/views/radio.js',
   './js/views/artist.js',
-];
+  './js/views/more.js',
+  './js/views/party.js',
+]
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -50,21 +54,23 @@ self.addEventListener('install', (event) => {
       .open(CACHE_NAME)
       .then((cache) => cache.addAll(SHELL_PATHS))
       .then(() => self.skipWaiting()),
-  );
-});
+  )
+})
 
 self.addEventListener('activate', (event) => {
   event.waitUntil(
     caches
       .keys()
-      .then((keys) => Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))))
+      .then((keys) =>
+        Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))),
+      )
       .then(() => self.clients.claim()),
-  );
-});
+  )
+})
 
 self.addEventListener('fetch', (event) => {
-  const url = new URL(event.request.url);
-  if (event.request.method !== 'GET' || !url.pathname.startsWith('/remote/app/')) return;
+  const url = new URL(event.request.url)
+  if (event.request.method !== 'GET' || !url.pathname.startsWith('/remote/app/')) return
 
   // Network-first with a cache fallback — a version bump (new deploy) is
   // picked up immediately on a good connection instead of serving stale
@@ -72,10 +78,10 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        const copy = response.clone();
-        void caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
-        return response;
+        const copy = response.clone()
+        void caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy))
+        return response
       })
       .catch(() => caches.match(event.request)),
-  );
-});
+  )
+})

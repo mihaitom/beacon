@@ -16,7 +16,7 @@ import { t } from './i18n.js';
  * — read from the hash rather than asked of the router, so this never
  * depends on which of the two hashchange listeners runs first. */
 function currentPath() {
-  return (location.hash.replace(/^#/, '') || '/now-playing').split('?')[0];
+  return (location.hash.replace(/^#/, '') || '/home').split('?')[0];
 }
 
 export function initMiniPlayer() {

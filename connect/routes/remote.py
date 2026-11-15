@@ -396,6 +396,35 @@ async def list_albums(search: str = "", offset: int = 0, limit: int = 50):
     return await relay_query("albums-request", {"search": search, "offset": offset, "limit": limit})
 
 
+@router.get("/albums/{album_id}", dependencies=[Depends(require_remote_password)])
+async def get_album(album_id: str):
+    """The phone's album page: the album and its tracks in album order,
+    answered by the desktop like an artist's page."""
+    return await relay_query("album-request", {"albumId": album_id})
+
+
+@router.get("/home", dependencies=[Depends(require_remote_password)])
+async def get_home():
+    """The phone's Home page: recent, newest, top, rediscover and discover
+    shelves in one answer, the same lists the app's own Home builds."""
+    return await relay_query("home-request", {})
+
+
+@router.get("/discover", dependencies=[Depends(require_remote_password)])
+async def get_discover():
+    """A fresh draw for Home's Discover shelf, so its shuffle button does
+    not replace the shelves around it."""
+    return await relay_query("discover-request", {})
+
+
+@router.get("/party", dependencies=[Depends(require_remote_password)])
+async def get_party():
+    """The phone's Party page: whether a party runs, its guest list and the
+    invitation link. Kept out of the shared snapshot, which integrations
+    also receive."""
+    return await relay_query("party-request", {})
+
+
 @router.get("/artists", dependencies=[Depends(require_remote_password)])
 async def list_artists(search: str = "", offset: int = 0, limit: int = 50):
     """The artists half of the phone's library view, paged like /albums."""
