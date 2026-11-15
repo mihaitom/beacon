@@ -67,7 +67,13 @@ export default {
       device: 'phone',
       remote: true,
       theme: { theme: 'graphite', adaptiveAccent: true },
-      song: { artist: 'Yeah Yeah Yeahs', title: 'Heads Will Roll', position: 260 },
+      fanart: { 'Nora en Pure': 1 },
+      song: { artist: 'Nora en Pure', title: 'Who You Are', position: 160 },
+      open: { route: '/now-playing' },
+      hideArtwork: true,
+      cast: { type: 'sonos', name: 'Living Room', volume: 35 },
+      // The waveform is decoded on demand and lands after the default settle.
+      settle: 8000,
     },
     {
       name: 'mobile-web',
