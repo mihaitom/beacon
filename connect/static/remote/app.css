@@ -298,19 +298,26 @@ textarea {
 
 .now-playing {
   position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 12px;
-  min-height: 100%;
-  padding-top: 8px;
+  /* Exactly the view's height, not at least it: the stage takes what the
+   * controls leave over and the controls sit on the bottom edge, the way
+   * the app's MobileNowPlayingView.vue grid does. minmax(0, 1fr) lets the
+   * stage shrink below its content on a short screen instead of pushing the
+   * controls out of view. */
+  height: 100%;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 8px;
 }
 
-/* Shrinks with the screen's height too, not only its width: the toolbar,
- * info, transport, seek and volume rows all have to fit under it. */
+/* Sized against the stage (container units), not the viewport: the app
+ * bar, tab bar, a mini player or a banner all take height the viewport
+ * units knew nothing about. The same clamp the app's
+ * NowPlayingStageMobile.vue uses, less room for the track text below. */
 .cover-art {
-  width: min(68vw, 34vh, 280px);
-  height: min(68vw, 34vh, 280px);
+  --np-art-size: clamp(88px, min(90cqw, calc(100cqh - 120px)), 480px);
+  width: var(--np-art-size);
+  height: var(--np-art-size);
+  flex-shrink: 0;
   border-radius: 16px;
   background: var(--surface);
   overflow: hidden;
@@ -358,6 +365,7 @@ textarea {
 /* Room for the heart on both sides, so the title stays centred. */
 .now-playing__info {
   position: relative;
+  align-self: stretch;
   padding-inline: 44px;
 }
 
@@ -376,6 +384,13 @@ textarea {
 
 .now-playing__favorite.active {
   color: var(--accent);
+}
+
+/* Transport, seek and volume, stacked on the stage's bottom edge. */
+.np-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 /* Elapsed, bar, total - one row, the same shape
@@ -561,7 +576,12 @@ textarea {
 .transport-side:first-child {
   justify-content: flex-end;
 }
+/* Seven 44px buttons are wider than a 320px screen leaves; they give up
+ * the spare pixels around their 24px icon to each other instead of
+ * running off both ends - MobileTransportControls.vue does the same. */
 .transport-row button {
+  flex-shrink: 1;
+  min-width: 0;
   background: none;
   color: var(--text);
   font-size: 1.5rem;
@@ -586,6 +606,7 @@ textarea {
  * `background` token for contrast). */
 .transport-row .play-pause {
   /* 48 like the app's, see that file's own note on why not 56. */
+  flex-shrink: 0;
   width: 48px;
   height: 48px;
   margin: 0 4px;
@@ -1637,13 +1658,17 @@ button.album-artist {
  * padding - the app's own full-bleed artist photo. */
 .np-backdrop {
   position: absolute;
-  inset: -16px -16px 0;
+  inset: -16px -16px calc(-16px - env(safe-area-inset-bottom));
   z-index: 0;
   overflow: hidden;
   background: var(--bg);
 }
 
-.np-backdrop img { width: 100%; height: 100%; object-fit: cover; }
+.np-backdrop img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
 
 /* No artist photo: the cover, blurred and dimmed - the app's own fallback. */
 .np-backdrop--fallback img {
@@ -1655,13 +1680,13 @@ button.album-artist {
  * where the controls begin. */
 .np-scrim {
   position: absolute;
-  inset: -16px -16px 0;
+  inset: -16px -16px calc(-16px - env(safe-area-inset-bottom));
   z-index: 1;
   pointer-events: none;
   background: linear-gradient(
     180deg,
     rgba(0, 0, 0, 0.3) 0%,
-    rgba(0, 0, 0, 0.45) 40%,
+    rgba(0, 0, 0, 0.45) 55%,
     var(--bg) 100%
   );
 }
@@ -1679,6 +1704,8 @@ button.album-artist {
 }
 
 .np-tool {
+  flex-shrink: 1;
+  min-width: 0;
   width: 40px;
   height: 40px;
   border-radius: 50%;
@@ -1690,28 +1717,52 @@ button.album-artist {
   justify-content: center;
 }
 
-.np-tool.active { color: var(--accent); }
-.np-tool:disabled { opacity: 0.4; }
-
-.np-stage {
-  align-self: stretch;
-  display: flex;
-  justify-content: center;
-  min-height: 0;
+.np-tool.active {
+  color: var(--accent);
+}
+.np-tool:disabled {
+  opacity: 0.4;
 }
 
-/* The lyrics take the artwork's place rather than stacking beside it: a
- * phone has room for one of the two. */
-.np-lyrics {
+.np-stage {
   position: relative;
-  width: min(88vw, 420px);
-  height: min(42vh, 320px);
-  border-radius: 16px;
-  background: rgba(0, 0, 0, 0.38);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  overflow: hidden;
+  min-height: 0;
+  container-type: size;
+}
+
+/* Artwork with the track text under it, centred in the stage. */
+.np-primary {
+  height: 100%;
   display: flex;
   flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+}
+
+.np-primary--corner {
+  justify-content: flex-end;
+}
+
+.now-playing--lyrics .np-primary {
+  visibility: hidden;
+}
+
+/* The lyrics take the whole stage, track text included - a phone has room
+ * for one or the other. No panel edge: a darkening that fades out towards
+ * every side, the app's own --lyrics-ground. */
+.np-lyrics {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: radial-gradient(
+    ellipse farthest-side,
+    rgba(0, 0, 0, 0.45) 0%,
+    rgba(0, 0, 0, 0.3) 50%,
+    rgba(0, 0, 0, 0.09) 82%,
+    rgba(0, 0, 0, 0) 100%
+  );
 }
 
 .np-lyrics__scroll {
@@ -1720,28 +1771,40 @@ button.album-artist {
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: none;
-  padding: 24px 14px;
+  padding: 0 8px;
   /* Fades the first and last lines into the panel instead of cutting them
    * at its edge - the app's own mask, kept simple here. */
   mask-image: linear-gradient(180deg, transparent 0, #000 18%, #000 82%, transparent 100%);
 }
 
-.np-lyrics__scroll::-webkit-scrollbar { display: none; }
+.np-lyrics__scroll::-webkit-scrollbar {
+  display: none;
+}
 
-.np-lyrics__pad { height: 45%; }
+.np-lyrics__pad {
+  height: 45%;
+}
 
 .np-lyric {
   padding: 6px 0;
   text-align: center;
   color: var(--text-muted);
-  font-size: 0.95rem;
+  font-size: 1.15rem;
   line-height: 1.45;
   cursor: pointer;
-  transition: color 0.2s ease, opacity 0.2s ease;
+  transition:
+    color 0.2s ease,
+    opacity 0.2s ease;
 }
 
-.np-lyric--past { opacity: 0.45; }
-.np-lyric--active { color: var(--text); font-weight: 600; opacity: 1; }
+.np-lyric--past {
+  opacity: 0.45;
+}
+.np-lyric--active {
+  color: var(--text);
+  font-weight: 600;
+  opacity: 1;
+}
 
 .np-lyrics__plain {
   white-space: pre-wrap;
@@ -1754,7 +1817,7 @@ button.album-artist {
 .np-lyrics__status {
   color: var(--text-muted);
   text-align: center;
-  padding: 40% 12px 0;
+  padding: 45cqh 12px 0;
   font-size: 0.9rem;
 }
 
@@ -1770,8 +1833,8 @@ button.album-artist {
 
 .np-lyrics__resume {
   position: absolute;
-  right: 8px;
-  bottom: 8px;
+  right: 0;
+  bottom: 0;
   width: 36px;
   height: 36px;
   border-radius: 50%;
@@ -1783,6 +1846,58 @@ button.album-artist {
   justify-content: center;
 }
 
+/* A phone held sideways has no height for artwork, text and controls in
+ * one column: the artwork (or the lyrics in its place) takes the left, the
+ * track text and the controls the right - the app's own landscape stage.
+ * The two wrappers step out of the way so their children can be placed on
+ * this grid directly, and the view itself becomes what the artwork
+ * measures against. */
+@media (orientation: landscape) and (max-height: 560px) {
+  .now-playing {
+    container-type: size;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-areas:
+      'art info'
+      'art controls';
+    column-gap: 20px;
+  }
+  .np-stage,
+  .np-primary {
+    display: contents;
+  }
+  /* Out of their wrappers they need their own place above the backdrop. */
+  .cover-art,
+  .now-playing__info,
+  .np-lyrics {
+    position: relative;
+    z-index: 2;
+  }
+  .cover-art {
+    --np-art-size: clamp(88px, min(100cqh, 45cqw), 480px);
+    grid-area: art;
+    align-self: center;
+  }
+  .now-playing__info {
+    grid-area: info;
+    align-self: end;
+  }
+  .np-controls {
+    grid-area: controls;
+  }
+  .np-lyrics {
+    inset: auto;
+    grid-area: art;
+    width: clamp(88px, min(100cqh, 45cqw), 480px);
+  }
+  .now-playing--lyrics .np-primary {
+    visibility: visible;
+  }
+  .now-playing--lyrics .cover-art {
+    display: none;
+  }
+}
+
 /* ── Equalizer dialog ── */
 
 .eq-overlay {
@@ -1792,8 +1907,7 @@ button.album-artist {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding: calc(16px + env(safe-area-inset-top)) 16px
-    calc(16px + env(safe-area-inset-bottom));
+  padding: calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom));
   overflow-y: auto;
   background: rgba(0, 0, 0, 0.6);
 }
@@ -1822,7 +1936,10 @@ button.album-artist {
   border-bottom: 1px solid var(--border);
 }
 
-.eq-dialog__heading { flex: 1; min-width: 0; }
+.eq-dialog__heading {
+  flex: 1;
+  min-width: 0;
+}
 
 .eq-dialog__title {
   font-size: 1.15rem;
@@ -1862,7 +1979,9 @@ button.album-artist {
   padding-bottom: calc(12px + env(safe-area-inset-bottom));
 }
 
-.eq-dialog__footer .btn { flex: 1; }
+.eq-dialog__footer .btn {
+  flex: 1;
+}
 
 /* The switch the desktop dialog carries in its title row, at phone size. */
 .eq-switch {
@@ -1897,10 +2016,14 @@ button.album-artist {
   height: 18px;
   border-radius: 50%;
   background: var(--text-muted);
-  transition: transform 0.18s ease, background 0.18s ease;
+  transition:
+    transform 0.18s ease,
+    background 0.18s ease;
 }
 
-.eq-switch input:checked + .eq-switch__track { background: var(--accent); }
+.eq-switch input:checked + .eq-switch__track {
+  background: var(--accent);
+}
 .eq-switch input:checked + .eq-switch__track .eq-switch__thumb {
   transform: translateX(20px);
   background: var(--accent-on);
@@ -1947,7 +2070,9 @@ button.album-artist {
   font-size: 0.8rem;
 }
 
-.eq-graph-wrap { position: relative; }
+.eq-graph-wrap {
+  position: relative;
+}
 
 .eq-readout {
   position: absolute;
@@ -1971,7 +2096,9 @@ button.album-artist {
   cursor: crosshair;
 }
 
-.eq-graph--off { opacity: 0.45; }
+.eq-graph--off {
+  opacity: 0.45;
+}
 
 .eq-graph__grid line {
   stroke: rgba(255, 255, 255, 0.08);
@@ -1982,7 +2109,9 @@ button.album-artist {
   stroke: rgba(255, 255, 255, 0.2);
 }
 
-.eq-graph__area { fill: rgba(var(--accent-rgb), 0.13); }
+.eq-graph__area {
+  fill: rgba(var(--accent-rgb), 0.13);
+}
 
 .eq-graph__curve {
   fill: none;
@@ -2058,7 +2187,9 @@ button.album-artist {
 }
 
 .lights-option:disabled,
-.lights-area:disabled { opacity: 0.5; }
+.lights-area:disabled {
+  opacity: 0.5;
+}
 
 .lights-areas {
   display: flex;
@@ -2066,7 +2197,9 @@ button.album-artist {
   gap: 6px;
 }
 
-.lights-area { border-radius: 10px; }
+.lights-area {
+  border-radius: 10px;
+}
 
 .lights-hint {
   margin: 0;
@@ -2106,10 +2239,14 @@ button.album-artist {
   padding: 12px 16px;
 }
 
-.lights-pair { width: 100%; }
+.lights-pair {
+  width: 100%;
+}
 
 .lights-hue,
-.lights-brightness { width: 100%; }
+.lights-brightness {
+  width: 100%;
+}
 
 .lights-forget {
   align-self: flex-start;

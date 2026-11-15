@@ -67,8 +67,24 @@ export function renderNowPlaying(root) {
           <i class="mdi mdi-tune-vertical"></i>
         </button>
       </div>
-      <div class="np-stage">
-        <div class="cover-art" id="np-art"></div>
+      <!-- Everything above the controls, sized to what they leave over - the
+           app's NowPlayingStageMobile.vue. The lyrics take the whole of it,
+           track text included, as the app's flip card does. -->
+      <div class="np-stage" id="np-stage">
+        <div class="np-primary" id="np-primary">
+          <div class="cover-art" id="np-art"></div>
+          <div class="now-playing__info">
+            <div class="now-playing__eyebrow" id="np-eyebrow"></div>
+            <div class="song-title" id="np-title">${t('nowPlaying.nothing')}</div>
+            <div class="song-artist" id="np-artist"></div>
+            <div class="song-album" id="np-album"></div>
+            <!-- Out of the flow and mirrored by the padding on the left, so the
+                 text stays centred - the app's NowPlayingTrackPanels.vue. -->
+            <button id="np-favorite" class="now-playing__favorite hidden" aria-label="${t('favorite.add')}">
+              <i class="mdi mdi-heart-outline"></i>
+            </button>
+          </div>
+        </div>
         <div class="np-lyrics hidden" id="np-lyrics-panel">
           <div class="np-lyrics__scroll" id="np-lyrics-scroll"></div>
           <div class="np-lyrics__credits" id="np-lyrics-credits"></div>
@@ -78,54 +94,45 @@ export function renderNowPlaying(root) {
           </button>
         </div>
       </div>
-      <div class="now-playing__info">
-        <div class="now-playing__eyebrow" id="np-eyebrow"></div>
-        <div class="song-title" id="np-title">${t('nowPlaying.nothing')}</div>
-        <div class="song-artist" id="np-artist"></div>
-        <div class="song-album" id="np-album"></div>
-        <!-- Out of the flow and mirrored by the padding on the left, so the
-             text stays centred - the app's NowPlayingTrackPanels.vue. -->
-        <button id="np-favorite" class="now-playing__favorite hidden" aria-label="${t('favorite.add')}">
-          <i class="mdi mdi-heart-outline"></i>
-        </button>
-      </div>
-      <div class="transport-row">
-        <div class="transport-side">
-          <button id="np-autoplay" title="${t('nowPlaying.autoplay')}"><i class="mdi mdi-infinity"></i></button>
-          <button id="np-shuffle"><i class="mdi mdi-shuffle"></i></button>
-          <button id="np-prev"><i class="mdi mdi-skip-previous"></i></button>
+      <div class="np-controls">
+        <div class="transport-row">
+          <div class="transport-side">
+            <button id="np-autoplay" title="${t('nowPlaying.autoplay')}"><i class="mdi mdi-infinity"></i></button>
+            <button id="np-shuffle"><i class="mdi mdi-shuffle"></i></button>
+            <button id="np-prev"><i class="mdi mdi-skip-previous"></i></button>
+          </div>
+          <button id="np-play" class="play-pause"><i class="mdi mdi-play"></i></button>
+          <div class="transport-side">
+            <button id="np-next"><i class="mdi mdi-skip-next"></i></button>
+            <button id="np-repeat"><i class="mdi mdi-repeat"></i></button>
+            <button id="np-cast" title="${t('nowPlaying.playOn')}"><i class="mdi mdi-cast"></i></button>
+          </div>
         </div>
-        <button id="np-play" class="play-pause"><i class="mdi mdi-play"></i></button>
-        <div class="transport-side">
-          <button id="np-next"><i class="mdi mdi-skip-next"></i></button>
-          <button id="np-repeat"><i class="mdi mdi-repeat"></i></button>
-          <button id="np-cast" title="${t('nowPlaying.playOn')}"><i class="mdi mdi-cast"></i></button>
+        <!-- Below the transport buttons, elapsed and total either side of the
+             bar - the same order and the same row MobileTransportControls.vue
+             has, rather than above them with the times stacked underneath. -->
+        <div class="seek-row" id="np-seek-row">
+          <span class="seek-time" id="np-elapsed">0:00</span>
+          <span class="seek-bar" id="np-seek"></span>
+          <span class="seek-time" id="np-duration">0:00</span>
         </div>
-      </div>
-      <!-- Below the transport buttons, elapsed and total either side of the
-           bar - the same order and the same row MobileTransportControls.vue
-           has, rather than above them with the times stacked underneath. -->
-      <div class="seek-row" id="np-seek-row">
-        <span class="seek-time" id="np-elapsed">0:00</span>
-        <span class="seek-bar" id="np-seek"></span>
-        <span class="seek-time" id="np-duration">0:00</span>
-      </div>
-      <!-- What a station gets instead: it has no position or length a bar
-           could honestly represent. Mirrors the desktop/mobile app's own
-           RadioLiveStatus.vue, three states and all. Its own fixed height,
-           so buffering starting or ending never shifts the row below. -->
-      <div class="live-row hidden" id="np-live-row">
-        <div class="live-buffering hidden" id="np-live-buffering"></div>
-        <div class="live-readout hidden" id="np-live-readout">
-          <span class="live-dot" id="np-live-dot"></span>
-          <span class="live-label">${t('nowPlaying.live')}</span>
-          <span class="live-sep">·</span>
-          <span class="live-time" id="np-live-time">0:00</span>
+        <!-- What a station gets instead: it has no position or length a bar
+             could honestly represent. Mirrors the desktop/mobile app's own
+             RadioLiveStatus.vue, three states and all. Its own fixed height,
+             so buffering starting or ending never shifts the row below. -->
+        <div class="live-row hidden" id="np-live-row">
+          <div class="live-buffering hidden" id="np-live-buffering"></div>
+          <div class="live-readout hidden" id="np-live-readout">
+            <span class="live-dot" id="np-live-dot"></span>
+            <span class="live-label">${t('nowPlaying.live')}</span>
+            <span class="live-sep">·</span>
+            <span class="live-time" id="np-live-time">0:00</span>
+          </div>
         </div>
-      </div>
-      <div class="volume-row">
-        <button id="np-mute"><i class="mdi mdi-volume-high"></i></button>
-        <input type="range" id="np-volume" min="0" max="100" step="1" value="100" />
+        <div class="volume-row">
+          <button id="np-mute"><i class="mdi mdi-volume-high"></i></button>
+          <input type="range" id="np-volume" min="0" max="100" step="1" value="100" />
+        </div>
       </div>
     </div>
   `;
@@ -157,6 +164,8 @@ export function renderNowPlaying(root) {
   const backgroundBtn = toolbar.querySelector('#np-tool-background');
   const lightsBtn = toolbar.querySelector('#np-tool-lights');
   const equalizerBtn = toolbar.querySelector('#np-tool-equalizer');
+  const view = root.querySelector('.now-playing');
+  const stagePrimary = root.querySelector('#np-primary');
   const stageArt = root.querySelector('#np-art');
   const lyricsPanel = root.querySelector('#np-lyrics-panel');
   const lyricsScroll = root.querySelector('#np-lyrics-scroll');
@@ -301,7 +310,13 @@ export function renderNowPlaying(root) {
   }
 
   function setArtworkVisible() {
-    stageArt.classList.toggle('hidden', lyricsOpen || artworkHidden);
+    // What the lyrics cover is the stylesheet's call: the artwork and the
+    // track text upright, only the artwork on a phone held sideways.
+    view.classList.toggle('now-playing--lyrics', lyricsOpen);
+    stageArt.classList.toggle('hidden', artworkHidden);
+    // Without the artwork the track text drops to the stage's bottom edge,
+    // over the photo - the app's own artwork-hidden layout.
+    stagePrimary.classList.toggle('np-primary--corner', artworkHidden);
   }
 
   function setLyricsOpen(open) {
