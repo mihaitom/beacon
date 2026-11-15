@@ -35,6 +35,7 @@ from .state import (
     stream_url,
     supports_radio_position,
 )
+from .stream_format import radio_content_type
 from .streamer import strip_stream_extension
 from .visualizer_feed import ASSUMED_DEVICE_LEAD_SECONDS, VisualizerFeed
 
@@ -1249,6 +1250,24 @@ SESSION_IDLE_TIMEOUT = int(os.getenv("SESSION_IDLE_TIMEOUT", str(60 * 30)))
 # limit rather than an exemption — an unbounded one left a Sonos claimed
 # from 17:01 to 22:17 with nobody listening (observed live 2026-09-11).
 PAUSED_IDLE_TIMEOUT = int(os.getenv("PAUSED_IDLE_TIMEOUT", str(60 * 60 * 2)))
+
+
+def current_stream_dispatch(session: SessionState) -> tuple[str, str]:
+    """(url, content_type) a device is handed for what this session plays now.
+
+    Radio goes by its own dispatch URL - it has no track loaded, and the
+    /stream proxy answers 204 without one - announced as the station's type
+    probed at play time; a device told anything else refuses an AAC station
+    (see core/stream_format.py). A track goes through /stream, as whatever
+    /play resolved, which is what /stream sends."""
+    st = session.state
+    if st.radio_info:
+        return (
+            radio_dispatch_url(session.session_id, st.radio_info),
+            radio_content_type(st.radio_info),
+        )
+    content_type = st.current_output_format.content_type
+    return stream_url(session.session_id, content_type), content_type
 
 
 def is_this_sessions_stream(session: SessionState, uri: str) -> bool:

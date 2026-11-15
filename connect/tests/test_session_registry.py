@@ -710,3 +710,18 @@ async def test_a_paused_cast_keeps_its_relay():
     assert session.radio_relay is not None
     assert st.radio_info is not None
     assert st.is_streaming is True
+
+
+def test_current_stream_dispatch_names_a_track_s_url_after_its_resolved_format():
+    """The URL's extension and the announced type come from the same
+    resolved format, so a device never fetches a .mp3 announced as FLAC."""
+    from core.session import SessionState, current_stream_dispatch
+    from core.streamer import OutputFormat
+
+    session = SessionState("s")
+    session.state.current_output_format = OutputFormat(content_type="audio/flac")
+
+    url, content_type = current_stream_dispatch(session)
+
+    assert content_type == "audio/flac"
+    assert url.endswith("/stream/s.flac")

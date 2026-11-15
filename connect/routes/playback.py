@@ -25,6 +25,7 @@ from core.session import (
     build_status_dict,
     check_claims,
     clock_position,
+    current_stream_dispatch,
     displace_target,
     mark_delivery_failed,
     mark_interrupted,
@@ -38,12 +39,11 @@ from core.state import (
     first_radio_position_delivery,
     list_target_pairs,
     playable_codecs,
-    radio_dispatch_url,
     radio_stream_url,
     resolve_target,
     stream_url,
 )
-from core.stream_format import content_type_from_extension, probe_stream, radio_content_type
+from core.stream_format import content_type_from_extension, probe_stream
 from core.streamer import (
     FALLBACK_FORMAT,
     REASON_DEVICE_REJECTED_STREAM,
@@ -249,22 +249,13 @@ def _current_reconnect_args(
     resolved for current_track (see core/streamer.py's resolve_output_format())
     — the track hasn't changed, so there's no need to probe again."""
     st = session.state
+    url, content_type = current_stream_dispatch(session)
     if st.radio_info:
-        content_type = radio_content_type(st.radio_info)
-        url = radio_dispatch_url(session.session_id, st.radio_info)
         return url, st.radio_info["title"], "", None, None, "", content_type
     title, artist, album_art_url, duration, album = _current_track_play_args(session)
     if st.mix is not None:
         duration = None  # a mix goes on with the queue
-    return (
-        stream_url(session.session_id, st.current_output_format.content_type),
-        title,
-        artist,
-        album_art_url,
-        duration,
-        album,
-        st.current_output_format.content_type,
-    )
+    return url, title, artist, album_art_url, duration, album, content_type
 
 
 class PlayRequest(BaseModel):
