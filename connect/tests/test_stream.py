@@ -10,6 +10,7 @@ correct position.
 
 import asyncio
 import logging
+import threading
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -1196,6 +1197,121 @@ async def test_resolve_track_does_not_block_the_event_loop(default_session):
         ticked = True
     assert ticked
     await lookup
+
+
+async def test_stream_url_lookup_runs_off_the_event_loop(default_session):
+    """Plex has to look the URL up over the network first; run on the loop,
+    that request freezes every open /stream socket for its whole length."""
+    lookup_thread = {}
+
+    def _lookup(track_id):
+        lookup_thread["id"] = threading.get_ident()
+        return "http://media/stream"
+
+    default_session.media.get_stream_url = _lookup
+    track = Track(id="1", title="Song", artist="Artist", duration=180, cover_art_id="")
+
+    url = await stream_routes._source_url(default_session, track, None)
+
+    assert url == "http://media/stream"
+    assert lookup_thread["id"] != threading.get_ident()
+
+
+async def test_a_mix_connection_looks_up_no_stream_url(default_session):
+    """A mix fetches each song itself; asking the server for one here is a
+    wasted round trip - a network one for Plex - on every connection."""
+    default_session.media.get_stream_url = MagicMock()
+    track = Track(id="1", title="Song", artist="Artist", duration=180, cover_art_id="")
+
+    assert await stream_routes._source_url(default_session, track, MagicMock()) is None
+    default_session.media.get_stream_url.assert_not_called()
+
+
+async def test_fire_track_end_advances_only_under_the_play_lock(default_session):
+    """A track ending in the same instant as a user's skip or stop must not
+    interleave its state changes with theirs."""
+    generation = default_session.state.clock.play_generation
+    with patch("routes.stream._advance_or_end", new=AsyncMock()) as advance:
+        async with default_session.play_lock:
+            ending = asyncio.create_task(
+                stream_routes._fire_track_end(default_session, generation, 0.0)
+            )
+            await asyncio.sleep(0.01)
+            advance.assert_not_awaited()
+        await ending
+    advance.assert_awaited_once_with(default_session, generation)
+
+
+def _session_mid_track(default_session):
+    st = default_session.state
+    st.current_track = Track(id="1", title="Song", artist="Artist", duration=180, cover_art_id="")
+    st.is_streaming = True
+    st.clock.start(0.0)
+    return st
+
+
+def test_track_end_is_not_scheduled_while_paused(default_session):
+    """A paused track has not ended; /resume schedules its end afresh."""
+    st = _session_mid_track(default_session)
+    st.clock.pause(10.0)
+    with patch("routes.stream.asyncio.create_task") as create_task:
+        stream_routes._schedule_track_end(default_session, st.clock.play_generation)
+    create_task.assert_not_called()
+
+
+def test_track_end_is_not_scheduled_for_a_superseded_connection(default_session):
+    """A connection that finishes after a skip or seek would otherwise end
+    the track that replaced it."""
+    st = _session_mid_track(default_session)
+    with patch("routes.stream.asyncio.create_task") as create_task:
+        stream_routes._schedule_track_end(default_session, st.clock.play_generation - 1)
+    create_task.assert_not_called()
+
+
+def test_track_end_is_not_scheduled_once_playback_has_stopped(default_session):
+    st = _session_mid_track(default_session)
+    st.is_streaming = False
+    with patch("routes.stream.asyncio.create_task") as create_task:
+        stream_routes._schedule_track_end(default_session, st.clock.play_generation)
+    create_task.assert_not_called()
+
+
+async def test_a_mix_connection_leaves_the_track_end_to_the_mix(default_session):
+    """A mix moves on by itself (routes/mix_cast.py's follow()); scheduling
+    a track end as well would advance the queue a second time."""
+    st = _session_mid_track(default_session)
+    st.mix = MagicMock()
+
+    async def _mix_audio(*args, **kwargs):
+        yield b"\x00" * 1024
+
+    with (
+        patch("routes.stream.mix_cast.mix_audio", side_effect=_mix_audio),
+        patch("routes.stream._schedule_track_end") as schedule,
+    ):
+        resp = await audio_stream(_device_request(), session_id=default_session.session_id)
+        [_ async for _ in resp.body_iterator]
+
+    schedule.assert_not_called()
+
+
+async def test_a_superseded_connection_s_ffmpeg_failure_leaves_playback_alone(default_session):
+    """The old connection failing as it is torn down must not stop the
+    track that replaced it."""
+    st = _session_mid_track(default_session)
+    await stream_routes._on_ffmpeg_failure(default_session, st.clock.play_generation - 1)
+    assert st.is_streaming is True
+
+
+async def test_a_superseded_connection_s_missing_source_reports_nothing(default_session):
+    """Only the track playing now can be reported as unplayable."""
+    st = _session_mid_track(default_session)
+    st.active_delivery = ChromecastDelivery("TV")
+    with patch("routes.stream.mark_delivery_failed", new=AsyncMock()) as mark_failed:
+        await stream_routes._on_source_unavailable(
+            default_session, st.clock.play_generation - 1, SourceUnavailableError("gone")
+        )
+    mark_failed.assert_not_awaited()
 
 
 # ── mark_interrupted ─────────────────────────────────────────────────────────
