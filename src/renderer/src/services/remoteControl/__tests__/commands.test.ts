@@ -8,6 +8,7 @@ import { useAutoplayStore } from '@/stores/autoplay'
 import { useAuthStore } from '@/stores/auth'
 import { useFanartStore } from '@/stores/fanart'
 import { useEqualizerStore } from '@/stores/equalizer'
+import { useLightsStore } from '@/stores/lights'
 import { useLyricsStore } from '@/stores/lyrics'
 import { PartyRefusal, usePartyStore } from '@/stores/party'
 import {
@@ -625,6 +626,24 @@ describe('handleRemoteCommand', () => {
     })
   })
 
+  describe('lights', () => {
+    it('pairs the bridge the phone names', async () => {
+      const pair = vi.spyOn(useLightsStore(), 'pair').mockResolvedValue()
+
+      await handleRemoteCommand('lights-pair', { host: '192.0.2.10' })
+
+      expect(pair).toHaveBeenCalledWith('192.0.2.10')
+    })
+
+    it('forgets the bridge when asked', async () => {
+      const forget = vi.spyOn(useLightsStore(), 'forget').mockResolvedValue()
+
+      await handleRemoteCommand('lights-forget', {})
+
+      expect(forget).toHaveBeenCalledOnce()
+    })
+  })
+
   describe('party', () => {
     it('party-wish hands the resolved song and the guest to the party store', async () => {
       const library = useLibraryStore()
@@ -1152,6 +1171,27 @@ describe('resolveRemoteQuery', () => {
       expect(result.built_in.find((preset) => preset.name === 'bass')!.gains).toEqual([
         6, 5, 4, 2, 0, 0, 0, 0, 0, 0,
       ])
+    })
+  })
+
+  describe('lights-update-request', () => {
+    it('applies the setting through the store and answers with the new state', async () => {
+      const lights = useLightsStore()
+      const update = vi.spyOn(lights, 'update').mockImplementation(async (next) => {
+        lights.lights = { ...(lights.lights ?? ({} as never)), ...next }
+      })
+      lights.lights = {
+        paired: true,
+        enabled: false,
+        area_id: 'area-1',
+      } as never
+
+      const result = (await resolveRemoteQuery('lights-update-request', {
+        update: { enabled: true },
+      })) as { enabled: boolean }
+
+      expect(update).toHaveBeenCalledWith({ enabled: true })
+      expect(result.enabled).toBe(true)
     })
   })
 

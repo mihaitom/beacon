@@ -433,6 +433,48 @@ async def get_equalizer():
     return await relay_query("equalizer-request", {})
 
 
+@router.get("/lights", dependencies=[Depends(require_remote_password)])
+async def get_lights():
+    """The Hue setup for the phone's lights dialog: the bridge, its areas
+    and the current setting, answered by the desktop against connect."""
+    return await relay_query("lights-request", {})
+
+
+@router.post("/lights/discover", dependencies=[Depends(require_remote_password)])
+async def discover_lights():
+    """A fresh search for Hue bridges on the network (connect's own)."""
+    return await relay_query("lights-discover-request", {})
+
+
+class LightsPairRequest(BaseModel):
+    host: str
+
+
+@router.post("/lights/pair", dependencies=[Depends(require_remote_password)])
+async def pair_lights(req: LightsPairRequest):
+    """Waits for the bridge's button and pairs it, like the app's own
+    dialog. The command budget is what covers the wait (COMMAND_TIMEOUT)."""
+    await relay_command("lights-pair", {"host": req.host})
+    return {"success": True}
+
+
+class LightsUpdateRequest(BaseModel):
+    update: dict
+
+
+@router.post("/lights/update", dependencies=[Depends(require_remote_password)])
+async def update_lights(req: LightsUpdateRequest):
+    """Applies one setting and answers with the resulting state, so the
+    phone does not have to ask the bridge again just to see it."""
+    return await relay_query("lights-update-request", {"update": req.update})
+
+
+@router.delete("/lights", dependencies=[Depends(require_remote_password)])
+async def forget_lights():
+    await relay_command("lights-forget", {})
+    return {"success": True}
+
+
 @router.get("/discover", dependencies=[Depends(require_remote_password)])
 async def get_discover():
     """A fresh draw for Home's Discover shelf, so its shuffle button does

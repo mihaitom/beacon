@@ -66,9 +66,9 @@
         <button id="mini-play" class="mini-player__btn"><i class="mdi mdi-play"></i></button>
         <button id="mini-next" class="mini-player__btn"><i class="mdi mdi-skip-next"></i></button>
       </div>
-      <!-- Icons/labels/order match MobileTabBar.vue's own `items` exactly.
-         Radio, party, stats and settings live behind More now, as they do
-         on the phone. -->
+      <!-- Home, Queue, Library and Playlists as on the phone. Radio has
+         its own tab here: the remote has no stats, settings or pages of
+         its own to put behind a More tab. -->
       <nav class="tabbar">
         <a href="#/home" data-tab="home">
           <i class="mdi mdi-home-variant icon"></i><span data-i18n="tab.home">Home</span>
@@ -82,9 +82,9 @@
         <a href="#/playlists" data-tab="playlists">
           <i class="mdi mdi-playlist-play icon"></i><span data-i18n="tab.playlists">Playlists</span>
         </a>
-        <a href="#/more" data-tab="more">
-          <i class="mdi mdi-dots-horizontal icon"></i><span data-i18n="tab.more">More</span>
-        </a>
+      <a href="#/radio" data-tab="radio">
+        <i class="mdi mdi-radio icon"></i><span data-i18n="tab.radio">Radio</span>
+      </a>
       </nav>
     </div>
 

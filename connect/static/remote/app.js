@@ -16,7 +16,6 @@ import './js/views/library.js';
 import './js/views/album.js';
 import './js/views/radio.js';
 import './js/views/artist.js';
-import './js/views/more.js';
 
 // Registering this is what actually makes Chrome/Android offer "Add to Home
 // Screen" for the manifest above — a manifest alone isn't enough for

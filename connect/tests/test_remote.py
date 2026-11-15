@@ -422,6 +422,101 @@ def test_equalizer_query_is_relayed_to_the_renderer(client, monkeypatch):
     assert seen == {"event": "equalizer-request", "payload": {}}
 
 
+def test_lights_query_is_relayed_to_the_renderer(client, monkeypatch):
+    client.post("/remote/enable")
+    remote.renderer_connected = True
+    seen = {}
+
+    async def capture(event, payload):
+        seen["event"] = event
+        seen["payload"] = payload
+        return {"paired": False, "found": []}
+
+    monkeypatch.setattr(remote_routes, "relay_query", capture)
+    resp = client.get("/remote/lights", headers={"X-Remote-Password": remote.password})
+
+    assert resp.status_code == 200
+    assert seen == {"event": "lights-request", "payload": {}}
+
+
+def test_lights_discover_query_is_relayed_to_the_renderer(client, monkeypatch):
+    client.post("/remote/enable")
+    remote.renderer_connected = True
+    seen = {}
+
+    async def capture(event, payload):
+        seen["event"] = event
+        seen["payload"] = payload
+        return {"bridges": []}
+
+    monkeypatch.setattr(remote_routes, "relay_query", capture)
+    resp = client.post(
+        "/remote/lights/discover",
+        headers={"X-Remote-Password": remote.password},
+    )
+
+    assert resp.status_code == 200
+    assert seen == {"event": "lights-discover-request", "payload": {}}
+
+
+def test_lights_update_relays_the_change_and_answers_with_the_state(client, monkeypatch):
+    client.post("/remote/enable")
+    remote.renderer_connected = True
+    seen = {}
+
+    async def capture(event, payload):
+        seen["event"] = event
+        seen["payload"] = payload
+        return {"paired": True, "enabled": True}
+
+    monkeypatch.setattr(remote_routes, "relay_query", capture)
+    resp = client.post(
+        "/remote/lights/update",
+        json={"update": {"enabled": True}},
+        headers={"X-Remote-Password": remote.password},
+    )
+
+    assert resp.status_code == 200
+    assert seen == {"event": "lights-update-request", "payload": {"update": {"enabled": True}}}
+    assert resp.json()["enabled"] is True
+
+
+def test_lights_pair_relays_the_host_as_a_command(client, monkeypatch):
+    client.post("/remote/enable")
+    remote.renderer_connected = True
+    seen = {}
+
+    async def capture(event, payload):
+        seen["event"] = event
+        seen["payload"] = payload
+
+    monkeypatch.setattr(remote_routes, "relay_command", capture)
+    resp = client.post(
+        "/remote/lights/pair",
+        json={"host": "192.0.2.10"},
+        headers={"X-Remote-Password": remote.password},
+    )
+
+    assert resp.status_code == 200
+    assert seen == {"event": "lights-pair", "payload": {"host": "192.0.2.10"}}
+
+
+def test_lights_forget_is_a_command(client, monkeypatch):
+    client.post("/remote/enable")
+    remote.renderer_connected = True
+    seen = {}
+
+    async def capture(event, payload):
+        seen["event"] = event
+        seen["payload"] = payload
+
+    monkeypatch.setattr(remote_routes, "relay_command", capture)
+    resp = client.delete("/remote/lights", headers={"X-Remote-Password": remote.password})
+
+    assert resp.status_code == 200
+    assert seen == {"event": "lights-forget", "payload": {}}
+
+
 def test_remote_fanart_404s_when_the_image_is_not_allowed(client, monkeypatch):
     from core import fanart
 

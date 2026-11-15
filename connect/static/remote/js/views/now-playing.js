@@ -1,8 +1,9 @@
-import { fetchBackdrop, fetchLyrics, fireCommand } from '../api.js';
+import { fetchBackdrop, fetchLights, fetchLyrics, fireCommand } from '../api.js';
 import { navigate, registerRoute } from '../router.js';
 import { state, subscribe } from '../state.js';
 import { openDevicePicker } from '../devices.js';
 import { openEqualizer } from '../equalizer.js';
+import { openLights } from '../lights.js';
 import { setArt } from '../art.js';
 import { paintRange } from '../range.js';
 import { createWaveform } from '../waveform.js';
@@ -56,6 +57,10 @@ export function renderNowPlaying(root) {
         <button type="button" class="np-tool hidden" id="np-tool-background"
                 title="${t('nowPlaying.nextBackground')}" aria-label="${t('nowPlaying.nextBackground')}">
           <i class="mdi mdi-wallpaper"></i>
+        </button>
+        <button type="button" class="np-tool hidden" id="np-tool-lights"
+                title="${t('lights.title')}" aria-label="${t('lights.title')}">
+          <i class="mdi mdi-lightbulb-outline"></i>
         </button>
         <button type="button" class="np-tool hidden" id="np-tool-equalizer"
                 title="${t('equalizer.title')}" aria-label="${t('equalizer.title')}">
@@ -150,6 +155,7 @@ export function renderNowPlaying(root) {
   const lyricsBtn = toolbar.querySelector('#np-tool-lyrics');
   const artworkBtn = toolbar.querySelector('#np-tool-artwork');
   const backgroundBtn = toolbar.querySelector('#np-tool-background');
+  const lightsBtn = toolbar.querySelector('#np-tool-lights');
   const equalizerBtn = toolbar.querySelector('#np-tool-equalizer');
   const stageArt = root.querySelector('#np-art');
   const lyricsPanel = root.querySelector('#np-lyrics-panel');
@@ -242,6 +248,11 @@ export function renderNowPlaying(root) {
   // it, so a later ask finds the answer waiting.
   let backdropRetries = 0;
   let backdropRetryTimer = null;
+
+  // Hue is connect's, for the whole installation; the button only shows
+  // where there is a bridge paired or one on the network.
+  let lightsState = null;
+  let lightsTimer = null;
 
   let lyricsOpen = false;
   let lyricsPaused = false;
@@ -463,6 +474,30 @@ export function renderNowPlaying(root) {
     if (lyricsOpen) loadLyrics(songId);
   }
 
+  function updateLightsButton() {
+    const available = Boolean(
+      lightsState && (lightsState.paired || (lightsState.found?.length ?? 0) > 0),
+    );
+    lightsBtn.classList.toggle('hidden', !available);
+    lightsBtn.classList.toggle('active', Boolean(lightsState?.enabled && lightsState?.area_id));
+    lightsBtn.querySelector('i').className = lightsState?.playing
+      ? 'mdi mdi-lightbulb-on'
+      : 'mdi mdi-lightbulb-outline';
+    lightsBtn.title = t('lights.title');
+    lightsBtn.setAttribute('aria-label', t('lights.title'));
+  }
+
+  function refreshLights() {
+    fetchLights()
+      .then((answer) => {
+        if (answer) lightsState = answer;
+        updateLightsButton();
+      })
+      .catch(() => {
+        // The button keeps whatever it last knew; the bridge may be asleep.
+      });
+  }
+
   function updateToolbar(snapshot) {
     const hasSong = Boolean(snapshot.current_song);
     if (!backdropSource) artworkHidden = false;
@@ -475,6 +510,7 @@ export function renderNowPlaying(root) {
     artworkBtn.setAttribute('aria-label', artworkLabel);
     backgroundBtn.classList.toggle('hidden', backdropUrls.length < 2);
     equalizerBtn.classList.toggle('hidden', !(snapshot.casting?.length));
+    updateLightsButton();
     setArtworkVisible();
   }
 
@@ -492,6 +528,14 @@ export function renderNowPlaying(root) {
     applyBackdrop(lastCoverUrl);
   });
   equalizerBtn.addEventListener('click', () => openEqualizer());
+  lightsBtn.addEventListener('click', () =>
+    openLights({
+      onChange: (next) => {
+        lightsState = next;
+        updateLightsButton();
+      },
+    }),
+  );
   lyricsResume.addEventListener('click', () => {
     lyricsPaused = false;
     lyricsResume.classList.add('hidden');
@@ -646,6 +690,10 @@ export function renderNowPlaying(root) {
 
   const unsubscribe = subscribe(render);
   render(state);
+  // A bridge can appear after this window opened; the app rechecks on the
+  // same interval.
+  refreshLights();
+  lightsTimer = setInterval(refreshLights, 60_000);
 
   castBtn.addEventListener('click', () => void openDevicePicker());
   playBtn.addEventListener('click', () => fireCommand('toggle-play'));
@@ -685,6 +733,7 @@ export function renderNowPlaying(root) {
     lyricsForSongId = null;
     clearTimeout(lyricsRetryTimer);
     clearTimeout(backdropRetryTimer);
+    clearInterval(lightsTimer);
     toolbar.remove();
   };
 }

@@ -12,6 +12,8 @@ import { useAutoplayStore } from '@/stores/autoplay'
 import { useFanartStore } from '@/stores/fanart'
 import { useLyricsStore } from '@/stores/lyrics'
 import { speakerKey, useEqualizerStore } from '@/stores/equalizer'
+import { useLightsStore } from '@/stores/lights'
+import { discoverBridges, getLights, type LightsUpdate } from '@/services/connect/lights'
 import { PartyRefusal, usePartyStore } from '@/stores/party'
 import { getArtistArt, fanartSource } from '@/services/connect/fanart'
 import { EQ_PRESET_NAMES, EQ_PRESETS, sanitizeSetting } from '@/services/equalizer'
@@ -307,6 +309,15 @@ export async function handleRemoteCommand(
       }
       return
     }
+    // Hue lights, from the phone's Now Playing. Pairing waits on the
+    // bridge's button, which is why it is a command (45s budget) rather
+    // than a query.
+    case 'lights-pair':
+      await useLightsStore().pair(String(payload.host))
+      return
+    case 'lights-forget':
+      await useLightsStore().forget()
+      return
     // The app's "Hear it now": restart the current song where it is, so a
     // curve that would otherwise wait for the next track is heard.
     case 'equalizer-apply': {
@@ -699,6 +710,34 @@ export async function resolveRemoteQuery(
         ),
         presets: equalizer.presets,
         built_in: EQ_PRESET_NAMES.map((name) => ({ name, gains: EQ_PRESETS[name] })),
+      }
+    }
+    case 'lights-request': {
+      // null rather than an unanswered query: connect being unable to reach
+      // the bridge is a normal outcome the dialog reports, not a timeout.
+      try {
+        return await getLights()
+      } catch {
+        return null
+      }
+    }
+    case 'lights-discover-request': {
+      try {
+        return { bridges: await discoverBridges() }
+      } catch {
+        return null
+      }
+    }
+    case 'lights-update-request': {
+      // Through the store, so the desktop's own lights button and dialog
+      // see the change too. Its answer is the state after connect's reply,
+      // which is what the phone shows.
+      try {
+        const lights = useLightsStore()
+        await lights.update(payload.update as LightsUpdate)
+        return lights.lights
+      } catch {
+        return null
       }
     }
     case 'playlists-request': {
