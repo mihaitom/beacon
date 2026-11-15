@@ -2035,6 +2035,10 @@ button.album-artist {
   font-size: 0.9rem;
 }
 
+.eq-dialog__body .segmented {
+  margin-bottom: 0;
+}
+
 .eq-preset-field {
   display: flex;
   flex-direction: column;
@@ -2132,12 +2136,20 @@ button.album-artist {
   stroke: var(--accent);
 }
 
+/* Each label sits under its own handle: positioned at the same share of
+ * the width the handle has in the drawing (set in equalizer.js). */
 .eq-graph__freqs {
-  display: flex;
-  justify-content: space-between;
-  padding: 4px 2px 0;
+  position: relative;
+  height: 1.4em;
+  margin-top: 4px;
   color: var(--text-muted);
   font-size: 0.6rem;
+}
+
+.eq-graph__freqs span {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
 }
 
 .eq-hint {
@@ -2148,6 +2160,8 @@ button.album-artist {
 }
 
 /* ── Hue lights dialog ── */
+/* Mirrors the app's LightsDialog.vue: areas as a radio list, styles and
+ * colour modes as cards, a rainbow for the fixed colour. */
 
 .lights-group {
   display: flex;
@@ -2164,41 +2178,122 @@ button.album-artist {
   text-transform: uppercase;
 }
 
-.lights-options {
+.lights-status {
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.lights-option,
-.lights-area {
-  padding: 8px 12px;
-  border-radius: 9999px;
-  background: var(--surface-2);
+  align-items: center;
+  gap: 8px;
+  margin-top: -6px;
   color: var(--text-muted);
-  font-size: 0.85rem;
-  text-align: left;
+  font-size: 0.8rem;
+  line-height: 1.4;
 }
 
-.lights-option.active,
-.lights-area.active {
+.lights-status__dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.lights-status__dot--on {
   background: var(--accent);
-  color: var(--accent-on);
+  box-shadow: 0 0 8px rgba(var(--accent-rgb), 0.7);
 }
 
-.lights-option:disabled,
-.lights-area:disabled {
-  opacity: 0.5;
+.lights-status__dot--warn {
+  background: var(--error);
 }
 
 .lights-areas {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
 }
 
 .lights-area {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 0 14px;
+  background: none;
+  color: var(--text);
+  font-size: 0.95rem;
+  text-align: left;
+}
+
+.lights-area + .lights-area {
+  border-top: 1px solid var(--border);
+}
+
+.lights-area__radio {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--text-muted);
+}
+
+.lights-area.active .lights-area__radio {
+  border-color: var(--accent);
+  background: radial-gradient(circle, var(--accent) 40%, transparent 45%);
+}
+
+.lights-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.lights-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px 4px 8px;
+  border: 1px solid var(--border);
   border-radius: 10px;
+  background: none;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
+.lights-card span:last-child {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lights-card .mdi {
+  font-size: 22px;
+}
+
+.lights-card.active {
+  border-color: var(--accent);
+  background: rgba(var(--accent-rgb), 0.1);
+  color: var(--text);
+}
+
+.lights-card.active .mdi {
+  color: var(--accent);
+}
+
+.lights-card:disabled,
+.lights-area:disabled {
+  opacity: 0.5;
+}
+
+.lights-chip {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px var(--border);
 }
 
 .lights-hint {
@@ -2243,14 +2338,64 @@ button.album-artist {
   width: 100%;
 }
 
-.lights-hue,
-.lights-brightness {
-  width: 100%;
+/* The hue itself as the track, the picked colour on the thumb - the app's
+ * .lights__hue. `input.` to outrank the shared slider's own rules. */
+input.lights-hue {
+  height: 26px;
+  margin-top: 4px;
+  border-radius: 13px;
+  background: linear-gradient(90deg, #ff0000, #ffff00, #00ff00, #00ffff, #0000ff, #ff00ff, #ff0000);
 }
 
+input.lights-hue::-webkit-slider-runnable-track {
+  height: 26px;
+  background: none;
+}
+
+input.lights-hue::-moz-range-track {
+  height: 26px;
+  background: none;
+}
+
+input.lights-hue::-moz-range-progress {
+  background: none;
+}
+
+input.lights-hue::-webkit-slider-thumb {
+  width: 24px;
+  height: 24px;
+  margin-top: 1px;
+  border: 3px solid #fff;
+  background: var(--hue-colour);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+}
+
+input.lights-hue::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: 3px solid #fff;
+  background: var(--hue-colour);
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.6);
+}
+
+.lights-brightness-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 1.2rem;
+}
+
+.lights-brightness {
+  flex: 1;
+  min-width: 0;
+}
+
+/* In the footer, opposite Done, as a quiet text button: it is the one
+ * action here that cannot be taken back with a tap. */
 .lights-forget {
-  align-self: flex-start;
-  padding: 8px 0;
+  flex-shrink: 0;
+  padding: 0 4px;
   background: none;
   color: var(--error);
   font-size: 0.85rem;

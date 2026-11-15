@@ -97,3 +97,8 @@
   0% { transform: rotate(0deg); }
   100% { transform: rotate(359deg); }
 }
+.mdi-pulse::before { content: "\F0430"; }
+.mdi-weather-night::before { content: "\F0594"; }
+.mdi-chevron-triple-right::before { content: "\F0DBB"; }
+.mdi-brightness-5::before { content: "\F00DE"; }
+.mdi-brightness-7::before { content: "\F00E0"; }

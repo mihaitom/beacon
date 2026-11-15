@@ -222,7 +222,9 @@ export function openEqualizer() {
    * repaints in place while a finger drags it. */
   function render() {
     body.innerHTML = '';
-    subject.textContent = target?.name ?? '';
+    // With a choice of speakers the switch below already names the one
+    // being set; the heading would only repeat it.
+    subject.textContent = (data?.targets ?? []).length > 1 ? '' : (target?.name ?? '');
     enableInput = null;
     graphSvg = null;
     readout = null;
@@ -375,11 +377,12 @@ export function openEqualizer() {
 
     const frequencies = document.createElement('div');
     frequencies.className = 'eq-graph__freqs';
-    for (const frequency of BAND_FREQUENCIES) {
+    BAND_FREQUENCIES.forEach((frequency, index) => {
       const label = document.createElement('span');
       label.textContent = compactFrequency(frequency);
+      label.style.left = `${(bandX(index) / GRAPH_WIDTH) * 100}%`;
       frequencies.appendChild(label);
-    }
+    });
 
     wrapper.append(readout, svg, frequencies);
     paintGraph();

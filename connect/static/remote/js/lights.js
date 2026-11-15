@@ -13,10 +13,18 @@ import {
   pairLights,
   updateLights,
 } from './api.js';
+import { paintRange } from './range.js';
 import { t } from './i18n.js';
 
-const STYLES = ['pulse', 'calm', 'party', 'chase'];
+// The app's LightsDialog.vue cards, icon for icon.
+const STYLES = [
+  { value: 'pulse', icon: 'mdi-pulse' },
+  { value: 'calm', icon: 'mdi-weather-night' },
+  { value: 'party', icon: 'mdi-party-popper' },
+  { value: 'chase', icon: 'mdi-chevron-triple-right' },
+];
 const COLOUR_MODES = ['theme', 'palette', 'rotate', 'fixed'];
+const WHEEL = 'conic-gradient(#ff3b3b, #ffd23b, #3bff6b, #3bd8ff, #3b5bff, #d43bff, #ff3b3b)';
 const MIN_BRIGHTNESS = 20;
 // The app's own wait: a drag or held arrow key settles into one save.
 const SAVE_DELAY_MS = 400;
@@ -64,7 +72,6 @@ export function openLights({ onChange } = {}) {
   dialog.innerHTML = `
     <div class="eq-dialog__head">
       <div class="eq-dialog__heading">
-        <div class="eyebrow-label" id="lights-status"></div>
         <div class="eq-dialog__title">${t('lights.title')}</div>
       </div>
       <button type="button" class="eq-dialog__close" aria-label="${t('common.close')}">
@@ -73,13 +80,14 @@ export function openLights({ onChange } = {}) {
     </div>
     <div class="eq-dialog__body"><div class="empty-state">${t('common.loading')}</div></div>
     <div class="eq-dialog__footer">
+      <button type="button" class="lights-forget hidden">${t('lights.forget')}</button>
       <button type="button" class="btn btn-primary lights-done">${t('common.done')}</button>
     </div>
   `;
   overlay.appendChild(dialog);
 
   const body = dialog.querySelector('.eq-dialog__body');
-  const status = dialog.querySelector('#lights-status');
+  const forgetButton = dialog.querySelector('.lights-forget');
   const doneButton = dialog.querySelector('.lights-done');
   const closeButton = dialog.querySelector('.eq-dialog__close');
 
@@ -109,6 +117,7 @@ export function openLights({ onChange } = {}) {
   });
   closeButton.addEventListener('click', close);
   doneButton.addEventListener('click', close);
+  forgetButton.addEventListener('click', () => void forget());
   document.addEventListener('keydown', onKey);
 
   function setState(next) {
@@ -228,19 +237,55 @@ export function openLights({ onChange } = {}) {
     return element;
   }
 
-  function options(values, active, onPick, label) {
+  /** Four cards in a row, each a mark over its name - the app's styles
+   * and colour modes. `mark` builds what sits on top. */
+  function cards(values, active, onPick, label, mark) {
     const row = document.createElement('div');
-    row.className = 'lights-options';
+    row.className = 'lights-cards';
+    row.setAttribute('role', 'radiogroup');
     for (const value of values) {
       const button = document.createElement('button');
       button.type = 'button';
-      button.className = `lights-option${value === active ? ' active' : ''}`;
-      button.textContent = label ? label(value) : value;
+      button.className = `lights-card${value === active ? ' active' : ''}`;
+      button.setAttribute('role', 'radio');
+      button.setAttribute('aria-checked', String(value === active));
       button.disabled = saving;
+      const name = document.createElement('span');
+      name.textContent = label(value);
+      button.append(mark(value), name);
       button.addEventListener('click', () => onPick(value));
       row.appendChild(button);
     }
     return row;
+  }
+
+  function icon(name) {
+    const element = document.createElement('i');
+    element.className = `mdi ${name}`;
+    return element;
+  }
+
+  /** What each colour mode would give right now, as the app's chips do. */
+  function chip(mode) {
+    const element = document.createElement('span');
+    element.className = 'lights-chip';
+    const picture = state.picture;
+    let background;
+    if (mode === 'theme') {
+      background =
+        state.theme_follows_picture && picture?.accent ? picture.accent : state.theme_colour;
+    } else if (mode === 'fixed') {
+      background = state.fixed_colour;
+    } else if (mode === 'rotate') {
+      background = WHEEL;
+    } else {
+      const colours = picture?.colours?.length ? picture.colours : [state.theme_colour];
+      const share = 100 / colours.length;
+      const stops = colours.map((c, i) => `${c} ${i * share}% ${(i + 1) * share}%`);
+      background = `conic-gradient(${stops.join(', ')})`;
+    }
+    if (background) element.style.background = background;
+    return element;
   }
 
   function switchRow(checked, onChange) {
@@ -265,13 +310,12 @@ export function openLights({ onChange } = {}) {
 
   function render() {
     body.innerHTML = '';
-    if (state?.paired) {
-      status.textContent = state.playing
-        ? t('lights.playing')
-        : t('lights.connected', { host: state.bridge?.host ?? '' });
-    } else {
-      status.textContent = '';
-    }
+    forgetButton.classList.toggle('hidden', !state?.paired);
+    forgetButton.disabled = saving;
+    // Before pairing, Pair is the one thing to do here; Done steps back.
+    const pairingStep = Boolean(state && !state.paired);
+    doneButton.classList.toggle('btn-primary', !pairingStep);
+    doneButton.classList.toggle('btn-secondary', pairingStep);
 
     if (error) {
       const message = document.createElement('p');
@@ -330,25 +374,47 @@ export function openLights({ onChange } = {}) {
       return;
     }
 
-    if (state.reachable === false) {
-      body.appendChild(
-        hint(t('lights.unreachable', { host: state.bridge?.host ?? '' })),
-      );
-    } else if (state.start_error && state.enabled) {
-      body.appendChild(hint(t('lights.startFailed')));
-    }
-
     body.appendChild(switchRow(state.enabled, (enabled) => save({ enabled })));
+
+    // One line on how the bridge is doing, a dot in front: amber while the
+    // lights play along, red where something stands in their way.
+    const problem =
+      state.reachable === false
+        ? t('lights.unreachable', { host: state.bridge?.host ?? '' })
+        : state.start_error && state.enabled
+          ? t('lights.startFailed')
+          : null;
+    const statusRow = document.createElement('div');
+    statusRow.className = 'lights-status';
+    const dot = document.createElement('span');
+    dot.className = `lights-status__dot${
+      problem ? ' lights-status__dot--warn' : state.playing ? ' lights-status__dot--on' : ''
+    }`;
+    const statusText = document.createElement('span');
+    statusText.textContent =
+      problem ??
+      (state.playing
+        ? t('lights.playing')
+        : t('lights.connected', { host: state.bridge?.host ?? '' }));
+    statusRow.append(dot, statusText);
+    body.appendChild(statusRow);
 
     const areas = state.areas ?? [];
     if (areas.length) {
       const areaRow = document.createElement('div');
       areaRow.className = 'lights-areas';
+      areaRow.setAttribute('role', 'radiogroup');
       for (const area of areas) {
         const button = document.createElement('button');
         button.type = 'button';
         button.className = `lights-area${area.id === state.area_id ? ' active' : ''}`;
-        button.textContent = area.name;
+        button.setAttribute('role', 'radio');
+        button.setAttribute('aria-checked', String(area.id === state.area_id));
+        const radio = document.createElement('span');
+        radio.className = 'lights-area__radio';
+        const name = document.createElement('span');
+        name.textContent = area.name;
+        button.append(radio, name);
         button.disabled = saving;
         button.addEventListener('click', () => save({ area_id: area.id }));
         areaRow.appendChild(button);
@@ -361,16 +427,24 @@ export function openLights({ onChange } = {}) {
     body.appendChild(
       section(
         t('lights.style'),
-        options(STYLES, state.style, (style) => save({ style }), (value) =>
-          t(`lights.styles.${value}`),
+        cards(
+          STYLES.map((style) => style.value),
+          state.style,
+          (style) => save({ style }),
+          (value) => t(`lights.styles.${value}`),
+          (value) => icon(STYLES.find((style) => style.value === value).icon),
         ),
       ),
     );
 
     const colourGroup = section(
       t('lights.colour'),
-      options(COLOUR_MODES, state.colour_mode, (colour_mode) => save({ colour_mode }), (value) =>
-        t(`lights.colourModes.${value}`),
+      cards(
+        COLOUR_MODES,
+        state.colour_mode,
+        (colour_mode) => save({ colour_mode }),
+        (value) => t(`lights.colourModes.${value}`),
+        chip,
       ),
     );
     colourGroup.appendChild(
@@ -402,6 +476,8 @@ export function openLights({ onChange } = {}) {
         const colour = hueToHex(value);
         state = { ...state, fixed_colour: colour };
         hue.style.setProperty('--hue-colour', colour);
+        const fixedChip = colourGroup.querySelectorAll('.lights-chip')[COLOUR_MODES.indexOf('fixed')];
+        if (fixedChip) fixedChip.style.background = colour;
         onChange?.(state);
         clearTimeout(hueTimer);
         hueTimer = setTimeout(() => {
@@ -426,8 +502,11 @@ export function openLights({ onChange } = {}) {
     brightness.step = '5';
     brightness.value = String(state.brightness);
     brightness.setAttribute('aria-label', t('lights.brightness'));
-    brightness.disabled = saving;
+    // Not disabled while saving: that would end a drag that pauses long
+    // enough for a save, as the app's own slider notes.
+    paintRange(brightness);
     brightness.addEventListener('input', () => {
+      paintRange(brightness);
       const value = Number(brightness.value);
       state = { ...state, brightness: value };
       onChange?.(state);
@@ -441,16 +520,11 @@ export function openLights({ onChange } = {}) {
           });
       }, SAVE_DELAY_MS);
     });
-    brightnessGroup.appendChild(brightness);
+    const brightnessRow = document.createElement('div');
+    brightnessRow.className = 'lights-brightness-row';
+    brightnessRow.append(icon('mdi-brightness-5'), brightness, icon('mdi-brightness-7'));
+    brightnessGroup.appendChild(brightnessRow);
     body.appendChild(brightnessGroup);
-
-    const forgetButton = document.createElement('button');
-    forgetButton.type = 'button';
-    forgetButton.className = 'lights-forget';
-    forgetButton.textContent = t('lights.forget');
-    forgetButton.disabled = saving;
-    forgetButton.addEventListener('click', () => void forget());
-    body.appendChild(forgetButton);
   }
 
   document.body.appendChild(overlay);
