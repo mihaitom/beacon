@@ -15,7 +15,7 @@ from core.session import (
     is_this_sessions_stream,
     playback_duration,
 )
-from core.state import AppState, is_still_targeted
+from core.state import AppState, connection_being_played, fetched_by, is_still_targeted
 from delivery import SonosDelivery
 
 # Kept on the playback logger: the log-level setting and every existing log
@@ -206,6 +206,7 @@ async def apply_position_offset(session: SessionState, target, generation: int) 
         # guard below) — not a real position either.
         if device_pos is None or device_pos < 0:
             continue
+        follow_the_connection_played(st, candidate, generation)
         wall_elapsed = st.clock.elapsed_since_stream_start()
         # A genuine startup-buffering delay makes the device *lag* the wall
         # clock by a few seconds at most. A device reporting a position well
@@ -259,6 +260,28 @@ async def _foreign_uri(session: SessionState, candidate) -> str | None:
     return uri
 
 
+def follow_the_connection_played(st: AppState, candidate, generation: int) -> None:
+    """Base the clock's stream frame on the connection `candidate` is
+    actually playing.
+
+    routes/stream.py re-bases it on every connection the device opens by
+    itself, as a reconnect - but a Sonos opens a second one at the start of
+    a stream only to probe it, and keeps playing the first. Left on the
+    probe's start, every position compared against the device was off by
+    the difference: 2s, observed as the visualizer and the lights running
+    that far ahead of the sound."""
+    mine = [c for c in st.open_streams if fetched_by(candidate, c.peer, c.sender)]
+    played = connection_being_played(mine, generation)
+    if played is None or played.start == st.clock.track_start_position:
+        return
+    logger.info(
+        f"[position-resync] {candidate.target}: plays the connection from "
+        f"{played.start:.1f}s, not the one from {st.clock.track_start_position:.1f}s "
+        "— following it"
+    )
+    st.clock.restream_from(played.start)
+
+
 def _describe_open_streams(st) -> str:
     if not st.open_streams:
         return "no stream connection open"
@@ -305,6 +328,7 @@ async def resync_position_once(session: SessionState, candidate, generation: int
             "while get_position() was in flight — discarding"
         )
         return
+    follow_the_connection_played(st, candidate, generation)
     # Frozen right here, immediately after get_position() returns (and the
     # freshness check above), rather than after any further work below —
     # any extra device round trip inserted between reading device_pos and

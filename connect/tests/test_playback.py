@@ -20,7 +20,7 @@ from core.cast_position import (
 from core.playback_clock import POSITION_RESYNC_THRESHOLD
 from core.radio_position import RadioPositionTracker
 from core.session import build_status_dict, compute_position
-from core.state import stream_url
+from core.state import StreamConnection, stream_url
 from core.stream_format import ProbedStream, content_type_from_extension
 from core.streamer import FALLBACK_FORMAT, OutputFormat
 from delivery import (
@@ -2269,6 +2269,88 @@ def test_resync_position_once_keeps_the_reading_for_the_stream_diagnostics(defau
     generation, at, position, _ = default_session.state.device_reading
     assert (generation, position) == (0, 10.2)
     assert at == pytest.approx(time.time(), abs=1.0)
+
+
+def _open_connection(session, peer: str, start: float, read_ago: float) -> StreamConnection:
+    conn = StreamConnection(
+        generation=session.state.clock.play_generation,
+        start=start,
+        peer=peer,
+        last_handoff=time.monotonic() - read_ago,
+    )
+    session.state.open_streams.append(conn)
+    return conn
+
+
+def _resync_against(session, target, device_pos: float) -> None:
+    import asyncio
+
+    with (
+        patch.object(target, "get_position", new=AsyncMock(return_value=device_pos)),
+        patch.object(target, "current_uri", new=AsyncMock(return_value=None)),
+        patch.object(target, "describe_transport", new=AsyncMock(return_value=None)),
+    ):
+        asyncio.run(resync_position_once(session, target, session.state.clock.play_generation))
+
+
+def test_resync_position_once_ignores_a_probe_connection(default_session):
+    """A Sonos starts a stream with GET, HEAD, GET and plays the first
+    connection; the second, taken for a reconnect from 2s, re-based the
+    clock's stream frame, and everything following the clock ran 2s ahead
+    of the sound for the rest of the track."""
+    st = default_session.state
+    st.is_streaming = True
+    st.clock.start(0.0)
+    st.clock.play_start_time = time.time() - 100.0
+    st.clock.restream_from(2.0)
+    target = SonosDelivery("Küche")
+    target.stream_peer = "10.0.0.5"
+    st.active_delivery = target
+    _open_connection(default_session, "10.0.0.5", start=0.0, read_ago=0.0)
+    _open_connection(default_session, "10.0.0.5", start=2.0, read_ago=98.0)
+
+    _resync_against(default_session, target, 100.0)
+
+    # Device and clock agree once both count from the connection it plays.
+    assert st.clock.track_start_position == 0.0
+    assert st.clock.position_offset == pytest.approx(0.0, abs=0.1)
+
+
+def test_resync_position_once_follows_a_reconnect_the_device_plays(default_session):
+    """The other way round: a device that really moved to its new
+    connection is measured against that one, even while the old one is
+    still open."""
+    st = default_session.state
+    st.is_streaming = True
+    st.clock.start(0.0)
+    st.clock.play_start_time = time.time() - 52.0
+    target = SonosDelivery("Küche")
+    target.stream_peer = "10.0.0.5"
+    st.active_delivery = target
+    _open_connection(default_session, "10.0.0.5", start=0.0, read_ago=2.0)
+    _open_connection(default_session, "10.0.0.5", start=50.0, read_ago=0.0)
+
+    # Two seconds into the stream from 50s: where the clock already is.
+    _resync_against(default_session, target, 2.0)
+
+    assert st.clock.track_start_position == 50.0
+    assert st.clock.position_offset == pytest.approx(0.0, abs=0.1)
+
+
+def test_resync_position_once_ignores_another_devices_connection(default_session):
+    st = default_session.state
+    st.is_streaming = True
+    st.clock.start(0.0)
+    st.clock.play_start_time = time.time() - 30.0
+    target = SonosDelivery("Küche")
+    target.stream_peer = "10.0.0.5"
+    st.active_delivery = target
+    _open_connection(default_session, "10.0.0.5", start=0.0, read_ago=1.0)
+    _open_connection(default_session, "10.0.0.9", start=20.0, read_ago=0.0)
+
+    _resync_against(default_session, target, 30.0)
+
+    assert st.clock.track_start_position == 0.0
 
 
 def test_resync_position_once_ignores_small_drift_on_top_of_large_offset(default_session):

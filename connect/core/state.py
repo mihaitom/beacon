@@ -78,6 +78,25 @@ class StreamConnection:
         )
 
 
+def fetched_by(delivery, peer: str | None, sender: str | None) -> bool:
+    """Whether a /stream request came from `delivery`: by the target connect
+    named when it fetched on the device's behalf, else by address."""
+    if sender is not None:
+        return sender.lower() == delivery.target.lower()
+    return peer is not None and peer == delivery.stream_peer
+
+
+def connection_being_played(
+    connections: list[StreamConnection], generation: int
+) -> StreamConnection | None:
+    """Of one device's connections, the open one of `generation` it is
+    playing: the one it took a chunk from last. Not simply its newest - a
+    Sonos starts a stream with GET, HEAD, GET, plays the first connection
+    and leaves the second one open and unread for the rest of the track."""
+    playing = [c for c in connections if c.outcome is None and c.generation == generation]
+    return max(playing, key=lambda c: c.last_handoff, default=None)
+
+
 class AppState:
     def __init__(self):
         self.current_track: Track | None = None

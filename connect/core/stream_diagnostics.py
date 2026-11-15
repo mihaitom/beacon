@@ -24,7 +24,7 @@ from delivery.manager import DeliveryManager
 
 from .device_reports import last_reported
 from .session import SessionState, compute_position, playback_duration
-from .state import StreamConnection
+from .state import StreamConnection, connection_being_played, fetched_by
 
 # How many of a target's requests are listed, newest first.
 _REQUESTS_SHOWN = 3
@@ -32,12 +32,6 @@ _REQUESTS_SHOWN = 3
 # for anything: long enough to read off the overlay, short enough that the
 # speakers of an earlier cast drop out on their own.
 _UNKNOWN_PEER_SECONDS = 60.0
-
-
-def _fetched_by(delivery, peer: str | None, sender: str | None) -> bool:
-    if sender is not None:
-        return sender.lower() == delivery.target.lower()
-    return peer is not None and peer == delivery.stream_peer
 
 
 def describe_stream(session: SessionState) -> dict:
@@ -54,8 +48,8 @@ def describe_stream(session: SessionState) -> dict:
 
     targets = []
     for d in deliveries:
-        mine = [c for c in connections if _fetched_by(d, c.peer, c.sender)]
-        asked = [r for r in requests if _fetched_by(d, r.get("peer"), r.get("sender"))]
+        mine = [c for c in connections if fetched_by(d, c.peer, c.sender)]
+        asked = [r for r in requests if fetched_by(d, r.get("peer"), r.get("sender"))]
         claimed_connections.update(id(c) for c in mine)
         claimed_requests.update(id(r) for r in asked)
         coordinator = delivery.coordinator_of(d) if isinstance(delivery, DeliveryManager) else None
@@ -116,16 +110,21 @@ def _describe_target(
     state = reported.get("state")
     problem = reported.get("problem")
 
-    # The newest connection of the stream now playing, else the newest of
-    # all: one that ended a moment ago still says how it ended.
+    # The connection the device plays, else the newest of the stream now
+    # playing, else the newest of all: one that ended a moment ago still
+    # says how it ended.
     current = [c for c in connections if c.generation == generation]
-    connection = (current or connections or [None])[0]
+    connection = (
+        connection_being_played(connections, generation) or (current or connections or [None])[0]
+    )
 
     device = None
+    device_stream_time = None
     if st.device_reading is not None:
         reading_generation, at, position, reader = st.device_reading
         if reading_generation == generation and reader.lower() == name.lower():
-            device = {"position": st.clock.track_start_position + position, "age": now - at}
+            device_stream_time = st.clock.track_start_position + position
+            device = {"position": _song_position(st, device_stream_time), "age": now - at}
 
     # How far the audio sent runs ahead of where the device is now, read off
     # its last position. Only while it plays: a stopped or paused device is
@@ -134,7 +133,7 @@ def _describe_target(
     sent_end = _audio_end(connection) if connection in current else None
     playing = state is None or state[1] in ("PLAYING", "TRANSITIONING")
     if sent_end is not None and device is not None and playing:
-        ahead = sent_end - (device["position"] + device["age"])
+        ahead = sent_end - (device_stream_time + device["age"])
 
     return {
         "type": kind,
@@ -159,6 +158,15 @@ def _describe_target(
             for request in requests[:_REQUESTS_SHOWN]
         ],
     }
+
+
+def _song_position(st, stream_time: float) -> float:
+    """A position in the stream as a position in the song, which is what
+    the overlay's track line shows: a mix's stream runs across songs."""
+    if st.mix is None:
+        return stream_time
+    heard = st.mix.timeline.at_time(max(stream_time, 0.0))
+    return heard.position if heard is not None and heard.song_id else stream_time
 
 
 def _audio_end(conn: StreamConnection) -> float | None:
