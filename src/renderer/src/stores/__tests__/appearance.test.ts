@@ -13,6 +13,7 @@ import {
   MAX_CUSTOM_THEMES,
   customTheme,
   nightTheme,
+  dayTheme,
   sanitizeThemePreference,
   themeDefinitions,
   themeOptions,
@@ -73,6 +74,15 @@ describe('theme definitions', () => {
     expect(nightTheme(prefer('paper'))).toBe('paper-night')
     expect(nightTheme(prefer('glacier'))).toBe('glacier-night')
     expect(themeDefinitions(prefer('paper'))['paper-night']!.dark).toBe(true)
+  })
+
+  it('gives a dark theme a light day for artwork headers over a light picture, and a light one none', () => {
+    expect(dayTheme(prefer('beacon'))).toBe('beacon-day')
+    expect(dayTheme(prefer('paper'))).toBe('paper')
+    expect(themeDefinitions(prefer('beacon'))['beacon-day']!.dark).toBe(false)
+    expect(dayTheme(prefer('custom', { background: '#101820', primary: '#E07A5F' }))).toBe(
+      'custom-day',
+    )
   })
 
   it('makes a self-made theme light or dark by its background', () => {

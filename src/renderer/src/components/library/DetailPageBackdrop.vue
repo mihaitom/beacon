@@ -442,6 +442,20 @@ export default {
   --shade-rgb: var(--v-theme-background);
 }
 
+/* Over a photo the text has its own shade, so here the scrim only eases the
+ * top edge into the chrome: run down the band like on a dark theme, it
+ * washed the whole photo out - a black one barely shows on a dark photo, a
+ * white one does. The cover wash has no text shade and keeps the full one. */
+.detail-page__band--on-light
+  .detail-page__layers:has(.detail-page__backdrop--photo.detail-page__backdrop--shown)
+  .detail-page__scrim {
+  background: linear-gradient(
+    to bottom,
+    rgba(var(--v-theme-background), 0.6) 0%,
+    rgba(var(--v-theme-background), 0) 22%
+  );
+}
+
 /* The cover wash brightened rather than darkened, for the same reason. */
 .detail-page__band--on-light .detail-page__backdrop:not(.detail-page__backdrop--photo) {
   filter: blur(38px) saturate(1.2) brightness(1.25);

@@ -89,6 +89,12 @@ function night(primary: string): ThemeDefinition {
   return { dark: true, colors: { ...beacon.colors, primary } }
 }
 
+/** Glacier with another accent: what a dark theme's artwork headers are
+ * drawn in over a light picture (see `dayTheme`). */
+function day(primary: string): ThemeDefinition {
+  return { dark: false, colors: { ...glacier.colors, primary } }
+}
+
 export type ThemeDefinitionColors = NonNullable<ThemeDefinition['colors']>
 
 export type PresetThemeId = 'beacon' | 'graphite' | 'paper' | 'glacier'
@@ -135,9 +141,10 @@ export const PRESET_THEMES: { id: PresetThemeId; definition: ThemeDefinition }[]
   { id: 'glacier', definition: glacier },
 ]
 
-/** The accent an accent has to become on the dark parts: the copper and
- * blue of the light themes are too dark to read there. */
-const NIGHT_ACCENT_CONTRAST = 4.5
+/** The accent an accent has to become on the other side's parts: the
+ * copper and blue of the light themes are too dark to read on a night, the
+ * amber of the dark ones too pale on a day. */
+const SWAPPED_ACCENT_CONTRAST = 4.5
 
 /** A full theme from a background and an accent. The surfaces are steps of
  * the background towards the text colour, the frame a step away from it,
@@ -185,8 +192,14 @@ export function nightTheme(preference: ThemePreference): string {
   return definitionOf(preference).dark ? preference.theme : `${preference.theme}-night`
 }
 
+/** The Vuetify theme for an artwork header over a light picture, which
+ * takes dark text whatever the theme. A light theme is its own. */
+export function dayTheme(preference: ThemePreference): string {
+  return definitionOf(preference).dark ? `${preference.theme}-day` : preference.theme
+}
+
 /** Every theme Vuetify needs to know about for this preference, the chosen
- * one and the night one of each light theme. */
+ * one, the night one of each light theme and the day one of each dark. */
 export function themeDefinitions(preference: ThemePreference): Record<string, ThemeDefinition> {
   const themes: Record<string, ThemeDefinition> = {}
   // Copies: Vuetify keeps what it is handed and Now Playing writes its
@@ -197,11 +210,20 @@ export function themeDefinitions(preference: ThemePreference): Record<string, Th
   }
   for (const own of preference.customThemes) themes[own.id] = customTheme(own)
   for (const [id, definition] of Object.entries({ ...themes })) {
-    if (definition.dark) continue
+    if (definition.dark) {
+      themes[`${id}-day`] = day(
+        towardsContrast(
+          definition.colors!.primary as string,
+          glacier.colors!.background as string,
+          SWAPPED_ACCENT_CONTRAST,
+        ),
+      )
+      continue
+    }
     const accent = towardsContrast(
       definition.colors!.primary as string,
       beacon.colors!.background as string,
-      NIGHT_ACCENT_CONTRAST,
+      SWAPPED_ACCENT_CONTRAST,
     )
     themes[`${id}-night`] = night(accent)
   }

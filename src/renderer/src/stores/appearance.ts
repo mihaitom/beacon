@@ -7,6 +7,7 @@ import {
   DEFAULT_CUSTOM_COLORS,
   MAX_CUSTOM_THEMES,
   nightTheme,
+  dayTheme,
   sanitizeCustomThemes,
   sanitizeThemePreference,
   themeDefinitions,
@@ -167,7 +168,7 @@ export function borrowAccent(
 ): void {
   const definitions = themeDefinitions(preference)
   const night = nightTheme(preference)
-  for (const name of new Set([preference.theme, night])) {
+  for (const name of new Set([preference.theme, night, dayTheme(preference)])) {
     const own = definitions[name]!.colors!
     const target = themes[name]?.colors
     if (!target) continue
@@ -197,6 +198,11 @@ export const useAppearanceStore = defineStore('appearance', {
      * plugins/theme.ts's nightTheme(). */
     nightTheme(state): string {
       return nightTheme(state)
+    },
+    /** The theme of an artwork header over a light picture - see
+     * plugins/theme.ts's dayTheme(). */
+    dayTheme(state): string {
+      return dayTheme(state)
     },
     selectedCustomTheme(state): CustomTheme | null {
       return state.customThemes.find((theme) => theme.id === state.theme) ?? null

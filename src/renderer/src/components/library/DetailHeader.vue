@@ -2,16 +2,19 @@
   <section
     ref="card"
     class="detail-header"
-    :class="[`v-theme--${appearance.nightTheme}`, { 'detail-header--text-only': !hasArtwork }]"
+    :class="[
+      `v-theme--${headerTheme}`,
+      { 'detail-header--text-only': !hasArtwork, 'detail-header--light': light },
+    ]"
     :style="textEnd ? { '--text-end': `${textEnd}px` } : {}"
   >
-    <!-- Drawn in the theme's night whatever the theme: white text over a
-     - darkened picture, which a light page around it does not change (see
-     - plugins/theme.ts's nightTheme()). -->
-    <v-theme-provider :theme="appearance.nightTheme">
+    <!-- Light or dark by the art under the text, not by the page's theme
+     - (services/artworkHeaderTheme.ts): the class for the CSS variables, the
+     - provider for the Vuetify components inside. -->
+    <v-theme-provider :theme="headerTheme">
       <!-- Two stacked layers so navigating from one album/artist to the next
-       - crossfades the artwork behind the header instead of cutting to it —
-       - see services/crossfadeBackdrop.ts for why one element can't do this. -->
+         - crossfades the artwork behind the header instead of cutting to it —
+         - see services/crossfadeBackdrop.ts for why one element can't do this. -->
       <div
         v-for="(url, i) in backdrop.urls"
         :key="i"
@@ -25,7 +28,7 @@
       >
         <div v-if="layerKind[i] !== 'cover'" class="detail-header__backdrop-slot">
           <!-- A stored picture opens its artist's page, when the library has
-           - them - a shortcut only, so no keyboard stop of its own. -->
+             - them - a shortcut only, so no keyboard stop of its own. -->
           <div
             class="detail-header__backdrop-art"
             :class="{ 'detail-header__backdrop-art--link': i === backdrop.active && activeArtist }"
@@ -44,12 +47,12 @@
       />
       <div v-if="starred !== null || $slots['top-right']" class="detail-header__top-right">
         <!-- Its own row, separate from the #top-right slot below — rating/
-         - heart are icon-sized controls that always belong together on one
-         - line; slot content (an artist page's external-link icons, a
-         - playlist's edit/delete buttons) is a different, often wider group
-         - that reads better stacked under them than crammed onto the same
-         - line. v-if guards it so an empty row (e.g. a playlist, which has
-         - neither) doesn't reserve a gap for nothing. -->
+           - heart are icon-sized controls that always belong together on one
+           - line; slot content (an artist page's external-link icons, a
+           - playlist's edit/delete buttons) is a different, often wider group
+           - that reads better stacked under them than crammed onto the same
+           - line. v-if guards it so an empty row (e.g. a playlist, which has
+           - neither) doesn't reserve a gap for nothing. -->
         <div v-if="rating !== null || starred !== null" class="detail-header__top-right-row">
           <v-rating
             v-if="rating !== null"
@@ -78,9 +81,9 @@
       </div>
       <div ref="text" class="detail-header__content">
         <!-- Only when there is a real picture: a list page has none, and a
-         - square holding nothing but a generic icon takes room from the
-         - title without saying anything. The icon remains for a picture that
-         - fails to load. -->
+           - square holding nothing but a generic icon takes room from the
+           - title without saying anything. The icon remains for a picture that
+           - fails to load. -->
         <div
           v-if="recordStack"
           class="detail-header__cover"
@@ -144,6 +147,7 @@ import { getStoredImages, type StoredImage } from '@/services/connect/fanart'
 import { preloadImage } from '@/services/preloadImage'
 import { useFanartStore } from '@/stores/fanart'
 import { useAppearanceStore } from '@/stores/appearance'
+import { artworkHeaderTheme } from '@/services/artworkHeaderTheme'
 import type { Artist } from '@/types/library'
 
 // How long each stored Fanart.tv background stays before the next one fades
@@ -223,8 +227,18 @@ export default {
     }
   },
   computed: {
-    appearance() {
-      return useAppearanceStore()
+    headerTheme(): string {
+      const active = this.backdrop.active
+      return artworkHeaderTheme(
+        this.layerKind[active] !== 'cover',
+        this.fills[active] ?? null,
+        useAppearanceStore(),
+      )
+    },
+    /** Whether the card is light, shaded towards a pale accent rather than
+     * black so its dark text reads. */
+    light(): boolean {
+      return this.headerTheme === useAppearanceStore().dayTheme
     },
     /** What storedFanart asks for, as one value to watch: null for nothing,
      * [] for every artist, or the artists' names. */
@@ -425,9 +439,11 @@ export default {
 
 <style scoped>
 .detail-header {
-  /* The night's background under the scrims: on a light theme the page
-   * would otherwise show through them. */
+  /* Under the scrims, so the page doesn't show through them. */
   background: rgb(var(--v-theme-background));
+  /* What the picture is shaded towards behind the text: black, or a pale
+   * accent on a light card (--light below). */
+  --shade: #000;
   color: rgb(var(--v-theme-on-background));
   /* Where the scrim behind the text has cleared - and so, wherever there
    * is room, where Fanart.tv art starts at the earliest. The scrim eases
@@ -594,7 +610,7 @@ export default {
     linear-gradient(to top, rgba(var(--v-theme-background), 0.55), transparent 55%);
 }
 
-/* Over Fanart.tv art the scrim is plain black: the amber wash would read
+/* Over Fanart.tv art the scrim is plain --shade: the amber wash would read
  * as a colour cast on a sharp photo (over the blurred cover it reads as the
  * app's own light), and the app's blue-grey as a blue tint. Strong and even
  * behind the text, the art under it still just visible, then clear where
@@ -603,19 +619,55 @@ export default {
   background:
     linear-gradient(
       to right,
-      rgba(0, 0, 0, 0.85) var(--text-end, 40%),
-      rgba(0, 0, 0, 0.826) calc(var(--text-end, 40%) + var(--scrim-fade) * 0.1),
-      rgba(0, 0, 0, 0.762) calc(var(--text-end, 40%) + var(--scrim-fade) * 0.2),
-      rgba(0, 0, 0, 0.666) calc(var(--text-end, 40%) + var(--scrim-fade) * 0.3),
-      rgba(0, 0, 0, 0.551) calc(var(--text-end, 40%) + var(--scrim-fade) * 0.4),
-      rgba(0, 0, 0, 0.425) calc(var(--text-end, 40%) + var(--scrim-fade) * 0.5),
-      rgba(0, 0, 0, 0.299) calc(var(--text-end, 40%) + var(--scrim-fade) * 0.6),
-      rgba(0, 0, 0, 0.184) calc(var(--text-end, 40%) + var(--scrim-fade) * 0.7),
-      rgba(0, 0, 0, 0.088) calc(var(--text-end, 40%) + var(--scrim-fade) * 0.8),
-      rgba(0, 0, 0, 0.024) calc(var(--text-end, 40%) + var(--scrim-fade) * 0.9),
-      rgba(0, 0, 0, 0) var(--text-clearance)
+      color-mix(in srgb, var(--shade) 85%, transparent) var(--text-end, 40%),
+      color-mix(in srgb, var(--shade) 82.6%, transparent)
+        calc(var(--text-end, 40%) + var(--scrim-fade) * 0.1),
+      color-mix(in srgb, var(--shade) 76.2%, transparent)
+        calc(var(--text-end, 40%) + var(--scrim-fade) * 0.2),
+      color-mix(in srgb, var(--shade) 66.6%, transparent)
+        calc(var(--text-end, 40%) + var(--scrim-fade) * 0.3),
+      color-mix(in srgb, var(--shade) 55.1%, transparent)
+        calc(var(--text-end, 40%) + var(--scrim-fade) * 0.4),
+      color-mix(in srgb, var(--shade) 42.5%, transparent)
+        calc(var(--text-end, 40%) + var(--scrim-fade) * 0.5),
+      color-mix(in srgb, var(--shade) 29.9%, transparent)
+        calc(var(--text-end, 40%) + var(--scrim-fade) * 0.6),
+      color-mix(in srgb, var(--shade) 18.4%, transparent)
+        calc(var(--text-end, 40%) + var(--scrim-fade) * 0.7),
+      color-mix(in srgb, var(--shade) 8.8%, transparent)
+        calc(var(--text-end, 40%) + var(--scrim-fade) * 0.8),
+      color-mix(in srgb, var(--shade) 2.4%, transparent)
+        calc(var(--text-end, 40%) + var(--scrim-fade) * 0.9),
+      color-mix(in srgb, var(--shade) 0%, transparent) var(--text-clearance)
     ),
-    linear-gradient(to top, rgba(0, 0, 0, 0.55), transparent 55%);
+    linear-gradient(to top, color-mix(in srgb, var(--shade) 55%, transparent), transparent 55%);
+}
+
+/* A light card: in a pale accent rather than the theme's background, which
+ * it would otherwise melt into on a light page wherever the picture is light
+ * too. Scrims and all, so the dark text reads on it. */
+.detail-header--light {
+  --shade: color-mix(in srgb, rgb(var(--v-theme-primary)) 12%, rgb(var(--v-theme-background)));
+  background: var(--shade);
+}
+
+.detail-header--light .detail-header__scrim:not(.detail-header__scrim--photo) {
+  background:
+    linear-gradient(
+      120deg,
+      color-mix(in srgb, var(--shade) 94%, transparent) 0%,
+      color-mix(in srgb, var(--shade) 75%, transparent) 45%,
+      rgba(var(--v-theme-primary), 0.2) 100%
+    ),
+    linear-gradient(to top, color-mix(in srgb, var(--shade) 55%, transparent), transparent 55%);
+}
+
+/* The cover wash brightened rather than darkened, for the same reason. */
+.detail-header--light
+  .detail-header__backdrop:not(.detail-header__backdrop--photo):not(
+    .detail-header__backdrop--banner
+  ) {
+  filter: blur(38px) saturate(1.2) brightness(1.25);
 }
 
 .detail-header__top-right {
