@@ -93,17 +93,21 @@ accent falls under 3:1.
 
 ### What stays dark on a light theme
 
-The artwork headers (`DetailHero`, `DetailHeader`, `HeroBand`) and Now
-Playing put white text over a darkened picture, which a light page around
-them does not change. They are drawn in the theme's _night_
+The artwork headers (`DetailHeader`, `HeroBand`) and Now Playing put white
+text over a darkened picture, which a light page around them does not
+change. They are drawn in the theme's _night_
 (`nightTheme()`: Beacon's surfaces with the theme's accent lifted to read on
 them; a dark theme is its own night): the root element carries the
 `v-theme--<night>` class for the CSS variables and its own text colour, and
 a `<v-theme-provider>` inside it gives the Vuetify components the same
 theme. Inside, as rather than around the root, so the component keeps one
-root element. On a light theme the artist and album pages' band
-(`DetailPageBackdrop`) ends with the header and fades into the page below
-instead of running on behind the albums and songs.
+root element.
+
+The artist and album pages (`DetailPageBackdrop` with `DetailHero`) are the
+exception: their photo runs on behind the page as on a dark theme, shaded
+towards the page's own background instead of towards black, so the header
+takes the light theme's dark text. Fanart.tv's clear logos, drawn for dark
+backgrounds, get a dark outline shadow there.
 
 The party guest page has no themes: it is Beacon's colours. The Remote
 Control follows the app it controls: every snapshot carries the theme's

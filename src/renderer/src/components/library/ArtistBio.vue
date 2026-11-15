@@ -104,8 +104,9 @@ export default {
    * the page scrim has faded out, so a soft shadow under the glyphs keeps
    * it readable over a bright or busy one. On this wrapper, not on the
    * paragraph: the paragraph clips its own overflow for the line clamp,
-   * which would cut a shadow off flat at its edges. */
-  filter: drop-shadow(0 1px 5px rgba(0, 0, 0, 0.7));
+   * which would cut a shadow off flat at its edges. In the page's
+   * background colour, so a light theme's dark text gets a light halo. */
+  filter: drop-shadow(0 1px 5px rgba(var(--v-theme-background), 0.8));
 }
 
 .artist-bio__text {
