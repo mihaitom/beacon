@@ -14,6 +14,11 @@ Set the log level in Settings > Advanced, or with `LOG_LEVEL` (see the environme
 
 The setting takes effect immediately and survives a restart, so remember to put it back afterwards.
 
+## Where is the log?
+
+- **Docker:** `docker logs <container>`.
+- **Desktop app:** `logs/main.log` in the app's data folder - `%APPDATA%\Beacon` on Windows, `~/Library/Application Support/Beacon` on macOS, `~/.config/Beacon` on Linux. The previous session's log is next to it as `main.log.old`.
+
 ## What does the panel in Now Playing show while casting?
 
 With the log level at Debug, Now Playing shows a small panel while casting: what was sent and how far into the song it reaches, whether the speaker is still reading (`STALLED` once it has stopped), how many seconds it has ahead, and what it asked for. The `?` on the panel explains each line. Copying it needs the page to be served over HTTPS; on plain HTTP, select the text and copy it by hand.
