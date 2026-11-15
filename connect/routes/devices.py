@@ -14,6 +14,7 @@ from pydantic import BaseModel
 
 from core import cast_permissions, media_login
 from core.auth import require_token
+from core.cast_position import resync_position_periodically
 from core.claims import claims
 from core.ffmpeg import ffmpeg_available
 from core.radio_position import RadioPositionTracker
@@ -42,7 +43,6 @@ from media import (
 )
 from media.login_errors import LoginFailed
 from media.plex import account_username_for_server_token
-from routes.playback import _resync_position_periodically
 
 logger = logging.getLogger("connect.devices")
 router = APIRouter(dependencies=[Depends(require_token)])
@@ -351,7 +351,7 @@ async def stop_device(
             (d for d in candidates if isinstance(d, type_cls) and d.target == name), None
         )
         remaining: list[BaseDelivery] = [d for d in candidates if d is not matched]
-        # Which delivery the session's running _resync_position_periodically()
+        # Which delivery the session's running resync_position_periodically()
         # task is polling: it picks the first position-capable one and holds
         # onto it for the whole track. If that is the device being stopped
         # here, that task retires itself on its next wake (see
@@ -539,7 +539,7 @@ async def stop_device(
             # _tracked_for_radio()).
             if st.is_streaming and matched is not None and resync_candidate is matched:
                 asyncio.create_task(
-                    _resync_position_periodically(session, new_delivery, st.clock.play_generation)
+                    resync_position_periodically(session, new_delivery, st.clock.play_generation)
                 )
 
     await session.event_bus.broadcast(build_status_dict(session))

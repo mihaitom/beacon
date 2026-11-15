@@ -41,6 +41,7 @@ from typing import Literal
 from pydantic import BaseModel
 
 from core import deezer, preview, replay_gain
+from core.cast_position import start_position_sync
 from core.equalizer import Band
 from core.local_mixes import SongEntry
 from core.mix_engine import MixEngine, MixItem, song_label
@@ -294,8 +295,6 @@ async def restart(session: SessionState, item: MixItem, position: float) -> dict
     Must be called holding session.play_lock."""
     from delivery.errors import delivery_error_response
 
-    from .playback import _apply_position_offset, _resync_position_periodically
-
     st = session.state
     target = st.active_delivery
     old = st.mix
@@ -319,10 +318,7 @@ async def restart(session: SessionState, item: MixItem, position: float) -> dict
         except Exception as e:
             logger.exception("[mix] Delivery error")
             return delivery_error_response(e, target)
-        asyncio.create_task(_apply_position_offset(session, target, st.clock.play_generation))
-        asyncio.create_task(
-            _resync_position_periodically(session, target, st.clock.play_generation)
-        )
+        start_position_sync(session, target)
     asyncio.create_task(follow(session, mix))
     logger.info(f"[mix] ▶ {item.name} from {position:.1f}s")
     await session.event_bus.broadcast(build_status_dict(session))

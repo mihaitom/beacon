@@ -147,8 +147,8 @@ def _block_real_sonos_discovery(monkeypatch):
     Confirmed live 2026-08-24: a /resume regression test in test_playback.py
     uses the real production room name "Arbeitszimmer" for its
     active_delivery and only mocks SonosDelivery.play — the position-resync
-    background tasks that /resume's handler schedules (_apply_position_offset,
-    _resync_position_periodically) are not covered by that mock and call the
+    background tasks that /resume's handler schedules (apply_position_offset,
+    resync_position_periodically) are not covered by that mock and call the
     real, unmocked get_position() for as long as the test process runs. The
     dev machine and the production Sonos speakers share the same /24, so
     this reached the real device; the user reproduced it directly (fresh

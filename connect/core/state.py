@@ -543,7 +543,7 @@ def first_radio_position_delivery(
     """The first Chromecast/DLNA/Sonos delivery in `active`, if any — the
     reference device for core/radio_position.py's RadioPositionTracker.
     Same "pick the first SUPPORTS_POSITION delivery" pragmatism as
-    routes/playback.py's _apply_position_offset() uses for multi-target
+    core/cast_position.py's apply_position_offset() uses for multi-target
     casts. AirPlay is excluded even though it also sets SUPPORTS_POSITION
     — see core/radio_position.py's own module docstring for why. Sonos
     included since 2026-09-02: delivery/sonos.py's http:// radio dispatch
@@ -598,8 +598,8 @@ def is_still_targeted(
     (or position-tracking) task started for the device that just went away
     keeps its own generation valid and would go on polling a stopped
     speaker for the rest of the track. A stopped Sonos answers
-    get_position() with a bare 0:00:00, which routes/playback.py's
-    _resync_position_once() cannot tell apart from a genuine rewind at the
+    get_position() with a bare 0:00:00, which core/cast_position.py's
+    resync_position_once() cannot tell apart from a genuine rewind at the
     value level, so every tick recalibrated position_offset by the entire
     elapsed time: elapsed() froze at ~0, and with it the `remaining` that
     _fire_track_end() re-measures on every poll, which is what auto-advance

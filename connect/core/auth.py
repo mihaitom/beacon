@@ -1,17 +1,10 @@
-"""core/auth.py — Token-based auth for the Connect API.
+"""core/auth.py - Token-based auth for the Connect API.
 
-When CONNECT_TOKEN isn't set via the environment (e.g. docker-compose, where
-it's genuinely fixed configuration), a random token is generated instead of
-falling back to a hardcoded default — a checked-in constant would be public
-(open source) and give no real protection. That token is then persisted to
-.connect-token (next to this file's package, gitignored, installation-
-specific) and reused on subsequent restarts rather than regenerated every
-time: Beacon's Electron main process reads the same file (see
-src/main/index.ts's readConnectDefaults()) to learn the token without either
-side hardcoding or being told the other's secret — the two processes are
-started independently (Electron doesn't spawn/manage the Python backend, see
-the project plan), so a stable, file-shared secret is what lets them agree
-without one being launched from the other.
+Without CONNECT_TOKEN in the environment a random token is generated - a
+checked-in default would be public. It is persisted to .connect-token
+(gitignored) so it survives restarts: in `pnpm dev` connect is started on its
+own, and Electron's readConnectDefaults() (src/main/index.ts) learns the
+token from that file.
 """
 
 import os

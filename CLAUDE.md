@@ -232,8 +232,8 @@ that nobody has to ask again.
   (`Artist/Album/01-03 - Title.mp3`), not the real one, unless that player
   has "Report Real Path" enabled. Beacon shows what the server sent; that is
   not a bug in the path row.
-- **Party guests have their own copy of Now Playing:**
-  `party/components/GuestNowPlaying.vue` is a copy of Now Playing. A change
-  to `NowPlayingView` or its components does not reach party guests; before
-  a larger one, do `docs/plans/now-playing-shared-with-party.md` first
-  instead of changing both.
+- **Now Playing is shared with party guests:** the guest page renders the
+  same `components/now-playing/` components as the app, fed through
+  `source.ts` instead of the app's stores. A component there that imports a
+  store directly works in the app and breaks on the guest page, which has
+  none - see `docs/plans/now-playing-shared-with-party.md`.

@@ -17,6 +17,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 import core.mix_engine as me
+from core.cast_position import finish_orphaned_track, resync_position_once
 from core.mix_engine import MixEngine, MixItem
 from core.mix_timeline import SAMPLE_RATE
 from core.session import build_status_dict, compute_position
@@ -25,7 +26,6 @@ from delivery import ChromecastDelivery
 from media import Track
 from media.base import ReplayGain
 from routes import mix_cast
-from routes.playback import _finish_orphaned_track, _resync_position_once
 from routes.stream import _resume_after_interruption, advance_now
 
 SR = SAMPLE_RATE
@@ -375,7 +375,7 @@ async def test_a_device_position_past_the_song_is_not_ignored_in_a_mix(default_s
     device = ChromecastDelivery("TV")
     st.active_delivery = device
     with patch.object(device, "get_position", new=AsyncMock(return_value=405.0)):
-        await _resync_position_once(default_session, device, st.clock.play_generation)
+        await resync_position_once(default_session, device, st.clock.play_generation)
     assert st.clock.position_offset == pytest.approx(5.0, abs=0.5)
 
 
@@ -385,7 +385,7 @@ async def test_a_mix_is_never_closed_out_as_an_orphaned_song(default_session):
     st.mix = MixEngine(MixItem("1", 0), 0.0, AsyncMock(), AsyncMock())
     st.clock.start(0.0)
     st.clock.play_start_time -= 1000.0  # far past the first song's 180s
-    assert not await _finish_orphaned_track(default_session, st.clock.play_generation)
+    assert not await finish_orphaned_track(default_session, st.clock.play_generation)
     assert st.is_streaming
 
 

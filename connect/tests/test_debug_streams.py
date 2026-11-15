@@ -177,7 +177,7 @@ def _target(name="room A"):
 @pytest.fixture
 def quiet_dispatch(monkeypatch):
     monkeypatch.setattr(debug, "build_status_dict", lambda s: {})
-    monkeypatch.setattr(debug, "_apply_position_offset", AsyncMock())
+    monkeypatch.setattr(debug, "apply_position_offset", AsyncMock())
     monkeypatch.setattr(debug, "_sample_endless", AsyncMock())
     monkeypatch.setattr(debug, "get_local_ip", lambda: "10.0.0.1")
 

@@ -102,7 +102,7 @@ def test_skips_the_round_trip_while_paused(default_session):
     """A Sonos get_position() is two real HTTP round trips
     (delivery/sonos.py's own comment) — polling a frozen position for as
     long as a pause lasts is pure waste, same reasoning as
-    _resync_position_periodically's identical check."""
+    resync_position_periodically's identical check."""
     tracker, delivery = _tracker(default_session)
     default_session.state.clock.is_paused = True
     with patch.object(delivery, "get_position", new=AsyncMock(return_value=5.0)) as get_position:
@@ -123,7 +123,7 @@ def test_stops_when_device_stop_drops_the_target(default_session):
     can swap active_delivery for something that no longer includes this
     tracker's own delivery, without touching play_generation at all — see
     that function's own docstring for the prod incident this mirrors for
-    _resync_position_periodically."""
+    resync_position_periodically."""
     tracker, delivery = _tracker(default_session)
     default_session.state.active_delivery = ChromecastDelivery("Different room")
     with patch.object(delivery, "get_position", new=AsyncMock(return_value=5.0)):
@@ -131,7 +131,7 @@ def test_stops_when_device_stop_drops_the_target(default_session):
 
 
 def test_stops_when_superseded_while_get_position_in_flight(default_session):
-    """Same race _resync_position_once() guards against: the generation
+    """Same race resync_position_once() guards against: the generation
     bump has to be re-checked *after* the await, not just before it."""
     tracker, delivery = _tracker(default_session)
     generation_at_start = default_session.state.clock.play_generation
@@ -211,7 +211,7 @@ def test_poll_interval_backs_off_once_ready_with_nobody_watching(default_session
     two real HTTP round trips per poll, sustained for as long as radio
     played. Once ready (radio_buffering has already latched False for
     good) and nobody is watching the visualizer, this should back off to
-    the same cadence as _resync_position_periodically."""
+    the same cadence as resync_position_periodically."""
     tracker, _ = _tracker(default_session)
     tracker.ready = True
     assert default_session.visualizer.is_watching_radio() is False
@@ -313,8 +313,8 @@ def test_buffer_lag_uses_a_handed_over_started_at(default_session):
 class TestClockCalibration:
     """The tracker is the only thing polling a station's device, so it is
     also what keeps the session clock in step with it — the job
-    routes/playback.py's _apply_position_offset()/
-    _resync_position_periodically() do for a track, and deliberately step
+    core/cast_position.py's apply_position_offset()/
+    resync_position_periodically() do for a track, and deliberately step
     aside from here (see _tracked_for_radio() there). Two pollers asking
     one DLNA renderer the same SOAP question is what this replaces."""
 

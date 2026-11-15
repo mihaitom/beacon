@@ -305,7 +305,7 @@ def test_device_stop_hands_position_resync_over_to_the_remaining_device(client, 
             "delivery.sonos_discovery.discover_zones", return_value=[raw_coordinator, raw_follower]
         ),
         patch("asyncio.sleep", new=AsyncMock()),
-        patch("routes.devices._resync_position_periodically") as resync,
+        patch("routes.devices.resync_position_periodically") as resync,
     ):
         client.post("/device-stop?device_type=sonos&name=Arbeitszimmer")
 
@@ -336,7 +336,7 @@ def test_device_stop_does_not_start_a_second_resync_for_an_untouched_device(
             "delivery.sonos_discovery.discover_zones", return_value=[raw_coordinator, raw_follower]
         ),
         patch("asyncio.sleep", new=AsyncMock()),
-        patch("routes.devices._resync_position_periodically") as resync,
+        patch("routes.devices.resync_position_periodically") as resync,
     ):
         client.post("/device-stop?device_type=sonos&name=Wohnzimmer")
 
@@ -558,7 +558,7 @@ def test_device_stop_hands_radio_tracking_to_a_device_playing_all_along(client, 
     with (
         patch.object(ChromecastDelivery, "stop", new=AsyncMock()),
         patch("core.radio_position.RadioPositionTracker.start") as start,
-        patch("routes.devices._resync_position_periodically", new=MagicMock()),
+        patch("routes.devices.resync_position_periodically", new=MagicMock()),
     ):
         client.post("/device-stop?device_type=chromecast&name=TV")
 
@@ -573,7 +573,7 @@ def test_device_stop_drops_radio_tracking_when_no_trackable_device_is_left(clien
     _radio_on(default_session, [tv, airplay])
     with (
         patch.object(ChromecastDelivery, "stop", new=AsyncMock()),
-        patch("routes.devices._resync_position_periodically", new=MagicMock()),
+        patch("routes.devices.resync_position_periodically", new=MagicMock()),
     ):
         client.post("/device-stop?device_type=chromecast&name=TV")
 

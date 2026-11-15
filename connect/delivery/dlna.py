@@ -135,7 +135,7 @@ class UnsupportedDlnaDevice(Exception):
 # wrong at both ends. A command may legitimately take several seconds —
 # transport switches of around seven have been reported — and giving up on
 # one loses a track that was about to play. A reading has to be back well
-# inside routes/playback.py's POSITION_RESYNC_INTERVAL to be worth
+# inside core/cast_position.py's POSITION_RESYNC_INTERVAL to be worth
 # anything. Discovery keeps the old value: it walks every SSDP responder in
 # turn, so this is paid once per unreachable device before anything lists.
 _COMMAND_TIMEOUT = 15

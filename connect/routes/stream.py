@@ -13,6 +13,7 @@ from fastapi.responses import Response, StreamingResponse
 
 from core import equalizer, replay_gain
 from core.auth import require_token
+from core.cast_position import POSITION_RESYNC_INTERVAL, start_position_sync
 from core.icy_metadata import (
     DEVICE_METAINT,
     IcyMuxer,
@@ -53,12 +54,7 @@ from delivery.errors import source_error_response
 from delivery.sonos import model_in_user_agent
 
 from . import mix_cast
-from .playback import (
-    POSITION_RESYNC_INTERVAL,
-    _apply_position_offset,
-    _current_reconnect_args,
-    _resync_position_periodically,
-)
+from .playback import _current_reconnect_args
 
 logger = logging.getLogger("connect.stream")
 router = APIRouter()
@@ -121,8 +117,7 @@ async def _dispatch_queued_track(session: SessionState, target, track) -> bool:
         st.is_streaming = False
         return False
 
-    asyncio.create_task(_apply_position_offset(session, target, st.clock.play_generation))
-    asyncio.create_task(_resync_position_periodically(session, target, st.clock.play_generation))
+    start_position_sync(session, target)
     await session.event_bus.broadcast(build_status_dict(session))
     return True
 
@@ -245,7 +240,7 @@ _TRACK_END_TOLERANCE = 0.05
 async def _advance_or_end(session: SessionState, my_generation: int) -> None:
     """What happens when a track finishes — split out from _fire_track_end()
     below purely so it's directly testable, same reasoning as
-    routes/playback.py's _resync_position_once(). Must be called while
+    core/cast_position.py's resync_position_once(). Must be called while
     holding session.play_lock (see _fire_track_end()), same as every other
     handler that mutates this state (/play, /stop, /seek, ...).
 
@@ -348,7 +343,7 @@ async def _jump_locked(session: SessionState, index: int, context: str) -> bool:
 # _mark_disconnected_if_not_reconnected()'s own docstring. Long enough that
 # an ordinary quick reconnect blip (buffer management, a momentary WiFi
 # hiccup, a Sonos re-doing SSDP discovery before it re-requests the stream —
-# "easily a second or more" on its own per _resync_position_once()'s
+# "easily a second or more" on its own per resync_position_once()'s
 # comment) doesn't falsely trip this; short enough that a genuinely dead
 # stream doesn't sit is_streaming=True for long once nothing's actually
 # flowing. 5s (the original value) turned out too tight in practice —
@@ -469,7 +464,7 @@ async def _mark_disconnected_if_not_reconnected(
     nothing left to play. Nothing told the resync loop that "streaming"
     wasn't actually true anymore, so it misread that persisting, ever-
     growing gap as one genuine external rewind after another (the same
-    ambiguity _resync_position_once()'s own near-track-end guard already
+    ambiguity resync_position_once()'s own near-track-end guard already
     covers, just from a different cause — a stream that plain died instead
     of one that finished on schedule): position_offset ratcheted more
     negative every single 8s resync tick, indefinitely, while the frontend
@@ -580,12 +575,7 @@ async def _resume_after_interruption(session: SessionState) -> bool:
         logger.exception("[stream] Resume-after-interruption failed")
         return False
 
-    asyncio.create_task(
-        _apply_position_offset(session, st.active_delivery, st.clock.play_generation)
-    )
-    asyncio.create_task(
-        _resync_position_periodically(session, st.active_delivery, st.clock.play_generation)
-    )
+    start_position_sync(session, st.active_delivery)
     st.is_streaming = True
     await session.event_bus.broadcast(build_status_dict(session))
     return True
@@ -1420,7 +1410,7 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
                             # /resume after an interruption dispatches without
                             # setting is_streaming again; this connection is
                             # where audio is known to flow. Left False, it
-                            # disables position resync (routes/playback.py's
+                            # disables position resync (core/cast_position.py's
                             # own is_streaming guard) and auto-advance
                             # (_advance_or_end's), and makes /join reject
                             # with "No active stream" for a session that's

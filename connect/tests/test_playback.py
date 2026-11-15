@@ -8,6 +8,16 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from core.cast_position import (
+    ORPHANED_TRACK_GRACE_SECONDS,
+    PROVISIONAL_STARTUP_DELAY,
+    apply_position_offset,
+    finish_orphaned_track,
+    resync_position_once,
+    resync_position_periodically,
+    start_position_sync,
+)
+from core.playback_clock import POSITION_RESYNC_THRESHOLD
 from core.radio_position import RadioPositionTracker
 from core.session import build_status_dict, compute_position
 from core.state import stream_url
@@ -21,16 +31,7 @@ from delivery import (
     SonosDelivery,
 )
 from media import SubsonicClient, Track
-from routes.playback import (
-    ORPHANED_TRACK_GRACE_SECONDS,
-    POSITION_RESYNC_THRESHOLD,
-    PROVISIONAL_STARTUP_DELAY,
-    QUEUE_TOPUP_DEDUP_WINDOW,
-    _apply_position_offset,
-    _finish_orphaned_track,
-    _resync_position_once,
-    _resync_position_periodically,
-)
+from routes.playback import QUEUE_TOPUP_DEDUP_WINDOW
 
 # ── /status ──────────────────────────────────────────────────────────────────
 
@@ -578,6 +579,33 @@ def test_play_rolls_back_state_when_delivery_dispatch_fails(client, default_sess
     # still-actually-playing "old" track's own queue.
     assert default_session.state.queue == ["old"]
     assert default_session.state.queue_index == 0
+
+
+def test_play_rollback_leaves_an_idle_session_as_it_was(client, default_session):
+    """A failed dispatch from a session that was not casting must leave it
+    not casting - no delivery, not streaming - with its preview and its
+    clock untouched."""
+    client.post("/config", json={"url": "http://nav:4533", "credential": "x"})
+    st = default_session.state
+    st.preview = {"song_id": "preview"}
+    generation = st.clock.play_generation
+    track = Track(id="new", title="New", artist="Artist", duration=200, cover_art_id="c")
+
+    with (
+        patch.object(default_session.media, "get_track", return_value=track),
+        patch.object(
+            ChromecastDelivery, "play", new=AsyncMock(side_effect=RuntimeError("unreachable"))
+        ),
+    ):
+        r = client.post(
+            "/play", json={"song_ids": ["new"], "target_name": "TV", "target_type": "chromecast"}
+        )
+
+    assert "error" in r.json()
+    assert st.active_delivery is None
+    assert st.is_streaming is False
+    assert st.preview == {"song_id": "preview"}
+    assert st.clock.play_generation == generation
 
 
 # ── Queue auto-advance seeding (see routes/stream.py's _advance_or_end()) ──────
@@ -1500,7 +1528,7 @@ def test_resume_then_resync_does_not_corrupt_position_offset_after_deep_pause(
     # ~8s in, matching how long it took this resync check to land.
     with patch.object(SonosDelivery, "get_position", new=AsyncMock(return_value=8.0)):
         asyncio.run(
-            _resync_position_once(
+            resync_position_once(
                 default_session,
                 default_session.state.active_delivery,
                 default_session.state.clock.play_generation,
@@ -1515,7 +1543,7 @@ def test_resume_then_resync_does_not_corrupt_position_offset_after_deep_pause(
 def test_resume_schedules_immediate_position_offset_recalibration(client, default_session):
     """/resume's reconnect restarts the stream near 0 again, re-incurring
     the device's startup-buffering delay exactly like /seek's reconnect
-    does — /resume must schedule the same immediate _apply_position_offset()
+    does — /resume must schedule the same immediate apply_position_offset()
     recalibration /seek does, not just the ongoing periodic resync (see
     that function's own docstring). Regression test: without this,
     position_offset stayed whatever it was before the pause for up to
@@ -1528,8 +1556,8 @@ def test_resume_schedules_immediate_position_offset_recalibration(client, defaul
 
     with (
         patch.object(SonosDelivery, "play", new=AsyncMock()),
-        patch("routes.playback._apply_position_offset", new=AsyncMock()) as apply_offset,
-        patch("routes.playback._resync_position_periodically", new=AsyncMock()),
+        patch("core.cast_position.apply_position_offset", new=AsyncMock()) as apply_offset,
+        patch("core.cast_position.resync_position_periodically", new=AsyncMock()),
     ):
         r = client.post("/resume")
 
@@ -1546,7 +1574,7 @@ def test_resume_restarts_radio_position_tracker_at_the_new_generation(client, de
     bumps play_generation, the same way seek_to() does — and
     core/radio_position.py's RadioPositionTracker self-terminates the
     instant it notices a generation mismatch (see its own docstring),
-    exactly like _resync_position_periodically does. Without restarting it
+    exactly like resync_position_periodically does. Without restarting it
     here, a pause/resume during a radio dispatch (observed live: a Sonos
     auto-pauses/resumes seconds into its own dispatch, apparently routine)
     leaves the tracker dead for good — radio_buffering stuck True forever
@@ -1559,8 +1587,8 @@ def test_resume_restarts_radio_position_tracker_at_the_new_generation(client, de
 
     with (
         patch.object(SonosDelivery, "play", new=AsyncMock()),
-        patch("routes.playback._apply_position_offset", new=AsyncMock()),
-        patch("routes.playback._resync_position_periodically", new=AsyncMock()),
+        patch("core.cast_position.apply_position_offset", new=AsyncMock()),
+        patch("core.cast_position.resync_position_periodically", new=AsyncMock()),
         patch("routes.playback.RadioPositionTracker") as tracker_cls,
     ):
         r = client.post("/resume")
@@ -1597,8 +1625,8 @@ def test_resume_skips_radio_position_tracker_for_relayed_sonos(client, default_s
 
     with (
         patch.object(SonosDelivery, "play", new=AsyncMock()),
-        patch("routes.playback._apply_position_offset", new=AsyncMock()),
-        patch("routes.playback._resync_position_periodically", new=AsyncMock()),
+        patch("core.cast_position.apply_position_offset", new=AsyncMock()),
+        patch("core.cast_position.resync_position_periodically", new=AsyncMock()),
         patch("routes.playback.RadioPositionTracker") as tracker_cls,
     ):
         r = client.post("/resume")
@@ -1619,8 +1647,8 @@ def test_resume_does_not_touch_radio_position_tracker_for_a_track(client, defaul
 
     with (
         patch.object(SonosDelivery, "play", new=AsyncMock()),
-        patch("routes.playback._apply_position_offset", new=AsyncMock()),
-        patch("routes.playback._resync_position_periodically", new=AsyncMock()),
+        patch("core.cast_position.apply_position_offset", new=AsyncMock()),
+        patch("core.cast_position.resync_position_periodically", new=AsyncMock()),
         patch("routes.playback.RadioPositionTracker") as tracker_cls,
     ):
         r = client.post("/resume")
@@ -1824,7 +1852,23 @@ def test_resume_still_uses_stream_proxy_for_a_regular_track(client, default_sess
     assert url.startswith("http://") and "/stream/" in url
 
 
-# ── _apply_position_offset ──────────────────────────────────────────────────────
+async def test_start_position_sync_calibrates_and_keeps_resyncing(default_session):
+    """Every dispatch path relies on this one call for both: the calibration
+    right after the start, and the resync for the rest of the track."""
+    target = ChromecastDelivery("TV")
+    generation = default_session.state.clock.play_generation
+    with (
+        patch("core.cast_position.apply_position_offset", new=AsyncMock()) as apply_offset,
+        patch("core.cast_position.resync_position_periodically", new=AsyncMock()) as resync,
+    ):
+        start_position_sync(default_session, target)
+        await asyncio.sleep(0)
+
+    apply_offset.assert_awaited_once_with(default_session, target, generation)
+    resync.assert_awaited_once_with(default_session, target, generation)
+
+
+# ── apply_position_offset ──────────────────────────────────────────────────────
 
 
 class _FixedOffsetDelivery(BaseDelivery):
@@ -1851,7 +1895,7 @@ def test_apply_position_offset_uses_a_declared_fixed_offset(default_session):
     target = _FixedOffsetDelivery("estimating-device")
     import asyncio
 
-    asyncio.run(_apply_position_offset(default_session, target, generation=1))
+    asyncio.run(apply_position_offset(default_session, target, generation=1))
 
     assert default_session.state.clock.position_offset == -_FixedOffsetDelivery.FIXED_OFFSET
 
@@ -1862,7 +1906,7 @@ def test_apply_position_offset_measures_airplay_instead_of_estimating(default_se
     AirPlay derives a real position now (see AirPlayDelivery.get_position()),
     so it must take the *measuring* branch. The trap this guards against is
     the half-done version of that change: keeping a FIXED_OFFSET alongside
-    the new get_position() short-circuits _apply_position_offset() before it
+    the new get_position() short-circuits apply_position_offset() before it
     ever polls, and the measurement is silently never used.
 
     The numbers are picked so a measured offset can't be mistaken for
@@ -1879,7 +1923,7 @@ def test_apply_position_offset_measures_airplay_instead_of_estimating(default_se
     import asyncio
 
     with patch.object(target, "get_position", new=AsyncMock(return_value=0.5)):
-        asyncio.run(_apply_position_offset(default_session, target, generation=1))
+        asyncio.run(apply_position_offset(default_session, target, generation=1))
 
     # ~3.5s of wall clock by the time the first poll lands (incl. the 0.5s
     # poll delay) against a device 0.5s in.
@@ -1896,7 +1940,7 @@ def test_apply_position_offset_calibrates_for_sonos(default_session):
     import asyncio
 
     with patch.object(target, "get_position", new=AsyncMock(return_value=1.5)):
-        asyncio.run(_apply_position_offset(default_session, target, generation=1))
+        asyncio.run(apply_position_offset(default_session, target, generation=1))
 
     # device is ~1.5s in, wall-clock elapsed ~5.5s (incl. the 0.5s poll delay) -> offset ~-4s
     assert -4.5 < default_session.state.clock.position_offset < -3.5
@@ -1917,7 +1961,7 @@ def test_apply_position_offset_ignores_implausible_reading_then_calibrates(
     import asyncio
 
     with patch.object(target, "get_position", new=AsyncMock(side_effect=[56.0, 1.5])):
-        asyncio.run(_apply_position_offset(default_session, target, generation=1))
+        asyncio.run(apply_position_offset(default_session, target, generation=1))
 
     # Must have used the second (plausible) reading, not the bogus first one —
     # a -53s-ish offset would mean this assertion range is wrong.
@@ -1943,7 +1987,7 @@ def test_apply_position_offset_calibrates_correctly_with_start_position(
     import asyncio
 
     with patch.object(target, "get_position", new=AsyncMock(return_value=1.0)):
-        asyncio.run(_apply_position_offset(default_session, target, generation=1))
+        asyncio.run(apply_position_offset(default_session, target, generation=1))
 
     # device is ~1s into the post-seek stream, ~0.5s of that is the poll delay
     # -> offset should be a small buffering correction, NOT ~-start_position (-10s).
@@ -1973,7 +2017,7 @@ class TestStandsAsideForTheRadioTracker:
 
         with patch.object(delivery, "get_position", new=AsyncMock(return_value=4.0)) as read:
             asyncio.run(
-                _apply_position_offset(
+                apply_position_offset(
                     default_session, delivery, default_session.state.clock.play_generation
                 )
             )
@@ -1998,7 +2042,7 @@ class TestStandsAsideForTheRadioTracker:
 
         with patch.object(delivery, "get_position", new=AsyncMock(return_value=4.0)) as read:
             asyncio.run(
-                _apply_position_offset(
+                apply_position_offset(
                     default_session, delivery, default_session.state.clock.play_generation
                 )
             )
@@ -2015,7 +2059,7 @@ class TestStandsAsideForTheRadioTracker:
         with patch.object(delivery, "get_position", new=AsyncMock(return_value=4.0)) as read:
             asyncio.run(
                 asyncio.wait_for(
-                    _resync_position_periodically(
+                    resync_position_periodically(
                         default_session, delivery, default_session.state.clock.play_generation
                     ),
                     timeout=1.0,
@@ -2045,7 +2089,7 @@ def test_apply_position_offset_returns_when_nothing_supports_position(default_se
     import asyncio
 
     asyncio.run(
-        asyncio.wait_for(_apply_position_offset(default_session, target, generation=1), timeout=1.0)
+        asyncio.wait_for(apply_position_offset(default_session, target, generation=1), timeout=1.0)
     )
 
     assert default_session.state.clock.position_offset == 0.0
@@ -2063,7 +2107,7 @@ def test_apply_position_offset_keeps_polling_while_no_reading_yet(default_sessio
     import asyncio
 
     with patch.object(target, "get_position", new=AsyncMock(side_effect=[None, 1.0])):
-        asyncio.run(_apply_position_offset(default_session, target, generation=1))
+        asyncio.run(apply_position_offset(default_session, target, generation=1))
 
     # Used the second, real reading — didn't give up after the first poll
     # came back empty.
@@ -2091,7 +2135,7 @@ def test_apply_position_offset_stops_polling_once_streaming_stops_between_polls(
 
     async def _run():
         await asyncio.gather(
-            _apply_position_offset(default_session, target, generation=1),
+            apply_position_offset(default_session, target, generation=1),
             _stop_shortly_after(),
         )
 
@@ -2110,7 +2154,7 @@ def test_apply_position_offset_discards_stale_reading_that_arrives_after_being_s
     flight must not have its now-stale reading calibrate the *new* stream's
     clock — regression test for the exact race that used to read live as a
     freshly-restarted track's displayed position getting stuck near 0:00
-    (see _resync_position_once()'s identical guard/comment, which already
+    (see resync_position_once()'s identical guard/comment, which already
     covered this for the periodic resync but not this one-shot startup
     calibration)."""
     default_session.state.is_streaming = True
@@ -2126,7 +2170,7 @@ def test_apply_position_offset_discards_stale_reading_that_arrives_after_being_s
         return 5.0
 
     with patch.object(target, "get_position", new=_fake_get_position):
-        asyncio.run(_apply_position_offset(default_session, target, generation=1))
+        asyncio.run(apply_position_offset(default_session, target, generation=1))
 
     # Left at the provisional guess, not calibrated from the stale reading
     # meant for a generation that's no longer current.
@@ -2147,7 +2191,7 @@ def test_apply_position_offset_abandons_fixed_offset_branch_on_track_change(defa
     target = _FixedOffsetDelivery("estimating-device")
     import asyncio
 
-    asyncio.run(_apply_position_offset(default_session, target, generation=1))
+    asyncio.run(apply_position_offset(default_session, target, generation=1))
 
     assert default_session.state.clock.position_offset == 0.0
 
@@ -2165,7 +2209,7 @@ def test_apply_position_offset_retries_after_a_transient_get_position_error(defa
         "get_position",
         new=AsyncMock(side_effect=[RuntimeError("SOAP fault"), 0.5]),
     ):
-        asyncio.run(_apply_position_offset(default_session, target, generation=1))
+        asyncio.run(apply_position_offset(default_session, target, generation=1))
 
     # Used the second, successful reading rather than aborting on the
     # first transient failure.
@@ -2183,16 +2227,16 @@ def test_apply_position_offset_abandons_on_track_change(default_session):
     import asyncio
 
     with patch.object(target, "get_position", new=AsyncMock(return_value=5.0)):
-        asyncio.run(_apply_position_offset(default_session, target, generation=1))
+        asyncio.run(apply_position_offset(default_session, target, generation=1))
 
     assert default_session.state.clock.position_offset == 0.0
 
 
-# ── _resync_position_once / _resync_position_periodically ───────────────────
+# ── resync_position_once / resync_position_periodically ───────────────────
 # Regression coverage for "let me poll the device's own position so an
 # external seek — scrubbing on the device's own remote/app instead of
 # through Beacon — doesn't leave the displayed position stuck on the old
-# wall-clock model" (_apply_position_offset above deliberately only
+# wall-clock model" (apply_position_offset above deliberately only
 # calibrates once, at track start — see its own docstring).
 
 
@@ -2205,7 +2249,7 @@ def test_resync_position_once_ignores_small_drift(default_session):
     import asyncio
 
     with patch.object(target, "get_position", new=AsyncMock(return_value=10.2)):
-        asyncio.run(_resync_position_once(default_session, target, 0))
+        asyncio.run(resync_position_once(default_session, target, 0))
 
     # 0.2s off wall-clock is ordinary jitter, not a real change — must not
     # have recalibrated at all.
@@ -2220,7 +2264,7 @@ def test_resync_position_once_keeps_the_reading_for_the_stream_diagnostics(defau
     import asyncio
 
     with patch.object(target, "get_position", new=AsyncMock(return_value=10.2)):
-        asyncio.run(_resync_position_once(default_session, target, 0))
+        asyncio.run(resync_position_once(default_session, target, 0))
 
     generation, at, position, _ = default_session.state.device_reading
     assert (generation, position) == (0, 10.2)
@@ -2249,14 +2293,14 @@ def test_resync_position_once_ignores_small_drift_on_top_of_large_offset(default
     # POSITION_RESYNC_THRESHOLD on its own, but only 0.3s away from the
     # already-applied -6.0s offset.
     with patch.object(target, "get_position", new=AsyncMock(return_value=34.3)):
-        asyncio.run(_resync_position_once(default_session, target, 0))
+        asyncio.run(resync_position_once(default_session, target, 0))
 
     assert default_session.state.clock.position_offset == -6.0
 
 
 def test_resync_position_once_recalibrates_on_forward_seek(default_session):
     """A device position well *ahead* of the wall-clock model must still be
-    trusted here — unlike _apply_position_offset's startup-only guard, this
+    trusted here — unlike apply_position_offset's startup-only guard, this
     is exactly the "skipped forward on the device itself" case this exists
     to catch, not a stale reading to reject."""
     default_session.state.is_streaming = True
@@ -2267,7 +2311,7 @@ def test_resync_position_once_recalibrates_on_forward_seek(default_session):
     import asyncio
 
     with patch.object(target, "get_position", new=AsyncMock(return_value=40.0)):
-        asyncio.run(_resync_position_once(default_session, target, 0))
+        asyncio.run(resync_position_once(default_session, target, 0))
 
     assert default_session.state.clock.position_offset > POSITION_RESYNC_THRESHOLD
 
@@ -2281,7 +2325,7 @@ def test_resync_position_once_recalibrates_on_backward_seek(default_session):
     import asyncio
 
     with patch.object(target, "get_position", new=AsyncMock(return_value=10.0)):
-        asyncio.run(_resync_position_once(default_session, target, 0))
+        asyncio.run(resync_position_once(default_session, target, 0))
 
     assert default_session.state.clock.position_offset < -POSITION_RESYNC_THRESHOLD
 
@@ -2301,7 +2345,7 @@ def test_resync_position_once_logs_what_the_device_says_about_a_jump(default_ses
         ),
         caplog.at_level(logging.INFO),
     ):
-        asyncio.run(_resync_position_once(default_session, target, 0))
+        asyncio.run(resync_position_once(default_session, target, 0))
 
     assert "device reports play_mode=REPEAT_ONE" in caplog.text
 
@@ -2320,7 +2364,7 @@ def test_resync_position_once_still_recalibrates_when_the_device_cannot_describe
         patch.object(target, "current_uri", new=AsyncMock(return_value=None)),
         patch.object(target, "describe_transport", new=AsyncMock(side_effect=OSError("gone"))),
     ):
-        asyncio.run(_resync_position_once(default_session, target, 0))
+        asyncio.run(resync_position_once(default_session, target, 0))
 
     assert default_session.state.clock.position_offset < -POSITION_RESYNC_THRESHOLD
 
@@ -2335,7 +2379,7 @@ def test_resync_position_once_ignores_reading_past_track_duration(default_sessio
     import asyncio
 
     with patch.object(target, "get_position", new=AsyncMock(return_value=500.0)):
-        asyncio.run(_resync_position_once(default_session, target, 0))
+        asyncio.run(resync_position_once(default_session, target, 0))
 
     assert default_session.state.clock.position_offset == 0.0
 
@@ -2364,7 +2408,7 @@ def test_resync_position_once_ignores_a_reset_to_zero_once_wall_clock_is_past_du
     import asyncio
 
     with patch.object(target, "get_position", new=AsyncMock(return_value=0.0)):
-        asyncio.run(_resync_position_once(default_session, target, 0))
+        asyncio.run(resync_position_once(default_session, target, 0))
 
     assert default_session.state.clock.position_offset == -1.07
 
@@ -2384,7 +2428,7 @@ def test_resync_position_once_still_recalibrates_a_real_rewind_well_before_durat
     import asyncio
 
     with patch.object(target, "get_position", new=AsyncMock(return_value=0.0)):
-        asyncio.run(_resync_position_once(default_session, target, 0))
+        asyncio.run(resync_position_once(default_session, target, 0))
 
     assert default_session.state.clock.position_offset < -POSITION_RESYNC_THRESHOLD
 
@@ -2409,7 +2453,7 @@ def test_resync_position_once_ignores_a_stop_where_the_audio_sent_ends_after_a_s
     import asyncio
 
     with patch.object(target, "get_position", new=AsyncMock(return_value=0.0)):
-        asyncio.run(_resync_position_once(default_session, target, st.clock.play_generation))
+        asyncio.run(resync_position_once(default_session, target, st.clock.play_generation))
 
     assert st.clock.position_offset == -0.9
 
@@ -2423,7 +2467,7 @@ def test_resync_position_once_ignores_negative_reading(default_session):
     import asyncio
 
     with patch.object(target, "get_position", new=AsyncMock(return_value=-1.0)):
-        asyncio.run(_resync_position_once(default_session, target, 0))
+        asyncio.run(resync_position_once(default_session, target, 0))
 
     assert default_session.state.clock.position_offset == 0.0
 
@@ -2437,7 +2481,7 @@ def test_resync_position_once_ignores_get_position_failure(default_session):
     import asyncio
 
     with patch.object(target, "get_position", new=AsyncMock(side_effect=OSError("unreachable"))):
-        asyncio.run(_resync_position_once(default_session, target, 0))
+        asyncio.run(resync_position_once(default_session, target, 0))
 
     assert default_session.state.clock.position_offset == 0.0
 
@@ -2451,7 +2495,7 @@ def test_resync_position_once_discards_reading_superseded_while_in_flight(defaul
     mid-playback via the Previous button. Comparing that stale reading
     against the freshly-reset clock must not recalibrate at all, the same
     way a generation mismatch checked *before* the call already prevents
-    (see _resync_position_periodically's own guard) — observed live as a
+    (see resync_position_periodically's own guard) — observed live as a
     freshly-restarted track's displayed position getting stuck near 0:00."""
     default_session.state.is_streaming = True
     default_session.state.current_track = Track("1", "Song", "Artist", 180, "")
@@ -2471,7 +2515,7 @@ def test_resync_position_once_discards_reading_superseded_while_in_flight(defaul
         return 118.0  # the *old* stream's position, nowhere near the new one
 
     with patch.object(target, "get_position", new=AsyncMock(side_effect=stale_get_position)):
-        asyncio.run(_resync_position_once(default_session, target, 0))  # generation 0, now stale
+        asyncio.run(resync_position_once(default_session, target, 0))  # generation 0, now stale
 
     # Must stay exactly what the restart set it to — not recalibrated
     # against the old stream's leftover reading.
@@ -2488,7 +2532,7 @@ def test_resync_position_periodically_returns_immediately_without_position(defau
 
     asyncio.run(
         asyncio.wait_for(
-            _resync_position_periodically(default_session, target, generation=1), timeout=1.0
+            resync_position_periodically(default_session, target, generation=1), timeout=1.0
         )
     )
 
@@ -2508,7 +2552,7 @@ def test_resync_position_periodically_skips_a_relayed_sonos(default_session):
     with patch.object(target, "get_position", new=AsyncMock(return_value=0.0)) as get_position:
         asyncio.run(
             asyncio.wait_for(
-                _resync_position_periodically(default_session, target, generation=1), timeout=1.0
+                resync_position_periodically(default_session, target, generation=1), timeout=1.0
             )
         )
     get_position.assert_not_called()
@@ -2525,7 +2569,7 @@ def test_resync_position_periodically_skips_a_proxied_sonos(default_session):
     with patch.object(target, "get_position", new=AsyncMock(return_value=0.0)) as get_position:
         asyncio.run(
             asyncio.wait_for(
-                _resync_position_periodically(default_session, target, generation=1), timeout=1.0
+                resync_position_periodically(default_session, target, generation=1), timeout=1.0
             )
         )
     get_position.assert_not_called()
@@ -2541,10 +2585,10 @@ async def test_resync_position_periodically_still_polls_a_direct_cast_sonos(defa
     default_session.state.active_delivery = target
 
     with (
-        patch("routes.playback.POSITION_RESYNC_INTERVAL", 0.01),
-        patch("routes.playback._resync_position_once", new=AsyncMock()) as resync_once,
+        patch("core.cast_position.POSITION_RESYNC_INTERVAL", 0.01),
+        patch("core.cast_position.resync_position_once", new=AsyncMock()) as resync_once,
     ):
-        await _run_briefly(_resync_position_periodically(default_session, target, generation=1))
+        await _run_briefly(resync_position_periodically(default_session, target, generation=1))
     resync_once.assert_called()
 
 
@@ -2559,15 +2603,15 @@ async def test_resync_position_periodically_still_polls_a_sonos_playing_a_track(
     default_session.state.active_delivery = target
 
     with (
-        patch("routes.playback.POSITION_RESYNC_INTERVAL", 0.01),
-        patch("routes.playback._resync_position_once", new=AsyncMock()) as resync_once,
+        patch("core.cast_position.POSITION_RESYNC_INTERVAL", 0.01),
+        patch("core.cast_position.resync_position_once", new=AsyncMock()) as resync_once,
     ):
-        await _run_briefly(_resync_position_periodically(default_session, target, generation=1))
+        await _run_briefly(resync_position_periodically(default_session, target, generation=1))
     resync_once.assert_called()
 
 
 def test_resync_position_periodically_stops_on_generation_mismatch(default_session, monkeypatch):
-    monkeypatch.setattr("routes.playback.POSITION_RESYNC_INTERVAL", 0.01)
+    monkeypatch.setattr("core.cast_position.POSITION_RESYNC_INTERVAL", 0.01)
     default_session.state.is_streaming = True
     # A new /play (or /seek, or /resume) already bumped the generation by
     # the time this task gets to run its first check.
@@ -2579,7 +2623,7 @@ def test_resync_position_periodically_stops_on_generation_mismatch(default_sessi
     with patch.object(target, "get_position", new=AsyncMock(return_value=5.0)) as get_position:
         asyncio.run(
             asyncio.wait_for(
-                _resync_position_periodically(default_session, target, generation=1), timeout=1.0
+                resync_position_periodically(default_session, target, generation=1), timeout=1.0
             )
         )
     get_position.assert_not_called()
@@ -2588,7 +2632,7 @@ def test_resync_position_periodically_stops_on_generation_mismatch(default_sessi
 async def _run_briefly(coro) -> None:
     """Runs `coro` (expected to loop forever) for a short bounded window,
     then cancels it — used below to assert on behavior *during* a few loop
-    iterations of _resync_position_periodically(), which otherwise never
+    iterations of resync_position_periodically(), which otherwise never
     returns on its own within a single test."""
     task = asyncio.ensure_future(coro)
     try:
@@ -2604,14 +2648,14 @@ async def _run_briefly(coro) -> None:
 async def test_resync_position_periodically_calls_resync_once_per_interval(
     default_session, monkeypatch
 ):
-    monkeypatch.setattr("routes.playback.POSITION_RESYNC_INTERVAL", 0.01)
+    monkeypatch.setattr("core.cast_position.POSITION_RESYNC_INTERVAL", 0.01)
     default_session.state.is_streaming = True
     default_session.state.clock.play_generation = 1
     target = SonosDelivery("Küche")
     default_session.state.active_delivery = target
 
-    with patch("routes.playback._resync_position_once", new=AsyncMock()) as resync_once:
-        await _run_briefly(_resync_position_periodically(default_session, target, generation=1))
+    with patch("core.cast_position.resync_position_once", new=AsyncMock()) as resync_once:
+        await _run_briefly(resync_position_periodically(default_session, target, generation=1))
 
     resync_once.assert_awaited()
 
@@ -2625,7 +2669,7 @@ async def test_resync_position_periodically_stops_once_its_device_is_dropped(
     /device-stop deliberately does not touch play_generation — nothing about
     the stream changed, only who receives it — so the generation check alone
     never fires."""
-    monkeypatch.setattr("routes.playback.POSITION_RESYNC_INTERVAL", 0.01)
+    monkeypatch.setattr("core.cast_position.POSITION_RESYNC_INTERVAL", 0.01)
     st = default_session.state
     st.is_streaming = True
     st.clock.play_generation = 1
@@ -2633,10 +2677,10 @@ async def test_resync_position_periodically_stops_once_its_device_is_dropped(
     remaining = SonosDelivery("Wohnzimmer")
     st.active_delivery = DeliveryManager.from_deliveries([stopped, remaining])
 
-    with patch("routes.playback._resync_position_once", new=AsyncMock()) as resync_once:
+    with patch("core.cast_position.resync_position_once", new=AsyncMock()) as resync_once:
         # Drop `stopped` out of the session the way /device-stop does.
         st.active_delivery = remaining
-        await _run_briefly(_resync_position_periodically(default_session, stopped, generation=1))
+        await _run_briefly(resync_position_periodically(default_session, stopped, generation=1))
 
     resync_once.assert_not_awaited()
 
@@ -2646,16 +2690,16 @@ async def test_resync_position_periodically_keeps_polling_a_device_still_targete
 ):
     """Mirror of the test above — stopping some *other* device must not
     retire the task for one this session is still playing to."""
-    monkeypatch.setattr("routes.playback.POSITION_RESYNC_INTERVAL", 0.01)
+    monkeypatch.setattr("core.cast_position.POSITION_RESYNC_INTERVAL", 0.01)
     st = default_session.state
     st.is_streaming = True
     st.clock.play_generation = 1
     kept = SonosDelivery("Wohnzimmer")
     st.active_delivery = DeliveryManager.from_deliveries([kept, SonosDelivery("Küche")])
 
-    with patch("routes.playback._resync_position_once", new=AsyncMock()) as resync_once:
+    with patch("core.cast_position.resync_position_once", new=AsyncMock()) as resync_once:
         st.active_delivery = kept
-        await _run_briefly(_resync_position_periodically(default_session, kept, generation=1))
+        await _run_briefly(resync_position_periodically(default_session, kept, generation=1))
 
     resync_once.assert_awaited()
 
@@ -2681,7 +2725,7 @@ def test_resync_position_once_discards_a_device_dropped_while_in_flight(default_
         return 0.0
 
     with patch.object(stopped, "get_position", new=AsyncMock(side_effect=_drop_then_report)):
-        asyncio.run(_resync_position_once(default_session, stopped, 0))
+        asyncio.run(resync_position_once(default_session, stopped, 0))
 
     assert st.clock.position_offset == 0.0
 
@@ -2714,7 +2758,7 @@ def test_resync_leaves_the_clock_alone_when_the_device_plays_something_else(
         ),
         caplog.at_level("INFO", logger="connect.playback"),
     ):
-        asyncio.run(_resync_position_once(default_session, target, 0))
+        asyncio.run(resync_position_once(default_session, target, 0))
 
     assert default_session.state.clock.position_offset == 0.0
     assert "other.mp3" in caplog.text
@@ -2728,7 +2772,7 @@ def test_resync_follows_a_rewind_on_this_sessions_own_stream(default_session):
         patch.object(target, "get_position", new=AsyncMock(return_value=7.0)),
         patch.object(target, "current_uri", new=AsyncMock(return_value=own)),
     ):
-        asyncio.run(_resync_position_once(default_session, target, 0))
+        asyncio.run(resync_position_once(default_session, target, 0))
 
     assert default_session.state.clock.position_offset == pytest.approx(-49.0, abs=0.5)
 
@@ -2749,7 +2793,7 @@ def test_resync_counts_the_uri_lookup_as_time_the_device_played_on(default_sessi
         patch.object(target, "get_position", new=AsyncMock(return_value=7.0)),
         patch.object(target, "current_uri", new=AsyncMock(side_effect=_slow_lookup)),
     ):
-        asyncio.run(_resync_position_once(default_session, target, 0))
+        asyncio.run(resync_position_once(default_session, target, 0))
 
     assert st.clock.position_offset == pytest.approx(-49.0, abs=0.5)
 
@@ -2766,13 +2810,13 @@ def test_resync_discards_a_reading_superseded_during_the_uri_lookup(default_sess
         patch.object(target, "get_position", new=AsyncMock(return_value=7.0)),
         patch.object(target, "current_uri", new=AsyncMock(side_effect=_seek_meanwhile)),
     ):
-        asyncio.run(_resync_position_once(default_session, target, 0))
+        asyncio.run(resync_position_once(default_session, target, 0))
 
     assert st.clock.position_offset == 0.0
 
 
 def test_resync_position_periodically_skips_polling_while_paused(default_session, monkeypatch):
-    monkeypatch.setattr("routes.playback.POSITION_RESYNC_INTERVAL", 0.01)
+    monkeypatch.setattr("core.cast_position.POSITION_RESYNC_INTERVAL", 0.01)
     default_session.state.is_streaming = True
     default_session.state.clock.play_generation = 1
     default_session.state.clock.is_paused = True
@@ -2782,7 +2826,7 @@ def test_resync_position_periodically_skips_polling_while_paused(default_session
 
     with patch.object(target, "get_position", new=AsyncMock(return_value=5.0)) as get_position:
         asyncio.run(
-            _run_briefly(_resync_position_periodically(default_session, target, generation=1))
+            _run_briefly(resync_position_periodically(default_session, target, generation=1))
         )
     get_position.assert_not_called()
 
@@ -2813,7 +2857,7 @@ def test_finishes_a_track_whose_end_was_never_reported(default_session):
     frame and the resync loop keeps polling a stopped speaker."""
     st = _orphaned_session(default_session)
 
-    assert asyncio.run(_finish_orphaned_track(default_session, st.clock.play_generation)) is True
+    assert asyncio.run(finish_orphaned_track(default_session, st.clock.play_generation)) is True
     assert st.track_ended is True
     assert st.is_streaming is False
 
@@ -2824,7 +2868,7 @@ def test_leaves_a_track_alone_while_a_stream_connection_is_still_open(default_se
     file's own header can simply be wrong."""
     st = _orphaned_session(default_session, connections=1)
 
-    assert asyncio.run(_finish_orphaned_track(default_session, st.clock.play_generation)) is False
+    assert asyncio.run(finish_orphaned_track(default_session, st.clock.play_generation)) is False
     assert st.track_ended is False
     assert st.is_streaming is True
 
@@ -2835,7 +2879,7 @@ def test_leaves_a_track_alone_until_well_past_its_end(default_session):
     sits right at it — this backstop must not race either of them."""
     st = _orphaned_session(default_session, elapsed=230)
 
-    assert asyncio.run(_finish_orphaned_track(default_session, st.clock.play_generation)) is False
+    assert asyncio.run(finish_orphaned_track(default_session, st.clock.play_generation)) is False
     assert st.track_ended is False
 
 
@@ -2844,7 +2888,7 @@ def test_leaves_radio_alone(default_session):
     st = _orphaned_session(default_session)
     st.current_track = Track("radio", "Some station", "", 0, "")
 
-    assert asyncio.run(_finish_orphaned_track(default_session, st.clock.play_generation)) is False
+    assert asyncio.run(finish_orphaned_track(default_session, st.clock.play_generation)) is False
     assert st.track_ended is False
 
 
