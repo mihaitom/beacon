@@ -1,7 +1,7 @@
 # Folder source for Beacon
 
 One of the example apps for Beacon's external sources, and a complete one: it is meant to be
-run, not only read. It plays a folder of music files in Beacon without
+run, not only read. It plays folders of music files in Beacon without
 adding them to your media server. It shows up as its own tab in Beacon with albums,
 artists, songs and search. Every song plays like any other, on the speakers too, and Beacon's
 own queue does the rest, shuffle included.
@@ -13,6 +13,8 @@ recordings, a friend's hard drive.
 
 ## What it does
 
+- Takes one folder or several. With several, each gets a tab at the top of the page, named
+  after the folder, with its own albums, artists, songs and search.
 - Reads every audio file below the folder, subfolders included, and groups them into
   albums: one album per folder and album tag. A compilation stays one album even when
   every song names another artist; `CD1`/`Disc 2` folders join their album.
@@ -103,8 +105,10 @@ if your user has another uid, `chown 1000 data` once.
 Needs Python 3.13 and [uv](https://docs.astral.sh/uv/).
 
 ```bash
-TOKEN=change-me uv run main.py /path/to/music
+TOKEN=change-me uv run main.py /path/to/music /path/to/more/music
 ```
+
+Each folder becomes a tab, named after the folder.
 
 ## Connecting Beacon
 
@@ -136,17 +140,33 @@ listeners.
 
 ## Settings
 
-All from the environment. The folder can also be the first argument.
+All from the environment. The folders can also be given as arguments.
 
 | Variable         | Default        | What it does                                                 |
 | ---------------- | -------------- | ------------------------------------------------------------ |
-| `MUSIC_DIR`      | -              | The folder to serve (in Docker: mount it at `/music`)        |
+| `MUSIC_DIR`      | -              | The folder to serve; several separated by `:`. See below     |
 | `TOKEN`          | none           | Beacon has to send it to see the page. Set one               |
 | `SOURCE_NAME`    | `Music folder` | The name shown in the page's header                          |
 | `RESCAN_MINUTES` | `30`           | How often to look for new music; `0`: at start and on demand |
 | `DATA_DIR`       | `./data`       | Music index and secret (in Docker: `/data`)                  |
 | `SECRET`         | made once      | Signs song addresses. Leave it unset unless you run copies   |
 | `HOST`, `PORT`   | `0.0.0.0:8800` | Where to listen                                              |
+
+### Several folders
+
+Each folder is a tab, named after the folder itself. In Docker that is the name it is
+mounted under, so the mount point is where you choose it:
+
+```yaml
+volumes:
+  - /srv/imports:/music/Imports:ro
+  - /srv/dj-sets:/music/DJ Sets:ro
+environment:
+  MUSIC_DIR: /music/Imports:/music/DJ Sets
+```
+
+The tabs keep the order of `MUSIC_DIR`. Two folders of the same name are refused at start:
+mount one under another name. Search looks only in the folder whose tab is open.
 
 ## Security
 
@@ -165,8 +185,9 @@ to the internet; only Beacon's server needs to reach it.
 ### Songs keep their identity
 
 Beacon tells songs apart by their address, and the address comes from the file's place in
-the folder and the secret. Moving or renaming a file makes it a new song to Beacon, and so
-does a new secret: delete `data/secret` and every song played so far is a stranger.
+the folder, its name and the secret. Moving or renaming a file makes it a new song to Beacon,
+and so does renaming its folder (in Docker: its mount point) or a new secret: delete
+`data/secret` and every song played so far is a stranger.
 
 ## Development
 

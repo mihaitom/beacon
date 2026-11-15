@@ -1,15 +1,29 @@
-"""Settings, from the environment (and the music folder from the command line,
+"""Settings, from the environment (and the music folders from the command line,
 for a quick start)."""
 
 import os
+import re
 import secrets
 from dataclasses import dataclass
 from pathlib import Path
 
+from .library import sort_text
+
+
+@dataclass(frozen=True)
+class MusicFolder:
+    """One folder, shown as its own tab in the page."""
+
+    # In the page's and the songs' addresses: renaming the folder makes its
+    # songs new ones to Beacon.
+    key: str
+    name: str
+    path: Path
+
 
 @dataclass(frozen=True)
 class Config:
-    music_dir: Path
+    folders: tuple[MusicFolder, ...]
     data_dir: Path
     name: str
     # Required on every request Beacon passes on to /v1 and /ui/ when set.
@@ -39,13 +53,30 @@ def _secret(data_dir: Path) -> bytes:
         return value
 
 
+def music_folders(paths: list[str]) -> tuple[MusicFolder, ...]:
+    """Each folder is named after itself: in Docker, the name it is mounted under."""
+    folders: list[MusicFolder] = []
+    for given in paths:
+        path = Path(given).expanduser().resolve()
+        if not path.is_dir():
+            raise SystemExit(f"Not a folder: {path}")
+        name = path.name or str(path)
+        if any(f.name == name for f in folders):
+            raise SystemExit(f'Two folders are called "{name}". Give one of them another name.')
+        key = re.sub(r"[^a-z0-9]+", "-", sort_text(name)).strip("-") or "folder"
+        taken = {f.key for f in folders}
+        unique, n = key, 2
+        while unique in taken:
+            unique, n = f"{key}-{n}", n + 1
+        folders.append(MusicFolder(key=unique, name=name, path=path))
+    return tuple(folders)
+
+
 def load(argv: list[str]) -> Config:
-    music = argv[1] if len(argv) > 1 else os.environ.get("MUSIC_DIR", "")
-    if not music:
-        raise SystemExit("Which folder? Pass it as an argument or set MUSIC_DIR.")
-    music_dir = Path(music).expanduser().resolve()
-    if not music_dir.is_dir():
-        raise SystemExit(f"Not a folder: {music_dir}")
+    paths = argv[1:] or [p for p in os.environ.get("MUSIC_DIR", "").split(os.pathsep) if p]
+    if not paths:
+        raise SystemExit("Which folders? Pass them as arguments or set MUSIC_DIR.")
+    folders = music_folders(paths)
     data_dir = Path(os.environ.get("DATA_DIR", "data")).expanduser().resolve()
     data_dir.mkdir(parents=True, exist_ok=True)
     if not os.access(data_dir, os.W_OK):
@@ -55,7 +86,7 @@ def load(argv: list[str]) -> Config:
             f"Give it to this user, e.g. chown {os.getuid()} <the folder on the host>."
         )
     return Config(
-        music_dir=music_dir,
+        folders=folders,
         data_dir=data_dir,
         name=os.environ.get("SOURCE_NAME", "Music folder"),
         token=os.environ.get("TOKEN", ""),

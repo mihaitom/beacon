@@ -148,7 +148,7 @@ Content`). Then a song can be seeked, gets a waveform and can go into a
 
 Beacon's repository has a full app to start from or to run as it is:
 [folder-source](https://github.com/mihaitom/beacon/tree/main/docs/examples/folder-source)
-plays a music folder as albums and artists, with covers, search, play now, next
+plays one or more music folders as albums and artists, with covers, search, play now, next
 and queue, the song that is playing marked, and Beacon's colours. It shows what
 the sections above ask for: the token, signed song addresses that do not
 expire, `Range` requests, and a page that fits a phone. It is written in

@@ -8,6 +8,9 @@ const searchInput = document.getElementById('search')
 const embedded = window.parent !== window
 
 const state = {
+  // The music folder on screen (its key), and every folder from the status.
+  folder: null,
+  folders: [],
   albums: [],
   artists: [],
   albumCache: new Map(),
@@ -34,6 +37,12 @@ async function api(path, options) {
   if (!response.ok) throw new Error(`${response.status} ${response.statusText}`)
   return response.json()
 }
+
+// The same, for the folder on screen.
+const folderApi = (path) => api(`${state.folder}/${path}`)
+
+// Addresses in the page carry the folder: #/<folder>/album/<id>.
+const link = (path) => `#/${state.folder}${path}`
 
 function duration(seconds) {
   if (!seconds) return ''
@@ -62,7 +71,7 @@ function tint(text) {
 
 function cover(albumId, hasCover, name, { full = false } = {}) {
   const letter = esc((name || '?').trim().charAt(0).toUpperCase() || '?')
-  const src = full ? `covers/${albumId}` : `covers/${albumId}?size=thumb`
+  const src = `covers/${state.folder}/${albumId}${full ? '' : '?size=thumb'}`
   const image = hasCover ? `<img src="${src}" alt="" loading="lazy" />` : ''
   return `<div class="cover" style="background:${tint(name)}">${letter}${image}</div>`
 }
@@ -117,7 +126,7 @@ async function playRows(rows, { mode = 'now', label } = {}) {
 
 async function albumRows(albumId) {
   if (!state.albumCache.has(albumId)) {
-    state.albumCache.set(albumId, await api(`albums/${albumId}`))
+    state.albumCache.set(albumId, await folderApi(`albums/${albumId}`))
   }
   return state.albumCache.get(albumId)
 }
@@ -491,15 +500,15 @@ function trackRow(row, i, number, sub, { withCover = false } = {}) {
 
 function albumTile(album) {
   const sub = album.artist
-    ? `<a class="sub" href="#/artist/${encodeURIComponent(album.artist)}">${esc(album.artist)}</a>`
+    ? `<a class="sub" href="${link(`/artist/${encodeURIComponent(album.artist)}`)}">${esc(album.artist)}</a>`
     : `<div class="sub">${plural(album.songs, 'song')}</div>`
   return `
     <div class="tile">
       <div class="cover-wrap">
-        <a href="#/album/${album.id}" aria-label="${esc(album.title)}">${cover(album.id, album.cover, album.title)}</a>
+        <a href="${link(`/album/${album.id}`)}" aria-label="${esc(album.title)}">${cover(album.id, album.cover, album.title)}</a>
         <button class="play-fab" title="Play" data-play-album="${album.id}">${icon('play')}</button>
       </div>
-      <a class="name" href="#/album/${album.id}" style="display:block">${esc(album.title)}</a>
+      <a class="name" href="${link(`/album/${album.id}`)}" style="display:block">${esc(album.title)}</a>
       ${sub}
     </div>`
 }
@@ -524,7 +533,7 @@ const SHELF_SIZE = 14
 function backdrop(album, { full = false } = {}) {
   if (!album.cover) return `<div class="backdrop" style="background:${tint(album.title)}"></div>`
   // Blurred beyond recognition: the small cover does as well as the big one.
-  const src = full ? `covers/${album.id}` : `covers/${album.id}?size=thumb`
+  const src = `covers/${state.folder}/${album.id}${full ? '' : '?size=thumb'}`
   return `<div class="backdrop" style="background-image:url('${src}')"></div>`
 }
 
@@ -532,10 +541,10 @@ function feature(album) {
   const meta = [album.artist, album.year, plural(album.songs, 'song')].filter(Boolean).map(esc)
   return `
     <section class="feature">${backdrop(album)}
-      <a class="feature-cover" href="#/album/${album.id}">${cover(album.id, album.cover, album.title)}</a>
+      <a class="feature-cover" href="${link(`/album/${album.id}`)}">${cover(album.id, album.cover, album.title)}</a>
       <div class="feature-text">
         <div class="eyebrow">Just added</div>
-        <a class="feature-title" href="#/album/${album.id}">${esc(album.title)}</a>
+        <a class="feature-title" href="${link(`/album/${album.id}`)}">${esc(album.title)}</a>
         <div class="meta">${meta.join(' · ')}</div>
         <div class="actions"><button class="pill" data-play-album="${album.id}">${icon('play')} Play</button></div>
       </div>
@@ -569,6 +578,9 @@ function renderAlbums() {
   if (nameOf) mountIndex(firstIndexes(albums, nameOf))
 }
 
+const folderStatus = () => state.status?.folders.find((f) => f.key === state.folder)
+const totalSongs = () => state.status.folders.reduce((sum, f) => sum + f.songs, 0)
+
 function emptyLibrary() {
   if (state.status?.scanning) return `<div id="scan-progress" class="scan-card">${scanProgress()}</div>`
   return '<div class="empty">No music found in this folder yet.</div>'
@@ -598,7 +610,13 @@ function timeLeft(progress) {
 }
 
 function scanProgress() {
-  const progress = state.status?.progress ?? { phase: 'looking', found: 0 }
+  const progress = folderStatus()?.progress ?? { phase: 'looking', found: 0 }
+  // Folders are scanned one after the other.
+  if (!progress.phase && state.status?.scanning) {
+    return `
+      <div class="scan-title">Waiting for the other folders…</div>
+      <div class="meter meter--busy"><i></i></div>`
+  }
   if (progress.phase !== 'reading') {
     return `
       <div class="scan-title">Looking for music…</div>
@@ -622,8 +640,8 @@ function showScanProgress() {
   const card = document.getElementById('scan-progress')
   if (card) card.innerHTML = scanProgress()
   // With music already there, only a scan with something new to read is worth a bar.
-  const progress = state.status?.progress
-  const reading = state.status?.scanning && progress?.phase === 'reading' && progress.toRead > 0
+  const progress = folderStatus()?.progress
+  const reading = progress?.phase === 'reading' && progress.toRead > 0
   scanBar.hidden = !(reading && !card)
   if (!scanBar.hidden) {
     const share = progress.read / progress.toRead
@@ -637,7 +655,7 @@ const artistLetter = (artist) => letterOf(artist.name)
 
 function artistRow(artist) {
   return `
-    <a class="artist-row" href="#/artist/${encodeURIComponent(artist.name)}">
+    <a class="artist-row" href="${link(`/artist/${encodeURIComponent(artist.name)}`)}">
       ${cover(artist.cover, !!artist.cover, artist.name)}
       <span class="artist-text"><div class="name">${esc(artist.name)}</div>
       <div class="sub">${plural(artist.albums, 'album')}</div></span>
@@ -680,7 +698,7 @@ async function loadSongPage(page) {
   const generation = songs.generation
   let result
   try {
-    result = await api(`songs?sort=${songs.sort}&offset=${page * SONGS_PAGE}&limit=${SONGS_PAGE}`)
+    result = await folderApi(`songs?sort=${songs.sort}&offset=${page * SONGS_PAGE}&limit=${SONGS_PAGE}`)
   } finally {
     // Loaded rows are not asked for again; a failed page is, when it next shows.
     if (generation === songs.generation) songs.loading.delete(page)
@@ -715,7 +733,7 @@ function songRow(index) {
 async function renderSongs() {
   view.innerHTML = '<div class="empty">Loading…</div>'
   if (!songs.rows.length) await loadSongPage(0)
-  if (location.hash !== '#/songs' || state.query) return
+  if (currentPath() !== '/songs' || state.query) return
   rowsOnScreen = songs.rows
   const chips = Object.entries(SONG_SORTS)
     .map(
@@ -760,7 +778,7 @@ async function renderAlbum(albumId) {
     return
   }
   const artist = album.artist
-    ? `<a href="#/artist/${encodeURIComponent(album.artist)}">${esc(album.artist)}</a> · `
+    ? `<a href="${link(`/artist/${encodeURIComponent(album.artist)}`)}">${esc(album.artist)}</a> · `
     : ''
   const details = [album.year, album.genre, plural(album.songs, 'song'), longDuration(album.duration)]
     .filter(Boolean)
@@ -787,7 +805,7 @@ async function renderAlbum(albumId) {
 let searchTimer
 async function renderSearch() {
   const query = state.query
-  const result = await api(`search?q=${encodeURIComponent(query)}`)
+  const result = await folderApi(`search?q=${encodeURIComponent(query)}`)
   if (query !== state.query) return
   const albums = result.albums.length
     ? `<div class="section-head"><h2>Albums</h2></div><div class="grid">${result.albums.map(albumTile).join('')}</div>`
@@ -801,14 +819,54 @@ async function renderSearch() {
   markPlaying()
 }
 
+// #/<folder>/<path>: the folder's key, and the page within it. A key no
+// folder has (an old address, a folder taken out) means the first folder.
+function parseHash() {
+  const [, key = '', rest = ''] = location.hash.match(/^#\/([^/]*)(.*)$/) || []
+  const known = state.folders.some((f) => f.key === key)
+  return { key: known ? key : state.folders[0]?.key, path: decodeURIComponent(rest) || '/' }
+}
+
+const currentPath = () => parseHash().path
+
+const SECTIONS = { albums: '/', artists: '/artists', songs: '/songs' }
+
+function sectionOf(path) {
+  return path.startsWith('/artist') ? 'artists' : path === '/songs' ? 'songs' : 'albums'
+}
+
+const foldersBar = document.getElementById('folders')
+
+// Switching folders keeps the section: from one folder's songs to the next one's.
+function renderFolders(section) {
+  foldersBar.hidden = state.folders.length < 2
+  foldersBar.innerHTML = state.folders
+    .map(
+      (f) =>
+        `<a href="#/${f.key}${SECTIONS[section]}" class="${f.key === state.folder ? 'active' : ''}">${esc(f.name)}</a>`,
+    )
+    .join('')
+  const name = state.folders.find((f) => f.key === state.folder)?.name
+  searchInput.placeholder = state.folders.length > 1 && name ? `Search ${name}` : 'Search'
+}
+
 function route() {
   unmountVirtual()
   delete view.dataset.album
-  const hash = decodeURIComponent(location.hash.slice(1) || '/')
+  const { key, path: hash } = parseHash()
+  if (key !== state.folder) {
+    state.folder = key
+    view.innerHTML = '<div class="empty">Loading…</div>'
+    return void loadLibrary().catch((error) => {
+      view.innerHTML = `<div class="empty">Could not load this folder: ${esc(error.message)}</div>`
+    })
+  }
+  const section = sectionOf(hash)
+  renderFolders(section)
+  document.getElementById('brand').setAttribute('href', link('/'))
   for (const tab of document.querySelectorAll('[data-tab]')) {
-    const section = hash.startsWith('/artist') ? 'artists' : hash === '/songs' ? 'songs' : 'albums'
-    const active = tab.dataset.tab === section
-    tab.classList.toggle('active', active && !state.query)
+    tab.setAttribute('href', link(SECTIONS[tab.dataset.tab]))
+    tab.classList.toggle('active', tab.dataset.tab === section && !state.query)
   }
   if (state.query) return void renderSearch()
   if (hash.startsWith('/album/')) return void renderAlbum(hash.slice(7))
@@ -849,7 +907,7 @@ view.addEventListener('click', async (event) => {
       await playRows(album.tracks, { mode: 'queue', label: `Added ${album.title}` })
     }
   } else if (dataset.playArtist !== undefined) {
-    const name = decodeURIComponent(location.hash.slice(9))
+    const name = currentPath().slice('/artist/'.length)
     const albums = state.albums.filter((a) => (a.artist || 'Unknown artist') === name)
     const rows = (await Promise.all(albums.map((a) => albumRows(a.id)))).flatMap((a) => a.tracks)
     await playRows(rows, { label: `Playing ${name}` })
@@ -896,19 +954,22 @@ async function followScan() {
   showScanProgress()
   if (!state.status?.scanning) return
   await new Promise((resolve) => setTimeout(resolve, 1000))
-  const before = state.status.songs
+  const before = totalSongs()
   state.status = await api('status')
   if (!state.status.scanning) {
     scanBar.hidden = true
     await loadLibrary()
-    const added = state.status.songs - before
+    const added = totalSongs() - before
     toast(added > 0 ? `Found ${plural(added, 'new song')}` : 'Up to date')
   }
   followScan()
 }
 
 async function loadLibrary() {
-  const [albums, artists] = await Promise.all([api('albums'), api('artists')])
+  const folder = state.folder
+  const [albums, artists] = await Promise.all([folderApi('albums'), folderApi('artists')])
+  // Another folder was picked meanwhile: its own load is on the way.
+  if (folder !== state.folder) return
   state.albums = albums
   state.artists = artists
   state.albumCache.clear()
@@ -921,8 +982,10 @@ async function start() {
   // First, so Beacon's colours arrive before the library does.
   if (embedded) window.parent.postMessage({ type: 'beacon.ready' }, '*')
   state.status = await api('status')
+  state.folders = state.status.folders
   document.getElementById('brand').textContent = state.status.name
   document.title = state.status.name
+  state.folder = parseHash().key
   await loadLibrary()
   followScan()
 }

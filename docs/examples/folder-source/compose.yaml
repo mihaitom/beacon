@@ -8,6 +8,10 @@ services:
       - /path/to/music:/music:ro
       - ./data:/data
     environment:
+      # Several folders: mount each under its own name, e.g.
+      # /path/to/imports:/music/Imports:ro, and list them here as
+      # /music/Imports:/music/DJ Sets. Each becomes a tab named after it.
+      MUSIC_DIR: /music
       SOURCE_NAME: Music folder
       # Beacon sends it with every request for the page; set the same value
       # in Beacon under Settings > Library > External sources.

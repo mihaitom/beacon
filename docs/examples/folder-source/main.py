@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Start the folder source: `uv run main.py /path/to/music`."""
+"""Start the folder source: `uv run main.py /path/to/music [/another/folder ...]`."""
 
 import logging
 import sys
@@ -16,8 +16,8 @@ def main() -> None:
     )
     config = load(sys.argv)
     logging.getLogger("folder_source").info(
-        f'Serving {config.music_dir} as "{config.name}" on port {config.port}'
-        + ("" if config.token else " (no token set)")
+        f"Serving {', '.join(str(f.path) for f in config.folders)} "
+        f'as "{config.name}" on port {config.port}' + ("" if config.token else " (no token set)")
     )
     uvicorn.run(create_app(config), host=config.host, port=config.port, log_level="warning")
 

@@ -7,7 +7,7 @@ from mutagen.id3 import APIC, ID3
 from starlette.testclient import TestClient
 
 from folder_source.app import create_app
-from folder_source.config import Config
+from folder_source.config import Config, music_folders
 from folder_source.library import Library
 
 if shutil.which("ffmpeg") is None:
@@ -50,7 +50,8 @@ def embed_cover(path: Path) -> None:
 
 @pytest.fixture(scope="session")
 def music(tmp_path_factory) -> Path:
-    root = tmp_path_factory.mktemp("music")
+    # Named, not numbered: the folder's name is its key in every address.
+    root = tmp_path_factory.mktemp("music") / "Music"
     # Tagged, with a cover file.
     make_mp3(
         root / "Nordlicht/Polarnacht/01 Schnee.mp3",
@@ -97,7 +98,7 @@ def music(tmp_path_factory) -> Path:
 @pytest.fixture
 def config(music, tmp_path) -> Config:
     return Config(
-        music_dir=music,
+        folders=music_folders([str(music)]),
         data_dir=tmp_path,
         name="Test folder",
         token="",
@@ -110,12 +111,12 @@ def config(music, tmp_path) -> Config:
 
 @pytest.fixture
 def library(config) -> Library:
-    library = Library(config.music_dir, config.data_dir / "library.sqlite")
+    library = Library(config.folders[0].path, config.data_dir / "library.sqlite")
     library.scan()
     return library
 
 
 @pytest.fixture
 def client(config, library):
-    with TestClient(create_app(config, library, scan_on_start=False)) as c:
+    with TestClient(create_app(config, {config.folders[0].key: library}, scan_on_start=False)) as c:
         yield c

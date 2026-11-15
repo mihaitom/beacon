@@ -47,13 +47,49 @@ svg {
   position: sticky;
   top: 0;
   z-index: 5;
-  display: flex;
-  align-items: center;
-  gap: 12px;
   padding: 14px 24px;
   background: color-mix(in srgb, var(--bg) 65%, transparent);
   backdrop-filter: blur(20px) saturate(1.4);
   border-bottom: 1px solid var(--line);
+}
+
+.bar-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* The folders sit above the sections: a level higher, so underlined rather
+ * than another row of pills. Many folders scroll sideways. */
+.folders {
+  display: flex;
+  gap: 22px;
+  margin: -4px 0 12px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  border-bottom: 1px solid var(--line);
+}
+
+.folders[hidden] {
+  display: none;
+}
+
+.folders a {
+  padding: 2px 0 10px;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  color: var(--muted);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.folders a:hover {
+  color: var(--fg);
+}
+
+.folders a.active {
+  color: var(--fg);
+  border-bottom-color: var(--primary);
 }
 
 .brand {
@@ -812,9 +848,18 @@ body.has-az .shelf {
     font-size: 14px;
   }
   .bar {
+    padding: 10px 16px;
+  }
+  .bar-row {
     flex-wrap: wrap;
     gap: 8px;
-    padding: 10px 16px;
+  }
+  .folders {
+    gap: 18px;
+    margin: -2px 0 8px;
+  }
+  .folders a {
+    padding-bottom: 8px;
   }
   .brand {
     display: none;

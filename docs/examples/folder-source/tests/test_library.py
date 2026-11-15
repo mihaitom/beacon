@@ -56,7 +56,7 @@ def test_only_audio_is_indexed(library):
 
 
 def test_ids_stay_the_same_across_scans(config, library):
-    again = Library(config.music_dir, config.data_dir / "other.sqlite")
+    again = Library(config.folders[0].path, config.data_dir / "other.sqlite")
     again.scan()
     assert set(again.tracks) == set(library.tracks)
     assert set(again.albums) == set(library.albums)
@@ -81,7 +81,7 @@ def test_a_symlink_out_of_the_folder_is_not_followed(config, tmp_path_factory, m
     links[0].symlink_to(outside)
     links[1].symlink_to(secret)
     try:
-        scanned = Library(config.music_dir, config.data_dir / "x.sqlite")
+        scanned = Library(config.folders[0].path, config.data_dir / "x.sqlite")
         scanned.scan()
         assert not any("secret" in t.path for t in scanned.tracks.values())
     finally:
@@ -102,7 +102,7 @@ def test_a_restart_reads_nothing_that_did_not_change(config, library, monkeypatc
     calls = []
     real = library_module.read_track
     monkeypatch.setattr(library_module, "read_track", lambda *a: calls.append(a) or real(*a))
-    restarted = Library(config.music_dir, config.data_dir / "library.sqlite")
+    restarted = Library(config.folders[0].path, config.data_dir / "library.sqlite")
     restarted.scan()
     assert calls == []
     assert set(restarted.tracks) == set(library.tracks)
@@ -113,10 +113,10 @@ def test_a_deleted_file_leaves_the_index(config, tmp_path_factory, music):
     extra.write_bytes((music / "Intro.mp3").read_bytes())
     index = config.data_dir / "gone.sqlite"
     try:
-        Library(config.music_dir, index).scan()
+        Library(config.folders[0].path, index).scan()
     finally:
         extra.unlink()
-    again = Library(config.music_dir, index)
+    again = Library(config.folders[0].path, index)
     again.scan()
     assert not any(t.path == "Extra.mp3" for t in again.tracks.values())
     with sqlite3.connect(index) as conn:
@@ -139,7 +139,7 @@ def test_a_scan_cut_short_keeps_what_it_read(config, monkeypatch):
 
     monkeypatch.setattr(library_module, "read_track", crash_on_the_fifth)
     try:
-        Library(config.music_dir, index).scan()
+        Library(config.folders[0].path, index).scan()
     except KeyboardInterrupt:
         pass
     with sqlite3.connect(index) as conn:
@@ -149,12 +149,12 @@ def test_a_scan_cut_short_keeps_what_it_read(config, monkeypatch):
 def test_the_old_json_cache_is_cleared_away(config):
     old = config.data_dir / "library.json"
     old.write_text("{}")
-    Library(config.music_dir, config.data_dir / "library.sqlite")
+    Library(config.folders[0].path, config.data_dir / "library.sqlite")
     assert not old.exists()
 
 
 def test_a_scan_counts_what_it_found_and_what_it_still_has_to_read(config, monkeypatch):
-    library = Library(config.music_dir, config.data_dir / "progress.sqlite")
+    library = Library(config.folders[0].path, config.data_dir / "progress.sqlite")
     seen = []
     real = library_module.read_track
 
