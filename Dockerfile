@@ -179,7 +179,7 @@ COPY --from=frontend-builder /app/connect/static/party ./static/party
 COPY start.sh /start.sh
 RUN chmod +x /start.sh
 
-ENV SERVER_INTERNAL_URL="" CONNECT_TOKEN="" CONNECT_URL=/api
+ENV SERVER_INTERNAL_URL="" CONNECT_URL=/api
 ENV WEB_PORT=7070 PORT=7071
 
 EXPOSE 7070

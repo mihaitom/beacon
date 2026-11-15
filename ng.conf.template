@@ -62,7 +62,7 @@ server {
     proxy_pass http://127.0.0.1:${PORT}/;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Connect-Token "${CONNECT_TOKEN}";
+    proxy_set_header X-Connect-Token "${CONNECT_INTERNAL_TOKEN}";
     # /events and /visualizer are long-lived SSE streams (see
     # routes/stream.py, routes/events.py) — without proxy_http_version 1.1,
     # nginx defaults to HTTP/1.0 towards the backend, which has no chunked
@@ -83,7 +83,7 @@ server {
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Connect-Token "${CONNECT_TOKEN}";
+    proxy_set_header X-Connect-Token "${CONNECT_INTERNAL_TOKEN}";
     proxy_buffering off;
     proxy_read_timeout 300s;
   }
@@ -93,7 +93,7 @@ server {
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Connect-Token "${CONNECT_TOKEN}";
+    proxy_set_header X-Connect-Token "${CONNECT_INTERNAL_TOKEN}";
   }
 
   # Party mode's guest page and API (connect/routes/party.py). Its own
@@ -151,7 +151,7 @@ server {
 
   location /stream {
     proxy_pass http://127.0.0.1:${PORT}/stream;
-    proxy_set_header X-Connect-Token "${CONNECT_TOKEN}";
+    proxy_set_header X-Connect-Token "${CONNECT_INTERNAL_TOKEN}";
     # Same reasoning as /api/'s identical two lines above: without
     # proxy_http_version 1.1, nginx speaks HTTP/1.0 to the backend, which
     # has no chunked transfer encoding, so a response with no known

@@ -31,15 +31,13 @@ from routes import discovery as discovery_module
 def client():
     """Synchronous TestClient — no network, no real devices needed.
 
-    Automatically includes X-Connect-Token when CONNECT_TOKEN is set so tests
-    pass regardless of whether token auth is enabled in the environment. No
+    Sends the Connect API token, like nginx or the desktop app would. No
     X-Connect-Session header is set, so every request made through this
     client lands in the single DEFAULT_SESSION_ID session — same as the old
     single-global-session behavior. See the `default_session` fixture below.
     """
     with TestClient(app) as c:
-        if auth.TOKEN:
-            c.headers.update({"X-Connect-Token": auth.TOKEN})
+        c.headers.update({"X-Connect-Token": auth.TOKEN})
         yield c
 
 

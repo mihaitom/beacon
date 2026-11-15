@@ -1895,11 +1895,8 @@ def test_local_report_rejects_a_negative_position(client):
 def test_the_routes_need_the_token(monkeypatch):
     from fastapi.testclient import TestClient
 
-    from core import auth
     from main import app
 
-    if not auth.TOKEN:
-        pytest.skip("token auth is off in this environment")
     with TestClient(app) as c:
         assert c.get("/lights").status_code == 401
 

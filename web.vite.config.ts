@@ -6,9 +6,8 @@ import vuetify from 'vite-plugin-vuetify';
 import { config as loadDotenv } from 'dotenv';
 import { vuetifyComponentModules } from './vite.vuetify-deps';
 
-// Mirrors src/main/index.ts's readConnectDefaults() — same precedence
-// (explicit CONNECT_TOKEN in connect/.env, then the backend's own persisted
-// connect/.connect-token, same PORT default) so this config's dev-server
+// Mirrors src/main/index.ts's readConnectDefaults() — the backend's own
+// persisted connect/.connect-token, same PORT default — so this config's dev-server
 // proxy (see below) can stand in for nginx's identical job in the real
 // Docker deployment (see ng.conf.template's X-Connect-Token injection) —
 // nothing the renderer itself needs to know about either way
@@ -21,11 +20,8 @@ function readConnectDevDefaults(): { token: string; port: string } {
     const parsed = existsSync(envPath) ? (loadDotenv({ path: envPath }).parsed ?? {}) : {};
     const port = parsed.PORT || '7071';
 
-    let token = parsed.CONNECT_TOKEN ?? '';
-    if (!token) {
-        const tokenFile = resolve(connectDir, '.connect-token');
-        if (existsSync(tokenFile)) token = readFileSync(tokenFile, 'utf-8').trim();
-    }
+    const tokenFile = resolve(connectDir, '.connect-token');
+    const token = existsSync(tokenFile) ? readFileSync(tokenFile, 'utf-8').trim() : '';
     return { token, port };
 }
 

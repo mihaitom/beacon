@@ -49,6 +49,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Removed
 
+- The `CONNECT_TOKEN` setting is gone: Beacon protects its server with a token of its own and ignores a value still set in the Docker configuration. Scripts and apps of your own use a key from Settings instead
 - There is no separate Windows installer for ARM anymore, since its backend ran emulated anyway; Windows on ARM uses the regular installer
 
 ### Fixed

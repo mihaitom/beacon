@@ -19,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 # Must run before any core.*/routes.* import below — several of them read
-# their config (CONNECT_TOKEN, NAVIDROME_INTERNAL_URL, ...) from os.environ at
+# their config (NAVIDROME_INTERNAL_URL, ...) from os.environ at
 # *module import time*, not lazily. Loading .env after those imports meant
 # it was silently ignored — only working when the same variables happened
 # to already be set as real shell/process env vars (e.g. via docker-compose,
@@ -27,8 +27,6 @@ from fastapi.responses import JSONResponse
 load_dotenv()
 
 from core import local_mixes, mdns, server_link, shared_claims
-from core.auth import TOKEN as _CONNECT_TOKEN
-from core.auth import TOKEN_WAS_GENERATED as _CONNECT_TOKEN_GENERATED
 from core.device_volume import capture_main_loop
 from core.ffmpeg import FFMPEG_BIN, ffmpeg_available
 from core.http_diagnostics import UVICORN_INVALID_REQUEST_MESSAGE, DiagnosticHTTPProtocol
@@ -298,17 +296,6 @@ async def lifespan(_: FastAPI):
     else:
         logger.error(f"❌ ffmpeg NOT FOUND at '{FFMPEG_BIN}' — streaming will fail!")
 
-    if not _CONNECT_TOKEN:
-        logger.warning("⚠️  CONNECT_TOKEN explicitly set to empty — the Connect API has no auth!")
-    elif _CONNECT_TOKEN_GENERATED:
-        logger.info(
-            f"🔒 Token auth enabled (auto-generated, persisted in connect/.connect-token): "
-            f"{_CONNECT_TOKEN}\n"
-            "   Set CONNECT_TOKEN explicitly (see docker-compose.yaml) instead if a fixed "
-            "value is needed, e.g. for scripting direct API access."
-        )
-    else:
-        logger.info("🔒 Token auth enabled (custom CONNECT_TOKEN set)")
     logger.info("⏳ Waiting for /config (media server credentials)")
 
     discovery_task = asyncio.create_task(_periodic_discovery())

@@ -167,7 +167,7 @@ jobs:
                   data="$RUNNER_TEMP/connect-data"
                   mkdir -p "$data"
 
-                  PORT=17071 CONNECT_TOKEN=ci-smoke CONNECT_DATA_DIR="$data" "$backend" > "$RUNNER_TEMP/connect.log" 2>&1 &
+                  PORT=17071 CONNECT_INTERNAL_TOKEN=ci-smoke CONNECT_DATA_DIR="$data" "$backend" > "$RUNNER_TEMP/connect.log" 2>&1 &
                   pid=$!
 
                   # Locally it answers within 2 s; the margin is for a cold
