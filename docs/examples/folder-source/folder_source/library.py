@@ -41,7 +41,7 @@ TRACK_NUMBER = re.compile(r"^(\d{1,3})[\s._-]+")
 DISC_FOLDER = re.compile(r"^(cd|disc|disk)\s*\d+$", re.IGNORECASE)
 
 # Bump when Track's fields change: the index is then read afresh.
-_SCHEMA_VERSION = 3
+_SCHEMA_VERSION = 4
 
 # Tracks read before the index is written: a crash loses at most this many.
 _WRITE_EVERY = 200
@@ -89,6 +89,11 @@ class Track:
     year: int | None
     genre: str
     duration: float
+    # What Beacon's own song table shows in its Format column.
+    format: str
+    bitrate: int  # kbps
+    sample_rate: int  # Hz
+    bit_depth: int | None  # lossless formats only
     embedded_cover: bool
     mtime: float
     size: int
@@ -151,6 +156,29 @@ def _has_embedded_cover(path: Path) -> bool:
         return False
 
 
+# mutagen's class names, without "Easy", as a listener knows the format.
+_FORMAT_NAMES = {
+    "MP3": "MP3",
+    "FLAC": "FLAC",
+    "OggFLAC": "FLAC",
+    "OggVorbis": "Vorbis",
+    "OggOpus": "Opus",
+    "WAVE": "WAV",
+    "AAC": "AAC",
+}
+
+
+def _format_name(audio, path: Path) -> str:
+    fallback = path.suffix.lstrip(".").upper()
+    if audio is None:
+        return fallback
+    name = type(audio).__name__.removeprefix("Easy")
+    if name == "MP4":
+        # An .m4a is AAC or Apple Lossless.
+        return "ALAC" if getattr(audio.info, "codec", "").startswith("alac") else "AAC"
+    return _FORMAT_NAMES.get(name, fallback)
+
+
 def read_track(root: Path, path: Path) -> Track:
     """A track from its tags, falling back to its file and folder names:
     `Artist/Album/01 Title.mp3` is a track with all of those set."""
@@ -162,6 +190,7 @@ def read_track(root: Path, path: Path) -> Track:
         logger.warning(f"Could not read tags of {relative}: {e}")
         audio = None
     tags = audio.tags if audio is not None else None
+    info = getattr(audio, "info", None)
 
     stem = path.stem
     number = TRACK_NUMBER.match(stem)
@@ -179,7 +208,11 @@ def read_track(root: Path, path: Path) -> Track:
         disc=_number(_first(tags, "discnumber")),
         year=_number(_first(tags, "date")),
         genre=_first(tags, "genre"),
-        duration=round(float(getattr(getattr(audio, "info", None), "length", 0) or 0), 2),
+        duration=round(float(getattr(info, "length", 0) or 0), 2),
+        format=_format_name(audio, path),
+        bitrate=round((getattr(info, "bitrate", 0) or 0) / 1000),
+        sample_rate=int(getattr(info, "sample_rate", 0) or 0),
+        bit_depth=getattr(info, "bits_per_sample", None) or None,
         embedded_cover=_has_embedded_cover(path),
         mtime=stat.st_mtime,
         size=stat.st_size,

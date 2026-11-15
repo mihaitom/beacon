@@ -4,7 +4,7 @@ import sqlite3
 from conftest import make_mp3
 
 from folder_source import library as library_module
-from folder_source.library import VARIOUS, Library
+from folder_source.library import VARIOUS, Library, read_track
 
 
 def _album(library, title):
@@ -217,3 +217,10 @@ def test_the_index_points_at_each_letter_first_song(library):
 
 def test_recently_added_has_no_index(library):
     assert library.song_letters("added") == {}
+
+
+def test_the_format_is_read_from_the_file(tmp_path):
+    lossy = read_track(tmp_path, make_mp3(tmp_path / "a.mp3"))
+    assert (lossy.format, lossy.bitrate, lossy.bit_depth) == ("MP3", 64, None)
+    lossless = read_track(tmp_path, make_mp3(tmp_path / "b.flac"))
+    assert (lossless.format, lossless.sample_rate, lossless.bit_depth) == ("FLAC", 44100, 16)

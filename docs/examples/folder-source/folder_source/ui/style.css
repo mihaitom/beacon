@@ -1,15 +1,39 @@
-/* Beacon's dark theme until Beacon sends the real colours (beacon.theme). */
+/* Beacon's own look, rebuilt for a page that cannot load Beacon's stylesheet:
+ * the values follow Beacon's style guide (docs/styleguide.md in its
+ * repository), so the tab reads as part of the app rather than as a page
+ * framed inside it. */
+
+/* Inter is what Beacon is set in. Bundled because the frame cannot borrow
+ * Beacon's copy, and a system font beside Beacon's chrome gives it away. */
+@font-face {
+  font-family: 'Inter';
+  src: url('fonts/inter.woff2') format('woff2');
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+/* Beacon's default theme until Beacon sends the real colours (beacon.theme). */
 :root {
-  --bg: #121417;
-  --fg: #e8e8ea;
-  --surface: #1c1f24;
+  --bg: #12141c;
+  --fg: #ffffff;
+  --surface: #1a1d27;
   --primary: #f5a94e;
-  --on-primary: #1a1a1a;
-  --muted: color-mix(in srgb, var(--fg) 62%, transparent);
-  --line: color-mix(in srgb, var(--fg) 10%, transparent);
-  --hover: color-mix(in srgb, var(--fg) 7%, transparent);
-  /* A surface on a surface. Made here: Beacon sends only the four above. */
-  --raised: color-mix(in srgb, var(--fg) 8%, var(--surface));
+  --on-primary: #12141c;
+  /* Vuetify's medium emphasis, which Beacon's quieter lines use. */
+  --muted: color-mix(in srgb, var(--fg) 70%, transparent);
+  /* Beacon draws every border in the accent at 0.14 and hovers rows in it at
+   * 0.07 - not in grey. */
+  --line: color-mix(in srgb, var(--primary) 14%, transparent);
+  --hover: color-mix(in srgb, var(--primary) 7%, transparent);
+  --tonal: color-mix(in srgb, var(--primary) 16%, transparent);
+  /* A surface on a surface (Beacon's surface-bright, which it does not send). */
+  --raised: color-mix(in srgb, var(--fg) 6%, var(--surface));
+  --panel: color-mix(in srgb, var(--fg) 2%, transparent);
+  /* An empty cover: the faint fill Beacon's own cover-less albums have. */
+  --placeholder: color-mix(in srgb, var(--fg) 6%, transparent);
+  /* The hero cards stay dark on a light theme too, as Beacon's do: white
+   * text over a darkened picture. */
+  --night: #12141c;
   color-scheme: dark;
 }
 
@@ -19,9 +43,13 @@
 
 body {
   margin: 0;
-  font: 15px/1.45 Inter, system-ui, sans-serif;
+  font:
+    15px/1.45 Inter,
+    system-ui,
+    sans-serif;
   background: var(--bg);
   color: var(--fg);
+  -webkit-font-smoothing: antialiased;
 }
 
 a {
@@ -29,7 +57,8 @@ a {
   text-decoration: none;
 }
 
-button {
+button,
+select {
   font: inherit;
   color: inherit;
 }
@@ -41,14 +70,23 @@ svg {
   flex: none;
 }
 
+/* Beacon hides scrollbars app-wide; scrolling still works. */
+* {
+  scrollbar-width: none;
+}
+
+*::-webkit-scrollbar {
+  display: none;
+}
+
 /* ── Header ─────────────────────────────────────────────────────────── */
 
 .bar {
   position: sticky;
   top: 0;
   z-index: 5;
-  padding: 14px 24px;
-  background: color-mix(in srgb, var(--bg) 65%, transparent);
+  padding: 12px 24px;
+  background: color-mix(in srgb, var(--bg) 85%, transparent);
   backdrop-filter: blur(20px) saturate(1.4);
   border-bottom: 1px solid var(--line);
 }
@@ -59,14 +97,13 @@ svg {
   gap: 12px;
 }
 
-/* The folders sit above the sections: a level higher, so underlined rather
- * than another row of pills. Many folders scroll sideways. */
+/* The folders sit above the sections, as tabs with the accent's underline -
+ * Beacon's Settings tabs. Many folders scroll sideways. */
 .folders {
   display: flex;
-  gap: 22px;
-  margin: -4px 0 12px;
+  gap: 24px;
+  margin: -2px 0 12px;
   overflow-x: auto;
-  scrollbar-width: none;
   border-bottom: 1px solid var(--line);
 }
 
@@ -75,12 +112,13 @@ svg {
 }
 
 .folders a {
-  padding: 2px 0 10px;
+  padding: 4px 0 10px;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
   color: var(--muted);
-  font-weight: 600;
+  font-weight: 500;
   white-space: nowrap;
+  transition: color 0.15s;
 }
 
 .folders a:hover {
@@ -92,62 +130,92 @@ svg {
   border-bottom-color: var(--primary);
 }
 
+/* Beacon names the tab already; the name is for the page on its own. */
 .brand {
-  font-weight: 700;
-  font-size: 18px;
+  font-weight: 600;
+  font-size: 17px;
   white-space: nowrap;
 }
 
+body.embedded .brand {
+  display: none;
+}
+
+/* Beacon's segmented control: one 40px pill, the shown part in amber. */
 .tabs {
   display: flex;
-  gap: 4px;
+  gap: 2px;
+  height: 40px;
+  padding: 4px;
   margin-right: auto;
+  border-radius: 999px;
+  background: var(--surface);
 }
 
 .tabs a {
-  padding: 6px 14px;
+  display: grid;
+  place-items: center;
+  padding: 0 16px;
   border-radius: 999px;
   color: var(--muted);
-  font-weight: 600;
+  font-weight: 500;
+  font-size: 14px;
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+
+.tabs a:hover {
+  color: var(--fg);
 }
 
 .tabs a.active {
-  background: var(--raised);
-  color: var(--fg);
+  background: var(--tonal);
+  color: var(--primary);
 }
 
 .search {
   display: flex;
   align-items: center;
   gap: 8px;
+  height: 40px;
   padding: 0 14px;
   border-radius: 999px;
   background: var(--surface);
   color: var(--muted);
-  width: 260px;
+  width: 320px;
 }
 
+/* 16px at least: a phone zooms the page in for anything smaller and does
+ * not zoom back out. */
 .search input {
   flex: 1;
   min-width: 0;
-  padding: 9px 0;
   border: 0;
   outline: 0;
   background: none;
   color: var(--fg);
   font: inherit;
+  font-size: 16px;
+}
+
+.search input::placeholder {
+  color: var(--muted);
 }
 
 .icon-button {
   display: grid;
   place-items: center;
-  width: 38px;
-  height: 38px;
+  width: 40px;
+  height: 40px;
   border: 0;
   border-radius: 50%;
   background: none;
   cursor: pointer;
   color: var(--muted);
+  transition:
+    color 0.15s,
+    background 0.15s;
 }
 
 .icon-button:hover {
@@ -165,23 +233,25 @@ svg {
   }
 }
 
+/* .beacon-panel */
 .notice {
   margin: 16px 24px 0;
-  padding: 10px 14px;
-  border-radius: 10px;
-  background: var(--surface);
+  padding: 12px 18px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--panel);
   color: var(--muted);
 }
 
 main {
-  padding: 20px 24px 64px;
+  padding: 24px 24px 64px;
 }
 
 /* ── Sections ───────────────────────────────────────────────────────── */
 
 .section-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 12px;
   flex-wrap: wrap;
   margin: 8px 0 16px;
@@ -189,71 +259,77 @@ main {
 
 .section-head h1,
 .section-head h2 {
-  margin: 0;
-  font-size: 26px;
-  margin-right: auto;
+  margin: 0 auto 0 0;
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
 
+/* .page-title: a view's own name. */
+.section-head h1 {
+  font-size: 1.5rem;
+}
+
+/* .section-title: a section of a page, with Beacon's lit mark. */
 .section-head h2 {
-  font-size: 19px;
+  position: relative;
+  padding-left: 14px;
+  font-size: 1.15rem;
+}
+
+.section-head h2::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 3px;
+  height: 0.85em;
+  transform: translateY(-50%);
+  border-radius: 2px;
+  background: var(--primary);
+  box-shadow: 0 0 6px 1px color-mix(in srgb, var(--primary) 50%, transparent);
 }
 
 .count {
   color: var(--muted);
+  font-size: 14px;
 }
 
-.chips {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.chip {
-  border: 1px solid var(--line);
-  background: none;
+/* Beacon's sort select: a flat 40px pill, the same surface as the search. */
+.sort-select {
+  appearance: none;
+  height: 40px;
+  padding: 0 38px 0 16px;
+  border: 0;
   border-radius: 999px;
-  padding: 5px 12px;
+  background: var(--surface)
+    url('data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="%23999"><path d="M7 10l5 5 5-5z"/></svg>')
+    no-repeat right 12px center / 20px;
+  font-size: 14px;
   cursor: pointer;
-  color: var(--muted);
-  font-size: 13px;
 }
 
-.chip.active {
-  border-color: transparent;
-  background: var(--primary);
-  color: var(--on-primary);
-  font-weight: 600;
+.sort-select option {
+  background: var(--surface);
+  color: var(--fg);
 }
 
-/* ── Album grid ─────────────────────────────────────────────────────── */
+/* ── Covers ─────────────────────────────────────────────────────────── */
 
-.grid {
-  display: grid;
-  gap: 22px 18px;
-  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-}
-
-.tile {
-  position: relative;
-  display: block;
-  min-width: 0;
-}
-
+/* 4px: Beacon's radius for every picture, whatever holds it. */
 .cover {
   position: relative;
   aspect-ratio: 1;
-  border-radius: 12px;
+  border-radius: 4px;
   overflow: hidden;
   display: grid;
   place-items: center;
-  font-size: 44px;
-  font-weight: 700;
-  /* The initial of a cover-less album: there, not loud. */
-  color: color-mix(in srgb, var(--fg) 35%, transparent);
-  box-shadow: 0 10px 28px #0006;
-  transition:
-    transform 0.25s ease,
-    box-shadow 0.25s ease;
+  background: var(--placeholder);
+  color: color-mix(in srgb, var(--fg) 30%, transparent);
+}
+
+.cover > svg {
+  width: 38%;
+  height: 38%;
 }
 
 .cover img {
@@ -264,11 +340,19 @@ main {
   object-fit: cover;
 }
 
-.tile:hover .cover {
-  transform: translateY(-6px) scale(1.02);
-  box-shadow:
-    0 18px 40px #0009,
-    0 0 0 1px var(--line);
+/* ── Album grid ─────────────────────────────────────────────────────── */
+
+.grid {
+  display: grid;
+  gap: 24px 18px;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+}
+
+/* A tile does not lift on hover: swept across a grid, every tile jumped. */
+.tile {
+  position: relative;
+  display: block;
+  min-width: 0;
 }
 
 .cover-wrap {
@@ -277,41 +361,41 @@ main {
 
 .tile .play-fab {
   position: absolute;
-  right: 10px;
-  bottom: 10px;
+  right: 8px;
+  bottom: 8px;
   opacity: 0;
-  transform: translateY(6px);
-  transition: 0.2s ease;
+  transition: opacity 0.15s;
 }
 
 .tile:hover .play-fab,
 .tile:focus-within .play-fab {
   opacity: 1;
-  transform: none;
 }
 
 .play-fab {
   display: grid;
   place-items: center;
-  width: 46px;
-  height: 46px;
+  width: 44px;
+  height: 44px;
   border: 0;
   border-radius: 50%;
   background: var(--primary);
   color: var(--on-primary);
   cursor: pointer;
-  box-shadow: 0 6px 16px #0007;
+  box-shadow: 0 4px 14px #0008;
 }
 
 .name {
-  margin-top: 9px;
-  font-weight: 600;
+  display: block;
+  margin-top: 8px;
+  font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .sub {
+  display: block;
   color: var(--muted);
   font-size: 13px;
   white-space: nowrap;
@@ -319,89 +403,370 @@ main {
   text-overflow: ellipsis;
 }
 
-/* ── Just added ─────────────────────────────────────────────────────── */
-
-/* The newest album, on a blur of its own cover. The blur is mixed into the
- * page rather than darkened, so the theme's own text colour reads on it in a
- * light theme too. */
-.feature {
-  position: relative;
-  display: flex;
-  align-items: flex-end;
-  gap: 28px;
-  margin: 4px 0 34px;
-  padding: 32px;
-  border-radius: 22px;
-  overflow: hidden;
-  background: var(--surface);
-}
-
-.backdrop {
-  position: absolute;
-  inset: -60px;
-  background-size: cover;
-  background-position: center;
-  filter: blur(56px) saturate(1.6);
-  opacity: 0.55;
-}
-
-.feature > :not(.backdrop) {
-  position: relative;
-}
-
-.feature-cover {
-  flex: none;
-  width: 220px;
-}
-
-.feature-cover .cover {
-  border-radius: 14px;
-  box-shadow: 0 24px 60px #0009;
-}
-
-.feature-text {
-  min-width: 0;
-}
-
-.eyebrow {
-  color: var(--primary);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-.feature-title {
-  display: block;
-  margin: 8px 0 6px;
-  font-size: clamp(28px, 4vw, 46px);
-  font-weight: 800;
-  line-height: 1.05;
-  letter-spacing: -0.02em;
-  overflow-wrap: anywhere;
-}
-
-.feature .meta {
-  color: var(--muted);
+a.sub:hover {
+  color: var(--fg);
 }
 
 /* One row, scrolled sideways; snaps so a tile is never cut at the start. */
 .shelf {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: 168px;
+  grid-auto-columns: 160px;
   gap: 18px;
   overflow-x: auto;
   scroll-snap-type: x mandatory;
-  /* Room for the tiles' lift and shadow, which overflow would clip. */
-  margin: -10px -24px 30px;
-  padding: 10px 24px 14px;
+  margin: 0 -24px 36px;
+  padding: 0 24px;
   scroll-padding-inline: 24px;
-  scrollbar-width: thin;
 }
 
 .shelf .tile {
   scroll-snap-align: start;
+}
+
+/* ── Hero cards: the newest album, and an album's own page ────────────── */
+
+/* Beacon's one hero effect: the cover, blurred past recognition, under a
+ * scrim that keeps the text readable and lands the accent on the far side. */
+.hero {
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  margin: 0 0 32px;
+  padding: 28px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: var(--night);
+  color: #fff;
+}
+
+.backdrop {
+  position: absolute;
+  inset: -20px;
+  z-index: -2;
+  background-size: cover;
+  background-position: center;
+  filter: blur(38px) saturate(1.4) brightness(0.55);
+  transform: scale(1.15);
+}
+
+.hero::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background:
+    linear-gradient(
+      120deg,
+      rgba(18, 20, 28, 0.94),
+      rgba(18, 20, 28, 0.74) 48%,
+      color-mix(in srgb, var(--primary) 18%, transparent)
+    ),
+    linear-gradient(to bottom, transparent 55%, rgba(18, 20, 28, 0.55));
+}
+
+.hero .cover {
+  flex: none;
+  width: 200px;
+  background-color: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.3);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+
+.hero--feature .cover {
+  width: 152px;
+}
+
+.hero-text {
+  min-width: 0;
+}
+
+/* A light theme's accent is dark enough for its page, too dark as text on the
+ * night card: Beacon lifts it there. */
+.hero {
+  --night-accent: var(--primary);
+}
+
+:root[data-theme='light'] .hero {
+  --night-accent: color-mix(in srgb, var(--primary) 55%, #fff);
+}
+
+.hero .eyebrow,
+.hero .pill.ghost {
+  color: var(--night-accent);
+}
+
+.eyebrow {
+  color: var(--primary);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* .detail-title: the serif is Beacon's signature, kept for the name. */
+.hero-title {
+  display: block;
+  margin: 6px 0 6px;
+  font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', serif;
+  font-size: clamp(1.75rem, 3.2vw, 2.5rem);
+  font-weight: 600;
+  line-height: 1.15;
+  overflow-wrap: anywhere;
+}
+
+.meta {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.meta a:hover {
+  color: #fff;
+  text-decoration: underline;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 18px;
+}
+
+/* Sentence case, a filled pill for the action and a tonal one beside it. */
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  border: 0;
+  border-radius: 999px;
+  padding: 0 20px 0 16px;
+  font-weight: 500;
+  cursor: pointer;
+  background: var(--primary);
+  color: var(--on-primary);
+  transition: filter 0.15s;
+}
+
+.pill:hover {
+  filter: brightness(1.08);
+}
+
+.pill.ghost {
+  background: var(--tonal);
+  color: var(--primary);
+}
+
+.pill svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* ── Song table ─────────────────────────────────────────────────────── */
+
+/* Columns of an album's songs, and of every other list of songs. A column
+ * the width cannot spare is dropped below (album, then year and format). */
+.row--album {
+  grid-template-columns: 28px minmax(0, 1fr) 140px 52px 104px;
+}
+
+.row--full {
+  grid-template-columns:
+    var(--num-width, 28px) 40px minmax(0, 1.4fr) minmax(0, 1fr)
+    52px 140px 52px 104px;
+}
+
+.row {
+  display: grid;
+  align-items: center;
+  gap: 14px;
+  min-height: 52px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  transition: background 0.15s;
+}
+
+.row:hover {
+  background: var(--hover);
+}
+
+/* The headings: the eyebrow's shape, in muted white rather than amber. */
+.row--head {
+  min-height: 0;
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+  border-radius: 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.row--head:hover {
+  background: none;
+}
+
+.row.playing .title {
+  color: var(--primary);
+}
+
+.num {
+  text-align: right;
+  color: var(--muted);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+
+.row.playing .num {
+  color: var(--primary);
+}
+
+.row-cover .cover {
+  width: 40px;
+}
+
+.row-cover .cover > svg {
+  width: 50%;
+  height: 50%;
+}
+
+.row--waiting {
+  opacity: 0.4;
+}
+
+.title,
+.row-sub,
+.col-album {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row-sub {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* The album shows in the line under the title only where its column is gone. */
+.sub-album {
+  display: none;
+}
+
+.col-album {
+  font-size: 14px;
+}
+
+.col-album:hover {
+  text-decoration: underline;
+}
+
+.col-year,
+.col-format,
+.time {
+  text-align: right;
+  color: var(--muted);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.row-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.row:hover .row-actions,
+.row:focus-within .row-actions {
+  opacity: 1;
+}
+
+/* No pointer to hover with: always there. */
+@media (hover: none) {
+  .row-actions {
+    opacity: 1;
+  }
+}
+
+.row-actions button {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.row-actions button:hover {
+  background: var(--hover);
+  color: var(--fg);
+}
+
+/* .panel-title: the eyebrow with a hairline carrying it to the far edge. */
+.disc,
+.letter {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--primary);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.disc::after,
+.letter::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--line);
+}
+
+.disc {
+  margin: 20px 10px 6px;
+}
+
+.bars {
+  display: inline-flex;
+  justify-content: flex-end;
+  align-items: flex-end;
+  gap: 2px;
+  height: 14px;
+  width: 100%;
+}
+
+.bars i {
+  width: 3px;
+  background: currentColor;
+  animation: bar 0.9s infinite ease-in-out alternate;
+}
+
+.bars i:nth-child(2) {
+  animation-delay: -0.3s;
+}
+
+.bars i:nth-child(3) {
+  animation-delay: -0.6s;
+}
+
+@keyframes bar {
+  from {
+    height: 20%;
+  }
+  to {
+    height: 100%;
+  }
 }
 
 /* Long lists (mountVirtual in app.js): the container keeps its columns and
@@ -427,22 +792,6 @@ main {
 .songs {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-}
-
-/* --num-width: as wide as the longest number, set in renderSongs(). */
-.songs .row {
-  grid-template-columns: var(--num-width, 32px) 40px minmax(0, 1fr) auto auto;
-}
-
-.row-cover .cover {
-  width: 40px;
-  border-radius: 6px;
-  font-size: 15px;
-  box-shadow: none;
-}
-
-.row--waiting .cover {
-  background: var(--surface);
 }
 
 /* ── A-Z index ──────────────────────────────────────────────────────── */
@@ -500,15 +849,11 @@ body.has-az .shelf {
   padding-right: 0;
 }
 
-.row--waiting {
-  opacity: 0.4;
-}
-
 /* ── Artists ────────────────────────────────────────────────────────── */
 
 .artists {
   display: grid;
-  gap: 6px 18px;
+  gap: 4px 18px;
   grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
 }
 
@@ -517,7 +862,8 @@ body.has-az .shelf {
   align-items: center;
   gap: 12px;
   padding: 8px;
-  border-radius: 10px;
+  border-radius: 8px;
+  transition: background 0.15s;
 }
 
 .artist-row:hover {
@@ -537,202 +883,14 @@ body.has-az .shelf {
   flex-shrink: 0;
   width: 52px;
   border-radius: 50%;
-  font-size: 20px;
-  box-shadow: none;
 }
 
 .letter {
   grid-column: 1 / -1;
-  margin: 14px 0 2px;
-  color: var(--primary);
-  font-weight: 700;
+  margin: 16px 8px 4px;
 }
 
-/* ── Album page ─────────────────────────────────────────────────────── */
-
-.hero {
-  position: relative;
-  display: flex;
-  gap: 32px;
-  align-items: flex-end;
-  flex-wrap: wrap;
-  margin: -20px -24px 24px;
-  padding: 64px 24px 32px;
-  overflow: hidden;
-}
-
-.hero::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(transparent 35%, var(--bg));
-}
-
-.hero > :not(.backdrop) {
-  position: relative;
-  z-index: 1;
-}
-
-.hero .cover {
-  width: 240px;
-  font-size: 72px;
-  border-radius: 14px;
-  box-shadow: 0 30px 70px #000a;
-}
-
-.hero h1 {
-  margin: 6px 0 10px;
-  font-size: clamp(28px, 5vw, 56px);
-  line-height: 1.02;
-  letter-spacing: -0.025em;
-}
-
-.hero .meta {
-  color: var(--muted);
-}
-
-.hero .meta a:hover {
-  color: var(--fg);
-  text-decoration: underline;
-}
-
-.actions {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin-top: 18px;
-}
-
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  border: 0;
-  border-radius: 999px;
-  padding: 10px 20px;
-  font-weight: 600;
-  cursor: pointer;
-  background: var(--primary);
-  color: var(--on-primary);
-}
-
-.pill.ghost {
-  background: var(--raised);
-  color: var(--fg);
-}
-
-.disc {
-  margin: 18px 0 6px;
-  color: var(--muted);
-  font-weight: 600;
-  font-size: 13px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.row {
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) auto auto;
-  align-items: center;
-  gap: 12px;
-  padding: 7px 10px;
-  border-radius: 8px;
-}
-
-.row:hover {
-  background: var(--hover);
-}
-
-.row.playing {
-  color: var(--primary);
-}
-
-.row.playing .title {
-  font-weight: 700;
-}
-
-.num {
-  text-align: right;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.title,
-.row-sub {
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.row-sub {
-  color: var(--muted);
-  font-size: 13px;
-}
-
-.time {
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-  font-size: 13px;
-}
-
-.row-actions {
-  display: flex;
-  gap: 2px;
-  opacity: 0.35;
-  transition: opacity 0.15s;
-}
-
-.row:hover .row-actions,
-.row:focus-within .row-actions {
-  opacity: 1;
-}
-
-.row-actions button {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  border: 0;
-  border-radius: 50%;
-  background: none;
-  cursor: pointer;
-}
-
-.row-actions button:hover {
-  background: var(--hover);
-}
-
-.bars {
-  display: inline-flex;
-  justify-content: flex-end;
-  align-items: flex-end;
-  gap: 2px;
-  height: 14px;
-  width: 100%;
-}
-
-.bars i {
-  width: 3px;
-  background: currentColor;
-  animation: bar 0.9s infinite ease-in-out alternate;
-}
-
-.bars i:nth-child(2) {
-  animation-delay: -0.3s;
-}
-
-.bars i:nth-child(3) {
-  animation-delay: -0.6s;
-}
-
-@keyframes bar {
-  from {
-    height: 20%;
-  }
-  to {
-    height: 100%;
-  }
-}
+/* ── Empty and waiting ──────────────────────────────────────────────── */
 
 .empty {
   padding: 64px 16px;
@@ -740,18 +898,18 @@ body.has-az .shelf {
   color: var(--muted);
 }
 
-/* ── Scan progress ──────────────────────────────────────────────────── */
-
+/* .beacon-panel */
 .scan-card {
   max-width: 460px;
   margin: 56px auto;
-  padding: 22px 24px;
+  padding: 18px 20px;
   border-radius: 14px;
-  background: var(--surface);
+  border: 1px solid var(--line);
+  background: var(--panel);
 }
 
 .scan-title {
-  font-weight: 700;
+  font-weight: 600;
   font-size: 17px;
   margin-bottom: 14px;
 }
@@ -769,10 +927,10 @@ body.has-az .shelf {
 
 .meter {
   position: relative;
-  height: 6px;
+  height: 4px;
   border-radius: 999px;
   overflow: hidden;
-  background: var(--line);
+  background: var(--tonal);
 }
 
 .meter i {
@@ -828,14 +986,41 @@ body.has-az .shelf {
   max-width: calc(100% - 32px);
   transform: translate(-50%, 90px);
   padding: 10px 18px;
-  border-radius: 999px;
-  background: var(--surface);
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--raised);
   box-shadow: 0 8px 24px #0009;
-  transition: transform 0.25s ease;
+  transition: transform 0.2s ease;
 }
 
 #toast.show {
   transform: translate(-50%, 0);
+  transition-duration: 0.3s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bars i,
+  .meter--busy i,
+  .spinning svg {
+    animation: none;
+  }
+}
+
+/* ── Narrower ───────────────────────────────────────────────────────── */
+
+/* The album column goes first, then the year: the format and the length
+ * are what a folder of files is most often looked through for. */
+@media (max-width: 1000px) {
+  .row--full {
+    grid-template-columns: var(--num-width, 28px) 40px minmax(0, 1fr) 140px 52px 104px;
+  }
+  .row--full .col-album,
+  .row--full .col-year {
+    display: none;
+  }
+  .row--full .sub-album {
+    display: inline;
+  }
 }
 
 /* ── Phone ──────────────────────────────────────────────────────────── */
@@ -856,7 +1041,7 @@ body.has-az .shelf {
   }
   .folders {
     gap: 18px;
-    margin: -2px 0 8px;
+    margin: 0 0 8px;
   }
   .folders a {
     padding-bottom: 8px;
@@ -864,26 +1049,28 @@ body.has-az .shelf {
   .brand {
     display: none;
   }
+  .tabs {
+    height: 36px;
+  }
   .tabs a {
-    padding: 5px 12px;
+    padding: 0 12px;
+    font-size: 13px;
   }
   .icon-button {
-    width: 34px;
-    height: 34px;
+    width: 36px;
+    height: 36px;
   }
   .search {
     order: 4;
     width: 100%;
-  }
-  .search input {
-    padding: 7px 0;
   }
   .notice {
     margin: 10px 16px 0;
   }
   .scan-card {
     margin: 24px 0;
-    padding: 18px;
+    padding: 14px;
+    border-radius: 12px;
   }
   .scan-bar {
     padding: 8px 16px;
@@ -896,23 +1083,18 @@ body.has-az .shelf {
     margin: 0 0 12px;
   }
   .section-head h1 {
-    font-size: 20px;
+    font-size: 1.25rem;
   }
   .section-head h2 {
-    font-size: 17px;
+    font-size: 1.05rem;
   }
-  .chip {
-    padding: 4px 10px;
-    font-size: 12px;
+  .sort-select {
+    height: 34px;
+    font-size: 13px;
   }
   .grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 14px 10px;
-  }
-  .cover {
-    border-radius: 8px;
-    font-size: 28px;
-    box-shadow: 0 4px 12px #0005;
   }
   .name {
     margin-top: 6px;
@@ -924,39 +1106,78 @@ body.has-az .shelf {
   .tile .play-fab {
     display: none;
   }
-  .tile:hover .cover {
-    transform: none;
-  }
-  /* Cover beside the text, as on the album page below. */
-  .feature {
-    align-items: center;
+  /* Cover beside the text, smaller, as Beacon's phone hero. */
+  .hero {
     gap: 14px;
     margin-bottom: 22px;
     padding: 14px;
-    border-radius: 16px;
+    border-radius: 12px;
   }
-  .feature-cover {
+  .hero .cover,
+  .hero--feature .cover {
     width: 96px;
   }
-  .feature-title {
-    margin: 4px 0 2px;
-    font-size: 20px;
+  .hero-title {
+    margin: 2px 0 2px;
+    font-size: 1.3rem;
   }
-  .feature .meta {
+  .meta {
     font-size: 12px;
+  }
+  .actions {
+    gap: 6px;
+    margin-top: 10px;
+  }
+  .pill {
+    gap: 6px;
+    height: 34px;
+    padding: 0 14px 0 12px;
+    font-size: 13px;
   }
   .shelf {
     grid-auto-columns: 112px;
     gap: 10px;
-    margin: -10px -16px 20px;
-    padding: 10px 16px 10px;
+    margin: 0 -16px 24px;
+    padding: 0 16px;
     scroll-padding-inline: 16px;
   }
-  .songs .row {
+  /* A song: its number, title and actions; the rest is in the line under
+   * the title or left out. */
+  .row--head,
+  .col-format,
+  .col-year,
+  .col-album,
+  .time {
+    display: none;
+  }
+  .sub-album {
+    display: inline;
+  }
+  .row {
+    gap: 10px;
+    min-height: 48px;
+    padding: 4px 2px;
+  }
+  .row--album {
+    grid-template-columns: 22px minmax(0, 1fr) auto;
+  }
+  .row--full,
+  .songs .row--full {
     grid-template-columns: var(--num-width, 22px) 36px minmax(0, 1fr) auto;
   }
   .row-cover .cover {
     width: 36px;
+  }
+  .row-actions button {
+    width: 30px;
+    height: 30px;
+  }
+  .row-actions svg {
+    width: 18px;
+    height: 18px;
+  }
+  .disc {
+    margin: 12px 2px 4px;
   }
   body.has-az main {
     padding-right: 36px;
@@ -967,65 +1188,6 @@ body.has-az .shelf {
   }
   .artist-row .cover {
     width: 44px;
-    font-size: 17px;
-  }
-  /* Cover beside the title instead of above it. */
-  .hero {
-    flex-wrap: nowrap;
-    align-items: center;
-    gap: 14px;
-    margin: -14px -16px 12px;
-    padding: 22px 16px 14px;
-  }
-  .hero > div:not([class]) {
-    min-width: 0;
-  }
-  .hero .cover {
-    flex: none;
-    width: 96px;
-    font-size: 36px;
-  }
-  .hero h1 {
-    margin: 2px 0 4px;
-    font-size: 20px;
-  }
-  .hero .meta {
-    font-size: 12px;
-  }
-  .actions {
-    gap: 6px;
-    margin-top: 10px;
-  }
-  .pill {
-    gap: 6px;
-    padding: 7px 14px;
-    font-size: 13px;
-  }
-  .pill svg {
-    width: 18px;
-    height: 18px;
-  }
-  .disc {
-    margin-top: 12px;
-  }
-  .row {
-    grid-template-columns: 22px minmax(0, 1fr) auto;
-    gap: 10px;
-    padding: 6px 2px;
-  }
-  .time {
-    display: none;
-  }
-  .row-actions {
-    opacity: 1;
-  }
-  .row-actions button {
-    width: 30px;
-    height: 30px;
-  }
-  .row-actions svg {
-    width: 18px;
-    height: 18px;
   }
 }
 
@@ -1034,7 +1196,8 @@ body.has-az .shelf {
   .grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-  .hero .cover {
+  .hero .cover,
+  .hero--feature .cover {
     width: 80px;
   }
 }

@@ -18,7 +18,9 @@ recordings, a friend's hard drive.
 - Reads every audio file below the folder, subfolders included, and groups them into
   albums: one album per folder and album tag. A compilation stays one album even when
   every song names another artist; `CD1`/`Disc 2` folders join their album.
-- Takes title, artist, album, track and disc number, year and genre from the tags. A file
+- Looks like part of Beacon: its type, its colours (light themes too), its song table.
+- Takes title, artist, album, track and disc number, year and genre from the tags, and the
+  format with its bitrate, sample rate and bit depth from the file itself. A file
   without tags is named after its folders and file name (`Artist/Album/03 - Title.mp3`).
 - Covers come from `cover.jpg`, `folder.jpg`, `front.jpg` (and `.png`, `.webp`) in the
   album folder, or from the cover embedded in a song.
@@ -197,7 +199,8 @@ uv run pytest                     # needs ffmpeg, to make the test songs
 uv run ruff format . && uv run ruff check .
 ```
 
-The page is plain HTML, CSS and JavaScript in `folder_source/ui/`, no build step. Anything
+The page is plain HTML, CSS and JavaScript in `folder_source/ui/`, no build step. Inter,
+the typeface Beacon is set in, comes along in `ui/fonts/` under its own licence. Anything
 the page loads itself has to live below `/ui/`, because Beacon passes only that part
 through. Song and cover addresses handed to Beacon may point anywhere on this app.
 

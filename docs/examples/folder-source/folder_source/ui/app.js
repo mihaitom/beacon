@@ -26,6 +26,9 @@ const ICONS = {
   play: '<path d="M8 5v14l11-7z"/>',
   next: '<path d="M3 10h11v2H3zm0-4h11v2H3zm0 8h7v2H3zm13-1v8l6-4z"/>',
   queue: '<path d="M3 10h11v2H3zm0-4h11v2H3zm0 8h7v2H3zm16-1v-3h-2v3h-3v2h3v3h2v-3h3v-2z"/>',
+  album:
+    '<path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20m0 14.5a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9m0-5.5a1 1 0 1 0 0 2 1 1 0 0 0 0-2"/>',
+  artist: '<path d="M12 4a4 4 0 1 1 0 8 4 4 0 0 1 0-8m0 10c4.42 0 8 1.79 8 4v2H4v-2c0-2.21 3.58-4 8-4"/>',
 }
 const icon = (name) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]}</svg>`
 
@@ -51,6 +54,7 @@ function duration(seconds) {
 }
 
 function longDuration(seconds) {
+  if (seconds < 60) return `${Math.round(seconds)} s`
   const minutes = Math.round(seconds / 60)
   if (minutes < 60) return `${minutes} min`
   return `${Math.floor(minutes / 60)} h ${minutes % 60} min`
@@ -59,21 +63,11 @@ function longDuration(seconds) {
 const count = (n) => n.toLocaleString()
 const plural = (n, word) => `${count(n)} ${word}${n === 1 ? '' : 's'}`
 
-// For anything without a cover: the theme's surface with a hint of one colour
-// per name, the same every time. Quiet on purpose, next to real covers.
-function tint(text) {
-  let hash = 0
-  for (const c of String(text)) hash = (hash * 31 + c.charCodeAt(0)) | 0
-  const hue = Math.abs(hash) % 360
-  const shade = (share) => `color-mix(in srgb, hsl(${hue} 40% 50%) ${share}%, var(--surface))`
-  return `linear-gradient(135deg, ${shade(22)}, ${shade(8)})`
-}
-
-function cover(albumId, hasCover, name, { full = false } = {}) {
-  const letter = esc((name || '?').trim().charAt(0).toUpperCase() || '?')
+// Without a cover: Beacon's faint fill and a quiet record (or person).
+function cover(albumId, hasCover, { full = false, kind = 'album' } = {}) {
   const src = `covers/${state.folder}/${albumId}${full ? '' : '?size=thumb'}`
   const image = hasCover ? `<img src="${src}" alt="" loading="lazy" />` : ''
-  return `<div class="cover" style="background:${tint(name)}">${letter}${image}</div>`
+  return `<div class="cover">${icon(kind)}${image}</div>`
 }
 
 function toast(text) {
@@ -153,6 +147,7 @@ window.addEventListener('message', (event) => {
     set('--primary', c.primary)
     set('--on-primary', c['on-primary'])
     style.colorScheme = message.dark ? 'dark' : 'light'
+    document.documentElement.dataset.theme = message.dark ? 'dark' : 'light'
   }
 })
 
@@ -460,35 +455,72 @@ window.addEventListener(
 
 let rowsOnScreen = []
 
-function trackRows(rows, { showAlbum = false, albumArtist = '' } = {}) {
+// What Beacon's song table says in its Format column: "FLAC · 953 kbps".
+function formatText(row) {
+  if (!row.format) return ''
+  return row.bitrate ? `${row.format} · ${row.bitrate} kbps` : row.format
+}
+
+// An album's quality in one line: "FLAC · 24 bit / 96 kHz", "MP3 · 320 kbps".
+function albumQuality(tracks) {
+  const formats = new Set(tracks.map((t) => t.format))
+  if (formats.size !== 1 || !tracks[0].format) return ''
+  const first = tracks[0]
+  if (first.bitDepth && first.sampleRate) {
+    const same = tracks.every((t) => t.bitDepth === first.bitDepth && t.sampleRate === first.sampleRate)
+    if (same) return `${first.format} · ${first.bitDepth} bit / ${first.sampleRate / 1000} kHz`
+  }
+  const rates = tracks.map((t) => t.bitrate).filter(Boolean)
+  if (!rates.length) return first.format
+  const low = Math.min(...rates)
+  const high = Math.max(...rates)
+  return `${first.format} · ${low === high ? low : `${low}-${high}`} kbps`
+}
+
+/** The column headings over a list of songs, in the rows' own grid. `full`:
+ * a list of songs from anywhere (cover, album, year); otherwise one album's. */
+function trackHead(full) {
+  const columns = full
+    ? ['#', '', 'Title', 'Album', 'Year', 'Format', 'Time', '']
+    : ['#', 'Title', 'Format', 'Time', '']
+  const align = (label) => (['#', 'Year', 'Format', 'Time'].includes(label) ? ' style="text-align:right"' : '')
+  return `<div class="row row--head ${full ? 'row--full' : 'row--album'}" aria-hidden="true">${columns
+    .map((label) => `<span${align(label)}>${label}</span>`)
+    .join('')}</div>`
+}
+
+function trackRows(rows, { full = false, albumArtist = '' } = {}) {
   rowsOnScreen = rows
   const discs = new Set(rows.map((r) => r.disc || 1))
   let lastDisc = null
-  return rows
+  const body = rows
     .map((row, i) => {
       let heading = ''
       const disc = row.disc || 1
-      if (discs.size > 1 && disc !== lastDisc) heading = `<div class="disc">Disc ${disc}</div>`
+      if (!full && discs.size > 1 && disc !== lastDisc) heading = `<div class="disc">Disc ${disc}</div>`
       lastDisc = disc
-      const number = showAlbum ? i + 1 : (row.track ?? i + 1)
-      const sub = showAlbum
-        ? `${row.artist} · ${row.album}`
-        : row.artist && row.artist !== albumArtist
-          ? row.artist
-          : ''
-      return heading + trackRow(row, i, number, sub)
+      const number = full ? i + 1 : (row.track ?? i + 1)
+      const showArtist = full || (row.artist && row.artist !== albumArtist)
+      return heading + trackRow(row, i, number, { full, showArtist })
     })
     .join('')
+  return trackHead(full) + body
 }
 
-function trackRow(row, i, number, sub, { withCover = false } = {}) {
-  const art = withCover ? `<span class="row-cover">${cover(row.albumId, row.cover, row.album)}</span>` : ''
+function trackRow(row, i, number, { full = false, showArtist = true } = {}) {
+  const sub = [
+    showArtist && row.artist ? esc(row.artist) : '',
+    full && row.album ? `<span class="sub-album">${row.artist ? ' · ' : ''}${esc(row.album)}</span>` : '',
+  ].join('')
+  const album = row.albumId
+    ? `<a class="col-album" href="${link(`/album/${row.albumId}`)}">${esc(row.album)}</a>`
+    : `<span class="col-album">${esc(row.album)}</span>`
   return `
-    <div class="row" data-row="${i}" data-number="${esc(number)}">
-      <span class="num">${esc(number)}</span>${art}
-      <span><div class="title">${esc(row.title)}</div>${
-        sub ? `<div class="row-sub">${esc(sub)}</div>` : ''
-      }</span>
+    <div class="row ${full ? 'row--full' : 'row--album'}" data-row="${i}" data-number="${esc(number)}">
+      <span class="num">${esc(number)}</span>${full ? `<span class="row-cover">${cover(row.albumId, row.cover)}</span>` : ''}
+      <span><div class="title">${esc(row.title)}</div>${sub ? `<div class="row-sub">${sub}</div>` : ''}</span>
+      ${full ? `${album}<span class="col-year">${esc(row.year ?? '')}</span>` : ''}
+      <span class="col-format">${esc(formatText(row))}</span>
       <span class="time">${duration(row.duration)}</span>
       <span class="row-actions">
         <button title="Play" data-play="${i}" data-mode="now">${icon('play')}</button>
@@ -505,12 +537,19 @@ function albumTile(album) {
   return `
     <div class="tile">
       <div class="cover-wrap">
-        <a href="${link(`/album/${album.id}`)}" aria-label="${esc(album.title)}">${cover(album.id, album.cover, album.title)}</a>
+        <a href="${link(`/album/${album.id}`)}" aria-label="${esc(album.title)}">${cover(album.id, album.cover)}</a>
         <button class="play-fab" title="Play" data-play-album="${album.id}">${icon('play')}</button>
       </div>
-      <a class="name" href="${link(`/album/${album.id}`)}" style="display:block">${esc(album.title)}</a>
+      <a class="name" href="${link(`/album/${album.id}`)}">${esc(album.title)}</a>
       ${sub}
     </div>`
+}
+
+function sortSelect(list, labels, current) {
+  const options = Object.entries(labels)
+    .map(([key, label]) => `<option value="${key}" ${key === current ? 'selected' : ''}>${label}</option>`)
+    .join('')
+  return `<select class="sort-select" data-sort-select="${list}" aria-label="Sort by">${options}</select>`
 }
 
 // [label, order, the name the A-Z index goes by (none: no index)]
@@ -531,7 +570,8 @@ const SHELF_FROM = 8
 const SHELF_SIZE = 14
 
 function backdrop(album, { full = false } = {}) {
-  if (!album.cover) return `<div class="backdrop" style="background:${tint(album.title)}"></div>`
+  if (!album.cover) return ''
+
   // Blurred beyond recognition: the small cover does as well as the big one.
   const src = `covers/${state.folder}/${album.id}${full ? '' : '?size=thumb'}`
   return `<div class="backdrop" style="background-image:url('${src}')"></div>`
@@ -540,11 +580,11 @@ function backdrop(album, { full = false } = {}) {
 function feature(album) {
   const meta = [album.artist, album.year, plural(album.songs, 'song')].filter(Boolean).map(esc)
   return `
-    <section class="feature">${backdrop(album)}
-      <a class="feature-cover" href="${link(`/album/${album.id}`)}">${cover(album.id, album.cover, album.title)}</a>
-      <div class="feature-text">
+    <section class="hero hero--feature">${backdrop(album)}
+      <a href="${link(`/album/${album.id}`)}">${cover(album.id, album.cover)}</a>
+      <div class="hero-text">
         <div class="eyebrow">Just added</div>
-        <a class="feature-title" href="${link(`/album/${album.id}`)}">${esc(album.title)}</a>
+        <a class="hero-title" href="${link(`/album/${album.id}`)}">${esc(album.title)}</a>
         <div class="meta">${meta.join(' · ')}</div>
         <div class="actions"><button class="pill" data-play-album="${album.id}">${icon('play')} Play</button></div>
       </div>
@@ -554,15 +594,10 @@ function feature(album) {
 function renderAlbums() {
   const [, order, nameOf] = SORTS[state.sort]
   const albums = [...state.albums].sort(order)
-  const chips = Object.entries(SORTS)
-    .map(
-      ([key, [label]]) =>
-        `<button class="chip ${key === state.sort ? 'active' : ''}" data-sort="${key}">${label}</button>`,
-    )
-    .join('')
+  const labels = Object.fromEntries(Object.entries(SORTS).map(([key, [label]]) => [key, label]))
   // Nothing to count or sort before the first scan has found anything.
   const tools = albums.length
-    ? `<span class="count">${plural(albums.length, 'album')}</span><div class="chips">${chips}</div>`
+    ? `<span class="count">${plural(albums.length, 'album')}</span>${sortSelect('albums', labels, state.sort)}`
     : ''
   const newest = albums.length >= SHELF_FROM ? [...state.albums].sort(SORTS.added[1]) : []
   const top = newest.length
@@ -570,8 +605,9 @@ function renderAlbums() {
        <div class="section-head"><h2>Recently added</h2></div>
        <div class="shelf">${newest.slice(1, SHELF_SIZE + 1).map(albumTile).join('')}</div>`
     : ''
+  const heading = top ? '<h2>All albums</h2>' : '<h1>Albums</h1>'
   view.innerHTML = `${top}
-    <div class="section-head"><h1>${top ? 'All albums' : 'Albums'}</h1>${tools}</div>
+    <div class="section-head">${heading}${tools}</div>
     ${albums.length ? '<div class="grid"></div>' : emptyLibrary()}`
   if (!albums.length) return
   mountVirtual(view.querySelector('.grid'), albums, { renderItem: albumTile })
@@ -656,7 +692,7 @@ const artistLetter = (artist) => letterOf(artist.name)
 function artistRow(artist) {
   return `
     <a class="artist-row" href="${link(`/artist/${encodeURIComponent(artist.name)}`)}">
-      ${cover(artist.cover, !!artist.cover, artist.name)}
+      ${cover(artist.cover, !!artist.cover, { kind: 'artist' })}
       <span class="artist-text"><div class="name">${esc(artist.name)}</div>
       <div class="sub">${plural(artist.albums, 'album')}</div></span>
     </a>`
@@ -723,11 +759,11 @@ function songRow(index) {
       })
       .catch((error) => console.warn('Could not load songs:', error))
     // Two lines, like a loaded row, so nothing moves when it arrives.
-    return `<div class="row row--waiting"><span class="num">${index + 1}</span>
+    return `<div class="row row--full row--waiting"><span class="num">${index + 1}</span>
       <span class="row-cover"><div class="cover"></div></span>
       <span><div class="title">&nbsp;</div><div class="row-sub">&nbsp;</div></span></div>`
   }
-  return trackRow(row, index, index + 1, `${row.artist} · ${row.album}`, { withCover: true })
+  return trackRow(row, index, index + 1, { full: true })
 }
 
 async function renderSongs() {
@@ -735,22 +771,16 @@ async function renderSongs() {
   if (!songs.rows.length) await loadSongPage(0)
   if (currentPath() !== '/songs' || state.query) return
   rowsOnScreen = songs.rows
-  const chips = Object.entries(SONG_SORTS)
-    .map(
-      ([key, label]) =>
-        `<button class="chip ${key === songs.sort ? 'active' : ''}" data-song-sort="${key}">${label}</button>`,
-    )
-    .join('')
   const tools = songs.total
-    ? `<span class="count">${plural(songs.total, 'song')}</span>
-       <div class="chips">${chips}</div>`
+    ? `<span class="count">${plural(songs.total, 'song')}</span>${sortSelect('songs', SONG_SORTS, songs.sort)}`
     : ''
   view.innerHTML = `
     <div class="section-head"><h1>Songs</h1>${tools}</div>
-    ${songs.total ? '<div class="songs"></div>' : emptyLibrary()}`
+    ${songs.total ? `<div class="song-table">${trackHead(true)}<div class="songs"></div></div>` : emptyLibrary()}`
   if (!songs.total) return
   const list = view.querySelector('.songs')
-  list.style.setProperty('--num-width', `${String(songs.total).length + 0.5}ch`)
+  // The headings' number column has to be as wide as the rows'.
+  view.querySelector('.song-table').style.setProperty('--num-width', `${String(songs.total).length + 0.5}ch`)
   const indexes = Array.from({ length: songs.total }, (_, i) => i)
   mountVirtual(list, indexes, { renderItem: songRow })
   if (songs.letters && Object.keys(songs.letters).length) mountIndex(songs.letters)
@@ -780,16 +810,22 @@ async function renderAlbum(albumId) {
   const artist = album.artist
     ? `<a href="${link(`/artist/${encodeURIComponent(album.artist)}`)}">${esc(album.artist)}</a> · `
     : ''
-  const details = [album.year, album.genre, plural(album.songs, 'song'), longDuration(album.duration)]
+  const details = [
+    album.year,
+    album.genre,
+    plural(album.songs, 'song'),
+    longDuration(album.duration),
+    albumQuality(album.tracks),
+  ]
     .filter(Boolean)
     .map(esc)
     .join(' · ')
   view.innerHTML = `
     <section class="hero">${backdrop(album, { full: true })}
-      ${cover(album.id, album.cover, album.title, { full: true })}
-      <div>
-        <div class="sub">Album</div>
-        <h1>${esc(album.title)}</h1>
+      ${cover(album.id, album.cover, { full: true })}
+      <div class="hero-text">
+        <div class="eyebrow">Album</div>
+        <h1 class="hero-title">${esc(album.title)}</h1>
         <div class="meta">${artist}${details}</div>
         <div class="actions">
           <button class="pill" data-album-action="play">${icon('play')} Play</button>
@@ -813,7 +849,7 @@ async function renderSearch() {
   const songs = result.tracks.length
     ? `<div class="section-head" style="margin-top:28px"><h2>Songs</h2>
          <button class="pill ghost" data-play-results>${icon('play')} Play all</button></div>
-       ${trackRows(result.tracks, { showAlbum: true })}`
+       ${trackRows(result.tracks, { full: true })}`
     : ''
   view.innerHTML = albums || songs ? albums + songs : `<div class="empty">Nothing found for “${esc(query)}”.</div>`
   markPlaying()
@@ -878,19 +914,24 @@ function route() {
 
 // ── Events ─────────────────────────────────────────────────────────────
 
+view.addEventListener('change', (event) => {
+  const list = event.target.dataset?.sortSelect
+  if (list === 'albums') {
+    state.sort = event.target.value
+    renderAlbums()
+  } else if (list === 'songs') {
+    songs.sort = event.target.value
+    resetSongs()
+    window.scrollTo(0, 0)
+    renderSongs()
+  }
+})
+
 view.addEventListener('click', async (event) => {
   const button = event.target.closest('button')
   if (!button) return
   const { dataset } = button
-  if (dataset.sort) {
-    state.sort = dataset.sort
-    renderAlbums()
-  } else if (dataset.songSort) {
-    songs.sort = dataset.songSort
-    resetSongs()
-    window.scrollTo(0, 0)
-    renderSongs()
-  } else if (dataset.play !== undefined) {
+  if (dataset.play !== undefined) {
     const row = rowsOnScreen[dataset.play]
     const result = await send([row.item], dataset.mode)
     if (!result.ok) toast(result.error || 'Could not play that')
@@ -979,6 +1020,7 @@ async function loadLibrary() {
 
 async function start() {
   document.getElementById('standalone').hidden = embedded
+  document.body.classList.toggle('embedded', embedded)
   // First, so Beacon's colours arrive before the library does.
   if (embedded) window.parent.postMessage({ type: 'beacon.ready' }, '*')
   state.status = await api('status')

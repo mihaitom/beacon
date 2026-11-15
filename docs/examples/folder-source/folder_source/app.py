@@ -98,7 +98,13 @@ def create_app(
             "cover": bool(album and album.cover),
             "track": track.track,
             "disc": track.disc,
+            "year": track.year,
+            "genre": track.genre,
             "duration": track.duration,
+            "format": track.format,
+            "bitrate": track.bitrate,
+            "sampleRate": track.sample_rate,
+            "bitDepth": track.bit_depth,
             "item": play_item(key, library, track),
         }
 
