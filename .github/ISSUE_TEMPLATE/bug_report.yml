@@ -1,0 +1,104 @@
+name: Bug report
+description: Something doesn't work the way it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time! The questions below are the ones that usually come up first, so answering them up front saves a round of back and forth. [Reporting a problem](https://github.com/mihaitom/beacon/blob/main/docs/help/faq/reporting.md) explains the log level and the cast panel.
+
+  - type: input
+    id: version
+    attributes:
+      label: Beacon version
+      description: Shown in Settings > About Beacon.
+      placeholder: e.g. 1.11.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How do you run Beacon?
+      options:
+        - Desktop app (Windows)
+        - Desktop app (macOS)
+        - Desktop app (Linux)
+        - Docker / web
+    validations:
+      required: true
+
+  - type: input
+    id: client
+    attributes:
+      label: Where do you use it?
+      description: For Docker / web, the browser and device. Say whether it is installed to the home screen or desktop (PWA).
+      placeholder: e.g. Safari on iPhone 15, home-screen app / Chrome on Windows 11
+
+  - type: dropdown
+    id: media-server
+    attributes:
+      label: Media server
+      options:
+        - Navidrome
+        - Jellyfin
+        - Plex
+        - Other Subsonic-compatible server
+    validations:
+      required: true
+
+  - type: input
+    id: media-server-version
+    attributes:
+      label: Media server version
+      placeholder: e.g. Jellyfin 10.10.7
+    validations:
+      required: true
+
+  - type: dropdown
+    id: playback
+    attributes:
+      label: Where does the music play?
+      description: Pick all that apply, if more than one is involved.
+      multiple: true
+      options:
+        - On this device
+        - Sonos
+        - AirPlay
+        - Chromecast
+        - DLNA
+        - Not related to playback
+    validations:
+      required: true
+
+  - type: input
+    id: speaker
+    attributes:
+      label: Speaker make and model
+      description: Only when casting.
+      placeholder: e.g. Sonos Era 100, Audio Pro C5
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead. Screenshots welcome.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: How can it be reproduced?
+      description: If it only happens sometimes, say roughly how often.
+      placeholder: |
+        1. ...
+        2. ...
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log
+      description: |
+        Set the log level to Debug in Settings > Advanced (Trace for a casting problem), reproduce the problem and paste the log from around that time. Docker: `docker logs <container>`. Desktop app: `logs/main.log` in the app's data folder (`%APPDATA%\Beacon` on Windows, `~/Library/Application Support/Beacon` on macOS, `~/.config/Beacon` on Linux). Logins, tokens and API keys are masked.
+      render: text

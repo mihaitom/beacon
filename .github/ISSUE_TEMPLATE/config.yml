@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Help and FAQ
+    url: https://github.com/mihaitom/beacon/tree/main/docs/help
+    about: Setup, casting, networking and the questions that come up most.

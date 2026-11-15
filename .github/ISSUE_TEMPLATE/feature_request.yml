@@ -1,0 +1,34 @@
+name: Feature request
+description: An idea for something Beacon could do
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like Beacon to do?
+      description: And what you would use it for - the situation it comes up in helps more than a finished design.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: How do you run Beacon?
+      multiple: true
+      options:
+        - Desktop app (Windows)
+        - Desktop app (macOS)
+        - Desktop app (Linux)
+        - Docker / web
+
+  - type: dropdown
+    id: media-server
+    attributes:
+      label: Media server
+      description: Some features depend on what the server offers.
+      multiple: true
+      options:
+        - Navidrome
+        - Jellyfin
+        - Plex
+        - Other Subsonic-compatible server
