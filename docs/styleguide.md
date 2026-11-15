@@ -257,6 +257,13 @@ separate "show advanced features" switch. A section with nothing to show for
 this account hides itself (the log level does, for a non-admin) rather than
 rendering an empty panel.
 
+Where the page itself is at least 880px wide (200px tab column, 40px gap,
+the narrow layout's 640px), the bar becomes a vertical, sticky column on the
+left with an icon per tab, and the settings column grows to 720px. Measured
+on the page, not the viewport: the desktop shell never switches to the
+phone layout, and its sidebar and queue take their share of the window
+first. Narrower than that, it is the 640px column with the bar on top.
+
 The bar is Vuetify's `v-tabs` with `color="primary"`, so the active
 indicator is the app's amber. Its labels are reset to the app's own body
 weight and case (`text-transform: none`, no letter-spacing) because the

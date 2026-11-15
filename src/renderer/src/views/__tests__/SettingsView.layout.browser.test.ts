@@ -199,4 +199,19 @@ describe('SettingsView layout', () => {
     )
     expect(withSiblings.length).toBeGreaterThan(0)
   })
+
+  /** With room, the tab bar becomes a column beside the settings rather
+   * than a strip above them; a phone keeps it on top. */
+  it('puts the tabs beside the settings with room, and above them without', async () => {
+    await mountSettings(1400)
+    const [wideTabs] = rects('.settings-tabs')
+    const [widePanel] = rects('.beacon-panel')
+    expect(widePanel!.left).toBeGreaterThanOrEqual(wideTabs!.right)
+    expect(widePanel!.top).toBeLessThan(wideTabs!.bottom)
+
+    await mountSettings(390, 800)
+    const [narrowTabs] = rects('.settings-tabs')
+    const [narrowPanel] = rects('.beacon-panel')
+    expect(narrowPanel!.top).toBeGreaterThanOrEqual(narrowTabs!.bottom)
+  })
 })
