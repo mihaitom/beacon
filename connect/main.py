@@ -384,12 +384,10 @@ app = FastAPI(
     redoc_url=None,
 )
 _ALLOWED_ORIGIN_REGEX = r"http://localhost(:[0-9]+)?"
-_ALLOWED_ORIGINS_ENV = os.getenv("ALLOWED_ORIGINS", "")
-_ALLOWED_ORIGINS: list[str] = (
-    [o.strip() for o in _ALLOWED_ORIGINS_ENV.split(",") if o.strip()]
-    if _ALLOWED_ORIGINS_ENV
-    else ["null"]  # Electron file:// origin appears as "null"
-)
+# Electron's file:// page and the dev servers on localhost are the only
+# cross-origin callers; the Docker build is same-origin behind nginx, and
+# /device-link/v1/ answers any origin itself (routes/device_link.py).
+_ALLOWED_ORIGINS = ["null"]
 app.add_middleware(
     CORSMiddleware,
     # No cookies are ever used for auth here (X-Connect-Token/X-Connect-Session
