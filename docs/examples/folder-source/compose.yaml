@@ -1,6 +1,7 @@
 services:
   folder-source:
-    build: .
+    # Built from this folder instead: replace this line with `build: .`
+    image: ghcr.io/mihaitom/beacon-folder-source:latest
     container_name: beacon-folder-source
     restart: unless-stopped
     # The music is only read, never changed.

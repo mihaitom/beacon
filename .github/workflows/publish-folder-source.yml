@@ -1,0 +1,92 @@
+name: Publish folder-source image (Manual)
+
+# The folder-source example as a ready-made image on GHCR, so a reader can
+# pull it instead of building it. Run by hand when a new version of it is
+# due; tagged with the version in its pyproject.toml and `latest`, so bump
+# the version there first.
+# It is small and plain Python, so arm64 builds under QEMU on one runner,
+# unlike Beacon's own image (_publish-docker.yml).
+
+on: workflow_dispatch
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}-folder-source
+  CONTEXT: docs/examples/folder-source
+
+jobs:
+  test:
+    uses: ./.github/workflows/test-examples.yml
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Read version
+        id: version
+        run: echo "value=$(sed -n 's/^version = "\(.*\)"/\1/p' "$CONTEXT/pyproject.toml")" >> "$GITHUB_OUTPUT"
+      - name: Extract metadata for Docker
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6.2.0
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ steps.version.outputs.value }}
+            type=raw,value=latest
+          labels: |
+            org.opencontainers.image.title=Beacon folder source
+            org.opencontainers.image.description=Plays folders of music files in Beacon, without adding them to the media server
+      - name: Setup QEMU
+        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - name: Setup Docker buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      # The unit tests run on the source; this checks the image itself
+      # starts and answers, before anything is pushed.
+      - name: Build image for the smoke test
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ env.CONTEXT }}
+          platforms: linux/amd64
+          load: true
+          tags: folder-source:smoke
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke test
+        run: |
+          mkdir -p music
+          docker run -d --name smoke -p 8800:8800 -e TOKEN=smoke \
+              -v "$PWD/music:/music:ro" folder-source:smoke
+          for _ in $(seq 30); do
+              curl -fs http://127.0.0.1:8800/health && exit 0
+              sleep 1
+          done
+          docker logs smoke
+          exit 1
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      # provenance/sbom off for the same reason as in _publish-docker.yml:
+      # their extra manifest entries trip up some auto-updaters.
+      - name: Build and push
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ${{ env.CONTEXT }}
+          platforms: linux/amd64,linux/arm64
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: false
+          sbom: false
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

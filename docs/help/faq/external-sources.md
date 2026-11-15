@@ -14,7 +14,7 @@ it like any other: on this device, or cast to your speakers.
 Beacon itself does not include such an app. Its repository has two examples
 to run as they are or to build on:
 [one](https://github.com/mihaitom/beacon/tree/main/docs/examples/folder-source)
-plays one or more music folders,
+plays one or more music folders and comes as a ready-made Docker image,
 [the other](https://github.com/mihaitom/beacon/tree/main/docs/examples/live-music-archive)
 an online archive of live concerts whose bands allow them to be shared. The
 [API reference](../reference/external-source-api.md#examples) says more. What

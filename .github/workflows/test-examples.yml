@@ -4,6 +4,8 @@ name: Test examples
 # reader runs them as they are, so they are tested like the app.
 on:
   workflow_dispatch:
+  # publish-folder-source.yml runs it before publishing the image.
+  workflow_call:
   push:
     branches: [main, development]
     paths:

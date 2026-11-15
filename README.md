@@ -89,9 +89,24 @@ services:
     network_mode: host
     volumes:
       - ./data:/data
+
+  # optional
+  folder-source:
+    container_name: beacon-folder-source
+    image: ghcr.io/mihaitom/beacon-folder-source:latest
+    restart: unless-stopped
+    volumes:
+      - /path/to/music:/music:ro
+      - ./folder-source-data:/data
+    environment:
+      TOKEN: change-me
+    ports:
+      - '8800:8800'
 ```
 
 That's it - Beacon asks for your server URL, username, and password on first launch; nothing needs to be pre-configured. See the environment variables below for optional locking, LAN optimization, and SSO scenarios.
+
+**folder-source is optional:** it plays folders of music files in Beacon without adding them to your media server (imports not sorted yet, DJ sets, recordings), as a tab of its own whose songs play like any other, on your speakers too. Leave it out if you don't need it. To use it, add it in Beacon under **Settings > Library > External sources** with the address `http://localhost:8800` and the same token. Several folders as tabs and every setting are in [its README](docs/examples/folder-source/README.md).
 
 **Mount a volume at `/data`** to keep AirPlay 2 pairings, your log-level setting, your account settings (language, personalized recommendations, lyrics providers, Autoplay batch size, transition settings), the recommendations cache, the Fanart.tv image cache, API keys entered in Settings, each station's played-titles list, the casting allow-list, and (for Jellyfin/Plex sessions) your internet radio stations across container recreations/updates.
 

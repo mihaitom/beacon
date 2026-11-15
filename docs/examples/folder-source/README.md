@@ -41,31 +41,26 @@ Formats: MP3, AAC/M4A, FLAC, Ogg Vorbis, Opus, WAV and WebM audio.
 
 ### Docker
 
-There is no ready-made image: you build it yourself from this folder. It is not part of
-Beacon's own image either.
+There is a ready-made image, `ghcr.io/mihaitom/beacon-folder-source`, for x86 machines
+and ARM ones like a Raspberry Pi. `latest` is the newest version; a version number
+(`1.0.0`) stays on that version. It is not part of Beacon's own image.
 
-#### Getting the folder
+#### Starting it
 
-A clone of Beacon's repository has it at `docs/examples/folder-source`. To fetch only
-this folder instead of all of Beacon:
-
-```bash
-git clone --depth 1 --filter=blob:none --sparse https://github.com/mihaitom/beacon.git
-cd beacon
-git sparse-checkout set docs/examples/folder-source
-cd docs/examples/folder-source
-```
-
-#### Building and running on the same machine
-
-Set the music folder and a token in `compose.yaml`, then:
+Save [`compose.yaml`](compose.yaml) on the server, set the music folder and a token in it,
+then:
 
 ```bash
-docker compose up -d --build
+docker compose up -d
 ```
 
-Compose builds the image and starts it. To update later, `git pull` and run the same
-command again; the index in `./data` stays.
+To update later:
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+The index in `./data` stays.
 
 #### A complete example
 
@@ -74,7 +69,7 @@ Two folders, each its own tab, with every setting written out:
 ```yaml
 services:
   folder-source:
-    build: . # or image: <your registry>/folder-source:latest, see below
+    image: ghcr.io/mihaitom/beacon-folder-source:latest
     container_name: beacon-folder-source
     restart: unless-stopped
     volumes:
@@ -102,34 +97,32 @@ In Beacon the address is then `http://<this host>:8800`. When Beacon runs in the
 compose file on its default network (not with `network_mode: host`), it is
 `http://folder-source:8800` instead, and `ports:` can go.
 
-#### Building for another machine
+#### Building it yourself
 
-Build the image with a name of your choice:
+Only needed to run changes of your own. A clone of Beacon's repository has the app at
+`docs/examples/folder-source`. To fetch only this folder instead of all of Beacon:
 
 ```bash
-docker build -t folder-source:1.0.0 .
+git clone --depth 1 --filter=blob:none --sparse https://github.com/mihaitom/beacon.git
+cd beacon
+git sparse-checkout set docs/examples/folder-source
+cd docs/examples/folder-source
 ```
 
-Then get it to the server one of two ways:
+In `compose.yaml`, replace the `image:` line with `build: .`, then:
 
-- **Through a registry of your own**: tag and push it, and in the server's
-  `compose.yaml` replace `build: .` with `image:` and that name.
+```bash
+docker compose up -d --build
+```
 
-  ```bash
-  docker tag folder-source:1.0.0 registry.example.com/you/folder-source:latest
-  docker push registry.example.com/you/folder-source:latest
-  ```
+To build on one machine and run on another, build the image under a name of your
+choice, push it to a registry of your own and use that name as `image:`. A server with
+another processor than the machine you build on needs the image for its platform:
 
-- **Without a registry**: copy it straight over SSH, and use `image: folder-source:1.0.0`
-  in the server's `compose.yaml`.
-
-  ```bash
-  docker save folder-source:1.0.0 | ssh server docker load
-  ```
-
-A server with another processor than the machine you build on, a Raspberry Pi built for
-on a PC say, needs the image for its platform: `docker buildx build --platform
-linux/arm64 -t registry.example.com/you/folder-source:latest --push .`
+```bash
+docker buildx build --platform linux/amd64,linux/arm64 \
+  -t registry.example.com/you/folder-source:latest --push .
+```
 
 #### The data folder
 
@@ -244,4 +237,6 @@ through. Song and cover addresses handed to Beacon may point anywhere on this ap
 
 How Beacon and the page talk to each other is in Beacon's help, under **External source
 API** ([`docs/help/reference/external-source-api.md`](../../help/reference/external-source-api.md)).
-The tests run in Beacon's CI too, whenever something in this folder changes.
+The tests run in Beacon's CI too, whenever something in this folder changes. The image is
+published by hand, from Beacon's repository; a new `version` in `pyproject.toml` gives it a
+new version tag.
