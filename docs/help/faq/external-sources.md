@@ -17,9 +17,11 @@ to run as they are or to build on:
 plays one or more music folders and comes as a ready-made Docker image,
 [the other](https://github.com/mihaitom/beacon/tree/main/docs/examples/live-music-archive)
 an online archive of live concerts whose bands allow them to be shared. The
-[API reference](../reference/external-source-api.md#examples) says more. What
-an app offers and where its audio comes from is entirely up to whoever runs
-it. Only use sources you are allowed to play.
+[API reference](../reference/external-source-api.md#examples) says more, and
+apps others have written are listed in Beacon itself (see
+[below](#where-do-i-find-apps-others-have-written)). What an app offers and
+where its audio comes from is entirely up to whoever runs it. Only use sources
+you are allowed to play.
 
 ## What could it be?
 
@@ -43,6 +45,56 @@ in the list changes or removes it.
 
 On a Beacon server only an administrator can set sources up, and they are the
 same for everyone signed in. In the desktop app they are yours alone.
+
+## Where do I find apps others have written?
+
+Settings > Library > External sources > **Find apps** lists the apps their
+authors have put on Beacon's list, each with what it does and a link to its
+repository. Beacon reads the list from its repository on GitHub each time you
+open it.
+
+These apps are not part of Beacon. Their authors write and run them, and
+Beacon does not check them: what an app plays and where it gets it is up to
+its author and to you. Read its README before you run it, and only add sources
+you are allowed to play.
+
+To use one:
+
+1. Open its repository and run the app as its README says, somewhere Beacon
+   can reach it.
+2. Back in **Find apps**, choose **Add**. The usual dialog opens with the app's
+   name and icon filled in.
+3. Enter the address you run it at and, if the app asks for one, its token,
+   and save.
+
+## How do I list my own app?
+
+Open a pull request against the `main` branch of
+[Beacon's repository](https://github.com/mihaitom/beacon) that adds an entry
+to `community/external-sources.json`:
+
+```json
+{
+  "name": "My source",
+  "description": "What it plays, in a sentence or two.",
+  "repository": "https://github.com/you/my-source",
+  "icon": "mdi-album"
+}
+```
+
+- **name**: up to 60 characters. Beacon suggests it as the tab's name.
+- **description**: what it plays and how, in English, up to 300 characters.
+- **repository**: its public repository, an `https://` address. Its README
+  says how to run the app, how to connect it and where its audio comes from.
+- **icon**: optional, one of the tab icons Beacon offers. Beacon suggests it
+  for the tab.
+
+The app has to work as [the external source API](../reference/external-source-api.md)
+describes. Beacon's tests read the file the way Beacon does and fail on an
+entry it would leave out, so the pull request shows a broken one right away.
+Once it is merged, the app shows up in **Find apps** for everyone, whatever
+version of Beacon they run. `community/README.md` in the repository has the
+details.
 
 ## Is the token a key from Apps and devices?
 
@@ -101,6 +153,9 @@ Beacon. The full description, with a small working example, is
 Plan the phone from the start. There the tab gets only the space between
 Beacon's bars, and a page that looks right on the desktop is far too big in it.
 The API page says what helps.
+
+Once it works, others can find it too: see
+[how to list it](#how-do-i-list-my-own-app).
 
 ## Something does not work
 

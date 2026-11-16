@@ -22,8 +22,20 @@ change too:
   each a project of its own with its own tests (`test-examples.yml`).
 - **No service names** in Beacon's own UI, docs, changelog or code. The tab
   shows the name the admin gave the source. Only an example app and its own
-  README name what it plays from.
-- **No links** to third-party source apps from anything Beacon publishes.
+  README name what it plays from, and an entry in the list of apps by others
+  (below) is its author's text, not Beacon's.
+- **Apps by others are listed, not provided.** `community/external-sources.json`
+  holds apps their authors wrote and publish themselves, added by pull
+  request (`community/README.md`), and Beacon shows it under **Find apps**.
+  Beacon ships none of them, builds none, runs none and checks none; the
+  dialog says so above the list, every time, and that whoever adds one
+  decides whether they may play what it plays. An entry may name the
+  service it plays from - the rule above still holds for everything else
+  Beacon publishes. This replaced "no links to third-party source apps": the
+  maintainer does not answer for what someone else's app does, and a list
+  is what lets people find each other's apps at all. An entry can be taken
+  out again (a repository gone, an app that no longer works, its author's
+  wish).
 - **No plugin system.** Beacon runs no foreign code in its own context; the
   source's page is sandboxed and talks to Beacon only through messages.
 
@@ -93,6 +105,27 @@ playback store, as for any song  ->  /rest/stream?id=ext:...  ->  connect --GET 
   header, a menu of them with more than one source.
 - One source became several, set up in a dialog each, with an icon for the
   tab.
+
+## Apps by others
+
+- **One file on main**, `community/external-sources.json`: `{"apps": [{name,
+description, repository, icon?}]}`. main, not development, so an entry is
+  live as soon as its pull request is merged, for every installed version.
+- **Read in the renderer** (`services/externalSourceDirectory.ts`), from
+  raw.githubusercontent.com like the changelog, each time the dialog opens:
+  it is small, and a cached copy would hide a new entry. Nothing is fetched
+  until someone opens it.
+- **Nothing in it is trusted.** `parseDirectory()` drops an entry with a
+  missing or overlong field, an address that is not plain `https://`, or an
+  icon Beacon does not offer, keeps one entry per repository and caps the
+  list; one broken entry never hides the rest. The repository link is an
+  ordinary link, sent to the browser by main/index.ts.
+- **"Add" fills in name and icon only.** The address is wherever the
+  listener runs the app, which no list can know, so the usual dialog opens
+  with it empty.
+- **The pull request checks itself:** a frontend test reads the file through
+  the same `parseDirectory()` and fails on any entry it would drop, and
+  test-frontend.yml runs on changes under `community/`.
 
 ## Not built yet
 

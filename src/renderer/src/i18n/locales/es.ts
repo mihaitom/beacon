@@ -1824,7 +1824,7 @@ export default {
     playFailed: 'No se pudo reproducir: {reason}',
     settingsTitle: 'Fuentes externas',
     settingsWhat:
-      'Apps que gestionas tú, cada una con su propia página como pestaña en Beacon, que le pasan canciones para reproducir, también en los altavoces. Beacon no incluye ninguna; la ayuda tiene ejemplos para usar o adaptar.',
+      'Apps que gestionas tú, cada una con su propia página como pestaña en Beacon, que le pasan canciones para reproducir, también en los altavoces. Beacon no incluye ninguna; la ayuda tiene ejemplos para usar o adaptar, y Buscar apps muestra las que otros han publicado.',
     name: 'Nombre de la pestaña',
     namePlaceholder: 'p. ej. Lista de deseos',
     add: 'Añadir fuente',
@@ -1842,5 +1842,14 @@ export default {
     help: 'Ayuda',
     remove: 'Quitar',
     save: 'Guardar',
+    findApps: 'Buscar apps',
+    directoryTitle: 'Apps de otras personas',
+    directoryNotice:
+      'Escritas y publicadas por otras personas, no por Beacon, y sin revisar por Beacon. Lo que reproduce una app y de dónde lo saca depende de su autor y de ti: añade solo fuentes que puedas reproducir.',
+    directoryFailed: 'No se pudo cargar la lista. Se descarga de GitHub; comprueba la conexión.',
+    directoryRetry: 'Reintentar',
+    directoryEmpty: 'Todavía no hay apps en la lista.',
+    directoryAdd: 'Añadir',
+    directoryListYours: 'Añadir tu app a la lista',
   },
 } satisfies typeof de

@@ -45,6 +45,14 @@ jobs:
                   echo "PLATFORM_PAIR=${platform//\//-}" >> "$GITHUB_ENV"
             - name: Checkout repository
               uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+            - name: Check the list of apps by others is read from main
+              # services/externalSourceDirectory.ts reads it from development
+              # while the list is not on main yet. A release must not.
+              run: |
+                  if ! grep -q "^export const DIRECTORY_BRANCH = 'main'$" src/renderer/src/services/externalSourceDirectory.ts; then
+                      echo "::error file=src/renderer/src/services/externalSourceDirectory.ts::DIRECTORY_BRANCH has to be 'main' before a release."
+                      exit 1
+                  fi
             - name: Log in to the Container registry
               uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
               with:

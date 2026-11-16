@@ -161,6 +161,11 @@ the app. It also shows how to treat such a service: say who is asking, keep
 answers instead of asking again, slow down when asked to, and leave out
 what may not be fetched.
 
+Apps others have written are listed in Beacon under Settings > Library >
+External sources > **Find apps**, from `community/external-sources.json` in
+the repository. Listing one of your own takes a pull request; the
+[FAQ](../faq/external-sources.md#how-do-i-list-my-own-app) says how.
+
 ### A quick one
 
 Your music folder as albums, with covers, search, "play album", play next and

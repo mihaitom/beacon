@@ -1822,7 +1822,7 @@ export default {
     playFailed: 'Konnte nicht abgespielt werden: {reason}',
     settingsTitle: 'Externe Quellen',
     settingsWhat:
-      'Apps, die du selbst betreibst, zeigen jeweils ihre eigene Seite als Tab in Beacon und reichen Songs zum Abspielen herein - auch auf die Lautsprecher. Beacon selbst bringt keine mit; die Hilfe zeigt Beispiele zum Betreiben oder Weiterbauen.',
+      'Apps, die du selbst betreibst, zeigen jeweils ihre eigene Seite als Tab in Beacon und reichen Songs zum Abspielen herein - auch auf die Lautsprecher. Beacon selbst bringt keine mit; die Hilfe zeigt Beispiele zum Betreiben oder Weiterbauen, und „Apps finden“ listet, was andere veröffentlicht haben.',
     name: 'Name des Tabs',
     namePlaceholder: 'z. B. Wunschliste',
     add: 'Quelle hinzufügen',
@@ -1840,5 +1840,15 @@ export default {
     help: 'Hilfe',
     remove: 'Entfernen',
     save: 'Speichern',
+    findApps: 'Apps finden',
+    directoryTitle: 'Apps von anderen',
+    directoryNotice:
+      'Von anderen geschrieben und veröffentlicht, nicht von Beacon, und nicht von Beacon geprüft. Was eine App abspielt und woher, verantworten ihr Autor und du: Füge nur Quellen hinzu, die du abspielen darfst.',
+    directoryFailed:
+      'Die Liste konnte nicht geladen werden. Sie kommt von GitHub; prüfe die Verbindung.',
+    directoryRetry: 'Erneut versuchen',
+    directoryEmpty: 'Noch sind keine Apps eingetragen.',
+    directoryAdd: 'Hinzufügen',
+    directoryListYours: 'Eigene App eintragen',
   },
 }

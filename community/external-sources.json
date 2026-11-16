@@ -1,0 +1,10 @@
+{
+  "apps": [
+    {
+      "name": "BeaconTube",
+      "description": "Plays a link you paste, or a YouTube search, with yt-dlp. Keeps a library of everything played.",
+      "repository": "https://github.com/b-r-y/beacontube",
+      "icon": "mdi-inbox-arrow-down"
+    }
+  ]
+}

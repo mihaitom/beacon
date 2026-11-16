@@ -16,6 +16,8 @@ on:
             - vitest.browser.config.ts
             - package.json
             - pnpm-lock.yaml
+            # The list of apps by others is read by a frontend test.
+            - community/**
     pull_request:
         paths:
             - src/renderer/**
@@ -27,6 +29,7 @@ on:
             - vitest.browser.config.ts
             - package.json
             - pnpm-lock.yaml
+            - community/**
 
 jobs:
     test:

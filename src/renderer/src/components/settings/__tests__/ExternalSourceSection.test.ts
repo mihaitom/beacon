@@ -34,7 +34,11 @@ async function mountSection() {
     global: {
       plugins: [vuetify, i18n],
       mocks: { $emitter: { emit: vi.fn(), on: vi.fn(), off: vi.fn() } },
-      stubs: { ExternalSourceDialog: true, VDialog: INLINE_DIALOG },
+      stubs: {
+        ExternalSourceDialog: true,
+        ExternalSourceDirectoryDialog: true,
+        VDialog: INLINE_DIALOG,
+      },
     },
   })
   await flushPromises()
@@ -81,5 +85,25 @@ describe('ExternalSourceSection', () => {
     const dialog = wrapper.findComponent({ name: 'ExternalSourceDialog' })
     expect(dialog.props('modelValue')).toBe(true)
     expect(dialog.props('source')).toMatchObject({ id: 'b' })
+    expect(dialog.props('preset')).toBeNull()
+  })
+
+  it('adds an app from the list as a new source with its name and icon', async () => {
+    const wrapper = await mountSection()
+    await wrapper.get('.external-sources__find').trigger('click')
+    const directory = wrapper.findComponent({ name: 'ExternalSourceDirectoryDialog' })
+    expect(directory.props('modelValue')).toBe(true)
+    directory.vm.$emit('add', {
+      name: 'Folder',
+      description: 'Plays a folder.',
+      repository: 'https://github.com/someone/folder',
+      icon: 'mdi-album',
+    })
+    await wrapper.vm.$nextTick()
+    const dialog = wrapper.findComponent({ name: 'ExternalSourceDialog' })
+    expect(directory.props('modelValue')).toBe(false)
+    expect(dialog.props('modelValue')).toBe(true)
+    expect(dialog.props('source')).toBeNull()
+    expect(dialog.props('preset')).toEqual({ name: 'Folder', icon: 'mdi-album' })
   })
 })

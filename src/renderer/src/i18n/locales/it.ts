@@ -1817,7 +1817,7 @@ export default {
     playFailed: 'Impossibile riprodurlo: {reason}',
     settingsTitle: 'Fonti esterne',
     settingsWhat:
-      'App che gestisci tu, ognuna con la propria pagina come scheda in Beacon, che le passano brani da riprodurre, anche sugli altoparlanti. Beacon non ne include nessuna; la guida ha degli esempi da usare o adattare.',
+      'App che gestisci tu, ognuna con la propria pagina come scheda in Beacon, che le passano brani da riprodurre, anche sugli altoparlanti. Beacon non ne include nessuna; la guida ha degli esempi da usare o adattare, e Trova app elenca quelle pubblicate da altri.',
     name: 'Nome della scheda',
     namePlaceholder: 'ad es. Lista dei desideri',
     add: 'Aggiungi fonte',
@@ -1835,5 +1835,14 @@ export default {
     help: 'Aiuto',
     remove: 'Rimuovi',
     save: 'Salva',
+    findApps: 'Trova app',
+    directoryTitle: 'App di altri',
+    directoryNotice:
+      "Scritte e pubblicate da altri, non da Beacon, e non verificate da Beacon. Cosa riproduce un'app e da dove lo prende dipende dal suo autore e da te: aggiungi solo fonti che puoi riprodurre.",
+    directoryFailed: "Impossibile caricare l'elenco. Arriva da GitHub; controlla la connessione.",
+    directoryRetry: 'Riprova',
+    directoryEmpty: "Non ci sono ancora app nell'elenco.",
+    directoryAdd: 'Aggiungi',
+    directoryListYours: 'Aggiungi la tua app',
   },
 } satisfies typeof de

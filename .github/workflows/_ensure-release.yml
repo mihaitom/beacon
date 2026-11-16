@@ -38,6 +38,14 @@ jobs:
         steps:
             - name: Checkout git repo
               uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+            - name: Check the list of apps by others is read from main
+              # services/externalSourceDirectory.ts reads it from development
+              # while the list is not on main yet. A release must not.
+              run: |
+                  if ! grep -q "^export const DIRECTORY_BRANCH = 'main'$" src/renderer/src/services/externalSourceDirectory.ts; then
+                      echo "::error file=src/renderer/src/services/externalSourceDirectory.ts::DIRECTORY_BRANCH has to be 'main' before a release."
+                      exit 1
+                  fi
             - name: Read version
               id: version
               run: echo "value=$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"

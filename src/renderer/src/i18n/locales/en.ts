@@ -1804,7 +1804,7 @@ export default {
     playFailed: 'Could not play it: {reason}',
     settingsTitle: 'External sources',
     settingsWhat:
-      'Apps you run yourself, each with its own page as a tab in Beacon, handing over songs to play - on the speakers too. Beacon itself includes none; the help has examples to run or build on.',
+      'Apps you run yourself, each with its own page as a tab in Beacon, handing over songs to play - on the speakers too. Beacon itself includes none; the help has examples to run or build on, and Find apps lists ones others have published.',
     name: 'Tab name',
     namePlaceholder: 'e.g. Wishlist',
     add: 'Add source',
@@ -1822,5 +1822,15 @@ export default {
     help: 'Help',
     remove: 'Remove',
     save: 'Save',
+    findApps: 'Find apps',
+    directoryTitle: 'Apps by others',
+    directoryNotice:
+      'Written and published by others, not by Beacon, and not checked by it. What an app plays and where it gets it is up to its author and to you: only add sources you are allowed to play.',
+    directoryFailed:
+      'The list could not be loaded. It is fetched from GitHub; check the connection.',
+    directoryRetry: 'Try again',
+    directoryEmpty: 'No apps are listed yet.',
+    directoryAdd: 'Add',
+    directoryListYours: 'List your app',
   },
 } satisfies typeof de
