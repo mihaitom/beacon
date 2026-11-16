@@ -1841,14 +1841,17 @@ export default {
     remove: 'Entfernen',
     save: 'Speichern',
     findApps: 'Apps finden',
-    directoryTitle: 'Apps von anderen',
+    directoryTitle: 'Apps aus der Community',
+    directorySubtitle:
+      'Apps, die Leute für Beacon gebaut haben. Lass eine laufen, füge sie hinzu, und sie bekommt ihren eigenen Tab.',
+    directoryAuthor: 'Gemacht von {login}',
     directoryNotice:
-      'Von anderen geschrieben und veröffentlicht, nicht von Beacon, und nicht von Beacon geprüft. Was eine App abspielt und woher, verantworten ihr Autor und du: Füge nur Quellen hinzu, die du abspielen darfst.',
+      'Diese Apps laufen bei dir, nicht in Beacon, und Beacon prüft sie nicht. Was eine App abspielt und woher, verantworten ihr Autor und du: Füge nur Quellen hinzu, die du abspielen darfst.',
     directoryFailed:
       'Die Liste konnte nicht geladen werden. Sie kommt von GitHub; prüfe die Verbindung.',
     directoryRetry: 'Erneut versuchen',
     directoryEmpty: 'Noch sind keine Apps eingetragen.',
-    directoryAdd: 'Hinzufügen',
+    directoryOpen: 'Projekt ansehen',
     directoryListYours: 'Eigene App eintragen',
   },
 }

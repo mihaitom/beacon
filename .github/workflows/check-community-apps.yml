@@ -1,0 +1,29 @@
+name: Check community apps
+
+# Whether every repository (and picture) listed in
+# community/external-sources.json is still there. Not part of the frontend
+# tests: those must not depend on the network. A gone address fails the
+# run, so a scheduled failure is the maintainer's notice to take the entry
+# out; a timeout or rate limit is only a warning.
+on:
+    workflow_dispatch:
+    schedule:
+        # Mondays, 06:00 UTC.
+        - cron: '0 6 * * 1'
+    pull_request:
+        paths:
+            - community/**
+            - scripts/check-community-apps.mjs
+
+permissions:
+    contents: read
+
+jobs:
+    check:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+            # The runner's own Node has fetch; the script needs nothing else.
+            - name: Ask every address
+              run: node scripts/check-community-apps.mjs

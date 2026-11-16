@@ -1836,13 +1836,16 @@ export default {
     remove: 'Rimuovi',
     save: 'Salva',
     findApps: 'Trova app',
-    directoryTitle: 'App di altri',
+    directoryTitle: 'App della community',
+    directorySubtitle:
+      'App create per Beacon da altre persone. Avviane una, aggiungila e avrà la sua scheda.',
+    directoryAuthor: 'Creata da {login}',
     directoryNotice:
-      "Scritte e pubblicate da altri, non da Beacon, e non verificate da Beacon. Cosa riproduce un'app e da dove lo prende dipende dal suo autore e da te: aggiungi solo fonti che puoi riprodurre.",
+      "Queste app girano sul tuo computer, non in Beacon, e Beacon non le verifica. Cosa riproduce un'app e da dove lo prende dipende dal suo autore e da te: aggiungi solo fonti che puoi riprodurre.",
     directoryFailed: "Impossibile caricare l'elenco. Arriva da GitHub; controlla la connessione.",
     directoryRetry: 'Riprova',
     directoryEmpty: "Non ci sono ancora app nell'elenco.",
-    directoryAdd: 'Aggiungi',
+    directoryOpen: 'Vedi progetto',
     directoryListYours: 'Aggiungi la tua app',
   },
 } satisfies typeof de

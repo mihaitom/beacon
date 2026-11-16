@@ -43,12 +43,9 @@ type DialogVm = {
   remove: () => Promise<void>
 }
 
-function mountDialog(
-  source: ExternalSource | null,
-  preset: { name: string; icon: string } | null = null,
-) {
+function mountDialog(source: ExternalSource | null) {
   const wrapper = mount(ExternalSourceDialog, {
-    props: { modelValue: true, source, preset },
+    props: { modelValue: true, source },
     global: {
       plugins: [vuetify, i18n],
       mocks: { $emitter: { emit: vi.fn(), on: vi.fn(), off: vi.fn() } },
@@ -129,12 +126,5 @@ describe('ExternalSourceDialog', () => {
     const { vm } = mountDialog(null)
     await flushPromises()
     expect([vm.name, vm.baseUrl, vm.icon]).toEqual(['', '', 'mdi-web'])
-  })
-
-  it('takes the name and icon of an app from the list, the address left to fill in', async () => {
-    const { vm } = mountDialog(null, { name: 'Folder', icon: 'mdi-album' })
-    await flushPromises()
-    expect([vm.name, vm.baseUrl, vm.icon]).toEqual(['Folder', '', 'mdi-album'])
-    expect((vm as unknown as { editing: boolean }).editing).toBe(false)
   })
 })

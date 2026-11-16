@@ -65,13 +65,8 @@
         </li>
       </ul>
     </div>
-    <external-source-dialog
-      v-model="dialogOpen"
-      :source="editing"
-      :preset="preset"
-      @saved="onSaved"
-    />
-    <external-source-directory-dialog v-model="directoryOpen" @add="addFromDirectory" />
+    <external-source-dialog v-model="dialogOpen" :source="editing" @saved="onSaved" />
+    <external-source-directory-dialog v-model="directoryOpen" />
     <ai-instructions-dialog
       v-model="aiInstructionsOpen"
       :title="$t('settings.aiInstructions.title')"
@@ -90,7 +85,6 @@ import {
   type ExternalSource,
   type ExternalSourceProbe,
 } from '@/services/connect/externalSource'
-import type { DirectoryApp } from '@/services/externalSourceDirectory'
 import { useExternalSourceStore } from '@/stores/externalSource'
 
 /** connect's own limit (core/external_source.py), so the button says so
@@ -108,8 +102,6 @@ export default {
     return {
       dialogOpen: false,
       editing: null as ExternalSource | null,
-      /** A new source's name and icon, suggested by an app from the list. */
-      preset: null as { name: string; icon: string } | null,
       directoryOpen: false,
       /** What each app said when last asked, by source id. */
       probes: {} as Record<string, ExternalSourceProbe>,
@@ -141,15 +133,6 @@ export default {
   methods: {
     open(source: ExternalSource | null) {
       this.editing = source
-      this.preset = null
-      this.dialogOpen = true
-    },
-    /** An app from the list: a new source with its name and icon, the
-     * address still to be entered. */
-    addFromDirectory(app: DirectoryApp) {
-      this.directoryOpen = false
-      this.editing = null
-      this.preset = { name: app.name, icon: app.icon }
       this.dialogOpen = true
     },
     onSaved(source: ExternalSource, probe: ExternalSourceProbe) {

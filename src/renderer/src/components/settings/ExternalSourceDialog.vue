@@ -128,11 +128,6 @@ export default {
   props: {
     modelValue: { type: Boolean, required: true },
     source: { type: Object as PropType<ExternalSource | null>, default: null },
-    /** A new source's name and icon, from the list of apps by others. */
-    preset: {
-      type: Object as PropType<{ name: string; icon: string } | null>,
-      default: null,
-    },
   },
   emits: ['update:modelValue', 'saved'],
   data() {
@@ -169,8 +164,8 @@ export default {
   methods: {
     fill(source: ExternalSource | null) {
       this.sourceId = source?.id ?? null
-      this.name = source?.name ?? this.preset?.name ?? ''
-      this.icon = source?.icon ?? this.preset?.icon ?? DEFAULT_EXTERNAL_SOURCE_ICON
+      this.name = source?.name ?? ''
+      this.icon = source?.icon ?? DEFAULT_EXTERNAL_SOURCE_ICON
       this.baseUrl = source?.base_url ?? ''
       this.token = ''
     },

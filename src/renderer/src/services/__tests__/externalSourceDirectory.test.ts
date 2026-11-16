@@ -18,7 +18,9 @@ const APP = {
   name: 'Folder',
   description: 'Plays a folder.',
   repository: 'https://github.com/someone/folder',
+  author: 'someone',
   icon: 'mdi-album',
+  image: null,
 }
 
 describe('parseDirectoryApp', () => {
@@ -35,6 +37,60 @@ describe('parseDirectoryApp', () => {
     expect(parseDirectoryApp({ ...APP, icon: 'mdi-skull' })).toBeNull()
   })
 
+  it('takes a webp from the repository of the app as its picture', () => {
+    const raw = 'https://raw.githubusercontent.com/someone/folder/main/docs/icon.webp'
+    expect(parseDirectoryApp({ ...APP, icon: raw })).toMatchObject({ image: raw, icon: 'mdi-web' })
+    expect(
+      parseDirectoryApp({ ...APP, icon: 'https://github.com/someone/folder/raw/main/icon.webp' })
+        ?.image,
+    ).toBe('https://github.com/someone/folder/raw/main/icon.webp')
+  })
+
+  it('turns a GitHub file page into the file itself', () => {
+    expect(
+      parseDirectoryApp({ ...APP, icon: 'https://github.com/someone/folder/blob/main/a/icon.webp' })
+        ?.image,
+    ).toBe('https://raw.githubusercontent.com/someone/folder/main/a/icon.webp')
+  })
+
+  it('finds the repository behind an address into one of its folders', () => {
+    const app = {
+      ...APP,
+      repository: 'https://github.com/owner/beacon/tree/main/docs/examples/folder-source',
+      icon: 'https://raw.githubusercontent.com/owner/beacon/main/docs/examples/folder-source/icon.webp',
+    }
+    expect(parseDirectoryApp(app)?.image).toBe(app.icon)
+  })
+
+  it('keeps to the repository on other hosts too', () => {
+    const app = {
+      ...APP,
+      repository: 'https://codeberg.org/someone/folder',
+      icon: 'https://codeberg.org/someone/folder/raw/branch/main/icon.webp',
+    }
+    expect(parseDirectoryApp(app)?.image).toBe(app.icon)
+    expect(
+      parseDirectoryApp({
+        ...app,
+        icon: 'https://raw.githubusercontent.com/someone/folder/x.webp',
+      }),
+    ).toBeNull()
+  })
+
+  it('refuses a picture from anywhere else, or not a webp', () => {
+    for (const icon of [
+      'https://raw.githubusercontent.com/someone-else/folder/main/icon.webp',
+      'https://raw.githubusercontent.com/someone/other/main/icon.webp',
+      'https://example.com/someone/folder/icon.webp',
+      'https://raw.githubusercontent.com/someone/folder/main/icon.png',
+      'https://raw.githubusercontent.com/someone/folder/main/icon.webp?x=1',
+      'http://raw.githubusercontent.com/someone/folder/main/icon.webp',
+      'data:image/webp;base64,AAAA',
+    ]) {
+      expect(parseDirectoryApp({ ...APP, icon }), icon).toBeNull()
+    }
+  })
+
   it('refuses an address that is not a plain https page', () => {
     for (const repository of [
       'http://github.com/a/b',
@@ -44,6 +100,13 @@ describe('parseDirectoryApp', () => {
       42,
     ]) {
       expect(parseDirectoryApp({ ...APP, repository })).toBeNull()
+    }
+  })
+
+  it('needs an author that is a GitHub login', () => {
+    expect(parseDirectoryApp({ ...APP, author: 'b-r-y' })?.author).toBe('b-r-y')
+    for (const author of [undefined, '', '-x', 'x-', 'a--b', 'a/b', '@x', 'x'.repeat(40)]) {
+      expect(parseDirectoryApp({ ...APP, author })).toBeNull()
     }
   })
 
@@ -96,11 +159,15 @@ describe('parseDirectory', () => {
 describe('community/external-sources.json', () => {
   const file = JSON.parse(
     readFileSync(resolve(process.cwd(), 'community/external-sources.json'), 'utf8'),
-  ) as { apps: unknown[] }
+  ) as { apps: unknown[]; _example: unknown }
 
   it('has only entries Beacon shows', () => {
     const shown = parseDirectory(file)
     expect(shown).toHaveLength(file.apps.length)
+  })
+
+  it('has an example to copy that would be shown as it is', () => {
+    expect(parseDirectoryApp(file._example)).not.toBeNull()
   })
 })
 

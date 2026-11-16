@@ -109,8 +109,13 @@ playback store, as for any song  ->  /rest/stream?id=ext:...  ->  connect --GET 
 ## Apps by others
 
 - **One file on main**, `community/external-sources.json`: `{"apps": [{name,
-description, repository, icon?}]}`. main, not development, so an entry is
-  live as soon as its pull request is merged, for every installed version.
+description, repository, author, icon?}]}`. main, not development, so an
+  entry is live as soon as its pull request is merged, for every installed
+  version (DIRECTORY_BRANCH is development only until the list is on main;
+  the publish workflows refuse to build while it is). `author` is a GitHub
+  login, credited with avatar and profile link the way the release notes
+  credit people. An entry may point into Beacon's own repository
+  (folder-source).
 - **Read in the renderer** (`services/externalSourceDirectory.ts`), from
   raw.githubusercontent.com like the changelog, each time the dialog opens:
   it is small, and a cached copy would hide a new entry. Nothing is fetched
@@ -120,12 +125,23 @@ description, repository, icon?}]}`. main, not development, so an entry is
   icon Beacon does not offer, keeps one entry per repository and caps the
   list; one broken entry never hides the rest. The repository link is an
   ordinary link, sent to the browser by main/index.ts.
-- **"Add" fills in name and icon only.** The address is wherever the
-  listener runs the app, which no list can know, so the usual dialog opens
-  with it empty.
+- **No install button.** Each card leads to its repository, nothing more:
+  an app is run as its README says and then added like any other source.
+  A button that added it straight away read as a one-click install, which
+  it never was.
+- **A picture only from the app's own repository.** `icon` is a Beacon icon
+  name or an `https://` `.webp` on the repository's host (raw.githubusercontent.com
+  for GitHub) under the same owner/name; a GitHub `blob` page address is
+  turned into the file. Nothing in the list makes Beacon load from
+  anywhere else, and the icon stands in when the picture does not load.
 - **The pull request checks itself:** a frontend test reads the file through
   the same `parseDirectory()` and fails on any entry it would drop, and
   test-frontend.yml runs on changes under `community/`.
+- **Gone repositories are found:** `scripts/check-community-apps.mjs`
+  (check-community-apps.yml, on pull requests and every Monday) asks every
+  repository and picture. 404 or 410 fails, so the scheduled run is the
+  notice to take an entry out; a timeout or rate limit only warns. Not in
+  the unit tests, which must not depend on the network.
 
 ## Not built yet
 

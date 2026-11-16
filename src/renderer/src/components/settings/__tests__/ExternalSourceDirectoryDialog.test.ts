@@ -25,6 +25,8 @@ const APPS = [
     name: 'Folder',
     description: 'Plays a folder.',
     repository: 'https://github.com/someone/folder',
+    author: 'someone',
+    image: null,
     icon: 'mdi-album',
   },
 ]
@@ -47,31 +49,50 @@ describe('ExternalSourceDirectoryDialog', () => {
   beforeEach(() => vi.mocked(fetchDirectory).mockResolvedValue(APPS))
   afterEach(() => vi.clearAllMocks())
 
-  it('shows each app with a link to its repository', async () => {
+  it('shows each app with where its repository is', async () => {
     const { wrapper } = await mountDialog()
-    const rows = wrapper.findAll('.source-directory__row')
+    const rows = wrapper.findAll('.source-directory__card')
     expect(rows).toHaveLength(1)
     expect(rows[0]!.text()).toContain('Folder')
-    expect(rows[0]!.get('a').attributes('href')).toBe('https://github.com/someone/folder')
-    expect(rows[0]!.get('a').attributes('rel')).toContain('noopener')
+    expect(rows[0]!.get('.source-directory__repo').text()).toBe('github.com/someone/folder')
   })
 
-  it('hands the app on when it is added', async () => {
+  it('credits the author with a link to their profile', async () => {
     const { wrapper } = await mountDialog()
-    await wrapper.get('.source-directory__add').trigger('click')
-    expect(wrapper.emitted('add')?.[0]).toEqual([APPS[0]])
+    const author = wrapper.get('.source-directory__author')
+    expect(author.attributes('href')).toBe('https://github.com/someone')
+    expect(author.text()).toContain('@someone')
+  })
+
+  it('leads to the project in the browser, nothing installed', async () => {
+    const { wrapper } = await mountDialog()
+    const open = wrapper.get('.source-directory__open')
+    expect(open.attributes('href')).toBe('https://github.com/someone/folder')
+    expect(open.attributes('target')).toBe('_blank')
+    expect(open.attributes('rel')).toContain('noopener')
+  })
+
+  it('shows the picture from the repository, and the icon if it does not load', async () => {
+    const image = 'https://raw.githubusercontent.com/someone/folder/main/icon.webp'
+    vi.mocked(fetchDirectory).mockResolvedValue([{ ...APPS[0]!, image }])
+    const { wrapper } = await mountDialog()
+    const img = wrapper.get('.source-directory__art img')
+    expect(img.attributes('src')).toBe(image)
+    await img.trigger('error')
+    expect(wrapper.find('.source-directory__art img').exists()).toBe(false)
+    expect(wrapper.find('.source-directory__art .mdi-album').exists()).toBe(true)
   })
 
   it('says when the list could not be read, and asks again', async () => {
     vi.mocked(fetchDirectory).mockRejectedValueOnce(new Error('offline'))
     vi.spyOn(console, 'error').mockImplementation(() => {})
     const { wrapper } = await mountDialog()
-    expect(wrapper.find('.source-directory__row').exists()).toBe(false)
+    expect(wrapper.find('.source-directory__card').exists()).toBe(false)
     const asked = vi.mocked(fetchDirectory).mock.calls.length
     await wrapper.get('.source-directory__retry').trigger('click')
     await flushPromises()
     expect(fetchDirectory).toHaveBeenCalledTimes(asked + 1)
-    expect(wrapper.findAll('.source-directory__row')).toHaveLength(1)
+    expect(wrapper.findAll('.source-directory__card')).toHaveLength(1)
   })
 
   it('leads to the help on listing an app', async () => {

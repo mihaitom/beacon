@@ -9,8 +9,14 @@ export interface DirectoryApp {
   description: string
   /** Its public repository, always `https://`. */
   repository: string
-  /** One of EXTERNAL_SOURCE_ICONS, suggested for the tab. */
+  /** Who made it: a GitHub login, credited with avatar and profile link
+   * like the release notes do. */
+  author: string
+  /** One of EXTERNAL_SOURCE_ICONS: what the card shows without an image,
+   * or when the image does not load. */
   icon: string
+  /** A `.webp` from the app's own repository, shown instead of the icon. */
+  image: string | null
 }
 
 /** The branch the list is read from. main for a release: an entry is
@@ -36,6 +42,13 @@ function text(value: unknown, max: number): string | null {
   return trimmed && trimmed.length <= max ? trimmed : null
 }
 
+// GitHub's own rule: letters, digits and single hyphens, 39 at most.
+const LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/
+
+function login(value: unknown): string | null {
+  return typeof value === 'string' && LOGIN.test(value) ? value : null
+}
+
 function repository(value: unknown): string | null {
   if (typeof value !== 'string') return null
   try {
@@ -47,6 +60,53 @@ function repository(value: unknown): string | null {
   }
 }
 
+/** Where a repository's own files are served from: its host and
+ * "owner/name", plus GitHub's raw host for a GitHub repository. A
+ * repository address may point into a folder (`.../tree/main/docs/x`),
+ * the repository is still its first two path segments. */
+function repositoryRoot(repo: string): { hosts: string[]; path: string } | null {
+  const url = new URL(repo)
+  const [owner, name] = url.pathname.split('/').filter(Boolean)
+  if (!owner || !name) return null
+  const hosts = [url.hostname]
+  if (url.hostname === 'github.com') hosts.push('raw.githubusercontent.com')
+  return { hosts, path: `/${owner}/${name}/`.toLowerCase() }
+}
+
+/** An image address from the entry, or null unless it is a plain https
+ * `.webp` inside the app's own repository - the list never makes Beacon
+ * load anything from anywhere else. A GitHub `blob` page address becomes
+ * the file itself, which is what an author copying it from the browser
+ * would mean. */
+function image(value: unknown, repo: string): string | null {
+  if (typeof value !== 'string') return null
+  let url: URL
+  try {
+    url = new URL(value)
+  } catch {
+    return null
+  }
+  if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) {
+    return null
+  }
+  if (url.hostname === 'github.com') {
+    const parts = url.pathname.split('/')
+    if (parts[3] === 'blob') {
+      url = new URL(
+        `https://raw.githubusercontent.com/${[parts[1], parts[2], ...parts.slice(4)].join('/')}`,
+      )
+    }
+  }
+  if (!url.pathname.toLowerCase().endsWith('.webp')) return null
+  const root = repositoryRoot(repo)
+  if (!root || !root.hosts.includes(url.hostname)) return null
+  return url.pathname.toLowerCase().startsWith(root.path) ? url.href : null
+}
+
+function isIconName(value: unknown): boolean {
+  return (EXTERNAL_SOURCE_ICONS as readonly unknown[]).includes(value)
+}
+
 /** One entry, or null when any field is not what community/README.md
  * asks for. */
 export function parseDirectoryApp(raw: unknown): DirectoryApp | null {
@@ -55,19 +115,18 @@ export function parseDirectoryApp(raw: unknown): DirectoryApp | null {
   const name = text(entry.name, MAX_NAME_LENGTH)
   const description = text(entry.description, MAX_DESCRIPTION_LENGTH)
   const repo = repository(entry.repository)
-  if (!name || !description || !repo) return null
-  if (
-    entry.icon !== undefined &&
-    !(EXTERNAL_SOURCE_ICONS as readonly unknown[]).includes(entry.icon)
-  ) {
-    return null
+  const author = login(entry.author)
+  if (!name || !description || !repo || !author) return null
+  // An icon name, an image from the repository, or nothing at all.
+  let icon = DEFAULT_EXTERNAL_SOURCE_ICON
+  let picture: string | null = null
+  if (isIconName(entry.icon)) {
+    icon = entry.icon as string
+  } else if (entry.icon !== undefined) {
+    picture = image(entry.icon, repo)
+    if (!picture) return null
   }
-  return {
-    name,
-    description,
-    repository: repo,
-    icon: (entry.icon as string) ?? DEFAULT_EXTERNAL_SOURCE_ICON,
-  }
+  return { name, description, repository: repo, author, icon, image: picture }
 }
 
 /** The file as Beacon reads it: entries that do not fit are left out
@@ -95,6 +154,11 @@ export async function fetchDirectory(): Promise<DirectoryApp[]> {
   const response = await fetch(DIRECTORY_URL, { cache: 'no-cache' })
   if (!response.ok) throw new Error(`HTTP ${response.status}`)
   return parseDirectory(await response.json())
+}
+
+/** The author's GitHub avatar, as the release notes show it. */
+export function avatarUrl(author: string): string {
+  return `https://github.com/${author}.png?size=64`
 }
 
 /** The repository's address without its scheme ("github.com/owner/name"),

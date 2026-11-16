@@ -1823,14 +1823,17 @@ export default {
     remove: 'Remove',
     save: 'Save',
     findApps: 'Find apps',
-    directoryTitle: 'Apps by others',
+    directoryTitle: 'Community apps',
+    directorySubtitle:
+      'Apps people have built for Beacon. Run one, add it, and it gets its own tab.',
+    directoryAuthor: 'Made by {login}',
     directoryNotice:
-      'Written and published by others, not by Beacon, and not checked by it. What an app plays and where it gets it is up to its author and to you: only add sources you are allowed to play.',
+      'These apps run on your own machine, not in Beacon, and Beacon does not check them. What an app plays and where it gets it is up to its author and to you: only add sources you are allowed to play.',
     directoryFailed:
       'The list could not be loaded. It is fetched from GitHub; check the connection.',
     directoryRetry: 'Try again',
     directoryEmpty: 'No apps are listed yet.',
-    directoryAdd: 'Add',
+    directoryOpen: 'View project',
     directoryListYours: 'List your app',
   },
 } satisfies typeof de

@@ -49,23 +49,22 @@ same for everyone signed in. In the desktop app they are yours alone.
 ## Where do I find apps others have written?
 
 Settings > Library > External sources > **Find apps** lists the apps their
-authors have put on Beacon's list, each with what it does and a link to its
-repository. Beacon reads the list from its repository on GitHub each time you
+authors have put on Beacon's list, each with what it does, who made it and a
+link to its repository. Beacon reads the list from its repository on GitHub each time you
 open it.
 
-These apps are not part of Beacon. Their authors write and run them, and
-Beacon does not check them: what an app plays and where it gets it is up to
-its author and to you. Read its README before you run it, and only add sources
-you are allowed to play.
+Each app runs on your own machine, not inside Beacon, and Beacon does not
+check it: what an app plays and where it gets it is up to its author and to
+you. Read its README before you run it, and only add sources you are allowed
+to play.
 
 To use one:
 
-1. Open its repository and run the app as its README says, somewhere Beacon
-   can reach it.
-2. Back in **Find apps**, choose **Add**. The usual dialog opens with the app's
-   name and icon filled in.
-3. Enter the address you run it at and, if the app asks for one, its token,
-   and save.
+1. **View project** opens its repository in the browser. Nothing is
+   installed from Beacon.
+2. Run the app as its README says, somewhere Beacon can reach it.
+3. Add it like any other source ([how](#how-do-i-set-it-up)): **Add source**,
+   with the address you run it at and, if the app asks for one, its token.
 
 ## How do I list my own app?
 
@@ -78,6 +77,7 @@ to `community/external-sources.json`:
   "name": "My source",
   "description": "What it plays, in a sentence or two.",
   "repository": "https://github.com/you/my-source",
+  "author": "your-github-login",
   "icon": "mdi-album"
 }
 ```
@@ -86,8 +86,14 @@ to `community/external-sources.json`:
 - **description**: what it plays and how, in English, up to 300 characters.
 - **repository**: its public repository, an `https://` address. Its README
   says how to run the app, how to connect it and where its audio comes from.
-- **icon**: optional, one of the tab icons Beacon offers. Beacon suggests it
-  for the tab.
+- **author**: your GitHub login, without the `@`. Beacon credits you with
+  your avatar and a link to your profile.
+- **icon**: optional. Either one of the tab icons Beacon offers
+  (`mdi-album`, ...), or the `https://` address of a `.webp` image in the
+  app's own repository, for example
+  `https://raw.githubusercontent.com/you/my-source/main/icon.webp`. A square
+  image of at least 128 × 128 looks best. Anything else, and the entry is
+  left out.
 
 The app has to work as [the external source API](../reference/external-source-api.md)
 describes. Beacon's tests read the file the way Beacon does and fail on an
