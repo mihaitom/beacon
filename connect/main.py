@@ -11,6 +11,7 @@ import os
 import re
 import traceback
 from contextlib import asynccontextmanager
+from logging.handlers import RotatingFileHandler
 
 import uvicorn
 from dotenv import load_dotenv
@@ -37,6 +38,7 @@ from core.log_level import is_at_least
 from core.log_redaction import redact
 from core.loop_health import monitor_loop_lag
 from core.party import party, reap_stale_party
+from core.paths import data_dir
 from core.remote import reap_stale_remote, remote
 from core.session import reap_stale_sessions, registry
 from core.state import PORT, get_local_ip
@@ -168,7 +170,41 @@ _root_handler.setFormatter(
     _ColorLevelFormatter(_LOG_FORMAT, datefmt=_LOG_DATEFMT, use_color=_USE_COLOR)
 )
 _root_handler.addFilter(_ShortNameFilter())
-logging.basicConfig(level=logging.INFO, handlers=[_root_handler])
+
+# The same lines, kept in the data folder as well: `docker logs` goes with
+# the container, so the log of a problem was gone by the time the fix for
+# it had been deployed. Two files of 10 MB at most, and dated, since one
+# spans days.
+_LOG_FILE_MAX_BYTES = 10 * 1024 * 1024
+_LOG_FILE_BACKUPS = 1
+
+
+def _log_file_handler() -> logging.Handler | None:
+    path = os.path.join(data_dir(), "logs", "connect.log")
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        handler = RotatingFileHandler(
+            path,
+            maxBytes=_LOG_FILE_MAX_BYTES,
+            backupCount=_LOG_FILE_BACKUPS,
+            encoding="utf-8",
+        )
+    except OSError as e:
+        # A read-only data folder is no reason not to start.
+        print(f"Could not open the log file {path}: {e}", flush=True)
+        return None
+    handler.setFormatter(
+        _ColorLevelFormatter(_LOG_FORMAT, datefmt="%Y-%m-%d %H:%M:%S", use_color=False)
+    )
+    handler.addFilter(_ShortNameFilter())
+    return handler
+
+
+_file_handler = _log_file_handler()
+logging.basicConfig(
+    level=logging.INFO,
+    handlers=[_root_handler] + ([_file_handler] if _file_handler else []),
+)
 logger = logging.getLogger("connect")
 
 # The level Settings' log-level dropdown last persisted, falling back to
@@ -229,6 +265,12 @@ UVICORN_LOG_CONFIG = {
         },
     },
 }
+# uvicorn's loggers stop at their own handlers, so the file is added to them
+# too - a request's traceback is what a log file is kept for.
+if _file_handler is not None:
+    UVICORN_LOG_CONFIG["handlers"]["file"] = {"()": lambda: _file_handler}
+    for _name in ("uvicorn", "uvicorn.access"):
+        UVICORN_LOG_CONFIG["loggers"][_name]["handlers"].append("file")
 
 # Applies _INITIAL_LOG_LEVEL to our own logger tree (connect → also covers
 # children connect.streamer / connect.playback / ...) and, only at TRACE,

@@ -93,7 +93,7 @@ services:
 
 That's it - Beacon asks for your server URL, username, and password on first launch; nothing needs to be pre-configured. See the environment variables below for optional locking, LAN optimization, and SSO scenarios.
 
-**Mount a volume at `/data`** to keep AirPlay 2 pairings, your log-level setting, your account settings (language, personalized recommendations, lyrics providers, Autoplay batch size, transition settings), the recommendations cache, the Fanart.tv image cache, API keys entered in Settings, each station's played-titles list, the casting allow-list, and (for Jellyfin/Plex sessions) your internet radio stations across container recreations/updates.
+**Mount a volume at `/data`** to keep AirPlay 2 pairings, your log-level setting, your account settings (language, personalized recommendations, lyrics providers, Autoplay batch size, transition settings), the recommendations cache, the Fanart.tv image cache, API keys entered in Settings, each station's played-titles list, the casting allow-list, the server's log (`logs/connect.log`, two files of 10 MB at most), and (for Jellyfin/Plex sessions) your internet radio stations across container recreations/updates.
 
 ### Environment variables
 
