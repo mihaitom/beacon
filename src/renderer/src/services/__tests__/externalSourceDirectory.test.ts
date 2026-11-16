@@ -91,6 +91,25 @@ describe('parseDirectoryApp', () => {
     }
   })
 
+  it('takes repositories on GitHub, Codeberg and GitLab only', () => {
+    for (const repository of [
+      'https://codeberg.org/someone/folder',
+      'https://gitlab.com/someone/folder',
+    ]) {
+      expect(parseDirectoryApp({ ...APP, repository })?.repository, repository).toBe(repository)
+    }
+    for (const repository of [
+      'https://git.example.com/someone/folder',
+      'https://www.github.com/someone/folder',
+      'https://github.com.example.com/someone/folder',
+      'https://raw.githubusercontent.com/someone/folder',
+      'https://github.com:8443/someone/folder',
+      'https://github.com/someone',
+    ]) {
+      expect(parseDirectoryApp({ ...APP, repository }), repository).toBeNull()
+    }
+  })
+
   it('refuses an address that is not a plain https page', () => {
     for (const repository of [
       'http://github.com/a/b',
@@ -192,6 +211,6 @@ describe('fetchDirectory', () => {
 
 describe('repositoryLabel', () => {
   it('drops the scheme and a trailing slash', () => {
-    expect(repositoryLabel('https://www.github.com/a/b/')).toBe('github.com/a/b')
+    expect(repositoryLabel('https://github.com/a/b/')).toBe('github.com/a/b')
   })
 })

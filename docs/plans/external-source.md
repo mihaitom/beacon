@@ -129,9 +129,15 @@ description, repository, author, icon?}]}`. main, not development, so an
   an app is run as its README says and then added like any other source.
   A button that added it straight away read as a one-click install, which
   it never was.
+- **GitHub, Codeberg and GitLab only** (`REPOSITORY_HOSTS`), for the
+  repository and so for its picture. Opening the list makes Beacon load
+  every picture in it; on someone's own server that would tell its owner
+  the address of everyone who looked. Those three see no more than GitHub
+  already does from the release notes' avatars.
 - **A picture only from the app's own repository.** `icon` is a Beacon icon
-  name or an `https://` `.webp` on the repository's host (raw.githubusercontent.com
-  for GitHub) under the same owner/name; a GitHub `blob` page address is
+  name or an `https://` `.webp` on the hosts REPOSITORY_HOSTS gives the
+  repository's host (raw.githubusercontent.com too for GitHub) under the
+  same owner/name; a GitHub `blob` page address is
   turned into the file. Nothing in the list makes Beacon load from
   anywhere else, and the icon stands in when the picture does not load.
 - **The pull request checks itself:** a frontend test reads the file through

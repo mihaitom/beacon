@@ -84,8 +84,11 @@ to `community/external-sources.json`:
 
 - **name**: up to 60 characters. Beacon suggests it as the tab's name.
 - **description**: what it plays and how, in English, up to 300 characters.
-- **repository**: its public repository, an `https://` address. Its README
-  says how to run the app, how to connect it and where its audio comes from.
+- **repository**: its public repository on GitHub, Codeberg or GitLab. Its
+  README says how to run the app, how to connect it and where its audio comes
+  from. Repositories elsewhere, on a server of your own for example, are not
+  taken: Beacon loads an app's picture from where its repository is, and it
+  only does that from these hosts.
 - **author**: your GitHub login, without the `@`. Beacon credits you with
   your avatar and a link to your profile.
 - **icon**: optional. Either one of the tab icons Beacon offers

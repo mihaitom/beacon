@@ -1,7 +1,7 @@
 // Real-browser test that the community apps fit a phone - run via
 // `pnpm test:layout`. A long repository address or a long button next to
 // it is exactly what jsdom lays out as nothing at all.
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
 import { h } from 'vue'
 import { mount, type VueWrapper } from '@vue/test-utils'
@@ -14,18 +14,20 @@ import 'vuetify/styles'
 import { applyLocale, getLocale, i18n, SUPPORTED_LOCALES } from '@/i18n'
 import ExternalSourceDirectoryDialog from '../ExternalSourceDirectoryDialog.vue'
 
+const LONG_APP = {
+  name: 'A source with a rather long name for its tab',
+  description: 'Plays folders of music files as albums and artists, with covers and search.',
+  repository: 'https://github.com/mihaitom/beacon/tree/main/docs/examples/folder-source',
+  author: 'someone-with-a-long-login',
+  icon: 'mdi-folder-music',
+  image: null,
+}
+
+const { fetchDirectory } = vi.hoisted(() => ({ fetchDirectory: vi.fn() }))
+
 vi.mock('@/services/externalSourceDirectory', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/externalSourceDirectory')>()),
-  fetchDirectory: vi.fn(async () => [
-    {
-      name: 'A source with a rather long name for its tab',
-      description: 'Plays folders of music files as albums and artists, with covers and search.',
-      repository: 'https://github.com/mihaitom/beacon/tree/main/docs/examples/folder-source',
-      author: 'someone-with-a-long-login',
-      icon: 'mdi-folder-music',
-      image: null,
-    },
-  ]),
+  fetchDirectory,
 }))
 
 const vuetify = createVuetify({ components, directives })
@@ -56,6 +58,8 @@ async function open(width: number, height: number) {
 }
 
 describe('ExternalSourceDirectoryDialog layout', () => {
+  beforeEach(() => fetchDirectory.mockResolvedValue([LONG_APP]))
+
   afterEach(async () => {
     while (wrappers.length) wrappers.pop()?.unmount()
     document.body.innerHTML = ''
@@ -83,4 +87,40 @@ describe('ExternalSourceDirectoryDialog layout', () => {
       applyLocale(original)
     }
   })
+
+  it.each([
+    ['a desktop window', 1280, 900],
+    ['a phone', 390, 844],
+  ])(
+    'scrolls a long list inside the dialog on %s, header and buttons staying put',
+    async (_, w, h) => {
+      fetchDirectory.mockResolvedValue(
+        Array.from({ length: 12 }, (_, n) => ({
+          ...LONG_APP,
+          repository: `https://github.com/someone/app-${n}`,
+        })),
+      )
+      const card = await open(w, h)
+      const body = card.querySelector('.v-card-text') as HTMLElement
+      const rect = () => card.getBoundingClientRect()
+
+      // Capped like every dialog with content (.beacon-dialog in base.css);
+      // where Vuetify places it in the test page is its business, not this.
+      expect(rect().height).toBeLessThanOrEqual(h * 0.7 + 1)
+      expect(getComputedStyle(body).overflowY).toBe('auto')
+      expect(body.scrollHeight).toBeGreaterThan(body.clientHeight)
+
+      // The hero above and the buttons below stay inside the card.
+      const hero = card.querySelector('.source-directory__hero')!.getBoundingClientRect()
+      const actions = card.querySelector('.source-directory__actions')!.getBoundingClientRect()
+      expect(hero.top).toBeGreaterThanOrEqual(rect().top - 1)
+      expect(actions.bottom).toBeLessThanOrEqual(rect().bottom + 1)
+
+      // And the note under the last card can be scrolled into view.
+      body.scrollTop = body.scrollHeight
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      const notice = card.querySelector('.source-directory__notice')!.getBoundingClientRect()
+      expect(notice.bottom).toBeLessThanOrEqual(body.getBoundingClientRect().bottom + 1)
+    },
+  )
 })

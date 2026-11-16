@@ -49,28 +49,41 @@ function login(value: unknown): string | null {
   return typeof value === 'string' && LOGIN.test(value) ? value : null
 }
 
+/** The only hosts a listed repository may live on, each with the hosts
+ * its files - a picture - may come from. Opening the list makes Beacon
+ * load those pictures, so nobody's own server learns who opened it. */
+export const REPOSITORY_HOSTS: Readonly<Record<string, readonly string[]>> = {
+  'github.com': ['github.com', 'raw.githubusercontent.com'],
+  'codeberg.org': ['codeberg.org'],
+  'gitlab.com': ['gitlab.com'],
+}
+
 function repository(value: unknown): string | null {
   if (typeof value !== 'string') return null
+  let url: URL
   try {
-    const url = new URL(value)
-    // Opened in the browser from the dialog: nothing but a web page.
-    return url.protocol === 'https:' && !url.username && !url.password ? url.href : null
+    url = new URL(value)
   } catch {
     return null
   }
+  // Opened in the browser from the dialog: nothing but a web page.
+  if (url.protocol !== 'https:' || url.username || url.password || url.port) return null
+  if (!Object.hasOwn(REPOSITORY_HOSTS, url.hostname)) return null
+  // An owner and a name at least: a host's front page is no repository.
+  return url.pathname.split('/').filter(Boolean).length >= 2 ? url.href : null
 }
 
-/** Where a repository's own files are served from: its host and
- * "owner/name", plus GitHub's raw host for a GitHub repository. A
+/** Where a repository's own files are served from: the hosts
+ * REPOSITORY_HOSTS gives its host, and "owner/name". A
  * repository address may point into a folder (`.../tree/main/docs/x`),
  * the repository is still its first two path segments. */
 function repositoryRoot(repo: string): { hosts: string[]; path: string } | null {
   const url = new URL(repo)
   const [owner, name] = url.pathname.split('/').filter(Boolean)
   if (!owner || !name) return null
-  const hosts = [url.hostname]
-  if (url.hostname === 'github.com') hosts.push('raw.githubusercontent.com')
-  return { hosts, path: `/${owner}/${name}/`.toLowerCase() }
+  const hosts = REPOSITORY_HOSTS[url.hostname]
+  if (!hosts) return null
+  return { hosts: [...hosts], path: `/${owner}/${name}/`.toLowerCase() }
 }
 
 /** An image address from the entry, or null unless it is a plain https
