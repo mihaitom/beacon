@@ -16,9 +16,9 @@
       "icon": "mdi-inbox-arrow-down"
     },
     {
-      "name": "Folder source",
+      "name": "Beacon Folders",
       "description": "Plays folders of music files as albums and artists, with covers and search, without adding them to your media server. Also as a ready-made Docker image.",
-      "repository": "https://github.com/mihaitom/beacon/tree/development/docs/examples/folder-source",
+      "repository": "https://github.com/mihaitom/beacon-folders",
       "author": "mihaitom",
       "icon": "mdi-folder-music"
     }

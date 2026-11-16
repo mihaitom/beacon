@@ -114,8 +114,7 @@ description, repository, author, icon?}]}`. main, not development, so an
   version (DIRECTORY_BRANCH is development only until the list is on main;
   the publish workflows refuse to build while it is). `author` is a GitHub
   login, credited with avatar and profile link the way the release notes
-  credit people. An entry may point into Beacon's own repository
-  (folder-source).
+  credit people. An entry may point into a folder of a repository.
 - **Read in the renderer** (`services/externalSourceDirectory.ts`), from
   raw.githubusercontent.com like the changelog, each time the dialog opens:
   it is small, and a cached copy would hide a new entry. Nothing is fetched

@@ -1,5 +1,9 @@
 # Folder source for Beacon
 
+> This example is developed further as its own project,
+> [Beacon Folders](https://github.com/mihaitom/beacon-folders). Run that one;
+> this copy stays here as an example to read and build on.
+
 One of the example apps for Beacon's external sources, and a complete one: it is meant to be
 run, not only read. It plays folders of music files in Beacon without
 adding them to your media server. It shows up as its own tab in Beacon with albums,
@@ -90,7 +94,7 @@ services:
       RESCAN_MINUTES: 30
     ports:
       # Only Beacon's server has to reach this; do not forward it to the internet.
-      - "8800:8800"
+      - '8800:8800'
 ```
 
 In Beacon the address is then `http://<this host>:8800`. When Beacon runs in the same
