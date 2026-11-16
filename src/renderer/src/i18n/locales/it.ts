@@ -1840,6 +1840,7 @@ export default {
     directorySubtitle:
       'App create per Beacon da altre persone. Avviane una, aggiungila e avrà la sua scheda.',
     directoryAuthor: 'Creata da {login}',
+    directoryStars: '{count} stelle',
     directoryNotice:
       "Queste app girano sul tuo computer, non in Beacon, e Beacon non le verifica. Cosa riproduce un'app e da dove lo prende dipende dal suo autore e da te: aggiungi solo fonti che puoi riprodurre.",
     directoryFailed: "Impossibile caricare l'elenco. Arriva da GitHub; controlla la connessione.",

@@ -73,17 +73,29 @@ function repository(value: unknown): string | null {
   return url.pathname.split('/').filter(Boolean).length >= 2 ? url.href : null
 }
 
-/** Where a repository's own files are served from: the hosts
- * REPOSITORY_HOSTS gives its host, and "owner/name". A
- * repository address may point into a folder (`.../tree/main/docs/x`),
- * the repository is still its first two path segments. */
-function repositoryRoot(repo: string): { hosts: string[]; path: string } | null {
+/** The repository itself, "owner/name", from an address that may point
+ * into a folder of it (`.../tree/main/docs/x`). On GitLab a project can sit
+ * in nested groups, so there it is everything before the `/-/` that starts
+ * GitLab's own pages. */
+export function repositoryPath(repo: string): string | null {
   const url = new URL(repo)
-  const [owner, name] = url.pathname.split('/').filter(Boolean)
-  if (!owner || !name) return null
-  const hosts = REPOSITORY_HOSTS[url.hostname]
-  if (!hosts) return null
-  return { hosts: [...hosts], path: `/${owner}/${name}/`.toLowerCase() }
+  const segments = url.pathname.split('/').filter(Boolean)
+  if (url.hostname === 'gitlab.com') {
+    const end = segments.indexOf('-')
+    const project = end < 0 ? segments : segments.slice(0, end)
+    return project.length >= 2 ? project.join('/') : null
+  }
+  const [owner, name] = segments
+  return owner && name ? `${owner}/${name}` : null
+}
+
+/** Where a repository's own files are served from: the hosts
+ * REPOSITORY_HOSTS gives its host, under its own path. */
+function repositoryRoot(repo: string): { hosts: string[]; path: string } | null {
+  const path = repositoryPath(repo)
+  const hosts = REPOSITORY_HOSTS[new URL(repo).hostname]
+  if (!path || !hosts) return null
+  return { hosts: [...hosts], path: `/${path}/`.toLowerCase() }
 }
 
 /** An image address from the entry, or null unless it is a plain https
@@ -179,4 +191,116 @@ export function avatarUrl(author: string): string {
 export function repositoryLabel(url: string): string {
   const parsed = new URL(url)
   return `${parsed.host.replace(/^www\./, '')}${parsed.pathname.replace(/\/+$/, '')}`
+}
+
+/** How long a repository's stars are kept before they are asked for
+ * again. GitHub answers 60 unauthenticated questions an hour per address;
+ * a list opened now and then must never come near that. */
+export const STARS_TTL_MS = 6 * 60 * 60 * 1000
+/** How long the dialog waits for the stars before it shows the list
+ * without them, sorted by name. */
+export const STARS_TIMEOUT_MS = 4000
+const STARS_KEY = 'beacon.communityStars'
+
+/** The host's own API for a repository's details, or null for an address
+ * it cannot be read from. */
+export function starsApiUrl(repo: string): string | null {
+  const path = repositoryPath(repo)
+  if (!path) return null
+  switch (new URL(repo).hostname) {
+    case 'github.com':
+      return `https://api.github.com/repos/${path}`
+    case 'codeberg.org':
+      return `https://codeberg.org/api/v1/repos/${path}`
+    case 'gitlab.com':
+      return `https://gitlab.com/api/v4/projects/${encodeURIComponent(path)}`
+    default:
+      return null
+  }
+}
+
+/** The star count in a host's answer: each names it differently. */
+export function readStars(data: unknown): number | null {
+  if (data === null || typeof data !== 'object') return null
+  const answer = data as Record<string, unknown>
+  for (const field of ['stargazers_count', 'stars_count', 'star_count']) {
+    const value = answer[field]
+    if (typeof value === 'number' && Number.isInteger(value) && value >= 0) return value
+  }
+  return null
+}
+
+type StarCache = Record<string, { stars: number; at: number }>
+
+// Only ever a convenience: without storage the stars are just asked for
+// again.
+function readCache(): StarCache {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(STARS_KEY) ?? '{}')
+    return parsed && typeof parsed === 'object' ? (parsed as StarCache) : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeCache(cache: StarCache): void {
+  try {
+    localStorage.setItem(STARS_KEY, JSON.stringify(cache))
+  } catch {
+    // Full or blocked: the next open asks again.
+  }
+}
+
+/** One repository's stars, from the cache while it is fresh, otherwise
+ * from its host. Null when the host would not say. */
+export async function fetchStars(
+  repo: string,
+  signal?: AbortSignal,
+  now = Date.now(),
+): Promise<number | null> {
+  const cached = readCache()[repo]
+  if (cached && now - cached.at < STARS_TTL_MS) return cached.stars
+  const url = starsApiUrl(repo)
+  if (!url) return null
+  let stars: number | null
+  try {
+    const response = await fetch(url, { signal, headers: { Accept: 'application/json' } })
+    stars = response.ok ? readStars(await response.json()) : null
+  } catch {
+    stars = null
+  }
+  // An old count beats none: a rate limit or a timeout is not news.
+  if (stars === null) return cached?.stars ?? null
+  writeCache({ ...readCache(), [repo]: { stars, at: now } })
+  return stars
+}
+
+/** Every app's stars at once, given STARS_TIMEOUT_MS in all; an app whose
+ * host did not answer in time, or at all, has none. */
+export async function fetchAllStars(apps: DirectoryApp[]): Promise<Map<string, number>> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), STARS_TIMEOUT_MS)
+  try {
+    const results = await Promise.allSettled(
+      apps.map((app) => fetchStars(app.repository, controller.signal)),
+    )
+    const stars = new Map<string, number>()
+    results.forEach((result, n) => {
+      if (result.status === 'fulfilled' && result.value !== null) {
+        stars.set(apps[n]!.repository, result.value)
+      }
+    })
+    return stars
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/** Most stars first; those without any count, and ties, by name. */
+export function sortByStars(apps: DirectoryApp[], stars: Map<string, number>): DirectoryApp[] {
+  return [...apps].sort(
+    (a, b) =>
+      (stars.get(b.repository) ?? -1) - (stars.get(a.repository) ?? -1) ||
+      a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
+  )
 }

@@ -23,11 +23,18 @@ const LONG_APP = {
   image: null,
 }
 
-const { fetchDirectory } = vi.hoisted(() => ({ fetchDirectory: vi.fn() }))
+const { fetchDirectory, fetchAllStars } = vi.hoisted(() => ({
+  fetchDirectory: vi.fn(),
+  // Never the network here; a big count is the widest it gets.
+  fetchAllStars: vi.fn(async (apps: { repository: string }[]) => {
+    return new Map(apps.map((app) => [app.repository, 123456]))
+  }),
+}))
 
 vi.mock('@/services/externalSourceDirectory', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/externalSourceDirectory')>()),
   fetchDirectory,
+  fetchAllStars,
 }))
 
 const vuetify = createVuetify({ components, directives })

@@ -1847,6 +1847,7 @@ export default {
     directorySubtitle:
       'Des apps créées pour Beacon par d’autres. Lancez-en une, ajoutez-la, et elle aura son propre onglet.',
     directoryAuthor: 'Créée par {login}',
+    directoryStars: '{count} étoiles',
     directoryNotice:
       'Ces apps tournent chez vous, pas dans Beacon, et Beacon ne les vérifie pas. Ce qu’une app lit et d’où elle le tient relève de son auteur et de vous : n’ajoutez que des sources que vous avez le droit de lire.',
     directoryFailed:

@@ -1845,6 +1845,7 @@ export default {
     directorySubtitle:
       'Apps, die Leute für Beacon gebaut haben. Lass eine laufen, füge sie hinzu, und sie bekommt ihren eigenen Tab.',
     directoryAuthor: 'Gemacht von {login}',
+    directoryStars: '{count} Sterne',
     directoryNotice:
       'Diese Apps laufen bei dir, nicht in Beacon, und Beacon prüft sie nicht. Was eine App abspielt und woher, verantworten ihr Autor und du: Füge nur Quellen hinzu, die du abspielen darfst.',
     directoryFailed:

@@ -7,12 +7,13 @@ import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
-import { fetchDirectory } from '@/services/externalSourceDirectory'
+import { fetchAllStars, fetchDirectory } from '@/services/externalSourceDirectory'
 import ExternalSourceDirectoryDialog from '../ExternalSourceDirectoryDialog.vue'
 
 vi.mock('@/services/externalSourceDirectory', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/externalSourceDirectory')>()),
   fetchDirectory: vi.fn(),
+  fetchAllStars: vi.fn(),
 }))
 
 const vuetify = createVuetify({ components, directives })
@@ -46,7 +47,10 @@ async function mountDialog() {
 }
 
 describe('ExternalSourceDirectoryDialog', () => {
-  beforeEach(() => vi.mocked(fetchDirectory).mockResolvedValue(APPS))
+  beforeEach(() => {
+    vi.mocked(fetchDirectory).mockResolvedValue(APPS)
+    vi.mocked(fetchAllStars).mockResolvedValue(new Map())
+  })
   afterEach(() => vi.clearAllMocks())
 
   it('shows each app with where its repository is', async () => {
@@ -102,5 +106,16 @@ describe('ExternalSourceDirectoryDialog', () => {
       page: 'faq/external-sources',
       anchor: 'how-do-i-list-my-own-app',
     })
+  })
+
+  it('puts the app with most stars first and shows its count', async () => {
+    const other = { ...APPS[0]!, name: 'Another', repository: 'https://github.com/x/another' }
+    vi.mocked(fetchDirectory).mockResolvedValue([APPS[0]!, other])
+    vi.mocked(fetchAllStars).mockResolvedValue(new Map([[other.repository, 1234]]))
+    const { wrapper } = await mountDialog()
+    const cards = wrapper.findAll('.source-directory__card')
+    expect(cards[0]!.text()).toContain('Another')
+    expect(cards[0]!.get('.source-directory__stars').text()).toMatch(/1[.,]2/)
+    expect(cards[1]!.find('.source-directory__stars').exists()).toBe(false)
   })
 })

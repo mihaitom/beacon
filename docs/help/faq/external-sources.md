@@ -49,8 +49,8 @@ same for everyone signed in. In the desktop app they are yours alone.
 ## Where do I find apps others have written?
 
 Settings > Library > External sources > **Find apps** lists the apps their
-authors have put on Beacon's list, each with what it does, who made it and a
-link to its repository. Beacon reads the list from its repository on GitHub each time you
+authors have put on Beacon's list, each with what it does, who made it, its
+stars and a link to its repository. Those with the most stars come first. Beacon reads the list from its repository on GitHub each time you
 open it.
 
 Each app runs on your own machine, not inside Beacon, and Beacon does not

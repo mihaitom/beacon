@@ -3,8 +3,15 @@
 // Beacon reads whole - so a pull request with a broken entry fails here.
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  STARS_TTL_MS,
+  fetchAllStars,
+  fetchStars,
+  readStars,
+  repositoryPath,
+  sortByStars,
+  starsApiUrl,
   DIRECTORY_BRANCH,
   DIRECTORY_URL,
   MAX_APPS,
@@ -212,5 +219,109 @@ describe('fetchDirectory', () => {
 describe('repositoryLabel', () => {
   it('drops the scheme and a trailing slash', () => {
     expect(repositoryLabel('https://github.com/a/b/')).toBe('github.com/a/b')
+  })
+})
+
+describe('repositoryPath', () => {
+  it('is owner and name, also from an address into a folder', () => {
+    expect(repositoryPath('https://github.com/a/b/tree/main/docs/x')).toBe('a/b')
+    expect(repositoryPath('https://codeberg.org/a/b')).toBe('a/b')
+  })
+
+  it('keeps nested GitLab groups, up to GitLab own pages', () => {
+    expect(repositoryPath('https://gitlab.com/group/sub/app/-/tree/main/docs')).toBe(
+      'group/sub/app',
+    )
+  })
+})
+
+describe('starsApiUrl', () => {
+  it('asks each host its own API', () => {
+    expect(starsApiUrl('https://github.com/a/b/tree/main/x')).toBe(
+      'https://api.github.com/repos/a/b',
+    )
+    expect(starsApiUrl('https://codeberg.org/a/b')).toBe('https://codeberg.org/api/v1/repos/a/b')
+    expect(starsApiUrl('https://gitlab.com/g/sub/app')).toBe(
+      'https://gitlab.com/api/v4/projects/g%2Fsub%2Fapp',
+    )
+  })
+})
+
+describe('readStars', () => {
+  it('reads whichever name the host uses', () => {
+    expect(readStars({ stargazers_count: 5 })).toBe(5)
+    expect(readStars({ stars_count: 6 })).toBe(6)
+    expect(readStars({ star_count: 7 })).toBe(7)
+  })
+
+  it('reads nothing that is not a count', () => {
+    expect(readStars({ stargazers_count: '5' })).toBeNull()
+    expect(readStars({ stargazers_count: -1 })).toBeNull()
+    expect(readStars({ stargazers_count: 1.5 })).toBeNull()
+    expect(readStars(null)).toBeNull()
+  })
+})
+
+describe('fetchStars', () => {
+  const REPO = 'https://github.com/a/b'
+
+  beforeEach(() => localStorage.clear())
+  afterEach(() => vi.unstubAllGlobals())
+
+  function answer(body: unknown, status = 200) {
+    return vi.fn().mockResolvedValue(new Response(JSON.stringify(body), { status }))
+  }
+
+  it('asks once and keeps the answer for a while', async () => {
+    const fetchMock = answer({ stargazers_count: 12 })
+    vi.stubGlobal('fetch', fetchMock)
+    expect(await fetchStars(REPO, undefined, 1000)).toBe(12)
+    expect(await fetchStars(REPO, undefined, 1000 + STARS_TTL_MS - 1)).toBe(12)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    await fetchStars(REPO, undefined, 1000 + STARS_TTL_MS)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('keeps an old count when the host says no, and has none without one', async () => {
+    vi.stubGlobal('fetch', answer({ message: 'rate limit' }, 403))
+    expect(await fetchStars(REPO, undefined, 0)).toBeNull()
+    vi.stubGlobal('fetch', answer({ stargazers_count: 3 }))
+    await fetchStars(REPO, undefined, 0)
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))
+    expect(await fetchStars(REPO, undefined, STARS_TTL_MS * 2)).toBe(3)
+  })
+})
+
+describe('fetchAllStars and sortByStars', () => {
+  beforeEach(() => localStorage.clear())
+  afterEach(() => vi.unstubAllGlobals())
+
+  const app = (name: string, repo: string) => ({ ...APP, name, repository: repo })
+
+  it('sorts by stars, then by name, those without any last', async () => {
+    const apps = [
+      app('Beta', 'https://github.com/x/beta'),
+      app('Alpha', 'https://github.com/x/alpha'),
+      app('Many', 'https://github.com/x/many'),
+      app('Unknown', 'https://github.com/x/unknown'),
+    ]
+    const counts: Record<string, number> = { beta: 5, alpha: 5, many: 90 }
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        const count = counts[url.split('/').pop()!]
+        return count === undefined
+          ? new Response('', { status: 404 })
+          : new Response(JSON.stringify({ stargazers_count: count }))
+      }),
+    )
+    const stars = await fetchAllStars(apps)
+    expect(stars.has('https://github.com/x/unknown')).toBe(false)
+    expect(sortByStars(apps, stars).map((a) => a.name)).toEqual([
+      'Many',
+      'Alpha',
+      'Beta',
+      'Unknown',
+    ])
   })
 })

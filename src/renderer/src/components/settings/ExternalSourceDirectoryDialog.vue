@@ -70,26 +70,38 @@
               </span>
               <div class="source-directory__title">
                 <span class="source-directory__name">{{ app.name }}</span>
-                <!-- Credited like the release notes credit people. -->
-                <a
-                  class="source-directory__author"
-                  :href="`https://github.com/${app.author}`"
-                  :title="$t('externalSource.directoryAuthor', { login: app.author })"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  <span class="source-directory__avatar">
-                    <img
-                      v-if="!failedAvatars.includes(app.author)"
-                      :src="avatar(app.author)"
-                      alt=""
-                      loading="lazy"
-                      @error="failedAvatars.push(app.author)"
-                    />
-                    <template v-else>{{ app.author.charAt(0).toUpperCase() }}</template>
+                <div class="source-directory__meta">
+                  <!-- Credited like the release notes credit people. -->
+                  <a
+                    class="source-directory__author"
+                    :href="`https://github.com/${app.author}`"
+                    :title="$t('externalSource.directoryAuthor', { login: app.author })"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <span class="source-directory__avatar">
+                      <img
+                        v-if="!failedAvatars.includes(app.author)"
+                        :src="avatar(app.author)"
+                        alt=""
+                        loading="lazy"
+                        @error="failedAvatars.push(app.author)"
+                      />
+                      <template v-else>{{ app.author.charAt(0).toUpperCase() }}</template>
+                    </span>
+                    <span class="text-body-small">@{{ app.author }}</span>
+                  </a>
+                  <span
+                    v-if="stars.has(app.repository)"
+                    class="source-directory__stars text-body-small"
+                    :title="
+                      $t('externalSource.directoryStars', { count: stars.get(app.repository) })
+                    "
+                  >
+                    <v-icon icon="mdi-star" size="15" />
+                    {{ compact(stars.get(app.repository)!) }}
                   </span>
-                  <span class="text-body-small">@{{ app.author }}</span>
-                </a>
+                </div>
               </div>
             </div>
             <p class="source-directory__description text-body-medium">{{ app.description }}</p>
@@ -146,7 +158,9 @@
 <script lang="ts">
 import {
   avatarUrl,
+  fetchAllStars,
   fetchDirectory,
+  sortByStars,
   repositoryLabel,
   type DirectoryApp,
 } from '@/services/externalSourceDirectory'
@@ -168,6 +182,8 @@ export default {
       failed: false,
       /** Authors whose avatar did not load: their initial instead. */
       failedAvatars: [] as string[],
+      /** Each repository's stars, where its host said. */
+      stars: new Map<string, number>(),
       /** Pictures that did not load: the icon instead. */
       failedImages: [] as string[],
     }
@@ -185,13 +201,21 @@ export default {
       this.loading = true
       this.failed = false
       try {
-        this.apps = await fetchDirectory()
+        const apps = await fetchDirectory()
+        // Waited for, briefly, so the list does not reorder under the
+        // pointer; without them it stays sorted by name.
+        this.stars = await fetchAllStars(apps)
+        this.apps = sortByStars(apps, this.stars)
       } catch (error) {
         console.error('[external-source] Could not read the list of apps:', error)
         this.failed = true
       } finally {
         this.loading = false
       }
+    },
+    /** 1234 as "1.2K" (or "1,2 Tsd." in German): a rough size, not a count. */
+    compact(count: number): string {
+      return new Intl.NumberFormat(this.$i18n.locale, { notation: 'compact' }).format(count)
     },
     avatar(author: string): string {
       return avatarUrl(author)
@@ -326,6 +350,25 @@ export default {
   font-weight: 700;
   white-space: nowrap;
   text-overflow: ellipsis;
+}
+
+.source-directory__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.source-directory__stars {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: rgba(var(--v-theme-on-surface), 0.7);
+  font-variant-numeric: tabular-nums;
+}
+
+.source-directory__stars .v-icon {
+  color: rgb(var(--v-theme-warning));
 }
 
 /* The release notes' contributor chip. */

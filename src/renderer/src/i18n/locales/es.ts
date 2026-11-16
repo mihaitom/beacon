@@ -1847,6 +1847,7 @@ export default {
     directorySubtitle:
       'Apps que otras personas han creado para Beacon. Ponla en marcha, añádela y tendrá su propia pestaña.',
     directoryAuthor: 'Hecha por {login}',
+    directoryStars: '{count} estrellas',
     directoryNotice:
       'Estas apps se ejecutan en tu propio equipo, no en Beacon, y Beacon no las revisa. Lo que reproduce una app y de dónde lo saca depende de su autor y de ti: añade solo fuentes que puedas reproducir.',
     directoryFailed: 'No se pudo cargar la lista. Se descarga de GitHub; comprueba la conexión.',

@@ -148,6 +148,13 @@ description, repository, author, icon?}]}`. main, not development, so an
   repository and picture. 404 or 410 fails, so the scheduled run is the
   notice to take an entry out; a timeout or rate limit only warns. Not in
   the unit tests, which must not depend on the network.
+- **Sorted by stars.** Each repository's stars come from its host's API
+  (`stargazers_count`, `stars_count`, `star_count`), asked when the dialog
+  opens and kept 6 hours in localStorage: GitHub answers 60 unauthenticated
+  questions an hour per address. The dialog waits up to 4 seconds for them
+  so the list does not reorder under the pointer; a host that did not
+  answer leaves its app without stars, an old count kept if there is one,
+  and those without any are sorted by name after the rest.
 
 ## Not built yet
 
