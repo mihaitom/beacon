@@ -9,6 +9,14 @@ interface ReconnectingEventSourceHandlers {
   onError?: () => void
 }
 
+/** A server that sends `event` whenever it has nothing else to say. Once
+ * one has arrived on a connection, that connection going silent for
+ * `staleAfterMs` counts as dead and is replaced. */
+export interface HeartbeatOptions {
+  event: string
+  staleAfterMs: number
+}
+
 /**
  * A native EventSource reconnects on every drop using the server's `retry:`
  * hint verbatim, forever, with no backoff - fine on a stable LAN, but on a
@@ -23,16 +31,30 @@ interface ReconnectingEventSourceHandlers {
  * lockstep after a shared network blip), reset on a successful open, and no
  * retries at all while the browser reports itself offline - resuming
  * immediately on the `online` event instead of waiting out the backoff.
+ *
+ * With `heartbeat`, it also notices a connection that died without an
+ * error - a half-open TCP connection after a network hiccup, where the
+ * EventSource stays "open" and simply never hears anything again. Nothing
+ * else would: the app kept showing the song it last heard of, its position
+ * counting up to the end and stopping there, while a cast went on to the
+ * next song. Only once the server has shown it sends heartbeats, so an
+ * older server that sends comments instead is left as it was.
  */
 export class ReconnectingEventSource {
   private source: EventSource | null = null
   private retryDelay = INITIAL_RETRY_MS
   private retryTimer: ReturnType<typeof setTimeout> | null = null
   private stopped = true
+  private staleTimer: ReturnType<typeof setTimeout> | null = null
+  // When this connection last delivered anything, and whether its server
+  // has sent a heartbeat yet - see HeartbeatOptions.
+  private lastHeard = 0
+  private heartbeats = false
 
   constructor(
     private readonly url: string,
     private readonly handlers: ReconnectingEventSourceHandlers,
+    private readonly heartbeat?: HeartbeatOptions,
   ) {}
 
   start(): void {
@@ -48,6 +70,7 @@ export class ReconnectingEventSource {
       this.retryTimer = null
     }
     window.removeEventListener('online', this.handleOnline)
+    this.clearStaleTimer()
     this.source?.close()
     this.source = null
   }
@@ -55,16 +78,72 @@ export class ReconnectingEventSource {
   private open(): void {
     const source = new EventSource(this.url)
     this.source = source
+    this.heartbeats = false
+    this.lastHeard = Date.now()
     source.onopen = () => {
       this.retryDelay = INITIAL_RETRY_MS
+      this.heard()
       this.handlers.onOpen?.()
     }
-    source.onmessage = this.handlers.onMessage
-    source.onerror = () => {
-      source.close()
-      this.source = null
-      this.handlers.onError?.()
-      this.scheduleReconnect()
+    source.onmessage = (event) => {
+      this.heard()
+      this.handlers.onMessage(event)
+    }
+    if (this.heartbeat) {
+      source.addEventListener(this.heartbeat.event, () => {
+        this.heartbeats = true
+        this.heard()
+      })
+    }
+    source.onerror = () => this.drop(source)
+  }
+
+  /** Gives up on `source` and schedules the next one. */
+  private drop(source: EventSource): void {
+    if (this.source !== source) return
+    this.clearStaleTimer()
+    source.close()
+    this.source = null
+    this.handlers.onError?.()
+    this.scheduleReconnect()
+  }
+
+  private heard(): void {
+    this.lastHeard = Date.now()
+    if (this.heartbeat && this.heartbeats && !this.staleTimer) this.armStaleTimer()
+  }
+
+  /** Checks against the time last heard rather than trusting the timer
+   * alone: a timer in a hidden window or across a suspend can fire late,
+   * and what counts is how long nothing arrived. */
+  private armStaleTimer(): void {
+    const staleAfterMs = this.heartbeat!.staleAfterMs
+    const left = this.lastHeard + staleAfterMs - Date.now()
+    this.staleTimer = setTimeout(
+      () => {
+        this.staleTimer = null
+        const source = this.source
+        if (!source) return
+        if (Date.now() - this.lastHeard < staleAfterMs) {
+          this.armStaleTimer()
+          return
+        }
+        console.warn(
+          `[events] Nothing from ${this.url.split('?')[0]} for ${Math.round(staleAfterMs / 1000)}s — reconnecting`,
+        )
+        // Straight back rather than on the backoff: the server was fine a
+        // moment ago, it is the line that went.
+        this.retryDelay = INITIAL_RETRY_MS
+        this.drop(source)
+      },
+      Math.max(left, 0),
+    )
+  }
+
+  private clearStaleTimer(): void {
+    if (this.staleTimer) {
+      clearTimeout(this.staleTimer)
+      this.staleTimer = null
     }
   }
 

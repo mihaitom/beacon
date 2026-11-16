@@ -1,5 +1,10 @@
 import type { ConnectStatus } from './types'
-import { ReconnectingEventSource } from './reconnectingEventSource'
+import { ReconnectingEventSource, type HeartbeatOptions } from './reconnectingEventSource'
+
+/** /events sends status or a heartbeat every 2s (connect/routes/stream.py's
+ * status_events), so five missed in a row is a dead line, not a quiet
+ * session. */
+export const EVENTS_HEARTBEAT: HeartbeatOptions = { event: 'heartbeat', staleAfterMs: 10000 }
 
 /**
  * Wraps GET /events (via ReconnectingEventSource — see that file for why a
@@ -22,19 +27,23 @@ export class ConnectEventSource {
   start(): void {
     if (this.source) return
     const params = new URLSearchParams({ token: this.connectToken, session: this.sessionId })
-    this.source = new ReconnectingEventSource(`${this.connectUrl}/events?${params.toString()}`, {
-      onOpen: () => this.onConnectionChange?.(true),
-      onError: () => this.onConnectionChange?.(false),
-      onMessage: (event) => {
-        try {
-          const status = JSON.parse(event.data) as ConnectStatus
-          this.onStatus?.(status)
-        } catch {
-          // Heartbeat comments (": heartbeat") never reach onmessage — this
-          // only catches a genuinely malformed data payload.
-        }
+    this.source = new ReconnectingEventSource(
+      `${this.connectUrl}/events?${params.toString()}`,
+      {
+        onOpen: () => this.onConnectionChange?.(true),
+        onError: () => this.onConnectionChange?.(false),
+        onMessage: (event) => {
+          try {
+            const status = JSON.parse(event.data) as ConnectStatus
+            this.onStatus?.(status)
+          } catch {
+            // Heartbeats are a named event and never reach onmessage — this
+            // only catches a genuinely malformed data payload.
+          }
+        },
       },
-    })
+      EVENTS_HEARTBEAT,
+    )
     this.source.start()
   }
 

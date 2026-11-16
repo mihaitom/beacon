@@ -1525,13 +1525,25 @@ async def stream_diagnostics(session: SessionState = Depends(get_session)):
     return describe_stream(session)
 
 
+# What /events sends while there is no status to send. An event rather than
+# a comment, which a browser never hands to the page: the app can tell a
+# quiet session from a connection that died without an error (services/
+# connect/reconnectingEventSource.ts). Named, so a client listening to
+# `message` alone never sees it; with `data`, since an event without any is
+# never dispatched.
+HEARTBEAT_EVENT = "event: heartbeat\ndata: {}\n\n"
+
+
 @router.get("/events", dependencies=[Depends(require_token)])
 async def status_events(session: SessionState = Depends(get_session)):
     queue = session.event_bus.subscribe()
 
     async def generator():
         try:
-            yield "retry: 2000\n\n"
+            # One heartbeat straight away: while something plays, status
+            # replaces every later one, and this is how the app learns that
+            # this server sends them - and that silence means a dead line.
+            yield "retry: 2000\n\n" + HEARTBEAT_EVENT
             yield f"data: {json.dumps(build_status_dict(session))}\n\n"
             while True:
                 try:
@@ -1542,7 +1554,7 @@ async def status_events(session: SessionState = Depends(get_session)):
                     if session.state.is_streaming and not session.state.clock.is_paused:
                         yield f"data: {json.dumps(build_status_dict(session))}\n\n"
                     else:
-                        yield ": heartbeat\n\n"
+                        yield HEARTBEAT_EVENT
         finally:
             session.event_bus.unsubscribe(queue)
 
