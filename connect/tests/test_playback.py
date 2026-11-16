@@ -2353,6 +2353,42 @@ def test_resync_position_once_ignores_another_devices_connection(default_session
     assert st.clock.track_start_position == 0.0
 
 
+@pytest.mark.parametrize("old_still_open", [False, True])
+def test_resync_position_once_follows_a_late_reconnect_in_a_long_mix(
+    default_session, old_still_open
+):
+    """A mix cast to a Sonos, long past its start: the probe connection from
+    the stream's beginning is still open and unread, and the device has
+    just reconnected deep into the stream (its position starts over at 0).
+    The clock has to stay on the reconnect, not fall back to the probe -
+    a clock off by that much holds back every song change follow() makes
+    (routes/mix_cast.py), while the speaker plays the next song."""
+    st = default_session.state
+    st.is_streaming = True
+    st.mix = object()
+    st.clock.start(0.0)
+    reconnect_at = 2900.0
+    st.clock.play_start_time = time.time() - (reconnect_at + 5.0)
+    target = SonosDelivery("Küche")
+    target.stream_peer = "10.0.0.5"
+    st.active_delivery = target
+    # The probe, unread since the stream began.
+    _open_connection(default_session, "10.0.0.5", start=2.0, read_ago=reconnect_at + 3.0)
+    if old_still_open:
+        # The connection played until the drop, not yet noticed as closed.
+        _open_connection(default_session, "10.0.0.5", start=0.0, read_ago=6.0)
+    # The reconnect, as _on_first_audio() re-bases the clock on it.
+    _open_connection(default_session, "10.0.0.5", start=reconnect_at, read_ago=0.0)
+    st.clock.restream_from(reconnect_at)
+    elapsed_before = st.clock.elapsed()
+
+    _resync_against(default_session, target, 5.0)
+
+    assert st.clock.track_start_position == reconnect_at
+    assert st.clock.position_offset == pytest.approx(0.0, abs=0.1)
+    assert st.clock.elapsed() == pytest.approx(elapsed_before, abs=0.1)
+
+
 def test_resync_position_once_ignores_small_drift_on_top_of_large_offset(default_session):
     """Regression for a real prod symptom: once a track has a legitimately
     large standing offset (here -6.0s, e.g. from an earlier real device
