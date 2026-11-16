@@ -125,7 +125,7 @@ describe('SettingsView layout', () => {
         await showTab('library')
 
         const actions = rects('.external-sources__actions .v-btn')
-        expect(actions, locale).toHaveLength(3)
+        expect(actions, locale).toHaveLength(4)
         expect(new Set(actions.map((action) => Math.round(action.top))).size, locale).toBe(1)
       }
     } finally {

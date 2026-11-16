@@ -1824,7 +1824,7 @@ export default {
     playFailed: 'Lecture impossible : {reason}',
     settingsTitle: 'Sources externes',
     settingsWhat:
-      'Des apps que vous hébergez vous-même, chacune avec sa propre page dans un onglet de Beacon, qui lui transmettent des morceaux à lire, y compris sur les enceintes. Beacon n’en fournit aucune ; l’aide propose des exemples à utiliser ou à adapter, et Trouver des apps liste celles que d’autres ont publiées.',
+      'Des apps que vous hébergez vous-même, chacune avec sa propre page dans un onglet de Beacon, qui lui transmettent des morceaux à lire, y compris sur les enceintes. Beacon n’en fournit aucune ; l’aide propose des exemples à utiliser ou à adapter, et Découvrir liste celles que d’autres ont publiées.',
     name: "Nom de l'onglet",
     namePlaceholder: "p. ex. Liste d'envies",
     add: 'Ajouter une source',
@@ -1842,7 +1842,7 @@ export default {
     help: 'Aide',
     remove: 'Supprimer',
     save: 'Enregistrer',
-    findApps: 'Trouver des apps',
+    findApps: 'Découvrir',
     directoryTitle: 'Apps d’autres personnes',
     directoryNotice:
       'Écrites et publiées par d’autres, pas par Beacon, et non vérifiées par lui. Ce qu’une app lit et d’où elle le tient relève de son auteur et de vous : n’ajoutez que des sources que vous avez le droit de lire.',
