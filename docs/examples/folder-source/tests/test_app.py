@@ -37,8 +37,11 @@ def test_the_page_and_its_files_are_served(client):
     page = client.get("/ui/")
     assert page.status_code == 200
     assert 'src="app.js"' in page.text
-    assert client.get("/ui/app.js").status_code == 200
-    assert client.get("/ui/style.css").status_code == 200
+    for name in ("app.js", "style.css"):
+        response = client.get(f"/ui/{name}")
+        assert response.status_code == 200
+        # An update must reach a browser that has the old file.
+        assert response.headers["cache-control"] == "no-cache"
 
 
 def test_a_play_item_plays(client):

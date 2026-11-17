@@ -33,6 +33,18 @@ UI_DIR = Path(__file__).parent / "ui"
 _IMMUTABLE = "private, max-age=86400"
 
 
+class PageFiles(StaticFiles):
+    """The page's script, styles and font. Without a cache header the browser
+    guesses how long to keep them, and after an update went on running the old
+    script for hours beside the new page. Asked again every time, they cost a
+    304 while unchanged."""
+
+    def file_response(self, *args, **kwargs) -> Response:
+        response = super().file_response(*args, **kwargs)
+        response.headers["cache-control"] = "no-cache"
+        return response
+
+
 # Songs in one answer at most: a page of the songs list.
 _MAX_SONGS = 500
 
@@ -292,7 +304,7 @@ def create_app(
         Route("/ui/api/{folder}/songs", songs),
         Route("/ui/api/{folder}/search", search),
         Route("/ui/covers/{folder}/{album_id}", page_cover),
-        Mount("/ui", app=StaticFiles(directory=UI_DIR)),
+        Mount("/ui", app=PageFiles(directory=UI_DIR)),
         Route("/audio/{folder}/{track_id}/{signature}", audio),
         Route("/covers/{folder}/{album_id}/{signature}", signed_cover),
     ]
