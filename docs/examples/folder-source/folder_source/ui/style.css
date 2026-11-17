@@ -651,6 +651,8 @@ a.sub:hover {
   padding: 4px 10px;
   border-radius: 8px;
   transition: background 0.15s;
+  /* Otherwise a double-click to play also selects the title under it. */
+  user-select: none;
 }
 
 .row:hover {

@@ -24,7 +24,8 @@ recordings, a friend's hard drive.
   every song names another artist; `CD1`/`Disc 2` folders join their album.
 - Looks like part of Beacon: its type, its colours (light themes too), its song table.
 - Songs, albums and artists have Beacon's right-click menu: play now, next or at the end
-  of the queue, and go to the album or the artist.
+  of the queue, and go to the album or the artist. A double-click plays a song, on an
+  album with the rest of the album after it.
 - Takes title, artist, album, track and disc number, year and genre from the tags, and the
   format with its bitrate, sample rate and bit depth from the file itself. A file
   without tags is named after its folders and file name (`Artist/Album/03 - Title.mp3`).

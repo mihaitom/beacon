@@ -1160,6 +1160,20 @@ view.addEventListener('click', async (event) => {
   }
 })
 
+// A double-click plays the song as in Beacon: on an album the rest of the
+// album follows it, in a list of songs from anywhere it plays alone. Beacon
+// has no way to start a queue in its middle, so the album's earlier songs
+// stay out.
+view.addEventListener('dblclick', async (event) => {
+  if (event.target.closest('button, a')) return
+  const el = event.target.closest('.row[data-row]')
+  const row = el && rowsOnScreen[el.dataset.row]
+  if (!row) return
+  const index = Number(el.dataset.row)
+  const rows = el.classList.contains('row--album') ? rowsOnScreen.slice(index) : [row]
+  await playRows(rows)
+})
+
 searchInput.addEventListener('input', () => {
   state.query = searchInput.value.trim()
   clearTimeout(searchTimer)
