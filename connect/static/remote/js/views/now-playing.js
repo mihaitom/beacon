@@ -681,21 +681,20 @@ export function renderNowPlaying(root) {
     // hold below, so a snapshot that already agrees with what was sent
     // ends the hold early rather than sitting it out.
     const incomingVolume =
-      casting.length === 1
+      casting.length > 0
         ? snapshot.device_volume
         : Math.round((snapshot.volume ?? 1) * 100);
     if (incomingVolume != null && incomingVolume === Number(volume.value)) volumeHeldUntil = 0;
     if (!volumeDragging && Date.now() >= volumeHeldUntil) {
-      // Mirrors PlayerBar.vue's own slider swap: exactly one active cast
-      // target -> that device's volume (disabled until the first poll
+      // Mirrors PlayerBar.vue's own slider swap: casting -> the device's
+      // volume, or the master over several (disabled until the first poll
       // resolves, see stores/remoteControl.ts's device_volume field);
-      // zero -> local; 2+ -> no single "the" volume to represent here, same
-      // as the desktop's own local-fallback slider going disabled then.
-      if (casting.length === 1) {
+      // otherwise local.
+      if (casting.length > 0) {
         volume.disabled = snapshot.device_volume == null;
         volume.value = String(snapshot.device_volume ?? 0);
       } else {
-        volume.disabled = casting.length > 1;
+        volume.disabled = false;
         volume.value = String(Math.round((snapshot.volume ?? 1) * 100));
       }
       // Matches MobileTransportControls.vue's own volumeIcon computed.

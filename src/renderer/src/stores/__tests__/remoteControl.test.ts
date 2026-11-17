@@ -909,7 +909,7 @@ describe('remoteControl store', () => {
     // Regression test: Sonos volume/mute reaches connectStore.status by
     // push (see connectStore.isVolumePushCapable()) - this poll used to
     // call getDeviceVolume() every tick regardless of type, one of several
-    // surfaces that silently kept doing so after DeviceListItem.vue's own
+    // surfaces that silently kept doing so after the device list's own
     // fix, caught live 2026-08-25.
     it('stops calling getDeviceVolume for a push-capable target once a pushed reading exists', async () => {
       vi.useFakeTimers()
@@ -955,8 +955,7 @@ describe('remoteControl store', () => {
         radio: null,
         radio_buffering: false,
         streaming: false,
-        // No volume field yet — the first tick still has nothing pushed,
-        // same gap DeviceListItem.vue's always-on-activation fetch covers.
+        // No volume field yet — nothing pushed, so the first tick has to ask.
         targets: [{ name: 'Kitchen', type: 'sonos', volume_push: true }],
         total_songs: 0,
         displaced: false,

@@ -24,6 +24,10 @@ import { getLocalMix } from '@/services/playback/localMix'
 import { useRadioMetadataStore } from './radioMetadata'
 import { useConnectStore } from './connect'
 import { isBackingOff } from '@/services/connect/pollGate'
+import { acceptsVolumeReading } from '@/services/connect/volumeGuard'
+import { groupLevel } from '@/services/groupVolume'
+import { knownDeviceVolume, recordDeviceVolume, volumeScope } from '@/services/volumeControl'
+import type { ConnectDeviceRef } from '@/services/connect/types'
 import { useAuthStore } from './auth'
 import { useAutoplayStore } from './autoplay'
 import { tabId as partyTabId, usePartyStore } from './party'
@@ -57,7 +61,7 @@ interface RemoteControlState {
 
 const KEEPALIVE_INTERVAL_MS = 20_000
 const STATE_PUSH_DEBOUNCE_MS = 300
-// Matches DeviceListItem.vue's own polling interval — the fallback for
+// Matches the app's own volume polling interval — the fallback for
 // device types connectStore.isVolumePushCapable() doesn't cover (see
 // startDeviceVolumePoll()'s own comment for the push-capable case).
 const DEVICE_VOLUME_POLL_INTERVAL_MS = 4_000
@@ -366,10 +370,9 @@ export const useRemoteControlStore = defineStore('remoteControl', {
           // it — mirrors PlayerBar.vue's own two distinct sliders
           // (deviceVolume vs playbackStore.volume) exactly, so the phone
           // can tell "no device volume yet" (still polling) apart from
-          // "genuinely 0". Only ever non-null with exactly one active
-          // target — see startDeviceVolumePoll()'s own comment for why
-          // 2+ targets has no single value to report here either.
-          device_volume: connect.activeTargets.length === 1 ? deviceVolumeCache : null,
+          // "genuinely 0". With several targets it is the master volume
+          // over all of them — see startDeviceVolumePoll().
+          device_volume: connect.activeTargets.length > 0 ? deviceVolumeCache : null,
           // What the speakers are being sent, and what it was made from -
           // the two lines the desktop's own cast sheet ends with. Sent as
           // finished text rather than as the raw fields, so the phone's
@@ -442,32 +445,39 @@ export const useRemoteControlStore = defineStore('remoteControl', {
      * - but once a pushed reading actually exists it's used straight from
      * the store instead of a network round trip. Falls back to a real
      * fetch until the first one arrives (push only ever fires on the
-     * *next* change, never proactively on claim - same gap
-     * DeviceListItem.vue's own fetchVolume() covers with its one
-     * always-on-activation call), so the very first tick for a
+     * *next* change, never proactively on claim), so the very first tick for a
      * newly-active push-capable device still costs one request, not zero.
-     * With zero or 2+ active targets there's no single device this
-     * control should represent (matches PlayerBar.vue's local slider
-     * going `disabled` in the 2+ case) - the phone's device picker sheet
-     * (devices.js) is where each individual target's volume lives
-     * instead, fetched on demand rather than continuously polled here. */
+     * With 2+ active targets the reading is the master volume over all
+     * of them (see services/volumeControl.ts), the same value the desktop
+     * bar's slider shows. */
     startDeviceVolumePoll(): void {
       if (deviceVolumePollTimer) return
       const connect = useConnectStore()
-      const poll = async (): Promise<void> => {
-        const targets = connect.activeTargets
-        if (targets.length !== 1) {
-          if (deviceVolumeCache !== null) {
-            deviceVolumeCache = null
-            schedulePushSnapshot?.()
-          }
-          return
-        }
-        const target = targets[0]!
+      const readDevice = async (target: ConnectDeviceRef): Promise<number | null> => {
         const pushed = connect.isVolumePushCapable(target.type, target.name)
           ? connect.pushedVolumeFor(target.type, target.name)
           : null
-        const volume = pushed ?? (await connect.getDeviceVolume(target.type, target.name))
+        return pushed ?? (await connect.getDeviceVolume(target.type, target.name))
+      }
+      const poll = async (): Promise<void> => {
+        const targets = connect.activeTargets
+        let volume: number | null = null
+        if (targets.length === 1) {
+          volume = await readDevice(targets[0]!)
+        } else if (targets.length > 1) {
+          const group = volumeScope().group ?? []
+          await Promise.all(
+            group.map(async (target) => {
+              // Not while it is being set - same rule as every slider.
+              if (!acceptsVolumeReading(target)) return
+              const reading = await readDevice(target)
+              if (reading != null && acceptsVolumeReading(target)) {
+                recordDeviceVolume(target, Math.round(reading))
+              }
+            }),
+          )
+          volume = groupLevel(group.map(knownDeviceVolume))
+        }
         if (volume !== deviceVolumeCache) {
           deviceVolumeCache = volume
           schedulePushSnapshot?.()

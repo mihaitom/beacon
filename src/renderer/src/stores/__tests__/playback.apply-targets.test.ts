@@ -3,6 +3,8 @@ import { createPinia, setActivePinia } from 'pinia'
 import { useConnectStore } from '../connect'
 import { usePlaybackStore } from '../playback'
 import { makeStatus } from './fixtures'
+import { useGroupVolumeStore } from '../groupVolume'
+import { flushPromises } from '@vue/test-utils'
 
 /** applyTargets() is the single place that turns "here is the set of devices
  * that should be playing" into calls, shared by the desktop picker, the
@@ -199,5 +201,74 @@ describe('playbackStore.applyTargets', () => {
     expect(s.join).toHaveBeenCalledOnce()
     expect(s.join).toHaveBeenCalledWith(airplayKitchen, false)
     expect(s.stop).not.toHaveBeenCalled()
+  })
+
+  describe('the level a speaker starts at', () => {
+    function withLevels(levels: Record<string, number>) {
+      const connect = useConnectStore()
+      vi.spyOn(connect, 'getDeviceVolume').mockImplementation(
+        async (_type, name) => levels[name] ?? null,
+      )
+      return vi.spyOn(connect, 'setDeviceVolume').mockResolvedValue()
+    }
+
+    beforeEach(async () => {
+      const { _resetVolumeControl } = await import('@/services/volumeControl')
+      const { _resetVolumeGuards } = await import('@/services/connect/volumeGuard')
+      _resetVolumeControl()
+      _resetVolumeGuards()
+    })
+
+    it('fits a joining speaker in at the level of the ones playing, in "same level" mode', async () => {
+      useGroupVolumeStore().setMode('equal')
+      withActive([kitchen])
+      const setVolume = withLevels({ Kitchen: 30, 'Living Room': 70 })
+      const s = spies()
+
+      await s.playback.applyTargets([kitchen, living])
+      await flushPromises()
+
+      expect(setVolume).toHaveBeenCalledWith('sonos', 'Living Room', 30)
+      // The one already playing stays where it is.
+      expect(setVolume).not.toHaveBeenCalledWith('sonos', 'Kitchen', expect.anything())
+    })
+
+    it('leaves a joining speaker at its own level in "keep balance" mode', async () => {
+      useGroupVolumeStore().setMode('relative')
+      withActive([kitchen])
+      const setVolume = withLevels({ Kitchen: 30, 'Living Room': 70 })
+      const s = spies()
+
+      await s.playback.applyTargets([kitchen, living])
+      await flushPromises()
+
+      expect(setVolume).not.toHaveBeenCalled()
+    })
+
+    it('starts several speakers cast at once at their average, in "same level" mode', async () => {
+      useGroupVolumeStore().setMode('equal')
+      const setVolume = withLevels({ Kitchen: 20, 'Living Room': 41 })
+      const s = spies()
+      // castTo() is mocked, so the targets it would have claimed are put
+      // in place by hand.
+      s.castTo.mockImplementation(async () => withActive([kitchen, living]))
+
+      await s.playback.applyTargets([kitchen, living])
+      await flushPromises()
+
+      expect(setVolume).toHaveBeenCalledWith('sonos', 'Kitchen', 31)
+      expect(setVolume).toHaveBeenCalledWith('sonos', 'Living Room', 31)
+    })
+
+    it('leaves a single speaker cast fresh at its own level', async () => {
+      useGroupVolumeStore().setMode('equal')
+      const setVolume = withLevels({ Kitchen: 20 })
+      const s = spies()
+
+      await s.playback.applyTargets([kitchen])
+      await flushPromises()
+
+      expect(setVolume).not.toHaveBeenCalled()
+    })
   })
 })

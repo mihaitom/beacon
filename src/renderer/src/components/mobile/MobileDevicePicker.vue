@@ -105,6 +105,8 @@
           </template>
         </v-list-item>
 
+        <group-volume-mode class="mobile-device-picker__group-volume" />
+
         <template v-for="group in deviceGroups" :key="group.type">
           <v-list-subheader>{{ group.label }}</v-list-subheader>
           <mobile-device-row
@@ -143,6 +145,7 @@ import { useAuthStore } from '@/stores/auth'
 import { useConnectStore } from '@/stores/connect'
 import { usePlaybackStore } from '@/stores/playback'
 import ConnectErrorBanner from '@/components/connect/ConnectErrorBanner.vue'
+import GroupVolumeMode from '@/components/connect/GroupVolumeMode.vue'
 import StreamInfoSection, { hasStreamInfo } from '@/components/connect/StreamInfoSection.vue'
 import MobileDeviceRow from './MobileDeviceRow.vue'
 import type { DeviceType, DiscoveredDevice } from '@/services/connect/types'
@@ -170,7 +173,7 @@ const TYPE_LABELS: Record<DeviceType, string> = {
 
 export default {
   name: 'MobileDevicePicker',
-  components: { ConnectErrorBanner, MobileDeviceRow, StreamInfoSection },
+  components: { ConnectErrorBanner, GroupVolumeMode, MobileDeviceRow, StreamInfoSection },
   props: {
     modelValue: {
       type: Boolean,
@@ -180,8 +183,7 @@ export default {
   emits: ['update:modelValue'],
   data() {
     return {
-      // Pre-checked with whatever's already casting, same starting point as
-      // DeviceListItem.vue's own `checked` computed. Snapshotted separately
+      // Pre-checked with whatever's already casting. Snapshotted separately
       // as initialKeys so "Done" can tell a genuinely unchanged selection
       // apart from a re-confirmed one — see selectionUnchanged() below and
       // the LAN remote's devices.js, which validated this exact behavior
@@ -418,5 +420,10 @@ export default {
 /* The "no speakers found" line, given the padding a row would have. */
 .mobile-device-picker__empty {
   padding: 16px;
+}
+
+/* Lined up with the list subheaders below it. */
+.mobile-device-picker__group-volume {
+  padding: 0 16px;
 }
 </style>

@@ -626,6 +626,22 @@ whole list in that order, so a search, a filter or another order turns it off.
 Scrollbars are hidden app-wide (`base.css`) - scrolling still works, only the
 chrome is gone. A scroll region therefore has to look scrollable on its own.
 
+## Rows that are sliders
+
+A speaker's volume is not a second line under its name: the row itself is the
+slider (`VolumeFader.vue`). The level fills the row from the left in a faint
+amber gradient, its edge a lit 2px line like a meter's needle; dragging across
+the row, the arrow keys or the wheel set it. A finger only takes the row once
+it moves sideways, so a vertical swipe still scrolls the list. The master over
+several speakers is the same row one size up, and shows the spread
+(`20–45%`) in its value. A row that only
+names a speaker (in "same level" mode, where the master is the only level)
+drops the fill altogether rather than showing it disabled.
+
+The cast menu on the desktop is built from these: two halves, what is playing
+on the left and what could be added on the right, so its height follows the
+speakers in use rather than every one the network has. Below 620px it stacks.
+
 ## Empty states
 
 A page with nothing to show uses `EmptyState.vue` (Vuetify's

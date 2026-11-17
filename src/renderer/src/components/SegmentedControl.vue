@@ -8,7 +8,12 @@
    -
    - radiogroup/radio over a list of plain buttons — for a screen reader
    - this is one control with one answer, not several unrelated actions. -->
-  <div class="segmented" role="radiogroup" :aria-label="label">
+  <div
+    class="segmented"
+    :class="{ 'segmented--dense': dense }"
+    role="radiogroup"
+    :aria-label="label"
+  >
     <button
       v-for="option in options"
       :key="String(option.value)"
@@ -49,6 +54,11 @@ export default {
       type: String,
       default: '',
     },
+    /** Smaller, for a choice inside a menu rather than a dialog. */
+    dense: {
+      type: Boolean,
+      default: false,
+    },
   },
   emits: ['update:modelValue'],
 }
@@ -88,5 +98,9 @@ export default {
   background: rgba(var(--v-theme-primary), 0.12);
   color: rgb(var(--v-theme-on-surface));
   font-weight: 600;
+}
+.segmented--dense .segmented__option {
+  padding: 5px 8px;
+  font-size: 0.75rem;
 }
 </style>

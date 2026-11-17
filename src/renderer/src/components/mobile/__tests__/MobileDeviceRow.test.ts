@@ -7,6 +7,7 @@ import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useConnectStore } from '@/stores/connect'
+import { useGroupVolumeStore } from '@/stores/groupVolume'
 import MobileDeviceRow from '../MobileDeviceRow.vue'
 import type { DeviceType } from '@/services/connect/types'
 import { makeStatus } from '@/stores/__tests__/fixtures'
@@ -101,6 +102,23 @@ describe('MobileDeviceRow', () => {
   })
 
   describe('volume', () => {
+    it('leaves the level to the master with several speakers in "same level" mode', async () => {
+      vi.spyOn(useConnectStore(), 'getDeviceVolume').mockResolvedValue(30)
+      useConnectStore().status = makeStatus({
+        targets: [
+          { name: 'Kitchen', type: 'sonos', volume: 30, volume_push: true },
+          { name: 'Study', type: 'sonos', volume: 30, volume_push: true },
+        ],
+      })
+      useGroupVolumeStore().setMode('equal')
+      const wrapper = mountRow()
+      expect(wrapper.find('.mobile-device-row__volume').exists()).toBe(false)
+
+      useGroupVolumeStore().setMode('relative')
+      await wrapper.vm.$nextTick()
+      expect(wrapper.find('.mobile-device-row__volume').exists()).toBe(true)
+    })
+
     it('appears only once this device is actually casting, without waiting for a hover it can never get', async () => {
       const connect = useConnectStore()
       vi.spyOn(connect, 'getDeviceVolume').mockResolvedValue(30)
@@ -187,8 +205,6 @@ describe('MobileDeviceRow', () => {
       expect(wrapper.getComponent({ name: 'TouchVolumeSlider' }).props('disabled')).toBe(true)
     })
 
-    // Unlike DeviceListItem.vue, this row talks to the store itself rather
-    // than handing a volume-change up to its parent.
     it('sets the rounded volume on the device directly, and shows it before the round trip returns', async () => {
       const connect = useConnectStore()
       vi.spyOn(connect, 'getDeviceVolume').mockResolvedValue(30)

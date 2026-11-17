@@ -11,8 +11,7 @@
 <script lang="ts">
 /**
  * Material Design Icons has no "airplay" glyph (it won't carry Apple's
- * trademarked logo) — DeviceListItem used mdi-cast-audio as a stand-in
- * until now. This is the real AirPlay glyph, sized/colored like a v-icon
+ * trademarked logo). This is the real AirPlay glyph, sized/colored like a v-icon
  * (1em box, fill: currentColor) so it drops into the same spot.
  */
 export default {

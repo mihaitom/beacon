@@ -22,9 +22,8 @@
         </div>
       </div>
 
-      <!-- Explicit button, not "tap the row" — same deliberate-action shape
-       - as DeviceListItem.vue's own "Take over" button, just always visible
-       - here instead of hover-revealed (no touch equivalent to hover). -->
+      <!-- Explicit button, not "tap the row" — taking a speaker from
+       - someone is a deliberate action. -->
       <v-btn
         v-if="claimedByOther"
         size="small"
@@ -38,9 +37,10 @@
       <v-icon v-else-if="selected" icon="mdi-check-circle" color="primary" />
     </div>
 
-    <!-- Always visible (unlike DeviceListItem.vue's hover-accordion, which
-     - has no touch equivalent) for every currently active, volume-capable
-     - target — same rule the LAN remote's devices.js already validated. -->
+    <!-- Always visible (no hover on touch) for every currently active,
+     - volume-capable target — same rule the LAN remote's devices.js already
+     - validated. Not with several speakers in 'equal' mode, where the
+     - master is the only level there is. -->
     <div v-if="showVolume" class="mobile-device-row__volume">
       <v-icon icon="mdi-volume-high" size="18" class="mobile-device-row__volume-icon" />
       <touch-volume-slider
@@ -70,6 +70,8 @@ import {
 import { writeDeviceVolume } from '@/services/connect/volumeWrite'
 import { useAuthStore } from '@/stores/auth'
 import TouchVolumeSlider from './TouchVolumeSlider.vue'
+import { knownDeviceVolume, recordDeviceVolume, volumeScope } from '@/services/volumeControl'
+import { useGroupVolumeStore } from '@/stores/groupVolume'
 import AirplayIcon from '@/components/connect/AirplayIcon.vue'
 import type { ConnectDeviceRef, DeviceType } from '@/services/connect/types'
 
@@ -134,9 +136,9 @@ export default {
       )
     },
     showVolume() {
-      // Same gate DeviceListItem.vue uses, see
-      // connectStore.isVolumeCapable().
-      return this.isMyActiveTarget && this.connectStore.isVolumeCapable(this.type)
+      // See connectStore.isVolumeCapable().
+      if (!this.isMyActiveTarget || !this.connectStore.isVolumeCapable(this.type)) return false
+      return !(volumeScope().group && useGroupVolumeStore().mode === 'equal')
     },
     // Pushed reading for push-capable types (Sonos today - see
     // connectStore.isVolumePushCapable()'s own comment), null for
@@ -145,6 +147,11 @@ export default {
     // with nothing.
     pushedVolume(): number | null {
       return this.connectStore.pushedVolumeFor(this.type, this.device.name)
+    },
+    // Where the master and the volume keys report what they just set -
+    // see services/volumeControl.ts.
+    sharedVolume(): number | null {
+      return knownDeviceVolume(this.deviceRef)
     },
   },
   watch: {
@@ -176,7 +183,14 @@ export default {
     pushedVolume(value: number | null) {
       // See services/connect/volumeGuard.ts — a reading must not land on
       // top of a drag in progress.
-      if (value != null && acceptsVolumeReading(this.deviceRef)) this.volume = value
+      if (value != null && acceptsVolumeReading(this.deviceRef)) {
+        this.volume = value
+        recordDeviceVolume(this.deviceRef, value)
+      }
+    },
+    // No guard: this is the user's own change, made somewhere else.
+    sharedVolume(value: number | null) {
+      if (value != null) this.volume = value
     },
   },
   beforeUnmount() {
@@ -196,6 +210,8 @@ export default {
       const raw = await this.connectStore.getDeviceVolume(this.type, this.device.name)
       if (!acceptsVolumeReading(this.deviceRef)) return
       this.volume = raw == null ? null : Math.round(raw)
+      // Shared so the master in the player bar starts from it.
+      if (this.volume != null) recordDeviceVolume(this.deviceRef, this.volume)
     },
     /** Moves the slider and nothing else — the speaker is told on release,
      * same as MobileTransportControls.vue's own slider explains at length.
@@ -210,6 +226,7 @@ export default {
       this.volume = rounded
       endVolumeDrag(this.deviceRef)
       noteVolumeChange(this.deviceRef)
+      recordDeviceVolume(this.deviceRef, rounded)
       writeDeviceVolume(this.deviceRef, rounded, (volume) =>
         this.connectStore.setDeviceVolume(this.type, this.device.name, volume),
       )

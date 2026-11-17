@@ -6,6 +6,7 @@
 import { usePlaybackStore } from '@/stores/playback'
 import { useLibraryStore } from '@/stores/library'
 import { useConnectStore } from '@/stores/connect'
+import { recordDeviceVolume, setVolume, volumeScope } from '@/services/volumeControl'
 import { useRemoteControlStore } from '@/stores/remoteControl'
 import { useAuthStore } from '@/stores/auth'
 import { useAutoplayStore } from '@/stores/autoplay'
@@ -204,16 +205,17 @@ export async function handleRemoteCommand(
       await playback.seek(Number(payload.position))
       return
     case 'volume': {
-      // Mirrors PlayerBar.vue's own slider-swap logic exactly (single
-      // active cast target -> that device's volume; anything else -> local)
-      // — previously this always called playback.setVolume(), which is
-      // silently inaudible while casting (adjusts an <audio> element
-      // nobody's listening to). With 2+ active targets there's no single
-      // "the" volume to set here either, same as PlayerBar.vue's local
-      // slider going disabled in that case — see devices-request/
-      // set-device-volume below for per-device control instead.
+      // Mirrors PlayerBar.vue's own slider-swap logic exactly (one active
+      // cast target -> that device's volume; several -> the master over
+      // them; none -> local) — previously this always called
+      // playback.setVolume(), which is silently inaudible while casting
+      // (adjusts an <audio> element nobody's listening to).
       const targets = connect.activeTargets
-      if (targets.length === 1) {
+      if (targets.length > 1) {
+        const rounded = Math.round(Number(payload.volume) * 100)
+        await setVolume(volumeScope(), rounded)
+        useRemoteControlStore().reportDeviceVolume(rounded)
+      } else if (targets.length === 1) {
         const rounded = Math.round(Number(payload.volume) * 100)
         await connect.setDeviceVolume(targets[0]!.type, targets[0]!.name, rounded)
         // Updates remoteControl's device_volume cache immediately instead of
@@ -231,6 +233,8 @@ export async function handleRemoteCommand(
       const name = String(payload.name)
       const rounded = Number(payload.volume)
       await connect.setDeviceVolume(deviceType, name, rounded)
+      // So the master and this window's own sliders follow.
+      recordDeviceVolume({ type: deviceType, name }, rounded)
       const targets = connect.activeTargets
       if (targets.length === 1 && targets[0]!.type === deviceType && targets[0]!.name === name) {
         useRemoteControlStore().reportDeviceVolume(rounded)

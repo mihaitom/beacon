@@ -163,7 +163,7 @@ export const useConnectStore = defineStore('connect', {
     // the volume_push flag this reads).
     //
     // Centralized here so every surface showing a device's volume
-    // (DeviceListItem.vue, MobileDeviceRow.vue, PlayerToolbar.vue,
+    // (ConnectDevicePicker.vue, MobileDeviceRow.vue, PlayerToolbar.vue,
     // MobileTransportControls.vue, remoteControl.ts's own poll) agrees on
     // which devices that applies to, rather than each re-implementing its
     // own `type !== 'sonos'` check - three of those drifted out of sync
@@ -189,7 +189,7 @@ export const useConnectStore = defineStore('connect', {
     // Which device types have a per-device volume endpoint at all (see
     // connect/routes/volume.py's /device-volume, which answers with a
     // plain "not supported" error for anything else). Centralized here for
-    // the same reason as isVolumePushCapable() above: DeviceListItem.vue,
+    // the same reason as isVolumePushCapable() above: the cast menu's rows,
     // MobileDeviceRow.vue and MobileTransportControls.vue each carried
     // their own copy of this set, and each one's *fetch* forgot to consult
     // it - a target without one was polled every 4s for a reading that

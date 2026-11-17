@@ -165,22 +165,24 @@ describe('handleRemoteCommand', () => {
       expect(reportSpy).toHaveBeenCalledWith(42)
     })
 
-    it('is a no-op with two or more active targets — no single device to represent', async () => {
+    it('with several active targets, moves them all through the master volume', async () => {
       const connect = useConnectStore()
       connect.status = makeStatus({
         targets: [
-          { name: 'A', type: 'sonos' },
-          { name: 'B', type: 'sonos' },
+          { name: 'A', type: 'sonos', volume_push: true, volume: 20 },
+          { name: 'B', type: 'sonos', volume_push: true, volume: 60 },
         ],
       })
-      const playback = usePlaybackStore()
-      const setVolumeSpy = vi.spyOn(playback, 'setVolume')
-      const setDeviceVolumeSpy = vi.spyOn(connect, 'setDeviceVolume')
+      const setVolumeSpy = vi.spyOn(usePlaybackStore(), 'setVolume')
+      const setDeviceVolumeSpy = vi.spyOn(connect, 'setDeviceVolume').mockResolvedValue()
+      const reportSpy = vi.spyOn(useRemoteControlStore(), 'reportDeviceVolume')
 
       await handleRemoteCommand('volume', { volume: 0.5 })
 
       expect(setVolumeSpy).not.toHaveBeenCalled()
-      expect(setDeviceVolumeSpy).not.toHaveBeenCalled()
+      expect(setDeviceVolumeSpy).toHaveBeenCalledWith('sonos', 'A', 50)
+      expect(setDeviceVolumeSpy).toHaveBeenCalledWith('sonos', 'B', 50)
+      expect(reportSpy).toHaveBeenCalledWith(50)
     })
   })
 

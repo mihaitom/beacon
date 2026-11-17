@@ -1,4 +1,5 @@
 /** Casting: handing over to the speakers, and following what connect reports. */
+import { levelForJoiningSpeaker, sendDeviceVolume } from '@/services/volumeControl'
 import { getAudioEngine } from '@/services/audioEngine'
 import { useConnectStore } from '../connect'
 import { useAutoplayStore } from '../autoplay'
@@ -485,17 +486,32 @@ export const castActions: CastActions & ThisType<PlaybackContext> = {
     // carries the queue, position and paused-state handoff that /join
     // has no reason to.
     if (active.length === 0) {
+      // Several at once in 'equal' mode all start at their average.
+      const startLevel = desired.length > 1 ? await levelForJoiningSpeaker(desired) : null
       await this.castTo(desired, force)
+      if (startLevel != null) {
+        for (const target of connect.activeTargets) {
+          if (connect.isVolumeCapable(target.type)) sendDeviceVolume(target, startLevel)
+        }
+      }
       return
     }
 
     const desiredKeys = new Set(desired.map(key))
     const activeKeys = new Set(active.map(key))
-    for (const target of desired.filter((t) => !activeKeys.has(key(t)))) {
+    const joining = desired.filter((t) => !activeKeys.has(key(t)))
+    // Read before anything joins: the level of the speakers that stay.
+    const joinLevel = joining.length
+      ? await levelForJoiningSpeaker(active.filter((t) => desiredKeys.has(key(t))))
+      : null
+    for (const target of joining) {
       const joined = await connect.joinDevice(target, force)
       if (!joined) {
         connect.setTakeoverRetry(() => this.applyTargets(desired, true))
         return
+      }
+      if (joinLevel != null && connect.isVolumeCapable(target.type)) {
+        sendDeviceVolume(target, joinLevel)
       }
     }
     for (const target of active.filter((t) => !desiredKeys.has(key(t)))) {

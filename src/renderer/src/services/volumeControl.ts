@@ -2,8 +2,10 @@ import { reactive } from 'vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { useConnectStore } from '@/stores/connect'
 import { STEP_FRACTION } from '@/services/volumeWheel'
-import { noteVolumeChange } from '@/services/connect/volumeGuard'
+import { acceptsVolumeReading, noteVolumeChange } from '@/services/connect/volumeGuard'
 import { writeDeviceVolume } from '@/services/connect/volumeWrite'
+import { groupLevel, planGroupVolume, type GroupAnchor } from '@/services/groupVolume'
+import { useGroupVolumeStore } from '@/stores/groupVolume'
 import type { ConnectDeviceRef, ConnectStatusTarget } from '@/services/connect/types'
 
 /**
@@ -15,9 +17,12 @@ import type { ConnectDeviceRef, ConnectStatusTarget } from '@/services/connect/t
  * carrying its own copy: the pre-mute volume in particular has to be one
  * value, or muting with the M key and un-muting with the toolbar button
  * restores whatever that button last remembered instead of what was
- * actually playing. The per-device sliders in the connect picker
- * (DeviceListItem.vue) deliberately stay out of this — those name a
+ * actually playing. The per-device sliders in the cast menu
+ * (ConnectDevicePicker.vue) deliberately stay out of this — those name a
  * specific device rather than asking for "the" volume.
+ *
+ * With several cast targets, "the" volume is the master over all of them
+ * (see services/groupVolume.ts).
  */
 
 /** Local playback runs 0-1, a cast device 0-100 — the scale follows from
@@ -26,6 +31,9 @@ import type { ConnectDeviceRef, ConnectStatusTarget } from '@/services/connect/t
 export interface VolumeScope {
   /** The device a command should act on, or null for local playback. */
   device: ConnectStatusTarget | null
+  /** Two or more cast targets: the ones with a volume of their own, moved
+   * together by the master. Null otherwise. */
+  group: ConnectStatusTarget[] | null
   max: number
 }
 
@@ -47,24 +55,33 @@ const knownDeviceVolumes = reactive(new Map<string, number>())
  * share one field. */
 const localVolumeBeforeMute = { value: 1 }
 const deviceVolumesBeforeMute = new Map<string, number>()
+const GROUP_MUTE_KEY = 'group'
+
+/** See GroupAnchor - one per app, since there is only ever one group. */
+let groupAnchor: GroupAnchor | null = null
 
 function deviceKey(device: ConnectDeviceRef): string {
   return `${device.type}:${device.name}`
 }
 
 /**
- * Only ever a device when exactly one is being cast to *and* that device
- * type has a volume endpoint at all — with several active targets "the"
- * volume is ambiguous (that's what the picker's per-device sliders are
- * for), and a type without a per-device volume has nothing to ask for (see
- * connectStore.isVolumeCapable()).
+ * A device when exactly one is being cast to *and* that device type has a
+ * volume endpoint at all (a type without one has nothing to ask for, see
+ * connectStore.isVolumeCapable()); the master over all of them when there
+ * are several; local playback otherwise.
  */
 export function volumeScope(): VolumeScope {
   const connect = useConnectStore()
   const targets = connect.activeTargets
+  if (targets.length > 1) {
+    const group = targets.filter((target) => connect.isVolumeCapable(target.type))
+    return { device: null, group, max: 100 }
+  }
   const single = targets.length === 1 ? targets[0] : null
-  if (single && connect.isVolumeCapable(single.type)) return { device: single, max: 100 }
-  return { device: null, max: 1 }
+  if (single && connect.isVolumeCapable(single.type)) {
+    return { device: single, group: null, max: 100 }
+  }
+  return { device: null, group: null, max: 1 }
 }
 
 /** A reading PlayerToolbar already has (its own first fetch or 4s poll) —
@@ -86,6 +103,10 @@ export function knownDeviceVolume(device: ConnectDeviceRef): number | null {
  * — callers should leave the volume alone rather than guessing a value.
  */
 export async function currentVolume(scope: VolumeScope): Promise<number | null> {
+  if (scope.group) {
+    await fetchMissingGroupVolumes(scope.group)
+    return groupLevel(groupVolumes(scope.group).values())
+  }
   if (!scope.device) return usePlaybackStore().volume
   const connect = useConnectStore()
   // The pushed reading first: for Sonos it's the live one (a
@@ -102,26 +123,103 @@ export async function currentVolume(scope: VolumeScope): Promise<number | null> 
   return rounded
 }
 
-export async function setVolume(scope: VolumeScope, volume: number): Promise<void> {
-  const clamped = Math.min(scope.max, Math.max(0, volume))
-  if (!scope.device) {
-    usePlaybackStore().setVolume(clamped)
-    return
+/**
+ * A group member's level as far as this app knows it, without asking the
+ * device: its pushed reading while nobody is setting it (see
+ * volumeGuard.ts), otherwise the last one seen or sent.
+ */
+function memberVolume(device: ConnectDeviceRef): number | null {
+  const known = knownDeviceVolume(device)
+  if (!acceptsVolumeReading(device)) return known
+  return useConnectStore().pushedVolumeFor(device.type, device.name) ?? known
+}
+
+/** Keyed `type:name`; members without any reading are left out, so a
+ * master move never invents a level for them. */
+function groupVolumes(group: ConnectDeviceRef[]): Map<string, number> {
+  const volumes = new Map<string, number>()
+  for (const device of group) {
+    const volume = memberVolume(device)
+    if (volume != null) volumes.set(deviceKey(device), volume)
   }
-  const rounded = Math.round(clamped)
-  recordDeviceVolume(scope.device, rounded)
+  return volumes
+}
+
+async function fetchMissingGroupVolumes(group: ConnectDeviceRef[]): Promise<void> {
+  const connect = useConnectStore()
+  await Promise.all(
+    group
+      .filter((device) => memberVolume(device) == null)
+      .map(async (device) => {
+        const fetched = await connect.getDeviceVolume(device.type, device.name)
+        if (fetched != null) recordDeviceVolume(device, Math.round(fetched))
+      }),
+  )
+}
+
+/** Sets one device and tells every slider showing it. */
+export function sendDeviceVolume(device: ConnectDeviceRef, volume: number): void {
+  recordDeviceVolume(device, volume)
   // Every slider showing this device now ignores its own readings for a
   // moment — see volumeGuard.ts. Without this, a keyboard step or a mute
   // toggle was overwritten a second later by a poll that had been in
   // flight, or by a push carrying the pre-change value.
-  noteVolumeChange(scope.device)
+  noteVolumeChange(device)
   // Serialised like every slider's own writes - see volumeWrite.ts. A held
   // arrow key repeats at the keyboard's own rate and a wheel spins faster
   // still, which is the same burst a drag produces.
-  const device = scope.device
-  writeDeviceVolume(device, rounded, (volume) =>
-    useConnectStore().setDeviceVolume(device.type, device.name, volume),
+  writeDeviceVolume(device, volume, (level) =>
+    useConnectStore().setDeviceVolume(device.type, device.name, level),
   )
+}
+
+/**
+ * The level a speaker joining `playing` should start at in 'equal' mode:
+ * the average of the ones already playing, so it fits in without any of
+ * them changing. Null in 'relative' mode (the speaker keeps its own level
+ * - that difference is what the mode keeps) and when nothing playing has a
+ * reading.
+ */
+export async function levelForJoiningSpeaker(playing: ConnectDeviceRef[]): Promise<number | null> {
+  if (useGroupVolumeStore().mode !== 'equal') return null
+  const connect = useConnectStore()
+  const members = playing.filter((device) => connect.isVolumeCapable(device.type))
+  if (!members.length) return null
+  await fetchMissingGroupVolumes(members)
+  const levels = [...groupVolumes(members).values()]
+  if (!levels.length) return null
+  return Math.round(levels.reduce((sum, level) => sum + level, 0) / levels.length)
+}
+
+async function setGroupVolume(group: ConnectDeviceRef[], level: number): Promise<void> {
+  await fetchMissingGroupVolumes(group)
+  // Read after the await, not before: a drag sends a value per frame, and
+  // planning from levels read before the previous move was sent would
+  // break the relative anchor on every frame.
+  const { volumes, anchor } = planGroupVolume(
+    groupVolumes(group),
+    level,
+    useGroupVolumeStore().mode,
+    groupAnchor,
+  )
+  groupAnchor = anchor
+  for (const device of group) {
+    const volume = volumes.get(deviceKey(device))
+    if (volume != null) sendDeviceVolume(device, volume)
+  }
+}
+
+export async function setVolume(scope: VolumeScope, volume: number): Promise<void> {
+  const clamped = Math.min(scope.max, Math.max(0, volume))
+  if (scope.group) {
+    await setGroupVolume(scope.group, clamped)
+    return
+  }
+  if (!scope.device) {
+    usePlaybackStore().setVolume(clamped)
+    return
+  }
+  sendDeviceVolume(scope.device, Math.round(clamped))
 }
 
 /**
@@ -152,11 +250,11 @@ export function isMuted(volume: number | null): boolean {
   return volume === 0
 }
 
-/** Nothing to act on: local playback while casting (its slider is disabled
- * — the audio isn't coming from here), or a device that answered with no
- * reading. */
+/** Nothing to act on: local playback while casting to a device without a
+ * volume of its own (the audio isn't coming from here), or devices that
+ * answered with no reading. */
 export function volumeControllable(scope: VolumeScope, volume: number | null): boolean {
-  if (scope.device) return volume != null
+  if (scope.device || scope.group) return volume != null
   return !usePlaybackStore().isCasting
 }
 
@@ -164,8 +262,8 @@ export async function toggleMute(): Promise<void> {
   const scope = volumeScope()
   const current = await currentVolume(scope)
   if (!volumeControllable(scope, current)) return
-  if (scope.device) {
-    const key = deviceKey(scope.device)
+  if (scope.device || scope.group) {
+    const key = scope.device ? deviceKey(scope.device) : GROUP_MUTE_KEY
     if (isMuted(current)) {
       // The fallbacks (50 of 100, full local volume) only ever apply to a
       // device that was already sitting at 0 when this first saw it —
@@ -183,4 +281,13 @@ export async function toggleMute(): Promise<void> {
   }
   localVolumeBeforeMute.value = current ?? 1
   await setVolume(scope, 0)
+}
+
+/** Test seam - the readings, the pre-mute levels and the master's anchor
+ * outlive any one component, and one test's would leak into the next. */
+export function _resetVolumeControl(): void {
+  knownDeviceVolumes.clear()
+  deviceVolumesBeforeMute.clear()
+  localVolumeBeforeMute.value = 1
+  groupAnchor = null
 }

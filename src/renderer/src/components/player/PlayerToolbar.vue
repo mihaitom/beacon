@@ -46,21 +46,21 @@
         @click="toggleMute"
       />
       <touch-volume-slider
-        v-if="singleActiveTarget && coarsePointer"
+        v-if="castVolumeShown && coarsePointer"
         class="volume-slider"
-        :model-value="deviceVolume ?? 0"
+        :model-value="castVolume ?? 0"
         :max="100"
-        :disabled="deviceVolume == null"
+        :disabled="castVolume == null"
         :aria-label="$t('player.volume')"
         @update:model-value="onDeviceVolumeChange"
       />
       <v-slider
-        v-else-if="singleActiveTarget"
+        v-else-if="castVolumeShown"
         class="volume-slider volume-slider-touch"
-        :model-value="deviceVolume ?? 0"
+        :model-value="castVolume ?? 0"
         :max="100"
         :step="1"
-        :disabled="deviceVolume == null"
+        :disabled="castVolume == null"
         density="compact"
         hide-details
         @update:model-value="onDeviceVolumeChange"
@@ -143,21 +143,21 @@
             @click="toggleMute"
           />
           <touch-volume-slider
-            v-if="singleActiveTarget && coarsePointer"
+            v-if="castVolumeShown && coarsePointer"
             class="volume-slider"
-            :model-value="deviceVolume ?? 0"
+            :model-value="castVolume ?? 0"
             :max="100"
-            :disabled="deviceVolume == null"
+            :disabled="castVolume == null"
             :aria-label="$t('player.volume')"
             @update:model-value="onDeviceVolumeChange"
           />
           <v-slider
-            v-else-if="singleActiveTarget"
+            v-else-if="castVolumeShown"
             class="volume-slider volume-slider-touch"
-            :model-value="deviceVolume ?? 0"
+            :model-value="castVolume ?? 0"
             :max="100"
             :step="1"
-            :disabled="deviceVolume == null"
+            :disabled="castVolume == null"
             density="compact"
             hide-details
             @update:model-value="onDeviceVolumeChange"
@@ -224,8 +224,11 @@ import { volumeAfterWheel } from '@/services/volumeWheel'
 import {
   knownDeviceVolume,
   recordDeviceVolume,
+  setVolume,
   toggleMute as toggleVolumeMute,
+  volumeScope,
 } from '@/services/volumeControl'
+import { groupVolumeMixin } from './groupVolumeMixin'
 import type { ConnectDeviceRef } from '@/services/connect/types'
 
 // How long the level stays on the collapsed volume button after the last
@@ -235,6 +238,7 @@ const WHEEL_FLASH_MS = 1200
 
 export default {
   name: 'PlayerToolbar',
+  mixins: [groupVolumeMixin],
   components: {
     ConnectButton,
     EqualizerButton,
@@ -301,9 +305,8 @@ export default {
     isElectron(): boolean {
       return !!window.api
     },
-    // Only meaningful to control from here when there's exactly one active
-    // cast target — with several, "the" volume is ambiguous (that's what
-    // the per-device sliders in the connect picker are for).
+    // One cast target: this slider is that device's. Several: it is the
+    // master over all of them (groupVolumeMixin, volumeControl.ts).
     singleActiveTarget() {
       const targets = this.connectStore.activeTargets
       return targets.length === 1 ? targets[0] : null
@@ -322,32 +325,37 @@ export default {
     // show a bare number while casting to a single device (0-100 scale)
     // but "42%" during local playback (0-1 scale rounded), inconsistent for
     // no reason other than the two branches never having been reconciled.
+    /** The slider shows a cast volume - one device's, or the master's -
+     * rather than local playback's. */
+    castVolumeShown(): boolean {
+      return !!this.singleActiveTarget || !!this.volumeGroup
+    },
+    castVolume(): number | null {
+      return this.singleActiveTarget ? this.deviceVolume : this.groupVolumeLevel
+    },
     volumePercentLabel() {
-      if (this.singleActiveTarget) {
-        return this.deviceVolume == null ? '—' : `${this.deviceVolume}%`
+      if (this.castVolumeShown) {
+        return this.castVolume == null ? '—' : `${this.castVolume}%`
       }
       return `${Math.round(this.playbackStore.volume * 100)}%`
     },
-    // Mirrors DeviceListItem.vue's own two-state volumeIcon (mute vs. not) —
-    // same simple mute/not-mute distinction, not a third "medium" state.
+    // Two states (mute vs. not), not a third "medium" one.
     volumeIcon() {
-      const muted = this.singleActiveTarget
-        ? this.deviceVolume === 0
-        : this.playbackStore.volume === 0
+      const muted = this.castVolumeShown ? this.castVolume === 0 : this.playbackStore.volume === 0
       return muted ? 'mdi-volume-mute' : 'mdi-volume-high'
     },
     /** Same check as MobileTransportControls.vue's: a tablet in
      * landscape gets this bar, but its local level belongs to the system
-     * volume buttons (see AudioEngine.canSetVolume). A single cast target
-     * is set over the network and always has a slider. */
+     * volume buttons (see AudioEngine.canSetVolume). Cast targets are set
+     * over the network and always have a slider. */
     volumeControlAvailable(): boolean {
-      return !!this.singleActiveTarget || getAudioEngine().canSetVolume
+      return this.castVolumeShown || getAudioEngine().canSetVolume
     },
     localVolumePercent(): number {
       return Math.round(this.playbackStore.volume * 100)
     },
     muteDisabled() {
-      return this.singleActiveTarget ? this.deviceVolume == null : this.playbackStore.isCasting
+      return this.castVolumeShown ? this.castVolume == null : this.playbackStore.isCasting
     },
     // Pushed reading for push-capable types (Sonos today - see
     // connectStore.isVolumePushCapable()'s own comment), null for
@@ -434,6 +442,10 @@ export default {
       if (this.deviceVolume != null) recordDeviceVolume(target, this.deviceVolume)
     },
     onDeviceVolumeChange(value: number) {
+      if (this.volumeGroup) {
+        void setVolume(volumeScope(), Math.round(value))
+        return
+      }
       const target = this.singleActiveTarget
       if (!target) return
       const rounded = Math.round(value)
@@ -448,35 +460,40 @@ export default {
     onLocalVolumePercentChange(percent: number) {
       this.playbackStore.setVolume(percent / 100)
     },
+    /** The devices this slider moves - all of them for the master. */
+    castVolumeDevices(): ConnectDeviceRef[] {
+      if (this.singleActiveTarget) return [this.singleActiveTarget]
+      return this.volumeGroup ?? []
+    },
     onVolumeDragStart() {
-      if (this.singleActiveTarget) startVolumeDrag(this.singleActiveTarget)
+      this.castVolumeDevices().forEach(startVolumeDrag)
     },
     onVolumeDragEnd() {
-      if (this.singleActiveTarget) endVolumeDrag(this.singleActiveTarget)
+      this.castVolumeDevices().forEach(endVolumeDrag)
     },
     // Called for a wheel anywhere on the bar (PlayerBar.vue forwards it), and
     // from the popover's slider, which is teleported out of the bar. Same
-    // branch toggleMute() makes: with exactly one cast target this slider is
-    // that device's, otherwise it's local playback's.
+    // branch toggleMute() makes: while casting this slider is the device's
+    // (or the master's), otherwise it's local playback's.
     onVolumeWheel(event: WheelEvent) {
       // Sideways scrolling (shift+wheel, a trackpad swipe) and ctrl+wheel
       // (zoom, trackpad pinch) keep doing what they did before.
       if (event.ctrlKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return
-      const target = this.singleActiveTarget
-      const current = target ? this.deviceVolume : this.playbackStore.volume
+      const cast = this.castVolumeShown
+      const current = cast ? this.castVolume : this.playbackStore.volume
       // A disabled slider (a device with no volume support, local playback
       // while casting) leaves the wheel to whatever is scrollable behind it.
-      if (current == null || (!target && this.playbackStore.isCasting)) return
+      if (current == null || (!cast && this.playbackStore.isCasting)) return
       event.preventDefault()
       const { volume, carry } = volumeAfterWheel(
         event,
         current,
-        target ? 100 : 1,
+        cast ? 100 : 1,
         this.volumeWheelCarry,
       )
       this.volumeWheelCarry = carry
       if (volume == null) return
-      if (target) void this.onDeviceVolumeChange(volume)
+      if (cast) this.onDeviceVolumeChange(volume)
       else this.playbackStore.setVolume(volume)
       this.flashWheelVolume()
     },

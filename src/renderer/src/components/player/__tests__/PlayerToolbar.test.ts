@@ -11,6 +11,8 @@ import { useAuthStore } from '@/stores/auth'
 import { useAutoplayStore } from '@/stores/autoplay'
 import PlayerToolbar from '../PlayerToolbar.vue'
 import { _resetVolumeGuards } from '@/services/connect/volumeGuard'
+import { _resetVolumeControl } from '@/services/volumeControl'
+import { useGroupVolumeStore } from '@/stores/groupVolume'
 import { makeStatus } from '@/stores/__tests__/fixtures'
 import { getAudioEngine } from '@/services/audioEngine'
 
@@ -152,26 +154,6 @@ describe('PlayerToolbar', () => {
       expect(zoom.defaultPrevented).toBe(false)
     })
 
-    it('ignores the wheel while casting, when the local slider controls nothing', async () => {
-      const wrapper = mountToolbar()
-      const playback = usePlaybackStore()
-      const setVolumeSpy = vi.spyOn(playback, 'setVolume')
-      // Two targets: no single device to control from here either, so this
-      // is the (disabled) local slider.
-      useConnectStore().status = makeStatus({
-        targets: [
-          { name: 'Kitchen', type: 'sonos', volume_push: true },
-          { name: 'Living Room', type: 'sonos', volume_push: true },
-        ],
-      })
-      await wrapper.vm.$nextTick()
-
-      const event = scroll(wrapper, -120)
-
-      expect(setVolumeSpy).not.toHaveBeenCalled()
-      expect(event.defaultPrevented).toBe(false)
-    })
-
     it('offers no volume control where the page cannot change the level', () => {
       withLocalVolume(false)
       const expanded = mountToolbar({ volumeCollapsed: false })
@@ -255,7 +237,7 @@ describe('PlayerToolbar', () => {
     // Regression test: Sonos volume/mute reaches connectStore.status by
     // push (see connectStore.isVolumePushCapable()) - this used to still
     // poll every 4s regardless of type, one of several surfaces that
-    // silently kept doing so after DeviceListItem.vue's own fix, caught
+    // silently kept doing so after the device list's own fix, caught
     // live 2026-08-25.
     it('fetches once for a push-capable target, then relies on pushed updates instead of polling', async () => {
       vi.useFakeTimers()
@@ -460,6 +442,59 @@ describe('PlayerToolbar', () => {
 
       await vm.toggleMute()
       expect(setVolumeSpy).toHaveBeenLastCalledWith('sonos', 'Kitchen', 50)
+    })
+  })
+
+  describe('master volume (several cast targets)', () => {
+    async function castToRooms(mode: 'equal' | 'relative') {
+      useGroupVolumeStore().setMode(mode)
+      const connect = useConnectStore()
+      const setVolumeSpy = vi.spyOn(connect, 'setDeviceVolume').mockResolvedValue()
+      vi.spyOn(connect, 'getDeviceVolume').mockImplementation(async (_type, name) =>
+        name === 'Kitchen' ? 20 : 40,
+      )
+      connect.status = makeStatus({
+        targets: [
+          { name: 'Kitchen', type: 'sonos', volume_push: true, volume: 20 },
+          { name: 'Living Room', type: 'sonos', volume_push: true, volume: 40 },
+        ],
+      })
+      const wrapper = mountToolbar()
+      await flushPromises()
+      return { wrapper, setVolumeSpy }
+    }
+
+    it('shows the loudest speaker and evens them all out from the slider', async () => {
+      const { wrapper, setVolumeSpy } = await castToRooms('equal')
+      expect(wrapper.get('.volume-value').text()).toBe('40%')
+
+      wrapper.getComponent({ name: 'VSlider' }).vm.$emit('update:modelValue', 37)
+      await flushPromises()
+
+      expect(setVolumeSpy).toHaveBeenCalledWith('sonos', 'Kitchen', 37)
+      expect(setVolumeSpy).toHaveBeenCalledWith('sonos', 'Living Room', 37)
+      expect(wrapper.get('.volume-value').text()).toBe('37%')
+    })
+
+    it('keeps the balance between them in relative mode', async () => {
+      const { wrapper, setVolumeSpy } = await castToRooms('relative')
+
+      wrapper.getComponent({ name: 'VSlider' }).vm.$emit('update:modelValue', 20)
+      await flushPromises()
+
+      expect(setVolumeSpy).toHaveBeenCalledWith('sonos', 'Kitchen', 10)
+      expect(setVolumeSpy).toHaveBeenCalledWith('sonos', 'Living Room', 20)
+    })
+
+    it('takes the wheel for all of them', async () => {
+      const { wrapper, setVolumeSpy } = await castToRooms('equal')
+
+      const event = scroll(wrapper, -120)
+      await flushPromises()
+
+      expect(event.defaultPrevented).toBe(true)
+      expect(setVolumeSpy).toHaveBeenCalledWith('sonos', 'Kitchen', 45)
+      expect(setVolumeSpy).toHaveBeenCalledWith('sonos', 'Living Room', 45)
     })
   })
 

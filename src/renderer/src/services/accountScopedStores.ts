@@ -45,6 +45,7 @@ import {
   type LyricProvider,
 } from '@/stores/lyricsProviders'
 import { useAutoplayStore } from '@/stores/autoplay'
+import { useGroupVolumeStore } from '@/stores/groupVolume'
 import { useSongColumnsStore } from '@/stores/songColumns'
 import { sanitizeColumns, useLibraryColumnsStore } from '@/stores/libraryColumns'
 import { usePlaylistSummariesStore } from '@/stores/playlistSummaries'
@@ -206,6 +207,7 @@ export function initAccountScopedStores(): void {
     useLastfmStore().reloadForAccount()
     useListenbrainzStore().reloadForAccount()
     useFanartStore().reloadForAccount()
+    useGroupVolumeStore().reloadForAccount()
     // Needs the signed-in session, and which ones this session may
     // configure differs per account.
     void useExternalSourceStore().load()

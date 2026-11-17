@@ -4,6 +4,16 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- While casting to several speakers, the volume slider in the player bar moves all of them at once, on the desktop, on phones, in Remote Control and in Home Assistant. The cast menu sets whether it puts every speaker on the same level or keeps the balance between them; on the same level, a speaker you add joins at the level of the others (suggested by [@b-r-y](https://github.com/b-r-y), [#97](https://github.com/mihaitom/beacon/discussions/97))
+
+### Changed
+
+- The cast menu on the desktop is wider and split in two: the speakers playing, each row doubling as its volume slider, and the ones you can add. A click adds a speaker or stops one right away, without a separate confirm step
+
 ## [1.12.0] - 2026-11-17
 
 ### Highlights

@@ -69,7 +69,7 @@ The fields an integration is likely to need:
 | `position`             | Seconds into the current track                                                                                                                           |
 | `duration`             | Length of the current track in seconds                                                                                                                   |
 | `volume`               | Local volume, 0 to 1                                                                                                                                     |
-| `device_volume`        | Volume of the one speaker being cast to, 0 to 100, else null                                                                                             |
+| `device_volume`        | Volume of the speaker being cast to, 0 to 100; with several, the master over all of them; else null                                                      |
 | `shuffle`, `repeat`    | `repeat` is `off`, `all` or `one`                                                                                                                        |
 | `current_song`         | `id`, `title`, `artist`, `album`, `duration`, `cover_art_id`                                                                                             |
 | `radio`                | `name`, `now_playing`, `home_page_url`, `favicon_hint` while a station plays, else null                                                                  |
@@ -108,7 +108,7 @@ once the app has carried the command out.
 | `next`               |                                                                                  |
 | `previous`           |                                                                                  |
 | `seek`               | `position` in seconds                                                            |
-| `volume`             | `volume`, 0 to 1. Casting to one speaker: that speaker's; to several: ignored    |
+| `volume`             | `volume`, 0 to 1. Casting: that speaker's, or the master over several            |
 | `set-device-volume`  | `deviceType`, `name`, `volume` 0 to 100: one speaker, casting or not             |
 | `shuffle`            | toggles                                                                          |
 | `repeat`             | cycles off, all, one                                                             |

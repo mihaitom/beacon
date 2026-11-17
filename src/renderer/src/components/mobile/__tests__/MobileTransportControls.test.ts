@@ -13,6 +13,7 @@ import { getAudioEngine } from '@/services/audioEngine'
 import type { DeviceType } from '@/services/connect/types'
 import { makeSong, makeStatus } from '@/stores/__tests__/fixtures'
 import { _resetVolumeGuards } from '@/services/connect/volumeGuard'
+import { _resetVolumeControl } from '@/services/volumeControl'
 
 // The volume row asks the engine whether this device's own level can be
 // changed at all. jsdom has no AudioContext, so a real engine would always
@@ -65,6 +66,7 @@ describe('MobileTransportControls', () => {
     // Module-level and keyed by device (see volumeGuard.ts) - a settle
     // window left over from one test would swallow the next one's readings.
     _resetVolumeGuards()
+    _resetVolumeControl()
   })
 
   afterEach(() => {
@@ -371,20 +373,30 @@ describe('MobileTransportControls', () => {
       expect(setVolumeSpy).toHaveBeenLastCalledWith(0.6)
     })
 
-    it('locks the local slider while casting — it would move nothing', async () => {
+    it('becomes the master over several speakers, sent once the finger lifts', async () => {
       const wrapper = mountControls()
-      // Two targets, so this is the local slider rather than the
-      // single-target device one below.
-      useConnectStore().status = makeStatus({
+      const connect = useConnectStore()
+      const setVolumeSpy = vi.spyOn(connect, 'setDeviceVolume').mockResolvedValue()
+      connect.status = makeStatus({
         targets: [
-          { name: 'Kitchen', type: 'sonos', volume_push: true },
-          { name: 'Living Room', type: 'sonos', volume_push: true },
+          { name: 'Kitchen', type: 'sonos', volume_push: true, volume: 20 },
+          { name: 'Living Room', type: 'sonos', volume_push: true, volume: 40 },
         ],
       })
-      await wrapper.vm.$nextTick()
+      await flushPromises()
 
-      expect(wrapper.getComponent({ name: 'VSlider' }).props('disabled')).toBe(true)
-      expect(button(wrapper, 'mdi-volume-high').disabled).toBe(true)
+      expect(wrapper.get('.mobile-transport__volume-value').text()).toBe('40%')
+
+      const slider = wrapper.getComponent({ name: 'TouchVolumeSlider' })
+      await slider.vm.$emit('update:modelValue', 30)
+      expect(wrapper.get('.mobile-transport__volume-value').text()).toBe('30%')
+      expect(setVolumeSpy).not.toHaveBeenCalled()
+
+      slider.vm.$emit('commit', 30)
+      await flushPromises()
+
+      expect(setVolumeSpy).toHaveBeenCalledWith('sonos', 'Kitchen', 30)
+      expect(setVolumeSpy).toHaveBeenCalledWith('sonos', 'Living Room', 30)
     })
   })
 
