@@ -111,8 +111,7 @@ playback store, as for any song  ->  /rest/stream?id=ext:...  ->  connect --GET 
 - **One file on main**, `community/external-sources.json`: `{"apps": [{name,
 description, repository, author, icon?}]}`. main, not development, so an
   entry is live as soon as its pull request is merged, for every installed
-  version (DIRECTORY_BRANCH is development only until the list is on main;
-  the publish workflows refuse to build while it is). `author` is a GitHub
+  version. `author` is a GitHub
   login, credited with avatar and profile link the way the release notes
   credit people. An entry may point into a folder of a repository.
 - **Read in the renderer** (`services/externalSourceDirectory.ts`), from

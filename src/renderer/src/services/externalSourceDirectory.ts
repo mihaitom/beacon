@@ -19,14 +19,9 @@ export interface DirectoryApp {
   image: string | null
 }
 
-/** The branch the list is read from. main for a release: an entry is
- * listed once its pull request is merged there, whichever version of
- * Beacon reads it.
- *
- * TODO(before release): back to 'main'. development only while the list
- * is not on main yet - the publish workflows refuse to build until it is
- * (_ensure-release.yml, _publish-docker.yml). */
-export const DIRECTORY_BRANCH = 'development'
+/** The branch the list is read from: an entry is listed once its pull
+ * request is merged to main, whichever version of Beacon reads it. */
+export const DIRECTORY_BRANCH = 'main'
 
 export const DIRECTORY_URL = `https://raw.githubusercontent.com/${GITHUB_REPO}/${DIRECTORY_BRANCH}/community/external-sources.json`
 
