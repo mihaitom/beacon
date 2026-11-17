@@ -8,39 +8,35 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Highlights
 
-- **Stats, rebuilt from scratch:** Beacon keeps its own record of what you play on Navidrome, Jellyfin and Plex, and the Stats page shows your year of it on a record that fills up with your plays, with streaks, milestones and charts for any time window. Your Last.fm or ListenBrainz history fills in the past year
+- **Music from outside your library:** an app of your own can bring songs into Beacon as a tab of their own, played like the rest, on your speakers too. Two examples are included, one for local music folders and one for live concerts from archive.org, and you can write one for whatever else you have in mind, even something a command-line downloader fetches from the web
+- **Beacon beyond the app:** a display, a bot or a script of your own can read your history and what is playing, and control playback. Think of an e-ink display by the speaker showing the song and its cover, or your Discord status showing what you are listening to. Home Assistant now works with a Beacon server too
 - **Desktop app and server together:** connect the two once in Settings and they share your listening history, settings, themes and lyrics timing, and see which speakers the other is playing on
-- **Music from outside your library:** an app of your own can bring songs into Beacon as a tab of their own, played like the rest, on your speakers too. Two examples are included, one for local music folders and one for live concerts from archive.org, and an AI assistant can write one for whatever else you have in mind, even something a command-line downloader fetches from the web
-- **Your own apps:** apps you write, or have an AI assistant write, can read your history and what is playing and control playback. Think of an e-ink display by the speaker showing the song and its cover, or your Discord status showing what you are listening to
+- **Stats, rebuilt from scratch:** Beacon keeps its own record of what you play on Navidrome, Jellyfin and Plex, and the Stats page shows your year of it on a record that fills up with your plays, with streaks, milestones and charts for any time window. Your Last.fm or ListenBrainz history fills in the past year
 
 ### Added
 
-- Beacon keeps its own record of what you play, the same on Navidrome, Jellyfin and Plex, and the Stats page shows a year of it: your streak, every day and your favourite hours. With a Last.fm or ListenBrainz name set up in Settings the past year is filled in from there, by itself with one of the two and at the push of a button with both, and it can be fetched again later
-- Round numbers get their own moment when you open Stats: hours from 100 and streaks from a week up, in steps from bronze to diamond. Every full record goes on a stack under the turntable, which fans out on hover or tap and shows when each record filled up
-- The Stats page's charts can be narrowed to the last week, month, three or six months, or year
-- The desktop app and a Beacon server of yours can be connected, set up once in Settings on both sides: they then share your listening history, settings and your own themes, and if you confirm it for that device the server's Last.fm and Fanart keys too. What you play while the server is away is sent later, and each side sees which speakers the other is playing on and asks before taking one over
-- You can save several themes of your own instead of one, and themes and corrected lyrics timing follow your account on the same server, and between the desktop app and a connected server
-- Apps you write yourself can read your listening history, statistics, what is playing and its lyrics, and if you allow it control playback and start music from your library, each with its own key made in Settings. A server offers this for its accounts and the desktop app for apps on its own network; the FAQ has the details and a description to point an AI assistant at
 - Apps of your own can bring songs that are not in your library: Beacon shows each one's page as a tab with a name and icon of your choice and plays what you pick there, on your speakers too. Two examples are in the repository, one for music folders, also as a ready-made Docker image, and one for an online archive of live concerts. Apps others have written can be found under Find apps, and anyone can list their own there with a pull request (suggested by [@b-r-y](https://github.com/b-r-y), [#88](https://github.com/mihaitom/beacon/discussions/88))
-- Phones have a Home page as their first tab, and Beacon opens there: what you played last, your most played songs, new albums, songs you have not heard in a while and albums to discover, with each song list opening to its full length from its heading (suggested by [@b-r-y](https://github.com/b-r-y), [#87](https://github.com/mihaitom/beacon/discussions/87))
+- Apps you write yourself can read your listening history, statistics, what is playing and its lyrics, and if you allow it control playback and start music from your library, each with its own key made in Settings. A server offers this for its accounts and the desktop app for apps on its own network; the FAQ has the details and a description to point an AI assistant at
+- The desktop app and a Beacon server of yours can be connected, set up once in Settings on both sides: they then share your listening history, settings and your own themes, and if you confirm it for that device the server's Last.fm and Fanart keys too. What you play while the server is away is sent later, and each side sees which speakers the other is playing on and asks before taking one over
+- Beacon keeps its own record of what you play, the same on Navidrome, Jellyfin and Plex. With a Last.fm or ListenBrainz name set up in Settings, the past year is filled in from there
+- Phones have a Home page as their first tab, and Beacon opens there: what you played last, your most played songs, new albums, songs you have not heard in a while and albums to discover (suggested by [@b-r-y](https://github.com/b-r-y), [#87](https://github.com/mihaitom/beacon/discussions/87))
 - Home Assistant works with a Beacon server too, steering what an account plays on its speakers, set up with the same kind of key as your own apps
+- You can save several themes of your own instead of one, and themes and corrected lyrics timing follow your account on the same server, and between the desktop app and a connected server
 - Playlists can have a description, set when creating or editing one and shown on its page; on Navidrome and other Subsonic servers they can also be made public right away
 - A Navidrome admin can edit and delete other people's playlists and hand a playlist to another user
-- A server administrator can look at the Stats page of the other accounts on the server
 - The server keeps its log in its data folder as well (`logs/connect.log`), so it is still there after the container has been updated
 
 ### Changed
 
-- The Stats page is rebuilt from scratch: your listening time on a record that fills up with your plays, a small display that moves with the music, charts for songs, artists, albums and genres that show what moved up and have the library's right-click menu, and a look at what your collection is made of
-- The Playlists page is a wall of large record stacks that flip through on hover and tint the page with the cover in front, or a list as on Albums. It sorts by last edited, name, number of songs or length and can be narrowed to your own, smart, shared or shared-with-you playlists; "Global playlists" are now "Shared by me" and "Shared with me"
-- A playlist's page can be searched, filtered and sorted like Songs, starting in the playlist's own order, and Play and Preview take what is on screen. Its artwork is a stack of its albums, and the create and edit dialogs show it too and say who gets to see the playlist
-- The Radio page is a wall of station logos, each on a sleeve in the logo's own colours, with the list one click away. It can be narrowed by your most common genres and sorted by last heard, name, country or bitrate, and clicking the playing station stops it
+- The Stats page is rebuilt from scratch: your year of listening on a record that fills up with your plays, your streak and favourite hours, charts for songs, artists, albums and genres over any time window, and a look at what your collection is made of. Round numbers of hours and streaks get their own moment, and every full record goes on a stack under the turntable. A server administrator can look at the Stats page of the other accounts too
 - On phones, a new More tab holds Radio, the pages of your own apps, Stats and Settings, and party mode is a page there instead of a cramped dialog. Favorites moved into the library as a heart in its search field, and the equalizer is on Now Playing
-- The Remote Control follows the phone app: the same Home tab, a Radio tab, favourites in the library, albums on their own page and playlists grouped into your own and shared ones. Now Playing there shows the artist photo, lyrics, the speaker's equalizer and the room's Hue lights
-- In the Remote Control, Play All and a playlist's songs show that the music is starting until it plays, and a second tap no longer starts it again
+- The Remote Control follows the phone app: the same Home tab, a Radio tab, favourites in the library, albums on their own page and playlists grouped into your own and shared ones. Now Playing there shows the artist photo, lyrics, the speaker's equalizer and the room's Hue lights, and Play All shows that the music is starting instead of starting it again on a second tap
+- The Playlists page is a wall of record stacks, or a list as on Albums, and can be sorted and narrowed to your own, smart or shared playlists; "Global playlists" are now "Shared by me" and "Shared with me"
+- A playlist's page can be searched, filtered and sorted like Songs, and its artwork is a stack of its albums
+- The Radio page is a wall of station logos, with the list one click away, and can be narrowed by your most common genres and sorted by last heard, name, country or bitrate
 - A speaker that cannot reach the address it was given now says so, instead of a general "Playback failed"
-- On a wide window, Settings lists its tabs down the left side, in view while you scroll, with a wider column beside it
-- With a light theme, artist and album pages look the way they do with a dark one: the photo runs on behind the albums under a light veil, instead of a dark band across the top
+- With a light theme, artist and album pages look the way they do with a dark one, with the photo under a light veil instead of a dark band across the top
+- On a wide window, Settings lists its tabs down the left side, in view while you scroll
 - The Last.fm name is set in Settings next to ListenBrainz, and the playlist builder only starts from it instead of changing it
 - The help is sorted by topic, its questions stand out from their answers, and code examples are highlighted and can be copied
 
@@ -56,13 +52,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Fixed
 
 - ReplayGain applies to every song while casting, not only to the one you started, so the volume no longer changes from song to song (reported by [@ampcat3](https://github.com/ampcat3), [#91](https://github.com/mihaitom/beacon/discussions/91))
-- On a Sonos, the visualizer, lights and lyrics no longer run a few seconds ahead of the music when the speaker checks the stream twice as it starts
 - When the connection to Beacon's backend drops without an error, the app notices within seconds and reconnects, instead of staying on the last song while the speaker plays on
+- On a Sonos, the visualizer, lights and lyrics no longer run a few seconds ahead of the music when the speaker checks the stream twice as it starts
 - With Jellyfin, artists show their real number of albums: the artist page no longer counts the songs in, and artist cards no longer show 0 albums (reported by [@jolny](https://github.com/jolny), [#93](https://github.com/mihaitom/beacon/issues/93))
 - Home stays current while it is open: new albums show up after a library scan, "Recently played" moves as soon as a song counts as played, and the top songs no longer disappear when a scan finishes
-- The queue no longer twitches while it slides in or out
-- On phones, a long artist line no longer lets the page slide sideways
-- In the help's contents, clicking one of the last questions of a page marks that question instead of one further up
+- Smaller fixes: the queue no longer twitches while it slides in or out, a long artist line on phones no longer lets the page slide sideways, and clicking one of the last questions in the help's contents marks that question instead of one further up
 
 ## [1.11.0] - 2026-11-07
 
