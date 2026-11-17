@@ -41,7 +41,8 @@ async function mountView(playlists: Playlist[]) {
         // The header's own look is not under test; its action buttons are.
         DetailHeader: { template: '<div><slot name="actions" /></div>' },
         StickyFilter: { template: '<div><slot /></div>' },
-        PlaylistRow: true,
+        PlaylistCard: true,
+        CreatePlaylistDialog: true,
         PlaylistBuilderDialog: true,
         PlaylistEditDialog: true,
         PlaylistDeleteDialog: true,
@@ -52,8 +53,23 @@ async function mountView(playlists: Playlist[]) {
   return wrapper
 }
 
+type View = {
+  sections: { key: string; playlists: Playlist[] }[]
+  segments: { value: string }[]
+  activeSegment: string
+  segment: string
+  pickSort: (key: string) => void
+  toggleDirection: () => void
+  setListView: (list: boolean) => void
+  listView: boolean
+}
+
+const inSection = (vm: View, key: string) =>
+  vm.sections.find((section) => section.key === key)?.playlists.map((p) => p.id) ?? []
+
 describe('PlaylistsView', () => {
   beforeEach(() => {
+    localStorage.clear()
     setActivePinia(createPinia())
   })
 
@@ -81,12 +97,85 @@ describe('PlaylistsView', () => {
       makePlaylist('plex', { owner: '', ownedByUser: true }),
       makePlaylist('shared', { owner: '', ownedByUser: false }),
     ])
-    const vm = wrapper.vm as unknown as {
-      personalPlaylists: Playlist[]
-      globalPlaylists: Playlist[]
-    }
+    const vm = wrapper.vm as unknown as View
 
-    expect(vm.personalPlaylists.map((playlist) => playlist.id)).toEqual(['mine', 'plex'])
-    expect(vm.globalPlaylists.map((playlist) => playlist.id)).toEqual(['anna', 'shared'])
+    expect(inSection(vm, 'mine')).toEqual(['mine', 'plex'])
+    expect(inSection(vm, 'sharedWithMe')).toEqual(['anna', 'shared'])
+  })
+
+  it('offers no groups when every playlist is the plain, own kind', async () => {
+    const wrapper = await mountView([makePlaylist('a'), makePlaylist('b')])
+
+    expect((wrapper.vm as unknown as View).segments).toEqual([])
+  })
+
+  it('narrows both sections to the picked group', async () => {
+    const wrapper = await mountView([
+      makePlaylist('plain'),
+      makePlaylist('rules', { smart: true }),
+      makePlaylist('anna', { owner: 'anna' }),
+    ])
+    const vm = wrapper.vm as unknown as View
+
+    vm.segment = 'smart'
+    await flushPromises()
+    expect(inSection(vm, 'mine')).toEqual(['rules'])
+    expect(inSection(vm, 'sharedWithMe')).toEqual([])
+
+    vm.segment = 'sharedWithMe'
+    await flushPromises()
+    expect(inSection(vm, 'mine')).toEqual([])
+    expect(inSection(vm, 'sharedWithMe')).toEqual(['anna'])
+  })
+
+  it('goes back to everything when the picked group has emptied', async () => {
+    const wrapper = await mountView([makePlaylist('plain'), makePlaylist('r', { smart: true })])
+    const vm = wrapper.vm as unknown as View
+    vm.segment = 'smart'
+    await flushPromises()
+
+    useLibraryStore().playlists = [makePlaylist('plain')]
+    await flushPromises()
+
+    expect(vm.activeSegment).toBe('all')
+    expect(inSection(vm, 'mine')).toEqual(['plain'])
+  })
+
+  it('applies the picked order and remembers it for the next visit', async () => {
+    const playlists = [makePlaylist('b', { name: 'B' }), makePlaylist('a', { name: 'A' })]
+    const first = (await mountView(playlists)).vm as unknown as View
+
+    first.pickSort('name')
+    await flushPromises()
+    expect(inSection(first, 'mine')).toEqual(['a', 'b'])
+
+    first.toggleDirection()
+    await flushPromises()
+    expect(inSection(first, 'mine')).toEqual(['b', 'a'])
+
+    const second = (await mountView(playlists)).vm as unknown as View
+    expect(inSection(second, 'mine')).toEqual(['b', 'a'])
+  })
+
+  it('remembers grid or list for the next visit', async () => {
+    const first = (await mountView([makePlaylist('a')])).vm as unknown as View
+    expect(first.listView).toBe(false)
+
+    first.setListView(true)
+
+    expect(((await mountView([makePlaylist('a')])).vm as unknown as View).listView).toBe(true)
+  })
+
+  it('files a public playlist of your own under what you share', async () => {
+    const wrapper = await mountView([
+      makePlaylist('private'),
+      makePlaylist('public', { public: true }),
+      makePlaylist('anna', { owner: 'anna', public: true }),
+    ])
+    const vm = wrapper.vm as unknown as View
+
+    expect(inSection(vm, 'mine')).toEqual(['private'])
+    expect(inSection(vm, 'sharedByMe')).toEqual(['public'])
+    expect(inSection(vm, 'sharedWithMe')).toEqual(['anna'])
   })
 })

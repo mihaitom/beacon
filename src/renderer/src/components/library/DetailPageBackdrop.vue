@@ -11,20 +11,12 @@
        - held back (null) until the lookup answers, so the page never shows
        - the fallback and then swaps to a photo. Two layers so a change
        - fades rather than cuts (see services/crossfadeBackdrop.ts). -->
-      <!-- One wrapper so a light theme fades the layers out together: faded
-       - one by one, the dark night showed through the half-faded photo and
-       - darkened the fade below both of them. -->
       <div v-if="show" class="detail-page__layers">
-        <!-- On a light theme the header stays dark (see DetailHero.vue), so
-           - the band gets the night's background under the artwork, down to
-           - where the header ends. -->
-        <div v-if="onLight" class="detail-page__night" :class="nightClass" />
         <div
           v-for="(layerUrl, index) in layers.urls"
           :key="index"
           class="detail-page__backdrop"
           :class="{
-            [nightClass]: true,
             'detail-page__backdrop--photo': layerIsPhoto[index],
             'detail-page__backdrop--filled': layerIsPhoto[index] && Boolean(fills[index]),
             'detail-page__backdrop--shown': index === layers.active && Boolean(layerUrl),
@@ -38,7 +30,7 @@
             </div>
           </template>
         </div>
-        <div class="detail-page__scrim" :class="nightClass" />
+        <div class="detail-page__scrim" />
       </div>
       <div ref="content" class="detail-page__content">
         <slot />
@@ -62,10 +54,6 @@ import {
 } from '@/services/edgeFill'
 import { textEnd } from '@/services/textExtent'
 import { useAppearanceStore } from '@/stores/appearance'
-
-// Below where the header ends on a light theme, the dark band fades into
-// the page over this much.
-const NIGHT_FADE = 64
 
 /**
  * A detail page's backdrop: a Fanart.tv photo shown sharp when there is
@@ -110,31 +98,18 @@ export default {
       fills: [null, null] as (EdgeFill | null)[],
       /** Where the header text ends, in px from the band's left. */
       textEnd: 0,
-      /** Where the header itself ends, in px from the band's top. */
-      heroEnd: 0,
       textObserver: null as ResizeObserver | null,
     }
   },
   computed: {
-    appearance() {
-      return useAppearanceStore()
-    },
-    /** Whether the page around the header is light - the header itself
-     * never is. */
+    /** A light theme shades the artwork towards white rather than black,
+     * so the header's dark text reads on it (see --shade-rgb). */
     onLight(): boolean {
-      return this.appearance.nightTheme !== this.appearance.theme
-    },
-    /** The band's own layers are drawn in the night theme: its scrims
-     * darken towards the night's background, not the page's. */
-    nightClass(): string {
-      return `v-theme--${this.appearance.nightTheme}`
+      const appearance = useAppearanceStore()
+      return appearance.nightTheme !== appearance.theme
     },
     bandStyle(): Record<string, string> {
-      return {
-        ...(this.textEnd ? { '--text-end': `${this.textEnd}px` } : {}),
-        ...(this.heroEnd ? { '--hero-end': `${this.heroEnd}px` } : {}),
-        '--night-fade': `${NIGHT_FADE}px`,
-      }
+      return this.textEnd ? { '--text-end': `${this.textEnd}px` } : {}
     },
   },
   methods: {
@@ -165,10 +140,6 @@ export default {
       const hero = content.querySelectorAll('.detail-hero__main, .detail-hero__bio')
       const roots = hero.length ? [...hero] : [content]
       this.textEnd = Math.round(Math.max(...roots.map((root) => textEnd(root, band))))
-      const header = content.querySelector('.detail-hero')
-      this.heroEnd = header
-        ? Math.round(header.getBoundingClientRect().bottom - band.getBoundingClientRect().top)
-        : 0
     },
   },
   watch: {
@@ -234,7 +205,10 @@ export default {
     rgba(0, 0, 0, 0.04) 94%,
     transparent 100%
   );
-  /* The header text's shade over a photo: plain black, strong and even up
+  /* What the artwork is shaded towards behind the header text: black, or
+   * the page's own background on a light theme (--on-light below). */
+  --shade-rgb: 0, 0, 0;
+  /* The header text's shade over a photo: --shade-rgb, strong and even up
    * to where the text ends, then eased out over --scrim-fade along a
    * smoothstep curve - a straight ramp, over a light photo, shows both of
    * its ends as edges. Same as DetailHeader.vue's. */
@@ -242,17 +216,17 @@ export default {
   --text-clearance: calc(var(--text-end, 0px) + var(--scrim-fade));
   --text-shade: linear-gradient(
     to right,
-    rgba(0, 0, 0, 0.85) var(--text-end, 0px),
-    rgba(0, 0, 0, 0.826) calc(var(--text-end, 0px) + var(--scrim-fade) * 0.1),
-    rgba(0, 0, 0, 0.762) calc(var(--text-end, 0px) + var(--scrim-fade) * 0.2),
-    rgba(0, 0, 0, 0.666) calc(var(--text-end, 0px) + var(--scrim-fade) * 0.3),
-    rgba(0, 0, 0, 0.551) calc(var(--text-end, 0px) + var(--scrim-fade) * 0.4),
-    rgba(0, 0, 0, 0.425) calc(var(--text-end, 0px) + var(--scrim-fade) * 0.5),
-    rgba(0, 0, 0, 0.299) calc(var(--text-end, 0px) + var(--scrim-fade) * 0.6),
-    rgba(0, 0, 0, 0.184) calc(var(--text-end, 0px) + var(--scrim-fade) * 0.7),
-    rgba(0, 0, 0, 0.088) calc(var(--text-end, 0px) + var(--scrim-fade) * 0.8),
-    rgba(0, 0, 0, 0.024) calc(var(--text-end, 0px) + var(--scrim-fade) * 0.9),
-    rgba(0, 0, 0, 0) var(--text-clearance)
+    rgba(var(--shade-rgb), 0.85) var(--text-end, 0px),
+    rgba(var(--shade-rgb), 0.826) calc(var(--text-end, 0px) + var(--scrim-fade) * 0.1),
+    rgba(var(--shade-rgb), 0.762) calc(var(--text-end, 0px) + var(--scrim-fade) * 0.2),
+    rgba(var(--shade-rgb), 0.666) calc(var(--text-end, 0px) + var(--scrim-fade) * 0.3),
+    rgba(var(--shade-rgb), 0.551) calc(var(--text-end, 0px) + var(--scrim-fade) * 0.4),
+    rgba(var(--shade-rgb), 0.425) calc(var(--text-end, 0px) + var(--scrim-fade) * 0.5),
+    rgba(var(--shade-rgb), 0.299) calc(var(--text-end, 0px) + var(--scrim-fade) * 0.6),
+    rgba(var(--shade-rgb), 0.184) calc(var(--text-end, 0px) + var(--scrim-fade) * 0.7),
+    rgba(var(--shade-rgb), 0.088) calc(var(--text-end, 0px) + var(--scrim-fade) * 0.8),
+    rgba(var(--shade-rgb), 0.024) calc(var(--text-end, 0px) + var(--scrim-fade) * 0.9),
+    rgba(var(--shade-rgb), 0) var(--text-clearance)
   );
 }
 
@@ -462,59 +436,29 @@ export default {
   );
 }
 
-/* A light theme: the artwork, its scrim and the night under them end with
- * the header and fade into the page over --night-fade, instead of running
- * on behind the light content below it - as one, on their wrapper. The
- * album page's band is the header alone, so there they run its full height
- * and only soften the edge onto the track list. */
-.detail-page__night {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  pointer-events: none;
-  background: rgb(var(--v-theme-background));
+/* A light theme: the same artwork, shaded towards the page's background so
+ * the header's dark text reads on it, and fading out into it below. */
+.detail-page__band--on-light {
+  --shade-rgb: var(--v-theme-background);
 }
 
-.detail-page__band--on-light .detail-page__layers {
-  bottom: auto;
-  height: calc(var(--hero-end, 0px) + var(--night-fade));
-  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - var(--night-fade)), transparent);
-  mask-image: linear-gradient(to bottom, #000 calc(100% - var(--night-fade)), transparent);
+/* Over a photo the text has its own shade, so here the scrim only eases the
+ * top edge into the chrome: run down the band like on a dark theme, it
+ * washed the whole photo out - a black one barely shows on a dark photo, a
+ * white one does. The cover wash has no text shade and keeps the full one. */
+.detail-page__band--on-light
+  .detail-page__layers:has(.detail-page__backdrop--photo.detail-page__backdrop--shown)
+  .detail-page__scrim {
+  background: linear-gradient(
+    to bottom,
+    rgba(var(--v-theme-background), 0.6) 0%,
+    rgba(var(--v-theme-background), 0) 22%
+  );
 }
 
-.detail-page__band--on-light .detail-page__night {
-  bottom: 0;
-}
-
-.detail-page__band--on-light .detail-page__backdrop,
-.detail-page__band--on-light .detail-page__scrim {
-  -webkit-mask-image: none;
-  mask-image: none;
-}
-
-/* The photo keeps the size it has on a dark theme and is cut off by the
- * wrapper rather than shrunk to the header: the photo is sized by its
- * layer's height, and a header-high layer made it a third smaller. Taller
- * than that only where the header itself is. */
-.detail-page:not(.detail-page--banded) .detail-page__band--on-light .detail-page__backdrop,
-.detail-page:not(.detail-page--banded) .detail-page__band--on-light .detail-page__scrim {
-  height: max(min(78vh, 680px), 100%);
-}
-
-/* The fade runs below the header, so whatever follows it starts only once
- * the fade is over: in the hero's usual 28px gap, the artist page's
- * "Albums" heading sat on the half-dark middle of it, dark text on a
- * darkened page. */
-.detail-page:not(.detail-page--banded) .detail-page__band--on-light :deep(.detail-hero) {
-  margin-bottom: var(--night-fade);
-}
-
-.detail-page--banded .detail-page__band--on-light .detail-page__layers {
-  height: auto;
-  bottom: 0;
-  -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent);
-  mask-image: linear-gradient(to bottom, #000 calc(100% - 16px), transparent);
+/* The cover wash brightened rather than darkened, for the same reason. */
+.detail-page__band--on-light .detail-page__backdrop:not(.detail-page__backdrop--photo) {
+  filter: blur(38px) saturate(1.2) brightness(1.25);
 }
 
 .detail-page__content,

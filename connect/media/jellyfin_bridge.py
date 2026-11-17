@@ -10,7 +10,7 @@ Subsonic envelope ({"subsonic-response": {"status": "ok", ...}}), which
 SubsonicClient.get() already unwraps identically regardless of which real
 server actually answered it. getCoverArt.view/stream.view are the one
 exception — those are fetched as raw <img>/<audio> src URLs by the browser,
-so they're bridged as binary passthroughs instead (see _handle_binary).
+so they're bridged as binary passthroughs instead (see media/bridge.py).
 
 Internet radio stations are the one exception to "translates real Jellyfin
 API calls": Jellyfin has no concept of user-managed stations at all, so
@@ -35,20 +35,17 @@ import httpx
 from fastapi import Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from . import apply_image_cache_control
+from . import bridge
 from .base import (
     artwork_id,
     create_internet_radio_station,
     delete_internet_radio_station,
     get_internet_radio_stations,
-    match_entries_to_song_ids,
-    reorder_moves,
     split_artwork_id,
-    subsonic_envelope,
-    subsonic_error,
     update_internet_radio_station,
 )
-from .jellyfin import TICKS_PER_SECOND, JellyfinClient
+from .bridge import PlaylistEditor, map_all, quote_id, set_field, set_playlist_songs
+from .jellyfin import TICKS_PER_SECOND, JellyfinClient, replay_gain_of
 
 logger = logging.getLogger("connect.jellyfin_bridge")
 
@@ -159,32 +156,24 @@ def _map_song(item: dict) -> dict:
         song["bitRate"] = int(source["Bitrate"] / 1000)
     streams = source.get("MediaStreams") or item.get("MediaStreams") or []
     audio = next((stream for stream in streams if stream.get("Type") == "Audio"), {})
-    _set(song, "path", source.get("Path") or item.get("Path"))
-    _set(song, "size", source.get("Size"))
-    _set(song, "bitDepth", audio.get("BitDepth"))
-    _set(song, "samplingRate", audio.get("SampleRate"))
+    set_field(song, "path", source.get("Path") or item.get("Path"))
+    set_field(song, "size", source.get("Size"))
+    set_field(song, "bitDepth", audio.get("BitDepth"))
+    set_field(song, "samplingRate", audio.get("SampleRate"))
     # Both back a song-table column (see services/library/songColumns.ts)
     # and both are already in hand: DateCreated is one scalar field asked
     # for with the list, LastPlayedDate rides along in UserData.
     user_data = item.get("UserData") or {}
-    _set(song, "created", item.get("DateCreated"))
-    _set(song, "played", user_data.get("LastPlayedDate"))
+    set_field(song, "created", item.get("DateCreated"))
+    set_field(song, "played", user_data.get("LastPlayedDate"))
     # Presence, not value, is mappers.ts's whole signal (raw.starred != null)
     # — omitted entirely when not favorited, never sent as false.
     if _is_favorite(item):
         song["starred"] = "true"
-    replay_gain = _map_replay_gain(item)
+    replay_gain = replay_gain_of(item)
     if replay_gain:
         song["replayGain"] = replay_gain
     return song
-
-
-def _set(target: dict, key: str, value) -> None:
-    """Omit rather than send an empty field. mappers.ts and
-    services/library/songDetails.ts both read presence, not value: a key
-    that is there with None in it becomes a row saying nothing."""
-    if value not in (None, "", [], {}):
-        target[key] = value
 
 
 def _map_song_detail(item: dict) -> dict:
@@ -207,11 +196,11 @@ def _map_song_detail(item: dict) -> dict:
 
     # The file's own figures, added and last played are already on the list
     # mapping above.
-    _set(song, "channelCount", audio.get("Channels"))
-    _set(song, "sortName", item.get("SortName"))
-    _set(song, "musicBrainzId", (item.get("ProviderIds") or {}).get("MusicBrainzTrack"))
-    _set(song, "genres", [{"name": genre} for genre in (item.get("Genres") or [])])
-    _set(
+    set_field(song, "channelCount", audio.get("Channels"))
+    set_field(song, "sortName", item.get("SortName"))
+    set_field(song, "musicBrainzId", (item.get("ProviderIds") or {}).get("MusicBrainzTrack"))
+    set_field(song, "genres", [{"name": genre} for genre in (item.get("Genres") or [])])
+    set_field(
         song,
         "artists",
         [
@@ -220,7 +209,7 @@ def _map_song_detail(item: dict) -> dict:
             if artist.get("Id")
         ],
     )
-    _set(
+    set_field(
         song,
         "albumArtists",
         [
@@ -231,32 +220,9 @@ def _map_song_detail(item: dict) -> dict:
     )
     # The tag as written, which the Artists list above has already split on
     # its separators.
-    _set(song, "displayArtist", ", ".join(item.get("Artists") or []))
-    _set(song, "displayAlbumArtist", item.get("AlbumArtist"))
+    set_field(song, "displayArtist", ", ".join(item.get("Artists") or []))
+    set_field(song, "displayAlbumArtist", item.get("AlbumArtist"))
     return song
-
-
-def _map_replay_gain(item: dict) -> dict | None:
-    """Jellyfin exposes loudness-normalization data directly on the item
-    (NormalizationGain/AlbumNormalizationGain, dB — populated from the
-    file's own embedded ReplayGain tags when present) rather than nesting it
-    the way OpenSubsonic's `replayGain` object does — reshaped into that
-    same {trackGain, albumGain} shape here so the frontend only ever deals
-    with one format. LUFS is Jellyfin's own loudness-scan fallback for files
-    with no embedded ReplayGain tag, converted to a dB gain against
-    ReplayGain's -18 LUFS reference target."""
-    track_gain = item.get("NormalizationGain")
-    if track_gain is None and item.get("LUFS") is not None:
-        track_gain = -18 - item["LUFS"]
-    album_gain = item.get("AlbumNormalizationGain")
-    if track_gain is None and album_gain is None:
-        return None
-    gain: dict = {}
-    if track_gain is not None:
-        gain["trackGain"] = track_gain
-    if album_gain is not None:
-        gain["albumGain"] = album_gain
-    return gain
 
 
 def _map_album(item: dict) -> dict:
@@ -272,10 +238,10 @@ def _map_album(item: dict) -> dict:
     }
     # The key get_album_list2 sorts by, so the frontend's A-Z jump bar can
     # file the album where it actually sits (see indexLetterFor).
-    _set(album, "sortName", item.get("SortName"))
+    set_field(album, "sortName", item.get("SortName"))
     # When it entered the library, for the album list's "recently added"
     # order. get_album_list2 already asks for the field to sort "newest".
-    _set(album, "created", item.get("DateCreated"))
+    set_field(album, "created", item.get("DateCreated"))
     if artist_items:
         album["artistId"] = artist_items[0]["Id"]
     if item.get("ProductionYear") is not None:
@@ -290,13 +256,13 @@ def _map_album(item: dict) -> dict:
     # A tag written as one "Trance;Dance;Pop" string reaches Jellyfin
     # unsplit on some libraries, which would make one giant genre.
     split = [g.strip() for genre in genres for g in genre.split(";") if g.strip()]
-    _set(album, "genres", [{"name": g} for g in split])
-    _set(
+    set_field(album, "genres", [{"name": g} for g in split])
+    set_field(
         album,
         "recordLabels",
         [{"name": s["Name"]} for s in item.get("Studios") or [] if s.get("Name")],
     )
-    _set(album, "musicBrainzId", (item.get("ProviderIds") or {}).get("MusicBrainzAlbum"))
+    set_field(album, "musicBrainzId", (item.get("ProviderIds") or {}).get("MusicBrainzAlbum"))
     if _is_favorite(item):
         album["starred"] = "true"
     return album
@@ -307,11 +273,42 @@ def _map_artist(item: dict) -> dict:
         "id": item["Id"],
         "name": item.get("Name", "Unknown"),
         "coverArt": _cover_art_id(item),
-        "albumCount": item.get("ChildCount") or 0,
     }
     if _is_favorite(item):
         artist["starred"] = "true"
     return artist
+
+
+async def _map_artists(
+    media: JellyfinClient, items: list[dict], *, every: bool = False
+) -> list[dict]:
+    """Artists with a real albumCount. An artist's own ChildCount can't give
+    one: on the item itself it counts albums *and* songs, and in a listing it
+    is only there when asked for and still misses albums the artist is a
+    track artist on. Counting the albums instead, by the same rule as
+    get_artist()'s ArtistIds lookup, keeps a card and its page in agreement.
+    `every` tallies the whole library in one listing instead of naming the
+    artists, for getArtists, where the id list would be the library."""
+    artists = _map_all(_map_artist, items)
+    if not artists:
+        return artists
+    scope = {} if every else {"ArtistIds": ",".join(a["id"] for a in artists)}
+    albums = await _jf_get_items(
+        media,
+        IncludeItemTypes="MusicAlbum",
+        Recursive="true",
+        EnableImages="false",
+        EnableUserData="false",
+        **scope,
+    )
+    counts: dict[str, int] = {}
+    for album in albums.get("Items", []):
+        credited = (album.get("ArtistItems") or []) + (album.get("AlbumArtists") or [])
+        for artist_id in {a.get("Id") for a in credited}:
+            counts[artist_id] = counts.get(artist_id, 0) + 1
+    for artist in artists:
+        artist["albumCount"] = counts.get(artist["id"], 0)
+    return artists
 
 
 def _map_playlist(item: dict) -> dict:
@@ -332,7 +329,7 @@ def _map_playlist(item: dict) -> dict:
     # was added is the closest. Both are ISO with the same 7-digit
     # fraction, so the later one is also the larger string.
     dates = [d for d in (item.get("DateLastMediaAdded"), item.get("DateCreated")) if d]
-    _set(playlist, "changed", max(dates) if dates else None)
+    set_field(playlist, "changed", max(dates) if dates else None)
     can_delete = item.get("CanDelete")
     if can_delete is not None:
         playlist["owned"] = can_delete
@@ -345,33 +342,10 @@ def _map_playlist(item: dict) -> dict:
 
 
 def _map_all(mapper: Callable[[dict], dict], items: list[dict]) -> list[dict]:
-    """Applies `mapper` to each item, skipping (and logging) any single item
-    that fails to map instead of letting one malformed record fail the
-    entire request — a page with 999 of 1000 albums showing is still
-    useful; an empty page because item #500 was missing a field isn't."""
-    result = []
-    for item in items:
-        try:
-            result.append(mapper(item))
-        except Exception as e:
-            logger.warning(f"[jellyfin-bridge] Skipping malformed item {item.get('Id', '?')}: {e}")
-    return result
+    return map_all(mapper, items, id_field="Id", log=logger, label="jellyfin-bridge")
 
 
 # ── Jellyfin HTTP helper ─────────────────────────────────────────────────────
-
-
-def _quote_id(value: str) -> str:
-    """Percent-encodes an id (song/album/artist/playlist id, or any other
-    client-supplied value) before it's spliced into a Jellyfin URL *path*
-    segment via an f-string below. Every id handled here ultimately comes
-    from the incoming Subsonic-shaped request (params["id"] and friends),
-    unvalidated — without this, a value like "../Users" would let a caller
-    holding only the shared CONNECT_TOKEN reach arbitrary Jellyfin API paths
-    outside the _HANDLERS whitelist this module exists to enforce. `params`
-    passed separately to _jf_request()/_jf_get() don't need this — httpx
-    encodes those itself."""
-    return quote(str(value), safe="")
 
 
 async def _jf_request(
@@ -423,7 +397,7 @@ async def _jf_get_items(media: JellyfinClient, item_id: str = "", **params: str)
     """The user-scoped item endpoints, in the only shape both Jellyfin
     generations answer: 10.9 moved these off /Users/{userId}/Items to
     /Items?userId= and marked the old form obsolete, and 12 dropped it from
-    the API altogether. `item_id` must already be _quote_id()'d."""
+    the API altogether. `item_id` must already be quote_id()'d."""
     path = f"/Items/{item_id}" if item_id else "/Items"
     return await _jf_get(media, path, userId=media.user_id, **params)
 
@@ -461,7 +435,7 @@ async def get_album_list2(params: dict, media: JellyfinClient) -> dict:
 
 async def get_album(params: dict, media: JellyfinClient) -> dict:
     album_id = params["id"]
-    item = await _jf_get_items(media, _quote_id(album_id))
+    item = await _jf_get_items(media, quote_id(album_id))
     songs = await _jf_get_items(
         media,
         ParentId=album_id,
@@ -476,7 +450,7 @@ async def get_album(params: dict, media: JellyfinClient) -> dict:
 
 
 async def get_song(params: dict, media: JellyfinClient) -> dict:
-    item = await _jf_get_items(media, _quote_id(params["id"]))
+    item = await _jf_get_items(media, quote_id(params["id"]))
     # The detailed mapping, not the list one: this is the single-track
     # lookup, and the only caller that wants more than a row's worth of
     # fields (the track-info sheet) comes through here.
@@ -493,17 +467,17 @@ async def get_artists(_params: dict, media: JellyfinClient) -> dict:
     # Jellyfin has no native indexed-by-letter grouping (unlike Subsonic's
     # own getArtists.view shape) — bucket client(python)-side.
     buckets: dict[str, list[dict]] = {}
-    for item in data.get("Items", []):
-        name = item.get("Name") or ""
+    for artist in await _map_artists(media, data.get("Items", []), every=True):
+        name = artist["name"]
         letter = name[0].upper() if name else "#"
-        buckets.setdefault(letter, []).append(_map_artist(item))
+        buckets.setdefault(letter, []).append(artist)
     index = [{"name": letter, "artist": artists} for letter, artists in sorted(buckets.items())]
     return {"artists": {"index": index}}
 
 
 async def get_artist(params: dict, media: JellyfinClient) -> dict:
     artist_id = params["id"]
-    item = await _jf_get_items(media, _quote_id(artist_id))
+    item = await _jf_get_items(media, quote_id(artist_id))
     albums = await _jf_get_items(
         media,
         ArtistIds=artist_id,
@@ -512,7 +486,17 @@ async def get_artist(params: dict, media: JellyfinClient) -> dict:
     )
     artist = _map_artist(item)
     artist["album"] = [_map_album(a) for a in albums.get("Items", [])]
+    artist["albumCount"] = len(artist["album"])
     return {"artist": artist}
+
+
+def _search_offset(params: dict, song_count: int, album_count: int, artist_count: int) -> str:
+    asked = [
+        name for name, count in (("album", album_count), ("artist", artist_count)) if count > 0
+    ]
+    if song_count <= 0 and len(asked) == 1:
+        return params.get(f"{asked[0]}Offset", "0")
+    return params.get("songOffset", "0")
 
 
 async def search3(params: dict, media: JellyfinClient) -> dict:
@@ -551,10 +535,11 @@ async def search3(params: dict, media: JellyfinClient) -> dict:
         # roughly balanced counts) and exactly right for the common
         # single-type bulk-fetch case (the other two counts are 0 here).
         "Limit": str(max(song_count, album_count, artist_count)),
-        # songOffset is the only offset stores/library.ts's search3() ever
-        # sends (see its signature) — without mapping it to StartIndex, every
-        # "page" of a paginated bulk load re-fetched the exact same items.
-        "StartIndex": params.get("songOffset", "0"),
+        # Without mapping the offset to StartIndex, every "page" of a
+        # paginated load re-fetched the exact same items. The one shared
+        # StartIndex takes the offset of the one type asked for (the app
+        # API pages albums alone); a mixed search keeps songOffset.
+        "StartIndex": _search_offset(params, song_count, album_count, artist_count),
         # See _SONG_LIST_FIELDS for why this list is as short as it is -
         # it matters most here, where a bulk load asks for thousands of
         # items at once.
@@ -579,7 +564,7 @@ async def search3(params: dict, media: JellyfinClient) -> dict:
         "searchResult3": {
             "song": _map_all(_map_song, by_type["Audio"]),
             "album": _map_all(_map_album, by_type["MusicAlbum"]),
-            "artist": _map_all(_map_artist, by_type["MusicArtist"]),
+            "artist": await _map_artists(media, by_type["MusicArtist"]),
             # Not part of the base Subsonic API (a real Subsonic/Navidrome
             # server never sends this) — an additive extra field so
             # stores/library.ts's paginated bulk-load can show real
@@ -623,7 +608,7 @@ async def get_starred2(_params: dict, media: JellyfinClient) -> dict:
         "starred2": {
             "song": _map_all(_map_song, songs.get("Items", [])),
             "album": _map_all(_map_album, albums.get("Items", [])),
-            "artist": _map_all(_map_artist, artists.get("Items", [])),
+            "artist": await _map_artists(media, artists.get("Items", [])),
         }
     }
 
@@ -639,7 +624,7 @@ async def star(params: dict, media: JellyfinClient) -> dict:
     await _jf_request(
         "POST",
         media,
-        f"/UserFavoriteItems/{_quote_id(_favorite_item_id(params))}",
+        f"/UserFavoriteItems/{quote_id(_favorite_item_id(params))}",
         params={"userId": media.user_id},
     )
     return {}
@@ -649,7 +634,7 @@ async def unstar(params: dict, media: JellyfinClient) -> dict:
     await _jf_request(
         "DELETE",
         media,
-        f"/UserFavoriteItems/{_quote_id(_favorite_item_id(params))}",
+        f"/UserFavoriteItems/{quote_id(_favorite_item_id(params))}",
         params={"userId": media.user_id},
     )
     return {}
@@ -670,10 +655,10 @@ async def get_playlists(_params: dict, media: JellyfinClient) -> dict:
 
 async def get_playlist(params: dict, media: JellyfinClient) -> dict:
     playlist_id = params["id"]
-    item = await _jf_get_items(media, _quote_id(playlist_id))
+    item = await _jf_get_items(media, quote_id(playlist_id))
     songs = await _jf_get(
         media,
-        f"/Playlists/{_quote_id(playlist_id)}/Items",
+        f"/Playlists/{quote_id(playlist_id)}/Items",
         userId=media.user_id,
         Fields=_SONG_LIST_FIELDS,
     )
@@ -707,7 +692,7 @@ async def _playlist_entries(playlist_id: str, media: JellyfinClient) -> list[tup
     accepts one and reports both ids as the same value, offering nothing else
     per entry, which makes the two copies indistinguishable here — see
     docs/investigations/media-servers/playlist-duplicate-not-addressable.md for what that costs."""
-    items = await _jf_get(media, f"/Playlists/{_quote_id(playlist_id)}/Items", userId=media.user_id)
+    items = await _jf_get(media, f"/Playlists/{quote_id(playlist_id)}/Items", userId=media.user_id)
     return [
         (entry["PlaylistItemId"], str(entry.get("Id", "")))
         for entry in items.get("Items", [])
@@ -716,56 +701,30 @@ async def _playlist_entries(playlist_id: str, media: JellyfinClient) -> list[tup
 
 
 async def _set_playlist_songs(playlist_id: str, song_ids: list[str], media: JellyfinClient) -> None:
-    """Makes the playlist hold exactly `song_ids`, in that order.
+    """See bridge.py's set_playlist_songs(). Jellyfin removes any number of
+    entries in one call and moves an entry by its target index."""
+    items_path = f"/Playlists/{quote_id(playlist_id)}/Items"
 
-    Jellyfin has no replace-the-list call, so this removes what's no longer
-    wanted, appends what's missing, and then moves entries into place one at
-    a time. A plain reorder — the only thing Beacon's own UI sends — needs
-    neither of the first two steps and costs one listing plus one move per
-    row that actually shifted. Not atomic: a failure partway leaves the
-    playlist between the two orders, which is why the client keeps the
-    complete list on its side and can send it again."""
-    entries = await _playlist_entries(playlist_id, media)
-    matched = match_entries_to_song_ids([song_id for _, song_id in entries], song_ids)
+    async def remove(entry_ids: list[str]) -> None:
+        await _jf_request("DELETE", media, items_path, params={"EntryIds": ",".join(entry_ids)})
 
-    keep = {entries[position][0] for position in matched if position is not None}
-    stale = [entry_id for entry_id, _ in entries if entry_id not in keep]
-    missing = [
-        song_id for song_id, position in zip(song_ids, matched, strict=True) if position is None
-    ]
-    if stale:
-        await _jf_request(
-            "DELETE",
-            media,
-            f"/Playlists/{_quote_id(playlist_id)}/Items",
-            params={"EntryIds": ",".join(stale)},
-        )
-    if missing:
-        await _add_to_playlist(playlist_id, missing, media)
-    if stale or missing:
-        # Re-listed rather than predicted: an appended song gets a fresh
-        # PlaylistItemId only the server knows.
-        entries = await _playlist_entries(playlist_id, media)
-        matched = match_entries_to_song_ids([song_id for _, song_id in entries], song_ids)
+    async def add(ids: list[str]) -> None:
+        await _add_to_playlist(playlist_id, ids, media)
 
-    current = [entry_id for entry_id, _ in entries]
-    # Anything still unmatched here is a song the server refused to add
-    # (deleted since the client last looked, say) — the rest is still put in
-    # the requested order rather than failing the whole call over it.
-    target = [entries[position][0] for position in matched if position is not None]
-    for entry_id, index, _after in reorder_moves(current, target):
-        await _jf_request(
-            "POST",
-            media,
-            f"/Playlists/{_quote_id(playlist_id)}/Items/{_quote_id(entry_id)}/Move/{index}",
-        )
+    async def move(entry_id: str, index: int, _after: str | None) -> None:
+        await _jf_request("POST", media, f"{items_path}/{quote_id(entry_id)}/Move/{index}")
+
+    editor = PlaylistEditor(
+        entries=lambda: _playlist_entries(playlist_id, media), remove=remove, add=add, move=move
+    )
+    await set_playlist_songs(editor, song_ids)
 
 
 async def _add_to_playlist(playlist_id: str, song_ids: list[str], media: JellyfinClient) -> None:
     await _jf_request(
         "POST",
         media,
-        f"/Playlists/{_quote_id(playlist_id)}/Items",
+        f"/Playlists/{quote_id(playlist_id)}/Items",
         params={"Ids": ",".join(song_ids), "UserId": media.user_id},
     )
 
@@ -779,7 +738,7 @@ async def _remove_from_playlist(
     # this list and the delete below, same as any read-then-act sequence
     # without a lock. On v12 that id is not per-entry at all (see
     # _playlist_entries), so a song listed twice loses both copies here.
-    items = await _jf_get(media, f"/Playlists/{_quote_id(playlist_id)}/Items", userId=media.user_id)
+    items = await _jf_get(media, f"/Playlists/{quote_id(playlist_id)}/Items", userId=media.user_id)
     entries = items.get("Items", [])
     entry_ids = [
         entries[i]["PlaylistItemId"]
@@ -790,36 +749,30 @@ async def _remove_from_playlist(
         await _jf_request(
             "DELETE",
             media,
-            f"/Playlists/{_quote_id(playlist_id)}/Items",
+            f"/Playlists/{quote_id(playlist_id)}/Items",
             params={"EntryIds": ",".join(entry_ids)},
         )
 
 
 async def update_playlist(params, media: JellyfinClient) -> dict:
-    playlist_id = params.get("playlistId") or params["id"]
-    song_ids_to_add = params.getlist("songIdToAdd")
-    indexes_to_remove = params.getlist("songIndexToRemove")
-    if song_ids_to_add:
-        await _add_to_playlist(playlist_id, song_ids_to_add, media)
-        return {}
-    if indexes_to_remove:
-        await _remove_from_playlist(playlist_id, [int(i) for i in indexes_to_remove], media)
-        return {}
-    # The only remaining reason client.ts calls updatePlaylist.view is a
-    # rename. `public` is left alone: the playlist always reads as private
-    # here (see _map_playlist), so passing it on would quietly withdraw
-    # OpenAccess from one shared in Jellyfin itself.
-    name = params.get("name")
-    if name is not None:
+    async def rename(playlist_id: str, name: str) -> None:
+        # `public` is left alone: the playlist always reads as private here
+        # (see _map_playlist), so passing it on would quietly withdraw
+        # OpenAccess from one shared in Jellyfin itself.
         await _jf_request(
-            "POST", media, f"/Playlists/{_quote_id(playlist_id)}", json_body={"Name": name}
+            "POST", media, f"/Playlists/{quote_id(playlist_id)}", json_body={"Name": name}
         )
-        return {}
-    raise ValueError("updatePlaylist.view requires songIdToAdd, songIndexToRemove, or name")
+
+    return await bridge.update_playlist(
+        params,
+        add=lambda playlist_id, ids: _add_to_playlist(playlist_id, ids, media),
+        remove=lambda playlist_id, indexes: _remove_from_playlist(playlist_id, indexes, media),
+        rename=rename,
+    )
 
 
 async def delete_playlist(params: dict, media: JellyfinClient) -> dict:
-    await _jf_request("DELETE", media, f"/Items/{_quote_id(params['id'])}")
+    await _jf_request("DELETE", media, f"/Items/{quote_id(params['id'])}")
     return {}
 
 
@@ -893,7 +846,7 @@ async def start_scan(_params: dict, media: JellyfinClient) -> dict:
     if not libraries:
         raise ValueError("This Jellyfin server has no music library to scan")
     for library in libraries:
-        await _jf_request("POST", media, f"/Items/{_quote_id(library['ItemId'])}/Refresh")
+        await _jf_request("POST", media, f"/Items/{quote_id(library['ItemId'])}/Refresh")
     return {"scanStatus": {"scanning": True}}
 
 
@@ -942,7 +895,7 @@ async def get_lyrics_by_song_id(params: dict, media: JellyfinClient) -> dict:
     if not item_id:
         raise ValueError("getLyricsBySongId.view requires id")
     try:
-        data = await _jf_get(media, f"/Audio/{_quote_id(item_id)}/Lyrics")
+        data = await _jf_get(media, f"/Audio/{quote_id(item_id)}/Lyrics")
     except httpx.HTTPStatusError as e:
         # 404 is Jellyfin's answer for "this track has no lyrics", which is
         # a normal, extremely common result rather than a failure — the
@@ -1011,7 +964,7 @@ async def get_similar_songs2(params: dict, media: JellyfinClient) -> dict:
     count = params.get("count", "50")
     data = await _jf_get(
         media,
-        f"/Items/{_quote_id(item_id)}/InstantMix",
+        f"/Items/{quote_id(item_id)}/InstantMix",
         userId=media.user_id,
         Limit=count,
         Fields=_SONG_LIST_FIELDS,
@@ -1051,7 +1004,7 @@ async def scrobble(params: dict, media: JellyfinClient) -> dict:
     # from Jellyfin's perspective this reads the same as a listen that
     # ran to completion, which is enough to cross its own play/no-play
     # ratio check and bump UserData.PlayCount + LastPlayedDate.
-    item = await _jf_get_items(media, _quote_id(track_id))
+    item = await _jf_get_items(media, quote_id(track_id))
     position_ticks = item.get("RunTimeTicks") or 0
     await _jf_request(
         "POST",
@@ -1091,138 +1044,42 @@ _HANDLERS: dict[str, Callable[[dict, JellyfinClient], Awaitable[dict]]] = {
 }
 
 
-# ── Binary handlers (getCoverArt.view, stream.view) ──────────────────────────
-# Fetched by the browser as raw <img>/<audio> src URLs, not through
-# SubsonicClient.get()'s JSON envelope — see services/subsonic/client.ts's
-# coverArtUrl()/streamUrl(). Streamed through connect the same way
-# routes/proxy.py's own _proxy() streams Subsonic responses, just targeting
-# a Jellyfin URL instead of a fixed NAVIDROME_INTERNAL_URL base.
-
-_BINARY_PATHS = {"getCoverArt.view", "stream.view"}
-# content-length included: blindly forwarding the upstream value can crash
-# uvicorn ("Response content longer than Content-Length") if the actual
-# streamed byte count doesn't match it exactly — found live (2026-08-17)
-# against Plex's thumb endpoint (see plex_bridge.py's identical fix);
-# applied here too since this is the same latent risk, not something
-# proven safe for Jellyfin specifically, just not yet hit. Dropping it lets
-# StreamingResponse fall back to chunked transfer encoding, which makes no
-# such promise to violate.
-# date included for the same reason as in routes/proxy.py: uvicorn writes
-# its own, and a second one makes a reverse proxy in front of this log a
-# warning per request.
-_SKIP_RESP_HEADERS = {
-    "transfer-encoding",
-    "connection",
-    "content-encoding",
-    "content-length",
-    "date",
-}
-
-
-async def _stream_binary(
-    request: Request, url: str, media: JellyfinClient, keep_length: bool = False
-) -> StreamingResponse:
-    """`keep_length` forwards the upstream Content-Length after all, for a
-    track's original file: Safari only plays a media response through when it
-    knows the length
-    (docs/investigations/phone-and-browser/safari-transcode-jumps-to-start.md). Never
-    for a compressed body, which httpx decompresses and so makes longer than
-    the header says."""
-    client = _get_client()
-    headers = media.auth_headers()
-    range_header = request.headers.get("range")
-    if range_header:
-        headers["Range"] = range_header
-    req = client.build_request(request.method, url, headers=headers)
-    response = await client.send(req, stream=True)
-
-    async def streamed():
-        try:
-            async for chunk in response.aiter_bytes():
-                yield chunk
-        finally:
-            await response.aclose()
-
-    skip = set(_SKIP_RESP_HEADERS)
-    if keep_length and "content-encoding" not in response.headers:
-        skip.discard("content-length")
-    resp_headers = {k: v for k, v in response.headers.items() if k.lower() not in skip}
-    content_type = response.headers.get("content-type")
-    apply_image_cache_control(resp_headers, content_type)
-    return StreamingResponse(
-        streamed(),
-        status_code=response.status_code,
-        headers=resp_headers,
-        media_type=content_type,
-    )
-
-
-async def _handle_binary(
-    path: str, request: Request, media: JellyfinClient
-) -> StreamingResponse | JSONResponse:
-    params = dict(request.query_params)
-    if path == "getCoverArt.view":
-        cover_id = params.get("id", "")
-        if not cover_id:
-            return subsonic_error(70, "No cover art id supplied")
-        size = params.get("size", "300")
-        item_id, version = split_artwork_id(cover_id)
-        url = (
-            f"{media.internal_url}/Items/{_quote_id(item_id)}/Images/Primary"
-            f"?maxHeight={quote(size, safe='')}"
-        )
-        if version:
-            url += f"&tag={quote(version, safe='')}"
-    else:  # stream.view
-        track_id = params.get("id", "")
-        if not track_id:
-            return subsonic_error(70, "No track id supplied")
-        url = media.get_stream_url(track_id)
-    return await _stream_binary(request, url, media, keep_length=path == "stream.view")
-
-
 # ── Entry point ────────────────────────────────────────────────────────────
 
 
+async def _cover_url(cover_id: str, params: dict, media: JellyfinClient) -> str:
+    size = params.get("size", "300")
+    item_id, version = split_artwork_id(cover_id)
+    url = (
+        f"{media.internal_url}/Items/{quote_id(item_id)}/Images/Primary"
+        f"?maxHeight={quote(size, safe='')}"
+    )
+    if version:
+        url += f"&tag={quote(version, safe='')}"
+    return url
+
+
+async def _stream_url(track_id: str, media: JellyfinClient) -> str:
+    return media.get_stream_url(track_id)
+
+
+_BRIDGE = bridge.Bridge(
+    label="jellyfin-bridge",
+    unsupported="is not supported on Jellyfin",
+    handlers=_HANDLERS,
+    log=logger,
+    client=lambda: _get_client(),
+    cover_url=_cover_url,
+    stream_url=_stream_url,
+)
+
+
 async def call(endpoint: str, params: dict, media: JellyfinClient) -> dict:
-    """One Subsonic endpoint answered from inside connect rather than for a
-    request - core/party_library.py asks this while the party's host
-    window sleeps. Same answer handle() wraps in the Subsonic envelope."""
-    handler = _HANDLERS.get(endpoint)
-    if handler is None:
-        raise ValueError(f"{endpoint} is not bridged")
-    return await handler(params, media)
+    """See bridge.py's call()."""
+    return await bridge.call(_BRIDGE, endpoint, params, media)
 
 
 async def handle(
     path: str, request: Request, media: JellyfinClient
 ) -> JSONResponse | StreamingResponse:
-    if path in _BINARY_PATHS:
-        try:
-            return await _handle_binary(path, request, media)
-        except Exception as e:
-            # Unlike every JSON handler below, _handle_binary()/_stream_binary()
-            # had no try/except of their own — a Jellyfin connectivity blip
-            # (server restart, timeout) mid cover-art-load or mid-stream used
-            # to propagate as a raw FastAPI 500 with a stack trace instead of
-            # degrading like every other endpoint here.
-            logger.warning(f"[jellyfin-bridge] {path} failed: {e}")
-            return subsonic_error(0, str(e))
-
-    handler = _HANDLERS.get(path)
-    if handler is None:
-        # Also the fallback for endpoints deliberately never bridged (see
-        # module docstring) — the frontend hides the UI for those before
-        # they'd ever be called, this is just the safety net.
-        return subsonic_error(70, f"{path} is not supported on Jellyfin")
-    try:
-        # request.query_params (not dict(...)) — a plain dict() conversion
-        # collapses repeated keys (songId=1&songId=2&...), which
-        # create_playlist()/update_playlist() below need via .getlist().
-        # Starlette's QueryParams otherwise behaves like a dict for the
-        # .get()/[] access every other handler uses.
-        result = await handler(request.query_params, media)
-    except Exception as e:
-        logger.warning(f"[jellyfin-bridge] {path} failed: {e}")
-        return subsonic_error(0, str(e))
-    return subsonic_envelope(result)
+    return await bridge.handle(_BRIDGE, path, request, media)

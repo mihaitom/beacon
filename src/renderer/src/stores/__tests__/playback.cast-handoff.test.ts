@@ -60,6 +60,19 @@ describe('castTo', () => {
     } as unknown as SubsonicClient)
   })
 
+  it('hands over the ReplayGain mode for the songs connect starts by itself', async () => {
+    const playback = usePlaybackStore()
+    playback.replayGainMode = 'song'
+    playback.setQueue([makeSong('a')], 0)
+
+    await playback.castTo([kitchen])
+
+    expect(connectPlayback.play).toHaveBeenCalledWith(
+      'a',
+      expect.objectContaining({ replayGainMode: 'song' }),
+    )
+  })
+
   it('sends the song, the queue around it and the position it had reached', async () => {
     const playback = usePlaybackStore()
     playback.setQueue([makeSong('a'), makeSong('b')], 1)

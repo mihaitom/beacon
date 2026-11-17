@@ -7,8 +7,8 @@ clock itself, so the station's elapsed readout counts what is audible
 rather than what has been sent (see _calibrate_clock()). One shared poller
 for all three, not one each — DlnaDelivery.get_position() is a real SOAP
 round trip per call (see delivery/dlna.py), a Sonos's is two HTTP ones, and
-this shouldn't multiply them. That is also why routes/playback.py's own
-_apply_position_offset()/_resync_position_periodically() stand aside for a
+this shouldn't multiply them. That is also why core/cast_position.py's own
+apply_position_offset()/resync_position_periodically() stand aside for a
 device this covers (see _tracked_for_radio() there): they used to poll it
 in parallel, at 0.5s each for a station's first ten seconds.
 
@@ -51,7 +51,7 @@ _POLL_INTERVAL_SECONDS = 0.5
 # Cadence once `ready` has already latched True (radio_buffering has
 # already gone False for good — see build_status_dict()) and nobody has
 # the radio visualizer open to consume continuous updates from this
-# tracker. Matches routes/playback.py's own _resync_position_periodically
+# tracker. Matches core/cast_position.py's own resync_position_periodically
 # cadence, on the same reasoning: at that point this poll exists only so
 # elapsed_fn() isn't stale *if* a visualizer opens later, not because
 # anything is consuming it right now. Reported live 2026-09-02/03: this
@@ -61,7 +61,7 @@ _POLL_INTERVAL_SECONDS = 0.5
 # (delivery/sonos.py's own comment), that is 4 requests/second sustained
 # against the physical speaker for as long as radio played, a scale of
 # continuous network chatter this app had never produced before (compare
-# _resync_position_periodically's own 8s cadence, called "the loudest
+# resync_position_periodically's own 8s cadence, called "the loudest
 # thing this app does to the network" in its own comment) — user reported
 # general radio playback (not just visualizer use) regressing compared to
 # the previous day's build, traced to this via a diff against that day's
@@ -99,8 +99,8 @@ class RadioPositionTracker:
     before (a station change, a different target type, or /stop all just
     move that reference on).
 
-    Self-terminates the same way routes/playback.py's
-    _resync_position_periodically() does: checks play_generation/
+    Self-terminates the same way core/cast_position.py's
+    resync_position_periodically() does: checks play_generation/
     is_streaming every cycle rather than needing an explicit stop() call,
     so a fresh /play-url (new generation, new tracker) simply leaves the
     old one to notice and exit on its own — nothing else needs to reach in
@@ -109,7 +109,7 @@ class RadioPositionTracker:
 
     That self-termination cuts both ways, though: /resume and /seek both
     bump play_generation (PlaybackClock.resume()/seek_to()) for the same
-    reason _resync_position_periodically needs rescheduling there (see
+    reason resync_position_periodically needs rescheduling there (see
     those two routes' identical comments) — a tracker that isn't
     explicitly restarted at the new generation just quietly exits on its
     next poll and never comes back, leaving radio_buffering stuck True
@@ -226,15 +226,15 @@ class RadioPositionTracker:
         makes the station's "playing since" count what is audible rather
         than what has been sent.
 
-        Done here rather than by routes/playback.py's own
-        _apply_position_offset()/_resync_position_periodically(), which do
+        Done here rather than by core/cast_position.py's own
+        apply_position_offset()/resync_position_periodically(), which do
         exactly this for a track: both ask the same device the same
         question this tracker is already asking, and for a DLNA renderer
         (or a Sonos) that question is a real round trip, not a cached
         value. Two pollers on one device is precisely what
         _IDLE_POLL_INTERVAL_SECONDS above exists to avoid — so for a
         station on a device this tracker covers, those two step aside (see
-        routes/playback.py's _position_candidate) and this is the only
+        core/cast_position.py's _position_candidate) and this is the only
         thing measuring it.
 
         `position` is used straight from the caller's own reading rather
@@ -317,7 +317,7 @@ class RadioPositionTracker:
     async def _poll_once(self) -> bool:
         """One poll cycle — split out from _run() purely so it's directly
         testable without needing to unwind an infinite loop (same reasoning
-        as routes/playback.py's _resync_position_once()). Returns False if
+        as core/cast_position.py's resync_position_once()). Returns False if
         the tracker should stop for good (generation changed, streaming
         stopped, or the device is no longer targeted); True to keep
         polling, whether or not this particular cycle found anything worth
@@ -334,7 +334,7 @@ class RadioPositionTracker:
             return False
         # A real device round trip while paused would just poll a frozen
         # position for as long as the pause lasts — same reasoning as
-        # _resync_position_periodically's identical check. Matters more
+        # resync_position_periodically's identical check. Matters more
         # here than there: a Sonos get_position() is two real HTTP round
         # trips (delivery/sonos.py's own comment), and a pause/resume
         # happening seconds into a fresh dispatch (see the play_generation
@@ -347,7 +347,7 @@ class RadioPositionTracker:
             logger.debug(f"[radio-position] {self.delivery.target}: get_position() failed: {e}")
             return True
         # get_position() above is a real device round trip — same race
-        # routes/playback.py's _resync_position_once() guards against: a
+        # core/cast_position.py's resync_position_once() guards against: a
         # station change or /stop landing while it was in flight means this
         # reading belongs to a stream that isn't current anymore.
         if not self._current() or not is_still_targeted(st.active_delivery, self.delivery):

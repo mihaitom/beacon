@@ -18,24 +18,23 @@ on a device, what is decided and what is not.
 
 - [A DLNA renderer that accepts the stream but never fetches it stays silent](casting/dlna-renderer-accepts-but-never-fetches.md) - follows from the code, never seen; needs an AVTransport subscription and a report for tracks
 - [Sonos: pause and stop fail once the speaker is pulled into another group](casting/sonos-pause-fails-as-group-member.md) - never seen, probably small; reproduce before fixing
-- [UPnP 737/738/739 as a failure reason of their own](casting/upnp-737-739-failure-reason.md) - "the speaker cannot reach the stream's address" instead of `unknown`
 - [One device dropping out of a multi-target cast is never surfaced](../investigations/casting/multi-target-drop-not-surfaced.md) - shelved 2026-08-28, no small fix; the analysis is an investigation
 
 ## Radio
 
 - [Radio stations are global instead of per account](radio/stations-per-account.md) - the migration is decided (every account branches off the existing list), not built
 
-## Remote Control
+## Library
 
-- [Remote: "Play All" does not wait for the ack](remote-control/play-all-waits-for-ack.md) - small, the pattern is in `js/sheet.js`
-- [Remote: an album detail view](remote-control/album-detail-view.md) - four places, the last planned alignment with the mobile view
+- [Deezer lookups fail or go wrong when an artist was renamed](library/deezer-lookup-with-renamed-artists.md) - seen with one artist only, deliberately not built; ISRC lookup is the smallest step
 
-## Integrations
+## Apps and home automation
 
-- [Home Assistant for Docker/web too](integrations/home-assistant-for-docker.md) - two ways, decided only once someone asks
+- [Control and the library: what is still to be run on real speakers and Home Assistant](device-link/control-hardware-check.md) - setup, discovery and nginx done; the rest of the check list is in there
+- [Repeat on a server only works while a window is open](device-link/server-repeat-without-a-window.md) - only without transitions; touches auto-advance, needs every speaker type
+- [Remove the old Home automation key](device-link/retire-the-integration-key.md) - deprecated, not before a release has carried the notice; the full list of what goes
 
 ## Packaging and dependencies
 
-- [Dependency majors: Vite 8 and TypeScript 7](packaging/dependency-majors.md) - Vite 8 unblocked, TypeScript 7 to check again
-- [The Windows arm64 installer carries x64 binaries](packaging/windows-arm64-installer-x64-binaries.md) - drop the target or build natively
+- [Dependency majors: TypeScript 7](packaging/dependency-majors.md) - waits on a stable Vue Language Tools v4
 - [A Windows or Mac build made on Linux ships Linux binaries](packaging/cross-build-ships-host-binaries.md) - exits 0 and reports nothing; the build should refuse

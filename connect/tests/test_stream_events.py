@@ -43,7 +43,9 @@ async def test_events_opens_with_a_retry_directive_then_the_current_status(defau
     finally:
         await gen.aclose()
 
-    assert first == "retry: 2000\n\n"
+    # The heartbeat up front tells the app this server sends them, even
+    # while status leaves no room for another.
+    assert first == "retry: 2000\n\nevent: heartbeat\ndata: {}\n\n"
     assert second == f"data: {json.dumps(build_status_dict(default_session))}\n\n"
 
 
@@ -87,7 +89,9 @@ async def test_events_heartbeats_on_timeout_when_nothing_is_streaming(default_se
     finally:
         await gen.aclose()
 
-    assert tick == ": heartbeat\n\n"
+    # An event the page can see, not a comment: it is how the app tells a
+    # quiet session from a connection that died without an error.
+    assert tick == "event: heartbeat\ndata: {}\n\n"
 
 
 async def test_events_resends_status_on_timeout_while_actively_streaming(default_session):

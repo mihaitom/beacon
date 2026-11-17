@@ -48,7 +48,13 @@
         </template>
         <div class="setting__control-row">
           <v-spacer />
-          <v-btn color="primary" :loading="saving" :disabled="saving || loadFailed" @click="save">
+          <v-btn
+            color="primary"
+            rounded="pill"
+            :loading="saving"
+            :disabled="saving || loadFailed"
+            @click="save"
+          >
             {{ $t('settings.castPermissionsSave') }}
           </v-btn>
         </div>

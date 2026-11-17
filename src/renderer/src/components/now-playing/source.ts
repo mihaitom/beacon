@@ -99,6 +99,9 @@ export interface NowPlayingCapabilities {
   /** A heart beside the phone's title, where the server has favourites.
    * The desktop has its own in the player bar. */
   favorite: boolean
+  /** The speaker's equalizer in the phone's toolbar, while casting. The
+   * desktop has its own in the player bar. */
+  equalizer: boolean
 }
 
 export interface NowPlayingUi {
@@ -171,6 +174,9 @@ export interface NowPlayingSource {
   /** The artist line split into one link per performer (host only): it
    * reads the library's artist list. */
   artistCreditComponent: Component | null
+  /** The equalizer's button and dialog (host only): they read the cast
+   * and equalizer stores. */
+  equalizerComponent: Component | null
   ui: NowPlayingUi
   /** The corner stack: the current song, then the next one near the end of
    * a track. The source decides when the next one shows. */

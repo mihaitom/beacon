@@ -53,6 +53,18 @@ describe('connect playback dispatch', () => {
       })
     })
 
+    it('sends the ReplayGain mode for the songs connect starts by itself', async () => {
+      const { play, updateQueue } = await freshModule()
+      await play('song-1', { gain: 0.5, replayGainMode: 'album' })
+      await updateQueue(['song-1'], 0, { replayGainMode: 'song' })
+      await play('song-1')
+
+      expect(body(0)).toMatchObject({ gain: 0.5, replay_gain_mode: 'album' })
+      expect(body(1)).toMatchObject({ replay_gain_mode: 'song' })
+      // Not sent is "keep what connect has", not "off".
+      expect(body(2)).not.toHaveProperty('replay_gain_mode')
+    })
+
     it('sends a single song as a one-song queue, so connect has nothing to advance into', async () => {
       const { play } = await freshModule()
 

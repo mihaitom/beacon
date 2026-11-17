@@ -1056,6 +1056,36 @@ def _exceeds_quality_ceiling(
     return info.bitrate_kbps is not None and info.bitrate_kbps > max_lossy_bitrate_kbps
 
 
+def _source_format(info: SourceInfo, **output) -> OutputFormat:
+    """An OutputFormat for a probed source: what the probe found, plus
+    whatever this tier does with it."""
+    return OutputFormat(
+        source_codec=info.codec,
+        source_sample_rate=info.sample_rate,
+        source_bit_depth=info.bit_depth,
+        source_bitrate_kbps=info.bitrate_kbps,
+        source_duration=info.duration,
+        source_channels=info.channels,
+        **output,
+    )
+
+
+def _flac_format(info: SourceInfo, fit: DeviceFitPlan, label: str, reason: str) -> OutputFormat:
+    """A lossless re-encode to FLAC, brought down to the device's limit
+    where `fit` says the source exceeds it."""
+    flac_args, flac_type = lossless_encode_args(fit.args)
+    return _source_format(
+        info,
+        ffmpeg_args=flac_args,
+        content_type=flac_type,
+        label=label,
+        target_sample_rate=fit.target_sample_rate,
+        target_bit_depth=fit.target_bit_depth,
+        target_channels=fit.target_channels,
+        transcode_reason=reason,
+    )
+
+
 def _lossy_ceiling_format(
     info: SourceInfo,
     fmt: str,
@@ -1079,21 +1109,118 @@ def _lossy_ceiling_format(
         f"{f'{info.bitrate_kbps}kbps ' if info.bitrate_kbps else ''}"
         f"exceeds the {fmt} {bitrate_kbps}kbps quality ceiling — re-encoding"
     )
-    return OutputFormat(
+    return _source_format(
+        info,
         ffmpeg_args=args,
         content_type=content_type,
         label=f"{info.codec} → {fmt} {bitrate_kbps}k (quality ceiling)",
-        source_codec=info.codec,
-        source_sample_rate=info.sample_rate,
-        source_bit_depth=info.bit_depth,
-        source_bitrate_kbps=info.bitrate_kbps,
-        source_duration=info.duration,
-        source_channels=info.channels,
         target_sample_rate=_lossy_sample_rate(fmt, info.sample_rate, max_sample_rate),
         target_channels=target_channels,
         target_bitrate_kbps=bitrate_kbps,
         transcode_reason=REASON_QUALITY_LIMIT,
     )
+
+
+def _copyable_source_format(
+    info: SourceInfo,
+    muxer: str,
+    fit: DeviceFitPlan,
+    *,
+    gain: float,
+    equalized: bool,
+    device_codecs: frozenset[str] | None,
+    limits: tuple[int | None, int | None, int | None],
+) -> OutputFormat:
+    """A source in a codec that can be stream-copied: copied where nothing
+    stands in the way, otherwise whichever re-encode the first obstacle
+    calls for. See resolve_output_format() for each of them."""
+    codec = info.codec
+    # _COPY_MUXER_FOR_CODEC says what *can* be copied; this says whether
+    # this particular target can play it. The two used to be the same
+    # question, which is how an AAC source reached an AirPlay device it
+    # has never been able to decode (see AirPlayDelivery.PLAYABLE_CODECS)
+    # — copied straight through, announced correctly, and silent.
+    if not _may_copy(codec, device_codecs):
+        plays = (
+            "nothing is known about this target"
+            if device_codecs is None
+            else (f"this target plays only {sorted(device_codecs)}")
+        )
+        logger.info(
+            f"[ffmpeg] format probe: '{codec}' could be copied, but {plays} — using mp3 fallback"
+        )
+        return _fallback(REASON_CODEC_NOT_CASTABLE, info.duration)
+    if fit.args and not _plays_flac(device_codecs):
+        # The conversion below has to happen — the source is past what this
+        # device can decode — but its usual lossless landing place is out.
+        logger.info(
+            f"[ffmpeg] format probe: '{codec}' exceeds this target's limit and it does not "
+            "play flac — using mp3 fallback"
+        )
+        return _fallback(REASON_DEVICE_LIMIT, info.duration)
+    if fit.args:
+        max_sample_rate, max_bit_depth, max_channels = limits
+        logger.info(
+            f"[ffmpeg] format probe: '{codec}' would copy, but source "
+            f"{info.sample_rate}Hz/{info.bit_depth}bit/{info.channels}ch exceeds this "
+            f"target's limit ({max_sample_rate}Hz/{max_bit_depth}bit/{max_channels}ch) "
+            f"— re-encoding to flac, {_fit_description(fit)}"
+        )
+        return _flac_format(
+            info,
+            fit,
+            f"{codec} → flac ({_fit_description(fit)} for device limit)",
+            REASON_DEVICE_LIMIT,
+        )
+    if gain == 1.0 and not equalized:
+        return _source_format(
+            info,
+            ffmpeg_args=["-acodec", "copy", "-f", muxer],
+            content_type=_CONTENT_TYPE_FOR_MUXER[muxer],
+            label=f"{codec} (copy)",
+        )
+    if equalized and codec == "flac" and _plays_flac(device_codecs):
+        flac_args, flac_type = lossless_encode_args()
+        return _source_format(
+            info,
+            ffmpeg_args=flac_args,
+            content_type=flac_type,
+            label="flac → flac (equalizer)",
+            transcode_reason=REASON_EQUALIZER,
+        )
+    if equalized:
+        logger.info(
+            f"[ffmpeg] format probe: '{codec}' would copy, but a target has an equalizer "
+            "— using mp3 fallback instead, since streamcopy and a filter can't be combined"
+        )
+        return _fallback(REASON_EQUALIZER, info.duration)
+    logger.info(
+        f"[ffmpeg] format probe: '{codec}' would copy, but ReplayGain is active "
+        "(gain != 1.0) — using mp3 fallback instead, since streamcopy and a volume "
+        "filter can't be combined"
+    )
+    return _fallback(REASON_REPLAY_GAIN, info.duration)
+
+
+def _lossless_source_format(
+    info: SourceInfo, fit: DeviceFitPlan, device_codecs: frozenset[str] | None
+) -> OutputFormat:
+    """A lossless source in a container that can't be copied: re-encoded to
+    FLAC, where the target plays it."""
+    if not _plays_flac(device_codecs):
+        logger.info(
+            f"[ffmpeg] format probe: lossless '{info.codec}' would become flac, which this "
+            "target does not play — using mp3 fallback"
+        )
+        return _fallback(REASON_CODEC_NOT_CASTABLE, info.duration)
+    label = f"{info.codec} → flac" + (
+        f" ({_fit_description(fit)} for device limit)" if fit.args else ""
+    )
+    # Both reasons are true for one that also had to be brought down to a
+    # device limit; that is the more specific (and more actionable) of the
+    # two, so it wins.
+    reason = REASON_DEVICE_LIMIT if fit.args else REASON_LOSSLESS_CONTAINER
+    return _flac_format(info, fit, label, reason)
 
 
 async def resolve_output_format(
@@ -1202,121 +1329,18 @@ async def resolve_output_format(
         )
 
     muxer = _COPY_MUXER_FOR_CODEC.get(codec)
-    # _COPY_MUXER_FOR_CODEC says what *can* be copied; this says whether
-    # this particular target can play it. The two used to be the same
-    # question, which is how an AAC source reached an AirPlay device it
-    # has never been able to decode (see AirPlayDelivery.PLAYABLE_CODECS)
-    # — copied straight through, announced correctly, and silent.
-    if muxer and not _may_copy(codec, device_codecs):
-        plays = (
-            "nothing is known about this target"
-            if device_codecs is None
-            else (f"this target plays only {sorted(device_codecs)}")
-        )
-        logger.info(
-            f"[ffmpeg] format probe: '{codec}' could be copied, but {plays} — using mp3 fallback"
-        )
-        return _fallback(REASON_CODEC_NOT_CASTABLE, info.duration)
-    if muxer and fit.args and not _plays_flac(device_codecs):
-        # The conversion below has to happen — the source is past what this
-        # device can decode — but its usual lossless landing place is out.
-        logger.info(
-            f"[ffmpeg] format probe: '{codec}' exceeds this target's limit and it does not "
-            "play flac — using mp3 fallback"
-        )
-        return _fallback(REASON_DEVICE_LIMIT, info.duration)
-    if muxer and fit.args:
-        logger.info(
-            f"[ffmpeg] format probe: '{codec}' would copy, but source "
-            f"{info.sample_rate}Hz/{info.bit_depth}bit/{info.channels}ch exceeds this "
-            f"target's limit ({max_sample_rate}Hz/{max_bit_depth}bit/{max_channels}ch) "
-            f"— re-encoding to flac, {_fit_description(fit)}"
-        )
-        flac_args, flac_type = lossless_encode_args(fit.args)
-        return OutputFormat(
-            ffmpeg_args=flac_args,
-            content_type=flac_type,
-            label=f"{codec} → flac ({_fit_description(fit)} for device limit)",
-            source_codec=info.codec,
-            source_sample_rate=info.sample_rate,
-            source_bit_depth=info.bit_depth,
-            source_bitrate_kbps=info.bitrate_kbps,
-            source_duration=info.duration,
-            source_channels=info.channels,
-            target_sample_rate=fit.target_sample_rate,
-            target_bit_depth=fit.target_bit_depth,
-            target_channels=fit.target_channels,
-            transcode_reason=REASON_DEVICE_LIMIT,
-        )
-    if muxer and gain == 1.0 and not equalized:
-        return OutputFormat(
-            ffmpeg_args=["-acodec", "copy", "-f", muxer],
-            content_type=_CONTENT_TYPE_FOR_MUXER[muxer],
-            label=f"{codec} (copy)",
-            source_codec=info.codec,
-            source_sample_rate=info.sample_rate,
-            source_bit_depth=info.bit_depth,
-            source_bitrate_kbps=info.bitrate_kbps,
-            source_duration=info.duration,
-            source_channels=info.channels,
-        )
-    if muxer and equalized and codec == "flac" and _plays_flac(device_codecs):
-        flac_args, flac_type = lossless_encode_args()
-        return OutputFormat(
-            ffmpeg_args=flac_args,
-            content_type=flac_type,
-            label="flac → flac (equalizer)",
-            source_codec=info.codec,
-            source_sample_rate=info.sample_rate,
-            source_bit_depth=info.bit_depth,
-            source_bitrate_kbps=info.bitrate_kbps,
-            source_duration=info.duration,
-            source_channels=info.channels,
-            transcode_reason=REASON_EQUALIZER,
-        )
-    if muxer and equalized:
-        logger.info(
-            f"[ffmpeg] format probe: '{codec}' would copy, but a target has an equalizer "
-            "— using mp3 fallback instead, since streamcopy and a filter can't be combined"
-        )
-        return _fallback(REASON_EQUALIZER, info.duration)
     if muxer:
-        logger.info(
-            f"[ffmpeg] format probe: '{codec}' would copy, but ReplayGain is active "
-            "(gain != 1.0) — using mp3 fallback instead, since streamcopy and a volume "
-            "filter can't be combined"
+        return _copyable_source_format(
+            info,
+            muxer,
+            fit,
+            gain=gain,
+            equalized=equalized,
+            device_codecs=device_codecs,
+            limits=(max_sample_rate, max_bit_depth, max_channels),
         )
-        return _fallback(REASON_REPLAY_GAIN, info.duration)
-
     if codec in _LOSSLESS_REENCODE_CODECS:
-        if not _plays_flac(device_codecs):
-            logger.info(
-                f"[ffmpeg] format probe: lossless '{codec}' would become flac, which this "
-                "target does not play — using mp3 fallback"
-            )
-            return _fallback(REASON_CODEC_NOT_CASTABLE, info.duration)
-        label = f"{codec} → flac" + (
-            f" ({_fit_description(fit)} for device limit)" if fit.args else ""
-        )
-        flac_args, flac_type = lossless_encode_args(fit.args)
-        return OutputFormat(
-            ffmpeg_args=flac_args,
-            content_type=flac_type,
-            label=label,
-            source_codec=info.codec,
-            source_sample_rate=info.sample_rate,
-            source_bit_depth=info.bit_depth,
-            source_bitrate_kbps=info.bitrate_kbps,
-            source_duration=info.duration,
-            source_channels=info.channels,
-            target_sample_rate=fit.target_sample_rate,
-            target_bit_depth=fit.target_bit_depth,
-            target_channels=fit.target_channels,
-            # Both are true for one that also had to be brought down to a
-            # device limit; that is the more specific (and more actionable)
-            # of the two, so it wins.
-            transcode_reason=(REASON_DEVICE_LIMIT if fit.args else REASON_LOSSLESS_CONTAINER),
-        )
+        return _lossless_source_format(info, fit, device_codecs)
 
     # Everything reaching here is a codec no tier above recognised: not
     # copyable, not lossless. A source a *target* cannot play never gets this

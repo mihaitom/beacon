@@ -14,7 +14,6 @@ import * as directives from 'vuetify/directives'
 import '@/assets/main.css'
 import 'vuetify/styles'
 import { i18n } from '@/i18n'
-import { useAuthStore } from '@/stores/auth'
 import MobileLayout from '@/layouts/MobileLayout.vue'
 import MobileTabBar from '@/components/mobile/MobileTabBar.vue'
 
@@ -36,6 +35,19 @@ function mountShell(push: () => void, route = reactive({ path: '/m/library', nam
   return wrapper
 }
 
+/** Lets a change finish drawing before it is measured. The bar animates
+ * both its height and the tab colours, so a reading straight after
+ * nextTick() lands mid-transition. Waits on the transitions themselves
+ * rather than on a fixed delay, and only on transitions: anything looping
+ * would never finish. */
+async function settled() {
+  await nextTick()
+  // Reading layout makes the browser start the transitions this change set off.
+  document.body.getBoundingClientRect()
+  const running = document.getAnimations().filter((a) => a instanceof CSSTransition)
+  await Promise.all(running.map((a) => a.finished.catch(() => undefined)))
+}
+
 describe('mobile tab bar', () => {
   afterEach(() => {
     while (wrappers.length) wrappers.pop()?.unmount()
@@ -46,14 +58,13 @@ describe('mobile tab bar', () => {
   /** Five tabs at Vuetify's own 80px button minimum are 400px, which is
    * wider than every common phone - the row centred itself and hung off
    * both ends, so the outer two lost a slice and part of their touch
-   * target. Radio, being last, was the one that would not open.
+   * target. The last tab was the one that would not open.
    *
    * Checked at four widths rather than one: the overflow grows as the
    * screen narrows, and 320px is where it used to be 80px. */
   it.each([320, 360, 390, 430])('keeps every tab inside the bar at %ipx', async (width) => {
     await page.viewport(width, 844)
     setActivePinia(createPinia())
-    useAuthStore().capabilities.internetRadio = true
     const wrapper = mountShell(vi.fn())
     await new Promise((resolve) => setTimeout(resolve, 80))
 
@@ -79,7 +90,6 @@ describe('mobile tab bar', () => {
   it.each([320, 390])('keeps a long label inside its own tab at %ipx', async (width) => {
     await page.viewport(width, 844)
     setActivePinia(createPinia())
-    useAuthStore().capabilities.internetRadio = true
     i18n.global.locale = 'fr'
     const wrapper = mountShell(vi.fn())
     await new Promise((resolve) => setTimeout(resolve, 80))
@@ -113,12 +123,11 @@ describe('mobile tab bar', () => {
   it('keeps the tabs clear of the bottom edge on a screen it owns', async () => {
     await page.viewport(390, 844)
     setActivePinia(createPinia())
-    useAuthStore().capabilities.internetRadio = true
     const wrapper = mountShell(vi.fn())
     await new Promise((resolve) => setTimeout(resolve, 80))
 
     wrapper.findComponent(MobileTabBar).vm.atScreenEdge = true
-    await nextTick()
+    await settled()
 
     const bar = wrapper.get('.mobile-tabbar').element.getBoundingClientRect()
     expect(Math.round(bar.bottom), 'the bar has left the bottom edge itself').toBe(844)
@@ -141,7 +150,6 @@ describe('mobile tab bar', () => {
   it('leaves no gap when the browser has its own chrome below', async () => {
     await page.viewport(390, 844)
     setActivePinia(createPinia())
-    useAuthStore().capabilities.internetRadio = true
     const wrapper = mountShell(vi.fn())
     await new Promise((resolve) => setTimeout(resolve, 80))
 
@@ -178,13 +186,11 @@ describe('mobile tab bar', () => {
   it('follows the route rather than the last tab tapped', async () => {
     await page.viewport(390, 844)
     setActivePinia(createPinia())
-    useAuthStore().capabilities.internetRadio = true
-    useAuthStore().capabilities.favorites = true
     const route = reactive({ path: '/m/library', name: 'm-library' })
     const wrapper = mountShell(vi.fn(), route)
     await new Promise((resolve) => setTimeout(resolve, 80))
 
-    const tabs = ['/m/queue', '/m/library', '/m/favorites', '/m/playlists', '/m/radio']
+    const tabs = ['/m/home', '/m/queue', '/m/library', '/m/playlists', '/m/more']
     /** The one tab rendered in a colour no other tab has, or -1 when they
      * all match and nothing is picked out. */
     const litTab = () => {
@@ -201,39 +207,38 @@ describe('mobile tab bar', () => {
     // What tapping the mini player does: Now Playing has no tab of its own.
     route.path = '/m/now-playing'
     route.name = 'm-now-playing'
-    await nextTick()
+    await settled()
     expect(litTab(), 'the tab left behind stayed lit').toBe(-1)
 
-    route.path = '/m/favorites'
-    route.name = 'm-favorites'
-    await nextTick()
-    expect(tabs[litTab()], 'the open tab is not picked out at all').toBe('/m/favorites')
+    route.path = '/m/home'
+    route.name = 'm-home'
+    await settled()
+    expect(tabs[litTab()], 'the open tab is not picked out at all').toBe('/m/home')
 
     // ...and what tapping the album cover on Now Playing does.
     route.path = '/m/albums/42'
     route.name = 'm-album-detail'
-    await nextTick()
+    await settled()
     expect(litTab(), 'a tab is still lit on a sub-page').toBe(-1)
   })
 
   /** The whole point of the above: the last tab has to be tappable, and at
    * its own centre rather than at whatever slice of it stayed on screen. */
-  it('opens Radio when its tab is tapped', async () => {
+  it('opens More when its tab is tapped', async () => {
     await page.viewport(360, 844)
     setActivePinia(createPinia())
-    useAuthStore().capabilities.internetRadio = true
     const push = vi.fn()
     const wrapper = mountShell(push)
     await new Promise((resolve) => setTimeout(resolve, 80))
 
-    const radio = wrapper.findAll('.mobile-tabbar .v-btn').at(-1)!
-    const tab = radio.element.getBoundingClientRect()
+    const more = wrapper.findAll('.mobile-tabbar .v-btn').at(-1)!
+    const tab = more.element.getBoundingClientRect()
     const hit = document.elementFromPoint(tab.left + tab.width / 2, tab.top + tab.height / 2)
-    expect(hit && radio.element.contains(hit), 'something else owns the middle of the tab').toBe(
+    expect(hit && more.element.contains(hit), 'something else owns the middle of the tab').toBe(
       true,
     )
 
-    await radio.trigger('click')
-    expect(push).toHaveBeenCalledWith('/m/radio')
+    await more.trigger('click')
+    expect(push).toHaveBeenCalledWith('/m/more')
   })
 })

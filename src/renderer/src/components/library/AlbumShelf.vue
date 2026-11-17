@@ -112,7 +112,7 @@ export default {
       default: false,
     },
     // Parent-owned — fetching every shelf album's full song list (see
-    // HomeView.vue's playAllAlbums()) is a real network round-trip per
+    // homeShelves.ts's playAllAlbums()) is a real network round-trip per
     // album, worth showing feedback for rather than a silent multi-second
     // pause after the click.
     playAllLoading: {
@@ -193,6 +193,19 @@ export default {
     },
     skeletonCount(): number {
       return this.skeletonsFitting
+    },
+  },
+  watch: {
+    // Scroll snapping keeps a row on the card it was snapped to, so albums
+    // arriving at the front pushed themselves out of view to the left and
+    // the shelf looked unchanged. A row somebody has scrolled along is left
+    // to it: there, staying on the same card is the right thing.
+    albums() {
+      const row = this.$refs.row as HTMLElement | undefined
+      if (!row || row.scrollLeft > 0) return
+      void this.$nextTick(() => {
+        row.scrollLeft = 0
+      })
     },
   },
   mounted() {

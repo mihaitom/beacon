@@ -110,6 +110,11 @@ const router = createRouter({
       component: () => import('../views/RadioView.vue'),
     },
     {
+      path: '/external/:id',
+      name: 'external-source',
+      component: () => import('../views/ExternalSourceView.vue'),
+    },
+    {
       path: '/search',
       name: 'search',
       component: () => import('../views/SearchView.vue'),
@@ -142,6 +147,11 @@ const router = createRouter({
     // directly), but App.vue's `layout` computed only ever *lands* someone
     // here automatically when isMobileWeb is true — see the 'home' redirect
     // in the guard below.
+    {
+      path: '/m/home',
+      name: 'm-home',
+      component: () => import('../views/mobile/MobileHomeView.vue'),
+    },
     {
       path: '/m/now-playing',
       name: 'm-now-playing',
@@ -185,15 +195,31 @@ const router = createRouter({
     // MobileLibraryView.vue), so the old path is kept as a redirect rather
     // than 404ing a bookmark or a link someone already has.
     { path: '/m/songs', redirect: { name: 'm-library' } },
-    {
-      path: '/m/favorites',
-      name: 'm-favorites',
-      component: () => import('../views/mobile/MobileFavoritesView.vue'),
-    },
+    // Favourites became the library's heart filter rather than a tab of
+    // their own (see MobileLibraryView.vue); kept as a redirect for a
+    // bookmark or a link someone already has.
+    { path: '/m/favorites', redirect: { name: 'm-library', query: { favorites: '1' } } },
     {
       path: '/m/radio',
       name: 'm-radio',
       component: () => import('../views/mobile/MobileRadioView.vue'),
+    },
+    // Radio, the external sources, party, stats and settings: what is not
+    // one of the four tabs for getting to music.
+    {
+      path: '/m/more',
+      name: 'm-more',
+      component: () => import('../views/mobile/MobileMoreView.vue'),
+    },
+    {
+      path: '/m/party',
+      name: 'm-party',
+      component: () => import('../views/mobile/MobilePartyView.vue'),
+    },
+    {
+      path: '/m/external/:id',
+      name: 'm-external-source',
+      component: () => import('../views/ExternalSourceView.vue'),
     },
   ],
 })
@@ -220,7 +246,6 @@ const CAPABILITY_ROUTES: Partial<
   'm-radio': 'internetRadio',
   stats: 'playHistoryStats',
   favorites: 'favorites',
-  'm-favorites': 'favorites',
   'smart-playlist-new': 'smartPlaylistEditor',
   'smart-playlist-rules': 'smartPlaylistEditor',
 }
@@ -252,7 +277,7 @@ function afterAuth(to: RouteLocationNormalizedGeneric): true | RouteLocationRaw 
     return withoutCapability(to)
   }
   if (to.name === 'home' && isMobileWebNow()) {
-    return { name: 'm-now-playing' }
+    return { name: 'm-home' }
   }
   return true
 }

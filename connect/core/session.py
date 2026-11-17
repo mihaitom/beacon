@@ -20,7 +20,7 @@ from delivery import BaseDelivery, DeliveryManager
 from media import MediaClient, SubsonicClient
 
 from . import icy_metadata, local_mixes, radio_ads, radio_history, title_match
-from .claims import claims
+from .claims import claims, is_remote
 from .device_volume import pushes_volume
 from .local_address import on_default_address
 from .loop_health import peak_lag
@@ -35,6 +35,7 @@ from .state import (
     stream_url,
     supports_radio_position,
 )
+from .stream_format import radio_content_type
 from .streamer import strip_stream_extension
 from .visualizer_feed import ASSUMED_DEVICE_LEAD_SECONDS, VisualizerFeed
 
@@ -89,6 +90,10 @@ class SessionState:
         self.account_server_url: str = ""
         self.account_username: str = ""
         self.account_is_admin: bool = False
+        # (server_type, url, username) as this login's renderer spells them:
+        # what routes/account_settings.py files its settings under, which is
+        # not the verified account above (that one prefers a server id).
+        self.settings_identity: tuple[str, str, str] | None = None
         # Navidrome's own API token for the smart playlist editor (see
         # routes/navidrome.py). Memory only, like the session itself; the
         # password it was issued for is never kept.
@@ -646,6 +651,17 @@ class SessionRegistry:
 registry = SessionRegistry()
 
 
+def holder_name(holder: str | None, target_type: str, name: str) -> str | None:
+    """Who to show as holding a speaker: a local session's name, or the
+    label another connect gave its claim (core/claims.py)."""
+    if holder is None:
+        return None
+    if is_remote(holder):
+        return claims.remote_label(holder, target_type, name)
+    session = registry.get(holder)
+    return session.display_name if session else None
+
+
 async def get_session(
     x_connect_session: str | None = Header(default=None),
     session: str | None = Query(default=None),
@@ -825,6 +841,94 @@ def radio_is_buffering(session: SessionState) -> bool:
 STATUS_EXTRAS: list = []
 
 
+def _current_song_status(session: SessionState) -> dict | None:
+    t = session.state.current_track
+    if t is None:
+        return None
+    return {
+        "id": t.id,
+        "artist": t.artist,
+        "album": t.album,
+        "cover_art_url": session.media.get_cover_art_url(t.cover_art_id),
+        "duration": t.duration,
+        "title": t.title,
+    }
+
+
+def _targets_status(session: SessionState) -> list[dict]:
+    st = session.state
+    targets = []
+    # What a device would be handed for the station playing right now — the
+    # Sonos half of supports_radio_position() depends on it (see
+    # core/state.py). Empty when no station is playing, which is also when
+    # the flag it feeds means nothing to anybody.
+    radio_url = radio_dispatch_url(session.session_id, st.radio_info) if st.radio_info else ""
+    for target_type, name in list_target_pairs(st.active_delivery):
+        key = f"{target_type}:{name}"
+        volume, muted = st.device_volumes.get(key, (None, None))
+        targets.append(
+            {
+                "name": name,
+                "type": target_type,
+                "volume": volume,
+                "muted": muted,
+                # Whether this device reports its own volume changes, so a
+                # client can stop asking it every few seconds — per device,
+                # not per type: two DLNA renderers differ on whether they
+                # accept a subscription at all. See core/device_volume.py.
+                "volume_push": pushes_volume(target_type, name),
+                # Whether this device's own reported position is worth
+                # watching for a *station* — what makes the radio
+                # visualizer and the buffering indicator possible for a
+                # cast (see core/radio_position.py). Reported rather than
+                # left to the client to work out: the frontend used to keep
+                # its own copy of the delivery-type list in
+                # stores/connect.ts, hand-synced with core/state.py's, with
+                # nothing to catch the two drifting apart — and the copy
+                # could not have known about the Sonos-while-relayed
+                # exception at all, since that depends on the URL this
+                # session is dispatching.
+                "supports_radio_position": supports_radio_position(target_type, radio_url),
+                # The device's own repeat setting, None where unknown - see
+                # routes/upnp.py's _REPEATING_PLAY_MODES.
+                "device_repeat": st.device_repeat.get(key),
+            }
+        )
+    return targets
+
+
+def _stream_info(st) -> dict:
+    fmt = st.current_output_format
+    return {
+        # "transcoding" is derived rather than a stored flag: every copy-tier
+        # label ends in "(copy)" (see core/streamer.py's resolve_output_format())
+        # and nothing else ever does, so this can't drift out of sync with the
+        # label text the way a second, hand-set boolean could.
+        "label": fmt.label,
+        "content_type": fmt.content_type,
+        "transcoding": "copy" not in fmt.label,
+        "source_codec": fmt.source_codec,
+        "source_sample_rate": fmt.source_sample_rate,
+        "source_bit_depth": fmt.source_bit_depth,
+        "source_bitrate_kbps": fmt.source_bitrate_kbps,
+        "source_channels": fmt.source_channels,
+        # Only set where the output is actually forced away from the
+        # source's own numbers, and why this track is being transcoded at
+        # all — see OutputFormat's own comment on both.
+        "target_sample_rate": fmt.target_sample_rate,
+        "target_bit_depth": fmt.target_bit_depth,
+        "target_channels": fmt.target_channels,
+        "target_bitrate_kbps": fmt.target_bitrate_kbps,
+        "transcode_reason": fmt.transcode_reason,
+        "active_connections": st.active_stream_connections,
+        # Process-wide, not session-scoped — see core/loop_health.py. A short
+        # window (30s) rather than the module's full 120s history: this is
+        # meant to answer "is anything wrong *right now*", not carry a stall
+        # from ten minutes ago forward on every status tick after it.
+        "loop_lag": peak_lag(30.0),
+    }
+
+
 def build_status_dict(
     session: SessionState,
     displaced: bool = False,
@@ -869,89 +973,9 @@ def build_status_dict(
     elapsed = compute_position(session)
     st = session.state
 
-    current_track = None
-    if st.current_track:
-        t = st.current_track
-        current_track = {
-            "id": t.id,
-            "artist": t.artist,
-            "album": t.album,
-            "cover_art_url": session.media.get_cover_art_url(t.cover_art_id),
-            "duration": t.duration,
-            "title": t.title,
-        }
-
-    targets = []
-    # What a device would be handed for the station playing right now — the
-    # Sonos half of supports_radio_position() depends on it (see
-    # core/state.py). Empty when no station is playing, which is also when
-    # the flag it feeds means nothing to anybody.
-    radio_url = radio_dispatch_url(session.session_id, st.radio_info) if st.radio_info else ""
-    for target_type, name in list_target_pairs(st.active_delivery):
-        key = f"{target_type}:{name}"
-        volume, muted = st.device_volumes.get(key, (None, None))
-        targets.append(
-            {
-                "name": name,
-                "type": target_type,
-                "volume": volume,
-                "muted": muted,
-                # Whether this device reports its own volume changes, so a
-                # client can stop asking it every few seconds — per device,
-                # not per type: two DLNA renderers differ on whether they
-                # accept a subscription at all. See core/device_volume.py.
-                "volume_push": pushes_volume(target_type, name),
-                # Whether this device's own reported position is worth
-                # watching for a *station* — what makes the radio
-                # visualizer and the buffering indicator possible for a
-                # cast (see core/radio_position.py). Reported rather than
-                # left to the client to work out: the frontend used to keep
-                # its own copy of the delivery-type list in
-                # stores/connect.ts, hand-synced with core/state.py's, with
-                # nothing to catch the two drifting apart — and the copy
-                # could not have known about the Sonos-while-relayed
-                # exception at all, since that depends on the URL this
-                # session is dispatching.
-                "supports_radio_position": supports_radio_position(target_type, radio_url),
-                # The device's own repeat setting, None where unknown - see
-                # routes/upnp.py's _REPEATING_PLAY_MODES.
-                "device_repeat": st.device_repeat.get(key),
-            }
-        )
-
-    fmt = st.current_output_format
-    stream_info = {
-        # "transcoding" is derived rather than a stored flag: every copy-tier
-        # label ends in "(copy)" (see core/streamer.py's resolve_output_format())
-        # and nothing else ever does, so this can't drift out of sync with the
-        # label text the way a second, hand-set boolean could.
-        "label": fmt.label,
-        "content_type": fmt.content_type,
-        "transcoding": "copy" not in fmt.label,
-        "source_codec": fmt.source_codec,
-        "source_sample_rate": fmt.source_sample_rate,
-        "source_bit_depth": fmt.source_bit_depth,
-        "source_bitrate_kbps": fmt.source_bitrate_kbps,
-        "source_channels": fmt.source_channels,
-        # Only set where the output is actually forced away from the
-        # source's own numbers, and why this track is being transcoded at
-        # all — see OutputFormat's own comment on both.
-        "target_sample_rate": fmt.target_sample_rate,
-        "target_bit_depth": fmt.target_bit_depth,
-        "target_channels": fmt.target_channels,
-        "target_bitrate_kbps": fmt.target_bitrate_kbps,
-        "transcode_reason": fmt.transcode_reason,
-        "active_connections": st.active_stream_connections,
-        # Process-wide, not session-scoped — see core/loop_health.py. A short
-        # window (30s) rather than the module's full 120s history: this is
-        # meant to answer "is anything wrong *right now*", not carry a stall
-        # from ten minutes ago forward on every status tick after it.
-        "loop_lag": peak_lag(30.0),
-    }
-
     status = {
-        "current_song": current_track,
-        "stream_info": stream_info,
+        "current_song": _current_song_status(session),
+        "stream_info": _stream_info(st),
         # The full queue (history included) and where current_track sits in
         # it — see AppState.queue's comment. Lets every client sharing this
         # session (not just whichever one dispatched it) mirror the same
@@ -998,7 +1022,7 @@ def build_status_dict(
         # ways of knowing that, and why the second one had to be added.
         "radio_buffering": radio_is_buffering(session),
         "streaming": st.is_streaming,
-        "targets": targets,
+        "targets": _targets_status(session),
         "total_songs": len(st.queue),
         "displaced": displaced,
         "interrupted": interrupted,
@@ -1113,11 +1137,10 @@ async def check_claims(
     if conflict is None:
         return None, []
     target_type, name, owner = conflict
-    owner_session = registry.get(owner)
     return {
         "device": {"name": name, "type": target_type},
         "error": "device_in_use",
-        "owner": owner_session.display_name if owner_session else "another session",
+        "owner": holder_name(owner, target_type, name) or "another session",
     }, []
 
 
@@ -1127,14 +1150,13 @@ def check_ownership(target_type: str, name: str, session: SessionState) -> dict 
     device itself, it only rejects when a *different* session currently owns
     it. Returns the same device_in_use error shape as check_claims(), or None
     when the device is unclaimed or owned by this session."""
-    owner = claims.owner_of(target_type, name)
+    owner = claims.holder_of(target_type, name)
     if owner is None or owner == session.session_id:
         return None
-    owner_session = registry.get(owner)
     return {
         "device": {"name": name, "type": target_type},
         "error": "device_in_use",
-        "owner": owner_session.display_name if owner_session else "another session",
+        "owner": holder_name(owner, target_type, name) or "another session",
     }
 
 
@@ -1236,6 +1258,24 @@ SESSION_IDLE_TIMEOUT = int(os.getenv("SESSION_IDLE_TIMEOUT", str(60 * 30)))
 # limit rather than an exemption — an unbounded one left a Sonos claimed
 # from 17:01 to 22:17 with nobody listening (observed live 2026-09-11).
 PAUSED_IDLE_TIMEOUT = int(os.getenv("PAUSED_IDLE_TIMEOUT", str(60 * 60 * 2)))
+
+
+def current_stream_dispatch(session: SessionState) -> tuple[str, str]:
+    """(url, content_type) a device is handed for what this session plays now.
+
+    Radio goes by its own dispatch URL - it has no track loaded, and the
+    /stream proxy answers 204 without one - announced as the station's type
+    probed at play time; a device told anything else refuses an AAC station
+    (see core/stream_format.py). A track goes through /stream, as whatever
+    /play resolved, which is what /stream sends."""
+    st = session.state
+    if st.radio_info:
+        return (
+            radio_dispatch_url(session.session_id, st.radio_info),
+            radio_content_type(st.radio_info),
+        )
+    content_type = st.current_output_format.content_type
+    return stream_url(session.session_id, content_type), content_type
 
 
 def is_this_sessions_stream(session: SessionState, uri: str) -> bool:

@@ -23,7 +23,7 @@ being diagnosed.
 GET /debug/test-radio: the same idea aimed at the path that actually has
 the timing problem. Everything above dispatches a *track*, and a track's
 clock is calibrated against the device's own reported position
-(routes/playback.py's position-resync), which is why track playback is in
+(core/cast_position.py), which is why track playback is in
 sync and has stayed that way. Radio has no such feedback for a relayed
 Sonos — core/state.py's first_radio_position_delivery() excludes it,
 leaving core/visualizer_feed.py's _FirstByteClock running on an estimated
@@ -58,6 +58,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import StreamingResponse
 
+from core.cast_position import apply_position_offset
 from core.ffmpeg import FFMPEG_BIN
 from core.icy_metadata import DEVICE_METAINT, IcyMuxer
 from core.session import SessionState, build_status_dict, require_authenticated_session
@@ -69,8 +70,6 @@ from core.streamer import (
     lossy_encode_args,
 )
 from media.base import Track
-
-from .playback import _apply_position_offset
 
 logger = logging.getLogger("connect.debug")
 router = APIRouter(prefix="/debug")
@@ -266,7 +265,7 @@ async def play_test_tone(session: SessionState = Depends(require_authenticated_s
         logger.exception("[debug] play-test-tone delivery error")
         return {"error": str(e)}
 
-    asyncio.create_task(_apply_position_offset(session, target, st.clock.play_generation))
+    asyncio.create_task(apply_position_offset(session, target, st.clock.play_generation))
     logger.info(f"[debug] ▶ test tone — {len(_TONE_SEQUENCE_HZ)} pitches, one every {_INTERVAL_S}s")
     await session.event_bus.broadcast(build_status_dict(session))
     return {

@@ -6,6 +6,7 @@
         <p class="setting__description">{{ $t('settings.clearCacheHint') }}</p>
         <v-btn
           variant="tonal"
+          rounded="pill"
           prepend-icon="mdi-broom"
           :loading="clearingCache"
           :disabled="clearingCache"

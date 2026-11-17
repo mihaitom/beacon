@@ -10,6 +10,7 @@ correct position.
 
 import asyncio
 import logging
+import threading
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -30,6 +31,7 @@ from core.streamer import (
 )
 from delivery import ChromecastDelivery
 from media import Track
+from media.base import ReplayGain
 from routes.stream import (
     DisconnectSnapshot,
     _advance_or_end,
@@ -726,7 +728,7 @@ async def test_dispatch_queued_track_updates_state_and_schedules_background_task
         patch("routes.stream.resolve_output_format", AsyncMock(return_value=FALLBACK_FORMAT)),
         patch.object(ChromecastDelivery, "play", new=AsyncMock()) as play_mock,
     ):
-        dispatched = await _dispatch_queued_track(default_session, target, next_track, gain=1.0)
+        dispatched = await _dispatch_queued_track(default_session, target, next_track)
 
     assert dispatched is True
     assert play_mock.await_count == 1
@@ -734,25 +736,58 @@ async def test_dispatch_queued_track_updates_state_and_schedules_background_task
     assert default_session.state.is_streaming is True
 
 
-async def test_dispatch_queued_track_passes_its_gain_to_resolve_output_format(default_session):
-    """Regression test: resolve_output_format() needs to know the
-    ReplayGain multiplier up front to rule out a stream-copy tier that
-    can't actually apply it (see that function's own comment) — the same
-    `gain` this reuses for the device dispatch itself (see this function's
-    own docstring) must also reach resolve_output_format()."""
+async def _dispatch_next(default_session, next_track):
+    """Auto-advances from song 1, started by the app at +6 dB, to
+    `next_track`. Returns the gain the next song's stream was resolved with."""
     target = ChromecastDelivery("TV")
     _playing_session(default_session, ["1", "2"], target=target)
-    next_track = Track(id="2", title="Next", artist="Artist", duration=200, cover_art_id="c")
-
+    default_session.state.current_track_gain = 2.0
     with (
         patch(
             "routes.stream.resolve_output_format", AsyncMock(return_value=FALLBACK_FORMAT)
         ) as resolve_mock,
         patch.object(ChromecastDelivery, "play", new=AsyncMock()),
     ):
-        await _dispatch_queued_track(default_session, target, next_track, gain=0.8)
+        await _dispatch_queued_track(default_session, target, next_track)
+    return resolve_mock.call_args.kwargs["gain"]
 
-    assert resolve_mock.call_args.kwargs["gain"] == 0.8
+
+def _song_with_gain(track_gain_db):
+    return Track(
+        id="2",
+        title="Next",
+        artist="Artist",
+        duration=200,
+        cover_art_id="c",
+        replay_gain=ReplayGain(track_gain=track_gain_db),
+    )
+
+
+async def test_dispatch_queued_track_applies_the_next_songs_own_replay_gain(default_session):
+    """Regression test: every song connect moved on to by itself used to
+    play at the first song's gain, so with ReplayGain on a whole queue cast
+    from a sleeping phone played at one volume. The gain has to reach
+    resolve_output_format() too - it rules out a stream copy, which can't
+    apply it - and the session, which the stream itself reads."""
+    default_session.state.replay_gain_mode = "song"
+
+    gain = await _dispatch_next(default_session, _song_with_gain(-6.0))
+
+    assert gain == pytest.approx(0.501, abs=1e-3)
+    assert default_session.state.current_track_gain == gain
+
+
+async def test_dispatch_queued_track_plays_flat_with_replay_gain_off(default_session):
+    default_session.state.replay_gain_mode = "off"
+
+    assert await _dispatch_next(default_session, _song_with_gain(-6.0)) == 1.0
+
+
+async def test_dispatch_queued_track_prefers_the_apps_own_gain_for_a_song(default_session):
+    default_session.state.replay_gain_mode = "song"
+    default_session.state.song_hints = {"2": {"gain": 0.7}}
+
+    assert await _dispatch_next(default_session, _song_with_gain(-6.0)) == 0.7
 
 
 async def test_dispatch_queued_track_judges_the_format_by_the_speakers_equalizer(
@@ -772,7 +807,7 @@ async def test_dispatch_queued_track_judges_the_format_by_the_speakers_equalizer
         ) as resolve_mock,
         patch.object(ChromecastDelivery, "play", new=AsyncMock()),
     ):
-        await _dispatch_queued_track(default_session, target, next_track, gain=1.0)
+        await _dispatch_queued_track(default_session, target, next_track)
 
     assert resolve_mock.call_args.kwargs["equalized"] is True
 
@@ -1164,6 +1199,121 @@ async def test_resolve_track_does_not_block_the_event_loop(default_session):
     await lookup
 
 
+async def test_stream_url_lookup_runs_off_the_event_loop(default_session):
+    """Plex has to look the URL up over the network first; run on the loop,
+    that request freezes every open /stream socket for its whole length."""
+    lookup_thread = {}
+
+    def _lookup(track_id):
+        lookup_thread["id"] = threading.get_ident()
+        return "http://media/stream"
+
+    default_session.media.get_stream_url = _lookup
+    track = Track(id="1", title="Song", artist="Artist", duration=180, cover_art_id="")
+
+    url = await stream_routes._source_url(default_session, track, None)
+
+    assert url == "http://media/stream"
+    assert lookup_thread["id"] != threading.get_ident()
+
+
+async def test_a_mix_connection_looks_up_no_stream_url(default_session):
+    """A mix fetches each song itself; asking the server for one here is a
+    wasted round trip - a network one for Plex - on every connection."""
+    default_session.media.get_stream_url = MagicMock()
+    track = Track(id="1", title="Song", artist="Artist", duration=180, cover_art_id="")
+
+    assert await stream_routes._source_url(default_session, track, MagicMock()) is None
+    default_session.media.get_stream_url.assert_not_called()
+
+
+async def test_fire_track_end_advances_only_under_the_play_lock(default_session):
+    """A track ending in the same instant as a user's skip or stop must not
+    interleave its state changes with theirs."""
+    generation = default_session.state.clock.play_generation
+    with patch("routes.stream._advance_or_end", new=AsyncMock()) as advance:
+        async with default_session.play_lock:
+            ending = asyncio.create_task(
+                stream_routes._fire_track_end(default_session, generation, 0.0)
+            )
+            await asyncio.sleep(0.01)
+            advance.assert_not_awaited()
+        await ending
+    advance.assert_awaited_once_with(default_session, generation)
+
+
+def _session_mid_track(default_session):
+    st = default_session.state
+    st.current_track = Track(id="1", title="Song", artist="Artist", duration=180, cover_art_id="")
+    st.is_streaming = True
+    st.clock.start(0.0)
+    return st
+
+
+def test_track_end_is_not_scheduled_while_paused(default_session):
+    """A paused track has not ended; /resume schedules its end afresh."""
+    st = _session_mid_track(default_session)
+    st.clock.pause(10.0)
+    with patch("routes.stream.asyncio.create_task") as create_task:
+        stream_routes._schedule_track_end(default_session, st.clock.play_generation)
+    create_task.assert_not_called()
+
+
+def test_track_end_is_not_scheduled_for_a_superseded_connection(default_session):
+    """A connection that finishes after a skip or seek would otherwise end
+    the track that replaced it."""
+    st = _session_mid_track(default_session)
+    with patch("routes.stream.asyncio.create_task") as create_task:
+        stream_routes._schedule_track_end(default_session, st.clock.play_generation - 1)
+    create_task.assert_not_called()
+
+
+def test_track_end_is_not_scheduled_once_playback_has_stopped(default_session):
+    st = _session_mid_track(default_session)
+    st.is_streaming = False
+    with patch("routes.stream.asyncio.create_task") as create_task:
+        stream_routes._schedule_track_end(default_session, st.clock.play_generation)
+    create_task.assert_not_called()
+
+
+async def test_a_mix_connection_leaves_the_track_end_to_the_mix(default_session):
+    """A mix moves on by itself (routes/mix_cast.py's follow()); scheduling
+    a track end as well would advance the queue a second time."""
+    st = _session_mid_track(default_session)
+    st.mix = MagicMock()
+
+    async def _mix_audio(*args, **kwargs):
+        yield b"\x00" * 1024
+
+    with (
+        patch("routes.stream.mix_cast.mix_audio", side_effect=_mix_audio),
+        patch("routes.stream._schedule_track_end") as schedule,
+    ):
+        resp = await audio_stream(_device_request(), session_id=default_session.session_id)
+        [_ async for _ in resp.body_iterator]
+
+    schedule.assert_not_called()
+
+
+async def test_a_superseded_connection_s_ffmpeg_failure_leaves_playback_alone(default_session):
+    """The old connection failing as it is torn down must not stop the
+    track that replaced it."""
+    st = _session_mid_track(default_session)
+    await stream_routes._on_ffmpeg_failure(default_session, st.clock.play_generation - 1)
+    assert st.is_streaming is True
+
+
+async def test_a_superseded_connection_s_missing_source_reports_nothing(default_session):
+    """Only the track playing now can be reported as unplayable."""
+    st = _session_mid_track(default_session)
+    st.active_delivery = ChromecastDelivery("TV")
+    with patch("routes.stream.mark_delivery_failed", new=AsyncMock()) as mark_failed:
+        await stream_routes._on_source_unavailable(
+            default_session, st.clock.play_generation - 1, SourceUnavailableError("gone")
+        )
+    mark_failed.assert_not_awaited()
+
+
 # ── mark_interrupted ─────────────────────────────────────────────────────────
 # Shared by the grace-period check below and by delivery/airplay.py, which
 # reaches the same conclusion by an entirely different route: a push that
@@ -1411,7 +1561,7 @@ async def test_a_finished_track_that_auto_advanced_is_not_a_drop(
     default_session.media.get_cover_art_url = MagicMock(return_value=None)
     next_track = Track(id="2", title="Next", artist="A", duration=180, cover_art_id="")
 
-    assert await _dispatch_queued_track(default_session, delivery, next_track, 1.0) is True
+    assert await _dispatch_queued_track(default_session, delivery, next_track) is True
 
     q = default_session.event_bus.subscribe()
     await _mark_disconnected_if_not_reconnected(default_session, my_generation=finished_generation)

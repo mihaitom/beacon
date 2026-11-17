@@ -48,6 +48,12 @@ REASON_STATION_REFUSED = "station_refused"
 #: something it could report usefully: a Sonos calls the empty stream a
 #: corrupt file.
 REASON_SOURCE_FAILED = "source_failed"
+#: The device answers but cannot get at the stream's address (UPnP 737-739:
+#: no DNS server, bad domain name, server error). Not REASON_UNREACHABLE,
+#: which blames the device: for Beacon's own stream it is the way from the
+#: device back to Beacon, for a station cast directly a host name the device
+#: cannot resolve.
+REASON_STREAM_UNREACHABLE = "stream_unreachable"
 #: Anything this can't place. Carries `detail` through to the UI, which is
 #: no worse than what every failure used to show.
 REASON_UNKNOWN = "unknown"
@@ -69,6 +75,9 @@ _UPNP_REASONS = {
     "800": REASON_REJECTED,  # Sonos vendor fault, in practice "I won't play that"
     "705": REASON_BUSY,  # Transport is locked
     "715": REASON_BUSY,  # Resource is currently in use
+    "737": REASON_STREAM_UNREACHABLE,  # No DNS server
+    "738": REASON_STREAM_UNREACHABLE,  # Bad domain name
+    "739": REASON_STREAM_UNREACHABLE,  # Server error
 }
 
 

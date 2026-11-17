@@ -1,5 +1,5 @@
 import { fireCommand, fetchRadioStations } from '../api.js';
-import { registerRoute } from '../router.js';
+import { navigate, registerRoute } from '../router.js';
 import { createArt } from '../art.js';
 import { t } from '../i18n.js';
 
@@ -35,6 +35,9 @@ export function renderRadio(root) {
 }
 
 registerRoute('/radio', renderRadio);
+// More held only Radio; an installed shell left on the old hash lands on
+// the Radio tab instead of a blank page.
+registerRoute('/more', () => navigate('/radio'));
 
 function escapeHtml(text) {
   const div = document.createElement('div');

@@ -17,7 +17,7 @@ from media.jellyfin import JellyfinClient
 from media.plex import PlexClient
 
 
-async def _subsonic(media, endpoint: str, **params: str) -> dict:
+async def subsonic_call(media, endpoint: str, **params: str) -> dict:
     """One Subsonic call to whichever server the session talks to: Navidrome
     directly, Jellyfin and Plex through their bridges."""
     if isinstance(media, JellyfinClient):
@@ -27,7 +27,7 @@ async def _subsonic(media, endpoint: str, **params: str) -> dict:
     return await asyncio.to_thread(media._get, endpoint, **params)
 
 
-def _song(song: dict) -> dict:
+def song_fields(song: dict) -> dict:
     return {
         "id": song.get("id"),
         "title": song.get("title"),
@@ -38,7 +38,7 @@ def _song(song: dict) -> dict:
     }
 
 
-def _album(album: dict) -> dict:
+def album_fields(album: dict) -> dict:
     return {
         "id": album.get("id"),
         "name": album.get("name"),
@@ -49,7 +49,7 @@ def _album(album: dict) -> dict:
 
 
 async def search_songs(media, search: str, offset: int, limit: int) -> dict:
-    data = await _subsonic(
+    data = await subsonic_call(
         media,
         "search3.view",
         query=search,
@@ -58,14 +58,14 @@ async def search_songs(media, search: str, offset: int, limit: int) -> dict:
         albumCount="0",
         artistCount="0",
     )
-    songs = [_song(s) for s in (data.get("searchResult3") or {}).get("song") or []]
+    songs = [song_fields(s) for s in (data.get("searchResult3") or {}).get("song") or []]
     # search3 does not say how many there are in all; the guest page only
     # reads the items anyway.
     return {"items": songs, "total": offset + len(songs)}
 
 
 async def search_albums(media, search: str, offset: int, limit: int) -> dict:
-    data = await _subsonic(
+    data = await subsonic_call(
         media,
         "search3.view",
         query=search,
@@ -74,16 +74,19 @@ async def search_albums(media, search: str, offset: int, limit: int) -> dict:
         songCount="0",
         artistCount="0",
     )
-    albums = [_album(a) for a in (data.get("searchResult3") or {}).get("album") or []]
+    albums = [album_fields(a) for a in (data.get("searchResult3") or {}).get("album") or []]
     return {"items": albums, "total": offset + len(albums)}
 
 
 async def get_album(media, album_id: str) -> dict:
-    data = await _subsonic(media, "getAlbum.view", id=album_id)
+    data = await subsonic_call(media, "getAlbum.view", id=album_id)
     album = data.get("album")
     if not album:
         return {"album": None, "songs": []}
-    return {"album": _album(album), "songs": [_song(s) for s in album.get("song") or []]}
+    return {
+        "album": album_fields(album),
+        "songs": [song_fields(s) for s in album.get("song") or []],
+    }
 
 
 async def get_song(media, song_id: str) -> dict:

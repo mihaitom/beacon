@@ -26,8 +26,9 @@ import '@mdi/font/css/materialdesignicons.css'
 // declarations are invalid at computed-value time and drop out whole, so
 // every border measures 0px and the divider assertion below would pass no
 // matter what the rule said.
-import { i18n } from '@/i18n'
+import { applyLocale, getLocale, i18n, SUPPORTED_LOCALES } from '@/i18n'
 import { useAuthStore } from '@/stores/auth'
+import { useExternalSourceStore } from '@/stores/externalSource'
 import { usePlaybackStore } from '@/stores/playback'
 import SettingsView from '../SettingsView.vue'
 
@@ -111,6 +112,27 @@ describe('SettingsView layout', () => {
     expect(strip!.left).toBeGreaterThanOrEqual(panel!.left - 1)
   })
 
+  it('keeps the external sources actions on one line', async () => {
+    // The help and copy buttons are words, so how wide they are depends on
+    // the language: French is the longest. Flex-wrap resolving that is
+    // exactly what jsdom cannot answer.
+    const original = getLocale()
+    try {
+      for (const locale of SUPPORTED_LOCALES) {
+        applyLocale(locale)
+        await mountSettings(1200)
+        useExternalSourceStore().set({ may_configure: true, sources: [] })
+        await showTab('library')
+
+        const actions = rects('.external-sources__actions .v-btn')
+        expect(actions, locale).toHaveLength(4)
+        expect(new Set(actions.map((action) => Math.round(action.top))).size, locale).toBe(1)
+      }
+    } finally {
+      applyLocale(original)
+    }
+  })
+
   /** The format select carries the actual decision and the bitrate is a
    * number that needs no room, so they share a line where there is one. */
   it('puts format and bitrate side by side with room, and stacks them without', async () => {
@@ -151,7 +173,8 @@ describe('SettingsView layout', () => {
    * place in the page where the rhythm visibly broke. */
   it('draws a divider between blocks but never above the topmost in a panel', async () => {
     await mountSettings(1200)
-    const panels = [...document.querySelectorAll('.beacon-panel')]
+    // Not the list panels, whose rows draw their own lines.
+    const panels = [...document.querySelectorAll('.beacon-panel:not(.beacon-panel--flush)')]
 
     for (const panel of panels) {
       const settings = [...panel.querySelectorAll(':scope > .setting')]
@@ -175,5 +198,20 @@ describe('SettingsView layout', () => {
       (panel) => panel.querySelectorAll(':scope > .setting').length > 1,
     )
     expect(withSiblings.length).toBeGreaterThan(0)
+  })
+
+  /** With room, the tab bar becomes a column beside the settings rather
+   * than a strip above them; a phone keeps it on top. */
+  it('puts the tabs beside the settings with room, and above them without', async () => {
+    await mountSettings(1400)
+    const [wideTabs] = rects('.settings-tabs')
+    const [widePanel] = rects('.beacon-panel')
+    expect(widePanel!.left).toBeGreaterThanOrEqual(wideTabs!.right)
+    expect(widePanel!.top).toBeLessThan(wideTabs!.bottom)
+
+    await mountSettings(390, 800)
+    const [narrowTabs] = rects('.settings-tabs')
+    const [narrowPanel] = rects('.beacon-panel')
+    expect(narrowPanel!.top).toBeGreaterThanOrEqual(narrowTabs!.bottom)
   })
 })

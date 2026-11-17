@@ -15,7 +15,7 @@ import time
 from dataclasses import dataclass, field
 
 # How long a background position-resync correction (calibrate(), called from
-# routes/playback.py's periodic resync loop and its one-shot startup
+# core/cast_position.py's periodic resync loop and its one-shot startup
 # counterpart) takes to blend fully into elapsed()'s *output*, rather than
 # applying instantly. position_offset itself still updates immediately —
 # seconds_until()'s auto-advance scheduling and every log line that reads it
@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 # and the visualizer both suddenly snapping backward in the same instant,
 # instead of just quietly catching up (observed 2026-08-20). 2s is short
 # enough that a real, deliberate device-side seek (the other thing
-# calibrate() catches, see _resync_position_once()'s docstring) still feels
+# calibrate() catches, see resync_position_once()'s docstring) still feels
 # responsive rather than sluggish.
 _OFFSET_SLEW_SECONDS = 2.0
 
@@ -55,7 +55,7 @@ _OFFSET_SLEW_SECONDS = 2.0
 # one moment something really happened.
 # Lives here rather than with either caller because both of them
 # calibrate against a device reading and neither owns the answer:
-# routes/playback.py's resync loop for a track, core/radio_position.py's
+# core/cast_position.py's resync loop for a track, core/radio_position.py's
 # tracker for a cast station.
 POSITION_RESYNC_THRESHOLD = 1.0
 

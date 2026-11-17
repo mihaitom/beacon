@@ -11,19 +11,21 @@ Decks are replaced with silent stand-ins: nothing here may start ffmpeg.
 """
 
 import asyncio
+from dataclasses import replace
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 import core.mix_engine as me
+from core.cast_position import finish_orphaned_track, resync_position_once
 from core.mix_engine import MixEngine, MixItem
 from core.mix_timeline import SAMPLE_RATE
 from core.session import build_status_dict, compute_position
 from core.streamer import FALLBACK_FORMAT, REASON_TRANSITIONS, resolve_mix_format
 from delivery import ChromecastDelivery
 from media import Track
+from media.base import ReplayGain
 from routes import mix_cast
-from routes.playback import _finish_orphaned_track, _resync_position_once
 from routes.stream import _resume_after_interruption, advance_now
 
 SR = SAMPLE_RATE
@@ -251,6 +253,20 @@ def test_a_queue_edit_reaches_the_mix(client, default_session, media):
     assert default_session.state.song_hints["3"]["gain"] == 0.8
 
 
+def test_play_and_queue_remember_the_replay_gain_mode(client, default_session, media):
+    """For the songs connect starts by itself. A client that does not send
+    it leaves the mode alone rather than switching ReplayGain off."""
+    with patch.object(ChromecastDelivery, "play", new=AsyncMock()):
+        _play(client, replay_gain_mode="album")
+    assert default_session.state.replay_gain_mode == "album"
+    client.post("/queue", json={"song_ids": ["1", "3"], "queue_index": 0})
+    assert default_session.state.replay_gain_mode == "album"
+    client.post(
+        "/queue", json={"song_ids": ["1", "3"], "queue_index": 0, "replay_gain_mode": "song"}
+    )
+    assert default_session.state.replay_gain_mode == "song"
+
+
 async def test_a_party_skip_starts_a_new_mix_at_the_next_song(default_session):
     st = default_session.state
     st.queue, st.queue_index, st.is_streaming = ["1", "2"], 0, True
@@ -359,7 +375,7 @@ async def test_a_device_position_past_the_song_is_not_ignored_in_a_mix(default_s
     device = ChromecastDelivery("TV")
     st.active_delivery = device
     with patch.object(device, "get_position", new=AsyncMock(return_value=405.0)):
-        await _resync_position_once(default_session, device, st.clock.play_generation)
+        await resync_position_once(default_session, device, st.clock.play_generation)
     assert st.clock.position_offset == pytest.approx(5.0, abs=0.5)
 
 
@@ -369,7 +385,7 @@ async def test_a_mix_is_never_closed_out_as_an_orphaned_song(default_session):
     st.mix = MixEngine(MixItem("1", 0), 0.0, AsyncMock(), AsyncMock())
     st.clock.start(0.0)
     st.clock.play_start_time -= 1000.0  # far past the first song's 180s
-    assert not await _finish_orphaned_track(default_session, st.clock.play_generation)
+    assert not await finish_orphaned_track(default_session, st.clock.play_generation)
     assert st.is_streaming
 
 
@@ -498,6 +514,18 @@ async def test_the_next_song_carries_its_hint(default_session):
     default_session.state.song_hints = {"2": {"gain": 0.4, "album_id": "al", "track": 2}}
     item = await _next(default_session, MixItem("1", 0), queue=["1", "2"])
     assert (item.gain, item.album_id, item.track) == (0.4, "al", 2)
+
+
+async def test_a_song_past_the_hints_gets_its_own_replay_gain(default_session):
+    """The app only sends hints for the next few songs; a mix that plays on
+    past them must not carry the previous song's gain over."""
+    st = default_session.state
+    st.replay_gain_mode, st.current_track_gain = "song", 2.0
+    loud = replace(TRACKS["2"], replay_gain=ReplayGain(track_gain=-6.0))
+    with patch.object(default_session.media, "get_track", return_value=loud):
+        st.queue = ["1", "2"]
+        item = await mix_cast.next_item(default_session, MixItem("1", 0))
+    assert item.gain == pytest.approx(0.501, abs=1e-3)
 
 
 # ── The format ─────────────────────────────────────────────────────────────

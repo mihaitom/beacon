@@ -8,7 +8,6 @@ services:
             # of these does and when you'd need them.
             # - NAVIDROME_INTERNAL_URL=http://localhost:4533
             # - JELLYFIN_INTERNAL_URL=http://localhost:8096
-            # - CONNECT_TOKEN=change-me
             # - SERVER_URL=https://navidrome.example.com
             # - SERVER_LOCK=true
             # - SERVER_TYPE=subsonic

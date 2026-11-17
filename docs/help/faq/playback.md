@@ -1,5 +1,6 @@
 ---
-order: 2
+group: listening
+order: 1
 ---
 
 # How playback behaves

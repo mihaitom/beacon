@@ -1,0 +1,255 @@
+"""core/device_keys.py - the keys a Beacon server gives out to desktops and apps.
+
+A desktop app has its own connect and its own login, so a server cannot tell
+from a request whose desktop is calling. A key answers that: a listener makes
+one while signed in on the server, and it speaks for that one account from
+then on, whichever address the desktop reaches the media server by.
+
+The key is `<id>.<secret>`: the id finds the row, so the secret's hash is the
+only thing compared, and in constant time. Only the hash is stored.
+
+The account settings are filed under a different identity from the play
+history (see SessionState.settings_identity). That one is partly what the
+renderer claimed, so it is only kept when its name is the verified one: a key
+outlives the session that made it, and must not reach further than it did.
+"""
+
+import hashlib
+import json
+import secrets
+import time
+import uuid
+from collections.abc import Iterable
+from typing import NamedTuple
+
+from core import media_login, play_history, server_link
+from core.play_history import Account
+
+# More devices than anyone has; the bound is against a runaway script.
+MAX_KEYS_PER_ACCOUNT = 20
+
+# last_used_at is shown in days and hours. Without this, every request would
+# be a database write.
+_LAST_USED_RESOLUTION_SECONDS = 60
+
+# A running desktop checks in every IDLE_SECONDS. Two of those can pass with
+# one missed, and last_used_at is only as exact as the resolution above.
+ACTIVE_WITHIN_SECONDS = int(2 * server_link.IDLE_SECONDS) + _LAST_USED_RESOLUTION_SECONDS
+
+_NO_SUCH_KEY_HASH = hashlib.sha256(b"").hexdigest()
+
+SYNC = server_link.SYNC_SCOPE
+API_KEYS = "api_keys"
+HISTORY = "history"
+STATS = "stats"
+NOW_PLAYING = "now_playing"
+LYRICS = "lyrics"
+CONTROL = "control"
+LIBRARY = "library"
+_APP_SCOPES = {HISTORY, STATS, NOW_PLAYING, LYRICS, CONTROL, LIBRARY}
+# What only a server hands out: a desktop does not pair with another desktop.
+SERVER_ONLY_SCOPES = frozenset({SYNC, API_KEYS})
+
+
+class TooManyKeys(Exception):
+    pass
+
+
+class InvalidScopes(Exception):
+    pass
+
+
+class MissingMediaLogin(Exception):
+    """The library right without a media login to browse with."""
+
+
+class KeyOwner(NamedTuple):
+    key_id: str
+    account: Account
+    settings_identity: tuple[str, str, str] | None
+    scopes: frozenset[str] = frozenset({SYNC})
+    # The account's connect session the key was made in; None for a key
+    # older than that, or made outside one.
+    session_id: str | None = None
+
+
+def _stored_scopes(scopes: Iterable[str]) -> str:
+    """A key is a desktop's or an app's, never both: a desktop key can write
+    to the account, and an app's lives in somebody's own code."""
+    chosen = set(scopes)
+    if not chosen or not chosen <= {SYNC, API_KEYS, *_APP_SCOPES}:
+        raise InvalidScopes
+    if SYNC in chosen and chosen & _APP_SCOPES:
+        raise InvalidScopes
+    if API_KEYS in chosen and SYNC not in chosen:
+        raise InvalidScopes
+    # Lyrics are only ever those of the song playing now.
+    if LYRICS in chosen and NOW_PLAYING not in chosen:
+        raise InvalidScopes
+    # Browsing is for picking what to play.
+    if LIBRARY in chosen and CONTROL not in chosen:
+        raise InvalidScopes
+    return ",".join(sorted(chosen))
+
+
+def settings_identity_of(session) -> tuple[str, str, str] | None:
+    """The session's settings identity, if its name is the verified one.
+    Compared without case: a Subsonic login is not case sensitive."""
+    identity = session.settings_identity
+    if not identity or identity[2].casefold() != session.account_username.casefold():
+        return None
+    return identity
+
+
+def _hash(secret: str) -> str:
+    return hashlib.sha256(secret.encode()).hexdigest()
+
+
+def create(
+    account: Account,
+    label: str,
+    settings_identity: tuple[str, str, str] | None,
+    now: float | None = None,
+    scopes: Iterable[str] = (SYNC,),
+    login: dict | None = None,
+    session_id: str | None = None,
+) -> dict:
+    """The only time the key itself exists outside the device it goes to.
+    Raises InvalidScopes for a combination no key may have. `login` is the
+    media login a key with the library right browses with, and is kept only
+    for such a key."""
+    stored_scopes = _stored_scopes(scopes)
+    has_library = LIBRARY in stored_scopes.split(",")
+    if has_library and login is None:
+        raise MissingMediaLogin
+    created_at = int(time.time() if now is None else now)
+    key_id = uuid.uuid4().hex
+    secret = secrets.token_urlsafe(32)
+    sealed = media_login.seal(login, key_id, secret) if has_library else None
+    with play_history.transaction() as conn:
+        account_id = play_history.account_row(conn, account)
+        count = conn.execute(
+            "SELECT COUNT(*) FROM device_keys WHERE account_id = ?", (account_id,)
+        ).fetchone()[0]
+        if count >= MAX_KEYS_PER_ACCOUNT:
+            raise TooManyKeys
+        conn.execute(
+            "INSERT INTO device_keys"
+            " (id, account_id, key_hash, label, settings_identity, created_at, scopes,"
+            " media_login, session_id)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                key_id,
+                account_id,
+                _hash(secret),
+                label,
+                None if settings_identity is None else json.dumps(settings_identity),
+                created_at,
+                stored_scopes,
+                sealed,
+                session_id,
+            ),
+        )
+    return {
+        "id": key_id,
+        "key": f"{key_id}.{secret}",
+        "label": label,
+        "created_at": created_at,
+        "scopes": stored_scopes.split(","),
+    }
+
+
+def list_keys(account: Account, now: float | None = None) -> list[dict]:
+    """`active` is worked out here so that a browser's wrong clock cannot
+    light up a device that has gone."""
+    stamp = time.time() if now is None else now
+    with play_history.transaction() as conn:
+        rows = conn.execute(
+            "SELECT device_keys.id, label, created_at, last_used_at, scopes"
+            " FROM device_keys"
+            " JOIN accounts ON accounts.id = account_id"
+            " WHERE server_type = ? AND server_url = ? AND username = ?"
+            " ORDER BY created_at",
+            account,
+        ).fetchall()
+    return [
+        {
+            "id": row["id"],
+            "label": row["label"],
+            "created_at": row["created_at"],
+            "last_used_at": row["last_used_at"],
+            "scopes": row["scopes"].split(","),
+            "active": row["last_used_at"] is not None
+            and stamp - row["last_used_at"] < ACTIVE_WITHIN_SECONDS,
+        }
+        for row in rows
+    ]
+
+
+def revoke(account: Account, key_id: str) -> bool:
+    """False when this account has no such key, somebody else's included."""
+    with play_history.transaction() as conn:
+        cursor = conn.execute(
+            "DELETE FROM device_keys WHERE id = ? AND account_id ="
+            " (SELECT id FROM accounts WHERE server_type = ? AND server_url = ? AND username = ?)",
+            (key_id, *account),
+        )
+        return cursor.rowcount > 0
+
+
+def account_has_scope(account: Account, scope: str) -> bool:
+    with play_history.transaction() as conn:
+        rows = conn.execute(
+            "SELECT scopes FROM device_keys JOIN accounts ON accounts.id = account_id"
+            " WHERE server_type = ? AND server_url = ? AND username = ?",
+            account,
+        ).fetchall()
+    return any(scope in row["scopes"].split(",") for row in rows)
+
+
+def media_login_of(presented: str) -> dict | None:
+    """The media login a key carries, opened with its own secret. None for a
+    key without one, and for a wrong secret: nothing but the key opens it."""
+    key_id, _, secret = presented.partition(".")
+    with play_history.transaction() as conn:
+        row = conn.execute(
+            "SELECT key_hash, media_login FROM device_keys WHERE id = ?", (key_id,)
+        ).fetchone()
+    if row is None or row["media_login"] is None:
+        return None
+    if not secrets.compare_digest(_hash(secret), row["key_hash"]):
+        return None
+    return media_login.unseal(row["media_login"], key_id, secret)
+
+
+def any_key_has_scope(scope: str) -> bool:
+    """Whether any account on this installation has a key with `scope`."""
+    with play_history.transaction() as conn:
+        rows = conn.execute("SELECT scopes FROM device_keys").fetchall()
+    return any(scope in row["scopes"].split(",") for row in rows)
+
+
+def resolve(presented: str, now: float | None = None) -> KeyOwner | None:
+    """Whose key this is, or None for one that is wrong or revoked."""
+    key_id, _, secret = presented.partition(".")
+    stamp = int(time.time() if now is None else now)
+    with play_history.transaction() as conn:
+        row = conn.execute(
+            "SELECT device_keys.*, server_type, server_url, username FROM device_keys"
+            " JOIN accounts ON accounts.id = account_id WHERE device_keys.id = ?",
+            (key_id,),
+        ).fetchone()
+        stored = row["key_hash"] if row else _NO_SUCH_KEY_HASH
+        if not secrets.compare_digest(_hash(secret), stored) or row is None:
+            return None
+        last_used = row["last_used_at"]
+        if last_used is None or stamp - last_used >= _LAST_USED_RESOLUTION_SECONDS:
+            conn.execute("UPDATE device_keys SET last_used_at = ? WHERE id = ?", (stamp, key_id))
+    identity = row["settings_identity"]
+    return KeyOwner(
+        key_id,
+        Account(row["server_type"], row["server_url"], row["username"]),
+        None if identity is None else tuple(json.loads(identity)),
+        frozenset(row["scopes"].split(",")),
+        row["session_id"],
+    )

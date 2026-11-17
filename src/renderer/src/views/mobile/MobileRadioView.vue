@@ -1,7 +1,7 @@
 <template>
   <v-container fluid>
-    <!-- The same flat title row every other Mobile* view uses, with the two
-       - actions as icon buttons beside it — none of those views has a
+    <!-- The same flat title row every other Mobile* view uses, with its
+       - action as an icon button beside it — none of those views has a
        - header-level action whose labelled, pill-shaped desktop treatment
        - this could match against. -->
     <div class="mobile-header">

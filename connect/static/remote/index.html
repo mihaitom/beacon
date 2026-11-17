@@ -1,83 +1,108 @@
 <!doctype html>
 <html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <title>Beacon Remote</title>
-  <meta name="theme-color" content="#12141c" />
-  <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="apple-mobile-web-app-title" content="Beacon" />
-  <link rel="manifest" href="manifest.json" />
-  <link rel="icon" href="icon-192.png" />
-  <link rel="apple-touch-icon" href="apple-touch-icon.png" />
-  <link rel="stylesheet" href="fonts/mdi.css" />
-  <link rel="stylesheet" href="app.css" />
-</head>
-<body>
-  <div id="login-screen" class="screen hidden">
-    <div class="login-card">
-      <h1>Beacon Remote</h1>
-      <p class="muted" data-i18n="login.hint">Enter the 6-digit code shown in Beacon's Settings.</p>
-      <form id="login-form">
-        <input id="pin-input" class="pin-input" inputmode="numeric" pattern="[0-9]*" maxlength="6"
-               autocomplete="one-time-code" placeholder="000000" />
-        <button type="submit" class="btn btn-primary" data-i18n="login.connect">Connect</button>
-      </form>
-      <p id="login-error" class="error hidden"></p>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Beacon Remote</title>
+    <meta name="theme-color" content="#12141c" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Beacon" />
+    <link rel="manifest" href="manifest.json" />
+    <link rel="icon" href="icon-192.png" />
+    <link rel="apple-touch-icon" href="apple-touch-icon.png" />
+    <link rel="stylesheet" href="fonts/mdi.css" />
+    <link rel="stylesheet" href="app.css" />
+  </head>
+  <body>
+    <div id="login-screen" class="screen hidden">
+      <div class="login-card">
+        <h1>Beacon Remote</h1>
+        <p class="muted" data-i18n="login.hint">
+          Enter the 6-digit code shown in Beacon's Settings.
+        </p>
+        <form id="login-form">
+          <input
+            id="pin-input"
+            class="pin-input"
+            inputmode="numeric"
+            pattern="[0-9]*"
+            maxlength="6"
+            autocomplete="one-time-code"
+            placeholder="000000"
+          />
+          <button type="submit" class="btn btn-primary" data-i18n="login.connect">Connect</button>
+        </form>
+        <p id="login-error" class="error hidden"></p>
+      </div>
     </div>
-  </div>
 
-  <div id="app-screen" class="screen hidden">
-    <!-- Same lighthouse mark + wordmark as
+    <div id="app-screen" class="screen hidden">
+      <!-- Same lighthouse mark + wordmark as
      - src/renderer/src/layouts/MobileLayout.vue's <v-app-bar> — see
      - app.css's .app-bar. -->
-    <header class="app-bar">
-      <i class="mdi mdi-lighthouse-on app-bar__icon"></i>
-      <span class="app-bar__title">Beacon</span>
-    </header>
-    <main id="view-root"></main>
-    <!-- The strip MobilePlayerBar.vue shows on every mobile route but Now
+      <header class="app-bar">
+        <i class="mdi mdi-lighthouse-on app-bar__icon"></i>
+        <span class="app-bar__title">Beacon</span>
+        <!-- Where a view hangs its own actions, the same way MobileLayout.vue
+             gives Now Playing's toolbar a home in the app bar. -->
+        <span id="app-bar-actions" class="app-bar__actions"></span>
+      </header>
+      <main id="view-root"></main>
+      <!-- The strip MobilePlayerBar.vue shows on every mobile route but Now
      - Playing, docked above the tab bar the same way. Part of the shell,
      - not of a view: it has to survive route changes. See
      - js/mini-player.js. -->
-    <div id="mini-player" class="mini-player hidden">
-      <div class="row-art" id="mini-art"></div>
-      <div class="mini-player__labels">
-        <div class="row-title" id="mini-title"></div>
-        <div class="row-subtitle" id="mini-subtitle"></div>
+      <div id="mini-player" class="mini-player hidden">
+        <div class="row-art" id="mini-art"></div>
+        <div class="mini-player__labels">
+          <div class="row-title" id="mini-title"></div>
+          <div class="row-subtitle" id="mini-subtitle"></div>
+        </div>
+        <button id="mini-prev" class="mini-player__btn">
+          <i class="mdi mdi-skip-previous"></i>
+        </button>
+        <button id="mini-play" class="mini-player__btn"><i class="mdi mdi-play"></i></button>
+        <button id="mini-next" class="mini-player__btn"><i class="mdi mdi-skip-next"></i></button>
       </div>
-      <button id="mini-prev" class="mini-player__btn"><i class="mdi mdi-skip-previous"></i></button>
-      <button id="mini-play" class="mini-player__btn"><i class="mdi mdi-play"></i></button>
-      <button id="mini-next" class="mini-player__btn"><i class="mdi mdi-skip-next"></i></button>
-    </div>
-    <!-- Icons/labels/order match MobileTabBar.vue's own `items` exactly. -->
-    <nav class="tabbar">
-      <a href="#/queue" data-tab="queue">
-        <i class="mdi mdi-playlist-music icon"></i><span data-i18n="tab.queue">Queue</span>
-      </a>
-      <a href="#/library" data-tab="library">
-        <i class="mdi mdi-music-note icon"></i><span data-i18n="tab.library">Library</span>
-      </a>
-      <a href="#/favorites" data-tab="favorites">
-        <i class="mdi mdi-heart icon"></i><span data-i18n="tab.favorites">Favorites</span>
-      </a>
-      <a href="#/playlists" data-tab="playlists">
-        <i class="mdi mdi-playlist-play icon"></i><span data-i18n="tab.playlists">Playlists</span>
-      </a>
+      <!-- Home, Queue, Library and Playlists as on the phone. Radio has
+         its own tab here: the remote has no stats, settings or pages of
+         its own to put behind a More tab. -->
+      <nav class="tabbar">
+        <a href="#/home" data-tab="home">
+          <i class="mdi mdi-home-variant icon"></i><span data-i18n="tab.home">Home</span>
+        </a>
+        <a href="#/queue" data-tab="queue">
+          <i class="mdi mdi-playlist-music icon"></i><span data-i18n="tab.queue">Queue</span>
+        </a>
+        <a href="#/library" data-tab="library">
+          <i class="mdi mdi-music-note icon"></i><span data-i18n="tab.library">Library</span>
+        </a>
+        <a href="#/playlists" data-tab="playlists">
+          <i class="mdi mdi-playlist-play icon"></i><span data-i18n="tab.playlists">Playlists</span>
+        </a>
       <a href="#/radio" data-tab="radio">
         <i class="mdi mdi-radio icon"></i><span data-i18n="tab.radio">Radio</span>
       </a>
-    </nav>
-  </div>
+      </nav>
+    </div>
 
-  <div id="disconnected-banner" class="banner hidden" data-i18n="banner.disconnected">Connection lost - retrying…</div>
-  <button id="interrupted-banner" type="button" class="banner banner-action hidden" data-i18n="banner.interrupted">
-    Playback was interrupted - tap to resume
-  </button>
-  <div id="command-error-banner" class="banner hidden" data-i18n="banner.commandFailed">That didn't reach Beacon - try again</div>
+    <div id="disconnected-banner" class="banner hidden" data-i18n="banner.disconnected">
+      Connection lost - retrying…
+    </div>
+    <button
+      id="interrupted-banner"
+      type="button"
+      class="banner banner-action hidden"
+      data-i18n="banner.interrupted"
+    >
+      Playback was interrupted - tap to resume
+    </button>
+    <div id="command-error-banner" class="banner hidden" data-i18n="banner.commandFailed">
+      That didn't reach Beacon - try again
+    </div>
 
-  <script type="module" src="app.js"></script>
-</body>
+    <script type="module" src="app.js"></script>
+  </body>
 </html>

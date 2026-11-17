@@ -26,8 +26,9 @@
  * @typedef {number | string} FanartPick
  * @typedef {Record<string, FanartPick | { banner?: FanartPick, background?: FanartPick }>} FanartPicks
  * @typedef {{ name: string, device: 'desktop' | 'phone', song?: SongRef,
- *   open?: OpenTarget, remote?: boolean, settle?: number, theme?: Theme,
- *   fanart?: FanartPicks }} Shot
+ *   open?: OpenTarget, remote?: boolean, hideArtwork?: boolean, settle?: number, theme?: Theme,
+ *   fanart?: FanartPicks, cast?: CastPretence }} Shot
+ * @typedef {{ type: string, name: string, volume: number }} CastPretence
  * @typedef {{ outDir: string, quality: number, volume: number, settle: number,
  *   shots: Shot[] }} ScreenshotConfig
  */
@@ -207,6 +208,20 @@ async function inPageOpen({ open, phone }) {
   return router.push(`${prefix}/${kind}s/${hit.id}`)
 }
 
+/** connect keeps its first search for a Hue bridge for ten minutes, empty
+ * or not, and a freshly started one may miss the bridge on that first try -
+ * the remote's lights button would then be missing. Searching again here
+ * fills that list before the remote asks. Whether a bridge was found. */
+async function inPageFindLights() {
+  const { getLights, discoverBridges } = await import('/src/services/connect/lights.ts')
+  const lights = await getLights()
+  if (lights.paired || lights.found.length > 0) return true
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if ((await discoverBridges()).length > 0) return true
+  }
+  return false
+}
+
 async function inPageEnableRemote() {
   const { useRemoteControlStore } = await import('/src/stores/remoteControl.ts')
   const remote = useRemoteControlStore()
@@ -327,11 +342,27 @@ async function quietFirstStart(context) {
   )
 }
 
+/** The remote draws a cast (lit cast button, the equalizer, the speaker's
+ * volume) from the state the app sends it; this adds a speaker to that
+ * state, so a shot can show one without a real speaker in the room. The app
+ * itself plays locally and knows nothing of it. */
+async function pretendCast(context, cast) {
+  await context.route(/\/remote\/state$/, async (route) => {
+    const request = route.request()
+    if (request.method() !== 'POST') return route.continue()
+    const body = request.postDataJSON()
+    body.snapshot.casting = [{ type: cast.type, name: cast.name, volume: cast.volume }]
+    body.snapshot.device_volume = cast.volume
+    await route.continue({ postData: JSON.stringify(body) })
+  })
+}
+
 async function openApp(browser, appUrl, device, shot) {
   const context = await browser.newContext({ ...DEVICES[device], locale: 'en-US' })
   await quietFirstStart(context)
   await presetTheme(context, shot.theme)
   await pinFanart(context, shot.fanart ?? {})
+  if (shot.cast) await pretendCast(context, shot.cast)
   const page = await context.newPage()
   page.on('pageerror', (error) => console.warn(`  page error: ${error.message}`))
   await page.goto(appUrl)
@@ -361,6 +392,7 @@ async function takeShot(browser, appUrl, shot) {
 
     let target = app.page
     if (shot.remote) {
+      if (!(await app.page.evaluate(inPageFindLights))) console.log('  no Hue bridge found')
       const password = await app.page.evaluate(inPageEnableRemote)
       const phone = await browser.newContext({ ...DEVICES[shot.device], locale: 'en-US' })
       contexts.push(phone)
@@ -368,7 +400,12 @@ async function takeShot(browser, appUrl, shot) {
         localStorage.setItem('beacon_remote_password', value)
       }, password)
       target = await phone.newPage()
-      await target.goto(`${connectUrl}/remote/app/`)
+      // open.route is a remote route here (it starts on Home otherwise).
+      const route = shot.open?.route ? `#${shot.open.route}` : ''
+      await target.goto(`${connectUrl}/remote/app/${route}`)
+      // The remote keeps this nowhere to set it through, so it is the
+      // toolbar's button, which only shows once the artist photo is in.
+      if (shot.hideArtwork) await target.click('#np-tool-artwork:not(.hidden)')
     } else if (shot.open) {
       await app.page.evaluate(inPageOpen, { open: shot.open, phone: shot.device === 'phone' })
     }

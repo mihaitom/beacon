@@ -12,8 +12,8 @@ vi.mock('@/services/connect/apiKeys', () => ({
   getApiKeyStatuses: vi.fn(),
 }))
 
-function statuses(lastfm: { configured: boolean; fromEnvironment: boolean }) {
-  return { lastfm, fanart: { configured: false, fromEnvironment: false } }
+function statuses(lastfm: { configured: boolean; fromEnvironment: boolean; fromServer: boolean }) {
+  return { lastfm, fanart: { configured: false, fromEnvironment: false, fromServer: false } }
 }
 
 describe('lastfm store', () => {
@@ -58,7 +58,7 @@ describe('lastfm store', () => {
 
   it('checkConfigured asks once and reuses the answer', async () => {
     vi.mocked(getApiKeyStatuses).mockResolvedValue(
-      statuses({ configured: true, fromEnvironment: false }),
+      statuses({ configured: true, fromEnvironment: false, fromServer: false }),
     )
     const store = useLastfmStore()
 

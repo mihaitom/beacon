@@ -314,6 +314,23 @@ describe('playback transport', () => {
       expect(useConnectStore().errors.detail).toBe('no route')
     })
 
+    it('starts a song on the speakers with its gain and the mode it came from', async () => {
+      // The mode is for every song after this one, which connect starts by
+      // itself and works the gain out for.
+      const playback = usePlaybackStore()
+      stubLibraryClient()
+      castTo()
+      playback.setReplayGainMode('album')
+      playback.setQueue([makeSong('a', { replayGain: { albumGain: -6 } })], 0)
+
+      await playback.startCurrent()
+
+      expect(connectPlayback.play).toHaveBeenCalledWith(
+        'a',
+        expect.objectContaining({ gain: playback.replayGainMultiplier, replayGainMode: 'album' }),
+      )
+    })
+
     it("starts a song on the speakers with each one's equalizer", async () => {
       const playback = usePlaybackStore()
       stubLibraryClient()
@@ -1360,6 +1377,21 @@ describe('playback transport', () => {
       playback.setReplayGainMode('album')
 
       expect(engine.setReplayGain).not.toHaveBeenCalled()
+    })
+
+    it('tells a running cast the new mode, for the songs connect starts by itself', () => {
+      const playback = usePlaybackStore()
+      playback.setQueue([makeSong('a'), makeSong('b')], 0)
+      castTo()
+      vi.mocked(connectPlayback.updateQueue).mockClear()
+
+      playback.setReplayGainMode('album')
+
+      expect(connectPlayback.updateQueue).toHaveBeenCalledWith(
+        ['a', 'b'],
+        0,
+        expect.objectContaining({ replayGainMode: 'album' }),
+      )
     })
   })
 

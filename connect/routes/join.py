@@ -12,6 +12,7 @@ from core.session import (
     SessionState,
     build_status_dict,
     check_claims,
+    current_stream_dispatch,
     displace_target,
     registry,
     require_authenticated_session,
@@ -20,11 +21,8 @@ from core.state import (
     audio_capability_limits,
     find_sonos,
     playable_codecs,
-    radio_dispatch_url,
     resolve_target,
-    stream_url,
 )
-from core.stream_format import radio_content_type
 from core.streamer import resolve_output_format
 from delivery import (
     AirPlayDelivery,
@@ -238,25 +236,7 @@ async def join_stream(
             await session.event_bus.broadcast(build_status_dict(session))
             return {"status": "reserved", "device": req.target_name}
 
-        # Radio has no track loaded (session.state.current_track stays None
-        # for it — see /play-url), so it must join on its own raw URL rather
-        # than the FFmpeg /stream proxy, which 204s with no track loaded.
-
-        # URL extension and announced type out of one place. Radio: the
-        # station's own type as probed at play time — tell a device joining an
-        # AAC station anything else and it refuses the stream (see
-        # core/stream_format.py). A track: whatever /play resolved, which is
-        # what /stream is sending; this used to say audio/mpeg flat.
-        content_type = (
-            radio_content_type(st.radio_info)
-            if st.radio_info
-            else st.current_output_format.content_type
-        )
-        url = (
-            radio_dispatch_url(session.session_id, st.radio_info)
-            if st.radio_info
-            else stream_url(session.session_id, content_type)
-        )
+        url, content_type = current_stream_dispatch(session)
         title = st.radio_info["title"] if st.radio_info else "Connect"
         logger.info(f"[join] {req.target_type}:{req.target_name} → {url}")
 

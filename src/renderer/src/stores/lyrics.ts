@@ -1,3 +1,4 @@
+import { pushOffset, readStoredOffset, writeStoredOffset } from '@/services/lyrics/lyricsOffsets'
 import { defineStore } from 'pinia'
 import {
   autoLyrics,
@@ -240,7 +241,7 @@ export function shouldRecheckFile(entry: CachedPositive, now = Date.now()): bool
 
 /** Called from SettingsView.vue's "clear caches" action. Only the fetched-
  * lyrics cache — deliberately leaves OFFSETS_KEY (per-song sync-offset
- * corrections, see readStoredOffset() below) alone, since that's the user's
+ * corrections, see services/lyrics/lyricsOffsets.ts) alone, since that's the user's
  * own manual work, not a re-fetchable cache. */
 export function clearLyricsCache(): Promise<void> {
   sessionCache = new Map()
@@ -268,35 +269,6 @@ export function reloadLyricsCacheForAccount(): void {
   migrations = new Map()
   inFlightSongId = null
   generation += 1
-}
-
-const OFFSETS_KEY = 'beacon.lyricsOffsets'
-
-function readStoredOffset(songId: string): number {
-  try {
-    const all = JSON.parse(localStorage.getItem(accountScopedKey(OFFSETS_KEY)) ?? '{}') as Record<
-      string,
-      number
-    >
-    return all[songId] ?? 0
-  } catch {
-    return 0
-  }
-}
-
-function writeStoredOffset(songId: string, offset: number): void {
-  try {
-    const all = JSON.parse(localStorage.getItem(accountScopedKey(OFFSETS_KEY)) ?? '{}') as Record<
-      string,
-      number
-    >
-    if (offset === 0) delete all[songId]
-    else all[songId] = offset
-    localStorage.setItem(accountScopedKey(OFFSETS_KEY), JSON.stringify(all))
-  } catch {
-    // Losing a saved offset on write failure (e.g. storage full/disabled)
-    // isn't worth surfacing — the in-memory value for this session still works.
-  }
 }
 
 /** What the providers are asked with. The ISRC is only worth a request to
@@ -614,6 +586,13 @@ export const useLyricsStore = defineStore('lyrics', {
       // Rounded to avoid float noise, same as adjustOffset below.
       this.offset = Math.round(offsetSeconds * 10) / 10
       writeStoredOffset(this.songId, this.offset)
+      pushOffset(this.songId, this.offset)
+    },
+
+    /** Picks up a correction that arrived from another device for the
+     * song already showing. */
+    refreshOffset(): void {
+      if (this.songId) this.offset = readStoredOffset(this.songId)
     },
 
     /** Nudges the current song's timing offset by `deltaSeconds` (typically

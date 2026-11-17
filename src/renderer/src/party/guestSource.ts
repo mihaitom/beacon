@@ -396,6 +396,7 @@ export function useGuestNowPlayingSource(
       debug: false,
       lyricsTools: false,
       favorite: false,
+      equalizer: false,
     }),
     // Store-free, so the shared presentation never pulls the app's library
     // store (CoverArt's own imports) into the guest bundle.
@@ -405,6 +406,7 @@ export function useGuestNowPlayingSource(
     debugOverlayComponent: null,
     streamDebugComponent: null,
     artistCreditComponent: null,
+    equalizerComponent: null,
     ui: reactive({
       lyricsOpen: computed(() => showLyrics.value),
       showVisualizer: computed(() => showVisualizer.value),

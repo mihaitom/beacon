@@ -1,7 +1,9 @@
 <template>
   <v-container fluid>
     <div class="mobile-header">
-      <h1 class="page-title mobile-header__title">{{ $t('nav.library') }}</h1>
+      <h1 class="page-title mobile-header__title">
+        {{ favoritesOnly ? $t('nav.favorites') : $t('nav.library') }}
+      </h1>
     </div>
 
     <!-- One list at a time rather than two stacked sections: a phone has
@@ -28,7 +30,25 @@
         density="compact"
         clearable
         hide-details
-      />
+      >
+        <!-- Favourites are this list narrowed down rather than a tab of
+           - their own: the same three halves, the same rows, and the search
+           - comes along. In the field's end like the desktop's "Aa"
+           - (ExactMatchSwitch.vue), since it belongs to what is searched. -->
+        <template v-if="canFilterFavorites" #append-inner>
+          <v-btn
+            :icon="favoritesOnly ? 'mdi-heart' : 'mdi-heart-outline'"
+            size="small"
+            variant="text"
+            class="mobile-library__favorites"
+            :class="{ 'mobile-library__favorites--on': favoritesOnly }"
+            :title="$t('library.favoritesOnly')"
+            :aria-label="$t('library.favoritesOnly')"
+            :aria-pressed="favoritesOnly"
+            @click.stop="favoritesOnly = !favoritesOnly"
+          />
+        </template>
+      </v-text-field>
     </sticky-filter>
 
     <v-progress-circular v-if="libraryStore.loading" indeterminate class="view-notice" />
@@ -43,11 +63,11 @@
         :items="filteredSongs"
         :item-height="MOBILE_ROW_HEIGHT"
       >
-        <template #default="{ item: song }">
+        <template #default="{ item: song, index }">
           <mobile-song-row
             :key="song.id"
             :song="song"
-            @play="play(song)"
+            @play="play(song, index)"
             @open-actions="openActions(song)"
           />
         </template>
@@ -71,8 +91,9 @@
 
     <empty-state
       v-if="showEmptyState"
-      :icon="debouncedQuery ? 'mdi-magnify-close' : 'mdi-music-note-off'"
+      :icon="emptyIcon"
       :title="emptyMessage"
+      :text="favoritesOnly && !debouncedQuery ? $t('favorites.emptyHint') : undefined"
     />
 
     <mobile-song-action-sheet v-model="actionsOpen" :song="activeSong" />
@@ -81,6 +102,7 @@
 
 <script lang="ts">
 import { useLibraryStore } from '@/stores/library'
+import { useAuthStore } from '@/stores/auth'
 import EmptyState from '@/components/EmptyState.vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { matchesAllTerms } from '@/services/textSearch'
@@ -97,6 +119,17 @@ type LibraryTab = 'songs' | 'albums' | 'artists'
 
 let debounceTimer: ReturnType<typeof setTimeout> | undefined
 
+/** The heart filter outlives the view: the tab bar opens the library at
+ * its bare address, and someone who lives in their favourites should find
+ * them there again. Not stored, so a reload starts from the whole library -
+ * a filter nobody remembers switching on reads as missing music. */
+let favoritesOnlyThisSession = false
+
+/** For tests, which mount the view many times in one module. */
+export function resetFavoritesFilter(): void {
+  favoritesOnlyThisSession = false
+}
+
 export default {
   name: 'MobileLibraryView',
   components: {
@@ -112,6 +145,7 @@ export default {
     return {
       MOBILE_ROW_HEIGHT,
       view: 'songs' as LibraryTab,
+      favoritesOnly: favoritesOnlyThisSession,
       filterQuery: '',
       debouncedQuery: '',
       actionsOpen: false,
@@ -121,6 +155,18 @@ export default {
   computed: {
     libraryStore() {
       return useLibraryStore()
+    },
+    canFilterFavorites(): boolean {
+      return useAuthStore().capabilities.favorites
+    },
+    songs(): Song[] {
+      return this.favoritesOnly ? this.libraryStore.starred.songs : this.libraryStore.allSongs
+    },
+    albums(): Album[] {
+      return this.favoritesOnly ? this.libraryStore.starred.albums : this.libraryStore.albums
+    },
+    artists(): Artist[] {
+      return this.favoritesOnly ? this.libraryStore.starred.artists : this.libraryStore.artists
     },
     showingSongs(): boolean {
       return this.view === 'songs'
@@ -138,22 +184,22 @@ export default {
     },
     filteredSongs(): Song[] {
       const query = this.debouncedQuery
-      if (!query.trim()) return this.libraryStore.allSongs
-      return this.libraryStore.allSongs.filter((song: Song) =>
+      if (!query.trim()) return this.songs
+      return this.songs.filter((song: Song) =>
         matchesAllTerms(query, [song.title, song.artist, song.album], { exact: true }),
       )
     },
     filteredAlbums(): Album[] {
       const query = this.debouncedQuery
-      if (!query.trim()) return this.libraryStore.albums
-      return this.libraryStore.albums.filter((album: Album) =>
+      if (!query.trim()) return this.albums
+      return this.albums.filter((album: Album) =>
         matchesAllTerms(query, [album.name, album.artist], { exact: true }),
       )
     },
     filteredArtists(): Artist[] {
       const query = this.debouncedQuery
-      if (!query.trim()) return this.libraryStore.artists
-      return this.libraryStore.artists.filter((artist: Artist) =>
+      if (!query.trim()) return this.artists
+      return this.artists.filter((artist: Artist) =>
         matchesAllTerms(query, [artist.name], { exact: true }),
       )
     },
@@ -162,8 +208,18 @@ export default {
       if (this.view === 'artists') return this.filteredArtists.length === 0
       return this.showingSongs ? this.filteredSongs.length === 0 : this.filteredAlbums.length === 0
     },
+    emptyIcon(): string {
+      if (this.debouncedQuery) return 'mdi-magnify-close'
+      return this.favoritesOnly ? 'mdi-heart-outline' : 'mdi-music-note-off'
+    },
     emptyMessage(): string {
       const query = this.debouncedQuery
+      if (this.favoritesOnly && !query) {
+        if (this.view === 'artists') return this.$t('favorites.noArtistsYet')
+        return this.showingSongs
+          ? this.$t('favorites.noSongsYet')
+          : this.$t('favorites.noAlbumsYet')
+      }
       if (this.view === 'artists') {
         return query
           ? this.$t('library.noArtistsForQuery', { query })
@@ -197,6 +253,24 @@ export default {
       this.rememberSearch()
     },
     debouncedQuery: 'rememberSearch',
+    // Immediate for the fetch only: the address is written once created()
+    // has read the one it arrived with, or this would overwrite it first.
+    favoritesOnly: {
+      immediate: true,
+      handler(on: boolean, previous: boolean | undefined) {
+        favoritesOnlyThisSession = on
+        if (on) void this.libraryStore.fetchStarred()
+        if (previous !== undefined) this.rememberSearch()
+      },
+    },
+    // A server without favourites never shows the heart, so nor may it be
+    // left filtering by one switched on elsewhere.
+    canFilterFavorites: {
+      immediate: true,
+      handler(can: boolean) {
+        if (!can) this.favoritesOnly = false
+      },
+    },
     // Not created() alone: Vue Router reuses this component when only the
     // query changes, so a second hand-over while already here would be
     // silently ignored. Same reason SearchView.vue watches its own.
@@ -205,6 +279,8 @@ export default {
   created() {
     this.libraryStore.fetchAllSongs()
     this.applyHandedOverSearch()
+    // A filter kept from earlier in the session goes into the address too.
+    if (this.favoritesOnly) this.rememberSearch()
   },
   methods: {
     /** A search term handed over from somewhere else — the radio title
@@ -223,6 +299,7 @@ export default {
       // that) — a hand-over that cannot be read is simply not one.
       const tab = this.$route?.query?.tab
       if (tab === 'albums' || tab === 'songs' || tab === 'artists') this.view = tab
+      if (this.$route?.query?.favorites) this.favoritesOnly = true
       const term = this.$route?.query?.q
       if (typeof term !== 'string' || !term) return
       this.filterQuery = term
@@ -247,7 +324,15 @@ export default {
       else delete query.q
       if (this.view === 'songs') delete query.tab
       else query.tab = this.view
-      if (query.q === this.$route.query.q && query.tab === this.$route.query.tab) return
+      if (this.favoritesOnly) query.favorites = '1'
+      else delete query.favorites
+      if (
+        query.q === this.$route.query.q &&
+        query.tab === this.$route.query.tab &&
+        query.favorites === this.$route.query.favorites
+      ) {
+        return
+      }
       void this.$router.replace({ query })
     },
     /** The tapped song alone, not the list around it. This list is the
@@ -258,7 +343,15 @@ export default {
      * `queueWholeList`), and as this view's own action sheet, whose Play
      * already did exactly this - tapping the row and picking Play from the
      * "..." menu were two different actions until now. */
-    async play(song: Song) {
+    async play(song: Song, index: number) {
+      if (this.favoritesOnly) {
+        // Favourites are the exception: a collection somebody put
+        // together, which plays on after the tapped song - the desktop
+        // Favourites page reads them the same way.
+        const songs = this.filteredSongs
+        await usePlaybackStore().playSongList(songs, index, true, songs.length > 1)
+        return
+      }
       await usePlaybackStore().playSongList([song], 0)
     },
     /** Natural track order, not shuffled, and pinFirst false — an album is
@@ -281,6 +374,21 @@ export default {
 <style scoped>
 .mobile-library__toggle {
   margin-bottom: 12px;
+}
+
+/* ExactMatchSwitch.vue's pill and amber, so the two field-end toggles in
+ * the app read alike. */
+.mobile-library__favorites.v-btn {
+  width: 32px;
+  height: 28px;
+  margin-right: -6px;
+  border-radius: 9999px;
+  color: rgba(var(--v-theme-on-surface), 0.55);
+}
+
+.mobile-library__favorites--on.v-btn {
+  color: rgb(var(--v-theme-primary));
+  background: rgba(var(--v-theme-primary), 0.14);
 }
 
 .mobile-library__list {

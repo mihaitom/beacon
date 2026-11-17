@@ -1,24 +1,30 @@
 """core/mdns.py — announces this Beacon on the LAN for home automation
 
-Advertised as `_beacon._tcp` while an integration key exists
-(core/integration_key.py) and withdrawn when it is revoked: the only thing
-that can use the announcement is an integration holding that key, and a
-laptop has no business advertising itself on every network it joins
-otherwise. The record carries the port, so an integration that follows it
-keeps working when the desktop app had to fall back to another one.
+Advertised as `_beacon._tcp` while something exists that can use it - the
+retired integration key (core/integration_key.py), or a device key allowed
+to steer playback - and withdrawn once neither does: a laptop has no
+business advertising itself on every network it joins otherwise. The record
+carries the port, so an integration that follows it keeps working when the
+desktop app had to fall back to another one.
+
+A server announces nginx's port (WEB_PORT, start.sh), the address its web
+page is opened at, rather than its own. The container runs in the host's
+network anyway, which its speaker discovery needs.
 
 TXT properties: `id` (stable across restarts, for telling instances apart),
-`version`, and `path`, where the API lives. See docs/help/reference/home-automation-api.md.
+`version`, `api`, where the device-link API lives, and `path`, where the
+retired one does. See docs/help/faq/apps-and-api.md.
 """
 
 import asyncio
 import logging
+import os
 import socket
 
 from zeroconf import IPVersion
 from zeroconf.asyncio import AsyncServiceInfo, AsyncZeroconf
 
-from core import integration_key
+from core import device_keys, integration_key, server_link
 from core.client_id import stable_id
 from core.state import PORT, get_local_ip
 from lyrics.shared import CONNECT_VERSION
@@ -27,6 +33,7 @@ logger = logging.getLogger("connect.mdns")
 
 SERVICE_TYPE = "_beacon._tcp.local."
 API_PATH = "/remote/"
+DEVICE_LINK_PATH = "/device-link/v1/"
 # How often the announcement is checked against the machine's address, so a
 # laptop that moved networks is not left advertising its old one.
 RECHECK_SECONDS = 60
@@ -40,19 +47,30 @@ def instance_id() -> str:
     return stable_id(".beacon-instance-id")
 
 
+def _announced_port() -> int:
+    if not server_link.AVAILABLE and os.getenv("WEB_PORT"):
+        return int(os.environ["WEB_PORT"])
+    return PORT
+
+
 def _build_info(address: str) -> AsyncServiceInfo:
     ident = instance_id()
     host = socket.gethostname().split(".")[0] or "beacon"
     return AsyncServiceInfo(
         SERVICE_TYPE,
         f"Beacon on {host}.{SERVICE_TYPE}",
-        port=PORT,
+        port=_announced_port(),
         parsed_addresses=[address],
         # Its own host name rather than the machine's: the OS may already
         # answer for that one, and two responders disagreeing about it is
         # worse than a name nobody reads.
         server=f"beacon-{ident[:8]}.local.",
-        properties={"id": ident, "version": CONNECT_VERSION, "path": API_PATH},
+        properties={
+            "id": ident,
+            "version": CONNECT_VERSION,
+            "api": DEVICE_LINK_PATH,
+            "path": API_PATH,
+        },
     )
 
 
@@ -63,7 +81,7 @@ async def _register(address: str) -> None:
     info = _build_info(address)
     await _zeroconf.async_register_service(info, allow_name_change=True)
     _info = info
-    logger.info(f"[mdns] Announcing {info.name} at {address}:{PORT}")
+    logger.info(f"[mdns] Announcing {info.name} at {address}:{info.port}")
 
 
 async def _unregister() -> None:
@@ -75,13 +93,38 @@ async def _unregister() -> None:
     _info = None
 
 
+def steered_from_outside() -> bool:
+    """Whether something outside may steer this player through the window:
+    an integration key, or on a desktop app a key with the control right.
+    The window keeps the remote relay running for it (routes/remote.py)."""
+    if integration_key.is_set():
+        return True
+    # AVAILABLE: this is a desktop app.
+    return server_link.AVAILABLE and device_keys.any_key_has_scope(device_keys.CONTROL)
+
+
+def announced() -> bool:
+    """steered_from_outside(), and on a server any account's key with the
+    control right: there it steers the casts, not a window."""
+    if steered_from_outside():
+        return True
+    return device_keys.any_key_has_scope(device_keys.CONTROL)
+
+
 async def sync() -> None:
-    """Brings the announcement in line with the integration key and the
-    current address. Never raises: an announcement that failed costs
-    discovery, not the API."""
+    """Brings the announcement in line with the keys and the current
+    address. Never raises: an announcement that failed costs discovery, not
+    the API."""
+    # Decided under the lock: a sync that read the keys before another one
+    # announced a new key would otherwise withdraw that announcement again.
     async with _lock:
         try:
-            if not integration_key.is_set():
+            wanted = await asyncio.to_thread(announced)
+        except Exception as e:
+            logger.warning(f"[mdns] Could not read the keys: {e}")
+            return
+        try:
+            if not wanted:
                 await _unregister()
                 return
             address = get_local_ip()

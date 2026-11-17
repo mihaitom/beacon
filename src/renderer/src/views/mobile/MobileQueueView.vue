@@ -90,6 +90,7 @@ import MobileQueueRow from '@/components/mobile/MobileQueueRow.vue'
 import MobileSongActionSheet from '@/components/mobile/MobileSongActionSheet.vue'
 import { MOBILE_ROW_HEIGHT } from '@/components/mobile/rowMetrics'
 import { EdgeScroller, scrollParent } from '@/services/edgeScroll'
+import { dropHalf, reorderTarget, type DropHalf } from '@/services/rowReorder'
 import { markRaw } from 'vue'
 import type { Song } from '@/types/library'
 
@@ -138,14 +139,9 @@ export default {
       // reorderQueue() call only fires once, on release.
       dragIndex: null as number | null,
       overIndex: null as number | null,
-      // Which half of overIndex's own row the pointer is over — see
-      // insertBeforeIndex()'s own comment for why this matters: without it,
-      // hovering anywhere within a row's bounding box always meant "insert
-      // before this row's original index", correct only for dragging
-      // *up*. Dragging down past even a single adjacent row landed one
-      // further than intended (a "swap with the very next track" drag
-      // reliably overshot to the track after that).
-      overHalf: null as 'before' | 'after' | null,
+      // Which half of overIndex's own row the pointer is over - see
+      // services/rowReorder.ts.
+      overHalf: null as DropHalf | null,
       // Timer id of the armed click suppression below, so a second drag
       // doesn't leave the first one's timeout running.
       clickSuppressionTimer: null as ReturnType<typeof setTimeout> | null,
@@ -237,7 +233,7 @@ export default {
         const index = Number(row.dataset.index)
         if (!Number.isNaN(index)) {
           this.overIndex = index
-          this.overHalf = y > rect.top + rect.height / 2 ? 'after' : 'before'
+          this.overHalf = dropHalf(y, rect)
         }
         break
       }
@@ -247,10 +243,7 @@ export default {
       this.edgeScroller?.stop()
       this.detachPointerListeners()
       if (this.dragIndex !== null && this.overIndex !== null && this.overHalf !== null) {
-        // See QueueDrawer.vue's insertBeforeIndex()/dropIndex() for the
-        // identical original-index -> post-removal-index conversion.
-        const insertBefore = this.overHalf === 'after' ? this.overIndex + 1 : this.overIndex
-        const to = insertBefore > this.dragIndex ? insertBefore - 1 : insertBefore
+        const to = reorderTarget(this.dragIndex, this.overIndex, this.overHalf)
         if (to !== this.dragIndex) this.playbackStore.reorderQueue(this.dragIndex, to)
       }
       this.dragIndex = null

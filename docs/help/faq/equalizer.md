@@ -1,12 +1,13 @@
 ---
-order: 5
+group: listening
+order: 3
 ---
 
 # Equalizer
 
 ## Where do I find the equalizer?
 
-Behind the slider icon in the player bar. It always opens the equalizer for what is playing right now: the speaker you are casting to, or this device when you are not casting. Casting to several speakers at once, you pick which one to set at the top, and each keeps its own curve. On a phone the button is in the bar at the top, and only while casting.
+Behind the slider icon in the player bar. It always opens the equalizer for what is playing right now: the speaker you are casting to, or this device when you are not casting. Casting to several speakers at once, you pick which one to set at the top, and each keeps its own curve. On a phone the button is at the top of Now Playing, and only while casting.
 
 To change a band, drag its point up or down - anywhere in its column works, it does not have to be the point itself. A double click puts a band back to 0, and with the keyboard a point moves with the arrow keys.
 

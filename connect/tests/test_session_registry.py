@@ -710,3 +710,63 @@ async def test_a_paused_cast_keeps_its_relay():
     assert session.radio_relay is not None
     assert st.radio_info is not None
     assert st.is_streaming is True
+
+
+def test_current_stream_dispatch_names_a_track_s_url_after_its_resolved_format():
+    """The URL's extension and the announced type come from the same
+    resolved format, so a device never fetches a .mp3 announced as FLAC."""
+    from core.session import SessionState, current_stream_dispatch
+    from core.streamer import OutputFormat
+
+    session = SessionState("s")
+    session.state.current_output_format = OutputFormat(content_type="audio/flac")
+
+    url, content_type = current_stream_dispatch(session)
+
+    assert content_type == "audio/flac"
+    assert url.endswith("/stream/s.flac")
+
+
+def test_status_names_the_current_song_with_its_cover():
+    from unittest.mock import MagicMock
+
+    from core.session import SessionState, build_status_dict
+
+    session = SessionState("s")
+    session.media = MagicMock()
+    session.media.get_cover_art_url = lambda cover_id: f"http://covers/{cover_id}"
+    session.state.current_track = Track(
+        id="1", title="Song", artist="Artist", duration=180, cover_art_id="c1"
+    )
+
+    song = build_status_dict(session)["current_song"]
+
+    assert song["id"] == "1"
+    assert song["title"] == "Song"
+    assert song["cover_art_url"] == "http://covers/c1"
+
+
+def test_status_reports_a_speaker_s_own_repeat_setting():
+    """The app tells the listener about a speaker repeating by itself from
+    this (stores/connect.ts's noticeDeviceRepeat())."""
+    from core.session import SessionState, build_status_dict
+    from delivery import SonosDelivery
+
+    session = SessionState("s")
+    session.state.active_delivery = SonosDelivery("Küche")
+    session.state.device_repeat["sonos:Küche"] = True
+
+    (target,) = build_status_dict(session)["targets"]
+
+    assert target["device_repeat"] is True
+
+
+def test_status_carries_the_event_loop_s_recent_stall():
+    from unittest.mock import patch
+
+    from core.session import SessionState, build_status_dict
+
+    with patch("core.session.peak_lag", return_value=1.5):
+        info = build_status_dict(SessionState("s"))["stream_info"]
+
+    assert info["loop_lag"] == 1.5

@@ -10,6 +10,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
+import { VBtn } from 'vuetify/components'
 // Same order as main.ts: the app's own stylesheet first, which is what
 // makes base.css's @layer declaration the authoritative one. Reversed,
 // @layer base lands behind Vuetify's utility layer and its `* { margin: 0 }`
@@ -47,31 +48,40 @@ describe('mobile app bar', () => {
       },
     })
     wrappers.push(wrapper)
+    // A button as Now Playing's toolbar docks them in here.
+    wrappers.push(
+      mount(VBtn, {
+        attachTo: wrapper.get('#mobile-app-bar-actions').element as HTMLElement,
+        props: { icon: 'mdi-script-text-outline', variant: 'text', density: 'comfortable' },
+        global: { plugins: [vuetify] },
+      }),
+    )
     await new Promise((resolve) => setTimeout(resolve, 60))
 
     const bar = wrapper.get('.mobile-app-bar').element.getBoundingClientRect()
-    const settings = wrapper.get('.mobile-app-bar .v-btn').element.getBoundingClientRect()
+    const button = document.querySelector('#mobile-app-bar-actions .v-btn')!.getBoundingClientRect()
 
     expect(bar.height).toBeGreaterThanOrEqual(56)
     // Real air above and below, not a button wedged into the bar. This is
     // also what catches a `density` prop coming back: Vuetify's compact
     // density overrides the height outright rather than adjusting it, and
     // pinned the bar at 41px whatever the height said.
-    expect(bar.height - settings.height).toBeGreaterThanOrEqual(8)
-    // And a slot for a view to hang its own actions in.
-    expect(wrapper.find('#mobile-app-bar-actions').exists()).toBe(true)
+    expect(bar.height - button.height).toBeGreaterThanOrEqual(8)
 
     // The logo is an mdi icon like the buttons beside it, and was 16 to
     // their 24 — next to them it read as a smaller version of them rather
     // than as a mark.
     const logo = wrapper.get('.mobile-app-bar__logo').element.getBoundingClientRect()
-    const icon = wrapper.get('.mobile-app-bar .v-btn .v-icon').element.getBoundingClientRect()
+    const icon = document
+      .querySelector('#mobile-app-bar-actions .v-btn .v-icon')!
+      .getBoundingClientRect()
     expect(logo.width).toBeCloseTo(icon.width, 0)
   })
 
-  // Now Playing hangs up to three buttons of its own in here (lyrics,
-  // visualizer, artwork), and the app's own buttons sit beside them. Each
-  // of those as an icon of its own cut the name down to "B..." on a phone.
+  // Now Playing hangs up to five buttons of its own in here while casting
+  // (lyrics, visualizer, artwork, background, equalizer). The app's own
+  // menu sat beside them once, and each of its entries as an icon of its
+  // own had cut the name down to "B..." on a phone.
   it("keeps the app's name whole on a narrow phone, casting, with Now Playing's buttons in", async () => {
     await page.viewport(360, 740)
     setActivePinia(createPinia())
@@ -85,11 +95,17 @@ describe('mobile app bar', () => {
       },
     })
     wrappers.push(wrapper)
-    const slot = wrapper.get('#mobile-app-bar-actions').element
-    for (let i = 0; i < 3; i++) {
-      const button = document.createElement('button')
-      button.style.cssText = 'width: 40px; flex: none; margin-right: 4px'
-      slot.appendChild(button)
+    // Real buttons as the toolbar docks them: comfortable icon buttons,
+    // side by side with no gap (NowPlayingToolbar's docked row).
+    const slot = wrapper.get('#mobile-app-bar-actions').element as HTMLElement
+    for (let i = 0; i < 5; i++) {
+      wrappers.push(
+        mount(VBtn, {
+          attachTo: slot,
+          props: { icon: 'mdi-tune-vertical', variant: 'text', density: 'comfortable' },
+          global: { plugins: [vuetify] },
+        }),
+      )
     }
     await new Promise((resolve) => setTimeout(resolve, 60))
 

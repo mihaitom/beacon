@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
@@ -36,6 +36,26 @@ describe('DefaultLayout queue drawer', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     localStorage.clear()
+  })
+
+  it('lets the page and the drawer keep their slide while the queue moves', async () => {
+    const wrapper = await mountLayout()
+    vi.useFakeTimers()
+    useDrawersStore().setQueueDrawerOpen(true)
+    await vi.advanceTimersByTimeAsync(0)
+    expect(wrapper.find('.v-main').classes()).toContain('is-following-queue')
+    expect(wrapper.getComponent(QueueDrawer).props('sliding')).toBe(true)
+
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(wrapper.find('.v-main').classes()).not.toContain('is-following-queue')
+    expect(wrapper.getComponent(QueueDrawer).props('sliding')).toBe(false)
+    vi.useRealTimers()
+  })
+
+  it('does not count a queue that is already open at start as a slide', async () => {
+    useDrawersStore().setQueueDrawerOpen(true)
+    const wrapper = await mountLayout()
+    expect(wrapper.find('.v-main').classes()).not.toContain('is-following-queue')
   })
 
   it('opens the drawer when it is opened after the layout mounted', async () => {

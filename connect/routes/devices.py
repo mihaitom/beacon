@@ -12,19 +12,20 @@ import os
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from core import cast_permissions
+from core import cast_permissions, media_login
 from core.auth import require_token
+from core.cast_position import resync_position_periodically
 from core.claims import claims
 from core.ffmpeg import ffmpeg_available
 from core.radio_position import RadioPositionTracker
 from core.session import (
     SessionState,
     build_status_dict,
+    current_stream_dispatch,
     get_session,
     require_authenticated_session,
 )
-from core.state import first_radio_position_delivery, radio_dispatch_url, stream_url
-from core.stream_format import radio_content_type
+from core.state import delivery_class_for, first_radio_position_delivery, radio_dispatch_url
 from delivery import (
     AirPlayDelivery,
     BaseDelivery,
@@ -35,16 +36,13 @@ from delivery import (
 )
 from delivery.sonos import halt_if_possible
 from media import (
-    JellyfinClient,
     PlexClient,
     ResolvedAccount,
-    SubsonicClient,
     resolve_account,
     server_type_name,
 )
 from media.login_errors import LoginFailed
 from media.plex import account_username_for_server_token
-from routes.playback import _resync_position_periodically
 
 logger = logging.getLogger("connect.devices")
 router = APIRouter(dependencies=[Depends(require_token)])
@@ -74,7 +72,7 @@ _LOCKED_URLS = {
 # to Navidrome through, not reachable from the browser directly in most
 # deployments) is a reasonable fallback over showing the user nothing at
 # all. For a locked Jellyfin deployment, set SERVER_URL — Jellyfin has no
-# internal-URL variable of its own (see configure()'s internal_url comment).
+# internal-URL variable of its own (see core/media_login.py's build_client()).
 _LOCKED_LOGIN_URL = os.getenv("SERVER_URL") or os.getenv("NAVIDROME_INTERNAL_URL", "")
 # What kind of server SERVER_LOCK points at — only meaningful together with
 # _LOCKED_LOGIN_URL above. Defaults to "subsonic" for backwards compatibility
@@ -137,24 +135,6 @@ async def _resolve_plex_name(
 @router.post("/config")
 async def configure(req: ConfigRequest, session: SessionState = Depends(get_session)):
     server_type = req.server_type.lower()
-    # NAVIDROME_INTERNAL_URL and JELLYFIN_INTERNAL_URL are deliberately separate
-    # env vars, not one shared between server types — that used to be a
-    # single NAVIDROME_INTERNAL_URL applied regardless of server_type, which
-    # meant a Jellyfin session's ping() call was hit with Navidrome's own
-    # LAN address instead, always failing since Navidrome has no /Users/Me
-    # endpoint. Plex has no equivalent var at all: its server address comes
-    # from Plex's own account-based discovery (list_resources()), which
-    # already prefers a local, LAN-reachable connection over a remote one
-    # when it finds one — there's no manually-typed URL for an override to
-    # even apply to. All three clients fall back to req.url (the login URL)
-    # when their own internal_url is empty either way.
-    if server_type == "jellyfin":
-        internal_url = os.getenv("JELLYFIN_INTERNAL_URL", "")
-    elif server_type == "plex":
-        internal_url = ""
-    else:
-        internal_url = os.getenv("NAVIDROME_INTERNAL_URL", "")
-
     if _SERVER_LOCK and _LOCKED_URLS and req.url.rstrip("/") not in _LOCKED_URLS:
         logger.warning(f"[config] Rejected — url outside SERVER_LOCK allow-list: {req.url}")
         raise HTTPException(
@@ -162,23 +142,9 @@ async def configure(req: ConfigRequest, session: SessionState = Depends(get_sess
             detail="Server URL does not match the locked server for this deployment",
         )
 
-    media: JellyfinClient | PlexClient | SubsonicClient
-    if server_type == "jellyfin":
-        media = JellyfinClient(
-            req.url,
-            token=req.credential,
-            user_id=req.user_id,
-            internal_url=internal_url,
-        )
-    elif server_type == "plex":
-        media = PlexClient(
-            req.url,
-            token=req.credential,
-            internal_url=internal_url,
-            machine_identifier=req.machine_identifier,
-        )
-    else:
-        media = SubsonicClient(req.url, credential=req.credential, internal_url=internal_url)
+    media = media_login.build_client(
+        server_type, req.url, req.credential, req.user_id, req.machine_identifier
+    )
 
     # See config_seq's own comment — claimed before the slow ping() below so
     # a second, newer /config call landing while this one is still verifying
@@ -226,6 +192,7 @@ async def configure(req: ConfigRequest, session: SessionState = Depends(get_sess
     session.account_server_url = (account.server_id if account else "") or req.url
     session.account_username = account.username if account else ""
     session.account_is_admin = bool(account and account.is_admin)
+    session.settings_identity = (req.server_type, req.url, req.username)
     # The verified name when there is one, so "in use by" shows the real
     # account; the request body's value stays the fallback for a server
     # that could not answer (and for Plex, until plex.tv has confirmed it).
@@ -247,14 +214,13 @@ async def configure(req: ConfigRequest, session: SessionState = Depends(get_sess
     if server_type == "jellyfin":
         logger.info(
             f"[config] Jellyfin configured & verified: {req.url} "
-            f"(internal: {internal_url or 'same'}, user_id: {req.user_id or 'missing'})"
+            f"(internal: {media.internal_url}, user_id: {req.user_id or 'missing'})"
         )
     elif server_type == "plex":
         logger.info(f"[config] Plex configured & verified: {req.url}")
     else:
         logger.info(
-            f"[config] Subsonic configured & verified: {req.url} "
-            f"(internal: {internal_url or 'same'})"
+            f"[config] Subsonic configured & verified: {req.url} (internal: {media.internal_url})"
         )
 
     # Where the verification request actually landed, if that isn't what was
@@ -345,6 +311,169 @@ async def _group_followers_of(
     return followers
 
 
+async def _stop_sonos(
+    name: str, matched: BaseDelivery | None, remaining: list[BaseDelivery]
+) -> tuple[bool, str | None]:
+    """Stop one Sonos without taking the rest of its group down with it.
+    See _stop_one() for what it returns."""
+    # Resolved through the delivery's own cache (delivery/sonos.py's
+    # _cached_device()) rather than a fresh discovery: a full SSDP sweep
+    # here blocks a worker thread for the whole discovery timeout while the
+    # handler holds play_lock, so every /play, /pause and /seek on this
+    # session waits it out — right in the middle of a device switch, which
+    # is exactly when the frontend fires them. See
+    # SonosDelivery._get_device()'s own docstring for the multicast cost
+    # this cache exists to avoid.
+    stopped = matched if isinstance(matched, SonosDelivery) else SonosDelivery(name)
+    try:
+        target_dev = await asyncio.to_thread(stopped._get_device)
+    except Exception as ex:
+        logger.warning(f"[device-stop] Sonos '{name}' not found on network: {ex}")
+        return False, None
+
+    is_coord = await asyncio.to_thread(lambda: target_dev.is_coordinator)
+    logger.debug(f"[device-stop] {name} is_coordinator={is_coord}")
+
+    # Only the devices actually following *this* coordinator — a standalone
+    # Sonos is its own coordinator, so `is_coord and remaining` alone was
+    # true whenever any second Sonos was still active, and each of those got
+    # unjoined and re-dispatched even though it was playing its own
+    # independent stream. That is an audible restart on a speaker the user
+    # never touched, and it is what made switching between two Sonos
+    # speakers stutter.
+    followers = await _group_followers_of(target_dev, remaining) if is_coord and remaining else []
+
+    need_restart = False
+    if followers:
+        logger.info(f"[device-stop] Ungrouping {len(followers)} follower(s) …")
+        for rem, rem_dev in followers:
+            try:
+                await asyncio.to_thread(rem_dev.unjoin)
+                logger.debug(f"[device-stop] {rem.target} ungrouped")
+            except Exception as ex:
+                logger.warning(f"[device-stop] unjoin {rem.target}: {ex}")
+        await asyncio.sleep(0.3)
+        need_restart = True
+    elif not is_coord:
+        await asyncio.to_thread(target_dev.unjoin)
+        await asyncio.sleep(0.1)
+
+    try:
+        await asyncio.to_thread(halt_if_possible, target_dev.stop)
+    except Exception as e:
+        logger.exception(f"[device-stop] {name}")
+        return need_restart, str(e)
+    logger.info(f"[device-stop] {name} stopped")
+    return need_restart, None
+
+
+async def _stop_one(
+    device_type: str, name: str, matched: BaseDelivery | None, remaining: list[BaseDelivery]
+) -> tuple[bool, str | None]:
+    """Stop the one device. Returns whether the remaining devices need the
+    stream dispatched again, and the error if the stop failed - the two
+    together, since a Sonos coordinator that refuses to stop has already
+    split its followers off, and they still need their stream back."""
+    try:
+        if device_type == "sonos":
+            return await _stop_sonos(name, matched, remaining)
+        if device_type == "chromecast":
+            await ChromecastDelivery(name).stop()
+        elif device_type == "dlna":
+            await DlnaDelivery(name).stop()
+        else:
+            await (matched or AirPlayDelivery(name)).stop()
+    except Exception as e:
+        logger.exception(f"[device-stop] {name}")
+        return False, str(e)
+    return False, None
+
+
+async def _end_playback_without_devices(session: SessionState) -> None:
+    """The last device is gone."""
+    st = session.state
+    st.is_streaming = False
+    st.active_delivery = None
+    # Radio's own teardown, matching /stop's (see stop_playback()). A queued
+    # track needs no equivalent — its ffmpeg lives inside the device's own
+    # GET /stream connection and dies with it — but a relay does not: it
+    # keeps fetching the station and holding its ffmpeg open until the
+    # session is reaped, which is exactly the per-station cost the relay
+    # exists to avoid paying more than once. radio_info goes with it rather
+    # than lingering as "relayed" with no relay behind it; nothing can reach
+    # it again anyway, since /join refuses a session that isn't streaming.
+    st.radio_info = None
+    session.stop_radio_metadata_watch()
+    await session.stop_radio_relay()
+
+
+def _hand_over_radio_tracker(
+    session: SessionState, matched: BaseDelivery, new_delivery: BaseDelivery | DeliveryManager
+) -> None:
+    """Move core/radio_position.py's tracker off the stopped device, when it
+    was the one being polled (it only ever tracks Chromecast/DLNA, so this
+    can differ from the resync candidate)."""
+    st = session.state
+    tracker = session.radio_position_tracker
+    if tracker is None or tracker.delivery is not matched:
+        return
+    # What a fresh dispatch to this station would use.
+    replacement = first_radio_position_delivery(
+        new_delivery, radio_dispatch_url(session.session_id, st.radio_info)
+    )
+    if replacement is None:
+        session.radio_position_tracker = None
+        return
+    # started_at carried over from the tracker being replaced, not defaulted
+    # to now: `replacement` is a device that has been playing this same
+    # station all along and is *not* re-dispatched here, so its buffer
+    # filled back when the outgoing tracker was created. Without this,
+    # buffer_lag() reads negative for it and the visualizer loses its lag
+    # correction for the rest of the session — see that method's own comment.
+    new_tracker = RadioPositionTracker(
+        session, replacement, st.clock.play_generation, started_at=tracker.started_at
+    )
+    new_tracker.start()
+    session.radio_position_tracker = new_tracker
+
+
+async def _hand_over_to_remaining(
+    session: SessionState,
+    remaining: list[BaseDelivery],
+    matched: BaseDelivery | None,
+    resync_candidate: BaseDelivery | None,
+    need_restart: bool,
+) -> None:
+    """The devices still playing become the session's target, and take over
+    whatever the stopped one was doing for it."""
+    st = session.state
+    new_delivery: BaseDelivery | DeliveryManager = (
+        remaining[0] if len(remaining) == 1 else DeliveryManager.from_deliveries(remaining)
+    )
+    st.active_delivery = new_delivery
+
+    if need_restart and st.is_streaming:
+        url, content_type = current_stream_dispatch(session)
+        title = st.radio_info["title"] if st.radio_info else "Connect"
+        logger.info(f"[device-stop] Restarting stream: {url}")
+        try:
+            await new_delivery.play(url, title, content_type=content_type)
+        except Exception:
+            logger.exception("[device-stop] Restart error")
+
+    if st.is_streaming and st.radio_info and matched is not None:
+        _hand_over_radio_tracker(session, matched, new_delivery)
+
+    # After the tracker handover above, not before: where a tracker covers
+    # this delivery it calibrates the clock from its own readings, and the
+    # resync task stands aside instead of polling the same device again (see
+    # core/cast_position.py's _tracked_for_radio()).
+    if st.is_streaming and matched is not None and resync_candidate is matched:
+        asyncio.create_task(
+            resync_position_periodically(session, new_delivery, st.clock.play_generation)
+        )
+
+
 @router.post("/device-stop")
 async def stop_device(
     device_type: str,
@@ -356,15 +485,7 @@ async def stop_device(
     For Sonos coordinators: unjoins remaining followers first so the coordinator's
     stop command doesn't kill the whole group, then restarts the stream on them.
     """
-    type_cls: type[BaseDelivery]
-    if device_type == "sonos":
-        type_cls = SonosDelivery
-    elif device_type == "chromecast":
-        type_cls = ChromecastDelivery
-    elif device_type == "dlna":
-        type_cls = DlnaDelivery
-    else:
-        type_cls = AirPlayDelivery
+    type_cls = delivery_class_for(device_type) or AirPlayDelivery
 
     # Serialized under session.play_lock, same as /play, /pause, /seek etc.
     # (see that field's docstring) — without it, a concurrent /play reading
@@ -379,21 +500,21 @@ async def stop_device(
         # The actual live instance being stopped, if found — AirPlay in
         # particular needs this: its RAOP stream task/connection live on the
         # instance itself (see delivery/airplay.py), so stopping a freshly
-        # constructed AirPlayDelivery(name) below would be a no-op that never
+        # constructed AirPlayDelivery(name) would be a no-op that never
         # touches the real stream, leaving it playing forever.
         matched = next(
             (d for d in candidates if isinstance(d, type_cls) and d.target == name), None
         )
         remaining: list[BaseDelivery] = [d for d in candidates if d is not matched]
-        # Which delivery the session's running _resync_position_periodically()
+        # Which delivery the session's running resync_position_periodically()
         # task is polling: it picks the first position-capable one and holds
         # onto it for the whole track. If that is the device being stopped
         # here, that task retires itself on its next wake (see
-        # _still_targeted()) and the remaining devices would be left with no
+        # is_still_targeted()) and the remaining devices would be left with no
         # position resync at all for the rest of the track — so a replacement
-        # gets started below. Any other device going away leaves that task
-        # polling a device it still legitimately owns, and starting a second
-        # one for the same candidate would just double the round trips.
+        # gets started. Any other device going away leaves that task polling
+        # a device it still legitimately owns, and starting a second one for
+        # the same candidate would just double the round trips.
         resync_candidate = next((d for d in candidates if d.SUPPORTS_POSITION), None)
 
         logger.info(
@@ -401,76 +522,13 @@ async def stop_device(
             f"{[d.target for d in remaining] or 'none'}"
         )
 
-        need_restart = False
-        # Set instead of returned early on: a device that refused to stop
-        # must still be taken out of active_delivery below, since its claim
-        # is released either way — otherwise /status keeps reporting a
-        # target this session no longer owns, the picker re-ticks its
-        # checkbox from that, and the frontend and the claim registry
-        # disagree about who has the speaker. Reported at the end.
-        stop_error: str | None = None
-        try:
-            if device_type == "sonos":
-                # Resolved through the delivery's own cache
-                # (delivery/sonos.py's _cached_device()) rather than a
-                # fresh discovery: a full SSDP sweep here blocks a worker
-                # thread for the whole discovery timeout while this handler
-                # holds play_lock, so every /play, /pause and /seek on this
-                # session waits it out — right in the middle of a device
-                # switch, which is exactly when the frontend fires them.
-                # See SonosDelivery._get_device()'s own docstring for the
-                # multicast cost this cache exists to avoid.
-                stopped = matched if isinstance(matched, SonosDelivery) else SonosDelivery(name)
-                try:
-                    target_dev = await asyncio.to_thread(stopped._get_device)
-                except Exception as ex:
-                    target_dev = None
-                    logger.warning(f"[device-stop] Sonos '{name}' not found on network: {ex}")
-
-                if target_dev:
-                    is_coord = await asyncio.to_thread(lambda: target_dev.is_coordinator)
-                    logger.debug(f"[device-stop] {name} is_coordinator={is_coord}")
-
-                    # Only the devices actually following *this* coordinator
-                    # — a standalone Sonos is its own coordinator, so
-                    # `is_coord and remaining` alone was true whenever any
-                    # second Sonos was still active, and each of those got
-                    # unjoined and re-dispatched below even though it was
-                    # playing its own independent stream. That is an audible
-                    # restart on a speaker the user never touched, and it is
-                    # what made switching between two Sonos speakers stutter.
-                    followers = (
-                        await _group_followers_of(target_dev, remaining)
-                        if is_coord and remaining
-                        else []
-                    )
-
-                    if followers:
-                        logger.info(f"[device-stop] Ungrouping {len(followers)} follower(s) …")
-                        for rem, rem_dev in followers:
-                            try:
-                                await asyncio.to_thread(rem_dev.unjoin)
-                                logger.debug(f"[device-stop] {rem.target} ungrouped")
-                            except Exception as ex:
-                                logger.warning(f"[device-stop] unjoin {rem.target}: {ex}")
-                        await asyncio.sleep(0.3)
-                        need_restart = True
-                    elif not is_coord:
-                        await asyncio.to_thread(target_dev.unjoin)
-                        await asyncio.sleep(0.1)
-
-                    await asyncio.to_thread(halt_if_possible, target_dev.stop)
-                    logger.info(f"[device-stop] {name} stopped")
-            elif device_type == "chromecast":
-                await ChromecastDelivery(name).stop()
-            elif device_type == "dlna":
-                await DlnaDelivery(name).stop()
-            else:
-                await (matched or AirPlayDelivery(name)).stop()
-
-        except Exception as e:
-            logger.exception(f"[device-stop] {name}")
-            stop_error = str(e)
+        # Not returned early on: a device that refused to stop must still be
+        # taken out of active_delivery below, since its claim is released
+        # either way — otherwise /status keeps reporting a target this
+        # session no longer owns, the picker re-ticks its checkbox from that,
+        # and the frontend and the claim registry disagree about who has the
+        # speaker. Reported at the end.
+        need_restart, stop_error = await _stop_one(device_type, name, matched, remaining)
 
         # Released whether or not the stop itself worked — same reasoning as
         # /play's and /join's own claim release on a failed dispatch (see
@@ -480,101 +538,12 @@ async def stop_device(
         # anything.
         await claims.release(device_type, name, session.session_id)
 
-        st = session.state
-        if not remaining:
-            st.is_streaming = False
-            st.active_delivery = None
-            # Radio's own teardown, matching /stop's (see stop_playback()).
-            # A queued track needs no equivalent — its ffmpeg lives inside
-            # the device's own GET /stream connection and dies with it —
-            # but a relay does not: it keeps fetching the station and
-            # holding its ffmpeg open until the session is reaped, which is
-            # exactly the per-station cost the relay exists to avoid paying
-            # more than once. radio_info goes with it rather than lingering
-            # as "relayed" with no relay behind it; nothing can reach it
-            # again anyway, since /join refuses a session that isn't
-            # streaming.
-            st.radio_info = None
-            session.stop_radio_metadata_watch()
-            await session.stop_radio_relay()
-        else:
-            new_delivery: BaseDelivery | DeliveryManager = (
-                remaining[0] if len(remaining) == 1 else DeliveryManager.from_deliveries(remaining)
+        if remaining:
+            await _hand_over_to_remaining(
+                session, remaining, matched, resync_candidate, need_restart
             )
-            st.active_delivery = new_delivery
-
-            if need_restart and st.is_streaming:
-                # URL extension and announced type out of one place, same as
-                # /join — see the comment there.
-                content_type = (
-                    radio_content_type(st.radio_info)
-                    if st.radio_info
-                    else st.current_output_format.content_type
-                )
-                url = (
-                    radio_dispatch_url(session.session_id, st.radio_info)
-                    if st.radio_info
-                    else stream_url(session.session_id, content_type)
-                )
-                title = st.radio_info["title"] if st.radio_info else "Connect"
-                logger.info(f"[device-stop] Restarting stream: {url}")
-                try:
-                    await new_delivery.play(url, title, content_type=content_type)
-                except Exception:
-                    logger.exception("[device-stop] Restart error")
-
-            # Same handover, for core/radio_position.py's tracker (radio
-            # only, and only when the removed device was the one it was
-            # actually polling — matched is the delivery instance being
-            # stopped, radio_position_tracker.delivery is what the tracker
-            # holds, and they can differ from resync_candidate above since
-            # this only ever tracks Chromecast/DLNA, not every
-            # SUPPORTS_POSITION type).
-            tracker = session.radio_position_tracker
-            if (
-                st.is_streaming
-                and st.radio_info
-                and matched is not None
-                and tracker is not None
-                and tracker.delivery is matched
-            ):
-                # Recomputed rather than reusing `url` above: that one only
-                # exists inside the need_restart branch, and this check
-                # doesn't share that guard — st.radio_info is already known
-                # truthy here (the `and st.radio_info` above), so this is
-                # exactly what a fresh dispatch to this station would use.
-                replacement = first_radio_position_delivery(
-                    new_delivery, radio_dispatch_url(session.session_id, st.radio_info)
-                )
-                if replacement is not None:
-                    # started_at carried over from the tracker being
-                    # replaced, not defaulted to now: `replacement` is a
-                    # device that has been playing this same station all
-                    # along and is *not* re-dispatched here, so its buffer
-                    # filled back when the outgoing tracker was created.
-                    # Without this, buffer_lag() reads negative for it and
-                    # the visualizer loses its lag correction for the rest
-                    # of the session — see that method's own comment.
-                    new_tracker = RadioPositionTracker(
-                        session,
-                        replacement,
-                        st.clock.play_generation,
-                        started_at=tracker.started_at,
-                    )
-                    new_tracker.start()
-                    session.radio_position_tracker = new_tracker
-                else:
-                    session.radio_position_tracker = None
-
-            # After the tracker handover above, not before: where a tracker
-            # covers this delivery it calibrates the clock from its own
-            # readings, and the resync task stands aside instead of polling
-            # the same device again (see routes/playback.py's
-            # _tracked_for_radio()).
-            if st.is_streaming and matched is not None and resync_candidate is matched:
-                asyncio.create_task(
-                    _resync_position_periodically(session, new_delivery, st.clock.play_generation)
-                )
+        else:
+            await _end_playback_without_devices(session)
 
     await session.event_bus.broadcast(build_status_dict(session))
     if stop_error:

@@ -10,7 +10,7 @@ import pytest
 from core import radio_stations
 from core.session import DEFAULT_SESSION_ID, SessionState
 from core.session import registry as session_registry
-from media import JellyfinClient, SubsonicClient, jellyfin_bridge
+from media import JellyfinClient, SubsonicClient, bridge, jellyfin_bridge
 
 
 @pytest.fixture
@@ -36,14 +36,20 @@ def _fake_jf_client(json_by_path: dict[str, dict] | None = None):
     (typically a POST/DELETE mutation, which handlers don't parse a body
     from — see _jf_request's comment) succeeds with an empty body. Returns
     (mock_client, calls) — calls is a list of (method, url, params, json)
-    tuples, for asserting what a mutation actually sent."""
+    tuples, for asserting what a mutation actually sent. A key may end in
+    "?Param=Value" to tell apart two calls to the same path, which the real
+    URL can't do: params travel separately."""
     json_by_path = json_by_path or {}
     calls: list[tuple] = []
 
     async def fake_request(method, url, headers=None, params=None, json=None):
         calls.append((method, url, params, json))
         for path, payload in json_by_path.items():
-            if url.endswith(path):
+            base_path, _, condition = path.partition("?")
+            name, _, value = condition.partition("=")
+            if condition and (params or {}).get(name) != value:
+                continue
+            if url.endswith(base_path):
                 response = MagicMock()
                 response.raise_for_status = MagicMock()
                 response.content = b"1"
@@ -406,6 +412,15 @@ def test_search3_maps_song_offset_to_start_index(client, jellyfin_session, monke
     assert calls[0][2]["StartIndex"] == "3000"
 
 
+def test_search3_pages_albums_searched_alone(client, jellyfin_session, monkeypatch):
+    # The app API pages an album search by albumOffset (core/app_library.py).
+    fake_client, calls = _fake_jf_client({"/Items": {"Items": []}})
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    client.get("/rest/search3.view?query=x&songCount=0&albumCount=50&artistCount=0&albumOffset=50")
+    assert calls[0][2]["StartIndex"] == "50"
+
+
 def test_search3_only_requests_nonzero_count_types(client, jellyfin_session, monkeypatch):
     # Regression test: fetchAllTracks() sets albumCount=artistCount=0 — Jellyfin
     # must not be asked for those types too, since they'd otherwise crowd
@@ -600,6 +615,68 @@ def test_get_artists_buckets_by_first_letter(client, jellyfin_session, monkeypat
     assert [entry["name"] for entry in index] == ["A", "B"]
     a_names = {a["name"] for a in index[0]["artist"]}
     assert a_names == {"ABBA", "Air"}
+
+
+def test_artist_album_counts_come_from_their_albums(client, jellyfin_session, monkeypatch):
+    """An artist's own ChildCount is albums plus songs on the item itself and
+    absent from a listing (#93): the cards showed 0 albums, the artist page
+    16 for 3. Albums count by album artist or track artist, like getArtist's
+    own album list, and once each."""
+    albums = {
+        "Items": [
+            {"Id": "al1", "AlbumArtists": [{"Id": "a1"}], "ArtistItems": [{"Id": "a1"}]},
+            {"Id": "al2", "AlbumArtists": [{"Id": "a1"}], "ArtistItems": []},
+            {"Id": "al3", "AlbumArtists": [{"Id": "va"}], "ArtistItems": [{"Id": "a1"}]},
+        ]
+    }
+    artists = {
+        "Items": [
+            {"Id": "a1", "Name": "ABBA", "Type": "MusicArtist", "ChildCount": 16},
+            {"Id": "b1", "Name": "B", "Type": "MusicArtist"},
+        ]
+    }
+    fake_client, calls = _fake_jf_client(
+        {"/Items?IncludeItemTypes=MusicAlbum": albums, "/Items": artists}
+    )
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    def album_counts(url: str, key: str) -> dict[str, int]:
+        body = client.get(url).json()["subsonic-response"][key]
+        found = (
+            [a for entry in body["index"] for a in entry["artist"]]
+            if "index" in body
+            else body["artist"]
+        )
+        return {a["id"]: a["albumCount"] for a in found}
+
+    assert album_counts("/rest/getArtists.view", "artists") == {"a1": 3, "b1": 0}
+    # One listing for the whole library, not one per artist.
+    album_calls = [c for c in calls if (c[2] or {}).get("IncludeItemTypes") == "MusicAlbum"]
+    assert len(album_calls) == 1 and "ArtistIds" not in album_calls[0][2]
+
+    for url, key in (
+        ("/rest/search3.view?query=a", "searchResult3"),
+        ("/rest/getStarred2.view", "starred2"),
+    ):
+        calls.clear()
+        assert album_counts(url, key) == {"a1": 3, "b1": 0}, url
+        # One listing scoped to just these artists.
+        scoped = [c[2]["ArtistIds"] for c in calls if "ArtistIds" in (c[2] or {})]
+        assert scoped == ["a1,b1"], url
+
+
+def test_get_artist_counts_the_albums_it_lists(client, jellyfin_session, monkeypatch):
+    fake_client, _ = _fake_jf_client(
+        {
+            "/Items/artist-1": {"Id": "artist-1", "Name": "Radiohead", "ChildCount": 16},
+            "/Items": {"Items": [{"Id": "album-1", "Name": "OK Computer", "RunTimeTicks": 0}]},
+        }
+    )
+    monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
+
+    artist = client.get("/rest/getArtist.view?id=artist-1").json()["subsonic-response"]["artist"]
+
+    assert artist["albumCount"] == 1
 
 
 def test_get_artist_includes_its_albums(client, jellyfin_session, monkeypatch):
@@ -1151,15 +1228,15 @@ def test_stream_view_requires_id(client, jellyfin_session):
 def test_binary_handler_exception_returns_failed_envelope_not_500(
     client, jellyfin_session, monkeypatch
 ):
-    """Unlike every JSON handler, _handle_binary()/_stream_binary() had no
+    """Unlike every JSON handler, the binary passthrough had no
     try/except of their own — a Jellyfin connectivity blip mid cover-art-
     load or mid-stream used to propagate as a raw 500 instead of degrading
     like every other endpoint here."""
 
-    async def broken_stream_binary(request, url, media):
+    async def broken_stream_binary(*args, **kwargs):
         raise RuntimeError("connection reset")
 
-    monkeypatch.setattr(jellyfin_bridge, "_stream_binary", broken_stream_binary)
+    monkeypatch.setattr(bridge, "stream_binary", broken_stream_binary)
 
     r = client.get("/rest/getCoverArt.view?id=item-1")
 
@@ -1715,7 +1792,7 @@ def test_stream_view_drops_the_length_of_a_compressed_body(client, jellyfin_sess
 
 def test_cover_art_never_forwards_a_length(client, jellyfin_session, monkeypatch):
     """The reason content-length is skipped at all: an image endpoint whose
-    length and body disagreed crashed the response (see _SKIP_RESP_HEADERS)."""
+    length and body disagreed crashed the response (see bridge.py's SKIP_RESP_HEADERS)."""
     fake_client, _ = _mock_binary_httpx_client({"content-length": "999"})
     monkeypatch.setattr(jellyfin_bridge, "_get_client", lambda: fake_client)
 

@@ -466,7 +466,7 @@ function startConnectServer(): void {
   connectProcess = spawn(binaryPath, [], {
     env: {
       ...process.env,
-      CONNECT_TOKEN: packagedConnectToken,
+      CONNECT_INTERNAL_TOKEN: packagedConnectToken,
       PORT: String(packagedConnectPort),
       // Everything connect persists (AirPlay pairings, the Jellyfin/Plex
       // client ids, settings, caches) — userData survives app updates, unlike the
@@ -548,7 +548,7 @@ function stopConnectServer(): void {
   connectProcess = null
 }
 
-// Learns CONNECT_TOKEN the same way the Python backend resolves it (see
+// Learns the Connect API token the same way the Python backend resolves it (see
 // connect/core/auth.py), so the renderer never has to ask the user to type
 // it in — same idea as the web/Docker build's nginx config injecting
 // X-Connect-Token itself (see ng.conf.template): a trusted layer the user
@@ -556,12 +556,9 @@ function stopConnectServer(): void {
 //
 // Packaged builds bypass the file-based resolution entirely: startConnectServer()
 // above already generated packagedConnectToken and knows exactly which port
-// it told the bundled binary to listen on. Dev keeps the original precedence:
-//   1. connect/.env's CONNECT_TOKEN, if explicitly set (fixed/deployment config)
-//   2. connect/.connect-token — a random token the backend generates itself
-//      on first run when CONNECT_TOKEN isn't set, and persists so it's
-//      stable across restarts (never a hardcoded/checked-in value, and
-//      never regenerated out from under this file on every launch)
+// it told the bundled binary to listen on. Dev reads connect/.connect-token,
+// the random token the backend generates on first run and persists so it
+// stays stable across restarts.
 function readConnectDefaults(): { connectToken: string; connectUrl: string } {
   if (app.isPackaged) {
     return {
@@ -575,13 +572,8 @@ function readConnectDefaults(): { connectToken: string; connectUrl: string } {
   const parsed = existsSync(envPath) ? (loadDotenv({ path: envPath }).parsed ?? {}) : {}
   const port = parsed.PORT || '7071'
 
-  let connectToken = parsed.CONNECT_TOKEN ?? ''
-  if (!connectToken) {
-    const tokenFile = join(connectDir, '.connect-token')
-    if (existsSync(tokenFile)) {
-      connectToken = readFileSync(tokenFile, 'utf-8').trim()
-    }
-  }
+  const tokenFile = join(connectDir, '.connect-token')
+  const connectToken = existsSync(tokenFile) ? readFileSync(tokenFile, 'utf-8').trim() : ''
 
   return {
     connectToken,

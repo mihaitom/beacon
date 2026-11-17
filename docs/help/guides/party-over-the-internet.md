@@ -1,5 +1,6 @@
 ---
-order: 3
+group: party
+order: 2
 ---
 
 # Party mode over the internet

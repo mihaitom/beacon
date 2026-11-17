@@ -666,7 +666,7 @@ def test_airplay_pause_stops_the_stream():
 def test_airplay_reports_a_position_instead_of_a_fixed_estimate():
     """AirPlay used to declare FIXED_OFFSET = 2.0 and no position at all.
     Both halves matter: a leftover FIXED_OFFSET would short-circuit
-    routes/playback.py's calibration before it ever polls the position this
+    core/cast_position.py's calibration before it ever polls the position this
     class now derives (see
     test_apply_position_offset_measures_airplay_instead_of_estimating)."""
     assert AirPlayDelivery.SUPPORTS_POSITION is True

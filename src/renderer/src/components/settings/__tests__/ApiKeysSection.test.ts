@@ -21,12 +21,15 @@ vi.mock('@/services/connect/apiKeys', () => ({
 const vuetify = createVuetify({ components, directives })
 
 const NONE_SET: ApiKeyStatuses = {
-  lastfm: { configured: false, fromEnvironment: false },
-  fanart: { configured: false, fromEnvironment: false },
+  lastfm: { configured: false, fromEnvironment: false, fromServer: false },
+  fanart: { configured: false, fromEnvironment: false, fromServer: false },
 }
 
 function statuses(overrides: Partial<ApiKeyStatuses['lastfm']> = {}): ApiKeyStatuses {
-  return { ...NONE_SET, lastfm: { configured: false, fromEnvironment: false, ...overrides } }
+  return {
+    ...NONE_SET,
+    lastfm: { configured: false, fromEnvironment: false, fromServer: false, ...overrides },
+  }
 }
 
 async function mountSection() {
@@ -183,5 +186,12 @@ describe('ApiKeysSection', () => {
 
     expect(keyField(wrapper)).toBeDefined()
     expect(wrapper.find('.status-dot--warn').exists()).toBe(true)
+  })
+
+  it('says a key came from the paired server and offers no way to remove it', async () => {
+    vi.mocked(getApiKeyStatuses).mockResolvedValue(statuses({ configured: true, fromServer: true }))
+    const wrapper = await mountSection()
+    expect(wrapper.text()).toContain(i18n.global.t('settings.apiKeyFromServer'))
+    expect(wrapper.text()).not.toContain(i18n.global.t('settings.apiKeyClear'))
   })
 })

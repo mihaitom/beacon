@@ -25,6 +25,13 @@
       />
     </div>
 
+    <p
+      v-if="playlist.comment"
+      class="text-body-small text-medium-emphasis mobile-playlist-detail__comment"
+    >
+      {{ playlist.comment }}
+    </p>
+
     <playlist-notice v-if="notice" :notice="notice" @undo="runUndo" @dismiss="notice = null" />
 
     <!-- See the desktop page's own note on when a playlist can be empty. -->
@@ -200,6 +207,11 @@ export default {
 </script>
 
 <style scoped>
+.mobile-playlist-detail__comment {
+  margin: 0 0 12px;
+  white-space: pre-line;
+}
+
 /* The spinner while the playlist loads, centered in the space its rows
  * will take. */
 .mobile-playlist-detail__loading {

@@ -165,6 +165,14 @@ export const useRemoteControlStore = defineStore('remoteControl', {
       this.stopRelayUnlessNeeded()
     },
 
+    /** A device key with the control right steers this window through the
+     * relay too (connect/routes/player_desktop.py), so making or revoking
+     * one can start or end the need for it. */
+    async deviceKeysChanged(): Promise<void> {
+      await this.refreshStatus()
+      if (!this.integration) this.stopRelayUnlessNeeded()
+    },
+
     /** Sends connect a fresh snapshot soon, for a change no store
      * subscription below sees (party mode's lyrics and backdrop). */
     refreshSnapshot(): void {

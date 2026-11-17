@@ -253,6 +253,9 @@ export default {
     favoriteAvailable(): boolean {
       return this.authStore.capabilities.favorites && this.playbackStore.currentSongInLibrary
     },
+    equalizerAvailable(): boolean {
+      return useConnectStore().isActive
+    },
     // The radio snapshot fields the source hands the log panel, lifted here
     // so hostSource reads them the same way it reads everything else.
     radioNowPlaying(): string | null {

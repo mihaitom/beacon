@@ -8,6 +8,8 @@ import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { useLibraryStore } from '@/stores/library'
 import MobileLibraryView from '../MobileLibraryView.vue'
+import MobileMoreView from '../MobileMoreView.vue'
+import MobilePartyView from '../MobilePartyView.vue'
 import MobilePlaylistsView from '../MobilePlaylistsView.vue'
 import MobileQueueView from '../MobileQueueView.vue'
 import MobileRadioView from '../MobileRadioView.vue'
@@ -24,6 +26,8 @@ const VIEWS = [
   { name: 'MobilePlaylistsView', component: MobilePlaylistsView },
   { name: 'MobileQueueView', component: MobileQueueView },
   { name: 'MobileRadioView', component: MobileRadioView },
+  { name: 'MobileMoreView', component: MobileMoreView },
+  { name: 'MobilePartyView', component: MobilePartyView },
 ] as const
 
 function mountView(component: (typeof VIEWS)[number]['component']) {
@@ -41,7 +45,7 @@ function mountView(component: (typeof VIEWS)[number]['component']) {
 }
 
 /**
- * Four phone views that all open the same way — the view's name, then
+ * Phone views that all open the same way — the view's name, then
  * whatever the view is — used to spell that four different ways: a bare h1
  * with mb-3, another with mb-4, one wrapped in `d-flex align-center mb-3`
  * utility classes and one with a flex block of its own. They sat at

@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick } from 'vue'
-import { initAccountScopedStores } from '../accountScopedStores'
+import { initAccountScopedStores, syncWithAccount } from '../accountScopedStores'
 import { fetchAccountSettings } from '@/services/connect/accountSettings'
 import { useAuthStore } from '@/stores/auth'
 import { useRecommendationsStore } from '@/stores/recommendations'
@@ -10,13 +10,29 @@ import { useLyricsProvidersStore, LYRIC_PROVIDERS } from '@/stores/lyricsProvide
 import { useAutoplayStore } from '@/stores/autoplay'
 import { useHomeStore } from '@/stores/home'
 import { useEqualizerStore } from '@/stores/equalizer'
+import { useAppearanceStore } from '@/stores/appearance'
+import { pullLyricsOffsets } from '@/services/lyrics/lyricsOffsets'
 import type { Album } from '@/types/library'
 import { browserLocale, getLocale } from '@/i18n'
 import { setLocale } from '@/services/localeSetting'
+import { forgetWhatWasReported } from '@/services/playback/nowPlayingReport'
+import { getExternalSources } from '@/services/connect/externalSource'
+import { useExternalSourceStore } from '@/stores/externalSource'
 
 vi.mock('@/services/connect/accountSettings', () => ({
   fetchAccountSettings: vi.fn(),
   pushAccountSettings: vi.fn().mockResolvedValue({}),
+}))
+
+vi.mock('@/services/lyrics/lyricsOffsets', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/lyrics/lyricsOffsets')>()),
+  pullLyricsOffsets: vi.fn().mockResolvedValue(undefined),
+}))
+
+vi.mock('@/services/playback/nowPlayingReport', () => ({ forgetWhatWasReported: vi.fn() }))
+
+vi.mock('@/services/connect/externalSource', () => ({
+  getExternalSources: vi.fn().mockResolvedValue({ may_configure: false, sources: [] }),
 }))
 
 function signIn(username = 'alice'): void {
@@ -54,6 +70,54 @@ describe('accountScopedStores — pull on account change', () => {
     expect(useRecommendationsStore().enabled).toBe(false)
     expect(useLyricsProvidersStore().enabled).toEqual(['lrclib.net'])
     expect(useRadioSettingsStore().castDirectly).toBe(true)
+  })
+
+  it('starts the now-playing report over for the new account', async () => {
+    vi.mocked(fetchAccountSettings).mockResolvedValue({})
+    vi.mocked(forgetWhatWasReported).mockClear()
+    initAccountScopedStores()
+
+    signIn()
+    await nextTick()
+
+    expect(forgetWhatWasReported).toHaveBeenCalled()
+  })
+
+  // The layout mounts before the session is restored, so loading them
+  // there got a refusal and the tabs only appeared after the settings.
+  it('loads the external sources once signed in', async () => {
+    vi.mocked(fetchAccountSettings).mockResolvedValue({})
+    const source = { id: 'a', name: 'Archive', icon: 'mdi-web', ui_path: '/external-ui/x/a/' }
+    vi.mocked(getExternalSources).mockResolvedValue({ may_configure: false, sources: [source] })
+    initAccountScopedStores()
+
+    signIn()
+    await nextTick()
+
+    await vi.waitFor(() => expect(useExternalSourceStore().sources).toEqual([source]))
+  })
+
+  it("swaps the self-made themes for the new account's", async () => {
+    vi.mocked(fetchAccountSettings).mockResolvedValue({})
+    initAccountScopedStores()
+    signIn('alice')
+    await nextTick()
+    useAppearanceStore().addCustomTheme('Hers')
+
+    signIn('bob')
+    await nextTick()
+
+    expect(useAppearanceStore().customThemes).toEqual([])
+  })
+
+  it('takes over the settings and the lyrics corrections together', async () => {
+    vi.mocked(fetchAccountSettings).mockResolvedValue({ recommendationsEnabled: false })
+    vi.mocked(pullLyricsOffsets).mockClear()
+
+    await syncWithAccount()
+
+    expect(useRecommendationsStore().enabled).toBe(false)
+    expect(pullLyricsOffsets).toHaveBeenCalledOnce()
   })
 
   it("takes the speakers' equalizers another device saved", async () => {

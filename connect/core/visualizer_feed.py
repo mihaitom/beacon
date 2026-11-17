@@ -49,7 +49,7 @@ logger = logging.getLogger("connect.visualizer")
 _SUPERVISE_INTERVAL = 0.5
 
 # A track's visualizer clock (st.clock, see PlaybackClock) is calibrated
-# against the *device's own reported position* — routes/playback.py's
+# against the *device's own reported position* — core/cast_position.py's
 # position-resync — so it already accounts for however long the device
 # buffers before content becomes audible. Radio has no equivalent whenever
 # nothing can report a real position back (see this constant's own history

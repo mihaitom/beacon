@@ -146,6 +146,32 @@ def test_get_track_parses_song(monkeypatch):
     assert track.album == "The Album"
     assert track.duration == 213
     assert track.cover_art_id == "cover-1"
+    assert track.replay_gain is None
+
+
+def test_get_track_reads_the_songs_replay_gain(monkeypatch):
+    """Navidrome parses the tags ("2.35 dB") itself and sends numbers."""
+    import httpx
+
+    song = {
+        "id": "abc",
+        "title": "T",
+        "replayGain": {"trackGain": 2.35, "albumGain": 4.07, "trackPeak": 0.488479},
+    }
+
+    def fake_get(url, **kwargs):
+        return httpx.Response(
+            200,
+            json={"subsonic-response": {"status": "ok", "song": song}},
+            request=httpx.Request("GET", url),
+        )
+
+    monkeypatch.setattr(http_client, "get", fake_get)
+    replay_gain = _client().get_track("abc").replay_gain
+    assert replay_gain.track_gain == 2.35
+    assert replay_gain.album_gain == 4.07
+    assert replay_gain.track_peak == 0.488479
+    assert replay_gain.album_peak is None
 
 
 def test_get_raises_with_the_servers_own_error_message(monkeypatch):

@@ -1,14 +1,14 @@
 <template>
   <!-- Same big-card language as AlbumCard.vue/ArtistCard.vue (160px cover +
    - name below), not the old small-pill row — a real Deezer photo when
-   - HomeView.vue's lookup found one, plain fallback icon otherwise (no
+   - homeShelves.ts's lookup found one, plain fallback icon otherwise (no
    - cover-art placeholder to fall back to like an owned artist has —
    - CoverArt.vue's own coverArtId path never applies here, only imageUrl).
    - The card itself isn't a link (unlike before) — there is no page in
    - this app to link an artist nobody owns to. What it does have is the
    - artwork click every other picture in the app has (see showArtwork()
    - below) and the icon row below the name, one per external service
-   - HomeView.vue's lookup found (same set, same icons, as
+   - homeShelves.ts's lookup found (same set, same icons, as
    - ArtistDetailView.vue shows for an owned artist —
    - see externalArtistLinks.ts), instead of picking a single destination
    - (Deezer, or MusicBrainz as a fallback) on the artist's behalf.
@@ -17,7 +17,7 @@
   <card-shelf v-if="artists.length || loading" ref="shelf" :title="title">
     <!-- Passed straight through to CardShelf's own header slot: this shelf
      - is filled by the same request that fills the Discover one (see
-     - HomeView.vue's discoverFromSimilarArtists), so the control for
+     - homeShelves.ts's discoverFromSimilarArtists), so the control for
      - asking again belongs beside both of them, not just beside one. -->
     <template #action><slot name="action" /></template>
     <!-- Placeholder cards matching the real ones' shape, so asking for a
@@ -121,9 +121,9 @@ import CoverArt from './CoverArt.vue'
 import CardShelf from './CardShelf.vue'
 import { observeCardsAcross, skeletonsAcross } from './cardRowFit'
 
-/** SimilarArtist enriched with what HomeView.vue's own artist-images +
+/** SimilarArtist enriched with what homeShelves.ts's own artist-images +
  * artist-links-by-mbid lookups found (see discoverFromSimilarArtists()) —
- * `links` always has at least a musicbrainz entry (HomeView.vue's own
+ * `links` always has at least a musicbrainz entry (homeShelves.ts's own
  * last-resort fallback when nothing else came back), so this component
  * never has to handle a totally-empty card. */
 export interface SimilarArtistDisplay extends SimilarArtist {
@@ -244,7 +244,7 @@ export default {
       emitter.emit('showArtwork', {
         // No coverArtId to offer: these artists are not in the library,
         // which is the whole point of the shelf. The photo is whatever
-        // HomeView.vue's own lookup found — at the larger size here, since
+        // homeShelves.ts's own lookup found — at the larger size here, since
         // the viewer fills most of the window and the card's own 250px
         // looked like 250px blown up. Falls back to the card's picture for
         // an artist whose lookup only produced the one.

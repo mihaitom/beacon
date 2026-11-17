@@ -45,3 +45,6 @@ src/preload
 .vscode
 .eslintcache
 *.tsbuildinfo
+
+# Example apps for external sources, never part of the image.
+docs/examples

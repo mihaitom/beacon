@@ -84,4 +84,16 @@ describe('PartyModeDialog', () => {
 
     expect(closeRequests(wrapper)).toHaveLength(1)
   })
+
+  /** The dialog stays mounted between openings, so a party started on
+   * another device since the last one has to be asked about each time. */
+  it('asks whether a party is running every time it opens', async () => {
+    const wrapper = mountDialog()
+    for (const open of [true, false, true]) {
+      await wrapper.setProps({ modelValue: open })
+      await wrapper.vm.$nextTick()
+    }
+
+    expect(usePartyStore().refreshStatus).toHaveBeenCalledTimes(2)
+  })
 })

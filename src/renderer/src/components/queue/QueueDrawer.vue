@@ -38,6 +38,7 @@
     disable-resize-watcher
     color="chrome"
     class="beacon-drawer"
+    :class="{ 'is-sliding': sliding }"
     @update:model-value="$emit('update:modelValue', $event)"
     @pointerenter="drawersStore.cancelQueueDrawerAutoClose()"
   >
@@ -193,7 +194,13 @@
          - normally through the plain, non-appear enter path below — this
          - only costs the very first reveal of a session its slide-in; rows
          - just appear already in place instead. -->
-        <transition-group v-if="!virtualizeQueue" tag="div" name="queue-move" class="queue-scroll">
+        <transition-group
+          v-if="!virtualizeQueue"
+          tag="div"
+          name="queue-move"
+          :move-class="sliding ? 'queue-move-still' : undefined"
+          class="queue-scroll"
+        >
           <queue-row
             v-for="(song, index) in playbackStore.queue"
             :key="queueRowKey(song)"
@@ -326,6 +333,7 @@ import { useLibraryStore } from '@/stores/library'
 import { markRaw } from 'vue'
 import { EdgeScroller } from '@/services/edgeScroll'
 import GoToArtistItems from '@/components/library/GoToArtistItems.vue'
+import { dragEventHalf, reorderTarget } from '@/services/rowReorder'
 import QueueRow, { type QueueDragState } from './QueueRow.vue'
 import TileContextMenu from '@/components/library/TileContextMenu.vue'
 import ContextMenuSection from '@/components/library/ContextMenuSection.vue'
@@ -450,6 +458,12 @@ export default {
     return { queueDrag: this.drag }
   },
   props: {
+    /** Mid-slide; see DefaultLayout. Every row is somewhere else on screen
+     * then, and a re-render would animate each of them there on its own. */
+    sliding: {
+      type: Boolean,
+      default: false,
+    },
     modelValue: {
       type: Boolean,
       default: false,
@@ -470,13 +484,7 @@ export default {
       // reveal was still settling.
       //
       // `half` is which side of the row under the pointer the drop would
-      // land on — see insertBeforeIndex()'s own comment for why this
-      // matters: without it, dropping anywhere within a row's bounding box
-      // always meant "insert before this row's original index", which only
-      // produces the expected result for a drag moving *up*. Moving down
-      // past even a single adjacent row landed one further than intended
-      // (a "swap with the very next track" drag reliably overshot to the
-      // track after that).
+      // land on - see services/rowReorder.ts.
       drag: { from: null, over: null, half: null } as QueueDragState,
       // Raw, so a frame of scrolling never re-renders anything.
       edgeScroller: null as EdgeScroller | null,
@@ -932,29 +940,9 @@ export default {
         event.dataTransfer.setData('text/plain', String(index))
       }
     },
-    // The *original* array index to insert the dragged item before, given
-    // which half of `index`'s own row the pointer is over — top half means
-    // "right here, before this row" (index itself), bottom half means
-    // "right after this row" (index + 1). reorderQueue()'s own `to` is a
-    // post-removal splice index, not this original-array one — dropIndex()
-    // below converts between the two, since removing the dragged item
-    // first shifts every *later* original index left by one (see its own
-    // comment).
-    insertBeforeIndex(index: number, event: DragEvent): number {
-      const row = event.currentTarget as HTMLElement
-      const rect = row.getBoundingClientRect()
-      const isBottomHalf = event.clientY > rect.top + rect.height / 2
-      return isBottomHalf ? index + 1 : index
-    },
-    // Converts insertBeforeIndex()'s original-array target into the
-    // post-removal index reorderQueue(from, to) actually expects.
-    dropIndex(index: number, event: DragEvent): number {
-      const insertBefore = this.insertBeforeIndex(index, event)
-      return insertBefore > (this.drag.from ?? 0) ? insertBefore - 1 : insertBefore
-    },
     onDragOver(index: number, event: DragEvent) {
       this.drag.over = index
-      this.drag.half = this.insertBeforeIndex(index, event) > index ? 'after' : 'before'
+      this.drag.half = dragEventHalf(event)
     },
     onDragLeave(index: number) {
       if (this.drag.over === index) {
@@ -965,7 +953,7 @@ export default {
     onDrop(index: number, event: DragEvent) {
       const from = this.drag.from
       if (from !== null) {
-        const to = this.dropIndex(index, event)
+        const to = reorderTarget(from, index, dragEventHalf(event))
         if (to !== from) {
           const moved = this.playbackStore.queue[from]
           this.playbackStore.reorderQueue(from, to)
@@ -1038,6 +1026,13 @@ export default {
  * stagger that used to reach this by accident. */
 .queue-move-move {
   transition: transform 0.3s ease;
+}
+
+/* Vuetify's own values for the slide; see DefaultLayout for the !important. */
+.beacon-drawer.is-sliding {
+  transition:
+    transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
+    visibility 0.2s cubic-bezier(0.4, 0, 0.2, 1) !important;
 }
 
 /* The entrance every genuinely-new row gets from Vue itself — reads as

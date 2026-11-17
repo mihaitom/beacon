@@ -47,7 +47,7 @@ async def get_volume(session: SessionState = Depends(require_authenticated_sessi
         # response directly, so the fetch that's supposed to seed the very
         # first paint needs to actually reach that path instead of sitting
         # in device_volumes until some unrelated status change picks it up.
-        _record_volume(session, "sonos", sonos_targets[0].target, volume, None)
+        record_volume(session, "sonos", sonos_targets[0].target, volume, None)
         await session.event_bus.broadcast(build_status_dict(session))
         return {"volume": volume}
     except Exception as e:
@@ -76,7 +76,7 @@ async def set_volume(
     # this already shows `volume` as its own value; broadcasting it again
     # once the device's own event lands is harmless, just redundant.
     for d in sonos_targets:
-        _record_volume(session, "sonos", d.target, volume, None)
+        record_volume(session, "sonos", d.target, volume, None)
     await session.event_bus.broadcast(build_status_dict(session))
     return {"volume": volume}
 
@@ -94,7 +94,7 @@ def _live_airplay(session: SessionState, name: str) -> AirPlayDelivery | None:
     )
 
 
-def _record_volume(
+def record_volume(
     session: SessionState,
     device_type: str,
     name: str,
@@ -152,7 +152,7 @@ async def get_device_volume(
             # client falls back to when a device *isn't* pushing (see
             # core/device_volume.py), and the answer goes straight back to
             # whoever asked, so there is nothing to fan out.
-            _record_volume(session, "sonos", name, volume, None)
+            record_volume(session, "sonos", name, volume, None)
             await session.event_bus.broadcast(build_status_dict(session))
             return {"volume": volume}
         if device_type == "chromecast":
@@ -190,7 +190,7 @@ async def set_device_volume(
         if device_type == "sonos":
             device = await asyncio.to_thread(SonosDelivery(name)._get_device)
             await asyncio.to_thread(setattr, device, "volume", volume)
-            _record_volume(session, "sonos", name, volume, None)
+            record_volume(session, "sonos", name, volume, None)
             await session.event_bus.broadcast(build_status_dict(session))
             return {"volume": volume}
         if device_type == "chromecast":

@@ -20,8 +20,8 @@ vi.mock('@/services/connect/apiKeys', () => ({
 }))
 
 const NONE_SET = {
-  lastfm: { configured: false, fromEnvironment: false },
-  fanart: { configured: false, fromEnvironment: false },
+  lastfm: { configured: false, fromEnvironment: false, fromServer: false },
+  fanart: { configured: false, fromEnvironment: false, fromServer: false },
 }
 
 const vuetify = createVuetify({ components, directives })

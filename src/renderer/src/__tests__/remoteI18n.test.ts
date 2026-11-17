@@ -49,7 +49,7 @@ describe("the Remote Control's translations", () => {
     for (const source of sources()) {
       for (const m of source.matchAll(/\bt\('([\w.]+)'/g)) used.add(m[1]!)
       for (const m of source.matchAll(/data-i18n(?:-[\w-]+)?="([\w.]+)"/g)) used.add(m[1]!)
-      // Keys picked from a table (library.js's VIEWS, favorites.js's EMPTY).
+      // Keys picked from a table (library.js's VIEWS).
       for (const m of source.matchAll(/:\s*'((?:library|favorites)\.[\w]+)'/g)) used.add(m[1]!)
     }
     expect(used.size).toBeGreaterThan(40)

@@ -126,6 +126,44 @@ class TestPlayUrlRetries:
             play.await_args_list[1].args[0].endswith(f"/stream/radio/{default_session.session_id}")
         )
         assert default_session.state.radio_info["proxied"] is True
+        # Still showing the re-encode once /play-url has finished.
+        assert (
+            default_session.state.current_output_format.transcode_reason
+            == REASON_DEVICE_REJECTED_STREAM
+        )
+
+    def test_a_sonos_moved_onto_the_proxy_gets_no_position_tracker(self, client, default_session):
+        """Cast directly, but after the retry the Sonos plays Beacon's own
+        endpoint, where it reports a flat 0.00s (core/state.py's
+        first_radio_position_delivery()) - nothing to track there."""
+        with (
+            patch.object(
+                SonosDelivery,
+                "play",
+                new=AsyncMock(side_effect=[RuntimeError("UPnP Error 714"), None]),
+            ),
+            patch(
+                "routes.playback.probe_stream",
+                new=AsyncMock(return_value=ProbedStream("audio/aacp")),
+            ),
+            patch("core.cast_position.apply_position_offset", new=AsyncMock()),
+            patch("core.cast_position.resync_position_periodically", new=AsyncMock()),
+            patch("routes.playback.RadioPositionTracker") as tracker_cls,
+        ):
+            r = client.post(
+                "/play-url",
+                json={
+                    "target_name": "Kitchen",
+                    "target_type": "sonos",
+                    "title": "OWR International",
+                    "url": STATION,
+                    "cast_directly": True,
+                },
+            )
+
+        assert r.json()["status"] == "playing"
+        assert default_session.state.radio_info["proxied"] is True
+        tracker_cls.assert_not_called()
 
     def test_a_failure_the_proxy_cannot_fix_still_reports_the_error(self, client, default_session):
         with (

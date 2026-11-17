@@ -218,9 +218,11 @@ def _resolve(codec: str, **kwargs) -> OutputFormat:
 
 @pytest.mark.parametrize("codec", ["mp3", "aac", "vorbis"])
 def test_an_equalizer_rules_out_the_copy_tier(codec):
-    """ffmpeg cannot filter and stream-copy at once - same as ReplayGain."""
+    """ffmpeg cannot filter and stream-copy at once - same as ReplayGain. A
+    lossy source lands on the mp3 fallback, not on FLAC, which would only
+    inflate it."""
     fmt = _resolve(codec, equalized=True)
-    assert "copy" not in fmt.ffmpeg_args
+    assert fmt.ffmpeg_args == FALLBACK_FORMAT.ffmpeg_args
     assert fmt.transcode_reason == "equalizer"
 
 

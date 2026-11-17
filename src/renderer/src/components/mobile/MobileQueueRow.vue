@@ -113,7 +113,7 @@ export default {
       default: false,
     },
     // Which side of *this* row the dragged item would land on if dropped
-    // right now — see MobileQueueView.vue's insertBeforeIndex() for why a
+    // right now — see services/rowReorder.ts for why a
     // single boolean isn't enough to represent that.
     dragOverPosition: {
       type: String as () => 'before' | 'after' | null,

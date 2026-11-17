@@ -89,9 +89,19 @@ function night(primary: string): ThemeDefinition {
   return { dark: true, colors: { ...beacon.colors, primary } }
 }
 
+/** Glacier with another accent: what a dark theme's artwork headers are
+ * drawn in over a light picture (see `dayTheme`). */
+function day(primary: string): ThemeDefinition {
+  return { dark: false, colors: { ...glacier.colors, primary } }
+}
+
 export type ThemeDefinitionColors = NonNullable<ThemeDefinition['colors']>
 
-export type ThemeId = 'beacon' | 'graphite' | 'paper' | 'glacier' | 'custom'
+export type PresetThemeId = 'beacon' | 'graphite' | 'paper' | 'glacier'
+
+export type CustomThemeId = `custom${string}`
+
+export type ThemeId = PresetThemeId | CustomThemeId
 
 /** What a self-made theme is chosen from. Everything else is derived. */
 export interface CustomThemeColors {
@@ -104,27 +114,37 @@ export const DEFAULT_CUSTOM_COLORS: CustomThemeColors = {
   primary: '#E07A5F',
 }
 
+/** A self-made theme. An empty name is shown as the generic one. */
+export interface CustomTheme extends CustomThemeColors {
+  id: CustomThemeId
+  name: string
+}
+
+export const MAX_CUSTOM_THEMES = 20
+const MAX_CUSTOM_THEME_NAME = 40
+
 export interface ThemePreference {
   theme: ThemeId
-  custom: CustomThemeColors
+  customThemes: CustomTheme[]
 }
 
 export const DEFAULT_THEME_PREFERENCE: ThemePreference = {
   theme: 'beacon',
-  custom: DEFAULT_CUSTOM_COLORS,
+  customThemes: [],
 }
 
 /** The presets in the order Settings lists them, dark ones first. */
-export const PRESET_THEMES: { id: Exclude<ThemeId, 'custom'>; definition: ThemeDefinition }[] = [
+export const PRESET_THEMES: { id: PresetThemeId; definition: ThemeDefinition }[] = [
   { id: 'beacon', definition: beacon },
   { id: 'graphite', definition: graphite },
   { id: 'paper', definition: paper },
   { id: 'glacier', definition: glacier },
 ]
 
-/** The accent an accent has to become on the dark parts: the copper and
- * blue of the light themes are too dark to read there. */
-const NIGHT_ACCENT_CONTRAST = 4.5
+/** The accent an accent has to become on the other side's parts: the
+ * copper and blue of the light themes are too dark to read on a night, the
+ * amber of the dark ones too pale on a day. */
+const SWAPPED_ACCENT_CONTRAST = 4.5
 
 /** A full theme from a background and an accent. The surfaces are steps of
  * the background towards the text colour, the frame a step away from it,
@@ -160,7 +180,8 @@ export function customTheme({ background, primary }: CustomThemeColors): ThemeDe
 }
 
 function definitionOf(preference: ThemePreference): ThemeDefinition {
-  if (preference.theme === 'custom') return customTheme(preference.custom)
+  const own = preference.customThemes.find((theme) => theme.id === preference.theme)
+  if (own) return customTheme(own)
   return PRESET_THEMES.find((preset) => preset.id === preference.theme)!.definition
 }
 
@@ -171,8 +192,14 @@ export function nightTheme(preference: ThemePreference): string {
   return definitionOf(preference).dark ? preference.theme : `${preference.theme}-night`
 }
 
+/** The Vuetify theme for an artwork header over a light picture, which
+ * takes dark text whatever the theme. A light theme is its own. */
+export function dayTheme(preference: ThemePreference): string {
+  return definitionOf(preference).dark ? `${preference.theme}-day` : preference.theme
+}
+
 /** Every theme Vuetify needs to know about for this preference, the chosen
- * one and the night one of each light theme. */
+ * one, the night one of each light theme and the day one of each dark. */
 export function themeDefinitions(preference: ThemePreference): Record<string, ThemeDefinition> {
   const themes: Record<string, ThemeDefinition> = {}
   // Copies: Vuetify keeps what it is handed and Now Playing writes its
@@ -181,35 +208,84 @@ export function themeDefinitions(preference: ThemePreference): Record<string, Th
   for (const { id, definition } of PRESET_THEMES) {
     themes[id] = { ...definition, colors: { ...definition.colors } }
   }
-  themes.custom = customTheme(preference.custom)
+  for (const own of preference.customThemes) themes[own.id] = customTheme(own)
   for (const [id, definition] of Object.entries({ ...themes })) {
-    if (definition.dark) continue
+    if (definition.dark) {
+      themes[`${id}-day`] = day(
+        towardsContrast(
+          definition.colors!.primary as string,
+          glacier.colors!.background as string,
+          SWAPPED_ACCENT_CONTRAST,
+        ),
+      )
+      continue
+    }
     const accent = towardsContrast(
       definition.colors!.primary as string,
       beacon.colors!.background as string,
-      NIGHT_ACCENT_CONTRAST,
+      SWAPPED_ACCENT_CONTRAST,
     )
     themes[`${id}-night`] = night(accent)
   }
   return themes
 }
 
+function cleanColor(value: unknown, fallback: string): string {
+  return isHexColor(value) ? value.toUpperCase() : fallback
+}
+
+/** A list that came from storage or another device: what this build cannot
+ * use is dropped, a colour that isn't one falls back to the default. The id
+ * ends up in a CSS class name, so it is held to a plain shape. */
+export function sanitizeCustomThemes(raw: unknown): CustomTheme[] {
+  if (!Array.isArray(raw)) return []
+  const seen = new Set<string>()
+  const themes: CustomTheme[] = []
+  for (const entry of raw as Partial<CustomTheme>[]) {
+    const id = entry?.id
+    if (typeof id !== 'string' || !/^custom(-[a-z0-9]+)?$/.test(id) || seen.has(id)) continue
+    seen.add(id)
+    themes.push({
+      id: id as CustomThemeId,
+      name: typeof entry.name === 'string' ? entry.name.slice(0, MAX_CUSTOM_THEME_NAME) : '',
+      background: cleanColor(entry.background, DEFAULT_CUSTOM_COLORS.background),
+      primary: cleanColor(entry.primary, DEFAULT_CUSTOM_COLORS.primary),
+    })
+  }
+  return themes.slice(0, MAX_CUSTOM_THEMES)
+}
+
+/** The one self-made theme of the builds before there could be several.
+ * Colours nobody ever changed and never used are not a theme anybody made. */
+function themeFromSingleColours(value: {
+  theme?: unknown
+  custom?: Partial<CustomThemeColors>
+}): CustomTheme[] {
+  const custom = value.custom
+  if (!custom) return []
+  const background = cleanColor(custom.background, DEFAULT_CUSTOM_COLORS.background)
+  const primary = cleanColor(custom.primary, DEFAULT_CUSTOM_COLORS.primary)
+  const untouched =
+    background === DEFAULT_CUSTOM_COLORS.background && primary === DEFAULT_CUSTOM_COLORS.primary
+  if (untouched && value.theme !== 'custom') return []
+  return [{ id: 'custom', name: '', background, primary }]
+}
+
 /** A stored preference, cleaned of anything this build does not know -
- * an unknown theme or a colour that isn't one falls back to the default. */
+ * a theme that is not there any more falls back to Beacon. */
 export function sanitizeThemePreference(raw: unknown): ThemePreference {
-  const value = (raw ?? {}) as Partial<ThemePreference>
-  const known: ThemeId[] = [...PRESET_THEMES.map((preset) => preset.id), 'custom']
-  const custom = (value.custom ?? {}) as Partial<CustomThemeColors>
+  const value = (raw ?? {}) as Partial<ThemePreference> & { custom?: Partial<CustomThemeColors> }
+  const customThemes =
+    value.customThemes === undefined
+      ? themeFromSingleColours(value)
+      : sanitizeCustomThemes(value.customThemes)
+  const known: string[] = [
+    ...PRESET_THEMES.map((preset) => preset.id),
+    ...customThemes.map((theme) => theme.id),
+  ]
   return {
-    theme: known.includes(value.theme as ThemeId) ? (value.theme as ThemeId) : 'beacon',
-    custom: {
-      background: isHexColor(custom.background)
-        ? custom.background.toUpperCase()
-        : DEFAULT_CUSTOM_COLORS.background,
-      primary: isHexColor(custom.primary)
-        ? custom.primary.toUpperCase()
-        : DEFAULT_CUSTOM_COLORS.primary,
-    },
+    theme: known.includes(value.theme as string) ? (value.theme as ThemeId) : 'beacon',
+    customThemes,
   }
 }
 

@@ -6,7 +6,6 @@ import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
-import { useAuthStore } from '@/stores/auth'
 import MobileTabBar from '../MobileTabBar.vue'
 
 const vuetify = createVuetify({ components, directives })
@@ -72,7 +71,6 @@ describe('mobile tab bar gesture gap', () => {
     { standalone: false, touch: false, gap: false, what: 'a narrow desktop browser window' },
   ])('$what: gap $gap', async ({ standalone, touch, gap }) => {
     setActivePinia(createPinia())
-    useAuthStore().capabilities.internetRadio = true
     stubMediaQueries({ standalone, touch })
 
     const wrapper = await mountBar()

@@ -11,8 +11,9 @@ from dataclasses import dataclass
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import Response, StreamingResponse
 
-from core import equalizer
+from core import equalizer, replay_gain
 from core.auth import require_token
+from core.cast_position import POSITION_RESYNC_INTERVAL, start_position_sync
 from core.icy_metadata import (
     DEVICE_METAINT,
     IcyMuxer,
@@ -53,32 +54,27 @@ from delivery.errors import source_error_response
 from delivery.sonos import model_in_user_agent
 
 from . import mix_cast
-from .playback import (
-    POSITION_RESYNC_INTERVAL,
-    _apply_position_offset,
-    _current_reconnect_args,
-    _resync_position_periodically,
-)
+from .playback import _current_reconnect_args
 
 logger = logging.getLogger("connect.stream")
 router = APIRouter()
 
 
-async def _dispatch_queued_track(session: SessionState, target, track, gain: float) -> bool:
+async def _dispatch_queued_track(session: SessionState, target, track) -> bool:
     """Server-side track dispatch for _advance_or_end()'s queue auto-advance
     below — the same device-call + state/background-task bookkeeping
     routes/playback.py's /play handler does, minus the claim/target-
     resolution logic that doesn't apply here: `target` is already owned by
     this session, continuing the exact cast /play started (see
-    AppState.queue's comment). Reuses `gain` as-is rather than recomputing
-    ReplayGain for `track` specifically — connect only has track ids here,
-    not the frontend's per-track gain values; a cosmetic volume mismatch
-    at worst, self-corrects next time the frontend dispatches a real /play.
+    AppState.queue's comment). With `track`'s own ReplayGain (see
+    core/replay_gain.py), not the previous song's: this is how a whole
+    queue plays while the phone that started it is asleep.
 
     Returns False (leaving session.state.is_streaming off) on delivery
     failure, so the caller falls back to the normal "nothing more to play"
     broadcast instead of leaving state stuck mid-transition."""
     st = session.state
+    gain = replay_gain.gain_for(st, track)
     track_url = await asyncio.to_thread(session.media.get_stream_url, track.id)
     max_rate, max_depth, max_channels = audio_capability_limits(target)
     output_format = await resolve_output_format(
@@ -97,6 +93,7 @@ async def _dispatch_queued_track(session: SessionState, target, track, gain: flo
     url = stream_url(session.session_id, output_format.content_type)
 
     st.current_track = track
+    st.current_track_gain = gain
     st.current_output_format = output_format
     st.is_streaming = True
     st.clock.start(0.0)
@@ -120,8 +117,7 @@ async def _dispatch_queued_track(session: SessionState, target, track, gain: flo
         st.is_streaming = False
         return False
 
-    asyncio.create_task(_apply_position_offset(session, target, st.clock.play_generation))
-    asyncio.create_task(_resync_position_periodically(session, target, st.clock.play_generation))
+    start_position_sync(session, target)
     await session.event_bus.broadcast(build_status_dict(session))
     return True
 
@@ -244,7 +240,7 @@ _TRACK_END_TOLERANCE = 0.05
 async def _advance_or_end(session: SessionState, my_generation: int) -> None:
     """What happens when a track finishes — split out from _fire_track_end()
     below purely so it's directly testable, same reasoning as
-    routes/playback.py's _resync_position_once(). Must be called while
+    core/cast_position.py's resync_position_once(). Must be called while
     holding session.play_lock (see _fire_track_end()), same as every other
     handler that mutates this state (/play, /stop, /seek, ...).
 
@@ -283,9 +279,7 @@ async def _advance_or_end(session: SessionState, my_generation: int) -> None:
         # device runs out of buffered audio" territory.
         next_track = await _resolve_track(session, next_track_id, "Auto-advance")
         if next_track is not None:
-            dispatched = await _dispatch_queued_track(
-                session, st.active_delivery, next_track, st.current_track_gain
-            )
+            dispatched = await _dispatch_queued_track(session, st.active_delivery, next_track)
             if dispatched:
                 st.queue_index = next_index
                 logger.info(f"[stream] Auto-advanced to {next_track.artist} — {next_track.title}")
@@ -304,32 +298,43 @@ async def advance_now(session: SessionState) -> bool:
     False when there is nothing to skip to."""
     async with session.play_lock:
         st = session.state
-        if not st.active_delivery or not st.is_streaming:
-            return False
         next_index = st.queue_index + 1
-        if next_index >= len(st.queue):
+        if st.active_delivery and st.is_streaming and next_index >= len(st.queue):
             await _maybe_autoplay_topup(session)
-        if next_index >= len(st.queue):
+        return await _jump_locked(session, next_index, "Party skip")
+
+
+async def jump_to(session: SessionState, index: int, context: str) -> bool:
+    """Moves the cast to queue entry `index` from inside connect - an app
+    steering it with no window open. False when there is no such entry or
+    nothing is casting."""
+    async with session.play_lock:
+        return await _jump_locked(session, index, context)
+
+
+async def _jump_locked(session: SessionState, index: int, context: str) -> bool:
+    st = session.state
+    if not st.active_delivery or not st.is_streaming:
+        return False
+    if not 0 <= index < len(st.queue):
+        return False
+    if st.mix is not None:
+        if not await mix_cast.skip_to(session, index):
             return False
-        if st.mix is not None:
-            if not await mix_cast.skip_to(session, next_index):
-                return False
-            session.play_seq = max(session.play_seq, int(time.time() * 1000))
-            logger.info(f"[stream] Party skip to queue entry {next_index} (mix)")
-            return True
-        track = await _resolve_track(session, st.queue[next_index], "Party skip")
-        if track is None:
-            return False
-        if not await _dispatch_queued_track(
-            session, st.active_delivery, track, st.current_track_gain
-        ):
-            return False
-        st.queue_index = next_index
-        # A window that slept through this must not put the old track back.
         session.play_seq = max(session.play_seq, int(time.time() * 1000))
-        await session.event_bus.broadcast(build_status_dict(session))
-        logger.info(f"[stream] Party skip to {track.artist} — {track.title}")
+        logger.info(f"[stream] {context} to queue entry {index} (mix)")
         return True
+    track = await _resolve_track(session, st.queue[index], context)
+    if track is None:
+        return False
+    if not await _dispatch_queued_track(session, st.active_delivery, track):
+        return False
+    st.queue_index = index
+    # A window that slept through this must not put the old track back.
+    session.play_seq = max(session.play_seq, int(time.time() * 1000))
+    await session.event_bus.broadcast(build_status_dict(session))
+    logger.info(f"[stream] {context} to {track.artist} — {track.title}")
+    return True
 
 
 # How long to wait, after a device closes its GET /stream connection mid-
@@ -338,7 +343,7 @@ async def advance_now(session: SessionState) -> bool:
 # _mark_disconnected_if_not_reconnected()'s own docstring. Long enough that
 # an ordinary quick reconnect blip (buffer management, a momentary WiFi
 # hiccup, a Sonos re-doing SSDP discovery before it re-requests the stream —
-# "easily a second or more" on its own per _resync_position_once()'s
+# "easily a second or more" on its own per resync_position_once()'s
 # comment) doesn't falsely trip this; short enough that a genuinely dead
 # stream doesn't sit is_streaming=True for long once nothing's actually
 # flowing. 5s (the original value) turned out too tight in practice —
@@ -459,7 +464,7 @@ async def _mark_disconnected_if_not_reconnected(
     nothing left to play. Nothing told the resync loop that "streaming"
     wasn't actually true anymore, so it misread that persisting, ever-
     growing gap as one genuine external rewind after another (the same
-    ambiguity _resync_position_once()'s own near-track-end guard already
+    ambiguity resync_position_once()'s own near-track-end guard already
     covers, just from a different cause — a stream that plain died instead
     of one that finished on schedule): position_offset ratcheted more
     negative every single 8s resync tick, indefinitely, while the frontend
@@ -570,12 +575,7 @@ async def _resume_after_interruption(session: SessionState) -> bool:
         logger.exception("[stream] Resume-after-interruption failed")
         return False
 
-    asyncio.create_task(
-        _apply_position_offset(session, st.active_delivery, st.clock.play_generation)
-    )
-    asyncio.create_task(
-        _resync_position_periodically(session, st.active_delivery, st.clock.play_generation)
-    )
+    start_position_sync(session, st.active_delivery)
     st.is_streaming = True
     await session.event_bus.broadcast(build_status_dict(session))
     return True
@@ -1156,6 +1156,177 @@ def _cast_device_note(request: Request) -> str:
     return f" [{', '.join(parts)}]"
 
 
+def _nothing_to_stream(content_type: str) -> StreamingResponse:
+    return StreamingResponse(iter([b""]), media_type=content_type, status_code=204)
+
+
+async def _source_url(session: SessionState, track, mix) -> str | None:
+    """Where ffmpeg reads the track from; None for a mix, which fetches each
+    song itself (core/mix_engine.py)."""
+    if mix is not None:
+        return None
+    # Debug-only special case (see routes/debug.py) — the test tone isn't a
+    # real library track, so there's nothing for session.media to resolve.
+    if track.id == TEST_TONE_TRACK_ID:
+        return test_tone_url()
+    # to_thread: get_stream_url() is a pure, instant string builder for
+    # Subsonic/Jellyfin, but Plex's needs a real network lookup first (see
+    # media/plex.py's docstring) — without this, that lookup would block
+    # the whole event loop, not just this one request/session.
+    return await asyncio.to_thread(session.media.get_stream_url, track.id)
+
+
+def _is_device_reconnect(st) -> bool:
+    """Whether this connection is the device reopening the stream by itself.
+
+    A connection for a generation that has already been served audio is
+    exactly that — no /play, /seek or /resume was involved, so resume_offset
+    (which only those set) has long been consumed and reads 0. Serving that
+    0 hands the device the track from the beginning while this session's
+    clock is minutes in, which is worse than it sounds: the device then
+    reports ~0 as its position, the resync loop reads that as a deliberate
+    seek on the speaker and drags position_offset by the full track
+    position, and everything downstream of elapsed() goes with it —
+    displayed position, lyrics sync, the cast visualizer's pacing,
+    auto-advance scheduling. Observed live 2026-08-23 after an event-loop
+    stall made a Sonos give up and reconnect: the track restarted audibly,
+    position_offset went to -60.35s, and the only way out from the UI was a
+    reload plus skipping the track.
+
+    Gated on is_streaming as well, so this never applies to a session whose
+    playback genuinely ended and whose device is only now getting round to
+    re-requesting the URL."""
+    return st.is_streaming and st.streamed_generation == st.clock.play_generation
+
+
+async def _fire_track_end(session: SessionState, my_generation: int, wait: float) -> None:
+    """Fires once ffmpeg (and, for Sonos, the device's own buffered
+    playback) is actually done — see _advance_or_end() above for what
+    actually happens: auto-advance to the next queued track, or mark
+    the stream complete once there isn't one.
+
+    Runs as an independent task so Sonos closing the HTTP connection cannot
+    cancel it (that CancelledError would only affect stream_with_completion).
+    Acquires play_lock like every other handler that mutates this session's
+    playback state (/play, /stop, /seek, ...) — without it, a track ending
+    in the same instant as a user-issued skip/stop could interleave state
+    updates between the two.
+
+    `wait` is only the *initial* estimate, from whatever position_offset
+    was in effect the moment ffmpeg finished — not slept in one go
+    anymore (an earlier version did exactly that). The position-resync
+    loop (core/cast_position.py) can recalibrate position_offset at any
+    point during this wait — a real correction, e.g. the device having
+    been paused/reconnected externally — and a single up-front sleep
+    had no way to notice that, firing on the original stale schedule
+    instead: observed live auto-advancing several seconds early,
+    cutting off the tail of the still-playing track, after exactly such
+    a mid-wait correction. Re-measuring against the live clock on each
+    poll (same cadence as the resync loop itself, so this never sleeps
+    past a point where a correction could already have landed without
+    reacting to it for a whole extra cycle) is what actually fixes
+    that — a real edit stays picked up within one more poll instead of
+    never at all.
+
+    The loop runs down to _TRACK_END_TOLERANCE rather than to a
+    comfortable-looking fraction of a second: whatever is left when it
+    breaks is time the *device* is still playing, and advancing the
+    queue hands that device a new URI, which cuts the current track off
+    mid-note. This used to stop at 0.5s, i.e. clipped the last half
+    second off every single track — inaudible on anything that fades or
+    ends in silence, obvious on one that stops abruptly. Sleeping the
+    remainder costs nothing: the sleep below is already
+    min(remaining, ...), so a short remainder is slept exactly, not
+    rounded up to a poll interval.
+    """
+    if wait > _TRACK_END_TOLERANCE:
+        logger.info(f"[stream] FFmpeg done early — waiting {wait:.1f}s for playback to finish")
+        while session.state.clock.play_generation == my_generation and session.state.current_track:
+            remaining = session.state.clock.seconds_until(playback_duration(session.state))
+            if remaining <= _TRACK_END_TOLERANCE:
+                break
+            await asyncio.sleep(min(remaining, POSITION_RESYNC_INTERVAL))
+    async with session.play_lock:
+        await _advance_or_end(session, my_generation)
+
+
+async def _on_first_audio(
+    session: SessionState, my_generation: int, offset: float, reconnecting: bool
+) -> None:
+    """What a connection settles once it has actually started producing
+    audio — not at connection time, since a device can open a connection and
+    never read from it — and only if no newer /play, /seek or /resume has
+    since set anything different."""
+    st = session.state
+    if st.clock.play_generation != my_generation:
+        return
+    st.clock.resume_offset = 0.0
+    # Marks this generation as "has had audio", which is what makes the
+    # *next* connection for it recognisable as a reconnect (see
+    # _is_device_reconnect()).
+    st.streamed_generation = my_generation
+    if reconnecting:
+        # The device's own position restarts with this stream, so the frame
+        # the resync loop compares it against has to restart too — see
+        # PlaybackClock.restream_from().
+        st.clock.restream_from(offset)
+    # /resume after an interruption dispatches without setting is_streaming
+    # again; this connection is where audio is known to flow. Left False, it
+    # disables position resync (core/cast_position.py's own is_streaming
+    # guard) and auto-advance (_advance_or_end's), and makes /join reject
+    # with "No active stream" for a session that's very much still playing.
+    # A device reopening a stopped stream by itself never gets here - see the
+    # check at the top of audio_stream().
+    if not st.is_streaming:
+        logger.info(
+            "[stream] is_streaming revived on reconnect "
+            f"(generation={my_generation}) — audio is "
+            "flowing again after a disconnect/grace trip"
+        )
+        st.is_streaming = True
+        await session.event_bus.broadcast(build_status_dict(session))
+
+
+async def _on_source_unavailable(
+    session: SessionState, my_generation: int, error: SourceUnavailableError
+) -> None:
+    """Nothing to play at all, so the device is left with an empty stream it
+    will only call corrupt, and keeps asking for again. Said once, while
+    still streaming: every one of those reconnects fails the same way."""
+    st = session.state
+    if (
+        st.clock.play_generation == my_generation
+        and st.is_streaming
+        and st.active_delivery is not None
+    ):
+        await mark_delivery_failed(session, source_error_response(str(error), st.active_delivery))
+
+
+async def _on_ffmpeg_failure(session: SessionState, my_generation: int) -> None:
+    """ffmpeg itself failed (missing binary, crash, decode error — already
+    logged by stream_tracks()). Not a natural end: treating it as the
+    track's end would make the frontend think this track finished playing
+    and advance the queue, when actually nothing (or only a partial track)
+    played."""
+    if session.state.clock.play_generation == my_generation:
+        session.state.is_streaming = False
+        await session.event_bus.broadcast(build_status_dict(session))
+
+
+def _schedule_track_end(session: SessionState, my_generation: int) -> None:
+    """FFmpeg may stream faster than real-time because Sonos buffers
+    aggressively, so the track's end is scheduled in an independent task —
+    Sonos closing the connection after receiving all data must not cancel
+    it. A mix's end is followed by routes/mix_cast.py's follow() instead."""
+    st = session.state
+    if not st.is_streaming or st.clock.is_paused or st.clock.play_generation != my_generation:
+        return
+    wait = 0.0
+    if st.current_track and st.clock.play_start_time:
+        wait = st.clock.seconds_until(playback_duration(st))
+    asyncio.create_task(_fire_track_end(session, my_generation, wait))
+
+
 @router.get("/stream")
 @router.get("/stream/{session_id}")
 async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
@@ -1166,30 +1337,24 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
     # dispatched URL ends in the output format's extension; same session.
     session = await registry.get_or_create(strip_stream_extension(session_id))
     noted = _note_request(session, request, "GET")
+    st = session.state
 
-    if not session.state.current_track:
+    if not st.current_track:
         noted["answer"] = "204, nothing loaded"
         logger.warning("[stream] No track loaded — returning 204")
-        return StreamingResponse(
-            iter([b""]),
-            media_type=session.state.current_output_format.content_type,
-            status_code=204,
-        )
+        return _nothing_to_stream(st.current_output_format.content_type)
 
     # The device reopening a stream that has stopped - ended, interrupted,
     # failed - without anyone pressing play. Served, it would play on by
     # itself; /play, /resume and /resume-interrupted all start a new
     # generation, so a stream somebody asked for never matches.
-    st = session.state
     if not st.is_streaming and st.streamed_generation == st.clock.play_generation:
         noted["answer"] = "204, stopped"
         logger.info(
             "[stream] Device reopened a stream that has stopped — not playing it"
             + _cast_device_note(request)
         )
-        return StreamingResponse(
-            iter([b""]), media_type=st.current_output_format.content_type, status_code=204
-        )
+        return _nothing_to_stream(st.current_output_format.content_type)
 
     # Counted from here — as soon as this is known to be a real connection
     # attempt, not only once its own setup below has finished (in
@@ -1202,31 +1367,18 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
     # Matched by the except below (setup failing before the connection
     # ever actually starts streaming) and by stream_with_completion()'s own
     # finally (once it does).
-    session.state.active_stream_connections += 1
-    mix = session.state.mix
+    st.active_stream_connections += 1
+    mix = st.mix
+    track = st.current_track
+    output_format = st.current_output_format
     try:
-        track = session.state.current_track
-        output_format = session.state.current_output_format
-        # Debug-only special case (see routes/debug.py) — the test tone isn't a
-        # real library track, so there's nothing for session.media to resolve.
-        # to_thread: get_stream_url() is a pure, instant string builder for
-        # Subsonic/Jellyfin, but Plex's needs a real network lookup first (see
-        # media/plex.py's docstring) — without this, that lookup would block
-        # the whole event loop, not just this one request/session.
-        # A mix fetches each song itself (core/mix_engine.py).
-        track_url = (
-            None
-            if mix is not None
-            else test_tone_url()
-            if track.id == TEST_TONE_TRACK_ID
-            else await asyncio.to_thread(session.media.get_stream_url, track.id)
-        )
+        track_url = await _source_url(session, track, mix)
     except Exception:
-        session.state.active_stream_connections -= 1
+        st.active_stream_connections -= 1
         raise
 
     # Captured now (for this connection's -ss), but *not* cleared yet — see
-    # stream_with_completion(), which only clears it once this connection has
+    # _on_first_audio(), which only clears it once this connection has
     # actually started producing audio. A device can open (and abandon) a
     # connection to /stream before ever reading data — most commonly the very
     # first connection of a session, while e.g. a Sonos coordinator is still
@@ -1234,36 +1386,14 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
     # silently discard the seek offset before the real connection arrives,
     # making the device audibly restart from 0:00 while our own state (and
     # thus the displayed position) still reports the correct position.
-    offset = session.state.clock.resume_offset
-    user_agent = request.headers.get("user-agent")
-
-    # A connection for a generation that has already been served audio is
-    # the device reopening the stream by itself — no /play, /seek or /resume
-    # was involved, so resume_offset (which only those set) has long been
-    # consumed and reads 0. Serving that 0 hands the device the track from
-    # the beginning while this session's clock is minutes in, which is worse
-    # than it sounds: the device then reports ~0 as its position, the resync
-    # loop reads that as a deliberate seek on the speaker and drags
-    # position_offset by the full track position, and everything downstream
-    # of elapsed() goes with it — displayed position, lyrics sync, the cast
-    # visualizer's pacing, auto-advance scheduling. Observed live 2026-08-23
-    # after an event-loop stall made a Sonos give up and reconnect: the
-    # track restarted audibly, position_offset went to -60.35s, and the only
-    # way out from the UI was a reload plus skipping the track.
-    #
-    # Gated on is_streaming as well, so this never applies to a session
-    # whose playback genuinely ended and whose device is only now getting
-    # round to re-requesting the URL.
-    reconnecting = (
-        session.state.is_streaming
-        and session.state.streamed_generation == session.state.clock.play_generation
-    )
+    offset = st.clock.resume_offset
+    reconnecting = _is_device_reconnect(st)
     if reconnecting:
-        offset = session.state.clock.stream_restart_position()
+        offset = st.clock.stream_restart_position()
         logger.info(
             f"[stream] Device reopened the stream on its own — resuming at "
             f"{offset:.1f}s instead of 0:00 "
-            f"(play_generation={session.state.clock.play_generation})" + _cast_device_note(request)
+            f"(play_generation={st.clock.play_generation})" + _cast_device_note(request)
         )
 
     # Debug, not info — routes/playback.py's own "[play] ..." line already
@@ -1280,58 +1410,6 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
         gain_str = f", gain={gain:.2f}" if gain != 1.0 else ""
         logger.debug(f"[stream] ▶ {track.artist} — {track.title} ({track.duration}s{gain_str})")
 
-    async def _fire_track_end(my_generation: int, wait: float) -> None:
-        """Fires once ffmpeg (and, for Sonos, the device's own buffered
-        playback) is actually done — see _advance_or_end() above for what
-        actually happens: auto-advance to the next queued track, or mark
-        the stream complete once there isn't one.
-
-        Runs as an independent task so Sonos closing the HTTP connection cannot
-        cancel it (that CancelledError would only affect stream_with_completion).
-        Acquires play_lock like every other handler that mutates this session's
-        playback state (/play, /stop, /seek, ...) — without it, a track ending
-        in the same instant as a user-issued skip/stop could interleave state
-        updates between the two.
-
-        `wait` is only the *initial* estimate, from whatever position_offset
-        was in effect the moment ffmpeg finished — not slept in one go
-        anymore (an earlier version did exactly that). The position-resync
-        loop (routes/playback.py) can recalibrate position_offset at any
-        point during this wait — a real correction, e.g. the device having
-        been paused/reconnected externally — and a single up-front sleep
-        had no way to notice that, firing on the original stale schedule
-        instead: observed live auto-advancing several seconds early,
-        cutting off the tail of the still-playing track, after exactly such
-        a mid-wait correction. Re-measuring against the live clock on each
-        poll (same cadence as the resync loop itself, so this never sleeps
-        past a point where a correction could already have landed without
-        reacting to it for a whole extra cycle) is what actually fixes
-        that — a real edit stays picked up within one more poll instead of
-        never at all.
-
-        The loop runs down to _TRACK_END_TOLERANCE rather than to a
-        comfortable-looking fraction of a second: whatever is left when it
-        breaks is time the *device* is still playing, and advancing the
-        queue hands that device a new URI, which cuts the current track off
-        mid-note. This used to stop at 0.5s, i.e. clipped the last half
-        second off every single track — inaudible on anything that fades or
-        ends in silence, obvious on one that stops abruptly. Sleeping the
-        remainder costs nothing: the sleep below is already
-        min(remaining, ...), so a short remainder is slept exactly, not
-        rounded up to a poll interval.
-        """
-        if wait > _TRACK_END_TOLERANCE:
-            logger.info(f"[stream] FFmpeg done early — waiting {wait:.1f}s for playback to finish")
-            while (
-                session.state.clock.play_generation == my_generation and session.state.current_track
-            ):
-                remaining = session.state.clock.seconds_until(playback_duration(session.state))
-                if remaining <= _TRACK_END_TOLERANCE:
-                    break
-                await asyncio.sleep(min(remaining, POSITION_RESYNC_INTERVAL))
-        async with session.play_lock:
-            await _advance_or_end(session, my_generation)
-
     async def stream_with_completion():
         my_generation = session.state.clock.play_generation
 
@@ -1339,13 +1417,12 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
             if session.state.clock.play_generation == my_generation:
                 session.state.sent_audio_end = (my_generation, position)
 
-        offset_consumed = False
         # Diagnostic bookkeeping for the cancellation snapshot below and the
         # resync loop's log lines - see StreamConnection.
         conn = StreamConnection(
             generation=my_generation,
             start=offset,
-            model=model_in_user_agent(user_agent),
+            model=model_in_user_agent(request.headers.get("user-agent")),
             **_requested_by(request),
         )
         session.state.open_streams.append(conn)
@@ -1386,45 +1463,7 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
                 async for chunk in audio:
                     if conn.first_byte_at is None:
                         conn.first_byte_at = time.monotonic()
-                    if not offset_consumed:
-                        offset_consumed = True
-                        # Only apply either of these once THIS connection has
-                        # actually started producing audio — and only if no
-                        # newer /play, /seek or /resume has since set a
-                        # different one.
-                        if session.state.clock.play_generation == my_generation:
-                            session.state.clock.resume_offset = 0.0
-                            # Marks this generation as "has had audio", which
-                            # is what makes the *next* connection for it
-                            # recognisable as a reconnect (see `reconnecting`
-                            # above). Set here rather than at connection time
-                            # because a device can open a connection and
-                            # never read from it.
-                            session.state.streamed_generation = my_generation
-                            if reconnecting:
-                                # The device's own position restarts with
-                                # this stream, so the frame the resync loop
-                                # compares it against has to restart too —
-                                # see PlaybackClock.restream_from().
-                                session.state.clock.restream_from(offset)
-                            # /resume after an interruption dispatches without
-                            # setting is_streaming again; this connection is
-                            # where audio is known to flow. Left False, it
-                            # disables position resync (routes/playback.py's
-                            # own is_streaming guard) and auto-advance
-                            # (_advance_or_end's), and makes /join reject
-                            # with "No active stream" for a session that's
-                            # very much still playing. A device reopening a
-                            # stopped stream by itself never gets here - see
-                            # the check at the top of audio_stream().
-                            if not session.state.is_streaming:
-                                logger.info(
-                                    "[stream] is_streaming revived on reconnect "
-                                    f"(generation={my_generation}) — audio is "
-                                    "flowing again after a disconnect/grace trip"
-                                )
-                                session.state.is_streaming = True
-                                await session.event_bus.broadcast(build_status_dict(session))
+                        await _on_first_audio(session, my_generation, offset, reconnecting)
                     yield chunk
                     conn.bytes_delivered += len(chunk)
                     conn.last_handoff = time.monotonic()
@@ -1446,47 +1485,15 @@ async def audio_stream(request: Request, session_id: str = DEFAULT_SESSION_ID):
                 raise
             except SourceUnavailableError as e:
                 outcome = "source unavailable"
-                # Nothing to play at all, so the device is left with an
-                # empty stream it will only call corrupt, and keeps asking
-                # for again. Said once, while still streaming: every one of
-                # those reconnects fails the same way.
-                st = session.state
-                if (
-                    st.clock.play_generation == my_generation
-                    and st.is_streaming
-                    and st.active_delivery is not None
-                ):
-                    await mark_delivery_failed(
-                        session, source_error_response(str(e), st.active_delivery)
-                    )
+                await _on_source_unavailable(session, my_generation, e)
                 return
             except Exception:
                 outcome = "ffmpeg failed"
-                # ffmpeg itself failed (missing binary, crash, decode error —
-                # already logged by stream_tracks()). Not a natural end either:
-                # falling through to the track-end broadcast below would make
-                # the frontend think this track finished playing and advance the
-                # queue, when actually nothing (or only a partial track) played.
-                if session.state.clock.play_generation == my_generation:
-                    session.state.is_streaming = False
-                    await session.event_bus.broadcast(build_status_dict(session))
+                await _on_ffmpeg_failure(session, my_generation)
                 return
 
-            # FFmpeg may stream faster than real-time because Sonos buffers aggressively.
-            # Schedule completion in an independent task so Sonos closing the connection
-            # after receiving all data doesn't cancel the track-end signal.
-            st = session.state
-            if (
-                mix is None
-                and st.is_streaming
-                and not st.clock.is_paused
-                and st.clock.play_generation == my_generation
-            ):
-                # (A mix's end is followed by routes/mix_cast.py's follow().)
-                wait = 0.0
-                if st.current_track and st.clock.play_start_time:
-                    wait = st.clock.seconds_until(playback_duration(st))
-                asyncio.create_task(_fire_track_end(my_generation, wait))
+            if mix is None:
+                _schedule_track_end(session, my_generation)
         finally:
             # Mirrors the increment in audio_stream() above — this specific
             # connection is done, one way or another (normal completion,
@@ -1518,13 +1525,25 @@ async def stream_diagnostics(session: SessionState = Depends(get_session)):
     return describe_stream(session)
 
 
+# What /events sends while there is no status to send. An event rather than
+# a comment, which a browser never hands to the page: the app can tell a
+# quiet session from a connection that died without an error (services/
+# connect/reconnectingEventSource.ts). Named, so a client listening to
+# `message` alone never sees it; with `data`, since an event without any is
+# never dispatched.
+HEARTBEAT_EVENT = "event: heartbeat\ndata: {}\n\n"
+
+
 @router.get("/events", dependencies=[Depends(require_token)])
 async def status_events(session: SessionState = Depends(get_session)):
     queue = session.event_bus.subscribe()
 
     async def generator():
         try:
-            yield "retry: 2000\n\n"
+            # One heartbeat straight away: while something plays, status
+            # replaces every later one, and this is how the app learns that
+            # this server sends them - and that silence means a dead line.
+            yield "retry: 2000\n\n" + HEARTBEAT_EVENT
             yield f"data: {json.dumps(build_status_dict(session))}\n\n"
             while True:
                 try:
@@ -1535,7 +1554,7 @@ async def status_events(session: SessionState = Depends(get_session)):
                     if session.state.is_streaming and not session.state.clock.is_paused:
                         yield f"data: {json.dumps(build_status_dict(session))}\n\n"
                     else:
-                        yield ": heartbeat\n\n"
+                        yield HEARTBEAT_EVENT
         finally:
             session.event_bus.unsubscribe(queue)
 

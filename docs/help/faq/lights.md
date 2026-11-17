@@ -1,5 +1,6 @@
 ---
-order: 4
+group: listening
+order: 7
 ---
 
 # Room lights

@@ -82,7 +82,7 @@ def observe(before: float, after: float) -> float:
     because `core.loop_health.time` *is* the global time module and
     asyncio's own event loop reads time.monotonic() to schedule — patching
     it would break the loop running the test rather than just this task's
-    view of it. Same reasoning as routes/playback.py's _resync_position_once().
+    view of it. Same reasoning as core/cast_position.py's resync_position_once().
     """
     lag = after - before - _TICK_SECONDS
     if lag <= 0:

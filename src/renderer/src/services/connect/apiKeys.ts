@@ -13,6 +13,8 @@ export interface ApiKeyStatus {
    * Settings, so the field is empty although a key is in effect. The key
    * itself never leaves the backend. */
   fromEnvironment: boolean
+  /** Lent by the Beacon server this desktop is paired with. */
+  fromServer: boolean
 }
 
 export type ApiKeyStatuses = Record<ApiKeyService, ApiKeyStatus>

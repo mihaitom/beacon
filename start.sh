@@ -8,31 +8,11 @@ export CONNECT_URL="${CONNECT_URL:-/api}"
 export WEB_PORT="${WEB_PORT:-7070}"
 export PORT="${PORT:-7071}"
 
-# No CONNECT_TOKEN set — generate a random one for this container run rather
-# than falling back to a fixed value (a hardcoded default would be public,
-# since this image is open source, and give no real protection). The browser
-# never needs to know this value: nginx injects it server-side when proxying
-# to the Python backend (see ng.conf.template), so a fresh token each start
-# is safe — nothing on the frontend caches or depends on it staying stable.
-# Set CONNECT_TOKEN explicitly only if something needs to call the API
-# directly, bypassing nginx, with a token that survives restarts.
-if [ -z "$CONNECT_TOKEN" ]; then
-    CONNECT_TOKEN="$(/app/.venv/bin/python -c 'import secrets; print(secrets.token_hex(32))')"
-    echo "No CONNECT_TOKEN set — generated a random one for this run."
-fi
-export CONNECT_TOKEN
-
-# CONNECT_TOKEN is embedded in a quoted nginx directive (X-Connect-Token
-# header) — characters like " \ $ would break or silently corrupt that
-# directive, so reject anything outside a safe charset up front instead of
-# letting nginx fail cryptically later.
-case "$CONNECT_TOKEN" in
-    *[!A-Za-z0-9_-]*)
-        echo "ERROR: CONNECT_TOKEN contains unsupported characters — only letters, numbers, '_' and '-' are allowed." >&2
-        echo "Generate a safe one with: openssl rand -hex 32" >&2
-        exit 1
-        ;;
-esac
+# The Connect API's token, fresh each start. Nothing outside this container
+# needs it: nginx adds it to every request it proxies to the backend (see
+# ng.conf.template), and own apps use a device key instead.
+CONNECT_INTERNAL_TOKEN="$(/app/.venv/bin/python -c 'import secrets; print(secrets.token_hex(32))')"
+export CONNECT_INTERNAL_TOKEN
 
 if [ -z "$SERVER_INTERNAL_URL" ] && [ -z "$NAVIDROME_INTERNAL_URL" ]; then
     echo "WARNING: SERVER_INTERNAL_URL is not set — the proxy (connect/routes/proxy.py)" >&2
@@ -44,6 +24,9 @@ fi
 # recreations/updates. No compose changes needed beyond that volume mount.
 export CONNECT_DATA_DIR="${CONNECT_DATA_DIR:-/data}"
 
+# Pairing with another Beacon is for desktop apps (connect/core/server_link.py).
+export BEACON_HOSTED=1
+
 # nginx access logging is off by default and only enabled with DEBUG=true,
 # matching the Python backend's DEBUG-gated verbose logging.
 case "$(printf '%s' "$DEBUG" | tr '[:upper:]' '[:lower:]')" in
@@ -54,7 +37,7 @@ esac
 # Alpine nginx reads from /etc/nginx/http.d/, not conf.d/.
 # Limit substitution to named vars only so nginx variables like $uri survive.
 mkdir -p /etc/nginx/http.d
-envsubst '${CONNECT_TOKEN} ${NGINX_ACCESS_LOG} ${WEB_PORT} ${PORT}' \
+envsubst '${CONNECT_INTERNAL_TOKEN} ${NGINX_ACCESS_LOG} ${WEB_PORT} ${PORT}' \
     < /etc/nginx/templates/default.conf.template \
     > /etc/nginx/http.d/default.conf
 

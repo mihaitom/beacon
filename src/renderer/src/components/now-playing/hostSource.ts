@@ -5,6 +5,7 @@ import RadioTitleLog from '@/components/radio/RadioTitleLog.vue'
 import LyricsCandidateList from '@/components/lyrics/LyricsCandidateList.vue'
 import CastStreamDebugOverlay from '@/components/player/CastStreamDebugOverlay.vue'
 import VisualizerDebugOverlay from '@/components/player/VisualizerDebugOverlay.vue'
+import EqualizerButton from '@/components/equalizer/EqualizerButton.vue'
 import type { Song, RadioStation } from '@/types/library'
 import type { RadioFaviconRequest } from '@/services/connect/radio'
 import type { RadioTitleEntry } from '@/services/connect/radioMetadata'
@@ -48,6 +49,9 @@ export interface HostNowPlayingApi {
   /** Whether the server can top up the queue at all (song radio). */
   autoplayAvailable: boolean
   favoriteAvailable: boolean
+  /** Casting: a phone plays without a Web Audio graph, so the speaker's
+   * curve is the only one there is to set. */
+  equalizerAvailable: boolean
   debugEnabled: boolean
 
   setLyricsOpen(open: boolean): void
@@ -171,6 +175,7 @@ export function hostNowPlayingSource(api: HostNowPlayingApi): NowPlayingSource {
       debug: computed(() => api.debugEnabled),
       lyricsTools: true,
       favorite: computed(() => api.favoriteAvailable),
+      equalizer: computed(() => api.equalizerAvailable),
     }),
     // The app's batched cover component. Kept out of the shared
     // presentation's imports on purpose - it pulls in the library store.
@@ -182,6 +187,7 @@ export function hostNowPlayingSource(api: HostNowPlayingApi): NowPlayingSource {
     debugOverlayComponent: markRaw(VisualizerDebugOverlay),
     streamDebugComponent: markRaw(CastStreamDebugOverlay),
     artistCreditComponent: markRaw(ArtistCredit),
+    equalizerComponent: markRaw(EqualizerButton),
     ui: reactive({
       lyricsOpen: computed(() => api.showLyrics),
       showVisualizer: computed(() => api.showVisualizer),

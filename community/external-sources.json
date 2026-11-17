@@ -1,0 +1,26 @@
+{
+  "_comment": "Beacon only reads \"apps\". To list your app, copy \"_example\" into \"apps\" and fill it in; community/README.md has the rules. \"icon\" is either a Beacon icon name (\"mdi-album\") or the https address of a square .webp in your own repository.",
+  "_example": {
+    "name": "My source",
+    "description": "What it plays and how, in English, up to 300 characters.",
+    "repository": "https://github.com/your-github-login/my-source",
+    "author": "your-github-login",
+    "icon": "https://raw.githubusercontent.com/your-github-login/my-source/main/icon.webp"
+  },
+  "apps": [
+    {
+      "name": "BeaconTube",
+      "description": "Plays a link you paste, or a YouTube search, with yt-dlp. Keeps a library of everything played.",
+      "repository": "https://github.com/b-r-y/beacontube",
+      "author": "b-r-y",
+      "icon": "mdi-inbox-arrow-down"
+    },
+    {
+      "name": "Beacon Folders",
+      "description": "Plays folders of music files as albums and artists, with covers and search, without adding them to your media server. Also as a ready-made Docker image.",
+      "repository": "https://github.com/mihaitom/beacon-folders",
+      "author": "mihaitom",
+      "icon": "mdi-folder-music"
+    }
+  ]
+}

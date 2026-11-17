@@ -155,4 +155,18 @@ describe('capabilitiesFor', () => {
     expect(capabilitiesFor('jellyfin', null, 'navidrome').smartPlaylistEditor).toBe(false)
     expect(capabilitiesFor('plex', null, 'navidrome').smartPlaylistEditor).toBe(false)
   })
+
+  it('keeps a description and public flag to servers with somewhere to put them', () => {
+    expect(capabilitiesFor('subsonic').playlistDetails).toBe(true)
+    expect(capabilitiesFor('jellyfin').playlistDetails).toBe(false)
+    expect(capabilitiesFor('plex').playlistDetails).toBe(false)
+  })
+
+  it('gives playlist administration only to a definite Navidrome admin', () => {
+    expect(capabilitiesFor('subsonic', true, 'navidrome').playlistAdmin).toBe(true)
+    expect(capabilitiesFor('subsonic', null, 'navidrome').playlistAdmin).toBe(false)
+    expect(capabilitiesFor('subsonic', false, 'navidrome').playlistAdmin).toBe(false)
+    expect(capabilitiesFor('subsonic', true, 'gonic').playlistAdmin).toBe(false)
+    expect(capabilitiesFor('jellyfin', true, 'navidrome').playlistAdmin).toBe(false)
+  })
 })

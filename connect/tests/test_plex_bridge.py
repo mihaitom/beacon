@@ -8,7 +8,7 @@ import pytest
 
 from core.session import DEFAULT_SESSION_ID, SessionState
 from core.session import registry as session_registry
-from media import PlexClient, plex_bridge
+from media import PlexClient, bridge, plex_bridge
 
 
 @pytest.fixture
@@ -650,6 +650,23 @@ def test_search3_with_query_sets_title_filter(client, plex_session, monkeypatch)
     assert all_calls[0][2]["title"] == "beatles"
 
 
+def test_search3_pages_albums(client, plex_session, monkeypatch):
+    # The app API pages an album search by albumOffset (core/app_library.py).
+    fake_client, calls = _fake_px_client(
+        {
+            "/library/sections": {
+                "MediaContainer": {"Directory": [{"key": "5", "type": "artist"}]}
+            },
+            "/library/sections/5/all": {"MediaContainer": {"Metadata": []}},
+        }
+    )
+    monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
+
+    client.get("/rest/search3.view?query=x&songCount=0&albumCount=50&artistCount=0&albumOffset=50")
+    [albums] = [c for c in calls if c[1].endswith("/library/sections/5/all")]
+    assert albums[2]["X-Plex-Container-Start"] == "50"
+
+
 # ── Ratings ───────────────────────────────────────────────────────────────────
 
 
@@ -1171,14 +1188,14 @@ def test_stream_view_forwards_range_header(client, plex_session, monkeypatch):
 def test_binary_handler_exception_returns_failed_envelope_not_500(
     client, plex_session, monkeypatch
 ):
-    """Same as jellyfin_bridge.py's identical guard — a Plex connectivity
+    """Same guard as for Jellyfin — a Plex connectivity
     blip mid cover-art-load or mid-stream must degrade like every other
     endpoint here instead of surfacing as a raw 500."""
 
-    async def broken_stream_binary(request, url, media):
+    async def broken_stream_binary(*args, **kwargs):
         raise RuntimeError("connection reset")
 
-    monkeypatch.setattr(plex_bridge, "_stream_binary", broken_stream_binary)
+    monkeypatch.setattr(bridge, "stream_binary", broken_stream_binary)
 
     r = client.get("/rest/getCoverArt.view?id=2001")
 
@@ -1693,7 +1710,7 @@ def test_stream_view_drops_the_length_of_a_compressed_body(client, plex_session,
 
 def test_cover_art_never_forwards_a_length(client, plex_session, monkeypatch):
     """The reason content-length is skipped at all: an image endpoint whose
-    length and body disagreed crashed the response (see _SKIP_RESP_HEADERS)."""
+    length and body disagreed crashed the response (see bridge.py's SKIP_RESP_HEADERS)."""
     fake_client, _ = _mock_binary_httpx_client({"content-length": "999"})
     monkeypatch.setattr(plex_bridge, "_get_client", lambda: fake_client)
 

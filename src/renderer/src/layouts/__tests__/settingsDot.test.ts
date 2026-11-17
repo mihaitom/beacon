@@ -8,7 +8,7 @@ import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { useUpdateStore } from '@/stores/update'
 import DefaultLayout from '../DefaultLayout.vue'
-import MobileLayout from '../MobileLayout.vue'
+import MobileTabBar from '@/components/mobile/MobileTabBar.vue'
 
 const vuetify = createVuetify({ components, directives })
 const wrappers: VueWrapper[] = []
@@ -21,6 +21,8 @@ async function mountDesktop() {
   await router.push('/')
   await router.isReady()
   const wrapper = mount(DefaultLayout, {
+    // Attached: isVisible() reads computed styles, which a detached tree has none of.
+    attachTo: document.body,
     global: {
       plugins: [vuetify, i18n, router],
       stubs: {
@@ -35,27 +37,29 @@ async function mountDesktop() {
   return wrapper.get('a[href="/settings"]')
 }
 
-function mountMobile() {
-  const wrapper = mount(MobileLayout, {
-    global: {
-      plugins: [vuetify, i18n],
-      mocks: { $route: { name: 'm-library' }, $router: { push: () => {} } },
-      stubs: {
-        RouterView: true,
-        MobileTabBar: true,
-        MobilePlayerBar: true,
-        CastTakeoverConfirmDialog: true,
-        PartyModeDialog: true,
-      },
-    },
+async function mountMobile() {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: '/:path(.*)', component: { template: '<div />' } }],
   })
+  await router.push('/m/library')
+  await router.isReady()
+  // In a v-layout: the tab bar registers with Vuetify's app layout.
+  const wrapper = mount(
+    { components: { MobileTabBar }, template: '<v-layout><mobile-tab-bar /></v-layout>' },
+    { attachTo: document.body, global: { plugins: [vuetify, i18n, router] } },
+  )
   wrappers.push(wrapper)
-  // Settings sits in the app bar's menu there; the dot is on what opens it.
-  return wrapper.get(`button[aria-label="${i18n.global.t('common.moreActions')}"]`)
+  // Settings sits behind the More tab there; the dot is on that tab.
+  const more = wrapper
+    .findAll('.mobile-tabbar .v-btn')
+    .find((button) => button.text().includes(i18n.global.t('mobile.tabMore')))
+  if (!more) throw new Error('no More tab')
+  return more
 }
 
 /** A newer release shows as a dot on the settings button - on the desktop's
- * sidebar entry and on the phone's app bar alike - until Settings, which
+ * sidebar entry and on the phone's More tab alike - until Settings, which
  * explains it, has been opened. */
 describe.each([
   ['desktop', mountDesktop],
@@ -68,7 +72,6 @@ describe.each([
 
   afterEach(() => {
     while (wrappers.length) wrappers.pop()?.unmount()
-    document.documentElement.classList.remove('mobile-shell')
   })
 
   function dotShowing(button: Awaited<ReturnType<typeof mountSettingsButton>>) {

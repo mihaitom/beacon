@@ -9,10 +9,11 @@ import { applyTheme, restoreTheme } from './js/theme.js';
 translateDocument();
 
 import './js/views/now-playing.js';
-import './js/views/favorites.js';
+import './js/views/home.js';
 import './js/views/queue.js';
 import './js/views/playlists.js';
 import './js/views/library.js';
+import './js/views/album.js';
 import './js/views/radio.js';
 import './js/views/artist.js';
 
@@ -67,7 +68,7 @@ function consumePairingLink() {
   if (!match) return false;
   setStoredPassword(decodeURIComponent(match[1]));
   // Strip the plaintext password out of the visible URL/history immediately.
-  history.replaceState(null, '', `${location.pathname}#/now-playing`);
+  history.replaceState(null, '', `${location.pathname}#/home`);
   return true;
 }
 

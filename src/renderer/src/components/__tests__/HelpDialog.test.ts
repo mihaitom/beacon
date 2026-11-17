@@ -1,11 +1,11 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { emitter } from '@/emitter'
-import { HELP_PAGES, isFaqPage, pageFor } from '@/services/help/docs'
+import { HELP_PAGES, pageFor } from '@/services/help/docs'
 import HelpDialog from '../HelpDialog.vue'
 
 const vuetify = createVuetify({ components, directives })
@@ -32,6 +32,22 @@ afterEach(() => {
 })
 
 describe('HelpDialog', () => {
+  it('copies a code block exactly as written', async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } })
+    await openOn('reference/external-source-api')
+    const button = content().querySelector<HTMLButtonElement>(
+      '.help-code:has(.language-python) [data-help-copy]',
+    )!
+    button.click()
+    await flushPromises()
+    const copied = writeText.mock.calls[0]![0] as string
+    expect(copied.startsWith('#!/usr/bin/env python3\n')).toBe(true)
+    expect(copied).toContain('<!doctype html>')
+    expect(button.querySelector('.mdi-check')).not.toBeNull()
+    vi.unstubAllGlobals()
+  })
+
   it('opens on the doc it was asked for', async () => {
     await openOn('guides/party-over-the-internet')
     expect(content().querySelector('#example-setups')).not.toBeNull()
@@ -40,7 +56,7 @@ describe('HelpDialog', () => {
   it('follows a link to another page inside the dialog', async () => {
     // A link as renderHelpPage() writes one, so this does not depend on
     // which docs happen to link to each other today.
-    const target = HELP_PAGES.find((page) => !isFaqPage(page))!
+    const target = HELP_PAGES.find((page) => !page.id.startsWith('faq/'))!
     const anchor = [...target.anchors].at(-1)!
     const wrapper = await openOn('faq')
     const link = document.createElement('a')
@@ -55,7 +71,7 @@ describe('HelpDialog', () => {
   })
 
   it('opens on one page at a heading, as a link from elsewhere asks', async () => {
-    const page = HELP_PAGES.find((p) => isFaqPage(p) && p !== pageFor('faq'))!
+    const page = HELP_PAGES.find((p) => p.id.startsWith('faq/') && p !== pageFor('faq'))!
     const anchor = [...page.anchors].at(-1)!
     const wrapper = await openOn('faq')
     emitter.emit('openHelp', { page: page.id, anchor })

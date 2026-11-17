@@ -9,7 +9,7 @@
       :aria-label="$t('equalizer.title')"
       @click="showDialog = true"
     />
-    <equalizer-dialog v-model="showDialog" />
+    <equalizer-dialog v-model="showDialog" :compact="compact" />
   </div>
 </template>
 
@@ -24,6 +24,13 @@ import EqualizerDialog from './EqualizerDialog.vue'
 export default {
   name: 'EqualizerButton',
   components: { EqualizerDialog },
+  props: {
+    /** The phone's fullscreen form of the dialog. */
+    compact: {
+      type: Boolean,
+      default: false,
+    },
+  },
   data() {
     return { showDialog: false }
   },

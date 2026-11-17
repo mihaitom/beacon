@@ -38,6 +38,17 @@ export interface PlaylistRemoval {
   reload: () => Promise<void>
 }
 
+/** Where `picked` stand in `playlist`, last first so that a server applying
+ * them one after another cannot have one removal shift the next. By the
+ * object, not the song id: a playlist can hold the same song twice, as one
+ * object per entry. */
+export function positionsIn(playlist: Song[], picked: Song[]): number[] {
+  return picked
+    .map((song) => playlist.indexOf(song))
+    .filter((position) => position >= 0)
+    .sort((a, b) => b - a)
+}
+
 function saidBy(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }

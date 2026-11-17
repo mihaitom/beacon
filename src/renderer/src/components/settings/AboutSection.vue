@@ -4,11 +4,17 @@
     <div class="beacon-panel">
       <div class="setting">
         <div class="about-actions">
-          <v-btn variant="tonal" prepend-icon="mdi-star-circle-outline" @click="showReleaseNotes">
+          <v-btn
+            variant="tonal"
+            rounded="pill"
+            prepend-icon="mdi-star-circle-outline"
+            @click="showReleaseNotes"
+          >
             {{ $t('settings.whatsNew') }}
           </v-btn>
           <v-btn
             variant="tonal"
+            rounded="pill"
             prepend-icon="mdi-help-circle-outline"
             @click="$emitter.emit('openHelp', 'features')"
           >
@@ -19,7 +25,12 @@
              - version, what can it do, who does it talk to — and a
              - one-button section would read as more ceremony than the
              - dialog behind it warrants. -->
-          <v-btn variant="tonal" prepend-icon="mdi-shield-lock-outline" @click="privacyOpen = true">
+          <v-btn
+            variant="tonal"
+            rounded="pill"
+            prepend-icon="mdi-shield-lock-outline"
+            @click="privacyOpen = true"
+          >
             {{ $t('privacy.title') }}
           </v-btn>
           <!-- The "?" key opens the same dialog, but nothing on screen says
@@ -31,6 +42,7 @@
           <v-btn
             v-if="!isMobileWeb"
             variant="tonal"
+            rounded="pill"
             prepend-icon="mdi-keyboard-outline"
             @click="showShortcuts"
           >

@@ -1,0 +1,22 @@
+services:
+  folder-source:
+    # Built from this folder instead: replace this line with `build: .`
+    image: ghcr.io/mihaitom/beacon-folder-source:latest
+    container_name: beacon-folder-source
+    restart: unless-stopped
+    # The music is only read, never changed.
+    volumes:
+      - /path/to/music:/music:ro
+      - ./data:/data
+    environment:
+      # Several folders: mount each under its own name, e.g.
+      # /path/to/imports:/music/Imports:ro, and list them here as
+      # /music/Imports:/music/DJ Sets. Each becomes a tab named after it.
+      MUSIC_DIR: /music
+      SOURCE_NAME: Music folder
+      # Beacon sends it with every request for the page; set the same value
+      # in Beacon under Settings > Library > External sources.
+      TOKEN: change-me
+      RESCAN_MINUTES: 30
+    ports:
+      - "8800:8800"

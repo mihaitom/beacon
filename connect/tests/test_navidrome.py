@@ -311,6 +311,62 @@ def test_an_old_uuid_playlist_id_is_accepted(client, navidrome, navidrome_api):
     assert calls[0]["url"].endswith("/api/playlist/0b7c2a3e-1f4d-4e6a-9c1b-2d3e4f5a6b7c")
 
 
+# ── Who a playlist can be handed to ──────────────────────────────────────────
+
+
+def test_the_user_list_carries_names_only_and_is_sorted(client, navidrome, navidrome_api):
+    calls, answers = navidrome_api
+    navidrome.navidrome_token = "jwt-1"
+    answers.append(
+        httpx.Response(
+            200,
+            json=[
+                {"id": "2", "userName": "zoe", "name": "Zoe", "email": "z@x", "isAdmin": True},
+                {"id": "1", "userName": "anna", "name": "", "email": "a@x"},
+            ],
+        )
+    )
+
+    r = client.get("/navidrome/users")
+
+    assert calls[0]["url"].endswith("/api/user")
+    assert r.json() == [
+        {"id": "1", "userName": "anna", "name": "anna"},
+        {"id": "2", "userName": "zoe", "name": "Zoe"},
+    ]
+
+
+def test_navidromes_refusal_of_the_user_list_reaches_the_frontend(client, navidrome, navidrome_api):
+    _calls, answers = navidrome_api
+    navidrome.navidrome_token = "jwt-1"
+    answers.append(httpx.Response(403, json={"error": "Forbidden"}))
+
+    r = client.get("/navidrome/users")
+
+    assert r.status_code == 403
+    assert "Forbidden" in r.json()["detail"]
+
+
+def test_the_user_list_needs_the_login_like_the_rest(client, navidrome, navidrome_api):
+    calls, _answers = navidrome_api
+
+    r = client.get("/navidrome/users")
+
+    assert r.status_code == 403
+    assert r.json()["detail"] == LOGIN_REQUIRED
+    assert calls == []
+
+
+def test_a_user_cannot_be_reached_any_other_way(client, navidrome, navidrome_api):
+    calls, _answers = navidrome_api
+    navidrome.navidrome_token = "jwt-1"
+
+    client.put("/navidrome/users", json={"name": "x"})
+    client.delete("/navidrome/users")
+
+    assert calls == []
+
+
 # ── Knowing it is Navidrome ──────────────────────────────────────────────────
 
 

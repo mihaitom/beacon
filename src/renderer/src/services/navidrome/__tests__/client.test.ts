@@ -7,7 +7,9 @@ import {
   NavidromePasswordRejected,
   createSmartPlaylist,
   getNavidromePlaylist,
+  listNavidromeUsers,
   loginToNavidrome,
+  setNavidromePlaylistOwner,
   updateSmartPlaylist,
 } from '../client'
 
@@ -127,5 +129,24 @@ describe('the Navidrome client', () => {
       method: 'PUT',
       body: { rules },
     })
+  })
+
+  it('changes the owner and nothing else', async () => {
+    answer({})
+
+    await setNavidromePlaylistOwner('pl1', 'user-2')
+
+    expect(fetchMock).toHaveBeenCalledWith('/navidrome/api/playlist/pl1', {
+      method: 'PUT',
+      body: { ownerId: 'user-2' },
+    })
+  })
+
+  it('lists the users through the same login handling', async () => {
+    useAuthStore().password = ''
+    answer(loginRequired())
+
+    await expect(listNavidromeUsers()).rejects.toBeInstanceOf(NavidromeLoginRequired)
+    expect(paths()).toEqual(['/navidrome/users'])
   })
 })

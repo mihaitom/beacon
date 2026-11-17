@@ -6,6 +6,7 @@ Both SubsonicClient and JellyfinClient implement MediaClient so the rest of the
 backend can stay agnostic about which music server is behind /config.
 """
 
+import functools
 from dataclasses import dataclass, field
 from typing import Protocol, runtime_checkable
 
@@ -70,6 +71,52 @@ def split_artwork_id(cover_art_id: str) -> tuple[str, str | None]:
     return item_id, version
 
 
+def routes_external(method):
+    """Hands an `ext:` id to core/external_source.py instead of the media
+    server. Applied to every client's get_track/get_stream_url/
+    get_cover_art_url, so a song from the external source plays everywhere a
+    library song does, without each caller having to tell them apart."""
+
+    @functools.wraps(method)
+    def wrapper(self, item_id, *args, **kwargs):
+        from core import external_source
+
+        if external_source.is_external_id(item_id):
+            return getattr(external_source, method.__name__)(item_id, *args, **kwargs)
+        return method(self, item_id, *args, **kwargs)
+
+    return wrapper
+
+
+@dataclass
+class ReplayGain:
+    """A song's loudness data in OpenSubsonic's terms: gains in dB, peaks as
+    linear amplitude. Any of them can be missing."""
+
+    track_gain: float | None = None
+    album_gain: float | None = None
+    track_peak: float | None = None
+    album_peak: float | None = None
+
+    @classmethod
+    def from_opensubsonic(cls, data: dict | None) -> "ReplayGain | None":
+        """From a song's `replayGain` object, as Navidrome and the bridges
+        send it. None when there is nothing in it."""
+        if not data:
+            return None
+        gain = cls(
+            track_gain=_number(data.get("trackGain")),
+            album_gain=_number(data.get("albumGain")),
+            track_peak=_number(data.get("trackPeak")),
+            album_peak=_number(data.get("albumPeak")),
+        )
+        return None if gain == cls() else gain
+
+
+def _number(value) -> float | None:
+    return float(value) if isinstance(value, int | float) and not isinstance(value, bool) else None
+
+
 @dataclass
 class Track:
     id: str
@@ -78,6 +125,9 @@ class Track:
     duration: int  # seconds
     cover_art_id: str = field(default="")
     album: str = field(default="")
+    # Only what get_track() and the similar-songs lookups fill in: what
+    # connect needs to apply ReplayGain to a song it moves on to by itself.
+    replay_gain: ReplayGain | None = None
 
 
 @runtime_checkable
@@ -101,7 +151,7 @@ class MediaClient(Protocol):
         and Jellyfin; PlexClient accepts and ignores it, always returning
         its one fixed thumbnail size — its browser-facing single-cover path
         never plumbed a size through either (see media/plex_bridge.py's
-        _handle_binary), so this isn't a regression, just not (yet)
+        _cover_url()), so this isn't a regression, just not (yet)
         implemented there. Accepting the parameter anyway means a caller
         that treats every MediaClient the same doesn't need to special-case
         Plex just to avoid a TypeError."""

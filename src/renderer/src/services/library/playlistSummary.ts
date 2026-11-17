@@ -36,6 +36,17 @@ export function summarizePlaylist(songs: Song[]): PlaylistSummary {
   }
 }
 
+/** The covers a playlist is shown with: its albums, from its songs where it
+ * carries them and from its summary where it does not (the overview's list);
+ * the server's artwork only if neither has any. */
+export function coversOf(playlist: Playlist, summary: PlaylistSummary | null = null): string[] {
+  const covers = playlist.songs.length
+    ? summarizePlaylist(playlist.songs).covers
+    : (summary?.covers ?? [])
+  if (covers.length) return covers
+  return playlist.coverArtId ? [playlist.coverArtId] : []
+}
+
 /** Changes whenever the playlist's content may have: a server that reports
  * `changed` bumps it on every edit, and count and length catch the rest. */
 export function summaryKey(playlist: Playlist): string {

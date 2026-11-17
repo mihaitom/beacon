@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { TransitionGroup } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
@@ -29,7 +30,7 @@ function mountDrawer(mocks: Record<string, unknown> = {}) {
 
 // jsdom never actually lays anything out — every element's
 // getBoundingClientRect() is {top: 0, height: 0, ...} regardless of real
-// DOM position. QueueDrawer's insertBeforeIndex() compares
+// DOM position. services/rowReorder.ts's dropHalf() compares
 // event.clientY against that rect's own vertical midpoint, so under jsdom
 // the midpoint is always 0: a positive clientY reliably reads as "bottom
 // half of the row", zero or negative as "top half" — not a real geometry
@@ -64,6 +65,23 @@ describe('QueueDrawer', () => {
 
   afterEach(() => {
     vi.useRealTimers()
+  })
+
+  it('keeps the rows from animating on their own while the drawer slides', () => {
+    usePlaybackStore().queue = [makeSong('a')]
+    const moveClass = (sliding: boolean) => {
+      const host = mount(
+        {
+          components: { QueueDrawer },
+          data: () => ({ sliding }),
+          template: '<v-app><queue-drawer model-value :sliding="sliding" /></v-app>',
+        },
+        { global: { plugins: [vuetify, i18n] } },
+      )
+      return host.findComponent(TransitionGroup).props('moveClass')
+    }
+    expect(moveClass(false)).toBeUndefined()
+    expect(moveClass(true)).toBeDefined()
   })
 
   it('shows the empty state and no clear/save-as-playlist buttons with nothing queued', () => {
@@ -379,9 +397,9 @@ describe('QueueDrawer', () => {
       const rows = wrapper.findAll('.queue-row')
 
       // Drag row 1 ('b') and drop it on the bottom half of row 3 ('d') —
-      // insertBeforeIndex would be 4 (after 'd'), but removing 'b' first
-      // shifts every later original index left by one, so the actual
-      // reorderQueue() target is 3, not 4.
+      // the boundary is after 'd', but removing 'b' first shifts every
+      // later index left by one, so the actual reorderQueue() target is 3,
+      // not 4.
       await rows[1]!.trigger('dragstart')
       await rows[3]!.trigger('dragover', BOTTOM_HALF)
       await rows[3]!.trigger('drop', BOTTOM_HALF)
@@ -396,8 +414,8 @@ describe('QueueDrawer', () => {
       const reorderSpy = vi.spyOn(playback, 'reorderQueue')
       const rows = wrapper.findAll('.queue-row')
 
-      // Dropping row 1 on its own top half: insertBeforeIndex(1) === 1,
-      // dropIndex resolves to the same 1 it started at — a no-op drag.
+      // Dropping row 1 on its own top half resolves to the same 1 it
+      // started at — a no-op drag.
       await rows[1]!.trigger('dragstart')
       await rows[1]!.trigger('drop', TOP_HALF)
 

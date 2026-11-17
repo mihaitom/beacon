@@ -1,7 +1,7 @@
 import { resolve } from 'path'
 import { pathToFileURL } from 'url'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_CUSTOM_COLORS, remotePalette } from '@/plugins/theme'
+import { remotePalette } from '@/plugins/theme'
 import { contrast } from '@/services/themeColors'
 
 /** The Remote Control in the desktop's theme: what the renderer sends
@@ -22,7 +22,7 @@ const rootVar = (name: string) => document.documentElement.style.getPropertyValu
 
 describe('remotePalette', () => {
   it("is the chosen theme's own colours", () => {
-    const palette = remotePalette({ theme: 'paper', custom: DEFAULT_CUSTOM_COLORS })
+    const palette = remotePalette({ theme: 'paper', customThemes: [] })
     expect(palette.dark).toBe(false)
     expect(palette.background).toBe('#F6F2EA')
     expect(palette.accent).toBe('#9E5800')
@@ -31,14 +31,15 @@ describe('remotePalette', () => {
 
   it('keeps text on the accent readable', () => {
     for (const theme of ['beacon', 'graphite', 'paper', 'glacier'] as const) {
-      const palette = remotePalette({ theme, custom: DEFAULT_CUSTOM_COLORS })
+      const palette = remotePalette({ theme, customThemes: [] })
       expect(contrast(palette.accent, palette.accent_on), theme).toBeGreaterThanOrEqual(4.5)
     }
   })
 
   it('carries a self-made theme too', () => {
     const custom = { background: '#F3EFFA', primary: '#7B3FC4' }
-    const palette = remotePalette({ theme: 'custom', custom })
+    const customThemes = [{ id: 'custom-a' as const, name: 'Mine', ...custom }]
+    const palette = remotePalette({ theme: 'custom-a', customThemes })
     expect(palette.background).toBe('#F3EFFA')
     expect(palette.accent).toBe('#7B3FC4')
     expect(palette.dark).toBe(false)
@@ -54,7 +55,7 @@ describe("the Remote Control's theme.js", () => {
 
   it("puts the desktop's palette into the page's variables", async () => {
     const { applyTheme } = await loadTheme()
-    applyTheme(remotePalette({ theme: 'glacier', custom: DEFAULT_CUSTOM_COLORS }))
+    applyTheme(remotePalette({ theme: 'glacier', customThemes: [] }))
 
     expect(rootVar('--bg')).toBe('#EEF1F5')
     expect(rootVar('--accent')).toBe('#2E6BB0')
@@ -70,7 +71,7 @@ describe("the Remote Control's theme.js", () => {
     const { applyTheme } = await loadTheme()
     applyTheme(undefined)
     applyTheme({
-      ...remotePalette({ theme: 'glacier', custom: DEFAULT_CUSTOM_COLORS }),
+      ...remotePalette({ theme: 'glacier', customThemes: [] }),
       accent: 'blue',
     })
     expect(rootVar('--bg')).toBe('')
@@ -78,7 +79,7 @@ describe("the Remote Control's theme.js", () => {
 
   it('starts a reload in the colours from last time', async () => {
     const first = await loadTheme()
-    first.applyTheme(remotePalette({ theme: 'graphite', custom: DEFAULT_CUSTOM_COLORS }))
+    first.applyTheme(remotePalette({ theme: 'graphite', customThemes: [] }))
     document.documentElement.removeAttribute('style')
 
     const second = await loadTheme()

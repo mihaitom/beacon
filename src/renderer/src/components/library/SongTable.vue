@@ -260,6 +260,7 @@ import type { PropType } from 'vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { useLibraryStore } from '@/stores/library'
 import { firstIndexByLetter, letterForName } from '@/services/alphabetIndex'
+import { dragEventHalf, reorderTarget } from '@/services/rowReorder'
 import { observeActiveLetter, type ActiveLetterHandle } from '@/services/activeLetter'
 import SongRow from './SongRow.vue'
 import MissingSongRow from './MissingSongRow.vue'
@@ -365,8 +366,8 @@ export default {
     columns: { type: Array as PropType<SongColumnKey[] | null>, default: null },
     // Overridable for views that hand over an already-meaningfully-ordered
     // list — null means "leave it in the order the list was given in" (no
-    // column highlighted as active), used by album/playlist detail so
-    // song-number/playlist order is what actually plays, not an
+    // column highlighted as active), used by album detail so
+    // song-number order is what actually plays, not an
     // alphabetical-by-title reshuffle. ArtistDetailView's/HomeView's "most
     // played" shelves instead pass 'playCount' (server-sorted desc).
     // Everywhere else without an override defaults to title, so a plain
@@ -436,7 +437,7 @@ export default {
     // and a pick emits `remove`. Unlike reorderable this survives a column
     // sort: which rows you mean is still unambiguous when they are only
     // displayed in a different order (see onRemoveRequested, which maps
-    // them back to real playlist positions).
+    // them back to positions in the list it was given).
     removable: { type: Boolean, default: false },
   },
   emits: ['reorder', 'remove', 'update:sort'],
@@ -869,16 +870,6 @@ export default {
     dragOverPosition(index: number): 'before' | 'after' | null {
       return this.dragOverIndex === index ? this.dragOverHalf : null
     },
-    insertBeforeIndex(index: number, event: DragEvent): number {
-      const row = event.currentTarget as HTMLElement
-      const rect = row.getBoundingClientRect()
-      const isBottomHalf = event.clientY > rect.top + rect.height / 2
-      return isBottomHalf ? index + 1 : index
-    },
-    dropIndex(index: number, event: DragEvent): number {
-      const insertBefore = this.insertBeforeIndex(index, event)
-      return insertBefore > (this.dragIndex ?? 0) ? insertBefore - 1 : insertBefore
-    },
     onRowDragStart(index: number) {
       this.dragIndex = index
     },
@@ -891,7 +882,7 @@ export default {
         return
       }
       this.dragOverIndex = index
-      this.dragOverHalf = this.insertBeforeIndex(index, event) > index ? 'after' : 'before'
+      this.dragOverHalf = dragEventHalf(event)
     },
     onRowDragLeave(index: number) {
       if (this.dragOverIndex === index) {
@@ -901,11 +892,9 @@ export default {
     },
     onRowDrop({ index, event }: { index: number; event: DragEvent }) {
       const from = this.dragIndex
-      // Read before clearing: dropIndex() works off dragIndex to convert
-      // the drop boundary into a post-removal position.
-      const to = from === null ? null : this.dropIndex(index, event)
       this.clearDragState()
-      if (from === null || to === null) return
+      if (from === null) return
+      const to = reorderTarget(from, index, dragEventHalf(event))
       if (to === from) return
       // The owning view persists this and owns the songs array — with a
       // column sort impossible here (see canReorder), both indices are
@@ -1040,7 +1029,9 @@ export default {
       dialog?.open(songs.map((track) => track.id))
     },
     /** Turns the rows the menu was used on into positions within `songs`
-     * as it was handed in, which for a playlist is the server's own order.
+     * as it was handed in. For a playlist narrowed by a search those are
+     * not yet the server's: its page maps them on by the songs emitted
+     * here (PlaylistDetailView's onRemove).
      *
      * Not the row indices this table works in: those count positions in
      * sortedSongs, and under a column sort that is a reordered copy — the

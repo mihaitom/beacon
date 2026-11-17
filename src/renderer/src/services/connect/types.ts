@@ -95,6 +95,7 @@ export interface DeliveryFailedError {
     | 'needs_pairing'
     | 'station_refused'
     | 'source_failed'
+    | 'stream_unreachable'
     | 'unknown'
   /** The speaker's own name, or every name in the group — see that
    * module's device_label() for why a group names all of them. */

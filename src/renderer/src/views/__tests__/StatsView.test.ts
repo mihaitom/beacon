@@ -1,13 +1,18 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { mount } from '@vue/test-utils'
+import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { useLibraryStore } from '@/stores/library'
-import type { Artist, Song } from '@/types/library'
-import type { RankedItem } from '@/components/library/RankedList.vue'
+import type { Album, Artist, Song } from '@/types/library'
+import type { ChartItem, ChartKind } from '@/components/stats/StatsCharts.vue'
+import * as playHistory from '@/services/connect/playHistory'
+import { useAuthStore } from '@/stores/auth'
+import { useLastfmStore } from '@/stores/lastfm'
+import { useListenbrainzStore } from '@/stores/listenbrainz'
+import { usePlaybackStore } from '@/stores/playback'
 import { makeSong } from '@/stores/__tests__/fixtures'
 import StatsView from '../StatsView.vue'
 
@@ -23,40 +28,96 @@ interface StatsVm {
   readonly libraryDuration: number
   readonly totalPlays: number
   readonly listeningTime: number
-  readonly topSongs: RankedItem[]
-  readonly topArtists: RankedItem[]
-  readonly topAlbums: RankedItem[]
-  readonly topGenres: RankedItem[]
-  readonly formatBreakdown: RankedItem[]
-  readonly decadeBreakdown: RankedItem[]
-  readonly qualityBreakdown: RankedItem[]
-  readonly largestArtists: RankedItem[]
+  readonly topSongs: ChartItem[]
+  readonly topArtists: ChartItem[]
+  readonly topAlbums: ChartItem[]
+  readonly topGenres: ChartItem[]
+  readonly formatBreakdown: ChartItem[]
+  readonly decadeBreakdown: ChartItem[]
+  readonly qualityBreakdown: ChartItem[]
   readonly storageBytes: number
   readonly playedCount: number
-  readonly hasLastPlayed: boolean
-  readonly recentlyPlayedCount: number
   readonly ratings: { count: number; average: number }
   formatBigDuration(totalSeconds: number): string
   formatShare(part: number, whole: number): string
 }
 
-function mountStats(songs: Song[], artists: Artist[] = []): StatsVm {
+vi.mock('@/services/connect/playHistory', () => ({
+  recordListen: vi.fn(),
+  getPlayHistorySummary: vi.fn(),
+  getPlayHistoryCharts: vi.fn(),
+  getPlayHistoryAccounts: vi.fn(),
+  saveMilestones: vi.fn(),
+  getImportStatus: vi.fn(),
+  startImport: vi.fn(),
+}))
+
+function summary(
+  over: Partial<playHistory.PlayHistorySummary> = {},
+): playHistory.PlayHistorySummary {
+  return {
+    available: true,
+    total: 0,
+    timestamps: [],
+    live_since: null,
+    recent_plays: {},
+    top: { songs: [], artists: [], albums: [], genres: [] },
+    milestones: { plays: 0, hours: 0, streak: 0 },
+    ...over,
+  }
+}
+
+function charts(
+  period: playHistory.PlayHistoryPeriod = 'week',
+  over: Partial<playHistory.PlayHistoryCharts> = {},
+): playHistory.PlayHistoryCharts {
+  return {
+    period,
+    total: 0,
+    top: { songs: [], artists: [], albums: [], genres: [] },
+    ...over,
+  }
+}
+
+const STUBS = {
+  StatsHero: true,
+  StatsCharts: true,
+  StatsYear: true,
+  StatsCollection: true,
+  StatsMoment: true,
+  PageLoader: true,
+}
+
+function mountView(
+  songs: Song[],
+  artists: Artist[] = [],
+  stubs: Record<string, boolean | object> = STUBS,
+): VueWrapper {
   const store = useLibraryStore()
   // created() kicks all three off; the tests supply the state directly.
   store.fetchAllSongs = vi.fn()
+  store.allSongsLoaded = true
   store.fetchStarred = vi.fn()
   store.fetchArtists = vi.fn()
+  store.fetchAlbums = vi.fn()
   store.allSongs = songs
   store.artists = artists
+  return mount(StatsView, { global: { plugins: [vuetify, i18n], stubs } })
+}
 
-  const wrapper = mount(StatsView, {
-    global: { plugins: [vuetify, i18n], stubs: { RankedList: true, PageLoader: true } },
-  })
-  return wrapper.vm as unknown as StatsVm
+function mountStats(songs: Song[], artists: Artist[] = []): StatsVm {
+  return mountView(songs, artists).vm as unknown as StatsVm
 }
 
 beforeEach(() => {
   setActivePinia(createPinia())
+  vi.clearAllMocks()
+  vi.mocked(playHistory.getPlayHistorySummary).mockResolvedValue(summary())
+  vi.mocked(playHistory.getPlayHistoryCharts).mockResolvedValue(charts())
+  vi.mocked(playHistory.getPlayHistoryAccounts).mockResolvedValue([])
+  vi.mocked(playHistory.getImportStatus).mockResolvedValue({ status: 'done' })
+  vi.mocked(playHistory.saveMilestones).mockResolvedValue({})
+  useLastfmStore().configured = true
 })
 
 describe('StatsView rankings', () => {
@@ -94,19 +155,6 @@ describe('StatsView rankings', () => {
     // A never-played artist is not a "top" artist with value 0; the list
     // should simply be shorter.
     expect(vm.topArtists.map((i) => i.label)).toEqual(['B'])
-  })
-
-  it('shows only the top five', () => {
-    const vm = mountStats(
-      Array.from({ length: 9 }, (_, i) =>
-        makeSong(`s${i}`, { artistId: `a${i}`, artist: `A${i}`, playCount: i + 1 }),
-      ),
-    )
-
-    expect(vm.topArtists).toHaveLength(5)
-    // Highest first: a8 (9 plays) down to a4 (5).
-    expect(vm.topArtists[0]?.label).toBe('A8')
-    expect(vm.topArtists[4]?.label).toBe('A4')
   })
 
   it('ranks songs by their own play count and links to the album', () => {
@@ -153,25 +201,12 @@ describe('StatsView artist artwork', () => {
     const vm = mountStats(songs, [artist('a', { name: 'A' })])
 
     expect(vm.topArtists[0]?.label).toBe('A')
-    expect(vm.largestArtists[0]?.label).toBe('A')
-  })
-
-  it('falls back to the shortest credit while the artist list is loading', () => {
-    // Credits on both sides of the plain name, so neither first- nor
-    // last-seen picks it by luck.
-    const vm = mountStats([
-      makeSong('1', { artistId: 'a', artist: 'A, B & C' }),
-      makeSong('2', { artistId: 'a', artist: 'A' }),
-      makeSong('3', { artistId: 'a', artist: 'A & D' }),
-    ])
-
-    expect(vm.largestArtists[0]?.label).toBe('A')
   })
 
   it('uses null, not undefined, while the artist list is still loading', () => {
     const vm = mountStats([makeSong('1', { artistId: 'a', artist: 'A', playCount: 2 })], [])
 
-    // null keeps RankedList reserving the art column; undefined would drop
+    // null keeps the chart's art column reserved; undefined would drop
     // it and make the whole row reflow once artists arrive.
     expect(vm.topArtists[0]?.coverArtId).toBeNull()
     expect(vm.topArtists[0]?.imageUrl).toBeNull()
@@ -191,6 +226,203 @@ describe('StatsView artist artwork', () => {
     expect(vm.topAlbums[0]?.coverArtId).toBe('c1')
     // A genre has no artwork of its own to show.
     expect(vm.topGenres[0]?.coverArtId).toBeUndefined()
+  })
+})
+
+describe('StatsView record label', () => {
+  type LabelVm = { recordLabel: string | null }
+
+  it('plays the song that is on', async () => {
+    const wrapper = mountView([])
+    usePlaybackStore().setQueue([makeSong('1', { coverArtId: 'on-now' })], 0)
+    await flushPromises()
+
+    expect((wrapper.vm as unknown as LabelVm).recordLabel).toContain('on-now')
+  })
+
+  it('has nothing of its own with nothing on', () => {
+    expect((mountStats([]) as unknown as LabelVm).recordLabel).toBeNull()
+  })
+
+  it("keeps away from another account's page", async () => {
+    const wrapper = mountView([])
+    usePlaybackStore().setQueue([makeSong('1', { coverArtId: 'on-now' })], 0)
+    await wrapper.setData({ viewedAccount: 'bob' })
+
+    expect((wrapper.vm as unknown as LabelVm).recordLabel).toBeNull()
+  })
+})
+
+describe('StatsView genre crate', () => {
+  it('stands the number one genre on its records, the most played in front', () => {
+    const vm = mountStats([
+      makeSong('1', { genre: 'Rock', coverArtId: 'quiet', playCount: 1 }),
+      makeSong('2', { genre: 'Rock', coverArtId: 'loud', playCount: 9 }),
+      makeSong('3', { genre: 'Rock', coverArtId: 'quiet', playCount: 1 }),
+      makeSong('4', { genre: 'Jazz', coverArtId: 'other', playCount: 2 }),
+    ]) as StatsVm & { charts: Record<ChartKind, ChartItem[]> }
+
+    expect(vm.charts.genres[0]?.covers).toEqual(['loud', 'quiet'])
+    expect(vm.charts.genres[1]?.covers).toBeUndefined()
+  })
+})
+
+describe('StatsView chart period', () => {
+  type PeriodVm = {
+    chartPeriod: playHistory.PlayHistoryPeriod
+    periodAvailable: boolean
+    periodLoading: boolean
+    charts: Record<ChartKind, ChartItem[]>
+  }
+
+  function admin(accounts: string[]): void {
+    const auth = useAuthStore()
+    auth.username = 'me'
+    auth.isAdmin = true
+    vi.mocked(playHistory.getPlayHistoryAccounts).mockResolvedValue(accounts)
+  }
+
+  it('keeps the all-time charts from the media server until a window is picked', async () => {
+    const wrapper = mountView([makeSong('1', { albumId: 'alb', playCount: 3 })])
+    await flushPromises()
+
+    const vm = wrapper.vm as unknown as PeriodVm
+    expect(vm.chartPeriod).toBe('all_time')
+    expect(vm.charts.songs[0]?.value).toBe(3)
+    expect(playHistory.getPlayHistoryCharts).not.toHaveBeenCalled()
+  })
+
+  it('reads the chosen window from the log instead', async () => {
+    const line = {
+      id: 'x',
+      value: 4,
+      label: 'Song',
+      sublabel: 'Artist',
+      album_id: 'alb',
+      cover_art_id: 'c',
+    }
+    vi.mocked(playHistory.getPlayHistoryCharts).mockResolvedValue(
+      charts('week', { total: 4, top: { ...charts().top, songs: [line] } }),
+    )
+    const wrapper = mountView([makeSong('1', { playCount: 99 })])
+    await wrapper.setData({ chartPeriod: 'week' })
+    await flushPromises()
+
+    expect(playHistory.getPlayHistoryCharts).toHaveBeenCalledWith('week', undefined)
+    const vm = wrapper.vm as unknown as PeriodVm
+    expect(vm.charts.songs[0]).toMatchObject({
+      label: 'Song',
+      to: '/albums/alb',
+      coverArtId: 'c',
+      value: 4,
+    })
+  })
+
+  it('hands a log line what the library has under it, for its right-click menu', async () => {
+    const song = makeSong('1', { title: 'Song', artist: 'Artist', album: 'Record', albumId: 'alb' })
+    const top = {
+      ...charts().top,
+      songs: [
+        {
+          id: 'x',
+          value: 4,
+          label: 'Song',
+          sublabel: 'Artist',
+          album_id: 'alb',
+          cover_art_id: 'c',
+        },
+        { id: 'y', value: 2, label: 'Elsewhere', sublabel: 'Nobody' },
+      ],
+      albums: [
+        {
+          id: 'z',
+          value: 4,
+          label: 'Record',
+          sublabel: 'Artist',
+          album_id: 'alb',
+          cover_art_id: 'c',
+        },
+      ],
+    }
+    vi.mocked(playHistory.getPlayHistoryCharts).mockResolvedValue(charts('week', { total: 6, top }))
+    const wrapper = mountView([song])
+    useLibraryStore().albums = [{ id: 'alb', name: 'Record' } as Album]
+    await wrapper.setData({ chartPeriod: 'week' })
+    await flushPromises()
+
+    const vm = wrapper.vm as unknown as PeriodVm
+    expect(vm.charts.songs[0]?.song?.id).toBe(song.id)
+    expect(vm.charts.songs[1]?.song).toBeUndefined()
+    expect(vm.charts.albums[0]?.album?.id).toBe('alb')
+  })
+
+  it("asks for the viewed account's own log", async () => {
+    admin(['bob'])
+    const wrapper = mountView([])
+    await flushPromises()
+    await wrapper.setData({ viewedAccount: 'bob' })
+    await wrapper.setData({ chartPeriod: 'month' })
+    await flushPromises()
+
+    expect(playHistory.getPlayHistoryCharts).toHaveBeenCalledWith('month', 'bob')
+  })
+
+  it('marks the panel as loading and keeps it empty until the answer is in', async () => {
+    let answer: (value: playHistory.PlayHistoryCharts) => void = () => {}
+    vi.mocked(playHistory.getPlayHistoryCharts).mockReturnValue(
+      new Promise((resolve) => (answer = resolve)),
+    )
+    const wrapper = mountView([makeSong('1', { playCount: 2 })])
+    await wrapper.setData({ chartPeriod: 'week' })
+
+    const vm = wrapper.vm as unknown as PeriodVm
+    expect(vm.periodLoading).toBe(true)
+    expect(vm.charts.songs).toEqual([])
+
+    answer(
+      charts('week', {
+        top: {
+          ...charts().top,
+          songs: [{ id: 'x', value: 1, label: 'Loaded' }],
+        },
+      }),
+    )
+    await flushPromises()
+
+    expect(vm.periodLoading).toBe(false)
+    expect(vm.charts.songs[0]?.label).toBe('Loaded')
+  })
+
+  it('drops a late answer for a window no longer chosen', async () => {
+    let answer: (value: playHistory.PlayHistoryCharts) => void = () => {}
+    vi.mocked(playHistory.getPlayHistoryCharts).mockReturnValue(
+      new Promise((resolve) => (answer = resolve)),
+    )
+    const wrapper = mountView([makeSong('1', { albumId: 'alb', playCount: 2 })])
+    await wrapper.setData({ chartPeriod: 'week' })
+    await wrapper.setData({ chartPeriod: 'all_time' })
+
+    answer(
+      charts('week', {
+        top: { ...charts().top, songs: [{ id: 'late', value: 9, label: 'Late' }] },
+      }),
+    )
+    await flushPromises()
+
+    const vm = wrapper.vm as unknown as PeriodVm
+    expect(vm.charts.songs[0]?.id).not.toBe('late')
+  })
+
+  it('offers the picker only once the log has plays in it', async () => {
+    vi.mocked(playHistory.getPlayHistorySummary).mockResolvedValue(summary({ total: 0 }))
+    const empty = mountView([])
+    await flushPromises()
+    expect((empty.vm as unknown as PeriodVm).periodAvailable).toBe(false)
+
+    vi.mocked(playHistory.getPlayHistorySummary).mockResolvedValue(summary({ total: 5 }))
+    const populated = mountView([])
+    await flushPromises()
+    expect((populated.vm as unknown as PeriodVm).periodAvailable).toBe(true)
   })
 })
 
@@ -224,8 +456,10 @@ describe('StatsView library composition', () => {
 
     const byLabel = vm.decadeBreakdown.map((i) => [i.id, i.value])
     // 1999 belongs to the 1990s, 2000 starts the next one.
-    expect(byLabel).toContainEqual(['1990', 2])
-    expect(byLabel).toContainEqual(['2000', 1])
+    expect(byLabel).toEqual([
+      ['1990', 2],
+      ['2000', 1],
+    ])
   })
 
   it('omits untagged years instead of inventing an unknown decade', () => {
@@ -234,22 +468,6 @@ describe('StatsView library composition', () => {
     // A bucket sized by tagging gaps would say nothing about the music.
     expect(vm.decadeBreakdown).toHaveLength(1)
     expect(vm.decadeBreakdown[0]?.id).toBe('1980')
-  })
-
-  it('ranks artists by how many songs they have, played or not', () => {
-    const vm = mountStats([
-      makeSong('1', { artistId: 'a', artist: 'A', playCount: 0 }),
-      makeSong('2', { artistId: 'a', artist: 'A', playCount: 0 }),
-      makeSong('3', { artistId: 'b', artist: 'B', playCount: 50 }),
-      makeSong('4', { artistId: '', artist: '' }),
-    ])
-
-    // Plays don't matter here - that is what the top-artists list is for.
-    expect(vm.largestArtists.map((i) => [i.label, i.value])).toEqual([
-      ['A', 2],
-      ['B', 1],
-    ])
-    expect(vm.largestArtists[0]?.to).toBe('/artists/a')
   })
 
   it('reports percentages against the whole library, not just the ranked rows', () => {
@@ -392,31 +610,6 @@ describe('StatsView audio quality', () => {
 })
 
 describe('StatsView listening facts', () => {
-  afterEach(() => {
-    vi.useRealTimers()
-  })
-
-  it('counts songs last played inside the 30-day window only', () => {
-    vi.useFakeTimers()
-    vi.setSystemTime(new Date('2026-09-24T12:00:00Z'))
-    const vm = mountStats([
-      makeSong('1', { lastPlayed: '2026-09-23T10:00:00Z' }),
-      makeSong('2', { lastPlayed: '2026-08-25T13:00:00Z' }),
-      // One hour past the window.
-      makeSong('3', { lastPlayed: '2026-08-25T11:00:00Z' }),
-      makeSong('4', { lastPlayed: null }),
-    ])
-
-    expect(vm.recentlyPlayedCount).toBe(2)
-    expect(vm.hasLastPlayed).toBe(true)
-  })
-
-  it('hides the recent-plays fact on a server that reports no dates', () => {
-    const vm = mountStats([makeSong('1', { playCount: 3 })])
-
-    expect(vm.hasLastPlayed).toBe(false)
-  })
-
   it('reports how much of the library was ever played', () => {
     const vm = mountStats([
       makeSong('1', { playCount: 5 }),
@@ -463,5 +656,366 @@ describe('StatsView listening facts', () => {
     expect(vm.playedCount).toBe(0)
     expect(vm.ratings.count).toBe(0)
     expect(vm.qualityBreakdown).toEqual([])
+  })
+})
+
+describe('StatsView milestones', () => {
+  // A hundred hours in all.
+  const thousandPlays = [makeSong('1', { playCount: 1000, duration: 360 })]
+
+  beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  function moment(wrapper: VueWrapper): unknown {
+    return (wrapper.vm as unknown as { moment: unknown }).moment
+  }
+
+  async function settle(): Promise<void> {
+    await flushPromises()
+    vi.advanceTimersByTime(2100)
+    await flushPromises()
+  }
+
+  it('celebrates a milestone passed since the last visit', async () => {
+    const wrapper = mountView(thousandPlays)
+    await settle()
+
+    expect(moment(wrapper)).toMatchObject({ kind: 'hours', value: 100 })
+    expect(playHistory.saveMilestones).toHaveBeenCalledWith({
+      plays: 1000,
+      hours: 100,
+      streak: 0,
+      records: 2,
+    })
+  })
+
+  it('marks the round numbers on the record without a moment', async () => {
+    vi.mocked(playHistory.getPlayHistorySummary).mockResolvedValue(
+      summary({ milestones: { plays: 0, hours: 0, streak: 0, records: 2 } }),
+    )
+    const wrapper = mountView([makeSong('1', { playCount: 1000, duration: 60 })])
+    await settle()
+
+    expect(moment(wrapper)).toBeNull()
+    expect(wrapper.findComponent({ name: 'StatsHero' }).props('passedPlays')).toBe(1000)
+  })
+
+  it('stays silent the first time and only sets the baseline', async () => {
+    vi.mocked(playHistory.getPlayHistorySummary).mockResolvedValue(summary({ milestones: null }))
+    const wrapper = mountView(thousandPlays)
+    await settle()
+
+    expect(moment(wrapper)).toBeNull()
+    expect(playHistory.saveMilestones).toHaveBeenCalledWith({
+      plays: 1000,
+      hours: 100,
+      streak: 0,
+      records: 2,
+    })
+  })
+
+  it('waits for the whole library before comparing', async () => {
+    vi.mocked(playHistory.getPlayHistorySummary).mockResolvedValue(
+      summary({ milestones: { plays: 1000, hours: 0, streak: 0, records: 0 } }),
+    )
+    const wrapper = mountView([makeSong('1', { playCount: 1800, duration: 60 })])
+    useLibraryStore().allSongsLoaded = false
+    await settle()
+
+    expect(moment(wrapper)).toBeNull()
+    expect(playHistory.saveMilestones).not.toHaveBeenCalled()
+  })
+
+  describe('debug buttons', () => {
+    const debugButtons = (wrapper: VueWrapper) => wrapper.findAll('.stats-page__debug button')
+
+    afterEach(() => {
+      vi.unstubAllEnvs()
+    })
+
+    it('play a moment without marking anything as seen', async () => {
+      vi.mocked(playHistory.getPlayHistorySummary).mockResolvedValue(
+        summary({ milestones: { plays: 1000, hours: 0, streak: 0, records: 2 } }),
+      )
+      const wrapper = mountView([makeSong('1', { playCount: 1000, duration: 60 })])
+      await settle()
+
+      await debugButtons(wrapper)[0]?.trigger('click')
+
+      expect(moment(wrapper)).toMatchObject({ kind: 'hours', value: 100 })
+      expect(playHistory.saveMilestones).not.toHaveBeenCalled()
+    })
+
+    it('land a moment on the figure it is about', async () => {
+      const FIGURE = { x: 1, y: 2, size: 3 }
+      const LABEL = { x: 4, y: 5, size: 6 }
+      const hero = {
+        template: '<div />',
+        methods: { figureRect: () => FIGURE, labelRect: () => LABEL, shelfRect: () => null },
+      }
+      const wrapper = mountView([makeSong('1', { playCount: 10, duration: 60 })], [], {
+        ...STUBS,
+        StatsHero: hero,
+      })
+      await settle()
+      const vm = wrapper.vm as unknown as {
+        playDebugMoment(moment: unknown): void
+        momentTarget(): unknown
+      }
+
+      vm.playDebugMoment({ kind: 'streak', value: 30, size: 'm' })
+      expect(vm.momentTarget()).toEqual(FIGURE)
+      vm.playDebugMoment({ kind: 'pressing', value: 99, size: 'l', tier: 'diamond' })
+      expect(vm.momentTarget()).toEqual(LABEL)
+    })
+
+    it('are not there in a build', async () => {
+      vi.stubEnv('DEV', false)
+      const wrapper = mountView([makeSong('1', { playCount: 10, duration: 60 })])
+      await settle()
+
+      expect(debugButtons(wrapper)).toHaveLength(0)
+    })
+  })
+
+  it('announces a new pressing when another record is full', async () => {
+    vi.mocked(playHistory.getPlayHistorySummary).mockResolvedValue(
+      summary({ milestones: { plays: 1000, hours: 0, streak: 0, records: 0 } }),
+    )
+    const wrapper = mountView([makeSong('1', { playCount: 600, duration: 60 })])
+    await settle()
+
+    expect(moment(wrapper)).toMatchObject({ kind: 'pressing', value: 1 })
+  })
+
+  it('takes on the count silently when what was saved has none', async () => {
+    vi.mocked(playHistory.getPlayHistorySummary).mockResolvedValue(
+      summary({ milestones: { plays: 2000, hours: 0, streak: 0 } }),
+    )
+    const wrapper = mountView([makeSong('1', { playCount: 2500, duration: 60 })])
+    await settle()
+
+    expect(moment(wrapper)).toBeNull()
+    expect(playHistory.saveMilestones).toHaveBeenCalledWith(expect.objectContaining({ records: 4 }))
+  })
+
+  it('does not show it while looking at another account', async () => {
+    const wrapper = mountView(thousandPlays)
+    await flushPromises()
+    await wrapper.setData({ viewedAccount: 'bob' })
+    await settle()
+
+    expect(moment(wrapper)).toBeNull()
+  })
+})
+
+describe('StatsView other accounts', () => {
+  function admin(accounts: string[]): void {
+    const auth = useAuthStore()
+    auth.username = 'me'
+    auth.isAdmin = true
+    vi.mocked(playHistory.getPlayHistoryAccounts).mockResolvedValue(accounts)
+  }
+
+  it('offers the picker to an administrator, without listing them twice', async () => {
+    admin(['bob', 'me'])
+    const wrapper = mountView([])
+    await flushPromises()
+
+    const items = (wrapper.vm as unknown as { accountItems: { value: string | null }[] })
+      .accountItems
+    expect(items.map((item) => item.value)).toEqual([null, 'bob'])
+  })
+
+  it('does not ask for accounts as a regular user', async () => {
+    useAuthStore().isAdmin = false
+    mountView([])
+    await flushPromises()
+
+    expect(playHistory.getPlayHistoryAccounts).not.toHaveBeenCalled()
+  })
+
+  it("shows the other account's log, and the own library's plays no longer", async () => {
+    admin(['bob'])
+    const line = { id: 'x', value: 4, label: 'Song', album_id: 'alb', cover_art_id: 'c' }
+    vi.mocked(playHistory.getPlayHistorySummary).mockImplementation(async (name) =>
+      name === 'bob'
+        ? summary({ total: 4, timestamps: [1000], top: { ...summary().top, songs: [line] } })
+        : summary(),
+    )
+    const wrapper = mountView([makeSong('1', { playCount: 99 })])
+    await flushPromises()
+    await wrapper.setData({ viewedAccount: 'bob' })
+    await flushPromises()
+
+    const vm = wrapper.vm as unknown as {
+      heroPlays: number
+      charts: Record<ChartKind, ChartItem[]>
+    }
+    expect(vm.heroPlays).toBe(4)
+    expect(vm.charts.songs[0]).toMatchObject({ label: 'Song', to: '/albums/alb', coverArtId: 'c' })
+  })
+
+  it('does not link a line that came from an import', async () => {
+    admin(['bob'])
+    const line = { id: 'x', value: 4, label: 'Song', album_id: '', cover_art_id: '' }
+    vi.mocked(playHistory.getPlayHistorySummary).mockResolvedValue(
+      summary({ top: { ...summary().top, songs: [line] } }),
+    )
+    const wrapper = mountView([])
+    await wrapper.setData({ viewedAccount: 'bob' })
+    await flushPromises()
+
+    const { charts } = wrapper.vm as unknown as { charts: Record<ChartKind, ChartItem[]> }
+    expect(charts.songs[0]?.to).toBeUndefined()
+  })
+
+  it('finds the cover and link of an imported line in the library', async () => {
+    const imported = (label: string, sublabel: string) => ({
+      id: label,
+      value: 4,
+      label,
+      sublabel,
+      album_id: '',
+      cover_art_id: '',
+      artist_id: '',
+    })
+    vi.mocked(playHistory.getPlayHistoryCharts).mockResolvedValue(
+      charts('week', {
+        top: {
+          songs: [imported('Song', 'Band'), imported('Unknown', 'Nobody')],
+          artists: [{ ...imported('Band', '') }],
+          albums: [imported('Record', 'Band')],
+          genres: [],
+        },
+      }),
+    )
+    const wrapper = mountView(
+      [
+        makeSong('1', {
+          title: 'Song',
+          artist: 'Band',
+          album: 'Record',
+          albumId: 'alb',
+          coverArtId: 'c',
+        }),
+      ],
+      [{ id: 'art', name: 'Band', coverArtId: 'face' } as Artist],
+    )
+    await wrapper.setData({ chartPeriod: 'week' })
+    await flushPromises()
+
+    const { charts: shown } = wrapper.vm as unknown as { charts: Record<ChartKind, ChartItem[]> }
+    expect(shown.songs[0]).toMatchObject({ to: '/albums/alb', coverArtId: 'c' })
+    expect(shown.songs[1]).toMatchObject({ to: undefined, coverArtId: null })
+    expect(shown.albums[0]).toMatchObject({ to: '/albums/alb', coverArtId: 'c' })
+    expect(shown.artists[0]).toMatchObject({ to: '/artists/art', coverArtId: 'face' })
+  })
+
+  it('keeps a late answer for one account off the page of another', async () => {
+    admin(['bob', 'eve'])
+    let answerBob: (value: playHistory.PlayHistorySummary) => void = () => {}
+    vi.mocked(playHistory.getPlayHistorySummary).mockImplementation((name) => {
+      if (name === 'bob') return new Promise((resolve) => (answerBob = resolve))
+      return Promise.resolve(summary({ total: name === 'eve' ? 7 : 0 }))
+    })
+    const wrapper = mountView([])
+    await wrapper.setData({ viewedAccount: 'bob' })
+    await wrapper.setData({ viewedAccount: 'eve' })
+    await flushPromises()
+    answerBob(summary({ total: 1 }))
+    await flushPromises()
+
+    expect((wrapper.vm as unknown as { heroPlays: number }).heroPlays).toBe(7)
+  })
+})
+
+describe('StatsView import', () => {
+  function offered(wrapper: VueWrapper): unknown[] {
+    return (wrapper.vm as unknown as { offeredImports: unknown[] }).offeredImports
+  }
+
+  beforeEach(() => {
+    vi.mocked(playHistory.startImport).mockResolvedValue({ status: 'done' })
+  })
+
+  it('starts by itself with a single profile', async () => {
+    useListenbrainzStore().username = 'me-lb'
+    useLastfmStore().username = ''
+    vi.mocked(playHistory.getImportStatus).mockResolvedValue({ status: 'none' })
+    mountView([])
+    await flushPromises()
+
+    expect(playHistory.startImport).toHaveBeenCalledWith('listenbrainz', 'me-lb', false)
+  })
+
+  it('offers a finished import again and says so when starting it', async () => {
+    useListenbrainzStore().username = 'me-lb'
+    useLastfmStore().username = ''
+    vi.mocked(playHistory.getImportStatus).mockResolvedValue({
+      status: 'done',
+      source: 'listenbrainz',
+    })
+    const wrapper = mountView([])
+    await flushPromises()
+
+    expect(playHistory.startImport).not.toHaveBeenCalled()
+    expect(offered(wrapper)).toHaveLength(1)
+    await (wrapper.vm as unknown as { beginImport(option: unknown): Promise<void> }).beginImport(
+      offered(wrapper)[0],
+    )
+    expect(playHistory.startImport).toHaveBeenCalledWith('listenbrainz', 'me-lb', true)
+  })
+
+  it('waits for a choice with two profiles', async () => {
+    useListenbrainzStore().username = 'me-lb'
+    useLastfmStore().username = 'me-fm'
+    vi.mocked(playHistory.getImportStatus).mockResolvedValue({ status: 'none' })
+    const wrapper = mountView([])
+    await flushPromises()
+
+    expect(playHistory.startImport).not.toHaveBeenCalled()
+    expect(offered(wrapper)).toHaveLength(2)
+  })
+
+  it('does nothing without a profile', async () => {
+    useListenbrainzStore().username = ''
+    useLastfmStore().username = ''
+    vi.mocked(playHistory.getImportStatus).mockResolvedValue({ status: 'none' })
+    const wrapper = mountView([])
+    await flushPromises()
+
+    expect(playHistory.startImport).not.toHaveBeenCalled()
+    expect(offered(wrapper)).toEqual([])
+  })
+
+  it('does not ask a failed profile again on its own', async () => {
+    useListenbrainzStore().username = 'me-lb'
+    useLastfmStore().username = ''
+    vi.mocked(playHistory.getImportStatus).mockResolvedValue({
+      status: 'failed',
+      source: 'listenbrainz',
+      error: 'not_found',
+    })
+    const wrapper = mountView([])
+    await flushPromises()
+
+    expect(playHistory.startImport).not.toHaveBeenCalled()
+    expect(offered(wrapper)).toHaveLength(1)
+  })
+})
+
+describe('StatsView when connect cannot answer', () => {
+  it('still shows what the media server knows', async () => {
+    vi.mocked(playHistory.getPlayHistorySummary).mockRejectedValue(new Error('down'))
+    const vm = mountStats([makeSong('1', { playCount: 3 })])
+    await flushPromises()
+
+    expect(vm.totalPlays).toBe(3)
   })
 })

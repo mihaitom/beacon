@@ -1,21 +1,35 @@
 <template>
-  <v-dialog v-model="visible" max-width="400">
+  <v-dialog v-model="visible" max-width="460" @after-enter="focusName">
     <v-card>
-      <v-card-title>{{ $t('playlists.createTitle') }}</v-card-title>
-      <v-card-text>
-        <v-text-field
-          v-model="name"
-          :label="$t('common.name')"
+      <playlist-dialog-head
+        ref="head"
+        v-model="name"
+        :eyebrow="$t('playlists.createTitle')"
+        @confirm="confirm"
+      />
+      <v-card-text v-if="capabilities.playlistDetails" class="create-playlist__fields">
+        <v-textarea
+          v-model="comment"
+          :label="$t('playlists.comment')"
           variant="solo-filled"
-          autofocus
-          clearable
-          @keyup.enter="confirm"
+          rows="2"
+          auto-grow
+          hide-details
         />
+        <playlist-visibility v-model="isPublic" />
       </v-card-text>
       <v-card-actions>
         <v-spacer />
         <v-btn variant="text" @click="visible = false">{{ $t('common.cancel') }}</v-btn>
-        <v-btn color="primary" :disabled="!name.trim()" :loading="creating" @click="confirm">
+        <v-btn
+          color="primary"
+          variant="flat"
+          rounded="pill"
+          prepend-icon="mdi-plus"
+          :disabled="!canCreate"
+          :loading="creating"
+          @click="confirm"
+        >
           {{ $t('common.create') }}
         </v-btn>
       </v-card-actions>
@@ -24,7 +38,11 @@
 </template>
 
 <script lang="ts">
+import PlaylistDialogHead from './PlaylistDialogHead.vue'
+import PlaylistVisibility from './PlaylistVisibility.vue'
+import { useAuthStore } from '@/stores/auth'
 import { useLibraryStore } from '@/stores/library'
+import type { PlaylistChanges } from '@/services/subsonic/client'
 
 /**
  * "Create new playlist…", asked for from a context menu and seeded with
@@ -36,27 +54,46 @@ import { useLibraryStore } from '@/stores/library'
  */
 export default {
   name: 'CreatePlaylistDialog',
+  components: { PlaylistDialogHead, PlaylistVisibility },
   emits: ['created'],
   data() {
     return {
       visible: false,
       name: '',
+      comment: '',
+      isPublic: false,
       creating: false,
       songIds: [] as string[],
     }
+  },
+  computed: {
+    capabilities() {
+      return useAuthStore().capabilities
+    },
+    canCreate(): boolean {
+      return !!this.name.trim()
+    },
   },
   methods: {
     open(songIds: string[]): void {
       this.songIds = songIds
       this.name = ''
+      this.comment = ''
+      this.isPublic = false
       this.visible = true
+    },
+    focusName(): void {
+      ;(this.$refs.head as InstanceType<typeof PlaylistDialogHead> | undefined)?.focus()
     },
     async confirm(): Promise<void> {
       const name = this.name.trim()
       if (!name || this.creating) return
       this.creating = true
       try {
-        await useLibraryStore().createPlaylist(name, this.songIds)
+        const details: PlaylistChanges = {}
+        if (this.comment.trim()) details.comment = this.comment.trim()
+        if (this.isPublic) details.public = true
+        await useLibraryStore().createPlaylist(name, this.songIds, details)
         this.visible = false
         this.$emit('created')
       } catch (error) {
@@ -73,3 +110,12 @@ export default {
   },
 }
 </script>
+
+<style scoped>
+.create-playlist__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 18px;
+}
+</style>

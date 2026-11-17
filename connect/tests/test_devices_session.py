@@ -195,6 +195,73 @@ def test_device_stop_sonos_coordinator_ungroups_followers_and_restarts_the_strea
     assert default_session.state.is_streaming is True
 
 
+def test_device_stop_sonos_coordinator_that_refuses_to_stop_still_restarts_its_followers(
+    client, default_session
+):
+    """By the time the coordinator's own stop fails, its followers are
+    already split off and silent - they need their stream back all the
+    same, and the failure is still reported."""
+    raw_coordinator = _fake_soco_device("Küche", is_coordinator=True)
+    raw_coordinator.stop.side_effect = RuntimeError("UPnP error 501")
+    raw_follower = _fake_soco_device(
+        "Wohnzimmer", is_coordinator=False, coordinator=raw_coordinator
+    )
+    follower_delivery = SonosDelivery("Wohnzimmer")
+    follower_delivery.play = AsyncMock()
+    default_session.state.is_streaming = True
+    default_session.state.active_delivery = DeliveryManager.from_deliveries(
+        [SonosDelivery("Küche"), follower_delivery]
+    )
+
+    with (
+        patch(
+            "delivery.sonos_discovery.discover_zones", return_value=[raw_coordinator, raw_follower]
+        ),
+        patch("asyncio.sleep", new=AsyncMock()),
+    ):
+        r = client.post("/device-stop?device_type=sonos&name=Küche")
+
+    assert "UPnP error 501" in r.json()["error"]
+    raw_follower.unjoin.assert_called_once()
+    follower_delivery.play.assert_awaited_once()
+    assert default_session.state.active_delivery is follower_delivery
+
+
+def test_device_stop_restarts_nothing_for_a_sonos_that_is_not_on_the_network(
+    client, default_session
+):
+    """Nothing was ungrouped, so the device still playing keeps its stream
+    rather than hearing it restart."""
+    other = SonosDelivery("Wohnzimmer")
+    other.play = AsyncMock()
+    default_session.state.is_streaming = True
+    default_session.state.active_delivery = DeliveryManager.from_deliveries(
+        [SonosDelivery("Küche"), other]
+    )
+
+    with patch("delivery.sonos_discovery.discover_zones", return_value=[]):
+        r = client.post("/device-stop?device_type=sonos&name=Küche")
+
+    assert r.json()["status"] == "stopped"
+    other.play.assert_not_awaited()
+    assert default_session.state.active_delivery is other
+
+
+def test_device_stop_tells_the_session_s_clients_about_it(client, default_session):
+    """Every other window and phone on the session learns the device is
+    gone, not only the one that asked."""
+    broadcast = AsyncMock()
+    default_session.event_bus.broadcast = broadcast
+    default_session.state.is_streaming = True
+    default_session.state.active_delivery = ChromecastDelivery("TV")
+
+    with patch.object(ChromecastDelivery, "stop", new=AsyncMock()):
+        client.post("/device-stop?device_type=chromecast&name=TV")
+
+    broadcast.assert_awaited_once()
+    assert broadcast.await_args.args[0]["targets"] == []
+
+
 def test_device_stop_leaves_an_unrelated_standalone_sonos_alone(client, default_session):
     """The device-switching regression: a Sonos playing its own stream is
     its own coordinator, so `is_coordinator and remaining` was true for it
@@ -305,7 +372,7 @@ def test_device_stop_hands_position_resync_over_to_the_remaining_device(client, 
             "delivery.sonos_discovery.discover_zones", return_value=[raw_coordinator, raw_follower]
         ),
         patch("asyncio.sleep", new=AsyncMock()),
-        patch("routes.devices._resync_position_periodically") as resync,
+        patch("routes.devices.resync_position_periodically") as resync,
     ):
         client.post("/device-stop?device_type=sonos&name=Arbeitszimmer")
 
@@ -336,7 +403,7 @@ def test_device_stop_does_not_start_a_second_resync_for_an_untouched_device(
             "delivery.sonos_discovery.discover_zones", return_value=[raw_coordinator, raw_follower]
         ),
         patch("asyncio.sleep", new=AsyncMock()),
-        patch("routes.devices._resync_position_periodically") as resync,
+        patch("routes.devices.resync_position_periodically") as resync,
     ):
         client.post("/device-stop?device_type=sonos&name=Wohnzimmer")
 
@@ -498,12 +565,16 @@ def test_device_stop_tears_down_a_radio_relay_when_it_was_the_last_device(client
     }
     default_session.radio_relay = relay
 
-    with patch.object(ChromecastDelivery, "stop", new=AsyncMock()):
+    with (
+        patch.object(ChromecastDelivery, "stop", new=AsyncMock()),
+        patch.object(default_session, "stop_radio_metadata_watch") as watch,
+    ):
         r = client.post("/device-stop?device_type=chromecast&name=TV")
 
     assert r.json()["status"] == "stopped"
     assert relay.stopped is True
     assert default_session.radio_relay is None
+    watch.assert_called_once()
     # Cleared rather than left as "relayed" with no relay behind it —
     # nothing can reach it again anyway, since /join refuses a session that
     # is not streaming.
@@ -558,7 +629,7 @@ def test_device_stop_hands_radio_tracking_to_a_device_playing_all_along(client, 
     with (
         patch.object(ChromecastDelivery, "stop", new=AsyncMock()),
         patch("core.radio_position.RadioPositionTracker.start") as start,
-        patch("routes.devices._resync_position_periodically", new=MagicMock()),
+        patch("routes.devices.resync_position_periodically", new=MagicMock()),
     ):
         client.post("/device-stop?device_type=chromecast&name=TV")
 
@@ -573,7 +644,7 @@ def test_device_stop_drops_radio_tracking_when_no_trackable_device_is_left(clien
     _radio_on(default_session, [tv, airplay])
     with (
         patch.object(ChromecastDelivery, "stop", new=AsyncMock()),
-        patch("routes.devices._resync_position_periodically", new=MagicMock()),
+        patch("routes.devices.resync_position_periodically", new=MagicMock()),
     ):
         client.post("/device-stop?device_type=chromecast&name=TV")
 

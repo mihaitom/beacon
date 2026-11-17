@@ -101,9 +101,11 @@ describe('DetailHeader banner placement', () => {
 
   it('darkens behind the text, clearing before the banner starts', async () => {
     const { banner, textRight, card } = await mountHeader(2400)
-    // Where the scrim has faded to nothing, from its computed gradient.
+    // Where the scrim has faded to nothing, from its computed gradient. Its
+    // colours come out of color-mix(), which Chromium serialises as
+    // color(srgb ... / 0) rather than rgba(..., 0).
     const scrim = getComputedStyle(card.querySelector('.detail-header__scrim')!).backgroundImage
-    const clearAt = Number(/rgba\(0, 0, 0, 0\) ([\d.]+)px/.exec(scrim)![1])
+    const clearAt = Number(/(?:rgba\([^)]*, 0\)|color\([^)]*\/ 0\)) ([\d.]+)px/.exec(scrim)![1])
 
     expect(clearAt).toBeGreaterThan(textRight)
     expect(clearAt).toBeLessThanOrEqual(banner.left + 3)

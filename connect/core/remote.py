@@ -60,6 +60,9 @@ class RemoteState:
         self.renderer_connections: int = 0
         self.last_keepalive: float = 0.0
         self.snapshot: dict = {}
+        # When the snapshot arrived: its position was right then (see
+        # routes/player_desktop.py).
+        self.snapshot_at: float = 0.0
         self.event_bus = EventBus()  # -> phone GET /remote/events
         # How many of event_bus's subscribers are integrations rather than
         # phones (routes/remote.py's phone_events()).

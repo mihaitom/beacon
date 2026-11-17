@@ -227,8 +227,13 @@ body {
  * long title would push the second line out of it entirely. Set here, on
  * the primitive, rather than per row component - every list in the phone
  * UI wants the same thing and used to say so one `text-truncate` at a
- * time. */
+ * time.
+ *
+ * `display: block` because a line can be an inline element - a song's
+ * artist line is ArtistCredit's <span> - and overflow does nothing on one:
+ * a long credit ran past the row and let the whole page pan sideways. */
 .mobile-row__text > * {
+  display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -319,6 +324,12 @@ body {
   padding: 0;
   border-radius: 9999px !important;
   color: rgba(var(--v-theme-on-surface), 0.6);
+}
+
+/* The same pill holding words rather than two icons (Playlists' groups). */
+.beacon-view-toggle--text .v-btn {
+  width: auto;
+  padding: 0 14px;
 }
 
 .beacon-view-toggle .v-btn--active {
@@ -730,6 +741,76 @@ body {
   white-space: pre;
 }
 
+/* A code block in the help docs, with its copy button in the corner. The
+   button stays visible rather than appearing on hover: a phone has none. */
+.beacon-markdown .help-code {
+  position: relative;
+}
+
+.beacon-markdown .help-code pre {
+  padding-right: 48px;
+}
+
+.beacon-markdown .help-code__copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 8px;
+  background: color-mix(in srgb, rgb(var(--v-theme-surface)) 80%, transparent);
+  color: rgb(var(--v-theme-on-surface), 0.7);
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.beacon-markdown .help-code__copy:hover,
+.beacon-markdown .help-code__copy:focus-visible {
+  color: rgb(var(--v-theme-on-surface));
+}
+
+.beacon-markdown .help-code__copy--done {
+  color: rgb(var(--v-theme-success));
+}
+
+/* Code highlighting (services/help/codeHighlight.ts), in the theme's own
+   colours so it follows light, dark and self-made themes alike. */
+.beacon-markdown .hljs-comment,
+.beacon-markdown .hljs-quote {
+  color: rgb(var(--v-theme-on-surface), 0.55);
+  font-style: italic;
+}
+
+.beacon-markdown .hljs-keyword,
+.beacon-markdown .hljs-selector-tag,
+.beacon-markdown .hljs-section {
+  color: rgb(var(--v-theme-primary));
+}
+
+.beacon-markdown .hljs-string,
+.beacon-markdown .hljs-regexp,
+.beacon-markdown .hljs-symbol {
+  color: rgb(var(--v-theme-success));
+}
+
+.beacon-markdown .hljs-number,
+.beacon-markdown .hljs-literal,
+.beacon-markdown .hljs-built_in,
+.beacon-markdown .hljs-type {
+  color: rgb(var(--v-theme-info));
+}
+
+.beacon-markdown .hljs-title,
+.beacon-markdown .hljs-attr,
+.beacon-markdown .hljs-attribute,
+.beacon-markdown .hljs-variable,
+.beacon-markdown .hljs-meta {
+  color: rgb(var(--v-theme-warning));
+}
+
 .beacon-markdown table {
   display: block;
   max-width: 100%;
@@ -761,6 +842,23 @@ body {
 
 .beacon-markdown blockquote p {
   margin: 0.2rem 0;
+}
+
+/* A page of sections, the help's: each heading in the accent and what
+ * belongs to it set in under it, so a question stands out of its answer.
+ * Only after the first heading, a page's opening text has none to sit under. */
+.beacon-markdown--sections > h2 {
+  color: rgb(var(--v-theme-primary));
+}
+
+.beacon-markdown--sections > h2 ~ :not(h2) {
+  margin-left: 1rem;
+}
+
+/* Their usual left margin is where the bullets hang, on top of the indent. */
+.beacon-markdown--sections > h2 ~ ul,
+.beacon-markdown--sections > h2 ~ ol {
+  margin-left: 2.25rem;
 }
 
 .beacon-markdown hr {
@@ -931,4 +1029,14 @@ body {
   .v-main > * {
     animation: none;
   }
+}
+
+/* A hero card's shade (DetailHeader.vue, HeroBand.vue), registered as a
+ * colour so that a card switching between light and dark with its art
+ * fades its scrims over rather than cutting: an unregistered custom
+ * property can't be transitioned. */
+@property --hero-shade {
+  syntax: '<color>';
+  inherits: true;
+  initial-value: #000;
 }

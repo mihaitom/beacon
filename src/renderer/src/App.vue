@@ -33,6 +33,7 @@ import { initWindowTitle } from '@/services/windowTitle'
 import { initTaskbar } from '@/services/taskbar'
 import { initServerQueueSync, saveServerQueue } from '@/services/playback/serverQueueSync'
 import { initLightsReport } from '@/services/lights/localPlaybackReport'
+import { initNowPlayingReport } from '@/services/playback/nowPlayingReport'
 import { initAccountScopedStores } from '@/services/accountScopedStores'
 import { routeInOtherShell } from '@/services/shellRoutes'
 
@@ -121,6 +122,8 @@ export default {
     initServerQueueSync()
     // Room lights following this device's own playback, where switched on.
     initLightsReport()
+    // What this device plays, for the account's own apps.
+    initNowPlayingReport()
     // Window-level, so a shortcut works wherever focus happens to be
     // (see resolveShortcut() for what it deliberately keeps its hands off).
     initKeyboardShortcuts()

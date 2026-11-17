@@ -71,7 +71,9 @@
                 :src="link.icon"
                 :alt="link.name"
                 class="external-link-icon"
-                :class="{ 'external-link-icon--invert': link.invert }"
+                :class="{
+                  'external-link-icon--invert': link.invert && !onLight,
+                }"
               />
             </v-btn>
           </div>
@@ -147,6 +149,7 @@ import { useLibraryStore, TOP_SONGS_LIMIT } from '@/stores/library'
 import { artistNameKey } from '@/services/artistCredits'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
+import { useAppearanceStore } from '@/stores/appearance'
 import DetailHero from '@/components/library/DetailHero.vue'
 import DetailPageBackdrop from '@/components/library/DetailPageBackdrop.vue'
 import AlbumShelf from '@/components/library/AlbumShelf.vue'
@@ -229,6 +232,12 @@ export default {
     },
     authStore() {
       return useAuthStore()
+    },
+    /** TIDAL's and Discogs' black glyphs are inverted to white only on a
+     * dark theme. */
+    onLight(): boolean {
+      const appearance = useAppearanceStore()
+      return appearance.nightTheme !== appearance.theme
     },
     /** How many songs this artist has, for the header and for deciding
      * whether the "show all" toggle has anything to offer.

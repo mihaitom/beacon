@@ -26,9 +26,11 @@
  * the server is the one allowed to win. */
 
 import { onAccountChange } from '@/services/accountKey'
+import { useAppearanceStore } from '@/stores/appearance'
 import { useUpdateStore } from '@/stores/update'
 import { usePlaybackStore } from '@/stores/playback'
-import { reloadLyricsCacheForAccount } from '@/stores/lyrics'
+import { reloadLyricsCacheForAccount, useLyricsStore } from '@/stores/lyrics'
+import { pullLyricsOffsets } from '@/services/lyrics/lyricsOffsets'
 import { useRecommendationsStore } from '@/stores/recommendations'
 import { useRadioSettingsStore } from '@/stores/radioSettings'
 import { useTransitionsStore, type TransitionSettings } from '@/stores/transitions'
@@ -53,6 +55,8 @@ import { parseLocale } from '@/i18n'
 import { adoptLocale, reloadLocaleForAccount } from '@/services/localeSetting'
 import { fetchAccountSettings } from '@/services/connect/accountSettings'
 import { clearCoverArtCache } from '@/services/connect/coverArtBatch'
+import { forgetWhatWasReported } from '@/services/playback/nowPlayingReport'
+import { useExternalSourceStore } from '@/stores/externalSource'
 
 /** Pulls whatever this account has synced server-side (see
  * services/connect/accountSettings.ts) and applies it through each
@@ -110,6 +114,12 @@ async function pullAccountSettings(): Promise<void> {
       useEqualizerStore().setPresets(remote.equalizerPresets)
     }
 
+    if (Array.isArray(remote.customThemes)) {
+      useAppearanceStore().adoptCustomThemes(remote.customThemes)
+    } else {
+      useAppearanceStore().shareCustomThemes()
+    }
+
     if (typeof remote.lastfmUsername === 'string') {
       useLastfmStore().setUsername(remote.lastfmUsername)
     }
@@ -153,16 +163,34 @@ async function pullAccountSettings(): Promise<void> {
   }
 }
 
+async function syncLyricsOffsets(): Promise<void> {
+  try {
+    await pullLyricsOffsets()
+    useLyricsStore().refreshOffset()
+  } catch (error) {
+    // Best-effort, like the settings above: this device's own stay in use.
+    console.error('[accountScopedStores] Failed to pull lyrics corrections:', error)
+  }
+}
+
+/** Takes over what the account has elsewhere. Besides every account change,
+ * for a desktop that has just been paired with a server. */
+export async function syncWithAccount(): Promise<void> {
+  await Promise.all([pullAccountSettings(), syncLyricsOffsets()])
+}
+
 export function initAccountScopedStores(): void {
   onAccountChange(() => {
     // Cover ids are only unique within one media server, so the artwork
     // this account is about to ask for must not be answered out of the
     // previous one's cache.
     clearCoverArtCache()
+    forgetWhatWasReported()
     usePlaylistSummariesStore().reset()
     useHomeStore().reset()
     useRadioStationInfoStore().reset()
     useUpdateStore().reload()
+    useAppearanceStore().reloadForAccount()
     usePlaybackStore().reloadAccountScoped()
     reloadLyricsCacheForAccount()
     reloadLocaleForAccount()
@@ -178,6 +206,9 @@ export function initAccountScopedStores(): void {
     useLastfmStore().reloadForAccount()
     useListenbrainzStore().reloadForAccount()
     useFanartStore().reloadForAccount()
-    void pullAccountSettings()
+    // Needs the signed-in session, and which ones this session may
+    // configure differs per account.
+    void useExternalSourceStore().load()
+    void syncWithAccount()
   })
 }

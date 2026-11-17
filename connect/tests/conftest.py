@@ -1,5 +1,6 @@
 """Shared fixtures for Connect API tests."""
 
+import asyncio
 import os
 import tempfile
 
@@ -30,15 +31,13 @@ from routes import discovery as discovery_module
 def client():
     """Synchronous TestClient — no network, no real devices needed.
 
-    Automatically includes X-Connect-Token when CONNECT_TOKEN is set so tests
-    pass regardless of whether token auth is enabled in the environment. No
+    Sends the Connect API token, like nginx or the desktop app would. No
     X-Connect-Session header is set, so every request made through this
     client lands in the single DEFAULT_SESSION_ID session — same as the old
     single-global-session behavior. See the `default_session` fixture below.
     """
     with TestClient(app) as c:
-        if auth.TOKEN:
-            c.headers.update({"X-Connect-Token": auth.TOKEN})
+        c.headers.update({"X-Connect-Token": auth.TOKEN})
         yield c
 
 
@@ -146,8 +145,8 @@ def _block_real_sonos_discovery(monkeypatch):
     Confirmed live 2026-08-24: a /resume regression test in test_playback.py
     uses the real production room name "Arbeitszimmer" for its
     active_delivery and only mocks SonosDelivery.play — the position-resync
-    background tasks that /resume's handler schedules (_apply_position_offset,
-    _resync_position_periodically) are not covered by that mock and call the
+    background tasks that /resume's handler schedules (apply_position_offset,
+    resync_position_periodically) are not covered by that mock and call the
     real, unmocked get_position() for as long as the test process runs. The
     dev machine and the production Sonos speakers share the same /24, so
     this reached the real device; the user reproduced it directly (fresh
@@ -187,6 +186,32 @@ def _isolated_client_ids(monkeypatch, tmp_path):
     client_id.forget_cached_ids()
     yield
     client_id.forget_cached_ids()
+
+
+@pytest.fixture(autouse=True)
+def _isolated_server_link(monkeypatch, tmp_path):
+    """No test may find a pairing another one left behind, and none may
+    reach the network through a real one."""
+    from core import server_link
+
+    monkeypatch.setattr(server_link, "_DATA_DIR", str(tmp_path / "link"))
+    monkeypatch.setattr(server_link, "AVAILABLE", True)
+
+    async def not_running() -> None:
+        return None
+
+    # The app's lifespan would start the real sender, which then races each
+    # test for the same unsent rows.
+    monkeypatch.setattr(server_link, "run", not_running)
+    # The same for the claims it shares with its server.
+    from core import shared_claims
+
+    monkeypatch.setattr(shared_claims, "run", not_running)
+    server_link.reset_for_tests()
+    shared_claims.reset_for_tests()
+    yield
+    server_link.reset_for_tests()
+    shared_claims.reset_for_tests()
 
 
 @pytest.fixture(autouse=True)
@@ -249,6 +274,8 @@ def fake_zeroconf(monkeypatch):
     monkeypatch.setattr(mdns, "AsyncZeroconf", _FakeZeroconf)
     monkeypatch.setattr(mdns, "_zeroconf", None)
     monkeypatch.setattr(mdns, "_info", None)
+    # A lock one test's event loop waited on cannot be used from the next one's.
+    monkeypatch.setattr(mdns, "_lock", asyncio.Lock())
     return _FakeZeroconf
 
 
@@ -392,6 +419,7 @@ def reset_state():
     global device-discovery cache, and Remote Control state."""
     session_module.registry._sessions.clear()
     claims_module.claims._claims.clear()
+    claims_module.claims._remote.clear()
     state.ctx.discovered = {"airplay": [], "chromecast": [], "dlna": [], "sonos": []}
     # has_cache (GET /discover) is keyed off this, not off ctx.discovered's
     # contents above — a test leaving it at a real timestamp from an

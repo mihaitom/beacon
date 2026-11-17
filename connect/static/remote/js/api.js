@@ -88,12 +88,20 @@ export function sendCommand(type, payload = {}) {
  * Not silent: the banner keeps "that didn't happen" from looking like
  * "Beacon ignored me". */
 export function fireCommand(type, payload = {}) {
-  sendCommand(type, payload).catch((error) => {
+  sendReportedCommand(type, payload).catch(() => {});
+}
+
+/** sendCommand() for a button that waits for the ack to show it is busy:
+ * raises the same banner as fireCommand() on a failure, then rejects. */
+export function sendReportedCommand(type, payload = {}) {
+  return sendCommand(type, payload).catch((error) => {
     // Already handled globally — request() dispatches its own event and
     // app.js sends the user back to the login screen.
-    if (error instanceof UnauthorizedError) return;
-    console.error('[remote] Command failed:', type, error);
-    window.dispatchEvent(new CustomEvent('beacon-remote-command-failed'));
+    if (!(error instanceof UnauthorizedError)) {
+      console.error('[remote] Command failed:', type, error);
+      window.dispatchEvent(new CustomEvent('beacon-remote-command-failed'));
+    }
+    throw error;
   });
 }
 
@@ -114,6 +122,52 @@ export function fetchArtists(search, offset, limit) {
 
 export function fetchArtist(id) {
   return request(`/remote/artists/${encodeURIComponent(id)}`);
+}
+
+export function fetchAlbum(id) {
+  return request(`/remote/albums/${encodeURIComponent(id)}`);
+}
+
+export function fetchHome() {
+  return request('/remote/home');
+}
+
+export function fetchDiscover() {
+  return request('/remote/discover');
+}
+
+export function fetchBackdrop(songId) {
+  const params = new URLSearchParams({ song: songId });
+  return request(`/remote/backdrop?${params}`);
+}
+
+export function fetchLyrics(songId) {
+  const params = new URLSearchParams({ song: songId });
+  return request(`/remote/lyrics?${params}`);
+}
+
+export function fetchEqualizer() {
+  return request('/remote/equalizer');
+}
+
+export function fetchLights() {
+  return request('/remote/lights');
+}
+
+export function fetchLightBridges() {
+  return request('/remote/lights/discover', { method: 'POST' });
+}
+
+export function pairLights(host) {
+  return request('/remote/lights/pair', { method: 'POST', body: { host } });
+}
+
+export function updateLights(update) {
+  return request('/remote/lights/update', { method: 'POST', body: { update } });
+}
+
+export function forgetLights() {
+  return request('/remote/lights', { method: 'DELETE' });
 }
 
 export function fetchPlaylists() {

@@ -62,8 +62,8 @@ name is.
 
 ## Palette
 
-There are four themes and one made from two colours, picked per device in
-Settings → Appearance (`plugins/theme.ts`, kept in `stores/appearance.ts`):
+There are four themes and any number made from two colours, picked per device
+in Settings → Appearance (`plugins/theme.ts`, kept in `stores/appearance.ts`):
 Beacon (the default) and Graphite are dark, Paper and Glacier are light. **So
 no colour is written down in a component.** A white is
 `rgba(var(--v-theme-on-surface), x)`, the accent `rgba(var(--v-theme-primary), x)`,
@@ -93,17 +93,21 @@ accent falls under 3:1.
 
 ### What stays dark on a light theme
 
-The artwork headers (`DetailHero`, `DetailHeader`, `HeroBand`) and Now
-Playing put white text over a darkened picture, which a light page around
-them does not change. They are drawn in the theme's _night_
+The artwork headers (`DetailHeader`, `HeroBand`) and Now Playing put white
+text over a darkened picture, which a light page around them does not
+change. They are drawn in the theme's _night_
 (`nightTheme()`: Beacon's surfaces with the theme's accent lifted to read on
 them; a dark theme is its own night): the root element carries the
 `v-theme--<night>` class for the CSS variables and its own text colour, and
 a `<v-theme-provider>` inside it gives the Vuetify components the same
 theme. Inside, as rather than around the root, so the component keeps one
-root element. On a light theme the artist and album pages' band
-(`DetailPageBackdrop`) ends with the header and fades into the page below
-instead of running on behind the albums and songs.
+root element.
+
+The artist and album pages (`DetailPageBackdrop` with `DetailHero`) are the
+exception: their photo runs on behind the page as on a dark theme, shaded
+towards the page's own background instead of towards black, so the header
+takes the light theme's dark text. Fanart.tv's clear logos, drawn for dark
+backgrounds, get a dark outline shadow there.
 
 The party guest page has no themes: it is Beacon's colours. The Remote
 Control follows the app it controls: every snapshot carries the theme's
@@ -123,6 +127,11 @@ Plus the chrome tokens in `base.css`:
 The accent is the app's signal colour: an active nav item, a selected segment, an
 eyebrow, a divider. It is not a fill - nothing large is amber.
 
+One exception to theme tokens: the record on the Stats page and the objects of
+its milestone moments (disc, tape reel, cassette) are objects, not interface. Vinyl, silver, gold and foil keep their own
+colours on every theme, and only the grooves' markings use the accent. The
+full records on the shelf below it are objects too, in the metal of their tier.
+
 ## Type
 
 | Class            | Face                                      | Where                                                |
@@ -136,6 +145,9 @@ eyebrow, a divider. It is not a fill - nothing large is amber.
 
 Body text stays on Vuetify's scale: `text-body-medium`, `text-body-small`,
 `text-medium-emphasis` for the quieter line.
+
+The Stats hero's display is the one exception to the faces above: it reads in
+VT323, as a device's own display would, and nothing else uses it.
 
 Inter is bundled (`@fontsource-variable/inter`, imported in `main.css`) and
 reaches Vuetify through `--v-font-body`/`--v-font-heading` in `base.css`.
@@ -249,11 +261,25 @@ separate "show advanced features" switch. A section with nothing to show for
 this account hides itself (the log level does, for a non-admin) rather than
 rendering an empty panel.
 
+Where the page itself is at least 880px wide (200px tab column, 40px gap,
+the narrow layout's 640px), the bar becomes a vertical, sticky column on the
+left with an icon per tab, and the settings column grows to 720px. Measured
+on the page, not the viewport: the desktop shell never switches to the
+phone layout, and its sidebar and queue take their share of the window
+first. Narrower than that, it is the 640px column with the bar on top.
+
 The bar is Vuetify's `v-tabs` with `color="primary"`, so the active
 indicator is the app's amber. Its labels are reset to the app's own body
 weight and case (`text-transform: none`, no letter-spacing) because the
 default wide-tracked, capitalised treatment reads as stock Material next to
 the app's headings.
+
+Every button on the Settings page is a pill, whatever its variant: the filled
+primary action, a tonal Reset or Revoke, a text Help link. The page puts those
+three in the same panel, and on the default 4px square they read as three
+different button systems - which is how one section ended up with a pill Add
+beside a square Revoke. Icon-only buttons are circles already. A dialog opened
+from the page keeps the app-wide footer (text Close, filled pill confirm).
 
 ## Surfaces
 
@@ -472,17 +498,39 @@ does not.
 Desktop rows get their hover from `--beacon-hover`; a plain `v-list` opts in
 with `.beacon-list` on its container.
 
-The desktop Playlists and Radio pages are lists of large rows in one
-`.beacon-panel--flush` rather than grids of tiles (`PlaylistRow.vue`,
-`RadioStationRow.vue`, placeholders from `RowSkeleton.vue`): artwork on the
-left, a name at 1.15rem/600 (Inter - the serif is never for a row), a
+Radio and Playlists in their list forms are large rows in
+one `.beacon-panel--flush` rather than tiles (`RadioStationCard.vue` and
+`PlaylistCard.vue` with `row`, placeholders from `RowSkeleton.vue`): artwork
+on the left, a name at 1.15rem/600 (Inter - the serif is never for a row), a
 quiet meta line, one line saying what is in it (a playlist's main artists,
 the last title heard on a station) and tonal genre chips; the actions sit as
-plain buttons, not pills, centred on the right. A playlist's artwork is made
-from its own albums and only cycles while the row is hovered. No backdrop -
-a page of rows each with its own moving picture is too much at once.
+plain buttons, not pills, centred on the right. No backdrop - a page of rows
+each with its own moving picture is too much at once.
 
-Albums and Artists switch between their grid and a list (a `v-btn-toggle`
+The Radio page's default form is a wall built like the Playlists one, one
+sleeve per station rather than a stack: a station has one logo, so there is
+nothing to flip through. The sleeve takes the logo's own background colour, so
+a logo reads as a whole cover (`services/stationLogo.ts`); a logo without one
+stands in front of a blurred copy of itself. A logo is
+enlarged at most threefold, and sized by what it fills rather than its
+transparent margin, so logos come out alike without a small favicon turning
+to mush.
+The station that is on is marked by its name and level bars, not a fill.
+
+The Playlists page's default form is a wall of record stacks
+(`PlaylistCard.vue`, a grid of at least 220px columns): each front record is
+as wide as its column, the name, length, two artists and genres under it.
+The stack only flips through the playlist's own albums while the card is
+pointed at. Play and Preview appear on the front record then, as round
+buttons, and the record in front casts its colour on the page around it,
+following each flip. That glow is for the one card being pointed at, so it
+never amounts to a page of moving pictures.
+
+Its sections say who sees a playlist: "My playlists" are the user's own and
+private, "Shared by me" their own and public, "Shared with me" everyone
+else's. Each playlist is in exactly one (`services/library/playlistBrowse.ts`).
+
+Albums, Artists and Playlists switch between their grid and a list (a `v-btn-toggle`
 with `.beacon-view-toggle` in the filter row - the field's 40px pill, the
 shown layout in amber - remembered per page). A list line is the card itself in
 its `row` form (`AlbumCard`/`ArtistCard` with `row`), 56px tall, figures in
@@ -501,6 +549,17 @@ the play count behind - five to a column, two columns once the section is
 760px wide and a third from 1500px, where two only stretched each line.
 Ranked down the first column and on into the next. A song table there
 brought column headings and sorting to a list that is only ever read.
+
+The phone's Home (`MobileHomeView.vue`) shows the same shelves, from the
+same code (`composables/homeShelves.ts`), laid out for one hand: a compact
+hero with the cover beside the text, the recently played as two columns of
+`MobileAlbumTile` tiles, songs as `.mobile-row` lists of five, and albums to
+browse as sideways rows (`v-slide-group`). A tile's cover carries a play
+mark and plays; its name opens the album. Home is for starting something,
+so playing is the bigger target - the library's rows, which are for
+picking, open on a tap instead. The desktop's "new artists" shelf is left
+out: those artists are not in the library, and every way to them leads out
+of the app.
 
 A tile that is a link does not lift or move on hover; only what is inside
 it may answer the pointer (the Genres page's crates flip through their
@@ -533,11 +592,14 @@ Everything in a filter row is a flat 40px pill on one surface
 inside the pill), a sort select, the view toggle. Exact spelling is an "Aa"
 toggle in the field's end (`<exact-match-switch />` in `#append-inner`),
 amber when on like a selected toggle segment - it belongs to the search, so
-it does not stand beside it as a labelled switch. The top bar's search
+it does not stand beside it as a labelled switch. The phone library's
+favourites filter is the same kind of toggle: a heart in the search field's
+end, which narrows the list showing to the favourites and renames the page
+"Favorites" while it is on, so a shorter list never reads as missing music. The top bar's search
 carries the same toggle; the results page has none of its own and searches
 again when the setting changes.
 
-The library lists (Songs, Albums, Artists, a genre's page) put their
+The library lists (Songs, Albums, Artists, a genre's page, a playlist's page) put their
 controls in the same row: the search on the left, then, pushed to the right,
 the grid/list toggle where there is one, a "Filter" pill and the sort select
 at the end (`LibraryFilterMenu.vue`, `LibrarySortSelect.vue`), grouped in
@@ -556,6 +618,10 @@ the song table's, and narrowed to what fits the list's width), the sorted column
 sections (letters, decades, stars, and the filter's ranges), the list draws
 them as `.letter-divider` headings and the index bar lists the same
 sections in short form.
+
+A playlist's page starts in the playlist's own order, offered first in the
+sort select and not remembered between playlists. Dragging a row needs the
+whole list in that order, so a search, a filter or another order turns it off.
 
 Scrollbars are hidden app-wide (`base.css`) - scrolling still works, only the
 chrome is gone. A scroll region therefore has to look scrollable on its own.
@@ -646,6 +712,7 @@ Width, by what the dialog is for:
 | `max-width` | For                                                      |
 | ----------- | -------------------------------------------------------- |
 | 400-420     | a form or a confirmation - a rename, a delete, a pairing |
+| 460-480     | a form that opens with `ChoiceTiles` - a playlist, a key |
 | 560-720     | something to read - shortcuts, privacy, a track's fields |
 | 820-920     | a list or a long document - Discover, release notes      |
 | 1080        | the help, whose contents column sits beside the page     |
@@ -698,6 +765,11 @@ does not scroll, which is what "the cap is clipping" looks like.
   right instead - the one exception is a dialog with a picture-backed
   header, which uses the icon only, since the footer button would sit under
   a header that already offers one.
+- A dialog's switches sit in a `.beacon-panel--flush`, one row each with the
+  words on the left and the switch on the right, the whole row clickable
+  (`DeviceKeyDialog.vue`). The confirming button is a filled pill. Help is the
+  icon in the title row, so the footer is left to the buttons that end the
+  dialog.
 - An exception to "never a second scroll region": inside `.beacon-markdown`
   (below), a code block or a table scrolls sideways on its own. Neither can
   wrap, and on a phone one would otherwise widen the whole dialog.
@@ -716,11 +788,22 @@ quotes, in `base.css` rather than as `:deep()` rules in each dialog, since
 v-html content never gets a component's scope id. A dialog only adds what is
 its own, like the release notes' pill-shaped section headings.
 
+Code blocks in the help docs are highlighted when the fence names a language
+(` ```python `). The colours are the theme's own - keywords in primary,
+strings in success, numbers and built-ins in info, names in warning, comments
+in a faded on-surface - so a self-made theme gets matching code without
+anything extra. Only the languages the docs use are bundled
+(`services/help/codeHighlight.ts`); a new one goes there first.
+
 Headings between a `<!-- tabs -->` and a `<!-- /tabs -->` line in a bundled
 doc are shown as tabs, one per heading of the level the first one has: for
 alternatives of which a reader wants one, like one reverse proxy's setup out
 of five. GitHub hides the two markers, so the doc reads the same there; the
 tabs' look is in `base.css` with the rest of `.beacon-markdown`.
+
+The help adds `.beacon-markdown--sections`: its main headings in the accent
+and the text under them set in by 1rem, so a question stands out of its
+answer on a page that is nothing but those.
 
 A doc that wants a help entry somewhere in the app goes into `docs/help/`,
 in the group it belongs to (`docs/README.md` says which is which), and is
@@ -752,6 +835,14 @@ inputs.
   result looks the way it does". The second is information, never an error.
 - **A name that is edited in place** wears the title's own type
   (`.detail-title`) and shows it is a field only on hover and focus.
+- **The dialogs for creating and editing a playlist have the same head**
+  (`PlaylistDialogHead.vue`): its record sleeves beside the name, with a line
+  under it because an empty field has nothing else to show it is one. The
+  front sleeve lights up with a name, the moment it can be confirmed. No tinted
+  wash behind it: the head is one flat surface. Private or public is two tiles
+  saying who sees it (`PlaylistVisibility.vue`), not a switch; the chosen one
+  is marked by its outline and icon, not a fill. `ChoiceTiles.vue` is that
+  control for any choice between a few things that need a line of explanation.
 
 ## Debug overlays
 
@@ -776,7 +867,7 @@ of them before anything else:
 | Duration | For                                                                 |
 | -------- | ------------------------------------------------------------------- |
 | 0.15s    | A hover, a colour, an opacity - feedback on something being touched |
-| 0.6s     | The artwork backdrop crossfade (and RankedList's bars filling)      |
+| 0.6s     | The artwork backdrop crossfade (and the Stats chart bars filling)   |
 
 0.15s is used about three dozen times and is the default answer. The rest of
 what the app does is not drift - each of these is a different _kind_ of
@@ -796,6 +887,8 @@ of inventing a neighbouring one:
 | 0.7s               | Now Playing's flip card (artwork <-> lyrics) | The one deliberate showpiece; it is meant to be watched                             |
 | 0.9s               | The release-notes icon                       | A one-off flourish on a dialog seen once per version                                |
 | 1.2s               | Now Playing's scrim and glow                 | Follows the colour extracted from the cover; a fast change reads as a flicker       |
+| 1.1s / 1.3s        | The Stats hero: tonearm, count-up            | The page's one entrance, once per visit                                             |
+| 3.7s in all        | A Stats milestone moment                     | Rare by design (round numbers only) and closed by a click or Esc                    |
 
 Loops are their own thing - they show a state rather than a change, so they
 are slow enough not to nag: 1.8s for the page loader, 2.4s for radio's "on
@@ -804,4 +897,5 @@ air" pulse, 3.5s for the beacon on the sign-in screen.
 **Every loop and every showpiece above answers `prefers-reduced-motion`**
 with `animation: none` or `transition: none` - the page loader, the radio
 pulse, the sign-in beacon, the flip card, the lyrics lines, the genre grid,
-the search box and the visualizer. A new one is expected to do the same.
+the search box, the visualizer and the Stats record and milestone moment. A new
+one is expected to do the same.

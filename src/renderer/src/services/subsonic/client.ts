@@ -100,6 +100,13 @@ export interface ServerPlayQueue {
   changedBy: string
 }
 
+/** What can be changed about a playlist besides its songs. */
+export interface PlaylistChanges {
+  name?: string
+  comment?: string
+  public?: boolean
+}
+
 export class SubsonicClient {
   constructor(
     private readonly proxyBaseUrl: string,
@@ -322,9 +329,14 @@ export class SubsonicClient {
     return mapPlaylist(data.playlist)
   }
 
-  async createPlaylist(name: string, songIds: string[] = []): Promise<void> {
+  /** Answers the new playlist's id, where the server says it: the API has
+   * only done so since 1.14, and the bridges do not. */
+  async createPlaylist(name: string, songIds: string[] = []): Promise<string | null> {
     const params: Record<string, string> = { name }
-    await this.getMulti('createPlaylist.view', params, { songId: songIds })
+    const data = await this.getMulti<Partial<PlaylistResponse>>('createPlaylist.view', params, {
+      songId: songIds,
+    })
+    return data.playlist?.id ?? null
   }
 
   async addToPlaylist(playlistId: string, songIds: string[]): Promise<void> {
@@ -358,9 +370,10 @@ export class SubsonicClient {
     await this.getMulti('createPlaylist.view', { playlistId }, { songId: songIds })
   }
 
-  async updatePlaylist(id: string, updates: { name?: string; public?: boolean }): Promise<void> {
+  async updatePlaylist(id: string, updates: PlaylistChanges): Promise<void> {
     const params: Record<string, string> = { playlistId: id }
     if (updates.name !== undefined) params.name = updates.name
+    if (updates.comment !== undefined) params.comment = updates.comment
     if (updates.public !== undefined) params.public = String(updates.public)
     await this.get('updatePlaylist.view', params)
   }
@@ -600,11 +613,11 @@ export class SubsonicClient {
 
   /** Like get(), but also appends one or more repeated-key params (Subsonic's
    * convention for list arguments, e.g. songId=1&songId=2&songId=3). */
-  private async getMulti(
+  private async getMulti<T = unknown>(
     endpoint: string,
     extra: Record<string, string>,
     repeated: Record<string, string[]>,
-  ): Promise<void> {
+  ): Promise<T> {
     const params = this.authParams()
     for (const [key, value] of Object.entries(extra)) params.set(key, value)
     for (const [key, values] of Object.entries(repeated)) {
@@ -621,6 +634,7 @@ export class SubsonicClient {
     if (subsonic?.status !== 'ok') {
       throw new Error(`Subsonic error ${subsonic?.error?.code}: ${subsonic?.error?.message}`)
     }
+    return subsonic as T
   }
 }
 

@@ -4,8 +4,9 @@ TRUSTED_PROXIES (comma-separated addresses or networks) lists them. The
 default is loopback, which in the Docker image is the nginx in front of
 connect. Behind a proxy of your own (Traefik, Nginx Proxy Manager, Caddy),
 add the address it reaches Beacon from, or every client counts as that
-proxy. Only party mode acts on a client's address today: its guests have no
-login, so their address is what tells them apart.
+proxy. Party mode and the limit on failed device keys act on a client's
+address: neither a guest nor somebody trying keys has a login, so the address
+is what tells them apart.
 """
 
 import ipaddress

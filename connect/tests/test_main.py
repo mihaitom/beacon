@@ -165,27 +165,6 @@ def test_lifespan_warns_when_ffmpeg_is_missing(caplog):
     assert "NOT FOUND" in caplog.text
 
 
-def test_lifespan_warns_when_connect_token_is_explicitly_empty(caplog, monkeypatch):
-    monkeypatch.setattr(main, "_CONNECT_TOKEN", "")
-    with caplog.at_level(logging.WARNING, logger="connect"), TestClient(main.app):
-        pass
-
-    assert "no auth" in caplog.text.lower()
-
-
-def test_lifespan_logs_a_custom_connect_token_without_printing_it(caplog, monkeypatch):
-    monkeypatch.setattr(main, "_CONNECT_TOKEN", "a-real-secret-token")
-    monkeypatch.setattr(main, "_CONNECT_TOKEN_GENERATED", False)
-    with caplog.at_level(logging.INFO, logger="connect"), TestClient(main.app):
-        pass
-
-    assert "custom CONNECT_TOKEN set" in caplog.text
-    # Unlike the auto-generated case (which does print the token, so it can
-    # be copy-pasted for scripting — see that branch's own comment), an
-    # explicitly-set one must never show up in the log.
-    assert "a-real-secret-token" not in caplog.text
-
-
 # ── debug_router registration gate ───────────────────────────────────────────
 # A startup-time-only check (see main.py's own comment on why) — only
 # reachable by actually re-executing the module, unlike everything else in

@@ -1,5 +1,6 @@
 ---
-order: 2
+group: party
+order: 1
 ---
 
 # Party mode

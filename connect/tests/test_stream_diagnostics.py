@@ -93,6 +93,35 @@ def test_the_buffer_ahead_is_the_audio_sent_beyond_where_the_device_is(default_s
     assert described["ahead"] == pytest.approx(160.0 - 132.0, abs=0.2)
 
 
+def test_the_connection_shown_is_the_one_the_device_reads(default_session):
+    """A Sonos opens a second connection to probe a stream and leaves it
+    unread; the overlay showed that one, STALLED, while the first played on."""
+    st = _playing(default_session)
+    played = _connection(st, start=100.0)
+    probe = _connection(st, start=102.0)
+    probe.last_handoff = played.last_handoff - 60.0
+
+    described = describe_stream(default_session)["targets"][0]
+
+    assert described["connection"]["start"] == 100.0
+
+
+def test_a_mix_shows_the_device_position_in_the_song(default_session):
+    """A mix counts stream time across songs; the overlay's track line is
+    the song's position, so the device's has to be too."""
+    st = _playing(default_session, at=0.0)
+    _connection(st, start=0.0, sent=1000.0)
+    st.mix = MagicMock()
+    st.mix.timeline.at_time.side_effect = lambda t: MagicMock(song_id="1", position=t + 10.2)
+    st.device_reading = (st.clock.play_generation, time.time(), 978.0, "Study")
+
+    described = describe_stream(default_session)["targets"][0]
+
+    assert described["device"]["position"] == pytest.approx(988.2)
+    # What was sent is still measured in the stream.
+    assert described["ahead"] == pytest.approx(1000.0 - 978.0, abs=0.2)
+
+
 def test_no_buffer_is_claimed_for_a_device_that_stopped(default_session):
     st = _playing(default_session)
     _connection(st, start=100.0)

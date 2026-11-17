@@ -11,6 +11,7 @@ import os
 import re
 import traceback
 from contextlib import asynccontextmanager
+from logging.handlers import RotatingFileHandler
 
 import uvicorn
 from dotenv import load_dotenv
@@ -19,16 +20,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 # Must run before any core.*/routes.* import below — several of them read
-# their config (CONNECT_TOKEN, NAVIDROME_INTERNAL_URL, ...) from os.environ at
+# their config (NAVIDROME_INTERNAL_URL, ...) from os.environ at
 # *module import time*, not lazily. Loading .env after those imports meant
 # it was silently ignored — only working when the same variables happened
 # to already be set as real shell/process env vars (e.g. via docker-compose,
 # or exported manually), never via a plain .env file alone.
 load_dotenv()
 
-from core import local_mixes, mdns
-from core.auth import TOKEN as _CONNECT_TOKEN
-from core.auth import TOKEN_WAS_GENERATED as _CONNECT_TOKEN_GENERATED
+from core import local_mixes, mdns, server_link, shared_claims
 from core.device_volume import capture_main_loop
 from core.ffmpeg import FFMPEG_BIN, ffmpeg_available
 from core.http_diagnostics import UVICORN_INVALID_REQUEST_MESSAGE, DiagnosticHTTPProtocol
@@ -39,6 +38,7 @@ from core.log_level import is_at_least
 from core.log_redaction import redact
 from core.loop_health import monitor_loop_lag
 from core.party import party, reap_stale_party
+from core.paths import data_dir
 from core.remote import reap_stale_remote, remote
 from core.session import reap_stale_sessions, registry
 from core.state import PORT, get_local_ip
@@ -52,9 +52,16 @@ from routes.cast_permissions import router as cast_permissions_router
 from routes.coverart import router as coverart_router
 from routes.debug import router as debug_router
 from routes.deezer import router as deezer_router
+from routes.device_link import add_public_api_cors
+from routes.device_link import keys_router as device_keys_router
+from routes.device_link import router as device_link_router
+from routes.device_link import v1_router as device_link_v1_router
 from routes.devices import router as devices_router
 from routes.discovery import discover_all
 from routes.discovery import router as discovery_router
+from routes.external_source import close as close_external_source_client
+from routes.external_source import router as external_source_router
+from routes.external_source import ui_router as external_ui_router
 from routes.fanart import router as fanart_router
 from routes.jellyfin_auth import router as jellyfin_auth_router
 from routes.join import router as join_router
@@ -66,12 +73,15 @@ from routes.local_stream import reset_hls_encodes
 from routes.local_stream import router as local_stream_router
 from routes.log_level import router as log_level_router
 from routes.lyrics import router as lyrics_router
+from routes.lyrics_offsets import router as lyrics_offsets_router
 from routes.navidrome import router as navidrome_router
+from routes.now_playing import router as now_playing_router
 from routes.pairing import reap_stale_pairings
 from routes.pairing import router as pairing_router
 from routes.party import add_security_headers as add_party_security_headers
 from routes.party import host_router as party_host_router
 from routes.party import router as party_router
+from routes.play_history import router as play_history_router
 from routes.playback import router as playback_router
 from routes.plex_auth import router as plex_auth_router
 from routes.proxy import close as close_proxy_client
@@ -79,6 +89,7 @@ from routes.proxy import router as proxy_router
 from routes.radio import router as radio_router
 from routes.recommendations import router as recommendations_router
 from routes.remote import router as remote_router
+from routes.server_link import router as server_link_router
 from routes.stream import router as stream_router
 from routes.upnp import router as upnp_router
 from routes.volume import router as volume_router
@@ -159,7 +170,41 @@ _root_handler.setFormatter(
     _ColorLevelFormatter(_LOG_FORMAT, datefmt=_LOG_DATEFMT, use_color=_USE_COLOR)
 )
 _root_handler.addFilter(_ShortNameFilter())
-logging.basicConfig(level=logging.INFO, handlers=[_root_handler])
+
+# The same lines, kept in the data folder as well: `docker logs` goes with
+# the container, so the log of a problem was gone by the time the fix for
+# it had been deployed. Two files of 10 MB at most, and dated, since one
+# spans days.
+_LOG_FILE_MAX_BYTES = 10 * 1024 * 1024
+_LOG_FILE_BACKUPS = 1
+
+
+def _log_file_handler() -> logging.Handler | None:
+    path = os.path.join(data_dir(), "logs", "connect.log")
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        handler = RotatingFileHandler(
+            path,
+            maxBytes=_LOG_FILE_MAX_BYTES,
+            backupCount=_LOG_FILE_BACKUPS,
+            encoding="utf-8",
+        )
+    except OSError as e:
+        # A read-only data folder is no reason not to start.
+        print(f"Could not open the log file {path}: {e}", flush=True)
+        return None
+    handler.setFormatter(
+        _ColorLevelFormatter(_LOG_FORMAT, datefmt="%Y-%m-%d %H:%M:%S", use_color=False)
+    )
+    handler.addFilter(_ShortNameFilter())
+    return handler
+
+
+_file_handler = _log_file_handler()
+logging.basicConfig(
+    level=logging.INFO,
+    handlers=[_root_handler] + ([_file_handler] if _file_handler else []),
+)
 logger = logging.getLogger("connect")
 
 # The level Settings' log-level dropdown last persisted, falling back to
@@ -220,6 +265,12 @@ UVICORN_LOG_CONFIG = {
         },
     },
 }
+# uvicorn's loggers stop at their own handlers, so the file is added to them
+# too - a request's traceback is what a log file is kept for.
+if _file_handler is not None:
+    UVICORN_LOG_CONFIG["handlers"]["file"] = {"()": lambda: _file_handler}
+    for _name in ("uvicorn", "uvicorn.access"):
+        UVICORN_LOG_CONFIG["loggers"][_name]["handlers"].append("file")
 
 # Applies _INITIAL_LOG_LEVEL to our own logger tree (connect → also covers
 # children connect.streamer / connect.playback / ...) and, only at TRACE,
@@ -287,17 +338,6 @@ async def lifespan(_: FastAPI):
     else:
         logger.error(f"❌ ffmpeg NOT FOUND at '{FFMPEG_BIN}' — streaming will fail!")
 
-    if not _CONNECT_TOKEN:
-        logger.warning("⚠️  CONNECT_TOKEN explicitly set to empty — the Connect API has no auth!")
-    elif _CONNECT_TOKEN_GENERATED:
-        logger.info(
-            f"🔒 Token auth enabled (auto-generated, persisted in connect/.connect-token): "
-            f"{_CONNECT_TOKEN}\n"
-            "   Set CONNECT_TOKEN explicitly (see docker-compose.yaml) instead if a fixed "
-            "value is needed, e.g. for scripting direct API access."
-        )
-    else:
-        logger.info("🔒 Token auth enabled (custom CONNECT_TOKEN set)")
     logger.info("⏳ Waiting for /config (media server credentials)")
 
     discovery_task = asyncio.create_task(_periodic_discovery())
@@ -308,6 +348,8 @@ async def lifespan(_: FastAPI):
     loop_lag_task = asyncio.create_task(monitor_loop_lag())
     upnp_renewal_task = asyncio.create_task(_renew_upnp_subscriptions())
     mdns_task = asyncio.create_task(mdns.keep_announced())
+    server_link_task = asyncio.create_task(server_link.run())
+    shared_claims_task = asyncio.create_task(shared_claims.run())
     light_controller.start()
     background_tasks = (
         discovery_task,
@@ -318,6 +360,8 @@ async def lifespan(_: FastAPI):
         loop_lag_task,
         upnp_renewal_task,
         mdns_task,
+        server_link_task,
+        shared_claims_task,
     )
     try:
         yield
@@ -343,6 +387,7 @@ async def lifespan(_: FastAPI):
         await light_controller.stop()
         await mdns.shutdown()
         await close_proxy_client()
+        await close_external_source_client()
         await jellyfin_bridge.close()
         await plex_bridge.close()
         reset_hls_encodes()
@@ -381,12 +426,10 @@ app = FastAPI(
     redoc_url=None,
 )
 _ALLOWED_ORIGIN_REGEX = r"http://localhost(:[0-9]+)?"
-_ALLOWED_ORIGINS_ENV = os.getenv("ALLOWED_ORIGINS", "")
-_ALLOWED_ORIGINS: list[str] = (
-    [o.strip() for o in _ALLOWED_ORIGINS_ENV.split(",") if o.strip()]
-    if _ALLOWED_ORIGINS_ENV
-    else ["null"]  # Electron file:// origin appears as "null"
-)
+# Electron's file:// page and the dev servers on localhost are the only
+# cross-origin callers; the Docker build is same-origin behind nginx, and
+# /device-link/v1/ answers any origin itself (routes/device_link.py).
+_ALLOWED_ORIGINS = ["null"]
 app.add_middleware(
     CORSMiddleware,
     # No cookies are ever used for auth here (X-Connect-Token/X-Connect-Session
@@ -487,6 +530,8 @@ app.include_router(cast_permissions_router)
 app.include_router(api_keys_router)
 app.include_router(pairing_router)
 app.include_router(lyrics_router)
+app.include_router(lyrics_offsets_router)
+app.include_router(now_playing_router)
 app.include_router(waveform_router)
 app.include_router(radio_router)
 app.include_router(recommendations_router)
@@ -494,7 +539,14 @@ app.include_router(fanart_router)
 app.include_router(lastfm_router)
 app.include_router(navidrome_router)
 app.include_router(listenbrainz_router)
+app.include_router(play_history_router)
+app.include_router(device_keys_router)
+app.include_router(device_link_router)
+app.include_router(device_link_v1_router)
+app.include_router(server_link_router)
 app.include_router(deezer_router)
+app.include_router(external_source_router)
+app.include_router(external_ui_router)
 app.include_router(coverart_router)
 app.include_router(upnp_router)
 # Diagnostic-only (routes/debug.py) — registered at Debug log level or
@@ -518,6 +570,8 @@ app.include_router(remote_router)
 app.include_router(party_host_router)
 app.include_router(party_router)
 app.include_router(proxy_router)
+# Outside the error boundary, so that a 500 from v1 reaches a page as a 500.
+app.middleware("http")(add_public_api_cors)
 # Last, so it is the outermost middleware: it has to see the answers the
 # error boundary and CORSMiddleware produce in order to correct them.
 app.middleware("http")(add_party_security_headers)

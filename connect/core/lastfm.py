@@ -27,6 +27,7 @@ to anyone's Last.fm account and cannot write anything (that needs the shared
 secret and a signed session, neither of which Beacon holds).
 """
 
+import asyncio
 import logging
 
 import httpx
@@ -43,6 +44,12 @@ _TIMEOUT = 15.0
 # lower, this only stops a hand-crafted request from asking for a page the
 # API would reject outright.
 _MAX_LIMIT = 1000
+
+# user.getRecentTracks' own maximum, how long to wait between its pages, and
+# a stop for a response that never reports its last page.
+_HISTORY_PAGE = 200
+_HISTORY_PACING = 1.1
+_MAX_HISTORY_PAGES = 2000
 
 # How many track.search hits the similar-tracks fallback weighs. Enough to
 # contain the widely-scrobbled version of a song without pulling a page of
@@ -120,6 +127,51 @@ def _track_list(container: dict | None) -> list[dict]:
     if isinstance(raw, dict):
         return [raw]
     return raw if isinstance(raw, list) else []
+
+
+def _text(value: object) -> str:
+    """A name in user.getRecentTracks, which comes as {"#text": "..."}."""
+    return (value.get("#text") or "").strip() if isinstance(value, dict) else ""
+
+
+def _to_listen(entry: object) -> dict | None:
+    """None for what is not a finished play: the track playing right now
+    carries no date, and is not a listen yet."""
+    if not isinstance(entry, dict):
+        return None
+    date = entry.get("date")
+    uts = date.get("uts") if isinstance(date, dict) else None
+    title = (entry.get("name") or "").strip()
+    if not title or not str(uts or "").isdigit():
+        return None
+    return {
+        "ts": int(uts),
+        "title": title,
+        "artist": _text(entry.get("artist")),
+        "album": _text(entry.get("album")),
+    }
+
+
+async def get_recent_listens(username: str, since: int, until: int, on_page) -> list[dict]:
+    """Every scrobble of a public profile between two UTC timestamps.
+    `on_page` hears the running count. Last.fm publishes no rate, only an
+    error for exceeding it, so this keeps to ListenBrainz's one call a
+    second."""
+    listens: list[dict] = []
+    page = 1
+    while page <= _MAX_HISTORY_PAGES:
+        params = {"user": username, "limit": _HISTORY_PAGE, "page": page}
+        data = await _get("user.getRecentTracks", **params, **{"from": since, "to": until})
+        root = data.get("recenttracks")
+        listens += [listen for listen in map(_to_listen, _track_list(root)) if listen is not None]
+        on_page(len(listens))
+        attr = root.get("@attr") if isinstance(root, dict) else None
+        total = str(attr.get("totalPages") or "") if isinstance(attr, dict) else ""
+        if not total.isdigit() or page >= int(total):
+            break
+        page += 1
+        await asyncio.sleep(_HISTORY_PACING)
+    return listens
 
 
 def _to_tracks(raw: list[dict]) -> list[dict]:

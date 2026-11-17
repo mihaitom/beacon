@@ -26,12 +26,23 @@ class _NoClient:
         raise BeaconError("No Beacon is running")
 
     get_state = query = command = _fail
+    on_server = False
+    pending_speakers: tuple[dict, ...] = ()
 
     def cover_url(self, *args, **kwargs) -> None:
         return None
 
     def favicon_url(self, *args, **kwargs) -> None:
         return None
+
+    def image_url(self, *args, **kwargs) -> None:
+        return None
+
+    def station_logo_url(self, *args, **kwargs) -> None:
+        return None
+
+    async def image(self, *args, **kwargs) -> tuple[None, None]:
+        return None, None
 
 
 class BeaconHub:

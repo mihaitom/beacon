@@ -27,13 +27,9 @@
             to="/playlists/smart/new"
             >{{ $t('smartPlaylists.newButton') }}</v-btn
           >
-          <v-btn
-            prepend-icon="mdi-plus"
-            color="primary"
-            rounded="pill"
-            @click="createDialog = true"
-            >{{ $t('playlists.newPlaylist') }}</v-btn
-          >
+          <v-btn prepend-icon="mdi-plus" color="primary" rounded="pill" @click="openCreate">{{
+            $t('playlists.newPlaylist')
+          }}</v-btn>
         </div>
       </template>
     </detail-header>
@@ -53,6 +49,37 @@
           hide-details
           class="library-search"
         />
+        <v-btn-toggle
+          v-if="segments.length"
+          :model-value="activeSegment"
+          mandatory
+          class="beacon-view-toggle beacon-view-toggle--text"
+          :aria-label="$t('playlists.segments')"
+          @update:model-value="segment = $event"
+        >
+          <v-btn v-for="item in segments" :key="item.value" :value="item.value">
+            {{ item.title }}
+          </v-btn>
+        </v-btn-toggle>
+        <div class="library-controls">
+          <v-btn-toggle
+            :model-value="listView ? 'list' : 'grid'"
+            mandatory
+            class="beacon-view-toggle"
+            :aria-label="$t('library.layout')"
+            @update:model-value="setListView($event === 'list')"
+          >
+            <v-btn value="grid" icon="mdi-view-grid-outline" :title="$t('library.layoutGrid')" />
+            <v-btn value="list" icon="mdi-view-list" :title="$t('library.layoutList')" />
+          </v-btn-toggle>
+          <library-sort-select
+            :model-value="sort.key"
+            :items="sortItems"
+            :direction="sort.direction"
+            @update:model-value="pickSort"
+            @toggle-direction="toggleDirection"
+          />
+        </div>
       </div>
     </sticky-filter>
     <v-alert v-if="libraryStore.error" type="error" variant="tonal" class="view-notice">
@@ -65,17 +92,30 @@
      - loading a playlist's songs) sets it too, and swapping a full list for
      - placeholders because of one of those would be worse than the jump it
      - replaced. -->
-    <div v-if="showSkeletons" class="beacon-panel beacon-panel--flush playlists-view__list">
+    <div
+      v-if="showSkeletons && listView"
+      class="beacon-panel beacon-panel--flush playlists-view__list"
+    >
       <row-skeleton v-for="n in SKELETON_ROWS" :key="n" :cover-size="112" />
     </div>
+    <div v-else-if="showSkeletons" class="playlists-view__grid">
+      <v-skeleton-loader
+        v-for="n in SKELETON_ROWS"
+        :key="n"
+        type="image"
+        class="playlists-view__skeleton"
+      />
+    </div>
 
-    <template v-if="personalPlaylists.length">
-      <h2 class="section-title">{{ $t('playlists.personal') }}</h2>
-      <div class="beacon-panel beacon-panel--flush playlists-view__list">
-        <playlist-row
-          v-for="playlist in personalPlaylists"
+    <template v-for="section in sections" :key="section.key">
+      <h2 class="section-title">{{ section.title }}</h2>
+      <div :class="containerClass">
+        <playlist-card
+          v-for="playlist in section.playlists"
           :key="playlist.id"
           :playlist="playlist"
+          :row="listView"
+          :show-owner="section.key === 'sharedWithMe'"
           @play="playPlaylist"
           @play-next="queuePlaylist($event, 'next')"
           @add-to-queue="queuePlaylist($event, 'end')"
@@ -85,23 +125,8 @@
       </div>
     </template>
 
-    <template v-if="globalPlaylists.length">
-      <h2 class="section-title">{{ $t('playlists.global') }}</h2>
-      <div class="beacon-panel beacon-panel--flush playlists-view__list">
-        <playlist-row
-          v-for="playlist in globalPlaylists"
-          :key="playlist.id"
-          :playlist="playlist"
-          show-owner
-          @play="playPlaylist"
-          @play-next="queuePlaylist($event, 'next')"
-          @add-to-queue="queuePlaylist($event, 'end')"
-        />
-      </div>
-    </template>
-
     <empty-state
-      v-if="!libraryStore.loading && !personalPlaylists.length && !globalPlaylists.length"
+      v-if="!libraryStore.loading && !sections.length"
       :icon="filterQuery ? 'mdi-magnify-close' : 'mdi-playlist-music-outline'"
       :title="
         filterQuery
@@ -114,25 +139,7 @@
     <playlist-edit-dialog ref="editDialog" />
     <playlist-delete-dialog ref="deleteDialog" />
 
-    <v-dialog v-model="createDialog" max-width="400">
-      <v-card>
-        <v-card-title>{{ $t('playlists.createTitle') }}</v-card-title>
-        <v-card-text>
-          <v-text-field
-            v-model="newPlaylistName"
-            :label="$t('common.name')"
-            variant="solo-filled"
-            clearable
-            @keyup.enter="createPlaylist"
-          />
-        </v-card-text>
-        <v-card-actions>
-          <v-spacer />
-          <v-btn variant="text" @click="createDialog = false">{{ $t('common.cancel') }}</v-btn>
-          <v-btn color="primary" @click="createPlaylist">{{ $t('common.create') }}</v-btn>
-        </v-card-actions>
-      </v-card>
-    </v-dialog>
+    <create-playlist-dialog ref="createDialog" />
   </v-container>
 </template>
 
@@ -143,14 +150,32 @@ import { useAuthStore } from '@/stores/auth'
 import { usePlaybackStore } from '@/stores/playback'
 import { matchesAllTerms } from '@/services/textSearch'
 import DetailHeader from '@/components/library/DetailHeader.vue'
-import PlaylistRow from '@/components/library/PlaylistRow.vue'
+import PlaylistCard from '@/components/library/PlaylistCard.vue'
+import LibrarySortSelect from '@/components/library/LibrarySortSelect.vue'
 import RowSkeleton from '@/components/library/RowSkeleton.vue'
 import PlaylistEditDialog from '@/components/library/PlaylistEditDialog.vue'
+import CreatePlaylistDialog from '@/components/library/CreatePlaylistDialog.vue'
 import PlaylistBuilderDialog from '@/components/library/PlaylistBuilderDialog.vue'
 import PlaylistDeleteDialog from '@/components/library/PlaylistDeleteDialog.vue'
 import StickyFilter from '@/components/StickyFilter.vue'
-import { isOwnedBy } from '@/services/library/playlistOwnership'
+import {
+  PLAYLIST_SORT_KEYS,
+  availableSegments,
+  defaultPlaylistDirection,
+  inSegment,
+  loadPlaylistSort,
+  savePlaylistSort,
+  sortPlaylists,
+  playlistSectionsFor,
+  type PlaylistSection,
+  type PlaylistSegment,
+  type PlaylistSort,
+  type PlaylistSortKey,
+} from '@/services/library/playlistBrowse'
+import { readBooleanPreference, writeBooleanPreference } from '@/services/booleanPreference'
 import type { Playlist } from '@/types/library'
+
+const LIST_VIEW_KEY = 'beacon.playlistsListView'
 
 // Enough placeholder rows to read as a list rather than as one stray box.
 // No real count to key off yet — the list they stand in for is exactly what
@@ -164,9 +189,11 @@ export default {
   components: {
     EmptyState,
     DetailHeader,
-    PlaylistRow,
+    PlaylistCard,
+    LibrarySortSelect,
     RowSkeleton,
     PlaylistEditDialog,
+    CreatePlaylistDialog,
     PlaylistBuilderDialog,
     PlaylistDeleteDialog,
     StickyFilter,
@@ -174,13 +201,14 @@ export default {
   data() {
     return {
       SKELETON_ROWS,
-      createDialog: false,
-      newPlaylistName: '',
       filterQuery: '',
       // filteredPlaylists reads this instead of filterQuery directly, so
       // filtering doesn't run synchronously on every keystroke — see the
       // identical pattern (and its rationale) in SongsView.vue.
       debouncedQuery: '',
+      segment: 'all' as PlaylistSegment,
+      sort: loadPlaylistSort() as PlaylistSort,
+      listView: readBooleanPreference(LIST_VIEW_KEY),
     }
   },
   computed: {
@@ -193,23 +221,52 @@ export default {
     showSkeletons(): boolean {
       return this.libraryStore.loading && this.libraryStore.playlists.length === 0
     },
-    filteredPlaylists(): Playlist[] {
-      const query = this.debouncedQuery
-      if (!query.trim()) return this.libraryStore.playlists
-      // Always exact: a playlist is found by its name, and the list is
-      // short enough that a misspelling is worth correcting rather than
-      // guessing around.
-      return this.libraryStore.playlists.filter((playlist: Playlist) =>
-        matchesAllTerms(query, [playlist.name], { exact: true }),
+    segments(): { title: string; value: PlaylistSegment }[] {
+      const titles = {
+        all: 'segmentAll',
+        mine: 'segmentMine',
+        smart: 'segmentSmart',
+        sharedByMe: 'sharedByMe',
+        sharedWithMe: 'sharedWithMe',
+      } as const
+      return availableSegments(this.libraryStore.playlists, this.authStore.username).map(
+        (value) => ({ title: this.$t(`playlists.${titles[value]}`), value }),
       )
     },
-    // Own playlists first, everything else (public playlists shared by
-    // other users) below in its own section.
-    personalPlaylists(): Playlist[] {
-      return this.filteredPlaylists.filter((p) => isOwnedBy(p, this.authStore.username))
+    /** Back to everything when the picked group has emptied, or its button
+     * would be gone and the page stuck on an empty list. */
+    activeSegment(): PlaylistSegment {
+      return this.segments.some((item) => item.value === this.segment) ? this.segment : 'all'
     },
-    globalPlaylists(): Playlist[] {
-      return this.filteredPlaylists.filter((p) => !isOwnedBy(p, this.authStore.username))
+    sortItems(): { title: string; value: string }[] {
+      return PLAYLIST_SORT_KEYS.map((key) => ({
+        title: this.$t(key === 'changed' ? 'playlists.sortChanged' : `library.albumSort.${key}`),
+        value: key,
+      }))
+    },
+    containerClass(): string {
+      return this.listView
+        ? 'beacon-panel beacon-panel--flush playlists-view__list'
+        : 'playlists-view__grid'
+    },
+    filteredPlaylists(): Playlist[] {
+      const query = this.debouncedQuery
+      const matching = this.libraryStore.playlists.filter(
+        (playlist: Playlist) =>
+          inSegment(playlist, this.activeSegment, this.authStore.username) &&
+          // Always exact: a playlist is found by its name, and the list is
+          // short enough that a misspelling is worth correcting rather than
+          // guessing around.
+          (!query.trim() || matchesAllTerms(query, [playlist.name], { exact: true })),
+      )
+      return sortPlaylists(matching, this.sort)
+    },
+    sections(): PlaylistSection[] {
+      return playlistSectionsFor(
+        this.filteredPlaylists,
+        this.authStore.username,
+        this.$t.bind(this),
+      )
     },
   },
   watch: {
@@ -224,6 +281,27 @@ export default {
     this.libraryStore.fetchPlaylists()
   },
   methods: {
+    setListView(listView: boolean): void {
+      this.listView = listView
+      writeBooleanPreference(LIST_VIEW_KEY, listView)
+    },
+    pickSort(key: string): void {
+      const sortKey = key as PlaylistSortKey
+      this.setSort({ key: sortKey, direction: defaultPlaylistDirection(sortKey) })
+    },
+    toggleDirection(): void {
+      this.setSort({
+        key: this.sort.key,
+        direction: this.sort.direction === 'asc' ? 'desc' : 'asc',
+      })
+    },
+    setSort(sort: PlaylistSort): void {
+      this.sort = sort
+      savePlaylistSort(sort)
+    },
+    openCreate(): void {
+      ;(this.$refs.createDialog as { open: (songIds: string[]) => void } | undefined)?.open([])
+    },
     openBuilder(): void {
       ;(this.$refs.builder as { open: () => void } | undefined)?.open()
     },
@@ -263,12 +341,6 @@ export default {
         playlist,
       )
     },
-    async createPlaylist() {
-      if (!this.newPlaylistName.trim()) return
-      await this.libraryStore.createPlaylist(this.newPlaylistName)
-      this.newPlaylistName = ''
-      this.createDialog = false
-    },
   },
 }
 </script>
@@ -282,6 +354,26 @@ export default {
 
 .playlists-view__list {
   margin-bottom: 24px;
+}
+
+/* The gaps are wide because a record falling forward swings out past its
+ * own column, and its glow needs somewhere to land. */
+.playlists-view__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 44px 36px;
+  margin: 18px 0 40px;
+}
+
+/* A front record and the two edges behind it: PlaylistCard's own stack. */
+.playlists-view__skeleton {
+  aspect-ratio: 1 / 1.15;
+  background: transparent;
+}
+
+.playlists-view__skeleton :deep(.v-skeleton-loader__bone) {
+  height: 100%;
+  margin: 0;
 }
 
 .detail-header__actions-row {
