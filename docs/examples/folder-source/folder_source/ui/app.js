@@ -29,6 +29,10 @@ const ICONS = {
   album:
     '<path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20m0 14.5a4.5 4.5 0 1 1 0-9 4.5 4.5 0 0 1 0 9m0-5.5a1 1 0 1 0 0 2 1 1 0 0 0 0-2"/>',
   artist: '<path d="M12 4a4 4 0 1 1 0 8 4 4 0 0 1 0-8m0 10c4.42 0 8 1.79 8 4v2H4v-2c0-2.21 3.58-4 8-4"/>',
+  // Material Design Icons' folder-outline and folder-open, as Beacon has them.
+  folder: '<path d="M20 18H4V8h16m0-2h-8l-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2"/>',
+  folderOpen:
+    '<path d="M19 20H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h6l2 2h7a2 2 0 0 1 2 2H4v10l2.14-8h17.07l-2.28 8.5c-.23.87-1.01 1.5-1.93 1.5"/>',
 }
 const icon = (name) => `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]}</svg>`
 
@@ -905,13 +909,17 @@ function sectionOf(path) {
 const foldersBar = document.getElementById('folders')
 
 // Switching folders keeps the section: from one folder's songs to the next one's.
+// The folder on screen is the open one.
 function renderFolders(section) {
   foldersBar.hidden = state.folders.length < 2
   foldersBar.innerHTML = state.folders
-    .map(
-      (f) =>
-        `<a href="#/${f.key}${SECTIONS[section]}" class="${f.key === state.folder ? 'active' : ''}">${esc(f.name)}</a>`,
-    )
+    .map((f) => {
+      const active = f.key === state.folder
+      const songs = state.status?.folders.find((s) => s.key === f.key)?.songs
+      const size = songs ? `<span class="songs" title="${plural(songs, 'song')}">${count(songs)}</span>` : ''
+      return `<a href="#/${f.key}${SECTIONS[section]}" class="${active ? 'active' : ''}"${active ? ' aria-current="page"' : ''}>
+        ${icon(active ? 'folderOpen' : 'folder')}<span>${esc(f.name)}</span>${size}</a>`
+    })
     .join('')
   const name = state.folders.find((f) => f.key === state.folder)?.name
   searchInput.placeholder = state.folders.length > 1 && name ? `Search ${name}` : 'Search'

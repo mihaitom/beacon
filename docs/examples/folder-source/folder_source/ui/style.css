@@ -81,6 +81,10 @@ svg {
 
 /* ── Header ─────────────────────────────────────────────────────────── */
 
+/* The header is the folder itself: the folders are its index tabs, and the
+ * open one runs without a seam into the panel below it, which holds what can
+ * be done in that folder (sections, search, rescan). With one folder there
+ * are no tabs, and the panel stands on its own. */
 .bar {
   position: sticky;
   top: 0;
@@ -88,23 +92,27 @@ svg {
   padding: 12px 24px;
   background: color-mix(in srgb, var(--bg) 85%, transparent);
   backdrop-filter: blur(20px) saturate(1.4);
-  border-bottom: 1px solid var(--line);
 }
 
 .bar-row {
   display: flex;
   align-items: center;
   gap: 12px;
+  padding: 10px;
+  border-radius: 16px;
+  background: var(--surface);
 }
 
-/* The folders sit above the sections, as tabs with the accent's underline -
- * Beacon's Settings tabs. Many folders scroll sideways. */
+/* The first tab stands on the panel's edge, the way a folder's does. */
+.bar:has(.folders:not([hidden]) a:first-child.active) .bar-row {
+  border-top-left-radius: 0;
+}
+
 .folders {
   display: flex;
-  gap: 24px;
-  margin: -2px 0 12px;
+  gap: 2px;
+  margin-top: -4px;
   overflow-x: auto;
-  border-bottom: 1px solid var(--line);
 }
 
 .folders[hidden] {
@@ -112,22 +120,80 @@ svg {
 }
 
 .folders a {
-  padding: 4px 0 10px;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 46px;
+  padding: 0 18px;
+  border-radius: 12px 12px 0 0;
   color: var(--muted);
-  font-weight: 500;
+  font-size: 0.95rem;
+  font-weight: 600;
   white-space: nowrap;
-  transition: color 0.15s;
+  transition:
+    color 0.15s,
+    background 0.15s;
 }
 
 .folders a:hover {
   color: var(--fg);
+  background: var(--hover);
 }
 
 .folders a.active {
-  color: var(--fg);
-  border-bottom-color: var(--primary);
+  color: var(--primary);
+  background: var(--surface);
+}
+
+/* The open tab's foot curves out into the panel, so tab and panel are one
+ * shape. A scrolling row of tabs clips at its edges, which only hides the
+ * first tab's outer curve: that one stands on the panel's square corner. */
+.folders a.active::before,
+.folders a.active::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  width: 12px;
+  height: 12px;
+  pointer-events: none;
+}
+
+.folders a.active::before {
+  left: -12px;
+  background: radial-gradient(circle at 0 0, transparent 11.5px, var(--surface) 12px);
+}
+
+.folders a.active::after {
+  right: -12px;
+  background: radial-gradient(circle at 100% 0, transparent 11.5px, var(--surface) 12px);
+}
+
+.folders a:first-child.active::before {
+  display: none;
+}
+
+/* How many songs a folder holds, quiet beside its name. */
+.folders .songs {
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--placeholder);
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+
+.folders a.active .songs {
+  background: var(--tonal);
+  color: var(--primary);
+}
+
+.folders a:focus-visible,
+.tabs a:focus-visible,
+.icon-button:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
 }
 
 /* Beacon names the tab already; the name is for the page on its own. */
@@ -149,7 +215,7 @@ body.embedded .brand {
   padding: 4px;
   margin-right: auto;
   border-radius: 999px;
-  background: var(--surface);
+  background: var(--bg);
 }
 
 .tabs a {
@@ -181,7 +247,7 @@ body.embedded .brand {
   height: 40px;
   padding: 0 14px;
   border-radius: 999px;
-  background: var(--surface);
+  background: var(--bg);
   color: var(--muted);
   width: 320px;
 }
@@ -1129,18 +1195,20 @@ body.has-az .shelf {
     font-size: 14px;
   }
   .bar {
-    padding: 10px 16px;
+    padding: 8px 12px 10px;
   }
   .bar-row {
     flex-wrap: wrap;
     gap: 8px;
+    padding: 8px;
+    border-radius: 14px;
   }
   .folders {
-    gap: 18px;
-    margin: 0 0 8px;
+    margin-top: 0;
   }
   .folders a {
-    padding-bottom: 8px;
+    height: 42px;
+    padding: 0 14px;
   }
   .brand {
     display: none;
