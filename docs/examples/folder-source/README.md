@@ -23,6 +23,8 @@ recordings, a friend's hard drive.
   albums: one album per folder and album tag. A compilation stays one album even when
   every song names another artist; `CD1`/`Disc 2` folders join their album.
 - Looks like part of Beacon: its type, its colours (light themes too), its song table.
+- Songs, albums and artists have Beacon's right-click menu: play now, next or at the end
+  of the queue, and go to the album or the artist.
 - Takes title, artist, album, track and disc number, year and genre from the tags, and the
   format with its bitrate, sample rate and bit depth from the file itself. A file
   without tags is named after its folders and file name (`Artist/Album/03 - Title.mp3`).

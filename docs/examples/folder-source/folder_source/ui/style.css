@@ -976,6 +976,101 @@ body.has-az .shelf {
   max-width: 240px;
 }
 
+/* ── Right-click menu ───────────────────────────────────────────────── */
+
+/* Beacon's menu is Vuetify's compact list on the surface colour: 4px corners,
+ * elevation 8, 40px rows with a small icon in front. Its sections are headed
+ * the way a group inside a panel is (.eyebrow-label + .panel-title), and that
+ * hairline is the separator: no divider beside it. */
+.menu {
+  position: fixed;
+  z-index: 20;
+  min-width: 200px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  padding: 0 0 8px;
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow:
+    0 5px 5px -3px #0003,
+    0 8px 10px 1px #00000024,
+    0 3px 14px 2px #0000001f;
+}
+
+.menu[hidden] {
+  display: none;
+}
+
+.menu.open {
+  animation: menu-in 0.15s ease-out;
+}
+
+@keyframes menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+}
+
+.menu-section {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 16px;
+  margin: 10px 0 6px;
+  color: var(--primary);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.menu-section:first-child {
+  margin-top: 14px;
+}
+
+/* A minimum, so a heading wider than every entry still has its line. */
+.menu-section::after {
+  content: '';
+  flex: 1 1 auto;
+  min-width: 28px;
+  height: 1px;
+  background: var(--line);
+}
+
+.menu-item {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  width: 100%;
+  min-height: 40px;
+  padding: 4px 16px;
+  border: 0;
+  background: none;
+  text-align: left;
+  font-size: 1rem;
+  letter-spacing: 0.009375em;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.menu-item svg {
+  opacity: 0.7;
+}
+
+.menu-item:hover,
+.menu-item:focus-visible {
+  background: color-mix(in srgb, var(--fg) 4%, transparent);
+  outline: none;
+}
+
+.menu-item:focus-visible {
+  background: color-mix(in srgb, var(--fg) 12%, transparent);
+}
+
 /* ── Toast ──────────────────────────────────────────────────────────── */
 
 #toast {
@@ -999,6 +1094,7 @@ body.has-az .shelf {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .menu.open,
   .bars i,
   .meter--busy i,
   .spinning svg {
