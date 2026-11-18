@@ -21,19 +21,20 @@
             <p class="text-body-medium text-medium-emphasis">
               {{ $t('connect.pairPinPrompt') }}
             </p>
-            <!-- AirPlay's PINs are four digits. A number field dropped leading
-             - zeros and offered spinner arrows; this also confirms itself
-             - once the last digit is in. -->
-            <v-otp-input
+            <!-- Text, not a number field, and no fixed length: a device may show
+             - four digits or six, an AirPort Express takes a code its owner
+             - chose, and a number would lose a leading zero. -->
+            <v-text-field
               v-model="pin"
-              :length="PIN_LENGTH"
-              type="number"
+              :label="$t('connect.pin')"
+              inputmode="numeric"
+              autocomplete="one-time-code"
               variant="solo-filled"
+              hide-details
               autofocus
               :disabled="loading"
-              :aria-label="$t('connect.pin')"
               class="airplay-pairing__pin"
-              @finish="finish"
+              @keyup.enter="finish"
             />
           </template>
           <p v-else class="text-body-medium text-medium-emphasis">
@@ -75,8 +76,6 @@
 <script lang="ts">
 import { useConnectStore } from '@/stores/connect'
 
-const PIN_LENGTH = 4
-
 export default {
   name: 'AirplayPairingDialog',
   props: {
@@ -92,7 +91,6 @@ export default {
   emits: ['update:modelValue'],
   data() {
     return {
-      PIN_LENGTH,
       started: false,
       devicePin: false,
       pin: '',
@@ -106,13 +104,19 @@ export default {
     },
     canFinish(): boolean {
       if (!this.started || this.loading) return false
-      return !this.devicePin || this.pin.length === PIN_LENGTH
+      return !this.devicePin || this.pin.length > 0
     },
   },
   watch: {
     modelValue(open: boolean) {
       if (open) this.start()
       else this.reset()
+    },
+    // Through the model rather than on input: a letter typed after digits
+    // leaves the filtered value unchanged and would otherwise stay on screen.
+    pin(value: string | null) {
+      const digits = (value ?? '').replace(/\D/g, '')
+      if (digits !== value) this.pin = digits
     },
   },
   methods: {
@@ -136,7 +140,7 @@ export default {
       try {
         await this.connectStore.finishPairing(
           this.deviceName,
-          this.devicePin ? Number(this.pin) : undefined,
+          this.devicePin ? this.pin : undefined,
         )
         this.onClose(false)
       } catch (error) {
@@ -181,10 +185,6 @@ export default {
   display: flex;
   align-items: center;
   gap: 12px;
-}
-
-.airplay-pairing__pin {
-  padding: 0;
 }
 
 .airplay-pairing__actions {

@@ -40,7 +40,7 @@ class _FakePairing:
         self.begin_calls = 0
         self.finish_calls = 0
         self.close_calls = 0
-        self.pinned: int | None = None
+        self.pinned: str | None = None
         self._begin_error = begin_error
         self._finish_error = finish_error
         self._close_error = close_error
@@ -53,7 +53,7 @@ class _FakePairing:
         if self._begin_error:
             raise self._begin_error
 
-    def pin(self, pin: int) -> None:  # synchronous, like the real pyatv API
+    def pin(self, pin: str) -> None:  # synchronous, like the real pyatv API
         self.pinned = pin
 
     async def finish(self) -> None:
@@ -364,16 +364,37 @@ def test_finish_success_saves_credentials_and_clears_the_session(client, default
     routes_pairing._sessions["FinishOk"] = (fake_pairing, time.monotonic())
 
     with patch.object(credentials, "_PATH", str(tmp_path / "creds.json")):
-        r = client.post("/pair/airplay/finish", json={"name": "FinishOk", "pin": 1234})
+        r = client.post("/pair/airplay/finish", json={"name": "FinishOk", "pin": "1234"})
 
         assert r.status_code == 200
         assert r.json() == {"success": True, "name": "FinishOk"}
         assert credentials.get("FinishOk") == "s3cr3t-creds"
 
-    assert fake_pairing.pinned == 1234
+    assert fake_pairing.pinned == "1234"
     assert fake_pairing.finish_calls == 1
     assert fake_pairing.close_calls == 1
     assert "FinishOk" not in routes_pairing._sessions
+
+
+def test_finish_keeps_the_leading_zero_of_a_six_digit_pin(client, default_session, tmp_path):
+    fake_pairing = _FakePairing()
+    routes_pairing._sessions["SixDigits"] = (fake_pairing, time.monotonic())
+
+    with patch.object(credentials, "_PATH", str(tmp_path / "creds.json")):
+        r = client.post("/pair/airplay/finish", json={"name": "SixDigits", "pin": "012345"})
+
+    assert r.status_code == 200
+    assert fake_pairing.pinned == "012345"
+
+
+def test_finish_rejects_a_pin_that_is_not_digits(client, default_session):
+    fake_pairing = _FakePairing()
+    routes_pairing._sessions["NotDigits"] = (fake_pairing, time.monotonic())
+
+    r = client.post("/pair/airplay/finish", json={"name": "NotDigits", "pin": "12a4"})
+
+    assert r.status_code == 422
+    assert fake_pairing.finish_calls == 0
 
 
 def test_finish_without_a_pin_skips_pin_entry(client, default_session, tmp_path):
@@ -395,7 +416,7 @@ def test_finish_reports_a_wrong_pin_as_a_friendly_message(client, default_sessio
     routes_pairing._sessions["WrongPin"] = (fake_pairing, time.monotonic())
 
     with patch.object(credentials, "_PATH", str(tmp_path / "creds.json")):
-        r = client.post("/pair/airplay/finish", json={"name": "WrongPin", "pin": 1111})
+        r = client.post("/pair/airplay/finish", json={"name": "WrongPin", "pin": "1111"})
 
     assert r.status_code == 500
     assert "Incorrect PIN" in r.json()["error"]
@@ -410,7 +431,7 @@ def test_finish_falls_back_to_the_raw_message_for_an_unrecognized_finish_error(
     routes_pairing._sessions["FinishGenericError"] = (fake_pairing, time.monotonic())
 
     with patch.object(credentials, "_PATH", str(tmp_path / "creds.json")):
-        r = client.post("/pair/airplay/finish", json={"name": "FinishGenericError", "pin": 1111})
+        r = client.post("/pair/airplay/finish", json={"name": "FinishGenericError", "pin": "1111"})
 
     assert r.status_code == 500
     assert r.json() == {"error": "device disconnected"}
@@ -424,7 +445,7 @@ def test_finish_swallows_a_close_error_after_a_failed_finish(client, default_ses
     routes_pairing._sessions["FinishCloseError"] = (fake_pairing, time.monotonic())
 
     with patch.object(credentials, "_PATH", str(tmp_path / "creds.json")):
-        r = client.post("/pair/airplay/finish", json={"name": "FinishCloseError", "pin": 1111})
+        r = client.post("/pair/airplay/finish", json={"name": "FinishCloseError", "pin": "1111"})
 
     assert r.status_code == 500
     assert "Incorrect PIN" in r.json()["error"]
@@ -437,7 +458,7 @@ def test_finish_reports_when_pairing_completes_without_credentials(
     routes_pairing._sessions["NoCreds"] = (fake_pairing, time.monotonic())
 
     with patch.object(credentials, "_PATH", str(tmp_path / "creds.json")):
-        r = client.post("/pair/airplay/finish", json={"name": "NoCreds", "pin": 1234})
+        r = client.post("/pair/airplay/finish", json={"name": "NoCreds", "pin": "1234"})
 
     assert r.status_code == 500
     assert r.json() == {"error": "Pairing completed but no credentials received."}
@@ -451,7 +472,7 @@ def test_finish_swallows_a_close_error_on_the_success_path(client, default_sessi
 
     with patch.object(credentials, "_PATH", str(tmp_path / "creds.json")):
         r = client.post(
-            "/pair/airplay/finish", json={"name": "FinishSuccessCloseError", "pin": 1234}
+            "/pair/airplay/finish", json={"name": "FinishSuccessCloseError", "pin": "1234"}
         )
 
     assert r.status_code == 200

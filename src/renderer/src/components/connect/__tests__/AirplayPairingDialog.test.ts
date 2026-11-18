@@ -28,8 +28,7 @@ function button(wrapper: Awaited<ReturnType<typeof openDialog>>, label: string) 
 }
 
 async function typePin(wrapper: Awaited<ReturnType<typeof openDialog>>, pin: string) {
-  // Vuetify 4's OTP field is one input behind the boxes.
-  await wrapper.get('.airplay-pairing__pin .v-otp-input__input').setValue(pin)
+  await wrapper.get('.airplay-pairing__pin input').setValue(pin)
   await flushPromises()
 }
 
@@ -41,24 +40,62 @@ describe('AirplayPairingDialog', () => {
     store = useConnectStore()
   })
 
-  it('pairs with the PIN the device shows once all four digits are in', async () => {
+  it('pairs with a six-digit PIN, leading zero included', async () => {
+    vi.spyOn(store, 'startPairing').mockResolvedValue({ device_provides_pin: true } as never)
+    const finish = vi.spyOn(store, 'finishPairing').mockResolvedValue()
+    const wrapper = await openDialog()
+
+    // jsdom ignores maxlength when a value is set, so it is checked apart.
+    expect(wrapper.get('.airplay-pairing__pin input').attributes('maxlength')).toBeUndefined()
+    await typePin(wrapper, '012345')
+    await button(wrapper, 'Done')!.trigger('click')
+    await flushPromises()
+
+    expect(finish).toHaveBeenCalledWith('Living Room', '012345')
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([false])
+  })
+
+  it('pairs on Enter with a four-digit PIN', async () => {
     vi.spyOn(store, 'startPairing').mockResolvedValue({ device_provides_pin: true } as never)
     const finish = vi.spyOn(store, 'finishPairing').mockResolvedValue()
     const wrapper = await openDialog()
 
     await typePin(wrapper, '0427')
+    await wrapper.get('.airplay-pairing__pin input').trigger('keyup', { key: 'Enter' })
+    await flushPromises()
 
-    expect(finish).toHaveBeenCalledWith('Living Room', 427)
-    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([false])
+    expect(finish).toHaveBeenCalledWith('Living Room', '0427')
   })
 
-  it('holds Done back until the PIN is complete', async () => {
+  it('holds Done back until a PIN is typed', async () => {
     vi.spyOn(store, 'startPairing').mockResolvedValue({ device_provides_pin: true } as never)
     const wrapper = await openDialog()
 
-    await typePin(wrapper, '04')
-
     expect(button(wrapper, 'Done')?.attributes('disabled')).toBeDefined()
+  })
+
+  it('takes a PIN of any length', async () => {
+    vi.spyOn(store, 'startPairing').mockResolvedValue({ device_provides_pin: true } as never)
+    const finish = vi.spyOn(store, 'finishPairing').mockResolvedValue()
+    const wrapper = await openDialog()
+
+    await typePin(wrapper, '12')
+    await button(wrapper, 'Done')!.trigger('click')
+    await flushPromises()
+
+    expect(finish).toHaveBeenCalledWith('Living Room', '12')
+  })
+
+  it('keeps only the digits of what is typed', async () => {
+    vi.spyOn(store, 'startPairing').mockResolvedValue({ device_provides_pin: true } as never)
+    const finish = vi.spyOn(store, 'finishPairing').mockResolvedValue()
+    const wrapper = await openDialog()
+
+    await typePin(wrapper, '12 34-56')
+    await button(wrapper, 'Done')!.trigger('click')
+    await flushPromises()
+
+    expect(finish).toHaveBeenCalledWith('Living Room', '123456')
   })
 
   it('pairs on Done when the device asks for a confirmation instead', async () => {
@@ -80,6 +117,8 @@ describe('AirplayPairingDialog', () => {
     const wrapper = await openDialog()
 
     await typePin(wrapper, '1111')
+    await button(wrapper, 'Done')!.trigger('click')
+    await flushPromises()
     expect(wrapper.text()).toContain('Incorrect PIN')
 
     await button(wrapper, 'Retry')!.trigger('click')
@@ -87,6 +126,6 @@ describe('AirplayPairingDialog', () => {
 
     expect(start).toHaveBeenCalledTimes(2)
     expect(wrapper.text()).not.toContain('Incorrect PIN')
-    expect(wrapper.find('.airplay-pairing__pin .v-otp-input__input').exists()).toBe(true)
+    expect(wrapper.find('.airplay-pairing__pin input').exists()).toBe(true)
   })
 })

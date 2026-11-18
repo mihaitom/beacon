@@ -400,7 +400,7 @@ export const useConnectStore = defineStore('connect', {
       return apiStartPairing(name, force)
     },
 
-    async finishPairing(name: string, pin?: number): Promise<void> {
+    async finishPairing(name: string, pin?: string): Promise<void> {
       await apiFinishPairing(name, pin)
       await this.refreshPaired()
       // /discover's needs_pairing is now credential-aware (see routes/
