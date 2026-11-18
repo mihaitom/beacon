@@ -14,6 +14,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - The cast menu is rebuilt: the speakers playing, each row doubling as its volume slider, and the ones you can add. A tap adds a speaker or stops one right away, without a separate confirm step. On the desktop it is wider and split in two; on phones and in Remote Control it is a sheet you pull down to close, and an AirPlay speaker can be paired from the phone too
 
+### Fixed
+
+- In Remote Control, the page behind an open menu no longer scrolls along when you swipe on the menu
+
 ## [1.12.0] - 2026-11-17
 
 ### Highlights

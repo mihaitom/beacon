@@ -160,6 +160,15 @@ textarea {
   padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
 }
 
+/* A sheet is open (js/scroll-lock.js): the page behind it stays where it
+ * is. */
+.scroll-locked,
+.scroll-locked body,
+.scroll-locked #view-root {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 /* Docks directly above the tab bar, as a sibling flex item of #view-root
  * rather than an overlay — the scroll area shrinks by exactly this height,
  * so nothing is ever hidden behind it and no padding has to be kept in

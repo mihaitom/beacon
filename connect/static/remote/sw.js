@@ -26,6 +26,7 @@ const SHELL_PATHS = [
   './js/waveform.js',
   './js/router.js',
   './js/sheet.js',
+  './js/scroll-lock.js',
   './js/album-row.js',
   './js/album-tile.js',
   './js/artist-row.js',

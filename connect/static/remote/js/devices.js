@@ -7,6 +7,7 @@
 
 import { fetchDevices, fetchDeviceVolume, fireCommand, sendReportedCommand } from './api.js';
 import { createFader } from './fader.js';
+import { lockScroll } from './scroll-lock.js';
 import { state, subscribe } from './state.js';
 import { t } from './i18n.js';
 
@@ -93,7 +94,7 @@ export async function openDevicePicker() {
         <button type="button" class="cast-sheet-round" data-action="close"><i class="mdi mdi-close"></i></button>
       </div>
     </div>
-    <div class="cast-sheet-body">
+    <div class="cast-sheet-body" data-scrolls>
       <section class="cast-sheet-playing"></section>
       <section class="cast-sheet-available">
         <div class="eyebrow-label cast-sheet-heading"></div>
@@ -480,7 +481,10 @@ export async function openDevicePicker() {
 
   // ── Opening and closing ──
 
+  const unlockScroll = lockScroll();
+
   function close() {
+    unlockScroll();
     clearInterval(refreshTimer);
     unsubscribe();
     document.removeEventListener('keydown', onKey);
