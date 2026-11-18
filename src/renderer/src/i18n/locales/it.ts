@@ -463,6 +463,7 @@ export default {
       unknown: 'Riproduzione su «{device}» non riuscita.',
     },
     pairDeviceTitle: 'Associa "{name}"',
+    pairConnecting: 'Ricerca di "{name}"...',
     pairPinPrompt: 'Il dispositivo mostra un PIN: inseriscilo:',
     pairConfirmPrompt: 'Conferma sul dispositivo, poi fai clic su "Fatto".',
     pin: 'PIN',

@@ -466,6 +466,7 @@ export default {
       unknown: 'Falló la reproducción en «{device}».',
     },
     pairDeviceTitle: 'Emparejar "{name}"',
+    pairConnecting: 'Buscando "{name}"...',
     pairPinPrompt: 'El dispositivo muestra un PIN - introdúcelo:',
     pairConfirmPrompt: 'Confirma en el dispositivo y luego haz clic en "Hecho".',
     pin: 'PIN',

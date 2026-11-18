@@ -462,6 +462,7 @@ export default {
       unknown: 'Die Wiedergabe auf „{device}“ ist fehlgeschlagen.',
     },
     pairDeviceTitle: '„{name}“ koppeln',
+    pairConnecting: 'Suche nach „{name}“...',
     pairPinPrompt: 'Auf dem Gerät wird eine PIN angezeigt - bitte eingeben:',
     pairConfirmPrompt: 'Bitte am Gerät bestätigen, dann „Fertig“ klicken.',
     pin: 'PIN',

@@ -461,6 +461,7 @@ export default {
       unknown: 'Playback on “{device}” failed.',
     },
     pairDeviceTitle: 'Pair "{name}"',
+    pairConnecting: 'Looking for "{name}"...',
     pairPinPrompt: 'The device is showing a PIN - please enter it:',
     pairConfirmPrompt: 'Please confirm on the device, then click "Done".',
     pin: 'PIN',

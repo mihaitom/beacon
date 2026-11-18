@@ -465,6 +465,7 @@ export default {
       unknown: 'La lecture sur « {device} » a échoué.',
     },
     pairDeviceTitle: 'Associer « {name} »',
+    pairConnecting: 'Recherche de « {name} »...',
     pairPinPrompt: "L'appareil affiche un code PIN - veuillez le saisir :",
     pairConfirmPrompt: "Veuillez confirmer sur l'appareil, puis cliquez sur « Terminé ».",
     pin: 'PIN',

@@ -14,6 +14,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Changed
 
 - The cast menu is rebuilt: the speakers playing, each row doubling as its volume slider, and the ones you can add. A tap adds a speaker or stops one right away, without a separate confirm step. On the desktop it is wider and split in two; on phones and in Remote Control it is a sheet you pull down to close, and an AirPlay speaker can be paired from the phone too
+- Pairing an AirPlay speaker says that it is looking for the speaker, takes its PIN in four boxes that confirm on the last digit, and after a wrong PIN offers to try again instead of having to close and reopen the dialog
 
 ### Fixed
 
