@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { useRemoteControlStore } from '../remoteControl'
 import { usePlaybackStore } from '../playback'
 import { useConnectStore } from '../connect'
+import { useGroupVolumeStore } from '../groupVolume'
 import { useAutoplayStore } from '../autoplay'
 import * as remoteHttp from '@/services/remoteControl/http'
 import * as commands from '@/services/remoteControl/commands'
@@ -809,6 +810,31 @@ describe('remoteControl store', () => {
         target: 'FLAC, 48 kHz',
         source: 'FLAC, 96 kHz / 24-bit',
       })
+    })
+
+    /** The phone's cast sheet shows the same switch, and has to follow it
+     * being flipped here. */
+    it('sends how the master moves several speakers, and again when that changes', async () => {
+      vi.useFakeTimers()
+      vi.mocked(remoteHttp.enableRemoteControl).mockResolvedValue({
+        password: 'secret',
+        pin: '1',
+        lan_ip: '',
+        port: 0,
+      })
+      const store = useRemoteControlStore()
+      useConnectStore().status = makeStatus({ targets: [] })
+
+      await store.enable()
+      await vi.advanceTimersByTimeAsync(300)
+      const first = vi.mocked(remoteHttp.pushRemoteState).mock.calls.at(-1)![0]
+      expect((first as Record<string, unknown>).group_volume_mode).toBe('equal')
+
+      useGroupVolumeStore().setMode('relative')
+      await vi.advanceTimersByTimeAsync(300)
+
+      const next = vi.mocked(remoteHttp.pushRemoteState).mock.calls.at(-1)![0]
+      expect((next as Record<string, unknown>).group_volume_mode).toBe('relative')
     })
 
     it('leaves the stream lines out entirely when nothing is being cast', async () => {

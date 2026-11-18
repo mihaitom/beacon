@@ -9,6 +9,7 @@ import { useConnectStore } from '@/stores/connect'
 import { recordDeviceVolume, setVolume, volumeScope } from '@/services/volumeControl'
 import { useRemoteControlStore } from '@/stores/remoteControl'
 import { useAuthStore } from '@/stores/auth'
+import { useGroupVolumeStore } from '@/stores/groupVolume'
 import { useAutoplayStore } from '@/stores/autoplay'
 import { useFanartStore } from '@/stores/fanart'
 import { useLyricsStore } from '@/stores/lyrics'
@@ -238,6 +239,12 @@ export async function handleRemoteCommand(
       const targets = connect.activeTargets
       if (targets.length === 1 && targets[0]!.type === deviceType && targets[0]!.name === name) {
         useRemoteControlStore().reportDeviceVolume(rounded)
+      }
+      return
+    }
+    case 'group-volume-mode': {
+      if (payload.mode === 'equal' || payload.mode === 'relative') {
+        useGroupVolumeStore().setMode(payload.mode)
       }
       return
     }
@@ -816,6 +823,7 @@ export async function resolveRemoteQuery(
       // the UI to grey the row out with a hint instead of pretending the
       // device isn't there.
       const typeOrder: DeviceType[] = ['sonos', 'airplay', 'chromecast', 'dlna']
+      const sessionId = useAuthStore().sessionId
       // Matches connectStore.isVolumeCapable() (see connect/routes/volume.py).
       const volumeCapableTypes = new Set<DeviceType>(['sonos', 'airplay', 'chromecast', 'dlna'])
       const flatten = (
@@ -825,6 +833,8 @@ export async function resolveRemoteQuery(
         type: DeviceType
         name: string
         in_use_by_name: string | null
+        in_use_by_song: string | null
+        claimed: boolean
         needs_pairing: boolean
         volume_capable: boolean
       }[] =>
@@ -834,6 +844,10 @@ export async function resolveRemoteQuery(
             type,
             name: d.name,
             in_use_by_name: d.in_use_by_name ?? null,
+            in_use_by_song: d.in_use_by_song ?? null,
+            // Held by another session rather than this window - the sheet
+            // offers "Take over" for these instead of a plain add.
+            claimed: d.in_use_by_session_id != null && d.in_use_by_session_id !== sessionId,
             needs_pairing: !!d.needs_pairing,
             volume_capable: volumeCapableTypes.has(type),
           }))

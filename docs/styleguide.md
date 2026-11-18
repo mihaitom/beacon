@@ -642,6 +642,14 @@ The cast menu on the desktop is built from these: two halves, what is playing
 on the left and what could be added on the right, so its height follows the
 speakers in use rather than every one the network has. Below 620px it stacks.
 
+On a phone (`MobileDevicePicker.vue`, and Remote Control's `devices.js`) the
+same two halves sit in one column of a sheet: a grabber and a large title on
+top, with round icon buttons for rescan and close, and the sheet closes when
+pulled down by its top. The rows are a thumb's height, 56px, and the master is
+68px, the one large thing in the sheet. The speakers to add sit in one grouped
+panel per kind, each marked by its icon in a small tile, with a round `+`.
+Every tap applies straight away, so there is no "Done".
+
 ## Empty states
 
 A page with nothing to show uses `EmptyState.vue` (Vuetify's

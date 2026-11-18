@@ -18,6 +18,7 @@ const SHELL_PATHS = [
   './js/art.js',
   './js/devices.js',
   './js/equalizer.js',
+  './js/fader.js',
   './js/lights.js',
   './js/mini-player.js',
   './js/range.js',

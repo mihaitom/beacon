@@ -6,6 +6,7 @@ import { useConnectStore } from '@/stores/connect'
 import { useRemoteControlStore } from '@/stores/remoteControl'
 import { useAutoplayStore } from '@/stores/autoplay'
 import { useAuthStore } from '@/stores/auth'
+import { useGroupVolumeStore } from '@/stores/groupVolume'
 import { useFanartStore } from '@/stores/fanart'
 import { useEqualizerStore } from '@/stores/equalizer'
 import { useLightsStore } from '@/stores/lights'
@@ -183,6 +184,24 @@ describe('handleRemoteCommand', () => {
       expect(setDeviceVolumeSpy).toHaveBeenCalledWith('sonos', 'A', 50)
       expect(setDeviceVolumeSpy).toHaveBeenCalledWith('sonos', 'B', 50)
       expect(reportSpy).toHaveBeenCalledWith(50)
+    })
+  })
+
+  describe('group-volume-mode', () => {
+    it("switches how the master moves several speakers from the phone's cast sheet", async () => {
+      await handleRemoteCommand('group-volume-mode', { mode: 'relative' })
+      expect(useGroupVolumeStore().mode).toBe('relative')
+
+      await handleRemoteCommand('group-volume-mode', { mode: 'equal' })
+      expect(useGroupVolumeStore().mode).toBe('equal')
+    })
+
+    it('ignores a mode it does not know', async () => {
+      useGroupVolumeStore().setMode('relative')
+
+      await handleRemoteCommand('group-volume-mode', { mode: 'loud' })
+
+      expect(useGroupVolumeStore().mode).toBe('relative')
     })
   })
 
@@ -1420,6 +1439,41 @@ describe('resolveRemoteQuery', () => {
       type: 'dlna',
       in_use_by_name: 'Someone',
     })
+  })
+
+  /** The sheet offers "Take over" only for a speaker somebody else holds -
+   * one this window holds itself is just playing. */
+  it('devices-request tells a speaker held elsewhere apart from one held here', async () => {
+    const connect = useConnectStore()
+    vi.spyOn(connect, 'refreshDevices').mockResolvedValue()
+    useAuthStore().sessionId = 'mine'
+    connect.devices = {
+      sonos: [
+        { name: 'Held here', in_use_by_session_id: 'mine', in_use_by_name: 'Me' },
+        {
+          name: 'Held elsewhere',
+          in_use_by_session_id: 'theirs',
+          in_use_by_name: 'Anna',
+          in_use_by_song: 'One More Time',
+        },
+        { name: 'Free' },
+      ],
+      airplay: [],
+      chromecast: [],
+      dlna: [],
+    }
+
+    const result = (await resolveRemoteQuery('devices-request', {})) as {
+      items: Record<string, unknown>[]
+    }
+    const byName = Object.fromEntries(result.items.map((d) => [d.name, d]))
+
+    expect(byName['Held here']).toMatchObject({ claimed: false })
+    expect(byName['Held elsewhere']).toMatchObject({
+      claimed: true,
+      in_use_by_song: 'One More Time',
+    })
+    expect(byName['Free']).toMatchObject({ claimed: false })
   })
 
   it('device-volume-request forwards straight to connect.getDeviceVolume', async () => {

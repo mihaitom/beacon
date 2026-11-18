@@ -103,13 +103,7 @@
          - say anything at all. It covers the first scan after login too,
          - which blocks for the full sweep (see refreshDevices()). -->
         <div v-if="availableGroups.length === 0" class="text-body-small connect-picker__empty">
-          {{
-            connectStore.isScanning
-              ? $t('connect.searchingDevices')
-              : allDevicesCount === 0
-                ? $t('connect.noDevicesFound')
-                : $t('connect.allInUse')
-          }}
+          {{ emptyAvailableText }}
         </div>
         <template v-for="group in availableGroups" :key="group.type">
           <div class="text-body-small connect-picker__type">{{ group.label }}</div>
@@ -155,55 +149,18 @@
 </template>
 
 <script lang="ts">
-import { useConnectStore } from '@/stores/connect'
-import { usePlaybackStore } from '@/stores/playback'
-import { useAuthStore } from '@/stores/auth'
-import { useGroupVolumeStore } from '@/stores/groupVolume'
-import { pollingAllowed } from '@/services/connect/pollGate'
-import { endVolumeDrag, startVolumeDrag } from '@/services/connect/volumeGuard'
-import {
-  knownDeviceVolume,
-  sendDeviceVolume,
-  setVolume,
-  volumeScope,
-} from '@/services/volumeControl'
-import { groupVolumeMixin } from '@/components/player/groupVolumeMixin'
-import SegmentedControl, { type SegmentedOption } from '@/components/SegmentedControl.vue'
+import SegmentedControl from '@/components/SegmentedControl.vue'
 import ConnectErrorBanner from './ConnectErrorBanner.vue'
 import AirplayPairingDialog from './AirplayPairingDialog.vue'
 import AirplayIcon from './AirplayIcon.vue'
-import AvailableDeviceRow, { TYPE_ICONS } from './AvailableDeviceRow.vue'
+import AvailableDeviceRow from './AvailableDeviceRow.vue'
 import VolumeFader from './VolumeFader.vue'
 import StreamInfoSection from './StreamInfoSection.vue'
-import type { GroupVolumeMode } from '@/services/groupVolume'
-import type {
-  ConnectDeviceRef,
-  ConnectStatusTarget,
-  DeviceType,
-  DiscoveredDevice,
-} from '@/services/connect/types'
+import { castMenuMixin } from './castMenuMixin'
 
-interface DeviceEntry {
-  device: DiscoveredDevice
-  type: DeviceType
-}
-
-interface DeviceGroup {
-  type: DeviceType
-  label: string
-  entries: DeviceEntry[]
-}
-
-// Fixed display order (not alphabetical) — Sonos/AirPlay are this app's
-// primary, best-supported casting targets.
-const TYPE_ORDER: DeviceType[] = ['sonos', 'airplay', 'chromecast', 'dlna']
-const TYPE_LABELS: Record<DeviceType, string> = {
-  sonos: 'Sonos',
-  airplay: 'AirPlay',
-  chromecast: 'Chromecast',
-  dlna: 'DLNA',
-}
-
+/** The desktop's cast menu: what is playing on the left, what could be
+ * added on the right. What it does lives in castMenuMixin, shared with the
+ * phone's sheet. */
 export default {
   name: 'ConnectDevicePicker',
   components: {
@@ -215,201 +172,7 @@ export default {
     StreamInfoSection,
     VolumeFader,
   },
-  mixins: [groupVolumeMixin],
-  data() {
-    return {
-      // The speaker being added right now, for its row's spinner.
-      busyKey: null as string | null,
-      pairingOpen: false,
-      pairingDeviceName: '',
-      devicesPollTimer: null as ReturnType<typeof setInterval> | null,
-    }
-  },
-  computed: {
-    connectStore() {
-      return useConnectStore()
-    },
-    authStore() {
-      return useAuthStore()
-    },
-    groupVolumeStore() {
-      return useGroupVolumeStore()
-    },
-    /** Every speaker in use, a single one included - its row is a slider
-     * here too. See groupVolumeMixin. */
-    volumeTrackedTargets(): ConnectStatusTarget[] {
-      return this.connectStore.activeTargets.filter((t) =>
-        this.connectStore.isVolumeCapable(t.type),
-      )
-    },
-    hasNotices(): boolean {
-      return (
-        this.connectStore.errors.apiUnreachable ||
-        this.authStore.health?.ffmpeg === false ||
-        !!this.connectStore.errors.message
-      )
-    },
-    /** Under the menu's own "Playing on", so just the count. */
-    playingHeading(): string {
-      const count = this.connectStore.activeTargets.length
-      return count === 1
-        ? this.$t('connect.oneSpeaker')
-        : this.$t('connect.speakerCount', { n: count })
-    },
-    /** With fewer than two speakers that have a volume, both modes do the
-     * same thing. */
-    showModeSwitch(): boolean {
-      return this.volumeTrackedTargets.length > 1
-    },
-    modeOptions(): SegmentedOption[] {
-      return [
-        { title: this.$t('connect.groupVolumeEqual'), value: 'equal' },
-        { title: this.$t('connect.groupVolumeRelative'), value: 'relative' },
-      ]
-    },
-    /** In 'equal' mode the master is the only level there is, so the
-     * speakers' rows are names only. */
-    perSpeakerPlain(): boolean {
-      return !!this.volumeGroup && this.groupVolumeStore.mode === 'equal'
-    },
-    groupVolumeFloor(): number | null {
-      const levels = (this.volumeGroup ?? [])
-        .map(knownDeviceVolume)
-        .filter((level): level is number => level != null)
-      return levels.length ? Math.min(...levels) : null
-    },
-    activeKeys(): Set<string> {
-      return new Set(this.connectStore.activeTargets.map((t) => `${t.type}:${t.name}`))
-    },
-    deviceGroups(): DeviceGroup[] {
-      const d = this.connectStore.devices
-      const byType: Record<DeviceType, DiscoveredDevice[]> = {
-        sonos: d.sonos,
-        airplay: d.airplay,
-        chromecast: d.chromecast,
-        dlna: d.dlna,
-      }
-      return TYPE_ORDER.map((type) => ({
-        type,
-        label: TYPE_LABELS[type],
-        entries: [...byType[type]]
-          .sort((a, b) => a.name.localeCompare(b.name))
-          .map((device) => ({ device, type })),
-      })).filter((group) => group.entries.length > 0)
-    },
-    allDevicesCount(): number {
-      return this.deviceGroups.reduce((sum, group) => sum + group.entries.length, 0)
-    },
-    /** What could still be added - the speakers in use are on the left. */
-    availableGroups(): DeviceGroup[] {
-      return this.deviceGroups
-        .map((group) => ({
-          ...group,
-          entries: group.entries.filter((e) => !this.activeKeys.has(this.key(e))),
-        }))
-        .filter((group) => group.entries.length > 0)
-    },
-  },
-  mounted() {
-    // Keeps in_use_by_name/in_use_by_song fresh while the picker is open —
-    // someone else's cast session changing songs, or a device becoming
-    // free again, should show up without the user having to hit "Scan
-    // again". Cheap: this omits fresh=true, so the backend just re-derives
-    // claim/song annotations for the already-cached device list (see
-    // routes/discovery.py's _annotate_claims()) rather than doing a real
-    // mDNS/SSDP rescan.
-    // Not while the window is hidden or the app is being denied by
-    // whatever sits in front of the backend — see pollGate.ts. Nobody can
-    // be watching a picker in a hidden window, and a re-annotation nothing
-    // renders is the kind of steady baseline that keeps a ban alive.
-    this.devicesPollTimer = setInterval(() => {
-      if (pollingAllowed()) void this.connectStore.refreshDevices()
-    }, 4000)
-  },
-  beforeUnmount() {
-    if (this.devicesPollTimer) clearInterval(this.devicesPollTimer)
-  },
-  methods: {
-    startVolumeDrag,
-    endVolumeDrag,
-    key(entry: DeviceEntry): string {
-      return `${entry.type}:${entry.device.name}`
-    },
-    typeIcon(type: DeviceType): string {
-      return TYPE_ICONS[type] ?? 'mdi-speaker'
-    },
-    deviceLevel(target: ConnectDeviceRef): number | null {
-      return knownDeviceVolume(target)
-    },
-    onModeChange(mode: string) {
-      this.groupVolumeStore.setMode(mode as GroupVolumeMode)
-    },
-    onMasterChange(level: number) {
-      void setVolume(volumeScope(), level)
-    },
-    onDeviceChange(target: ConnectDeviceRef, level: number) {
-      // Not awaited per move - see services/connect/volumeWrite.ts.
-      sendDeviceVolume({ type: target.type, name: target.name }, level)
-    },
-    /**
-     * Adds a speaker to what is playing, straight away. Through
-     * applyTargets() rather than castTo(): on a running session that
-     * replaces the targets instead of adding to them, and with nothing
-     * running applyTargets() starts the cast itself.
-     */
-    async add(entry: DeviceEntry) {
-      if (this.busyKey) return
-      this.busyKey = this.key(entry)
-      try {
-        await usePlaybackStore().applyTargets([
-          ...this.connectStore.activeTargets,
-          { type: entry.type, name: entry.device.name },
-        ])
-      } catch {
-        // A device-in-use conflict already opened the takeover dialog (see
-        // castTo()/withTakeoverHandling()); any other failure already set
-        // connectStore.errors.message, shown above.
-      } finally {
-        this.busyKey = null
-      }
-    },
-    /** Claim a device another session is holding, *in addition to*
-     * whatever is already playing. */
-    async takeOver(entry: DeviceEntry) {
-      const target = { name: entry.device.name, type: entry.type }
-      try {
-        await usePlaybackStore().applyTargets([...this.connectStore.activeTargets, target], true)
-      } catch {
-        // Already recorded on connectStore.errors and shown above.
-      }
-    },
-    /** One speaker stops; the rest keep playing. The last one hands back
-     * to this device, same as "Stop all". */
-    async remove(target: ConnectDeviceRef) {
-      const rest = this.connectStore.activeTargets.filter(
-        (t) => !(t.type === target.type && t.name === target.name),
-      )
-      try {
-        await usePlaybackStore().applyTargets(rest)
-      } catch {
-        // Already recorded on connectStore.errors and shown above.
-      }
-    },
-    async stopAll() {
-      await this.connectStore.stopAll()
-    },
-    /** Bring playback back to this device. Same call as "Stop all" — the
-     * two differ in what they say, not in what they do: stopping every
-     * cast target *is* playing here. */
-    async playHere() {
-      if (!this.connectStore.isActive) return
-      await this.connectStore.stopAll()
-    },
-    openPairing(name: string) {
-      this.pairingDeviceName = name
-      this.pairingOpen = true
-    },
-  },
+  mixins: [castMenuMixin],
 }
 </script>
 

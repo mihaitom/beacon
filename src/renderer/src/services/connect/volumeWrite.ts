@@ -30,8 +30,8 @@ import type { ConnectDeviceRef } from '@/services/connect/types'
  *
  * Every way a device's level can be set goes through here - the player
  * bar's slider, the phone's (PlayerToolbar.vue,
- * MobileTransportControls.vue), both device lists' per-device sliders
- * (ConnectDevicePicker.vue, MobileDeviceRow.vue)
+ * MobileTransportControls.vue), both cast menus' per-device rows
+ * (castMenuMixin.ts)
  * and the keyboard/wheel steps in volumeControl.ts. The LAN remote does
  * not: its sliders fire on 'change' rather than 'input', so a drag there
  * was always one command (see static/remote/js/views/now-playing.js).

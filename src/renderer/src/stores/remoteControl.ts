@@ -26,6 +26,7 @@ import { useConnectStore } from './connect'
 import { isBackingOff } from '@/services/connect/pollGate'
 import { acceptsVolumeReading } from '@/services/connect/volumeGuard'
 import { groupLevel } from '@/services/groupVolume'
+import { useGroupVolumeStore } from './groupVolume'
 import { knownDeviceVolume, recordDeviceVolume, volumeScope } from '@/services/volumeControl'
 import type { ConnectDeviceRef } from '@/services/connect/types'
 import { useAuthStore } from './auth'
@@ -373,6 +374,9 @@ export const useRemoteControlStore = defineStore('remoteControl', {
           // "genuinely 0". With several targets it is the master volume
           // over all of them — see startDeviceVolumePoll().
           device_volume: connect.activeTargets.length > 0 ? deviceVolumeCache : null,
+          // How that master moves several speakers, for the cast sheet's
+          // switch - see services/groupVolume.ts.
+          group_volume_mode: useGroupVolumeStore().mode,
           // What the speakers are being sent, and what it was made from -
           // the two lines the desktop's own cast sheet ends with. Sent as
           // finished text rather than as the raw fields, so the phone's
@@ -422,6 +426,9 @@ export const useRemoteControlStore = defineStore('remoteControl', {
       const unsubFromAutoplay = autoplay.$subscribe(schedulePush, { detached: true })
       const unsubFromParty = usePartyStore().$subscribe(schedulePush, { detached: true })
       const unsubFromAppearance = useAppearanceStore().$subscribe(schedulePush, { detached: true })
+      const unsubFromGroupVolume = useGroupVolumeStore().$subscribe(schedulePush, {
+        detached: true,
+      })
       // A new ICY title changes nothing in playback itself.
       const unsubFromRadioMeta = useRadioMetadataStore().$subscribe(schedulePush, {
         detached: true,
@@ -432,6 +439,7 @@ export const useRemoteControlStore = defineStore('remoteControl', {
         unsubFromAutoplay()
         unsubFromParty()
         unsubFromAppearance()
+        unsubFromGroupVolume()
         unsubFromRadioMeta()
       }
     },

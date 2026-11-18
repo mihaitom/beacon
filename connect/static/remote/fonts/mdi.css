@@ -102,3 +102,7 @@
 .mdi-chevron-triple-right::before { content: "\F0DBB"; }
 .mdi-brightness-5::before { content: "\F00DE"; }
 .mdi-brightness-7::before { content: "\F00E0"; }
+/* The cast sheet (devices.js): the master row, the app playing locally. */
+.mdi-speaker-multiple::before { content: "\F0D38"; }
+.mdi-laptop::before { content: "\F0322"; }
+.mdi-check-circle::before { content: "\F05E0"; }
