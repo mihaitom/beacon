@@ -1053,6 +1053,11 @@ export default {
     deviceKeysShareApi: 'Dai a questo dispositivo anche le chiavi Last.fm e Fanart del server',
     deviceKeysShareApiHint: 'Verranno salvate su quel computer. Vale solo per questo dispositivo.',
     deviceKeysSharesApi: 'Ha le chiavi Last.fm e Fanart',
+    deviceKeysShareSourceTokens: 'Dai a questo dispositivo anche i token delle fonti esterne',
+    deviceKeysShareSourceTokensHint:
+      'Verranno salvati su quel computer. Vale solo per questo dispositivo. Senza di essi, il token di una fonte si può inserire lì.',
+    deviceKeysSharesSourceTokens: 'Ha i token delle fonti esterne',
+    deviceKeysSetsUpSources: 'Può modificare le fonti esterne',
     deviceKeysFailed: 'Non è stato possibile modificare la chiave',
     advancedTitle: 'Avanzate',
     logLevel: 'Livello di log',
@@ -1838,6 +1843,8 @@ export default {
     tokenHint:
       "Solo se la tua app ne chiede uno: il valore impostato nell'app. Non è una chiave di App e dispositivi: quelle fanno entrare le app in Beacon, questo fa entrare Beacon nella tua app.",
     tokenKept: 'Salvato: lascia vuoto per mantenerlo',
+    fromServer:
+      'Arriva dal tuo server Beacon e si modifica lì. Un token inserito qui resta su questo computer.',
     tokenNone: 'Nessun token',
     reachable: 'Connesso a {name}',
     unreachable: 'Non raggiungibile: {reason}',

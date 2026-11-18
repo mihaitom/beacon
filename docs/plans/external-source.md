@@ -174,4 +174,5 @@ description, repository, author, icon?}]}`. main, not development, so an
   longer serves. Skipped like a deleted library song for now, without a word
   about why.
 - **Offline desktop app**: its bundled connect has no sources unless they are
-  configured there too.
+  configured there too. Syncing them over a paired server is planned in
+  `device-link.md`, section "External sources".

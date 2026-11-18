@@ -27,6 +27,7 @@ from core import (
     api_keys,
     app_library,
     device_keys,
+    external_source,
     lyrics_offsets,
     mdns,
     media_login,
@@ -94,6 +95,7 @@ _MAX_MILESTONES_BODY = 1024
 _MAX_OFFSETS_BODY = 256 * 1024
 _MAX_REPORT_BODY = 16 * 1024
 _MAX_COMMAND_BODY = 8 * 1024
+_MAX_SOURCES_BODY = 64 * 1024
 
 
 class IncomingListen(Listen):
@@ -982,6 +984,33 @@ def get_api_keys(owner: KeyOwner = _syncing) -> dict:
     return {"keys": {service: api_keys.get(service) for service in api_keys.SERVICES}}
 
 
+class SourcesPatch(BaseModel):
+    sources: list[dict] = Field(max_length=external_source.MAX_SOURCES * 2)
+    removed: dict[str, float] = Field(default_factory=dict, max_length=200)
+
+
+def _sources_for(owner: KeyOwner) -> dict:
+    return external_source.for_link(device_keys.SOURCE_TOKENS in owner.scopes)
+
+
+@router.get("/external-sources")
+def get_external_sources(owner: KeyOwner = _syncing) -> dict:
+    """The installation's sources: the same for every account, as their tabs
+    are. Tokens only for a device they were confirmed for, like the API keys."""
+    return _sources_for(owner)
+
+
+@router.patch("/external-sources")
+async def patch_external_sources(request: Request, owner: KeyOwner = _syncing) -> dict:
+    """A desktop setting up this server's sources, which only an admin may
+    do here (routes/external_source.py); the key remembers who made it."""
+    if device_keys.SOURCES not in owner.scopes:
+        raise HTTPException(status_code=403, detail="Server administrator rights required")
+    patch = await _parsed(request, SourcesPatch, _MAX_SOURCES_BODY)
+    await asyncio.to_thread(external_source.merge_from_desktop, patch.sources, patch.removed)
+    return await asyncio.to_thread(_sources_for, owner)
+
+
 @router.get("/lyrics-offsets")
 def get_lyrics_offsets(owner: KeyOwner = _syncing) -> dict:
     return {"offsets": lyrics_offsets.load(owner.account)}
@@ -1011,16 +1040,22 @@ async def create_device_key(
     new_key: NewKey, session: SessionState = Depends(require_authenticated_session)
 ) -> dict:
     account = _require_account(session)
+    scopes = set(new_key.scopes)
     # AVAILABLE means this is a desktop app, which pairs with a server itself.
-    if server_link.AVAILABLE and device_keys.SERVER_ONLY_SCOPES & set(new_key.scopes):
+    if server_link.AVAILABLE and device_keys.SERVER_ONLY_SCOPES & scopes:
         raise HTTPException(status_code=422, detail="Invalid scopes")
+    # Not the client's to ask for: a key made by an admin may set up the
+    # sources from the desktop, as the admin may here.
+    scopes.discard(device_keys.SOURCES)
+    if device_keys.SYNC in scopes and session.account_is_admin:
+        scopes.add(device_keys.SOURCES)
     try:
         made = await asyncio.to_thread(
             device_keys.create,
             account,
             new_key.label,
             device_keys.settings_identity_of(session),
-            scopes=new_key.scopes,
+            scopes=scopes,
             login=media_login.capture(session.media),
             session_id=session.session_id,
         )

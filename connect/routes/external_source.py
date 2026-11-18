@@ -20,7 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from core import external_source
+from core import external_source, server_link
 from core.auth import require_token
 from core.external_source import ExternalSourceError
 from core.session import SessionState, require_authenticated_session
@@ -131,6 +131,12 @@ async def _probe(config: dict) -> dict:
     }
 
 
+def _from_server_only(source: dict) -> bool:
+    """A source the paired server shares, on a desktop whose key may not set
+    up the server's: changed there, only its token here."""
+    return source["synced"] and not server_link.may_set_up_sources()
+
+
 def _describe(source: dict, session: SessionState) -> dict:
     described = {
         "id": source["id"],
@@ -141,6 +147,8 @@ def _describe(source: dict, session: SessionState) -> dict:
     if _may_configure(session):
         described["base_url"] = source["base_url"]
         described["has_token"] = bool(source["token"])
+        described["synced"] = source["synced"]
+        described["read_only"] = _from_server_only(source)
     return described
 
 
@@ -179,18 +187,23 @@ class ExternalSourceSettings(BaseModel):
 
 async def _save(source_id: str | None, req: ExternalSourceSettings, session: SessionState):
     _require_configure(session)
+    old = await _require_source(source_id) if source_id else None
     token = req.token
     if token is None:
-        token = (await _require_source(source_id))["token"] if source_id else ""
+        token = old["token"] if old else ""
+    name, icon, base_url = req.name, req.icon, req.base_url
+    if old and await asyncio.to_thread(_from_server_only, old):
+        name, icon, base_url = old["name"], old["icon"], old["base_url"]
     try:
         source = await asyncio.to_thread(
-            external_source.save_source, source_id, req.name, req.icon, req.base_url, token
+            external_source.save_source, source_id, name, icon, base_url, token
         )
     except KeyError as e:
         raise HTTPException(status_code=404, detail="No such external source") from e
     except ExternalSourceError as e:
         raise HTTPException(status_code=422, detail=str(e)) from e
     logger.info(f"[external-source] {source['name']} at {source['base_url']}")
+    server_link.wake()
     return {
         **await _sources(session),
         "source": _describe(source, session),
@@ -220,9 +233,12 @@ async def delete_external_source(
     source_id: str, session: SessionState = Depends(require_authenticated_session)
 ):
     _require_configure(session)
+    if await asyncio.to_thread(_from_server_only, await _require_source(source_id)):
+        raise HTTPException(status_code=403, detail="Shared by the paired server")
     if not await asyncio.to_thread(external_source.remove_source, source_id):
         raise HTTPException(status_code=404, detail="No such external source")
     logger.info(f"[external-source] Removed {source_id}")
+    server_link.wake()
     return await _sources(session)
 
 

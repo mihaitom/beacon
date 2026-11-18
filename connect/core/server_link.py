@@ -27,7 +27,7 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from core import account_settings, api_keys, lyrics_offsets, play_history
+from core import account_settings, api_keys, external_source, lyrics_offsets, play_history
 from core.account_settings import LINKED_FIELDS
 from core.paths import data_dir
 from core.play_history import Account
@@ -43,6 +43,8 @@ KEY_HEADER = "X-Beacon-Device-Key"
 INVALID_KEY_DETAIL = "Invalid device key"
 # What a key needs to be a desktop app's: core/device_keys.py has the others.
 SYNC_SCOPE = "sync"
+# Set up the server's external sources from here; only an admin's key has it.
+SOURCES_SCOPE = "sources"
 
 CONNECTED = "connected"
 WRONG_KEY = "wrong_key"
@@ -347,6 +349,7 @@ def pair(
                 "account": account._asdict(),
                 "settings_identity": settings_identity,
                 "remote_username": info.get("username", ""),
+                "scopes": _scopes_of(info),
                 "pending_settings": pending,
                 "pending_milestones": {},
                 "pending_lyrics_offsets": pending_offsets,
@@ -368,7 +371,20 @@ def unpair() -> None:
         except FileNotFoundError:
             pass
     _forget_api_keys()
+    external_source.forget_pairing()
     _note(CONNECTED)
+
+
+def _scopes_of(info: dict) -> list[str]:
+    scopes = info.get("scopes")
+    return [s for s in scopes if isinstance(s, str)] if isinstance(scopes, list) else []
+
+
+def may_set_up_sources() -> bool:
+    """Whether a source the server shares may be changed here: unpaired, or
+    paired with a key made by one of the server's admins."""
+    link = _read()
+    return link is None or SOURCES_SCOPE in link.get("scopes", [])
 
 
 def note_settings_changed(identity: tuple[str, str, str], patch: dict) -> None:
@@ -556,13 +572,31 @@ def _forget_api_keys() -> None:
         api_keys.set_shared(service, "")
 
 
-def _mark_synced(link: dict, now: float) -> None:
+def _sync_sources(link: dict, scopes: list[str]) -> None:
+    """A server from before external sources were shared answers 404 here,
+    which must not hold up the rest of the sync."""
+    try:
+        if SOURCES_SCOPE in scopes:
+            sent = external_source.outgoing()
+            remote = _call(link["url"], link["key"], "PATCH", "/external-sources", sent)
+            external_source.tokens_sent(sent)
+        else:
+            remote = _call(link["url"], link["key"], "GET", "/external-sources")
+    except LinkError as e:
+        if e.state != SERVER_TOO_OLD:
+            raise
+        return
+    external_source.adopt_from_server(remote)
+
+
+def _mark_synced(link: dict, now: float, scopes: list[str]) -> None:
     with _lock:
         current = _read()
         if current is None or current["key"] != link["key"]:
             return
         current["backfill"] = False
         current["last_sync_at"] = int(now)
+        current["scopes"] = scopes
         _write(current)
 
 
@@ -575,19 +609,21 @@ def send_once(now: float | None = None) -> bool:
     try:
         # First, so a pass with nothing to send still finds a server that
         # has gone or a key that was revoked.
-        _call(link["url"], link["key"], "GET", "/info")
+        scopes = _scopes_of(_call(link["url"], link["key"], "GET", "/info"))
         _send_listens(link, _account_of(link))
         _send_settings(link)
         _send_lyrics_offsets(link)
         _send_milestones(link)
         _adopt_api_keys(link)
+        _sync_sources(link, scopes)
     except LinkError as e:
         _note(e.state)
         if e.state == WRONG_KEY:
             _forget_api_keys()
+            external_source.forget_pairing()
         logger.info(f"[server-link] Sync paused: {e.state}")
         return False
-    _mark_synced(link, time.time() if now is None else now)
+    _mark_synced(link, time.time() if now is None else now, scopes)
     _note(CONNECTED)
     return True
 

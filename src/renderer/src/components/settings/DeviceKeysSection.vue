@@ -89,6 +89,7 @@ import {
   revokeDeviceKey,
   type AppScope,
   type DeviceKey,
+  type DeviceKeyScope,
 } from '@/services/connect/serverLink'
 import { useRemoteControlStore } from '@/stores/remoteControl'
 
@@ -104,6 +105,17 @@ const SCOPE_ICONS: Record<AppScope, string> = {
   control: 'mdi-play-pause',
   library: 'mdi-library-outline',
 }
+
+// What a desktop's key carries beyond the sync itself.
+const DESKTOP_RIGHTS: { scope: DeviceKeyScope; label: string; icon: string }[] = [
+  { scope: 'api_keys', label: 'settings.deviceKeysSharesApi', icon: 'mdi-key-variant' },
+  {
+    scope: 'source_tokens',
+    label: 'settings.deviceKeysSharesSourceTokens',
+    icon: 'mdi-key-chain-variant',
+  },
+  { scope: 'sources', label: 'settings.deviceKeysSetsUpSources', icon: 'mdi-web' },
+]
 
 /**
  * The keys that let a desktop app send this account's listening history and
@@ -159,9 +171,9 @@ export default {
     },
     rightsOf(entry: DeviceKey): { label: string; icon: string }[] {
       if (entry.scopes.includes('sync')) {
-        return entry.scopes.includes('api_keys')
-          ? [{ label: this.$t('settings.deviceKeysSharesApi'), icon: 'mdi-key-variant' }]
-          : []
+        return DESKTOP_RIGHTS.filter(({ scope }) => entry.scopes.includes(scope)).map(
+          ({ label, icon }) => ({ label: this.$t(label), icon }),
+        )
       }
       return APP_SCOPES.filter((scope) => entry.scopes.includes(scope)).map((scope) => ({
         label: this.$t(`settings.deviceKeysScope_${scope}`),

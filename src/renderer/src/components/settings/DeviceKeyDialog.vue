@@ -101,6 +101,21 @@
               class="device-key-dialog__switch"
             />
           </label>
+          <label class="device-key-dialog__row">
+            <span class="device-key-dialog__row-text">
+              <span class="text-body-medium">{{ $t('settings.deviceKeysShareSourceTokens') }}</span>
+              <span class="text-body-small text-medium-emphasis">
+                {{ $t('settings.deviceKeysShareSourceTokensHint') }}
+              </span>
+            </span>
+            <v-switch
+              v-model="shareSourceTokens"
+              color="primary"
+              density="compact"
+              hide-details
+              class="device-key-dialog__switch"
+            />
+          </label>
         </div>
         <section v-else>
           <h3 class="eyebrow-label panel-title">{{ $t('settings.deviceKeysAppRights') }}</h3>
@@ -201,6 +216,7 @@ export default {
       label: '',
       kind: defaultKind(),
       shareApiKeys: false,
+      shareSourceTokens: false,
       appScopes: [] as AppScope[],
       appScopeList: APP_SCOPES,
       busy: false,
@@ -236,7 +252,12 @@ export default {
     },
     /** A right that depends on another goes with it. */
     chosenScopes(): DeviceKeyScope[] {
-      if (this.kind === 'desktop') return this.shareApiKeys ? ['sync', 'api_keys'] : ['sync']
+      if (this.kind === 'desktop') {
+        const scopes: DeviceKeyScope[] = ['sync']
+        if (this.shareApiKeys) scopes.push('api_keys')
+        if (this.shareSourceTokens) scopes.push('source_tokens')
+        return scopes
+      }
       return this.appScopes.filter((scope) => !this.scopeLocked(scope))
     },
     helpPage(): string {
@@ -267,6 +288,7 @@ export default {
       this.label = ''
       this.kind = defaultKind()
       this.shareApiKeys = false
+      this.shareSourceTokens = false
       this.appScopes = []
       this.newKey = ''
       this.newKeyLabel = ''

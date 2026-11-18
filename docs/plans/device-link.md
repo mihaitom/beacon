@@ -125,6 +125,69 @@ the answer takes a new key. The desktop keeps them apart from a key entered
 there, which stays in charge, and gives them back on disconnecting or when its
 key is refused.
 
+## External sources
+
+Built 2026-11-18 on `feature/source-sync`. The list of sources (`external_sources.json`:
+id, name, icon, base_url, token) follows the pairing in both directions. Only
+the setup travels: each side then talks to the app itself, with its own
+connection, the way it did before. Neither side proxies the other's audio.
+
+Decided:
+
+- **Server to desktop, for every paired desktop.** Anyone with an account
+  already uses the server's sources there.
+- **Desktop to server only from an admin's key.** A source on the server is
+  there for every account, and the server fetches its address from inside
+  its own network: the reason Docker refuses to pair at all. A key knows no
+  admin rights today, so making one by an admin can grant a new scope,
+  `sources`, which nobody else is offered. It records the rights at that
+  moment; an admin demoted later keeps it until the key is revoked. Without
+  it, the desktop's own sources stay local and the server's are read-only
+  there.
+- **Tokens like the API keys.** A second switch when the key is made, off by
+  default and for that device only (scope `source_tokens`): only then does
+  `GET` send the tokens. Without it, the sources arrive without a token; a
+  token entered on the desktop stays local, is never sent up and is not
+  overwritten by a sync. Lent tokens are dropped on disconnecting and when
+  the key is refused, as the API keys are; the sources themselves stay, like
+  the settings.
+
+The other rules, set without a separate question:
+
+- **The id is shared.** Both sides keep the id the source was made with, so a
+  sync is a merge by id. At pairing, a source whose normalised `base_url`
+  matches one on the other side is the same app and takes the server's id.
+- **Newest wins, per source.** Each entry gets an `updated_at`, and a deletion
+  leaves a `deleted_at` tombstone (kept 90 days, as long as the items) so the
+  other side hears about it instead of sending it back.
+- **Loopback stays local.** `localhost`/`127.0.0.1` means a different machine
+  on each side: such a source is neither sent nor taken.
+- **Twelve at most** on each side. The server takes no new source past it
+  (the desktop's stays unsynced), and a desktop takes no more of the
+  server's than fit beside its own.
+- **History needs nothing.** An `ext:` id is a hash of the audio URL, so with
+  the same `base_url` both sides give a song the same id and the synced plays
+  line up. A source the other side cannot reach shows its tab with the
+  existing "not reachable" answer; an address only one side can resolve (a
+  Docker container name) is the person's to change, the guide says so.
+
+Routes, key only like the rest: `GET /device-link/external-sources` (all
+sources and tombstones, tokens only with `source_tokens`) and `PATCH
+/device-link/external-sources` (refused without `sources`). In `send_once()`
+a desktop with `sources` sends all its shareable sources with their
+`updated_at` and a token only where it changed here (`token_pending`); the
+server merges and answers with its list, which the desktop adopts, matching
+an unsynced source of the same address to the server's id. Without the
+right it only reads. The scopes come with every `/info`, so a key made
+again is noticed on the next pass. A server older than this answers 404,
+and the pass goes on without the sources.
+
+On the desktop each source carries `synced` (came from or went to the
+server; such a source is read-only there unless the key has `sources`,
+apart from its token) and `token_lent` (dropped on disconnecting or a
+refused key). A token-only change does not move `updated_at`, or an
+unpushed token would make an older copy of the rest win.
+
 ## What the server decides about incoming rows
 
 - **Time.** Stamped by the desktop's connect. More than a day ahead is dropped.

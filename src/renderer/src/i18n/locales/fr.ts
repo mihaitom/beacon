@@ -1058,6 +1058,11 @@ export default {
     deviceKeysShareApiHint:
       'Elles seront alors enregistrées sur cet ordinateur. Cela ne concerne que cet appareil.',
     deviceKeysSharesApi: 'Dispose des clés Last.fm et Fanart',
+    deviceKeysShareSourceTokens: 'Donner aussi à cet appareil les jetons des sources externes',
+    deviceKeysShareSourceTokensHint:
+      "Ils seront alors enregistrés sur cet ordinateur. Cela ne concerne que cet appareil. Sans eux, le jeton d'une source peut y être saisi.",
+    deviceKeysSharesSourceTokens: 'Dispose des jetons des sources externes',
+    deviceKeysSetsUpSources: 'Peut modifier les sources externes',
     deviceKeysFailed: "La clé n'a pas pu être modifiée",
     advancedTitle: 'Avancé',
     logLevel: 'Niveau de journalisation',
@@ -1845,6 +1850,8 @@ export default {
     tokenHint:
       "Seulement si votre app en demande un : la valeur définie dans votre app. Pas une clé d'Applications et appareils - celles-ci laissent entrer des apps dans Beacon, ceci laisse entrer Beacon dans votre app.",
     tokenKept: 'Enregistré - laisser vide pour le conserver',
+    fromServer:
+      'Vient de votre serveur Beacon et se modifie là-bas. Un jeton saisi ici reste sur cet ordinateur.',
     tokenNone: 'Aucun jeton',
     reachable: 'Connecté à {name}',
     unreachable: 'Injoignable : {reason}',

@@ -30,6 +30,7 @@ type Vm = {
   label: string
   kind: 'desktop' | 'app'
   shareApiKeys: boolean
+  shareSourceTokens: boolean
   appScopes: string[]
   create(): Promise<void>
 }
@@ -75,6 +76,20 @@ describe('DeviceKeyDialog', () => {
     vm.shareApiKeys = true
     await vm.create()
     expect(createDeviceKey).toHaveBeenLastCalledWith('Desktop', ['sync', 'api_keys'])
+
+    await reopen(wrapper)
+    vm.label = 'Tablet'
+    await vm.create()
+    expect(createDeviceKey).toHaveBeenLastCalledWith('Tablet', ['sync'])
+  })
+
+  it("lends the external sources' tokens only when confirmed, and not to the next device", async () => {
+    const { wrapper, vm } = mountDialog()
+
+    vm.label = 'Desktop'
+    vm.shareSourceTokens = true
+    await vm.create()
+    expect(createDeviceKey).toHaveBeenLastCalledWith('Desktop', ['sync', 'source_tokens'])
 
     await reopen(wrapper)
     vm.label = 'Tablet'

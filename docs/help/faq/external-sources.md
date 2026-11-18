@@ -44,7 +44,9 @@ Each app is a source of its own with its own tab, up to twelve. A click on one
 in the list changes or removes it.
 
 On a Beacon server only an administrator can set sources up, and they are the
-same for everyone signed in. In the desktop app they are yours alone.
+same for everyone signed in. In the desktop app they are yours alone, and a
+desktop app connected to a Beacon server shows the server's sources too (see
+the guide on the desktop app and the server).
 
 ## Where do I find apps others have written?
 

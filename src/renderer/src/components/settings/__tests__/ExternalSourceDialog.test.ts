@@ -122,6 +122,25 @@ describe('ExternalSourceDialog', () => {
     expect(wrapper.emitted('update:modelValue')).toEqual([[false]])
   })
 
+  it('leaves a source shared by the server to the server, all but its token', async () => {
+    const { vm } = mountDialog({ ...STORED, synced: true, read_only: true })
+    await flushPromises()
+    // The dialog is teleported to the body.
+    const removeLabel = i18n.global.t('externalSource.remove')
+    const buttons = [...document.querySelectorAll('button')].map((b) => b.textContent?.trim())
+    expect(buttons).not.toContain(removeLabel)
+    const inputs = [...document.querySelectorAll('input')]
+    expect(inputs.find((i) => i.value === 'http://app:8800')?.disabled).toBe(true)
+    expect(inputs.find((i) => i.type === 'password')?.disabled).toBe(false)
+
+    vm.token = 'mine'
+    await vm.save()
+    expect(changeExternalSource).toHaveBeenCalledWith(
+      'a',
+      expect.objectContaining({ token: 'mine' }),
+    )
+  })
+
   it('starts empty for a new source, with the default icon', async () => {
     const { vm } = mountDialog(null)
     await flushPromises()

@@ -24,6 +24,7 @@ from core import (
     account_settings,
     api_keys,
     device_keys,
+    external_source,
     lyrics_offsets,
     media_login,
     now_playing,
@@ -463,6 +464,7 @@ class FakeServer:
         self.settings: dict = {}
         self.offsets: dict = {}
         self.api_keys: dict = {}
+        self.sources: dict | None = {"sources": [], "removed": {}}
         self.summary: dict = {
             "available": True,
             "total": 1,
@@ -508,6 +510,10 @@ class FakeServer:
             return httpx.Response(200, json=self.charts)
         if path == "/api-keys":
             return httpx.Response(200, json={"keys": self.api_keys})
+        if path == "/external-sources":
+            if self.sources is None:
+                return httpx.Response(404, json={"detail": "Not Found"})
+            return httpx.Response(200, json=self.sources)
         if path == "/lyrics-offsets" and request.method == "GET":
             return httpx.Response(200, json={"offsets": self.offsets})
         return httpx.Response(200, json={"status": "ok"})
@@ -3419,3 +3425,147 @@ def test_volume_reaches_every_speaker_the_window_casts_to(public, default_sessio
         ("set-device-volume", {"deviceType": "sonos", "name": "Den", "volume": 40}),
         ("set-device-volume", {"deviceType": "dlna", "name": "Hall", "volume": 40}),
     ]
+
+
+# ── external sources ─────────────────────────────────────────────────────
+
+APP = "http://10.9.9.9:8800"
+
+
+def shared_source(source_id="srv1", name="Folder", updated_at=NOW, **over) -> dict:
+    return {
+        "id": source_id,
+        "name": name,
+        "icon": "mdi-folder",
+        "base_url": APP,
+        "updated_at": updated_at,
+        **over,
+    }
+
+
+def test_external_sources_need_a_device_key(public):
+    assert public.get("/device-link/external-sources").status_code == 401
+
+
+def test_a_desktop_gets_the_sources_but_a_token_only_when_confirmed(public):
+    external_source.save_source(None, "Folder", "mdi-folder", APP, "app-token")
+    plain = public.get("/device-link/external-sources", headers=auth(key_for())).json()
+    assert [s["name"] for s in plain["sources"]] == ["Folder"]
+    assert "token" not in plain["sources"][0]
+    lending = device_keys.create(ALICE, "Laptop", ALICE_SETTINGS, scopes=("sync", "source_tokens"))
+    lent = public.get("/device-link/external-sources", headers=auth(lending["key"])).json()
+    assert lent["sources"][0]["token"] == "app-token"
+
+
+def test_only_an_admins_key_may_set_up_the_servers_sources(public):
+    body = {"sources": [shared_source()], "removed": {}}
+    refused = public.patch("/device-link/external-sources", headers=auth(key_for()), json=body)
+    assert refused.status_code == 403
+    assert external_source.load_sources() == []
+    admins = device_keys.create(ALICE, "Laptop", ALICE_SETTINGS, scopes=("sync", "sources"))
+    answer = public.patch("/device-link/external-sources", headers=auth(admins["key"]), json=body)
+    assert answer.status_code == 200
+    assert [s["id"] for s in answer.json()["sources"]] == ["srv1"]
+    assert external_source.get_source("srv1")["name"] == "Folder"
+
+
+@pytest.mark.parametrize("is_admin", [True, False])
+def test_the_sources_right_follows_the_role_not_the_request(client, on_server, is_admin):
+    on_server.account_is_admin = is_admin
+    made = client.post(
+        "/device-keys", json={"label": "Laptop", "scopes": ["sync", "sources"]}
+    ).json()
+    assert ("sources" in device_keys.resolve(made["key"]).scopes) is is_admin
+
+
+def test_an_app_key_never_gets_the_sources_right(client, on_server):
+    on_server.account_is_admin = True
+    made = client.post("/device-keys", json={"label": "Display", "scopes": ["history"]}).json()
+    assert "sources" not in device_keys.resolve(made["key"]).scopes
+
+
+def test_a_desktop_cannot_lend_source_tokens(client, signed_in):
+    made = client.post("/device-keys", json={"label": "L", "scopes": ["sync", "source_tokens"]})
+    assert made.status_code == 422
+
+
+def test_a_token_lending_key_must_be_a_desktops():
+    with pytest.raises(device_keys.InvalidScopes):
+        device_keys.create(ALICE, "L", ALICE_SETTINGS, scopes=("source_tokens",))
+
+
+def test_a_desktop_takes_the_servers_sources_and_keeps_its_own(paired):
+    own = external_source.save_source(None, "Mine", "mdi-web", "http://10.1.1.1:9000", "")
+    paired.sources = {"sources": [shared_source()], "removed": {}}
+    assert server_link.send_once()
+    assert {s["id"]: s["synced"] for s in external_source.load_sources()} == {
+        own["id"]: False,
+        "srv1": True,
+    }
+    # Without the right, nothing of this desktop's goes up.
+    assert paired.sent("PATCH", "/external-sources") == []
+
+
+def test_an_admins_desktop_sends_its_sources_and_a_token_only_once(paired):
+    paired.scopes = ["sync", "sources"]
+    own = external_source.save_source(None, "Mine", "mdi-web", "http://10.1.1.1:9000", "tok")
+    server_link.send_once()
+    [sent] = paired.sent("PATCH", "/external-sources")
+    assert sent["sources"][0]["id"] == own["id"]
+    assert sent["sources"][0]["token"] == "tok"
+    paired.requests.clear()
+    server_link.send_once()
+    [again] = paired.sent("PATCH", "/external-sources")
+    assert "token" not in again["sources"][0]
+
+
+def test_a_server_without_shared_sources_holds_up_nothing(paired):
+    paired.sources = None
+    play()
+    assert server_link.send_once()
+    assert server_link.status(ALICE)["state"] == server_link.CONNECTED
+    assert paired.sent("POST", "/listens")
+
+
+def test_lent_tokens_go_back_when_the_key_is_refused(paired):
+    paired.sources = {"sources": [shared_source(token="lent")], "removed": {}}
+    server_link.send_once()
+    assert external_source.get_source("srv1")["token"] == "lent"
+    paired.fail = httpx.Response(401, json={"detail": server_link.INVALID_KEY_DETAIL})
+    server_link.send_once()
+    assert external_source.get_source("srv1")["token"] == ""
+
+
+def test_lent_tokens_go_back_on_disconnecting_and_the_sources_stay(paired):
+    paired.sources = {"sources": [shared_source(token="lent")], "removed": {}}
+    server_link.send_once()
+    server_link.unpair()
+    [kept] = external_source.load_sources()
+    assert (kept["id"], kept["token"], kept["synced"]) == ("srv1", "", False)
+
+
+def test_a_shared_source_is_changed_on_the_server_only_its_token_here(client, signed_in, paired):
+    paired.sources = {"sources": [shared_source()], "removed": {}}
+    server_link.send_once()
+    [listed] = client.get("/external-source").json()["sources"]
+    assert listed["read_only"] is True
+    changed = client.put(
+        "/external-source/srv1",
+        json={"name": "Renamed", "icon": "mdi-web", "base_url": "http://x:1", "token": "mine"},
+    )
+    assert changed.status_code == 200
+    stored = external_source.get_source("srv1")
+    assert (stored["name"], stored["base_url"], stored["token"]) == ("Folder", APP, "mine")
+    assert client.delete("/external-source/srv1").status_code == 403
+    # A token entered here outlives the next sync, the server lent none.
+    server_link.send_once()
+    assert external_source.get_source("srv1")["token"] == "mine"
+
+
+def test_an_admins_desktop_may_change_a_shared_source(client, signed_in, paired):
+    paired.scopes = ["sync", "sources"]
+    paired.sources = {"sources": [shared_source()], "removed": {}}
+    server_link.send_once()
+    [listed] = client.get("/external-source").json()["sources"]
+    assert listed["read_only"] is False
+    assert client.delete("/external-source/srv1").status_code == 200

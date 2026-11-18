@@ -18,8 +18,13 @@
         />
       </v-card-title>
       <v-card-text class="external-source-dialog__body">
+        <p v-if="readOnly" class="external-source-dialog__shared text-body-small">
+          <v-icon icon="mdi-server" size="18" />
+          <span>{{ $t('externalSource.fromServer') }}</span>
+        </p>
         <v-text-field
           v-model="name"
+          :disabled="readOnly"
           :label="$t('externalSource.name')"
           :placeholder="$t('externalSource.namePlaceholder')"
           variant="solo-filled"
@@ -31,7 +36,12 @@
           <p class="eyebrow-label external-source-dialog__label">
             {{ $t('externalSource.icon') }}
           </p>
-          <v-item-group v-model="icon" mandatory class="external-source-dialog__icons">
+          <v-item-group
+            v-model="icon"
+            mandatory
+            :disabled="readOnly"
+            class="external-source-dialog__icons"
+          >
             <v-item
               v-for="choice in icons"
               :key="choice"
@@ -44,6 +54,7 @@
                 :color="isSelected ? 'primary' : undefined"
                 :aria-pressed="isSelected"
                 :aria-label="choice"
+                :disabled="readOnly"
                 @click="toggle"
               />
             </v-item>
@@ -52,6 +63,7 @@
 
         <v-text-field
           v-model="baseUrl"
+          :disabled="readOnly"
           :label="$t('externalSource.address')"
           placeholder="http://192.168.1.20:8800"
           variant="solo-filled"
@@ -83,7 +95,13 @@
         </div>
       </v-card-text>
       <v-card-actions>
-        <v-btn v-if="editing" variant="text" color="error" :disabled="busy" @click="remove">
+        <v-btn
+          v-if="editing && !readOnly"
+          variant="text"
+          color="error"
+          :disabled="busy"
+          @click="remove"
+        >
           {{ $t('externalSource.remove') }}
         </v-btn>
         <v-spacer />
@@ -148,6 +166,10 @@ export default {
   computed: {
     editing(): boolean {
       return this.sourceId !== null
+    },
+    /** Shared by the paired server: only the token is this desktop's. */
+    readOnly(): boolean {
+      return !!this.source?.read_only && this.sourceId === this.source.id
     },
     canSave(): boolean {
       return !!this.name.trim() && !!this.baseUrl.trim()
@@ -228,6 +250,13 @@ export default {
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+
+.external-source-dialog__shared {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 0;
 }
 
 .external-source-dialog__label {
