@@ -466,9 +466,10 @@ export default {
     },
     pairDeviceTitle: 'Associer « {name} »',
     pairConnecting: 'Recherche de « {name} »...',
-    pairPinPrompt: "L'appareil affiche un code PIN - veuillez le saisir :",
+    pairPinPrompt:
+      "Saisissez le code PIN affiché par l'appareil, ou le mot de passe défini pour lui :",
     pairConfirmPrompt: "Veuillez confirmer sur l'appareil, puis cliquez sur « Terminé ».",
-    pin: 'PIN',
+    pin: 'PIN ou mot de passe',
     takeoverTitle: "Prendre le contrôle de l'appareil ?",
     takeoverBody:
       '« {name} » est actuellement utilisé par {owner}. Prendre le contrôle arrêtera sa lecture sur cet appareil.',

@@ -467,9 +467,10 @@ export default {
     },
     pairDeviceTitle: 'Emparejar "{name}"',
     pairConnecting: 'Buscando "{name}"...',
-    pairPinPrompt: 'El dispositivo muestra un PIN - introdúcelo:',
+    pairPinPrompt:
+      'Introduce el PIN que muestra el dispositivo o la contraseña configurada para él:',
     pairConfirmPrompt: 'Confirma en el dispositivo y luego haz clic en "Hecho".',
-    pin: 'PIN',
+    pin: 'PIN o contraseña',
     takeoverTitle: '¿Tomar el control del dispositivo?',
     takeoverBody:
       '"{name}" está siendo usado actualmente por {owner}. Tomar el control detendrá su reproducción en este dispositivo.',

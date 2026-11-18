@@ -6,7 +6,7 @@ import time
 
 from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from core.auth import require_token
 from core.session import require_authenticated_session
@@ -99,9 +99,10 @@ class StartRequest(BaseModel):
 
 class FinishRequest(BaseModel):
     name: str
-    # Digits as text, any number of them: an AirPort Express takes a code its
-    # owner chose, and as a number a leading zero would be lost.
-    pin: str | None = Field(default=None, pattern=r"^\d+$")
+    # Text: besides the PIN a device shows, an AirPort Express takes the
+    # password its owner set, of any length and with letters; and as a
+    # number a PIN's leading zero would be lost.
+    pin: str | None = None
 
 
 @router.get("")
@@ -225,8 +226,8 @@ async def finish_pairing(req: FinishRequest):
     pairing, _ = session
     try:
         if req.pin is not None:
-            # Typed int, but pyatv only runs it through str(), which keeps
-            # the leading zero an int would have dropped.
+            # Typed int, but pyatv only runs it through str(), so a password
+            # passes as it is.
             pairing.pin(req.pin)  # synchronous method, no await
         await pairing.finish()
     except Exception as e:

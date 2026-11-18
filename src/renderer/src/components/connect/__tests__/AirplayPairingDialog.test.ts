@@ -86,16 +86,16 @@ describe('AirplayPairingDialog', () => {
     expect(finish).toHaveBeenCalledWith('Living Room', '12')
   })
 
-  it('keeps only the digits of what is typed', async () => {
+  it('takes a password with letters and special characters', async () => {
     vi.spyOn(store, 'startPairing').mockResolvedValue({ device_provides_pin: true } as never)
     const finish = vi.spyOn(store, 'finishPairing').mockResolvedValue()
     const wrapper = await openDialog()
 
-    await typePin(wrapper, '12 34-56')
+    await typePin(wrapper, 'Kü che#1')
     await button(wrapper, 'Done')!.trigger('click')
     await flushPromises()
 
-    expect(finish).toHaveBeenCalledWith('Living Room', '123456')
+    expect(finish).toHaveBeenCalledWith('Living Room', 'Kü che#1')
   })
 
   it('pairs on Done when the device asks for a confirmation instead', async () => {

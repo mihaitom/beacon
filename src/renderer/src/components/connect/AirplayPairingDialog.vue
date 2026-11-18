@@ -21,14 +21,14 @@
             <p class="text-body-medium text-medium-emphasis">
               {{ $t('connect.pairPinPrompt') }}
             </p>
-            <!-- Text, not a number field, and no fixed length: a device may show
-             - four digits or six, an AirPort Express takes a code its owner
-             - chose, and a number would lose a leading zero. -->
+            <!-- Plain text with no fixed length: a device may show four digits
+             - or six, and an AirPort Express takes the password its owner set,
+             - letters and all. -->
             <v-text-field
               v-model="pin"
               :label="$t('connect.pin')"
-              inputmode="numeric"
-              autocomplete="one-time-code"
+              autocomplete="off"
+              spellcheck="false"
               variant="solo-filled"
               hide-details
               autofocus
@@ -111,12 +111,6 @@ export default {
     modelValue(open: boolean) {
       if (open) this.start()
       else this.reset()
-    },
-    // Through the model rather than on input: a letter typed after digits
-    // leaves the filtered value unchanged and would otherwise stay on screen.
-    pin(value: string | null) {
-      const digits = (value ?? '').replace(/\D/g, '')
-      if (digits !== value) this.pin = digits
     },
   },
   methods: {

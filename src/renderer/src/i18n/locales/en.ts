@@ -462,9 +462,9 @@ export default {
     },
     pairDeviceTitle: 'Pair "{name}"',
     pairConnecting: 'Looking for "{name}"...',
-    pairPinPrompt: 'The device is showing a PIN - please enter it:',
+    pairPinPrompt: 'Enter the PIN the device shows, or the password set for it:',
     pairConfirmPrompt: 'Please confirm on the device, then click "Done".',
-    pin: 'PIN',
+    pin: 'PIN or password',
     takeoverTitle: 'Take over device?',
     takeoverBody:
       '"{name}" is currently in use by {owner}. Taking over will stop their playback on this device.',

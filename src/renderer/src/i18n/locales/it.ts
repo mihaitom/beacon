@@ -464,9 +464,9 @@ export default {
     },
     pairDeviceTitle: 'Associa "{name}"',
     pairConnecting: 'Ricerca di "{name}"...',
-    pairPinPrompt: 'Il dispositivo mostra un PIN: inseriscilo:',
+    pairPinPrompt: 'Inserisci il PIN mostrato dal dispositivo o la password impostata:',
     pairConfirmPrompt: 'Conferma sul dispositivo, poi fai clic su "Fatto".',
-    pin: 'PIN',
+    pin: 'PIN o password',
     takeoverTitle: 'Subentrare nel dispositivo?',
     takeoverBody:
       '"{name}" è attualmente in uso da {owner}. Subentrare interromperà la sua riproduzione su questo dispositivo.',

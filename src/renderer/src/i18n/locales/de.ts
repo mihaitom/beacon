@@ -463,9 +463,9 @@ export default {
     },
     pairDeviceTitle: '„{name}“ koppeln',
     pairConnecting: 'Suche nach „{name}“...',
-    pairPinPrompt: 'Auf dem Gerät wird eine PIN angezeigt - bitte eingeben:',
+    pairPinPrompt: 'Die PIN, die das Gerät anzeigt, oder das dafür festgelegte Kennwort eingeben:',
     pairConfirmPrompt: 'Bitte am Gerät bestätigen, dann „Fertig“ klicken.',
-    pin: 'PIN',
+    pin: 'PIN oder Kennwort',
     takeoverTitle: 'Gerät übernehmen?',
     takeoverBody:
       '„{name}“ wird gerade von {owner} benutzt. Übernehmen beendet deren Wiedergabe auf diesem Gerät.',

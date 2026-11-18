@@ -387,14 +387,15 @@ def test_finish_keeps_the_leading_zero_of_a_six_digit_pin(client, default_sessio
     assert fake_pairing.pinned == "012345"
 
 
-def test_finish_rejects_a_pin_that_is_not_digits(client, default_session):
+def test_finish_passes_a_password_on_as_it_is(client, default_session, tmp_path):
     fake_pairing = _FakePairing()
-    routes_pairing._sessions["NotDigits"] = (fake_pairing, time.monotonic())
+    routes_pairing._sessions["Password"] = (fake_pairing, time.monotonic())
 
-    r = client.post("/pair/airplay/finish", json={"name": "NotDigits", "pin": "12a4"})
+    with patch.object(credentials, "_PATH", str(tmp_path / "creds.json")):
+        r = client.post("/pair/airplay/finish", json={"name": "Password", "pin": "Kü che#1"})
 
-    assert r.status_code == 422
-    assert fake_pairing.finish_calls == 0
+    assert r.status_code == 200
+    assert fake_pairing.pinned == "Kü che#1"
 
 
 def test_finish_without_a_pin_skips_pin_entry(client, default_session, tmp_path):
