@@ -1,5 +1,9 @@
 /** Casting: handing over to the speakers, and following what connect reports. */
-import { levelForJoiningSpeaker, sendDeviceVolume } from '@/services/volumeControl'
+import {
+  levelForJoiningSpeaker,
+  resetGroupAnchor,
+  sendDeviceVolume,
+} from '@/services/volumeControl'
 import { getAudioEngine } from '@/services/audioEngine'
 import { useConnectStore } from '../connect'
 import { useAutoplayStore } from '../autoplay'
@@ -488,6 +492,7 @@ export const castActions: CastActions & ThisType<PlaybackContext> = {
     if (active.length === 0) {
       // Several at once in 'equal' mode all start at their average.
       const startLevel = desired.length > 1 ? await levelForJoiningSpeaker(desired) : null
+      resetGroupAnchor()
       await this.castTo(desired, force)
       if (startLevel != null) {
         for (const target of connect.activeTargets) {
