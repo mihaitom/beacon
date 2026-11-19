@@ -13,7 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
-- The cast menu is rebuilt: the speakers playing, each row doubling as its volume slider, and the ones you can add. A tap adds a speaker or stops one right away, without a separate confirm step. On the desktop it is wider and split in two; on phones and in Remote Control it is a sheet you pull down to close, and an AirPlay speaker can be paired from the phone too
+- The cast menu is rebuilt: the speakers playing, each row doubling as its volume slider, and the ones you can add. A tap adds a speaker or stops one right away, without a separate confirm step. "Play on this device instead" ends the cast and carries the music on right here. On the desktop it is wider and split in two; on phones and in Remote Control it is a sheet you pull down to close, and an AirPlay speaker can be paired from the phone too
 - Pairing an AirPlay speaker says that it is looking for the speaker, takes the PIN the speaker shows as well as a password set for it, and after a wrong PIN offers to try again instead of having to close and reopen the dialog
 - The Docker image is built on Alpine 3.24 with up-to-date system packages, and ships nginx 1.30.7, which closes two HTTP/2 security holes (CVE-2026-123007, CVE-2026-123633). Beacon's own setup does not use HTTP/2, so it was not exposed
 

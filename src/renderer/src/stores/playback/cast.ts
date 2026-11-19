@@ -21,6 +21,7 @@ import { getLocalMix } from '@/services/playback/localMix'
 import {
   localSongChangeGuard,
   localRadioChangeGuard,
+  playHereRequest,
   resolveSongs,
   positionTracker,
 } from './shared'
@@ -42,6 +43,7 @@ export interface CastActions {
   resumeAfterInterruption(): Promise<void>
   castTo(targets: ConnectDeviceRef[], force?: boolean): Promise<void>
   applyTargets(desired: ConnectDeviceRef[], force?: boolean): Promise<void>
+  playHere(): Promise<void>
 }
 
 export const castActions: CastActions & ThisType<PlaybackContext> = {
@@ -521,6 +523,21 @@ export const castActions: CastActions & ThisType<PlaybackContext> = {
     }
     for (const target of active.filter((t) => !desiredKeys.has(key(t)))) {
       await connect.stopDevice(target.type, target.name)
+    }
+  },
+  /** Ends the cast and carries on on this device, playing - the one way a
+   * cast ends that is allowed to make sound here, because the user asked
+   * for exactly that. Only this client: the request is local, so the other
+   * clients in the session see an ordinary cast end and stay quiet. */
+  async playHere(): Promise<void> {
+    const connect = useConnectStore()
+    if (!connect.isActive) return
+    playHereRequest.pending = true
+    try {
+      await connect.stopAll()
+    } catch (error) {
+      playHereRequest.pending = false
+      throw error
     }
   },
 }

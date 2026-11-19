@@ -249,12 +249,14 @@ export const castMenuMixin = defineComponent({
     async stopAll() {
       await this.connectStore.stopAll()
     },
-    /** Bring playback back to this device. Same call as "Stop all" — the
-     * two differ in what they say, not in what they do: stopping every
-     * cast target *is* playing here. */
+    /** Bring playback back to this device and carry on playing here -
+     * unlike "Stop all", which leaves it paused. */
     async playHere() {
-      if (!this.connectStore.isActive) return
-      await this.connectStore.stopAll()
+      try {
+        await usePlaybackStore().playHere()
+      } catch {
+        this.reportCastError()
+      }
     },
     openPairing(name: string) {
       this.pairingDeviceName = name

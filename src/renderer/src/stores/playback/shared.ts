@@ -52,6 +52,11 @@ export const localSongChangeGuard = createKeyedGuard<string>()
 // starting.
 export const localRadioChangeGuard = createKeyedGuard<string>()
 
+// Set by playHere() until the cast it ended is seen to end: that one
+// falling edge plays here instead of only loading. Every other way a cast
+// ends stays silent (see prepareLocalPlayback()).
+export const playHereRequest = { pending: false }
+
 /** The songs for `ids`, in that order: from `known` (this client's own
  * objects - rows are keyed by them), the library, or the server. Null when
  * any lookup fails, rather than a list with a hole in it. */

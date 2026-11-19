@@ -13,7 +13,7 @@ import type { PlaybackContext } from './context'
 let mixSongStartedAt: number | null = null
 
 export interface LocalActions {
-  prepareLocalPlayback(): void
+  prepareLocalPlayback(autoplay?: boolean): void
   localStreamUrl(song: Song, hls?: boolean): string
   startLocalSong(song: Song, position: number, autoplay: boolean): void
   localMixWanted(): boolean
@@ -35,7 +35,9 @@ export const localActions: LocalActions & ThisType<PlaybackContext> = {
    * when it is the device the cast was started from: a shared session
    * means every client sees the cast end, so anything audible here
    * happens on all of them at once. Whatever was playing stays on the
-   * player bar, paused, and pressing play carries it on.
+   * player bar, paused, and pressing play carries it on. The exception is
+   * `autoplay`, set only on the client whose "play here instead" ended
+   * the cast (see playHere()).
    *
    * The loading is the point: the local element is not kept in sync while
    * casting (every song start goes to the backend instead, see
@@ -43,7 +45,7 @@ export const localActions: LocalActions & ThisType<PlaybackContext> = {
    * so without this play/pause afterwards would act on stale or empty
    * state. Positioned from this.localPosition, this session's own live
    * value, rather than resumeLocalPlayback()'s stored snapshot. */
-  prepareLocalPlayback(): void {
+  prepareLocalPlayback(autoplay = false): void {
     // Casting is over; there is nothing left to resume on a device.
     this.castInterrupted = false
     this.isPlaying = false
@@ -60,6 +62,10 @@ export const localActions: LocalActions & ThisType<PlaybackContext> = {
       // Nothing to preload for a station: a live stream has no position
       // to be loaded at, so pressing play is what opens the connection
       // (see togglePlay()'s own radio branch).
+      if (autoplay) {
+        this.startLocalRadio(this.radioStation.streamUrl)
+        this.isPlaying = true
+      }
       return
     }
     // A preview played on the speakers, which are gone: back to the
@@ -70,7 +76,7 @@ export const localActions: LocalActions & ThisType<PlaybackContext> = {
     }
     const song = this.currentSong
     if (!song) return
-    this.startLocalSong(song, this.localPosition, false)
+    this.startLocalSong(song, this.localPosition, autoplay)
   },
 
   /** The stream URL for `song`, recording what was actually decided.
