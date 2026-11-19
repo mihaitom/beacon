@@ -260,6 +260,26 @@ describe('playbackStore.applyTargets', () => {
       expect(setVolume).toHaveBeenCalledWith('sonos', 'Living Room', 31)
     })
 
+    it('does not bring the last session balance back into a new cast', async () => {
+      useGroupVolumeStore().setMode('relative')
+      withActive([kitchen, living])
+      const setVolume = withLevels({ Kitchen: 20, 'Living Room': 40 })
+      const { setVolume: setMaster, volumeScope } = await import('@/services/volumeControl')
+      await setMaster(volumeScope(), 0)
+      withActive([])
+
+      const s = spies()
+      s.castTo.mockImplementation(async () => withActive([kitchen, living]))
+      await s.playback.applyTargets([kitchen, living])
+      await flushPromises()
+      setVolume.mockClear()
+
+      await setMaster(volumeScope(), 40)
+
+      expect(setVolume).toHaveBeenCalledWith('sonos', 'Kitchen', 40)
+      expect(setVolume).toHaveBeenCalledWith('sonos', 'Living Room', 40)
+    })
+
     it('leaves a single speaker cast fresh at its own level', async () => {
       useGroupVolumeStore().setMode('equal')
       const setVolume = withLevels({ Kitchen: 20 })

@@ -157,6 +157,12 @@ async function fetchMissingGroupVolumes(group: ConnectDeviceRef[]): Promise<void
   )
 }
 
+/** A new cast starts its own grouping: the balance a master move restores
+ * belongs to the session it was made in. */
+export function resetGroupAnchor(): void {
+  groupAnchor = null
+}
+
 /** Sets one device and tells every slider showing it. */
 export function sendDeviceVolume(device: ConnectDeviceRef, volume: number): void {
   recordDeviceVolume(device, volume)
