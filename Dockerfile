@@ -144,7 +144,16 @@ RUN sh /build/verify-ffmpeg.sh /usr/local/bin/ffmpeg /build/ffmpeg/required-comp
 # wheel at all, so it is compiled here on amd64 too, against Alpine's own
 # Rubber Band and fmt - which is why the final stage installs their runtime
 # libraries.
-FROM ghcr.io/astral-sh/uv:python3.14-alpine AS python-builder
+#
+# The official Python image rather than uv's own, so the Alpine release is
+# ours to name: uv's image follows Alpine with a lag, and the final stage's
+# nginx comes from Alpine's repository, so a lagging base means a lagging
+# nginx (1.28 on 3.23, without the HTTP/2 fixes of 1.30.7). The final stage
+# has to match this one exactly - the venv points at its Python and was
+# linked against its Rubber Band.
+FROM python:3.14-alpine3.24 AS python-builder
+
+COPY --from=ghcr.io/astral-sh/uv:0.13 /uv /usr/local/bin/uv
 
 WORKDIR /app
 
@@ -158,7 +167,9 @@ RUN uv sync --locked --no-dev
 
 
 # --- Final image
-FROM ghcr.io/astral-sh/uv:python3.14-alpine
+# Same base as python-builder (see there). uv itself isn't needed here:
+# start.sh runs the venv's Python directly.
+FROM python:3.14-alpine3.24
 
 WORKDIR /app
 
