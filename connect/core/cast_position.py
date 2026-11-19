@@ -224,6 +224,7 @@ async def apply_position_offset(session: SessionState, target, generation: int) 
                 f"device position {device_pos:.2f}s vs. wall {wall_elapsed:.2f}s"
             )
             continue
+        _position_frozen(st, candidate, generation, device_pos)
         offset = st.clock.calibrate(device_pos)
         logger.debug(
             f"[lyrics-sync] {candidate.target}: calibrated position_offset="
@@ -280,6 +281,30 @@ def follow_the_connection_played(st: AppState, candidate, generation: int) -> No
         "— following it"
     )
     st.clock.restream_from(played.start)
+
+
+def _position_frozen(st: AppState, candidate, generation: int, device_pos: float) -> bool:
+    """Whether `device_pos` is the device still repeating the first position
+    it gave for this stream, which says nothing about where it is.
+
+    Some renderers (LinkPlay) report 0:00:00 for as long as they play. Each
+    of those readings looked like a rewind to the start, and recalibrating
+    onto it every POSITION_RESYNC_INTERVAL pulled the clock back by the whole
+    time played - the display kept jumping to 0:00, and the track end it
+    schedules from moved out with it (#94). The first reading is taken as
+    usual; until a later one differs, the clock runs on its own. Once the
+    position has moved, the device is followed again, rewinds included."""
+    first = st.first_device_reading
+    if first is None or first[0] != generation or first[1] != candidate.target:
+        st.first_device_reading = (generation, candidate.target, device_pos, False)
+        return False
+    _, _, first_pos, moved = first
+    if moved:
+        return False
+    if device_pos != first_pos:
+        st.first_device_reading = (generation, candidate.target, first_pos, True)
+        return False
+    return True
 
 
 def _describe_open_streams(st) -> str:
@@ -344,6 +369,13 @@ async def resync_position_once(session: SessionState, candidate, generation: int
         )
         return
     st.device_reading = (generation, time.time(), device_pos, candidate.target)
+    if _position_frozen(st, candidate, generation, device_pos):
+        logger.debug(
+            f"[position-resync] {candidate.target}: device={device_pos:.2f}s "
+            f"wall={wall_elapsed:.2f}s, the same position as its first reading of "
+            "this stream - it does not report one, keeping the clock"
+        )
+        return
     # A device clearly reporting well past the track's own duration is a
     # bogus/glitched reading (or has already rolled onto whatever comes
     # after, which our own session doesn't know about yet either way) —

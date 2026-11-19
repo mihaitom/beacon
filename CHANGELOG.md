@@ -19,6 +19,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- On DLNA speakers that report no playback position while they play (LinkPlay-based ones such as the Audiocast M5), the position no longer jumps back to 0:00 every few seconds, the next song starts without a long silence, and pausing right after a song starts really pauses the speaker instead of only showing it paused (reported by [@jolny](https://github.com/jolny), [#94](https://github.com/mihaitom/beacon/issues/94))
 - In Remote Control, the page behind an open menu no longer scrolls along when you swipe on the menu
 
 ## [1.12.0] - 2026-11-17

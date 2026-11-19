@@ -2551,6 +2551,76 @@ def test_resync_position_once_still_recalibrates_a_real_rewind_well_before_durat
     assert default_session.state.clock.position_offset < -POSITION_RESYNC_THRESHOLD
 
 
+def _resync_with_readings(session, target, readings):
+    """resync_position_once() once per reading, the wall clock 8s further on
+    each time, the way resync_position_periodically() calls it."""
+    import asyncio
+
+    st = session.state
+    for reading in readings:
+        st.clock.play_start_time -= 8.0
+        with (
+            patch.object(target, "get_position", new=AsyncMock(return_value=reading)),
+            patch.object(target, "current_uri", new=AsyncMock(return_value=None)),
+            patch.object(target, "describe_transport", new=AsyncMock(return_value=None)),
+        ):
+            asyncio.run(resync_position_once(session, target, st.clock.play_generation))
+
+
+def test_resync_position_once_keeps_the_clock_on_a_device_stuck_at_its_first_position(
+    default_session,
+):
+    """A LinkPlay renderer reports 0:00:00 for as long as it plays. Every
+    reading was taken for a rewind and pulled the clock back by the whole
+    time played (#94)."""
+    st = default_session.state
+    st.is_streaming = True
+    st.current_track = Track("1", "Song", "Artist", 180, "")
+    st.clock.play_start_time = time.time()
+    target = SonosDelivery("Küche")
+    st.active_delivery = target
+    import asyncio
+
+    with patch.object(target, "get_position", new=AsyncMock(return_value=0.0)):
+        asyncio.run(apply_position_offset(default_session, target, st.clock.play_generation))
+    calibrated = st.clock.position_offset
+
+    _resync_with_readings(default_session, target, [0.0, 0.0, 0.0, 0.0])
+
+    assert st.clock.position_offset == calibrated
+
+
+def test_resync_position_once_follows_a_rewind_once_the_position_has_moved(default_session):
+    st = default_session.state
+    st.is_streaming = True
+    st.current_track = Track("1", "Song", "Artist", 180, "")
+    st.clock.play_start_time = time.time()
+    st.clock.position_offset = 0.0
+    target = SonosDelivery("Küche")
+    st.active_delivery = target
+
+    _resync_with_readings(default_session, target, [8.0, 16.0, 24.0, 8.0])
+
+    assert st.clock.position_offset < -POSITION_RESYNC_THRESHOLD
+
+
+def test_resync_position_once_starts_over_for_a_new_stream(default_session):
+    """A position that moved on the last track says nothing about this one:
+    the first reading of the new stream is taken, the repeats are not."""
+    st = default_session.state
+    st.is_streaming = True
+    st.current_track = Track("1", "Song", "Artist", 180, "")
+    st.clock.play_start_time = time.time()
+    st.clock.position_offset = 0.0
+    target = SonosDelivery("Küche")
+    st.active_delivery = target
+    st.first_device_reading = (st.clock.play_generation - 1, "Küche", 0.0, True)
+
+    _resync_with_readings(default_session, target, [0.0, 0.0, 0.0])
+
+    assert st.clock.position_offset == pytest.approx(-8.0, abs=1.0)
+
+
 def test_resync_position_once_ignores_a_stop_where_the_audio_sent_ends_after_a_seek(
     default_session,
 ):

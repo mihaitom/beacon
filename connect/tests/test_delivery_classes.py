@@ -9,7 +9,7 @@ import subprocess
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from unittest.mock import ANY, AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, call, patch
 
 import httpx
 import numpy as np
@@ -2267,32 +2267,41 @@ def test_dlna_resume_sends_play_whatever_the_cached_actions_say():
     device.async_play.assert_not_called()
 
 
-def test_dlna_stop_is_sent_once_a_fresh_look_allows_it():
-    """The allowed actions from the last poll said no Stop; asked again, the
-    renderer allows it. Judged on the stale answer, the library would have
-    sent nothing and left the renderer playing."""
+def test_dlna_pause_and_stop_are_sent_while_a_just_started_renderer_lists_neither():
+    """A LinkPlay renderer that has just started a track allows neither
+    Pause nor Stop for a while, though it plays and accepts both. Taken at
+    its word, a pause sent nothing and the speaker played on while Beacon
+    showed it paused (#94)."""
     device = _mock_dmr_device()
-    device.can_stop = False
-
-    async def refresh(**kwargs):
-        device.can_stop = True
-
-    device.async_update.side_effect = refresh
-    d = DlnaDelivery("Receiver")
-    with patch.object(DlnaDelivery, "_get_device", new=AsyncMock(return_value=device)):
-        asyncio.run(d.stop())
-    device.async_stop.assert_awaited_once()
-
-
-def test_dlna_pause_and_stop_with_nothing_to_act_on_are_not_errors():
-    device = _mock_dmr_device()
+    device.transport_state = "TRANSITIONING"
     device.can_pause = device.can_stop = False
+    service = device.profile_device.service_id.return_value
     d = DlnaDelivery("Receiver")
     with patch.object(DlnaDelivery, "_get_device", new=AsyncMock(return_value=device)):
         asyncio.run(d.pause())
         asyncio.run(d.stop())
-    device.async_pause.assert_not_called()
-    device.async_stop.assert_not_called()
+    assert [c.args[0] for c in service.action.call_args_list] == ["Pause", "Stop"]
+    device.play_action.async_call.assert_has_awaits([call(InstanceID=0), call(InstanceID=0)])
+    device.async_update.assert_awaited_with(do_ping=False)
+
+
+@pytest.mark.parametrize(
+    ("state", "paused", "stopped"),
+    [
+        ("STOPPED", False, False),
+        ("NO_MEDIA_PRESENT", False, False),
+        ("PAUSED_PLAYBACK", False, True),
+    ],
+)
+def test_dlna_pause_and_stop_with_nothing_to_act_on_are_not_errors(state, paused, stopped):
+    device = _mock_dmr_device()
+    device.transport_state = state
+    d = DlnaDelivery("Receiver")
+    with patch.object(DlnaDelivery, "_get_device", new=AsyncMock(return_value=device)):
+        asyncio.run(d.pause())
+        asyncio.run(d.stop())
+    assert device.async_pause.called is paused
+    assert device.async_stop.called is stopped
 
 
 def test_dlna_pause_on_a_renderer_without_a_pause_action_still_fails():
@@ -2300,6 +2309,9 @@ def test_dlna_pause_on_a_renderer_without_a_pause_action_still_fails():
     and saying nothing would leave it playing with the app showing paused."""
     device = _mock_dmr_device()
     device.has_pause = device.can_pause = False
+    device.profile_device.service_id.return_value.has_action.side_effect = lambda name: (
+        name != "Pause"
+    )
     device.async_pause.side_effect = upnp_exceptions.UpnpError("Missing action AVT/Pause")
     d = DlnaDelivery("Receiver")
     with (
