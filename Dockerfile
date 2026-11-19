@@ -174,7 +174,13 @@ FROM python:3.14-alpine3.24
 WORKDIR /app
 
 # rubberband-libs and fmt: what the venv's pylibrb links against (see above).
-RUN apk add --no-cache nginx gettext rubberband-libs fmt
+# apk upgrade: the Python image is only rebuilt every few weeks, so its own
+# Alpine packages (OpenSSL, zlib) lag behind the fixes already in the
+# repository. pip goes: nothing here installs anything at runtime, and the
+# old urllib3/msgpack/setuptools it vendors are what scanners report.
+RUN apk upgrade --no-cache \
+    && apk add --no-cache nginx gettext rubberband-libs fmt \
+    && python -m pip uninstall --yes --quiet pip
 COPY --from=ffmpeg-builder /usr/local/bin/ffmpeg /usr/local/bin/ffmpeg
 COPY --chown=nginx:nginx --from=frontend-builder /app/out/web /usr/share/nginx/html
 COPY --chown=nginx:nginx ./settings.js.template /etc/nginx/templates/settings.js.template
