@@ -13,7 +13,7 @@
       :aria-label="$t('lights.title')"
       @click="showDialog = true"
     />
-    <lights-dialog v-model="showDialog" />
+    <lights-dialog v-model="showDialog" :compact="compact" />
   </div>
 </template>
 
@@ -35,6 +35,13 @@ const RETRY_MS = 5_000
 export default {
   name: 'LightsButton',
   components: { LightsDialog },
+  props: {
+    /** The phone's fullscreen form of the dialog. */
+    compact: {
+      type: Boolean,
+      default: false,
+    },
+  },
   data() {
     return {
       showDialog: false,

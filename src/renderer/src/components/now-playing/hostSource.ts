@@ -6,6 +6,7 @@ import LyricsCandidateList from '@/components/lyrics/LyricsCandidateList.vue'
 import CastStreamDebugOverlay from '@/components/player/CastStreamDebugOverlay.vue'
 import VisualizerDebugOverlay from '@/components/player/VisualizerDebugOverlay.vue'
 import EqualizerButton from '@/components/equalizer/EqualizerButton.vue'
+import LightsButton from '@/components/lights/LightsButton.vue'
 import type { Song, RadioStation } from '@/types/library'
 import type { RadioFaviconRequest } from '@/services/connect/radio'
 import type { RadioTitleEntry } from '@/services/connect/radioMetadata'
@@ -188,6 +189,7 @@ export function hostNowPlayingSource(api: HostNowPlayingApi): NowPlayingSource {
     streamDebugComponent: markRaw(CastStreamDebugOverlay),
     artistCreditComponent: markRaw(ArtistCredit),
     equalizerComponent: markRaw(EqualizerButton),
+    lightsComponent: markRaw(LightsButton),
     ui: reactive({
       lyricsOpen: computed(() => api.showLyrics),
       showVisualizer: computed(() => api.showVisualizer),

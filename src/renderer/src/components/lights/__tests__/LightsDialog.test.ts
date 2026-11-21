@@ -543,6 +543,74 @@ describe('LightsDialog preview', () => {
   })
 })
 
+// The phone's form: the remote's cut, for switching the lights off or
+// moving them from a phone with the computer shut down.
+describe('LightsDialog on the phone', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    vi.clearAllMocks()
+  })
+
+  async function openCompact(state: LightsState) {
+    vi.mocked(getLights).mockResolvedValue(state)
+    vi.mocked(getPicture).mockResolvedValue(state.picture)
+    vi.mocked(updateLights).mockImplementation(async (update) => ({ ...state, ...update }))
+    const wrapper = mount(LightsDialog, { props: { modelValue: true, compact: true }, global })
+    await flushPromises()
+    return wrapper
+  }
+
+  it('switches the lights off and moves them to another area', async () => {
+    const wrapper = await openCompact({ ...PAIRED, enabled: true })
+    await wrapper.findComponent({ name: 'VSwitch' }).find('input').setValue(false)
+    await flushPromises()
+    expect(updateLights).toHaveBeenCalledWith({ enabled: false })
+    await wrapper.findAll('.lights__area')[1]!.trigger('click')
+    await flushPromises()
+    expect(updateLights).toHaveBeenCalledWith({ area_id: 'area-2' })
+  })
+
+  it('saves the brightness from the native range once it settles', async () => {
+    const wrapper = await openCompact({ ...PAIRED, brightness: 70 })
+    vi.useFakeTimers()
+    try {
+      const range = wrapper.get('.lights__brightness input[type="range"]')
+      await range.setValue('60')
+      await range.setValue('50')
+      expect(updateLights).not.toHaveBeenCalled()
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect(updateLights).toHaveBeenCalledTimes(1)
+      expect(updateLights).toHaveBeenCalledWith({ brightness: 50 })
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("shows the bridge's state up front, with no advanced section to open", async () => {
+    const wrapper = await openCompact(PAIRED)
+    expect(wrapper.find('.lights__warning .status-dot--ok').exists()).toBe(true)
+  })
+
+  it('leaves the preview out, and does not ask connect for the song', async () => {
+    usePlaybackStore().$patch({
+      queue: [{ id: 'song-1', title: 'A song' } as Song],
+      currentIndex: 0,
+      isPlaying: true,
+    })
+    const wrapper = await openCompact(PAIRED)
+    expect(wrapper.findComponent({ name: 'LightsStage' }).exists()).toBe(false)
+    expect(getSongAnalysis).not.toHaveBeenCalled()
+  })
+
+  it('closes from the button in its title', async () => {
+    const wrapper = await openCompact(PAIRED)
+    await wrapper
+      .get('.lights__head button[title="' + i18n.global.t('common.close') + '"]')
+      .trigger('click')
+    expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([false])
+  })
+})
+
 describe('LightsButton', () => {
   beforeEach(() => {
     setActivePinia(createPinia())

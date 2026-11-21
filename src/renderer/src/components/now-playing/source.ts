@@ -177,6 +177,9 @@ export interface NowPlayingSource {
   /** The equalizer's button and dialog (host only): they read the cast
    * and equalizer stores. */
   equalizerComponent: Component | null
+  /** The room lights' button and dialog (host only), on the phone: they
+   * read the lights store. Shown only once connect has a bridge. */
+  lightsComponent: Component | null
   ui: NowPlayingUi
   /** The corner stack: the current song, then the next one near the end of
    * a track. The source decides when the next one shows. */

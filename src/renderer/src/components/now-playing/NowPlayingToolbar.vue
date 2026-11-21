@@ -106,6 +106,10 @@
         v-if="compact && source.capabilities.equalizer && source.equalizerComponent"
         compact
       />
+      <!-- Likewise the lights, whose desktop button sits in the player bar:
+       - the phone has to be able to stop them or move them to another room
+       - with the desktop shut down. -->
+      <component :is="source.lightsComponent" v-if="compact && source.lightsComponent" compact />
       <!-- Not a mobile feature — MobileTransportControls.vue/the tab bar
        - already own the phone's actual full screen; hiding *that* app chrome
        - behind the Fullscreen API here wouldn't gain anything and isn't what
