@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { withAccent } from '../textures'
+import { shippedPicturesFor, withAccent } from '../textures'
 
 const TAKES_ACCENT = {
   baseVals: { wave_r: 1, wave_g: 1, wave_b: 1, zoom: 1.01 },
@@ -34,5 +34,17 @@ describe('withAccent', () => {
 
   it('leaves the preset alone for an accent it cannot read', () => {
     expect(withAccent(TAKES_ACCENT, 'amber')).toBe(TAKES_ACCENT)
+  })
+})
+
+describe('shippedPicturesFor', () => {
+  it("names the shipped pictures a preset's shaders read, and only those", () => {
+    expect(shippedPicturesFor({ warp: 'uniform sampler2D sampler_moon;', comp: '' })).toEqual([
+      'moon',
+    ])
+    expect(shippedPicturesFor({ warp: 'uniform sampler2D sampler_moonlight;', comp: '' })).toEqual(
+      [],
+    )
+    expect(shippedPicturesFor(TAKES_ACCENT)).toEqual([])
   })
 })

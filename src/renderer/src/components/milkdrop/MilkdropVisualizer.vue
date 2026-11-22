@@ -33,9 +33,11 @@ import {
   COVER_SAMPLER,
   accentPicture,
   loadCoverPicture,
+  loadShippedPicture,
   placeholderPicture,
   setDataTexture,
   setTexture,
+  shippedPicturesFor,
   withAccent,
 } from '@/services/milkdrop/textures'
 import { ORBIT_LENGTH, ORBIT_SAMPLER, orbitsFor } from '@/services/milkdrop/orbits'
@@ -269,7 +271,11 @@ export default {
       const seq = ++this.rt.loadSeq
       try {
         const file = await loadPresetFile(key)
+        // Before it starts, so its first frame has them.
+        const names = shippedPicturesFor(file.preset)
+        const pictures = await Promise.all(names.map((name) => loadShippedPicture(name)))
         if (seq !== this.rt.loadSeq || !this.rt.visualizer) return
+        names.forEach((name, i) => setTexture(this.rt.visualizer!, name, pictures[i]!))
         // The very first preset cuts in: there is nothing to blend from yet.
         // So does one picked while paused, drawn as a single still frame
         // like the first one - a blend nobody gets to watch would leave the

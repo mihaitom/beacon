@@ -4,7 +4,7 @@
 // picture without a single error.
 import { describe, expect, it } from 'vitest'
 import { butterchurn } from '@/services/milkdrop/butterchurn'
-import { setDataTexture, setTexture } from '../textures'
+import { loadShippedPicture, setDataTexture, setTexture } from '../textures'
 
 const SIZE = 64
 
@@ -87,5 +87,13 @@ describe('setDataTexture', () => {
     expect(r).toBeLessThan(197)
     expect(g).toBeGreaterThan(58)
     expect(g).toBeLessThan(70)
+  })
+})
+
+describe('loadShippedPicture', () => {
+  it('decodes a picture that ships with Beacon', async () => {
+    const moon = await loadShippedPicture('moon')
+    expect(moon.width).toBeGreaterThan(0)
+    expect(moon.height).toBeGreaterThan(0)
   })
 })

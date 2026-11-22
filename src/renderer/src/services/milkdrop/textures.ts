@@ -110,6 +110,45 @@ export function accentPicture(triplet: string): HTMLCanvasElement {
   return onePixel(`rgb(${triplet})`)
 }
 
+// Pictures Beacon ships for its own presets (assets/milkdrop/pictures/),
+// each read as `sampler_<file name>`. As URLs: only a preset that asks for
+// one downloads it.
+const SHIPPED_PICTURES = import.meta.glob<string>('@/assets/milkdrop/pictures/*.jpg', {
+  query: '?url',
+  import: 'default',
+})
+
+function pictureName(path: string): string {
+  return path.slice(path.lastIndexOf('/') + 1, path.lastIndexOf('.'))
+}
+
+/** The shipped pictures the preset's shaders read, by name. */
+export function shippedPicturesFor(preset: MilkdropPreset): string[] {
+  const shaders = `${String(preset.warp ?? '')}${String(preset.comp ?? '')}`
+  return Object.keys(SHIPPED_PICTURES)
+    .map(pictureName)
+    .filter((name) => new RegExp(`\\bsampler_${name}\\b`).test(shaders))
+}
+
+// Each decoded once per session: they never change.
+const shippedCache = new Map<string, Promise<ImageBitmap>>()
+
+/** A shipped picture, ready for the GPU. */
+export function loadShippedPicture(name: string): Promise<ImageBitmap> {
+  let pending = shippedCache.get(name)
+  if (!pending) {
+    const entry = Object.entries(SHIPPED_PICTURES).find(([path]) => pictureName(path) === name)
+    if (!entry) return Promise.reject(new Error(`No shipped picture: ${name}`))
+    pending = entry[1]()
+      .then((url) => fetch(url))
+      .then((response) => response.blob())
+      .then((blob) => createImageBitmap(blob))
+    shippedCache.set(name, pending)
+    pending.catch(() => shippedCache.delete(name))
+  }
+  return pending
+}
+
 /** Whether the preset draws Milkdrop's own waveform: not when its alpha is
  * zero and no equation turns it up. */
 function drawsWaveform(preset: MilkdropPreset): boolean {
