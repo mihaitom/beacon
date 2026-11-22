@@ -41,6 +41,7 @@ function builtinFile(slug: string): (() => Promise<MilkdropPresetFile>) | undefi
   return Object.entries(PRESET_FILES).find(([path]) => path.endsWith(`/${slug}.json`))?.[1]
 }
 
+// In index.json's order: Beacon's own first, the rest by name.
 export const BUILTIN_PRESETS: readonly MilkdropPresetEntry[] = (
   BUILTIN_INDEX as { slug: string; name: string }[]
 ).map(({ slug, name }) => ({ key: BUILTIN_PREFIX + slug, name, custom: false }))
