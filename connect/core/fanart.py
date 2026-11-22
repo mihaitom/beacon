@@ -6,7 +6,8 @@ search plus one request. A collaboration credit ("Cardi B & Bruno Mars") has
 no MusicBrainz artist of its own, so it falls back to its first performer -
 who is who the track gets dressed with. Its images fill the gap the Deezer
 artist photo leaves: a wide banner and a background, up to ten candidates
-of each (see _top_urls() for which).
+of each (see _top_urls() for which), 4K backgrounds first where an
+artist has them.
 
 Two keys, as Fanart.tv's terms require of a publicly available program: a
 project ("client") key that identifies Beacon, set once for the project (see
@@ -84,7 +85,8 @@ _UNUSED = 30 * 86400.0
 # old: pruning runs on the first lookup after a break, so someone who opens
 # the app once a month would otherwise lose every other artist at that
 # moment and find the list pages' headers with next to nothing to show. At
-# up to ten backgrounds each this is a few hundred MB at most.
+# up to ten backgrounds each - about 4 MB apiece where they are 4K - this
+# stays around a gigabyte at worst, and a few hundred MB in practice.
 _KEEP_RECENT = 30
 
 # How stale an entry's "used" stamp may get before it is written to disk:
@@ -99,15 +101,16 @@ _USED_RESOLUTION = 86400.0
 # a nudge towards fresh images, not a replacement of the community's pick.
 _KEEP_BY_LIKES = 7
 _KEEP_NEWEST = 3
+_KEEP = _KEEP_BY_LIKES + _KEEP_NEWEST
 
 # Bumped whenever _pick() chooses differently, so metadata cached by an
 # older version is asked for again right away rather than after _REFRESH.
-_CACHE_VERSION = 2
+_CACHE_VERSION = 3
 
 # The candidates beyond the one shown are downloaded one at a time with this
 # pause between them: they are only needed once someone cycles or a list
-# page shows them, and Fanart.tv's CDN does not need a burst of ten 1 MB
-# images.
+# page shows them, and Fanart.tv's CDN does not need a burst of ten images
+# of up to 4 MB each.
 _PREFETCH_GAP = 2.0
 
 # The in-memory half, filled from disk on a miss and written through on a
@@ -216,6 +219,15 @@ def _top_urls(entries: object) -> list[str]:
     return [e["url"] for e in liked + rest[:_KEEP_NEWEST]]
 
 
+def _backgrounds(data: dict) -> list[str]:
+    """The 4K backgrounds (`artist4kbackground`, 3840x2160) ahead of the
+    regular 1920x1080 ones, which only fill the slots the 4K ones leave -
+    few artists have ten 4K images yet, and many have none."""
+    uhd = _top_urls(data.get("artist4kbackground"))
+    regular = _top_urls(data.get("artistbackground"))
+    return (uhd + regular)[:_KEEP]
+
+
 def _pick(data: dict) -> dict | None:
     """The candidate images the artist page can use, each from whichever of
     its Fanart.tv names is present - a banner is `artistbanner` on most
@@ -223,7 +235,7 @@ def _pick(data: dict) -> dict | None:
     high-resolution one exists. Lists of URLs, best first; _choose() makes
     the actual pick."""
     banner = _top_urls(data.get("artistbanner") or data.get("musicbanner"))
-    background = _top_urls(data.get("artistbackground"))
+    background = _backgrounds(data)
     logo = _top_urls(data.get("hdmusiclogo") or data.get("musiclogo"))
     if not (banner or background or logo):
         return None

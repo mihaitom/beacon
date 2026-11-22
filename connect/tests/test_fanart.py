@@ -221,6 +221,22 @@ def test_pick_keeps_everything_when_there_are_ten_or_fewer():
     assert len(picked["background"]) == 10
 
 
+def test_4k_backgrounds_come_first_and_regular_ones_fill_the_rest():
+    payload = _backgrounds({i: 0 for i in range(1, 11)}) | {
+        "artist4kbackground": [{"id": "1", "url": "uhd1", "likes": "0"}]
+    }
+    picked = fanart._pick(payload)
+
+    assert picked["background"][0] == "uhd1"
+    assert len(picked["background"]) == 10
+
+
+def test_4k_backgrounds_alone_are_enough():
+    payload = {"artist4kbackground": [{"id": "1", "url": "uhd1", "likes": "0"}]}
+
+    assert fanart._pick(payload)["background"] == ["uhd1"]
+
+
 async def test_shows_the_most_liked_when_nothing_is_on_disk(key):
     with _with_mbid(), _with_get(_response(200, _backgrounds({1: 2, 2: 5, 3: 1}))):
         art = await fanart.get_artist_art("Cher")
