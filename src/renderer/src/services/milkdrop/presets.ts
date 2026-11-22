@@ -44,6 +44,13 @@ export function customPresetId(key: string): string | null {
   return key.startsWith(CUSTOM_PREFIX) ? key.slice(CUSTOM_PREFIX.length) : null
 }
 
+/** Whether a stored key names a built-in preset Beacon no longer ships, so
+ * a choice saved before an update is let go rather than leaving the
+ * picture empty. */
+export function isRetiredPreset(key: string): boolean {
+  return key.startsWith(BUILTIN_PREFIX) && !BUILTIN_PRESETS.some((entry) => entry.key === key)
+}
+
 /** The preset a seed in [0, 1) stands for, never the one already showing
  * when there is any other: a new song that rolled the current preset again
  * would look like no change at all. */

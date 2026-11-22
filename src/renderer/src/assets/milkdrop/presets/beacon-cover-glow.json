@@ -1,0 +1,74 @@
+{
+ "name": "Beacon - Cover Glow",
+ "preset": {
+  "baseVals": {
+   "decay": 1.0,
+   "gammaadj": 1.0,
+   "zoom": 1.0,
+   "rot": 0.0,
+   "warp": 0.0,
+   "wave_mode": 0,
+   "wave_a": 0.0,
+   "wave_r": 0.96,
+   "wave_g": 0.66,
+   "wave_b": 0.31,
+   "wave_scale": 0.6,
+   "wave_smoothing": 0.8,
+   "additivewave": 1,
+   "wave_thick": 1,
+   "ob_size": 0,
+   "ib_size": 0,
+   "mv_a": 0,
+   "echo_alpha": 0
+  },
+  "shapes": [
+   {
+    "baseVals": {
+     "enabled": 0
+    }
+   },
+   {
+    "baseVals": {
+     "enabled": 0
+    }
+   },
+   {
+    "baseVals": {
+     "enabled": 0
+    }
+   },
+   {
+    "baseVals": {
+     "enabled": 0
+    }
+   }
+  ],
+  "waves": [
+   {
+    "baseVals": {
+     "enabled": 0
+    }
+   },
+   {
+    "baseVals": {
+     "enabled": 0
+    }
+   },
+   {
+    "baseVals": {
+     "enabled": 0
+    }
+   },
+   {
+    "baseVals": {
+     "enabled": 0
+    }
+   }
+  ],
+  "init_eqs_str": "a.e=0;a.flash=0;a.turn=0.6;",
+  "frame_eqs_str": "a.e=a.e*0.85+0.15*a.bass_att;a.q1=Math.min(1,0.08+0.6*Math.max(0,a.bass-1.15));a.q2=0.13+0.015*Math.min(2,a.bass_att);a.zoom=1.0+0.012*Math.min(2.5,a.e);a.rot=0.003*(a.mid_att-1);a.decay=0.985;a.wave_a=0.15+0.35*Math.min(1,a.treb_att);a.flash=Math.max(a.flash*0.86,(a.bass>1.25&&a.bass>a.bass_att*1.1)?1:0);a.q3=a.flash;a.turn=a.turn+0.02*Math.min(2,a.e);a.q5=a.turn;a.q6=Math.min(1.5,a.e);",
+  "pixel_eqs_str": "",
+  "warp": "\nuniform sampler2D sampler_cover;\n// The theme's accent, one pixel wide (see the app's\n// services/milkdrop/textures.ts).\nuniform sampler2D sampler_accent;\nvec3 accent() {\n  return texture(sampler_accent, vec2(0.5)).rgb;\n}\n// The screen's shorter side in the square units of (uv - 0.5) * aspect.xy,\n// relative to a 16:9 window's: covers are sized against the height, so a\n// 21:9 screen does not blow them up.\nfloat shortSide() {\n  return min(aspect.x, aspect.y) / 0.5625;\n}\n// Where the cover is, as texture coordinates: the screen's height,\n// centred, its sides fading out over `soft` - on a wide screen the rest is\n// left to the flow.\nvec2 heightCover(vec2 at) {\n  return (at - 0.5) * aspect.xy / (0.5625 * shortSide()) + 0.5;\n}\nfloat inside(vec2 cuv, float soft) {\n  vec2 e = smoothstep(0.0, soft, cuv) * smoothstep(0.0, soft, 1.0 - cuv);\n  return e.x * e.y;\n}\nvec3 tint(vec3 c) {\n  float l = dot(c, vec3(0.30, 0.52, 0.18));\n  return mix(c, accent() * l * 1.6, 0.35);\n}\n// The beam from Beacon's logo, the cover being its lamp: it leaves the\n// cover's edge a quarter of the cover wide and opens to its full width\n// over three quarters of a cover's length, to a flat end - the logo's\n// proportions. `c` in square screen units, `coverHalf` the cover's half width.\nfloat logoBeam(vec2 c, float coverHalf, float angle) {\n  vec2 dir = vec2(cos(angle), sin(angle));\n  float along = dot(c, dir) / coverHalf;\n  float across = abs(dot(c, vec2(-dir.y, dir.x))) / coverHalf;\n  float width = 0.25 + max(along - 1.0, 0.0) * 0.5;\n  return smoothstep(width, width - 0.06, across)\n       * smoothstep(0.9, 1.05, along) * smoothstep(2.55, 2.45, along);\n}\n shader_body {\n  vec3 prev = texture(sampler_main, uv).rgb;\n  // The trail takes on the accent as it spreads, then fades.\n  prev = mix(prev, tint(prev), 0.06) * 0.985 - 0.002;\n  vec2 c = (uv_orig - 0.5) * aspect.xy;\n  vec2 cuv = c / (2.0 * q2 * shortSide()) + 0.5;\n  vec2 e = smoothstep(0.0, 0.025, cuv) * smoothstep(0.0, 0.025, 1.0 - cuv);\n  vec3 cover = texture(sampler_cover, clamp(cuv, 0.0, 1.0)).rgb;\n  ret = mix(prev, cover, e.x * e.y * q1);\n  // Laid into the trails a little each frame, which carry it outwards\n  // into a swirl as it turns.\n  ret += accent() * logoBeam(c, q2 * shortSide(), q5) * 0.018 * q6;\n }",
+  "comp": "\nuniform sampler2D sampler_cover;\n// The theme's accent, one pixel wide (see the app's\n// services/milkdrop/textures.ts).\nuniform sampler2D sampler_accent;\nvec3 accent() {\n  return texture(sampler_accent, vec2(0.5)).rgb;\n}\n// The screen's shorter side in the square units of (uv - 0.5) * aspect.xy,\n// relative to a 16:9 window's: covers are sized against the height, so a\n// 21:9 screen does not blow them up.\nfloat shortSide() {\n  return min(aspect.x, aspect.y) / 0.5625;\n}\n// Where the cover is, as texture coordinates: the screen's height,\n// centred, its sides fading out over `soft` - on a wide screen the rest is\n// left to the flow.\nvec2 heightCover(vec2 at) {\n  return (at - 0.5) * aspect.xy / (0.5625 * shortSide()) + 0.5;\n}\nfloat inside(vec2 cuv, float soft) {\n  vec2 e = smoothstep(0.0, soft, cuv) * smoothstep(0.0, soft, 1.0 - cuv);\n  return e.x * e.y;\n}\nvec3 tint(vec3 c) {\n  float l = dot(c, vec3(0.30, 0.52, 0.18));\n  return mix(c, accent() * l * 1.6, 0.35);\n}\n// The beam from Beacon's logo, the cover being its lamp: it leaves the\n// cover's edge a quarter of the cover wide and opens to its full width\n// over three quarters of a cover's length, to a flat end - the logo's\n// proportions. `c` in square screen units, `coverHalf` the cover's half width.\nfloat logoBeam(vec2 c, float coverHalf, float angle) {\n  vec2 dir = vec2(cos(angle), sin(angle));\n  float along = dot(c, dir) / coverHalf;\n  float across = abs(dot(c, vec2(-dir.y, dir.x))) / coverHalf;\n  float width = 0.25 + max(along - 1.0, 0.0) * 0.5;\n  return smoothstep(width, width - 0.06, across)\n       * smoothstep(0.9, 1.05, along) * smoothstep(2.55, 2.45, along);\n}\n shader_body {\n  vec3 col = texture(sampler_main, uv).rgb;\n  vec3 glow = (texture(sampler_blur1, uv).rgb * scale1 + bias1);\n  col += glow * 0.35;\n  // The cover itself sharp on top, so the middle never smears away.\n  vec2 c = (uv - 0.5) * aspect.xy;\n  vec2 cuv = c / (2.0 * q2 * shortSide()) + 0.5;\n  vec2 e = smoothstep(0.0, 0.01, cuv) * smoothstep(0.0, 0.01, 1.0 - cuv);\n  // Outside the cover: how far from its edge, for a shadow it casts on\n  // the trails and an edge of light that flares with each beat.\n  float d = length(max(abs(cuv - 0.5) - 0.5, 0.0)) * 2.0 * q2 * shortSide();\n  float outside = 1.0 - e.x * e.y;\n  col *= 1.0 - 0.6 * exp(-d * 40.0) * outside;\n  col += accent() * exp(-d * 160.0) * (0.12 + 0.9 * q3) * outside;\n  // And sharp where it is now, so its shape reads as the logo's.\n  col += mix(accent(), vec3(1.0), 0.3) * logoBeam(c, q2 * shortSide(), q5) * 0.4 * min(q6, 1.0) * outside;\n  col = mix(col, texture(sampler_cover, clamp(cuv, 0.0, 1.0)).rgb, e.x * e.y);\n  col *= 1.0 - 0.55 * pow(clamp(rad * 1.35, 0.0, 1.0), 2.0);\n  ret = col;\n }"
+ }
+}

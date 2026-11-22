@@ -39,7 +39,7 @@ import { accountScopedKey } from '@/services/accountKey'
 import { reportForegroundPicture } from '@/services/lights/pictureReport'
 import { useLightsStore } from '@/stores/lights'
 import { useMilkdropStore } from '@/stores/milkdrop'
-import { pickPresetKey, presetPool } from '@/services/milkdrop/presets'
+import { isRetiredPreset, pickPresetKey, presetPool } from '@/services/milkdrop/presets'
 import type { Song } from '@/types/library'
 import type { MixTransition, NoBeatmixReason } from '@/services/connect/types'
 
@@ -527,6 +527,9 @@ export default {
       if (this.milkdropActive) return 'waveform'
       return this.visualizerMode === 'cast' ? 'bands' : 'none'
     },
+    milkdropCoverArtId(): string | null {
+      return this.currentSong?.coverArtId ?? null
+    },
     milkdropMode(): 'local' | 'cast' {
       return this.playbackStore.isCasting ? 'cast' : 'local'
     },
@@ -727,7 +730,9 @@ export default {
         if (!active) return
         if (!this.milkdropStore.customLoaded) void this.milkdropStore.loadCustom()
         this.milkdropPreset = this.milkdropStore.settings.preset ?? this.milkdropPreset
-        if (this.milkdropPreset === null) this.pickMilkdropPreset()
+        if (this.milkdropPreset === null || isRetiredPreset(this.milkdropPreset)) {
+          this.pickMilkdropPreset()
+        }
       },
     },
     // Picked in the menu: shown at once, even when it is the one picked

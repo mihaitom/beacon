@@ -5,6 +5,7 @@ import {
   customPresetId,
   customPresetKey,
   loadPresetFile,
+  isRetiredPreset,
   pickPresetKey,
   presetPool,
 } from '../presets'
@@ -80,5 +81,13 @@ describe('the shipped presets', () => {
         expect(() => new Function('a', `${code as string} return a;`), key).not.toThrow()
       }
     }
+  })
+})
+
+describe('isRetiredPreset', () => {
+  it('lets go of a built-in Beacon no longer ships, never of one it does or an upload', () => {
+    expect(isRetiredPreset('builtin:no-such-preset')).toBe(true)
+    expect(isRetiredPreset(BUILTIN_PRESETS[0]!.key)).toBe(false)
+    expect(isRetiredPreset(customPresetKey('abc'))).toBe(false)
   })
 })

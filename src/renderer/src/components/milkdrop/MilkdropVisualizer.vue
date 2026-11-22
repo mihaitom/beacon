@@ -15,9 +15,20 @@
 
 <script lang="ts">
 import { markRaw, type PropType } from 'vue'
-import type { MilkdropVisualizer } from 'butterchurn'
+import type { MilkdropPreset, MilkdropVisualizer } from 'butterchurn'
 import { butterchurn } from '@/services/milkdrop/butterchurn'
 import { getAudioEngine } from '@/services/audioEngine'
+import { NoCoverArtError } from '@/services/connect/coverArtBatch'
+import { themeAccent } from '@/services/appAccent'
+import {
+  ACCENT_SAMPLER,
+  COVER_SAMPLER,
+  accentPicture,
+  loadCoverPicture,
+  placeholderPicture,
+  setTexture,
+  withAccent,
+} from '@/services/milkdrop/textures'
 import { nextStep } from '@/services/milkdrop/pacing'
 import { loadPresetFile } from '@/services/milkdrop/presets'
 
@@ -47,6 +58,10 @@ interface Runtime {
   loadSeq: number
   /** When the next step is due (see services/milkdrop/pacing.ts). */
   nextStepAt: number
+  /** The cover being fetched, so a song change can call it off. */
+  coverLoad: AbortController | null
+  /** The preset on screen as loaded, to load again in a new accent. */
+  presetData: MilkdropPreset | null
 }
 
 export default {
@@ -60,6 +75,12 @@ export default {
     /** The preset to show (see services/milkdrop/presets.ts's keys); a
      * change blends over to the new one. */
     preset: {
+      type: String as PropType<string | null>,
+      default: null,
+    },
+    /** The song's cover, for the presets that work it into the picture
+     * (see services/milkdrop/textures.ts). */
+    coverArtId: {
       type: String as PropType<string | null>,
       default: null,
     },
@@ -84,12 +105,27 @@ export default {
         presetKey: null,
         loadSeq: 0,
         nextStepAt: 0,
+        coverLoad: null,
+        presetData: null,
       }),
     }
+  },
+  computed: {
+    /** The chosen theme's accent - not the colour Now Playing borrows from
+     * each cover, which the cover presets already show in full. */
+    accent(): string {
+      return themeAccent.value
+    },
   },
   watch: {
     preset(key: string | null) {
       void this.showPreset(key)
+    },
+    coverArtId(id: string | null) {
+      void this.showCover(id)
+    },
+    accent() {
+      this.showAccent()
     },
   },
   mounted() {
@@ -116,10 +152,13 @@ export default {
     }
     this.rt.observer = new ResizeObserver(() => this.resize())
     this.rt.observer.observe(canvas)
+    this.showAccent()
+    void this.showCover(this.coverArtId)
     void this.showPreset(this.preset)
     this.rt.frame = requestAnimationFrame(this.tick)
   },
   beforeUnmount() {
+    this.rt.coverLoad?.abort()
     cancelAnimationFrame(this.rt.frame)
     clearTimeout(this.rt.labelTimer)
     this.rt.observer?.disconnect()
@@ -188,13 +227,55 @@ export default {
         // like the first one - a blend nobody gets to watch would leave the
         // old picture standing.
         const blend = this.rt.presetKey && this.playing ? BLEND_SECONDS : 0
-        this.rt.visualizer.loadPreset(file.preset, blend)
+        this.rt.visualizer.loadPreset(withAccent(file.preset, this.accent), blend)
         this.rt.presetKey = key
+        this.rt.presetData = file.preset
         if (!this.playing) this.ready = false
         this.announce(file.name)
       } catch (error) {
         // A preset Butterchurn cannot compile; the last one keeps running.
         console.error('[milkdrop] Preset failed:', key, error)
+      }
+    },
+    /** The theme's accent, for the presets that draw in it. The waveform's
+     * colour is fixed when a preset loads, so the one on screen loads
+     * again in the new colour. */
+    showAccent(): void {
+      const visualizer = this.rt.visualizer
+      if (!visualizer) return
+      setTexture(visualizer, ACCENT_SAMPLER, accentPicture(this.accent))
+      const preset = this.rt.presetData
+      if (preset && withAccent(preset, this.accent) !== preset) {
+        visualizer.loadPreset(withAccent(preset, this.accent), 0)
+      }
+    },
+    async showCover(id: string | null): Promise<void> {
+      this.rt.coverLoad?.abort()
+      this.rt.coverLoad = null
+      const visualizer = this.rt.visualizer
+      if (!visualizer) return
+      if (!id) {
+        setTexture(visualizer, COVER_SAMPLER, placeholderPicture())
+        return
+      }
+      const load = new AbortController()
+      this.rt.coverLoad = load
+      try {
+        const picture = await loadCoverPicture(id, load.signal)
+        if (load.signal.aborted || this.rt.visualizer !== visualizer) {
+          picture.close()
+          return
+        }
+        setTexture(visualizer, COVER_SAMPLER, picture)
+        picture.close()
+      } catch (error) {
+        if (load.signal.aborted) return
+        // No art for this song, or none reachable: calm grey rather than
+        // the last song's cover.
+        if (!(error instanceof NoCoverArtError)) {
+          console.error('[milkdrop] Cover failed:', id, error)
+        }
+        setTexture(visualizer, COVER_SAMPLER, placeholderPicture())
       }
     },
     announce(name: string): void {

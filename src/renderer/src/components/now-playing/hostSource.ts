@@ -41,6 +41,7 @@ export interface HostNowPlayingApi {
   milkdropActive: boolean
   milkdropPreset: string | null
   milkdropMode: 'local' | 'cast'
+  milkdropCoverArtId: string | null
   milkdropWaveform: () => Uint8Array | null
   isPlaying: boolean
   showLyrics: boolean
@@ -183,6 +184,7 @@ export function hostNowPlayingSource(api: HostNowPlayingApi): NowPlayingSource {
       playing: computed(() => api.isPlaying),
       preset: computed(() => api.milkdropPreset),
       mode: computed(() => api.milkdropMode),
+      coverArtId: computed(() => api.milkdropCoverArtId),
       waveform: () => api.milkdropWaveform(),
     }),
     capabilities: reactive({

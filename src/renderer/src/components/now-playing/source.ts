@@ -91,6 +91,8 @@ export interface NowPlayingMilkdrop {
   /** Which preset to show (services/milkdrop/presets.ts's keys); null
    * until one is picked. */
   preset: string | null
+  /** The song's cover, which Beacon's own presets work into the picture. */
+  coverArtId: string | null
   /** Where the sound comes from: this device's own audio graph, or while
    * casting the waveform connect sends along with the bars' frames. */
   mode: 'local' | 'cast'

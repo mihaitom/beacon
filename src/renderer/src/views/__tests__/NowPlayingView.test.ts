@@ -865,6 +865,13 @@ describe('NowPlayingView', () => {
       expect(shownPreset(wrapper)).toBe(key)
     })
 
+    it('shows another preset when the fixed one is no longer shipped', async () => {
+      useMilkdropStore().set({ switchMode: 'fixed', preset: 'builtin:retired-preset' })
+      const { wrapper } = await mountPlaying()
+      await switchOn(wrapper)
+      expect(BUILTIN_PRESETS.map((entry) => entry.key)).toContain(shownPreset(wrapper))
+    })
+
     it('shows a preset picked in the menu at once', async () => {
       const { wrapper } = await mountPlaying()
       await switchOn(wrapper)

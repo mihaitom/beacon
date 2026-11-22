@@ -26,6 +26,7 @@
           :key="source.milkdrop.mode"
           :playing="source.milkdrop.playing"
           :preset="source.milkdrop.preset"
+          :cover-art-id="source.milkdrop.coverArtId"
           :waveform="source.milkdrop.mode === 'cast' ? source.milkdrop.waveform : null"
         />
       </now-playing-backdrop>

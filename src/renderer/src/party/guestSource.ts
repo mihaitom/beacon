@@ -396,6 +396,7 @@ export function useGuestNowPlayingSource(
       active: false,
       playing: false,
       preset: null,
+      coverArtId: null,
       mode: 'local',
       waveform: () => null,
     },
