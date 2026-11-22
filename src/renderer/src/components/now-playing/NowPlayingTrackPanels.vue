@@ -23,9 +23,10 @@
         <!-- The small cover stands in for the hidden artwork, so clicking
          - it brings the artwork back - the toolbar's toggle, where the eye
          - already is. Only the playing song's: the next one announced
-         - beside it is not what would appear. -->
+         - beside it is not what would appear. Not under Milkdrop either,
+         - which keeps the artwork hidden. -->
         <button
-          v-if="(corner || miniCover) && panel.song && isPlaying(panel)"
+          v-if="(corner || miniCover) && panel.song && isPlaying(panel) && !source.milkdrop.active"
           type="button"
           class="now-playing__mini-art-button"
           :aria-label="$t('nowPlaying.showArtworkLarge')"

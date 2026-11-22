@@ -29,8 +29,9 @@ function panel(s: NowPlayingSong): NowPlayingPanel {
 }
 
 /** The desktop with the artwork hidden: the small cover in the corner. */
-function mountCorner(panels = [panel(song('a'))]) {
+function mountCorner(panels = [panel(song('a'))], milkdropActive = false) {
   const source = reactive({
+    milkdrop: { active: milkdropActive },
     song: panels[0]!.song,
     panels,
     capabilities: { favorite: false, artistLinks: false },
@@ -61,5 +62,12 @@ describe("Now Playing's small cover", () => {
 
     expect(wrapper.findAll('.test-cover')).toHaveLength(2)
     expect(wrapper.findAll('.now-playing__mini-art-button')).toHaveLength(1)
+  })
+
+  it('is only a picture under Milkdrop, which keeps the artwork hidden', () => {
+    const { wrapper } = mountCorner([panel(song('a'))], true)
+
+    expect(wrapper.find('.test-cover').exists()).toBe(true)
+    expect(wrapper.find('.now-playing__mini-art-button').exists()).toBe(false)
   })
 })
