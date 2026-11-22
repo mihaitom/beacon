@@ -14,7 +14,7 @@
 </template>
 
 <script lang="ts">
-import { markRaw } from 'vue'
+import { markRaw, type PropType } from 'vue'
 import type { MilkdropVisualizer } from 'butterchurn'
 import { butterchurn } from '@/services/milkdrop/butterchurn'
 import { getAudioEngine } from '@/services/audioEngine'
@@ -28,6 +28,10 @@ const MAX_RENDER_EDGE = 1280
 const BLEND_SECONDS = 2.7
 // How long the preset's name stays up after it changes.
 const LABEL_MS = 5000
+// Butterchurn's own frame size: what it reads from an analyser per frame,
+// and what connect sends per frame while casting.
+const WAVEFORM_SAMPLES = 1024
+const SILENCE = new Uint8Array(WAVEFORM_SAMPLES).fill(128)
 
 // Kept raw: Vue proxying Butterchurn's WebGL state would be slow, and the
 // render loop changes none of what the template shows.
@@ -55,6 +59,12 @@ export default {
       type: Number,
       required: true,
     },
+    /** While casting: the latest waveform connect sent, read every frame.
+     * Null plays from this device's own audio graph instead. */
+    waveform: {
+      type: Function as PropType<(() => Uint8Array | null) | null>,
+      default: null,
+    },
   },
   data() {
     return {
@@ -80,16 +90,19 @@ export default {
   mounted() {
     const canvas = this.$refs.canvas as HTMLCanvasElement
     try {
-      const analyser = getAudioEngine().getAnalyser()
+      // Butterchurn wants an audio context even when it is handed its
+      // samples: an offline one opens no audio device and plays nothing.
+      const analyser = this.waveform ? null : getAudioEngine().getAnalyser()
+      const context = analyser?.context ?? new OfflineAudioContext(2, 1, 44100)
       const { width, height } = this.renderSize()
       canvas.width = width
       canvas.height = height
-      this.rt.visualizer = butterchurn.createVisualizer(analyser.context, canvas, {
+      this.rt.visualizer = butterchurn.createVisualizer(context, canvas, {
         width,
         height,
         pixelRatio: 1,
       })
-      this.rt.visualizer.connectAudio(analyser)
+      if (analyser) this.rt.visualizer.connectAudio(analyser)
       this.rt.analyser = analyser
     } catch (error) {
       // No WebGL 2, or no analyser: the backdrop underneath stays.
@@ -143,7 +156,16 @@ export default {
       // shows a picture instead of a black canvas.
       if (!this.rt.visualizer || !this.rt.presetKey) return
       if (!this.playing && this.ready) return
-      this.rt.visualizer.render()
+      if (this.waveform) {
+        // Mono: connect decodes one channel. Frames come at ~43/s, so a
+        // frame at 60 Hz sometimes draws the same samples twice.
+        const samples = this.waveform() ?? SILENCE
+        this.rt.visualizer.render({
+          audioLevels: { timeByteArray: samples, timeByteArrayL: samples, timeByteArrayR: samples },
+        })
+      } else {
+        this.rt.visualizer.render()
+      }
       this.ready = true
     },
     async showPreset(seed: number): Promise<void> {

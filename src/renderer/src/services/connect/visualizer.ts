@@ -20,11 +20,14 @@ export class VisualizerEventSource {
     private readonly connectUrl: string,
     private readonly connectToken: string,
     private readonly sessionId: string,
+    /** Also hand over each frame's raw samples (Milkdrop's input). */
+    private readonly waveform = false,
   ) {}
 
   start(): void {
     if (this.source) return
     const params = new URLSearchParams({ token: this.connectToken, session: this.sessionId })
+    if (this.waveform) params.set('waveform', 'true')
     this.source = new ReconnectingEventSource(
       `${this.connectUrl}/visualizer?${params.toString()}`,
       {

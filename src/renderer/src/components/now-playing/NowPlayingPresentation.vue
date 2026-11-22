@@ -23,8 +23,10 @@
         <component
           :is="source.milkdropComponent"
           v-if="source.milkdrop.active && source.milkdropComponent"
+          :key="source.milkdrop.mode"
           :playing="source.milkdrop.playing"
           :seed="source.milkdrop.seed"
+          :waveform="source.milkdrop.mode === 'cast' ? source.milkdrop.waveform : null"
         />
       </now-playing-backdrop>
       <!-- Wherever the text (and on a phone held sideways the controls) sits
@@ -114,6 +116,11 @@
           :is="source.debugOverlayComponent"
           v-if="source.debugOverlayComponent"
           :debug="source.visualizer.debug"
+          :waveform="
+            source.milkdrop.active && source.milkdrop.mode === 'cast'
+              ? source.milkdrop.waveform
+              : null
+          "
         />
       </div>
     </v-theme-provider>

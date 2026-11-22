@@ -391,7 +391,14 @@ export function useGuestNowPlayingSource(
       debug: null,
     }),
     // Needs this device's own audio, which a guest does not play.
-    milkdrop: { available: false, active: false, playing: false, seed: 0 },
+    milkdrop: {
+      available: false,
+      active: false,
+      playing: false,
+      seed: 0,
+      mode: 'local',
+      waveform: () => null,
+    },
     capabilities: reactive({
       fullscreen: true,
       artistLinks: false,

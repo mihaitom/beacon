@@ -88,6 +88,14 @@ function readHideArtwork(): boolean {
 // it is a lot more to look at than a photo.
 const MILKDROP_KEY = 'beacon.nowPlayingMilkdrop'
 
+/** A frame's base64 waveform as the bytes Butterchurn reads. */
+function decodeWaveform(base64: string): Uint8Array {
+  const text = atob(base64)
+  const bytes = new Uint8Array(text.length)
+  for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i)
+  return bytes
+}
+
 function readMilkdrop(): boolean {
   try {
     return localStorage.getItem(accountScopedKey(MILKDROP_KEY)) === 'true'
@@ -198,6 +206,7 @@ export default {
       frequencyData: null as Uint8Array<ArrayBuffer> | null,
       visualizerEvents: null as VisualizerEventSource | null,
       castBands: null as number[] | null,
+      castWaveform: null as Uint8Array | null,
       visualizerDebug: null as VisualizerFrame['debug'] | null,
       // The current song's artist background from Fanart.tv, when the
       // installation has a key and the artist has one. Shown crisp behind
@@ -481,12 +490,14 @@ export default {
     isPlaying(): boolean {
       return this.playbackStore.isPlaying
     },
-    /** Milkdrop reads this device's own Web Audio graph, so not while
-     * casting (the speaker plays, not this device) and not on a phone,
-     * which has none. Nor for anyone who has asked for less motion: it is
-     * nothing but motion. */
+    /** Milkdrop reads this device's own Web Audio graph, or while casting
+     * the waveform connect decodes alongside the speaker - wherever the
+     * bars would have something to show. Not on a phone: a full-screen
+     * WebGL canvas there costs battery and heat for a small picture, and
+     * locally it has no graph anyway. Nor for anyone who has asked for less
+     * motion: it is nothing but motion. */
     milkdropAvailable(): boolean {
-      if (this.playbackStore.isCasting || !getAudioEngine().hasAnalyser) return false
+      if (this.compact || !this.visualizerAvailable) return false
       try {
         return !window.matchMedia('(prefers-reduced-motion: reduce)').matches
       } catch {
@@ -495,6 +506,16 @@ export default {
     },
     milkdropActive(): boolean {
       return this.milkdropEnabled && this.milkdropAvailable && this.hasPlayable
+    },
+    /** Which frames connect has to send: the bars' bands, or for Milkdrop
+     * the waveform with them. Nothing while not casting or not playing. */
+    castFeed(): 'none' | 'bands' | 'waveform' {
+      if (!this.playbackStore.isCasting || !this.playbackStore.isPlaying) return 'none'
+      if (this.milkdropActive) return 'waveform'
+      return this.visualizerMode === 'cast' ? 'bands' : 'none'
+    },
+    milkdropMode(): 'local' | 'cast' {
+      return this.playbackStore.isCasting ? 'cast' : 'local'
     },
     /** 'local' has a real <audio> element to tap (services/audioEngine.ts),
      * 'cast' gets real data from the backend instead
@@ -695,11 +716,11 @@ export default {
         // next launch.
       }
     },
-    visualizerMode: {
+    castFeed: {
       immediate: true,
-      handler(mode: 'local' | 'cast' | 'idle') {
-        if (mode === 'cast') this.startVisualizerEvents()
-        else this.stopVisualizerEvents()
+      handler(feed: 'none' | 'bands' | 'waveform') {
+        this.stopVisualizerEvents()
+        if (feed !== 'none') this.startVisualizerEvents(feed === 'waveform')
       },
     },
   },
@@ -806,16 +827,18 @@ export default {
       ]
     },
     /** Starts the backend's real-time frames while casting. */
-    startVisualizerEvents() {
+    startVisualizerEvents(waveform: boolean) {
       if (this.visualizerEvents) return
       const auth = this.authStore
       this.visualizerEvents = new VisualizerEventSource(
         auth.apiUrl,
         auth.connectToken,
         auth.sessionId,
+        waveform,
       )
       this.visualizerEvents.onFrame = (frame: VisualizerFrame) => {
         this.castBands = frame.bands
+        this.castWaveform = frame.waveform ? decodeWaveform(frame.waveform) : null
         this.visualizerDebug = frame.debug ?? null
       }
       this.visualizerEvents.start()
@@ -824,7 +847,12 @@ export default {
       this.visualizerEvents?.stop()
       this.visualizerEvents = null
       this.castBands = null
+      this.castWaveform = null
       this.visualizerDebug = null
+    },
+    /** What Milkdrop reads every frame while casting. */
+    milkdropWaveform(): Uint8Array | null {
+      return this.castWaveform
     },
     /** What VisualizerBars reads every frame. */
     visualizerSample(): number[] | null {

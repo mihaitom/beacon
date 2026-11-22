@@ -9,7 +9,14 @@ declare module 'butterchurn' {
     /** Blends from the current preset over `blendSeconds`. */
     loadPreset(preset: MilkdropPreset, blendSeconds?: number): void
     setRendererSize(width: number, height: number, opts?: { pixelRatio?: number }): void
-    render(): void
+    /** Without `audioLevels` it reads the connected audio node itself. */
+    render(opts?: {
+      audioLevels?: {
+        timeByteArray: Uint8Array
+        timeByteArrayL: Uint8Array
+        timeByteArrayR: Uint8Array
+      }
+    }): void
   }
 
   export interface Butterchurn {

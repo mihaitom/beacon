@@ -91,6 +91,12 @@ export interface NowPlayingMilkdrop {
   /** In [0, 1): which preset to show; a new one per song and per press of
    * the toolbar's next-preset button. */
   seed: number
+  /** Where the sound comes from: this device's own audio graph, or while
+   * casting the waveform connect sends along with the bars' frames. */
+  mode: 'local' | 'cast'
+  /** The latest cast waveform, read every frame; null locally and until
+   * the first frame arrives. */
+  waveform: () => Uint8Array | null
 }
 
 /** What a given host allows the presentation to do. The app turns everything

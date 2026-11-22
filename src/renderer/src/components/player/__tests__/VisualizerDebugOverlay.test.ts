@@ -10,18 +10,24 @@ import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { getLogLevel } from '@/services/connect/logLevel'
 import type { VisualizerFrame } from '@/services/connect/types'
+import { playTestTone } from '@/services/connect/debugTone'
 import VisualizerDebugOverlay from '../VisualizerDebugOverlay.vue'
 
 vi.mock('@/services/connect/logLevel', () => ({ getLogLevel: vi.fn() }))
+vi.mock('@/services/connect/debugTone', () => ({ playTestTone: vi.fn() }))
 
 const vuetify = createVuetify({ components, directives })
 
 const DEBUG_FRAME = { visualizer: 12.34, cast: 12.11, lead: { seconds: 4.7, measured: false } }
 
-async function mountOverlay(level = 'DEBUG', debug: VisualizerFrame['debug'] | null = DEBUG_FRAME) {
+async function mountOverlay(
+  level = 'DEBUG',
+  debug: VisualizerFrame['debug'] | null = DEBUG_FRAME,
+  waveform: (() => Uint8Array | null) | null = null,
+) {
   vi.mocked(getLogLevel).mockResolvedValue({ level } as Awaited<ReturnType<typeof getLogLevel>>)
   const wrapper = mount(VisualizerDebugOverlay, {
-    props: { debug },
+    props: { debug, waveform },
     global: { plugins: [vuetify, i18n] },
   })
   await flushPromises()
@@ -117,5 +123,49 @@ describe('VisualizerDebugOverlay', () => {
     const wrapper = await mountOverlay('DEBUG', { visualizer: 13.5, cast: 12.11 })
 
     expect(wrapper.get('.debug-readings__value--bad').text()).toBe('+1.39s')
+  })
+
+  describe('Milkdrop signal', () => {
+    // Drives the overlay's frame loop by hand, one frame per call.
+    let frames: FrameRequestCallback[] = []
+    beforeEach(() => {
+      frames = []
+      vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+        frames.push(cb)
+        return frames.length
+      })
+    })
+    async function nextFrame(): Promise<void> {
+      frames.shift()?.(0)
+      await flushPromises()
+    }
+
+    it('lights while the samples carry sound, and only then', async () => {
+      let samples = new Uint8Array(1024).fill(128)
+      const wrapper = await mountOverlay('DEBUG', DEBUG_FRAME, () => samples)
+      const lamp = () => wrapper.get('.visualizer-debug-overlay__lamp').classes()
+
+      await nextFrame()
+      expect(lamp()).not.toContain('visualizer-debug-overlay__lamp--on')
+
+      samples = new Uint8Array(1024).fill(128)
+      samples[500] = 250
+      await nextFrame()
+      expect(lamp()).toContain('visualizer-debug-overlay__lamp--on')
+    })
+
+    it('is not there without Milkdrop casting', async () => {
+      const wrapper = await mountOverlay()
+
+      expect(wrapper.find('.visualizer-debug-overlay__lamp').exists()).toBe(false)
+    })
+
+    it('starts the test tone', async () => {
+      const wrapper = await mountOverlay('DEBUG', DEBUG_FRAME, () => null)
+
+      await wrapper.get('.visualizer-debug-overlay__signal button').trigger('click')
+
+      expect(playTestTone).toHaveBeenCalledOnce()
+    })
   })
 })

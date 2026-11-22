@@ -39,6 +39,8 @@ export interface HostNowPlayingApi {
   milkdropAvailable: boolean
   milkdropActive: boolean
   milkdropSeed: number
+  milkdropMode: 'local' | 'cast'
+  milkdropWaveform: () => Uint8Array | null
   isPlaying: boolean
   showLyrics: boolean
   showVisualizer: boolean
@@ -179,6 +181,8 @@ export function hostNowPlayingSource(api: HostNowPlayingApi): NowPlayingSource {
       active: computed(() => api.milkdropActive),
       playing: computed(() => api.isPlaying),
       seed: computed(() => api.milkdropSeed),
+      mode: computed(() => api.milkdropMode),
+      waveform: () => api.milkdropWaveform(),
     }),
     capabilities: reactive({
       fullscreen: true,

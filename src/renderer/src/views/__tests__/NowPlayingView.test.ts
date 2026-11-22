@@ -1,4 +1,4 @@
-import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
@@ -336,15 +336,47 @@ describe('NowPlayingView', () => {
       )
     })
 
-    it('offers no Milkdrop while casting, where this device plays nothing', async () => {
+    it('feeds Milkdrop the waveform from connect while casting', async () => {
+      // No local graph needed: the speaker plays, connect decodes alongside.
+      withAnalyser(false)
+      vi.stubGlobal(
+        'EventSource',
+        class {
+          close(): void {}
+        },
+      )
+      onTestFinished(() => {
+        vi.unstubAllGlobals()
+        // Switching it on persists, and would carry into the tests after.
+        localStorage.removeItem('beacon.nowPlayingMilkdrop')
+      })
       const { wrapper } = await mountWithSongFor()
-      const vm = wrapper.vm as unknown as { milkdropAvailable: boolean }
-      expect(vm.milkdropAvailable).toBe(true)
+      const vm = wrapper.vm as unknown as {
+        milkdropEnabled: boolean
+        milkdropActive: boolean
+        castFeed: string
+      }
+      useConnectStore().status = statusWithTargets([{ name: 'Living Room', type: 'sonos' }])
+      usePlaybackStore().isPlaying = true
+      await wrapper.vm.$nextTick()
+      expect(vm.castFeed).toBe('bands')
 
+      vm.milkdropEnabled = true
+      await wrapper.vm.$nextTick()
+
+      expect(vm.milkdropActive).toBe(true)
+      expect(vm.castFeed).toBe('waveform')
+    })
+
+    it('offers no Milkdrop on a phone, cast or not', async () => {
+      const { wrapper } = await mountView({ compact: true })
+      usePlaybackStore().setQueue([makeSong('a')], 0)
       useConnectStore().status = statusWithTargets([{ name: 'Living Room', type: 'sonos' }])
       await wrapper.vm.$nextTick()
 
-      expect(vm.milkdropAvailable).toBe(false)
+      expect((wrapper.vm as unknown as { milkdropAvailable: boolean }).milkdropAvailable).toBe(
+        false,
+      )
     })
 
     it('is available casting to AirPlay only', async () => {

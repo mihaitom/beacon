@@ -304,6 +304,23 @@ _STALL_CLOCK_MOVED_SECONDS = 0.5
 _MAX_LATENESS_SECONDS = 0.15
 
 
+# Samples per waveform snapshot - what Butterchurn (the Milkdrop
+# visualizer) reads per frame from a Web Audio analyser locally, which is
+# the shape it gets handed while casting instead.
+WAVEFORM_SAMPLES = 1024
+
+
+def waveform_snapshot(pcm: bytes) -> bytes:
+    """16-bit little-endian mono PCM -> its last WAVEFORM_SAMPLES samples as
+    unsigned bytes, silence at 128 - the format of
+    AnalyserNode.getByteTimeDomainData(). Short input is padded with silence
+    in front, as if it had been preceded by it."""
+    samples = np.frombuffer(pcm[: len(pcm) // 2 * 2], dtype="<i2")[-WAVEFORM_SAMPLES:]
+    if len(samples) < WAVEFORM_SAMPLES:
+        samples = np.pad(samples, (WAVEFORM_SAMPLES - len(samples), 0))
+    return ((samples.astype(np.int32) >> 8) + 128).astype(np.uint8).tobytes()
+
+
 def analyze_pcm(pcm: bytes) -> list[float]:
     """16-bit little-endian mono PCM -> _BAND_COUNT logarithmically-spaced
     band values in [0, 1], covering _MIN_FREQ_HZ.._MAX_FREQ_HZ. Expects
@@ -461,10 +478,15 @@ class AudioAnalyzer:
         # and party guests (core/party.py). A callback each rather than one
         # shared queue, which would deal the frames out between readers.
         self.listeners: list[Callable[[list[float]], None]] = []
-        # (content_position, bands) pairs already computed but not yet
-        # released — see _release_frames(). A handful of KB even for a
-        # whole track's worth (each entry is _BAND_COUNT floats).
-        self._pending: deque[tuple[float, list[float]]] = deque()
+        # The released frame's waveform (see waveform_snapshot()), set just
+        # before the listeners are called, for those that want it - Milkdrop
+        # while casting. An attribute rather than a second listener argument,
+        # so the bars' listeners stay as they are.
+        self.last_waveform: bytes | None = None
+        # (content_position, bands, waveform) triples already computed but not
+        # yet released — see _release_frames(). About a KB per frame, so a
+        # few hundred KB at the full lookahead.
+        self._pending: deque[tuple[float, list[float], bytes]] = deque()
         self._source_url = source_url
         self._source_queue = source_queue
         self._input_task: asyncio.Task | None = None
@@ -476,6 +498,10 @@ class AudioAnalyzer:
         self._reader_task: asyncio.Task | None = None
         self._release_task: asyncio.Task | None = None
         self._pcm_buffer = bytearray()
+        # The hop of PCM the last frame dropped off the front - the audio
+        # just before the next frame's position, which is that frame's
+        # waveform (see _read_pcm()). Silence before the first frame.
+        self._played_hop = b""
         # Running state for _smooth_bands() — carries across frames within
         # this one run, reset naturally for the next one since each gets a
         # fresh AudioAnalyzer instance.
@@ -652,12 +678,25 @@ class AudioAnalyzer:
                         self._debug_baseline = self._debug_cast_elapsed_fn()
                 self._pcm_buffer.extend(data)
                 while len(self._pcm_buffer) >= window_bytes:
-                    window = bytes(self._pcm_buffer[-window_bytes:])
+                    # From the front: `_pcm_position` is the front's
+                    # position. The tail, taken here before, is the same
+                    # window only while a read adds no more than one hop -
+                    # a larger one analyzed the same tail several times
+                    # over under advancing positions and skipped what lay
+                    # between, which the bars' long window hid and a
+                    # waveform cannot.
+                    window = bytes(self._pcm_buffer[:window_bytes])
                     bands = analyze_pcm(window)
                     bands = _smooth_bands(self._smoothed_bands, bands, _SMOOTHING_TIME_CONSTANT)
                     self._smoothed_bands = bands
-                    self._pending.append((self._pcm_position, bands))
+                    # The audio up to this frame's position, the way an
+                    # analyser reads it locally at that moment - i.e. the
+                    # hop dropped last time round, not the window ahead.
+                    self._pending.append(
+                        (self._pcm_position, bands, waveform_snapshot(self._played_hop))
+                    )
                     self._pcm_position += _FRAME_SECONDS
+                    self._played_hop = bytes(self._pcm_buffer[:hop_bytes])
                     del self._pcm_buffer[:hop_bytes]
                     # Yield after every frame — see _MAX_LOOKAHEAD_SECONDS's
                     # comment for the starvation this loop causes while
@@ -808,7 +847,7 @@ class AudioAnalyzer:
                         break
                     await asyncio.sleep(0.05)
                     continue
-                content_position, bands = self._pending[0]
+                content_position, bands, waveform = self._pending[0]
                 remaining = content_position - self._elapsed_fn()
                 if remaining > 0:
                     await asyncio.sleep(min(remaining, 0.5))
@@ -879,6 +918,7 @@ class AudioAnalyzer:
                 if self._debug_lead_fn is not None:
                     lead, measured = self._debug_lead_fn()
                     self.last_release_lead = (round(lead, 2), measured)
+                self.last_waveform = waveform
                 for listener in list(self.listeners):
                     listener(bands)
         except asyncio.CancelledError:
