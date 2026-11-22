@@ -101,13 +101,13 @@
         v-if="source.milkdrop.active && source.milkdropMenuComponent"
         :current="source.milkdrop.preset"
       />
-      <!-- Brings the album artwork back, large, over the artist background
-       - or Milkdrop. Only once there is one of those: without it the
-       - artwork is already what the stage shows, so there is nothing to
-       - toggle. Lit while the artwork is the thing on screen, like the
-       - other toggles. -->
+      <!-- Brings the album artwork back, large, over the artist background.
+       - Only once there is one: without it the artwork is already what the
+       - stage shows, so there is nothing to toggle. Not under Milkdrop,
+       - whose presets draw the cover themselves. Lit while the artwork is
+       - the thing on screen, like the other toggles. -->
       <v-btn
-        v-if="source.backdrop.isArtist || source.milkdrop.active"
+        v-if="source.backdrop.isArtist && !source.milkdrop.active"
         icon="mdi-album"
         :color="!source.ui.artworkHidden ? 'primary' : undefined"
         variant="text"

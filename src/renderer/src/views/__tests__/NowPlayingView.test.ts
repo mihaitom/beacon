@@ -809,6 +809,19 @@ describe('NowPlayingView', () => {
       expect(wrapper.find('.now-playing__toolbar .mdi-equalizer').exists()).toBe(false)
     })
 
+    it('hides the album artwork and its switch, since the presets draw the cover', async () => {
+      // Asked to show the artwork, which still must not double up with the
+      // cover Milkdrop draws.
+      localStorage.setItem('beacon.nowPlayingHideArtwork', 'false')
+      const { wrapper } = await mountPlaying()
+      expect(wrapper.find('.now-playing__art-wrap').exists()).toBe(true)
+
+      await switchOn(wrapper)
+
+      expect(wrapper.find('.now-playing__art-wrap').exists()).toBe(false)
+      expect(wrapper.find('.now-playing__toolbar .mdi-album').exists()).toBe(false)
+    })
+
     it('is not offered without a local audio graph', async () => {
       withAnalyser(false)
       const { wrapper } = await mountPlaying()

@@ -602,11 +602,13 @@ export default {
       if (!useAppearanceStore().adaptiveAccent) return visualizerBarColor(null)
       return visualizerBarColor(this.artistBackground ? this.artistColor : this.extractedColor)
     },
-    /** Whether the artwork is actually hidden right now: the wish, and a
-     * Fanart.tv artist background that is loaded and ready to show instead.
-     * Without one the artwork stays - hiding it would leave nothing. */
+    /** Whether the artwork is actually hidden right now: always under
+     * Milkdrop, whose presets already draw the cover themselves, otherwise
+     * the wish, and a Fanart.tv artist background that is loaded and ready
+     * to show instead. Without one the artwork stays - hiding it would
+     * leave nothing. */
     artworkHidden(): boolean {
-      return this.hideArtwork && (Boolean(this.artistBackground) || this.milkdropActive)
+      return this.milkdropActive || (this.hideArtwork && Boolean(this.artistBackground))
     },
     // A soft, wide wash filling the whole screen — the "room" the artwork
     // sits in reacts to whatever's playing, the same idea as the lighthouse
@@ -621,7 +623,7 @@ export default {
       // Over the artist's photo the darkening stays but the colour does
       // not: the cover's colour (or the amber fallback) over a sharp photo
       // reads as a colour cast. The glow behind the artwork keeps the light.
-      if (this.backdropIsArtist || this.milkdropActive) {
+      if (this.backdropIsArtist) {
         return { background: 'rgba(var(--v-theme-background), 0.55)' }
       }
       return {
