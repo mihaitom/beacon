@@ -27,6 +27,6 @@ describe('currentCaption', () => {
     })
     visualizer.loadPreset(SAYS_SECOND, 0)
     visualizer.render()
-    expect(currentCaption(visualizer, ['first', 'second'])).toBe('second')
+    expect(currentCaption(visualizer, [{ text: 'first' }, { text: 'second' }])?.text).toBe('second')
   })
 })

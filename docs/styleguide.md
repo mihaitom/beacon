@@ -160,7 +160,10 @@ label and the column headings, where they mark a label rather than an
 action.
 
 The serif face is the app's signature and is rationed deliberately - two or
-three per screen at most, never for a label or a row.
+three per screen at most, never for a label or a row. Now Playing has the
+song title in it, and a Milkdrop preset's named place (the Fractal Zoom's
+"Seahorse Valley") while it shows - the place's caption only, not the
+preset's name or the zoom beside it.
 
 ### The one type floor
 

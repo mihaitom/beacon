@@ -1,4 +1,4 @@
-// The label under the picture: a new preset's name first, then what the
+// The corner of the picture: a new preset's name first, then what the
 // preset says about itself (see services/milkdrop/captions.ts). Butterchurn
 // is a stand-in here - its side is covered by captions.browser.test.ts.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -18,20 +18,24 @@ vi.mock('@/services/milkdrop/butterchurn', () => ({
 }))
 
 vi.mock('@/services/milkdrop/presets', () => ({
-  loadPresetFile: async () => ({
-    name: 'Beacon - Fractal Zoom',
-    preset: { warp: '', comp: '' },
-    captions: ['Mandelbrot set', 'Seahorse Valley'],
-  }),
+  loadPresetFile: async (key: string) =>
+    key === 'builtin:other'
+      ? { name: 'Other', preset: { warp: '', comp: '' } }
+      : {
+          name: 'Beacon - Fractal Zoom',
+          preset: { warp: '', comp: '' },
+          captions: [{ text: 'Mandelbrot set' }, { text: 'Seahorse Valley', place: true }],
+          reportsZoom: true,
+        },
 }))
 
 import MilkdropVisualizer from '../MilkdropVisualizer.vue'
 
 const LABEL_MS = 5000
 
-async function mountPlaying() {
+async function mountPlaying(preset = 'builtin:beacon-fractal-zoom') {
   const wrapper = mount(MilkdropVisualizer, {
-    props: { playing: true, preset: 'builtin:beacon-fractal-zoom', waveform: () => null },
+    props: { playing: true, preset, waveform: () => null },
   })
   await flushPromises()
   return wrapper
@@ -43,8 +47,8 @@ async function frames() {
 }
 
 function label(wrapper: Awaited<ReturnType<typeof mountPlaying>>) {
-  const element = wrapper.get('.milkdrop__preset')
-  return element.classes().includes('milkdrop__preset--visible') ? element.text() : null
+  const element = wrapper.get('.milkdrop__label')
+  return element.classes().includes('milkdrop__label--visible') ? element.text() : null
 }
 
 describe('MilkdropVisualizer captions', () => {
@@ -86,8 +90,28 @@ describe('MilkdropVisualizer captions', () => {
     qs.q32 = 2
     await frames()
     expect(label(wrapper)).toBe('Seahorse Valley')
+    // A place arrived at stands out from the rest.
+    expect(wrapper.get('.milkdrop__label').classes()).toContain('milkdrop__label--place')
     await vi.advanceTimersByTimeAsync(LABEL_MS)
     // Still asked for, but already shown.
     expect(label(wrapper)).toBeNull()
+  })
+
+  it('keeps the zoom up for as long as the preset reports it', async () => {
+    const wrapper = await mountPlaying()
+    expect(wrapper.find('.milkdrop__zoom').exists()).toBe(false)
+
+    qs.q31 = 3
+    await frames()
+    expect(wrapper.get('.milkdrop__zoom').text()).toBe('×8')
+    await vi.advanceTimersByTimeAsync(3 * LABEL_MS)
+    expect(wrapper.get('.milkdrop__zoom').text()).toBe('×8')
+  })
+
+  it("reads no zoom into a preset that does not report one - q31 is any preset's to use", async () => {
+    qs.q31 = 3
+    const wrapper = await mountPlaying('builtin:other')
+    await frames()
+    expect(wrapper.find('.milkdrop__zoom').exists()).toBe(false)
   })
 })

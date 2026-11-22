@@ -2,6 +2,7 @@ import type { MilkdropPreset } from 'butterchurn'
 import BUILTIN_INDEX from '@/assets/milkdrop/index.json'
 import { getMilkdropPreset } from '@/services/connect/milkdropPresets'
 import type { OrbitTarget } from '@/services/milkdrop/orbits'
+import type { MilkdropCaption } from '@/services/milkdrop/captions'
 
 /** A preset file as it sits in assets/milkdrop/presets/: Butterchurn's
  * converted preset plus the name its author gave it, which the file name
@@ -14,7 +15,9 @@ export interface MilkdropPresetFile {
   orbits?: OrbitTarget[]
   /** What a preset of Beacon's own can say about what is on screen - see
    * captions.ts. */
-  captions?: string[]
+  captions?: MilkdropCaption[]
+  /** Whether it reports how far it has zoomed in - see captions.ts. */
+  reportsZoom?: boolean
 }
 
 /** One preset to pick from: one Beacon ships (`builtin:<slug>`) or one the

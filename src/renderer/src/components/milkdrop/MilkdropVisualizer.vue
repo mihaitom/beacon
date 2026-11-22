@@ -4,11 +4,17 @@
    - good where WebGL 2 is missing and this never draws a frame. -->
   <div class="milkdrop">
     <canvas ref="canvas" class="milkdrop__canvas" :class="{ 'milkdrop__canvas--ready': ready }" />
-    <div
-      class="milkdrop__preset text-body-small"
-      :class="{ 'milkdrop__preset--visible': labelVisible }"
-    >
-      {{ labelText }}
+    <div class="milkdrop__corner">
+      <div
+        class="milkdrop__label"
+        :class="[
+          labelPlace ? 'display-title milkdrop__label--place' : 'text-title-large',
+          { 'milkdrop__label--visible': labelVisible },
+        ]"
+      >
+        {{ labelText }}
+      </div>
+      <div v-if="zoomText" class="milkdrop__zoom text-title-medium">{{ zoomText }}</div>
     </div>
   </div>
 </template>
@@ -31,7 +37,13 @@ import {
   withAccent,
 } from '@/services/milkdrop/textures'
 import { ORBIT_LENGTH, ORBIT_SAMPLER, orbitsFor } from '@/services/milkdrop/orbits'
-import { currentCaption } from '@/services/milkdrop/captions'
+import { i18n } from '@/i18n'
+import {
+  currentCaption,
+  currentZoom,
+  formatZoom,
+  type MilkdropCaption,
+} from '@/services/milkdrop/captions'
 import { nextStep } from '@/services/milkdrop/pacing'
 import { loadPresetFile } from '@/services/milkdrop/presets'
 
@@ -68,9 +80,11 @@ interface Runtime {
   /** What the preset on screen can say about itself (see captions.ts),
    * the caption it last asked for, and one waiting for the preset's name
    * to go - the name comes first. */
-  captions: string[] | undefined
-  caption: string | null
-  pendingCaption: string | null
+  captions: MilkdropCaption[] | undefined
+  caption: MilkdropCaption | null
+  pendingCaption: MilkdropCaption | null
+  /** Whether the preset on screen reports its zoom (see captions.ts). */
+  reportsZoom: boolean
   labelIsName: boolean
 }
 
@@ -111,7 +125,9 @@ export default {
     return {
       ready: false,
       labelText: '',
+      labelPlace: false,
       labelVisible: false,
+      zoomText: null as string | null,
       rt: markRaw<Runtime>({
         visualizer: null,
         analyser: null,
@@ -126,6 +142,7 @@ export default {
         captions: undefined,
         caption: null,
         pendingCaption: null,
+        reportsZoom: false,
         labelIsName: false,
       }),
     }
@@ -239,6 +256,10 @@ export default {
         this.rt.caption = caption
         if (caption) this.showCaption(caption)
       }
+      const zoom = this.rt.reportsZoom ? currentZoom(this.rt.visualizer) : null
+      const zoomText = zoom === null ? null : formatZoom(zoom, String(i18n.global.locale))
+      // Only on a change: most frames move the factor less than it shows.
+      if (zoomText !== this.zoomText) this.zoomText = zoomText
       this.ready = true
     },
     async showPreset(key: string | null): Promise<void> {
@@ -266,6 +287,8 @@ export default {
         this.rt.presetData = file.preset
         this.rt.captions = file.captions
         this.rt.caption = null
+        this.rt.reportsZoom = file.reportsZoom === true
+        if (!this.rt.reportsZoom) this.zoomText = null
         if (!this.playing) this.ready = false
         this.announce(file.name)
       } catch (error) {
@@ -320,14 +343,15 @@ export default {
     },
     announce(name: string): void {
       this.rt.pendingCaption = null
-      this.showLabel(name, true)
+      this.showLabel({ text: name }, true)
     },
-    showCaption(caption: string): void {
+    showCaption(caption: MilkdropCaption): void {
       if (this.rt.labelIsName) this.rt.pendingCaption = caption
       else this.showLabel(caption, false)
     },
-    showLabel(text: string, isName: boolean): void {
-      this.labelText = text
+    showLabel(caption: MilkdropCaption, isName: boolean): void {
+      this.labelText = caption.text
+      this.labelPlace = caption.place === true
       this.labelVisible = true
       this.rt.labelIsName = isName
       clearTimeout(this.rt.labelTimer)
@@ -368,20 +392,40 @@ export default {
 /* Where the preset's name shows for a moment after it changes - so a good
  * one can be told apart from the rest - and what a preset says about
  * itself. Bottom right, clear of the toolbar (top right) and the debug
- * overlays (top left). */
-.milkdrop__preset {
+ * overlays (top left). Raised over Now Playing's scrims, which sit above
+ * the picture and would turn white text grey. */
+.milkdrop__corner {
   position: absolute;
   right: 24px;
   bottom: 24px;
-  text-align: right;
+  z-index: 2;
   max-width: calc(100% - 48px);
-  color: rgba(255, 255, 255, 0.75);
-  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+  text-align: right;
+  color: #fff;
+  text-shadow:
+    0 1px 3px rgba(0, 0, 0, 0.8),
+    0 0 12px rgba(0, 0, 0, 0.5);
+}
+
+.milkdrop__label {
   opacity: 0;
   transition: opacity 0.6s ease;
 }
 
-.milkdrop__preset--visible {
+.milkdrop__label--visible {
   opacity: 1;
+}
+
+/* A place arrived at: named in the song title's serif, a step below it. */
+.milkdrop__label--place {
+  font-size: 2rem;
+}
+
+.milkdrop__zoom {
+  font-variant-numeric: tabular-nums;
 }
 </style>
