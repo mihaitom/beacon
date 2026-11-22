@@ -733,6 +733,7 @@ describe('the store wiring the audio engine', () => {
 
         expect(useConnectStore().stopAll).toHaveBeenCalled()
         expect(engine.play).toHaveBeenCalledWith('https://server.example/stream/b', 75, 1)
+        expect(playback.isPlaying).toBe(true)
       })
 
       it('carries a station on here', async () => {

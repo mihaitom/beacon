@@ -77,6 +77,7 @@ export const localActions: LocalActions & ThisType<PlaybackContext> = {
     const song = this.currentSong
     if (!song) return
     this.startLocalSong(song, this.localPosition, autoplay)
+    if (autoplay) this.isPlaying = true
   },
 
   /** The stream URL for `song`, recording what was actually decided.
