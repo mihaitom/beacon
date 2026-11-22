@@ -126,7 +126,9 @@ describe('loadCoverPicture', () => {
     const readContext = read.getContext('2d')!
     readContext.drawImage(picture, 0, 0)
     for (const x of [2, 509]) {
-      expect(readContext.getImageData(x, 256, 1, 1).data.slice(0, 3)).toEqual([0, 255, 0])
+      expect(Array.from(readContext.getImageData(x, 256, 1, 1).data.slice(0, 3))).toEqual([
+        0, 255, 0,
+      ])
     }
   })
 })
