@@ -49,6 +49,7 @@ import {
 } from '@/services/milkdrop/captions'
 import { nextStep } from '@/services/milkdrop/pacing'
 import { renderSize } from '@/services/milkdrop/renderSize'
+import { RenderScale } from '@/services/milkdrop/resolution'
 import { loadPresetFile } from '@/services/milkdrop/presets'
 
 // How long a new preset blends in from the last one.
@@ -85,6 +86,8 @@ interface Runtime {
   pendingCaption: MilkdropCaption | null
   /** Whether the preset on screen reports its zoom (see captions.ts). */
   reportsZoom: boolean
+  /** Fewer pixels while the GPU cannot keep up (see resolution.ts). */
+  renderScale: RenderScale | null
   labelIsName: boolean
 }
 
@@ -142,6 +145,7 @@ export default {
         caption: null,
         pendingCaption: null,
         reportsZoom: false,
+        renderScale: null,
         labelIsName: false,
       }),
     }
@@ -179,6 +183,7 @@ export default {
         height,
         pixelRatio: 1,
       })
+      this.rt.renderScale = new RenderScale(this.rt.visualizer)
       if (analyser) this.rt.visualizer.connectAudio(analyser)
       this.rt.analyser = analyser
     } catch (error) {
@@ -211,7 +216,8 @@ export default {
   methods: {
     canvasSize(): { width: number; height: number } {
       const rect = (this.$refs.canvas as HTMLCanvasElement).getBoundingClientRect()
-      return renderSize(rect.width, rect.height, window.devicePixelRatio)
+      const scale = this.rt.renderScale?.scale ?? 1
+      return renderSize(rect.width, rect.height, window.devicePixelRatio * scale)
     },
     resize(): void {
       const visualizer = this.rt.visualizer
@@ -233,6 +239,7 @@ export default {
       // again for a preset picked while paused.
       if (!this.rt.visualizer || !this.rt.presetKey) return
       if (!this.playing && this.ready) return
+      this.rt.renderScale?.begin()
       if (this.waveform) {
         // Mono: connect decodes one channel. Frames come at ~43/s, so a
         // frame at 60 Hz sometimes draws the same samples twice.
@@ -243,6 +250,7 @@ export default {
       } else {
         this.rt.visualizer.render()
       }
+      if (this.rt.renderScale?.end(now) != null) this.resize()
       const caption = currentCaption(this.rt.visualizer, this.rt.captions)
       if (caption !== this.rt.caption) {
         this.rt.caption = caption
@@ -278,6 +286,7 @@ export default {
         }
         this.rt.visualizer.loadPreset(withAccent(file.preset, this.accentColour), blend)
         this.rt.presetKey = key
+        if (this.rt.renderScale?.presetChanged() != null) this.resize()
         this.rt.presetData = file.preset
         this.rt.captions = file.captions
         this.rt.caption = null
