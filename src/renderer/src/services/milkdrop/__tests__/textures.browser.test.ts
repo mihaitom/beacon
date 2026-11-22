@@ -2,9 +2,12 @@
 // internals (see textures.ts), which only a real WebGL context can show: a
 // version that moved them would leave Beacon's presets on a stand-in
 // picture without a single error.
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { butterchurn } from '@/services/milkdrop/butterchurn'
-import { loadShippedPicture, setDataTexture, setTexture } from '../textures'
+import { fetchCoverArtBatched } from '@/services/connect/coverArtBatch'
+import { loadCoverPicture, loadShippedPicture, setDataTexture, setTexture } from '../textures'
+
+vi.mock('@/services/connect/coverArtBatch', () => ({ fetchCoverArtBatched: vi.fn() }))
 
 const SIZE = 64
 
@@ -95,5 +98,35 @@ describe('loadShippedPicture', () => {
     const moon = await loadShippedPicture('moon')
     expect(moon.width).toBeGreaterThan(0)
     expect(moon.height).toBeGreaterThan(0)
+  })
+})
+
+describe('loadCoverPicture', () => {
+  it('cuts a wide cover to its middle instead of squeezing it', async () => {
+    // Red and blue bands either side of a green square: squeezed, the
+    // bands would reach the picture's edges.
+    const wide = document.createElement('canvas')
+    wide.width = 200
+    wide.height = 100
+    const context = wide.getContext('2d')!
+    context.fillStyle = 'red'
+    context.fillRect(0, 0, 50, 100)
+    context.fillStyle = 'lime'
+    context.fillRect(50, 0, 100, 100)
+    context.fillStyle = 'blue'
+    context.fillRect(150, 0, 50, 100)
+    const blob = await new Promise<Blob>((resolve) => wide.toBlob((b) => resolve(b!), 'image/png'))
+    vi.mocked(fetchCoverArtBatched).mockResolvedValue(blob)
+
+    const picture = await loadCoverPicture('al-1', new AbortController().signal)
+
+    expect([picture.width, picture.height]).toEqual([512, 512])
+    const read = document.createElement('canvas')
+    read.width = read.height = 512
+    const readContext = read.getContext('2d')!
+    readContext.drawImage(picture, 0, 0)
+    for (const x of [2, 509]) {
+      expect(readContext.getImageData(x, 256, 1, 1).data.slice(0, 3)).toEqual([0, 255, 0])
+    }
   })
 })

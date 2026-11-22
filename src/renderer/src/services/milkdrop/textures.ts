@@ -74,17 +74,27 @@ export function setDataTexture(
 /** A song's cover, square, ready for the GPU. Through the app's cover cache,
  * and as a bitmap made from the bytes rather than an <img> pointing at
  * connect: that one would be cross-origin in the desktop app, and WebGL
- * refuses to read a picture from another origin. */
+ * refuses to read a picture from another origin. A cover that is not
+ * square is cut to its middle, as the app shows covers everywhere else,
+ * rather than squeezed. */
 export async function loadCoverPicture(
   coverArtId: string,
   signal: AbortSignal,
 ): Promise<ImageBitmap> {
   const blob = await fetchCoverArtBatched(coverArtId, COVER_SIZE, signal)
-  return createImageBitmap(blob, {
-    resizeWidth: COVER_SIZE,
-    resizeHeight: COVER_SIZE,
-    resizeQuality: 'high',
-  })
+  const full = await createImageBitmap(blob)
+  try {
+    const side = Math.min(full.width, full.height)
+    const left = Math.floor((full.width - side) / 2)
+    const top = Math.floor((full.height - side) / 2)
+    return await createImageBitmap(full, left, top, side, side, {
+      resizeWidth: COVER_SIZE,
+      resizeHeight: COVER_SIZE,
+      resizeQuality: 'high',
+    })
+  } finally {
+    full.close()
+  }
 }
 
 function onePixel(colour: string): HTMLCanvasElement {
