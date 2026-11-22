@@ -261,9 +261,6 @@ export default {
     milkdropStore() {
       return useMilkdropStore()
     },
-    milkdropFps(): number {
-      return this.milkdropStore.settings.fps
-    },
     /** The interval of the timed change while it runs, 0 while it does
      * not: only on screen and while the music plays, so a paused song does
      * not come back to a picture that changed under it. */

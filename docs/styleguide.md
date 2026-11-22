@@ -789,6 +789,8 @@ does not scroll, which is what "the cap is clipping" looks like.
   right instead - the one exception is a dialog with a picture-backed
   header, which uses the icon only, since the footer button would sit under
   a header that already offers one.
+- A dialog that changes the picture behind it (the Milkdrop menu) sits at the
+  right edge and without a scrim, so the change stays in view.
 - A dialog's switches sit in a `.beacon-panel--flush`, one row each with the
   words on the left and the switch on the right, the whole row clickable
   (`DeviceKeyDialog.vue`). The confirming button is a filled pill. Help is the

@@ -735,9 +735,6 @@ export default {
     poolHint: 'Choisit parmi le {n} preset coché. | Choisit parmi les {n} presets cochés.',
     poolEmptyHint:
       'Choisit parmi tous les presets. Cochez-en ci-dessous pour ne choisir que parmi ceux-là.',
-    fpsTitle: 'Images par seconde',
-    fpsDisplay: 'Écran',
-    fpsHint: 'Une cadence plus basse ménage la carte graphique.',
     presetsTitle: 'Presets',
     presetsHint:
       'Cliquez sur un nom pour l’afficher tout de suite. Les presets cochés forment la sélection du changement automatique.',

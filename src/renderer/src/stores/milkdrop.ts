@@ -18,9 +18,6 @@ import {
 /** When Now Playing moves on to another preset by itself. */
 export type MilkdropSwitch = 'fixed' | 'song' | 'time'
 
-/** Frames per second at most; 0 is whatever the display runs at. */
-export type MilkdropFps = 0 | 30 | 60
-
 /** Follows the account (connect's account settings, and through them a
  * paired server) - see services/connect/accountSettings.ts. Whether
  * Milkdrop is on at all stays with the device, like which theme is. */
@@ -29,7 +26,6 @@ export interface MilkdropSettings {
   intervalSeconds: number
   /** What an automatic change picks from; empty picks from all. */
   preferred: string[]
-  fps: MilkdropFps
   /** The preset chosen by hand: the one shown for good in 'fixed', the one
    * to start from otherwise. Null lets the first one be picked at random. */
   preset: string | null
@@ -44,7 +40,6 @@ const DEFAULTS: MilkdropSettings = {
   switchMode: 'song',
   intervalSeconds: 60,
   preferred: [],
-  fps: 0,
   preset: null,
 }
 
@@ -63,9 +58,8 @@ export function sanitizeMilkdropSettings(raw: unknown): MilkdropSettings {
   const preferred = Array.isArray(value.preferred)
     ? [...new Set(value.preferred.filter((key): key is string => typeof key === 'string'))]
     : []
-  const fps = [0, 30, 60].includes(value.fps as number) ? (value.fps as MilkdropFps) : DEFAULTS.fps
   const preset = typeof value.preset === 'string' ? value.preset : null
-  return { switchMode, intervalSeconds, preferred, fps, preset }
+  return { switchMode, intervalSeconds, preferred, preset }
 }
 
 function loadSettings(): MilkdropSettings {

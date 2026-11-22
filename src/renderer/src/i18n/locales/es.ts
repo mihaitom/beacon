@@ -734,9 +734,6 @@ export default {
     poolHint: 'Elige entre el {n} preset marcado. | Elige entre los {n} presets marcados.',
     poolEmptyHint:
       'Elige entre todos los presets. Marca algunos abajo para elegir solo entre ellos.',
-    fpsTitle: 'Fotogramas por segundo',
-    fpsDisplay: 'Pantalla',
-    fpsHint: 'Una tasa más baja exige menos a la tarjeta gráfica.',
     presetsTitle: 'Presets',
     presetsHint:
       'Haz clic en un nombre para mostrarlo ya. Los marcados son el grupo del que elige el cambio automático.',

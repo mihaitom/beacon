@@ -18,6 +18,7 @@ import { markRaw, type PropType } from 'vue'
 import type { MilkdropVisualizer } from 'butterchurn'
 import { butterchurn } from '@/services/milkdrop/butterchurn'
 import { getAudioEngine } from '@/services/audioEngine'
+import { nextStep } from '@/services/milkdrop/pacing'
 import { loadPresetFile } from '@/services/milkdrop/presets'
 
 // Rendering at full size on a 4K screen costs a lot of GPU for no visible
@@ -44,8 +45,8 @@ interface Runtime {
   presetKey: string | null
   /** Bumped per preset request, so a slow load cannot replace a newer one. */
   loadSeq: number
-  /** When the last frame was drawn, for the fps cap. */
-  lastFrameAt: number
+  /** When the next step is due (see services/milkdrop/pacing.ts). */
+  nextStepAt: number
 }
 
 export default {
@@ -61,11 +62,6 @@ export default {
     preset: {
       type: String as PropType<string | null>,
       default: null,
-    },
-    /** Frames per second at most; 0 for the display's own rate. */
-    fps: {
-      type: Number,
-      default: 0,
     },
     /** While casting: the latest waveform connect sent, read every frame.
      * Null plays from this device's own audio graph instead. */
@@ -87,7 +83,7 @@ export default {
         labelTimer: undefined,
         presetKey: null,
         loadSeq: 0,
-        lastFrameAt: 0,
+        nextStepAt: 0,
       }),
     }
   },
@@ -161,12 +157,12 @@ export default {
     },
     tick(now: number): void {
       this.rt.frame = requestAnimationFrame(this.tick)
-      // A few ms of slack, or a 60 fps cap on a 60 Hz display would skip
-      // every frame that arrives a hair early and land on 30.
-      if (this.fps > 0 && now - this.rt.lastFrameAt < 1000 / this.fps - 4) return
-      this.rt.lastFrameAt = now
+      const next = nextStep(now, this.rt.nextStepAt)
+      if (next === null) return
+      this.rt.nextStepAt = next
       // The first frame is drawn even while paused, so a paused song still
-      // shows a picture instead of a black canvas.
+      // shows a picture instead of a black canvas; showPreset asks for one
+      // again for a preset picked while paused.
       if (!this.rt.visualizer || !this.rt.presetKey) return
       if (!this.playing && this.ready) return
       if (this.waveform) {
@@ -188,8 +184,13 @@ export default {
         const file = await loadPresetFile(key)
         if (seq !== this.rt.loadSeq || !this.rt.visualizer) return
         // The very first preset cuts in: there is nothing to blend from yet.
-        this.rt.visualizer.loadPreset(file.preset, this.rt.presetKey ? BLEND_SECONDS : 0)
+        // So does one picked while paused, drawn as a single still frame
+        // like the first one - a blend nobody gets to watch would leave the
+        // old picture standing.
+        const blend = this.rt.presetKey && this.playing ? BLEND_SECONDS : 0
+        this.rt.visualizer.loadPreset(file.preset, blend)
         this.rt.presetKey = key
+        if (!this.playing) this.ready = false
         this.announce(file.name)
       } catch (error) {
         // A preset Butterchurn cannot compile; the last one keeps running.

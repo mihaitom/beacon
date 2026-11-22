@@ -34,8 +34,8 @@ const global = {
   stubs: { 'v-dialog': { template: '<div><slot /></div>' } },
 }
 
-async function open() {
-  const wrapper = mount(MilkdropDialog, { props: { modelValue: true }, global })
+async function open(current: string | null = null) {
+  const wrapper = mount(MilkdropDialog, { props: { modelValue: true, current }, global })
   await flushPromises()
   return wrapper
 }
@@ -59,10 +59,20 @@ describe('MilkdropDialog', () => {
     expect(useMilkdropStore().settings.preset).toBe(entry.key)
   })
 
-  it('puts a ticked preset in the pool', async () => {
+  it('puts a ticked preset in the pool without switching to it', async () => {
     const wrapper = await open()
     await row(wrapper, 'My upload').get('input[type=checkbox]').setValue(true)
+    await row(wrapper, 'My upload').get('.milkdrop-menu__tick').trigger('click')
     expect(useMilkdropStore().settings.preferred).toEqual(['custom:p1'])
+    expect(useMilkdropStore().settings.preset).toBeNull()
+  })
+
+  it('picks out the preset on screen', async () => {
+    const entry = BUILTIN_PRESETS[4]!
+    const wrapper = await open(entry.key)
+    const current = wrapper.findAll('.milkdrop-menu__row--current')
+    expect(current).toHaveLength(1)
+    expect(current[0]!.text()).toContain(entry.name)
   })
 
   it('narrows the list to what the search finds', async () => {

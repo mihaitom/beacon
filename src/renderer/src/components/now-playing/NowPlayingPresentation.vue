@@ -26,7 +26,6 @@
           :key="source.milkdrop.mode"
           :playing="source.milkdrop.playing"
           :preset="source.milkdrop.preset"
-          :fps="source.milkdrop.fps"
           :waveform="source.milkdrop.mode === 'cast' ? source.milkdrop.waveform : null"
         />
       </now-playing-backdrop>

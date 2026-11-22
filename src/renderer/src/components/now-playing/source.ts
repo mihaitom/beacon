@@ -91,8 +91,6 @@ export interface NowPlayingMilkdrop {
   /** Which preset to show (services/milkdrop/presets.ts's keys); null
    * until one is picked. */
   preset: string | null
-  /** Frames per second at most; 0 for the display's own rate. */
-  fps: number
   /** Where the sound comes from: this device's own audio graph, or while
    * casting the waveform connect sends along with the bars' frames. */
   mode: 'local' | 'cast'

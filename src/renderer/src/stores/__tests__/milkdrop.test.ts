@@ -38,14 +38,12 @@ describe('sanitizeMilkdropSettings', () => {
         switchMode: 'time',
         intervalSeconds: 5,
         preferred: ['a', 7, 'a', 'b'],
-        fps: 45,
         preset: 'builtin:x',
       }),
     ).toEqual({
       switchMode: 'time',
       intervalSeconds: 15,
       preferred: ['a', 'b'],
-      fps: 0,
       preset: 'builtin:x',
     })
   })
@@ -58,12 +56,12 @@ describe('sanitizeMilkdropSettings', () => {
 
 describe('the Milkdrop store', () => {
   it('keeps a change on this device and sends it to the account', () => {
-    useMilkdropStore().set({ fps: 30 })
+    useMilkdropStore().set({ intervalSeconds: 90 })
     expect(vi.mocked(pushAccountSettings)).toHaveBeenCalledWith({
-      milkdrop: expect.objectContaining({ fps: 30 }),
+      milkdrop: expect.objectContaining({ intervalSeconds: 90 }),
     })
     setActivePinia(createPinia())
-    expect(useMilkdropStore().settings.fps).toBe(30)
+    expect(useMilkdropStore().settings.intervalSeconds).toBe(90)
   })
 
   it('toggles a preset in and out of the pool', () => {
@@ -124,7 +122,7 @@ describe('the Milkdrop store', () => {
 
   it('takes the account settings over from another device', () => {
     const store = useMilkdropStore()
-    store.adopt({ switchMode: 'fixed', fps: 60 })
-    expect(store.settings).toMatchObject({ switchMode: 'fixed', fps: 60 })
+    store.adopt({ switchMode: 'fixed', intervalSeconds: 120 })
+    expect(store.settings).toMatchObject({ switchMode: 'fixed', intervalSeconds: 120 })
   })
 })

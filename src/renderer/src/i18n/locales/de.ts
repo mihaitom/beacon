@@ -729,9 +729,6 @@ export default {
     switchFixedHint: 'Das unten gewählte Preset bleibt stehen.',
     poolHint: 'Wählt aus dem {n} angehakten Preset. | Wählt aus den {n} angehakten Presets.',
     poolEmptyHint: 'Wählt aus allen Presets. Hake unten welche an, um nur aus diesen zu wählen.',
-    fpsTitle: 'Bildrate',
-    fpsDisplay: 'Bildschirm',
-    fpsHint: 'Eine niedrigere Rate schont die Grafikkarte.',
     presetsTitle: 'Presets',
     presetsHint:
       'Ein Klick auf den Namen zeigt das Preset sofort. Die angehakten sind der Pool für den automatischen Wechsel.',

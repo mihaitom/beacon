@@ -99,6 +99,7 @@
       <component
         :is="source.milkdropMenuComponent"
         v-if="source.milkdrop.active && source.milkdropMenuComponent"
+        :current="source.milkdrop.preset"
       />
       <!-- Brings the album artwork back, large, over the artist background
        - or Milkdrop. Only once there is one of those: without it the

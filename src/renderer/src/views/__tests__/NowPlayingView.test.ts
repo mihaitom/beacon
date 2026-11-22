@@ -56,7 +56,7 @@ vi.mock('@/components/milkdrop/MilkdropVisualizer.vue', () => ({
   __esModule: true,
   default: {
     name: 'MilkdropVisualizer',
-    props: ['playing', 'preset', 'fps'],
+    props: ['playing', 'preset'],
     template: '<div class="milkdrop-stub" />',
   },
 }))

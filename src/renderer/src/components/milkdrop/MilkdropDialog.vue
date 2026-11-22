@@ -1,11 +1,16 @@
 <template>
+  <!-- At the right edge and without a scrim: what it changes is the picture
+     - behind it, which has to stay in view. -->
   <v-dialog
     :model-value="modelValue"
-    max-width="520"
+    width="420"
     scrollable
+    :scrim="false"
+    transition="slide-x-reverse-transition"
+    class="milkdrop-menu-overlay"
     @update:model-value="$emit('update:modelValue', $event)"
   >
-    <v-card class="beacon-dialog">
+    <v-card class="beacon-dialog milkdrop-menu">
       <v-card-title>{{ $t('milkdrop.title') }}</v-card-title>
 
       <v-card-text>
@@ -39,20 +44,6 @@
         </div>
         <p class="setting__hint">{{ switchHint }}</p>
 
-        <h3 class="section-title milkdrop-menu__heading">{{ $t('milkdrop.fpsTitle') }}</h3>
-        <v-btn-toggle
-          :model-value="settings.fps"
-          mandatory
-          class="beacon-view-toggle beacon-view-toggle--text"
-          :aria-label="$t('milkdrop.fpsTitle')"
-          @update:model-value="store.set({ fps: $event })"
-        >
-          <v-btn :value="0">{{ $t('milkdrop.fpsDisplay') }}</v-btn>
-          <v-btn :value="60">60</v-btn>
-          <v-btn :value="30">30</v-btn>
-        </v-btn-toggle>
-        <p class="setting__hint">{{ $t('milkdrop.fpsHint') }}</p>
-
         <h3 class="section-title milkdrop-menu__heading">{{ $t('milkdrop.presetsTitle') }}</h3>
         <p class="setting__hint milkdrop-menu__intro">{{ $t('milkdrop.presetsHint') }}</p>
         <v-text-field
@@ -70,15 +61,22 @@
             v-for="entry in shown"
             :key="entry.key"
             class="milkdrop-menu__row"
-            :class="{ 'milkdrop-menu__row--current': entry.key === settings.preset }"
+            :class="{ 'milkdrop-menu__row--current': entry.key === current }"
+            @click="store.choose(entry.key)"
           >
             <v-checkbox-btn
               :model-value="settings.preferred.includes(entry.key)"
               :aria-label="$t('milkdrop.prefer', { name: entry.name })"
               density="compact"
+              class="milkdrop-menu__tick"
+              @click.stop
               @update:model-value="store.togglePreferred(entry.key)"
             />
-            <button type="button" class="milkdrop-menu__name" @click="store.choose(entry.key)">
+            <button
+              type="button"
+              class="milkdrop-menu__name"
+              :aria-current="entry.key === current ? 'true' : undefined"
+            >
               <span class="text-body-medium">{{ entry.name }}</span>
               <span v-if="entry.custom" class="text-body-small text-medium-emphasis">
                 {{ $t('milkdrop.uploaded') }}
@@ -92,7 +90,7 @@
               size="small"
               :title="$t('milkdrop.delete')"
               :aria-label="$t('milkdrop.delete')"
-              @click="remove(entry.key)"
+              @click.stop="remove(entry.key)"
             />
           </li>
           <li v-if="shown.length === 0" class="milkdrop-menu__row text-medium-emphasis">
@@ -132,6 +130,7 @@ import {
   useMilkdropStore,
   type MilkdropSettings,
 } from '@/stores/milkdrop'
+import type { PropType } from 'vue'
 import type { MilkdropPresetEntry } from '@/services/milkdrop/presets'
 
 export default {
@@ -140,6 +139,11 @@ export default {
     modelValue: {
       type: Boolean,
       default: false,
+    },
+    /** The preset on screen right now, picked out in the list. */
+    current: {
+      type: String as PropType<string | null>,
+      default: null,
     },
   },
   emits: ['update:modelValue'],
@@ -176,12 +180,20 @@ export default {
     modelValue: {
       immediate: true,
       handler(open: boolean) {
-        if (open) void this.store.loadCustom()
-        else this.uploadMessage = ''
+        if (open) {
+          void this.store.loadCustom()
+          void this.$nextTick(() => this.revealCurrent())
+        } else {
+          this.uploadMessage = ''
+        }
       },
     },
   },
   methods: {
+    /** Opens on the preset on screen, wherever it is in the list. */
+    revealCurrent(): void {
+      document.querySelector('.milkdrop-menu__row--current')?.scrollIntoView?.({ block: 'center' })
+    },
     formatInterval(seconds: number): string {
       const minutes = Math.floor(seconds / 60)
       const rest = seconds % 60
@@ -268,18 +280,38 @@ export default {
 .milkdrop-menu__row {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   min-height: 44px;
-  padding: 0 8px;
+  padding: 0 6px 0 2px;
   border-bottom: 1px solid var(--beacon-hairline);
+  cursor: pointer;
+  transition: background-color 0.15s ease;
 }
 
 .milkdrop-menu__row:last-child {
   border-bottom: 0;
 }
 
-.milkdrop-menu__row--current {
-  background: rgba(var(--v-theme-primary), 0.12);
+.milkdrop-menu__row:hover {
+  background: rgba(var(--v-theme-on-surface), 0.05);
+}
+
+/* The amber of a selected segment, with a bar at the edge so it still
+ * reads as "this one" in a long list scrolled past quickly. */
+.milkdrop-menu__row--current,
+.milkdrop-menu__row--current:hover {
+  background: rgba(var(--v-theme-primary), 0.14);
+  box-shadow: inset 3px 0 0 rgb(var(--v-theme-primary));
+}
+
+.milkdrop-menu__row--current .milkdrop-menu__name {
+  color: rgb(var(--v-theme-primary));
+  font-weight: 600;
+}
+
+/* Vuetify's selection control grows to fill its row by default. */
+.milkdrop-menu__tick {
+  flex: none;
 }
 
 .milkdrop-menu__name {
@@ -289,9 +321,19 @@ export default {
   align-items: flex-start;
   min-width: 0;
   padding: 8px 4px;
+  border: 0;
+  background: none;
+  font: inherit;
   text-align: left;
   color: inherit;
+  cursor: pointer;
   overflow-wrap: anywhere;
+}
+
+.milkdrop-menu__name:focus-visible {
+  outline: 2px solid rgb(var(--v-theme-primary));
+  outline-offset: -2px;
+  border-radius: 6px;
 }
 
 .milkdrop-menu__status {
@@ -300,5 +342,16 @@ export default {
 
 .milkdrop-menu__file {
   display: none;
+}
+</style>
+
+<!-- Unscoped: v-dialog teleports its overlay out of this component. -->
+<style>
+.milkdrop-menu-overlay.v-dialog {
+  justify-content: flex-end;
+}
+
+.milkdrop-menu-overlay.v-dialog > .v-overlay__content {
+  margin: 16px;
 }
 </style>

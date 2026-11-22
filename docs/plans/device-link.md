@@ -115,7 +115,7 @@ device. A theme deleted elsewhere falls back to Beacon on this one.
 
 ## Milkdrop
 
-The choices (when the preset changes, the pool, the frame rate, the preset
+The choices (when the preset changes, the pool, the preset
 picked by hand) follow the account as `milkdrop` in the settings, whole, like
 the themes. Whether Milkdrop is on stays with the device.
 

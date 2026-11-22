@@ -396,7 +396,6 @@ export function useGuestNowPlayingSource(
       active: false,
       playing: false,
       preset: null,
-      fps: 0,
       mode: 'local',
       waveform: () => null,
     },

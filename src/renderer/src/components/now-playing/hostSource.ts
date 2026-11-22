@@ -40,7 +40,6 @@ export interface HostNowPlayingApi {
   milkdropAvailable: boolean
   milkdropActive: boolean
   milkdropPreset: string | null
-  milkdropFps: number
   milkdropMode: 'local' | 'cast'
   milkdropWaveform: () => Uint8Array | null
   isPlaying: boolean
@@ -183,7 +182,6 @@ export function hostNowPlayingSource(api: HostNowPlayingApi): NowPlayingSource {
       active: computed(() => api.milkdropActive),
       playing: computed(() => api.isPlaying),
       preset: computed(() => api.milkdropPreset),
-      fps: computed(() => api.milkdropFps),
       mode: computed(() => api.milkdropMode),
       waveform: () => api.milkdropWaveform(),
     }),

@@ -728,9 +728,6 @@ export default {
     poolHint: 'Sceglie tra il {n} preset selezionato. | Sceglie tra i {n} preset selezionati.',
     poolEmptyHint:
       'Sceglie tra tutti i preset. Selezionane alcuni qui sotto per scegliere solo tra quelli.',
-    fpsTitle: 'Fotogrammi al secondo',
-    fpsDisplay: 'Schermo',
-    fpsHint: 'Una frequenza più bassa pesa meno sulla scheda grafica.',
     presetsTitle: 'Preset',
     presetsHint:
       'Fai clic su un nome per mostrarlo subito. Quelli selezionati sono il gruppo da cui sceglie il cambio automatico.',

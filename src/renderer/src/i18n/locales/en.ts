@@ -723,9 +723,6 @@ export default {
     switchFixedHint: 'The preset picked below stays on screen.',
     poolHint: 'Picks from the {n} ticked preset. | Picks from the {n} ticked presets.',
     poolEmptyHint: 'Picks from all presets. Tick some below to pick only from those.',
-    fpsTitle: 'Frame rate',
-    fpsDisplay: 'Display',
-    fpsHint: 'A lower rate is easier on the graphics card.',
     presetsTitle: 'Presets',
     presetsHint:
       'Click a name to show it now. The ticked ones are the pool an automatic change picks from.',
