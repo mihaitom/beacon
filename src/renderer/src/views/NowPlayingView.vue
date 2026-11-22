@@ -735,6 +735,18 @@ export default {
         }
       },
     },
+    // Settings taken over from another device while this is open: a fixed
+    // preset is shown at once, and a new pool that leaves out the preset
+    // on screen moves on to one of its own.
+    'milkdropStore.settings.preset'(key: string | null) {
+      if (!this.milkdropActive || this.milkdropStore.settings.switchMode !== 'fixed') return
+      if (key && !isRetiredPreset(key)) this.milkdropPreset = key
+    },
+    'milkdropStore.settings.preferred'() {
+      if (!this.milkdropActive || this.milkdropStore.settings.switchMode === 'fixed') return
+      const pool = presetPool(this.milkdropStore.presets, this.milkdropStore.settings.preferred)
+      if (!this.milkdropPreset || !pool.includes(this.milkdropPreset)) this.pickMilkdropPreset()
+    },
     // Picked in the menu: shown at once, even when it is the one picked
     // before and an automatic change has moved on since.
     'milkdropStore.chosen'() {

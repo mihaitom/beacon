@@ -884,6 +884,25 @@ describe('NowPlayingView', () => {
       expect(BUILTIN_PRESETS.map((entry) => entry.key)).toContain(shownPreset(wrapper))
     })
 
+    it('moves into a pool of favourites taken over from another device', async () => {
+      const { wrapper } = await mountPlaying()
+      await switchOn(wrapper)
+      const favourite = BUILTIN_PRESETS.find((entry) => entry.key !== shownPreset(wrapper))!.key
+      useMilkdropStore().adopt({ ...useMilkdropStore().settings, preferred: [favourite] })
+      await flushPromises()
+      expect(shownPreset(wrapper)).toBe(favourite)
+    })
+
+    it('shows a fixed preset taken over from another device', async () => {
+      useMilkdropStore().set({ switchMode: 'fixed' })
+      const { wrapper } = await mountPlaying()
+      await switchOn(wrapper)
+      const other = BUILTIN_PRESETS.find((entry) => entry.key !== shownPreset(wrapper))!.key
+      useMilkdropStore().adopt({ ...useMilkdropStore().settings, preset: other })
+      await flushPromises()
+      expect(shownPreset(wrapper)).toBe(other)
+    })
+
     it('shows a preset picked in the menu at once', async () => {
       const { wrapper } = await mountPlaying()
       await switchOn(wrapper)

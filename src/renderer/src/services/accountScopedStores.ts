@@ -26,7 +26,9 @@
  * the server is the one allowed to win. */
 
 import { onAccountChange } from '@/services/accountKey'
+import { isBackingOff } from '@/services/connect/pollGate'
 import { useAppearanceStore } from '@/stores/appearance'
+import { useAuthStore } from '@/stores/auth'
 import { useUpdateStore } from '@/stores/update'
 import { usePlaybackStore } from '@/stores/playback'
 import { reloadLyricsCacheForAccount, useLyricsStore } from '@/stores/lyrics'
@@ -73,6 +75,7 @@ import { useExternalSourceStore } from '@/stores/externalSource'
  * "conflict policy" note for why this stays this simple (a single
  * person's own settings, not a multi-writer document). */
 async function pullAccountSettings(): Promise<void> {
+  lastPullAt = Date.now()
   try {
     const remote = await fetchAccountSettings()
 
@@ -185,7 +188,26 @@ export async function syncWithAccount(): Promise<void> {
   await Promise.all([pullAccountSettings(), syncLyricsOffsets()])
 }
 
+// Settings changed on another device arrive when this window is looked at
+// again, not only at the next start - a browser tab or a desktop window
+// stays open for days. Spaced out so switching back and forth between two
+// windows is not a request per switch.
+const REFRESH_MIN_INTERVAL_MS = 10_000
+let lastPullAt = 0
+
+function refreshOnReturn(): void {
+  if (!useAuthStore().authenticated || isBackingOff()) return
+  if (Date.now() - lastPullAt < REFRESH_MIN_INTERVAL_MS) return
+  void pullAccountSettings()
+}
+
 export function initAccountScopedStores(): void {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') refreshOnReturn()
+  })
+  // A desktop window left open never stops being visible - coming back to
+  // it is a focus.
+  window.addEventListener('focus', refreshOnReturn)
   onAccountChange(() => {
     // Cover ids are only unique within one media server, so the artwork
     // this account is about to ask for must not be answered out of the
