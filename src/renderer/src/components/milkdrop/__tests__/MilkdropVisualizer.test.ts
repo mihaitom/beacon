@@ -104,6 +104,11 @@ describe('MilkdropVisualizer captions', () => {
     expect(wrapper.get('.milkdrop__zoom').text()).toBe('×8')
     await vi.advanceTimersByTimeAsync(3 * LABEL_MS)
     expect(wrapper.get('.milkdrop__zoom').text()).toBe('×8')
+
+    // Deep in, the power of ten is raised by the page, not by characters.
+    qs.q31 = 80
+    await frames()
+    expect(wrapper.get('.milkdrop__zoom sup').text()).toBe('24')
   })
 
   it("reads no zoom into a preset that does not report one - q31 is any preset's to use", async () => {

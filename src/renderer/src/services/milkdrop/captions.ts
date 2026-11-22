@@ -45,15 +45,23 @@ export function currentZoom(visualizer: MilkdropVisualizer): number | null {
   return lastFrame(visualizer, ZOOM_Q)
 }
 
-const SUPERSCRIPT = '⁰¹²³⁴⁵⁶⁷⁸⁹'
 // Up to here the factor reads well in full; past it, as a power of ten.
 const FULL_BELOW = 10_000
 
-/** "×1", "×850", "×3.4 · 10²⁴" - in the locale's own digits. */
-export function formatZoom(doublings: number, locale: string): string {
+/** The factor - "1", "850", or "3.4" with a power of ten "24" to set
+ * raised - in the locale's own digits. The power is plain digits for the
+ * page to raise: of the superscript characters, a font often has only ¹ ² ³
+ * and fetches the rest from another, which shows. */
+export interface ZoomText {
+  factor: string
+  exponent: string | null
+}
+
+export function formatZoom(doublings: number, locale: string): ZoomText {
   const factor = 2 ** Math.max(0, doublings)
   if (factor < FULL_BELOW) {
-    return `×${new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(factor)}`
+    const whole = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(factor)
+    return { factor: whole, exponent: null }
   }
   let exponent = Math.floor(Math.log10(factor))
   let mantissa = Math.round((factor / 10 ** exponent) * 10) / 10
@@ -65,6 +73,5 @@ export function formatZoom(doublings: number, locale: string): string {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   }).format(mantissa)
-  const power = [...String(exponent)].map((digit) => SUPERSCRIPT[Number(digit)]).join('')
-  return `×${digits} · 10${power}`
+  return { factor: digits, exponent: String(exponent) }
 }

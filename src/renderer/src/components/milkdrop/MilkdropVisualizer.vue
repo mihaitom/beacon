@@ -11,7 +11,12 @@
           {{ labelText }}
         </div>
       </transition>
-      <div v-if="zoomText" class="milkdrop__zoom">{{ zoomText }}</div>
+      <div v-if="zoom" class="milkdrop__zoom">
+        <span>×{{ zoom.factor }}</span>
+        <span v-if="zoom.exponent"
+          >· 10<sup>{{ zoom.exponent }}</sup></span
+        >
+      </div>
     </div>
   </div>
 </template>
@@ -39,15 +44,13 @@ import {
   currentCaption,
   currentZoom,
   formatZoom,
+  type ZoomText,
   type MilkdropCaption,
 } from '@/services/milkdrop/captions'
 import { nextStep } from '@/services/milkdrop/pacing'
+import { renderSize } from '@/services/milkdrop/renderSize'
 import { loadPresetFile } from '@/services/milkdrop/presets'
 
-// Rendering at full size on a 4K screen costs a lot of GPU for no visible
-// gain: Milkdrop is all blur and feedback, and upscaling hides nothing
-// there. A first guess, not yet measured on anything but one desktop.
-const MAX_RENDER_EDGE = 1280
 // How long a new preset blends in from the last one.
 const BLEND_SECONDS = 2.7
 // How long the preset's name, or a caption, stays up.
@@ -123,7 +126,7 @@ export default {
       ready: false,
       labelText: '',
       labelVisible: false,
-      zoomText: null as string | null,
+      zoom: null as ZoomText | null,
       rt: markRaw<Runtime>({
         visualizer: null,
         analyser: null,
@@ -168,7 +171,7 @@ export default {
       // samples: an offline one opens no audio device and plays nothing.
       const analyser = this.waveform ? null : getAudioEngine().getAnalyser()
       const context = analyser?.context ?? new OfflineAudioContext(2, 1, 44100)
-      const { width, height } = this.renderSize()
+      const { width, height } = this.canvasSize()
       canvas.width = width
       canvas.height = height
       this.rt.visualizer = butterchurn.createVisualizer(context, canvas, {
@@ -206,22 +209,15 @@ export default {
     canvas?.getContext('webgl2')?.getExtension('WEBGL_lose_context')?.loseContext()
   },
   methods: {
-    renderSize(): { width: number; height: number } {
-      const canvas = this.$refs.canvas as HTMLCanvasElement
-      const rect = canvas.getBoundingClientRect()
-      const cssWidth = Math.max(1, rect.width)
-      const cssHeight = Math.max(1, rect.height)
-      const scale = Math.min(1, MAX_RENDER_EDGE / Math.max(cssWidth, cssHeight))
-      return {
-        width: Math.max(1, Math.round(cssWidth * scale)),
-        height: Math.max(1, Math.round(cssHeight * scale)),
-      }
+    canvasSize(): { width: number; height: number } {
+      const rect = (this.$refs.canvas as HTMLCanvasElement).getBoundingClientRect()
+      return renderSize(rect.width, rect.height, window.devicePixelRatio)
     },
     resize(): void {
       const visualizer = this.rt.visualizer
       if (!visualizer) return
       const canvas = this.$refs.canvas as HTMLCanvasElement
-      const { width, height } = this.renderSize()
+      const { width, height } = this.canvasSize()
       if (canvas.width === width && canvas.height === height) return
       canvas.width = width
       canvas.height = height
@@ -254,8 +250,10 @@ export default {
       }
       const zoom = this.rt.reportsZoom ? currentZoom(this.rt.visualizer) : null
       const zoomText = zoom === null ? null : formatZoom(zoom, String(i18n.global.locale))
+      const changed =
+        zoomText?.factor !== this.zoom?.factor || zoomText?.exponent !== this.zoom?.exponent
       // Only on a change: most frames move the factor less than it shows.
-      if (zoomText !== this.zoomText) this.zoomText = zoomText
+      if (changed) this.zoom = zoomText
       this.ready = true
     },
     async showPreset(key: string | null): Promise<void> {
@@ -284,7 +282,7 @@ export default {
         this.rt.captions = file.captions
         this.rt.caption = null
         this.rt.reportsZoom = file.reportsZoom === true
-        if (!this.rt.reportsZoom) this.zoomText = null
+        if (!this.rt.reportsZoom) this.zoom = null
         if (!this.playing) this.ready = false
         this.announce(file.name)
       } catch (error) {
@@ -424,6 +422,12 @@ export default {
  * outside Now Playing. */
 .milkdrop__label {
   font-size: var(--now-playing-title-size, 2rem);
+}
+
+.milkdrop__zoom sup {
+  /* Raised without pushing the line apart. */
+  font-size: 0.7em;
+  line-height: 0;
 }
 
 .milkdrop__zoom {

@@ -38,18 +38,18 @@ describe('currentZoom', () => {
 
 describe('formatZoom', () => {
   it('writes small factors in full', () => {
-    expect(formatZoom(0, 'en')).toBe('×1')
-    expect(formatZoom(Math.log2(850), 'en')).toBe('×850')
-    expect(formatZoom(Math.log2(9000), 'de')).toBe('×9.000')
+    expect(formatZoom(0, 'en')).toEqual({ factor: '1', exponent: null })
+    expect(formatZoom(Math.log2(850), 'en')).toEqual({ factor: '850', exponent: null })
+    expect(formatZoom(Math.log2(9000), 'de')).toEqual({ factor: '9.000', exponent: null })
   })
 
   it('writes large ones as a power of ten, in the locale', () => {
-    expect(formatZoom(Math.log2(3.4e24), 'en')).toBe('×3.4 · 10²⁴')
-    expect(formatZoom(Math.log2(3.4e24), 'de')).toBe('×3,4 · 10²⁴')
-    expect(formatZoom(Math.log2(20_000), 'en')).toBe('×2.0 · 10⁴')
+    expect(formatZoom(Math.log2(3.4e24), 'en')).toEqual({ factor: '3.4', exponent: '24' })
+    expect(formatZoom(Math.log2(3.4e24), 'de')).toEqual({ factor: '3,4', exponent: '24' })
+    expect(formatZoom(Math.log2(20_000), 'en')).toEqual({ factor: '2.0', exponent: '4' })
   })
 
   it('carries a mantissa that rounds up to ten', () => {
-    expect(formatZoom(Math.log2(9.97e12), 'en')).toBe('×1.0 · 10¹³')
+    expect(formatZoom(Math.log2(9.97e12), 'en')).toEqual({ factor: '1.0', exponent: '13' })
   })
 })
