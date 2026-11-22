@@ -1,6 +1,7 @@
 <template>
-  <!-- At the right edge and without a scrim: what it changes is the picture
-     - behind it, which has to stay in view. -->
+  <!-- At the right edge of Now Playing and without a scrim: what it changes
+     - is the picture behind it, which has to stay in view. Not the window's
+     - edge, where an open queue would be under it. -->
   <v-dialog
     :model-value="modelValue"
     width="420"
@@ -8,6 +9,7 @@
     :scrim="false"
     transition="slide-x-reverse-transition"
     class="milkdrop-menu-overlay"
+    :style="{ '--milkdrop-menu-right': `${rightInset}px` }"
     @update:model-value="$emit('update:modelValue', $event)"
   >
     <v-card class="beacon-dialog milkdrop-menu">
@@ -144,6 +146,11 @@ export default {
     current: {
       type: String as PropType<string | null>,
       default: null,
+    },
+    /** How far Now Playing's right edge is from the window's. */
+    rightInset: {
+      type: Number,
+      default: 0,
     },
   },
   emits: ['update:modelValue'],
@@ -353,5 +360,6 @@ export default {
 
 .milkdrop-menu-overlay.v-dialog > .v-overlay__content {
   margin: 16px;
+  margin-right: calc(16px + var(--milkdrop-menu-right, 0px));
 }
 </style>

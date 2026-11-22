@@ -84,6 +84,12 @@ export default {
       type: String as PropType<string | null>,
       default: null,
     },
+    /** The colour Now Playing takes from the picture, while that is
+     * switched on (Settings -> Appearance); null keeps the theme's. */
+    accent: {
+      type: String as PropType<string | null>,
+      default: null,
+    },
     /** While casting: the latest waveform connect sent, read every frame.
      * Null plays from this device's own audio graph instead. */
     waveform: {
@@ -111,10 +117,10 @@ export default {
     }
   },
   computed: {
-    /** The chosen theme's accent - not the colour Now Playing borrows from
-     * each cover, which the cover presets already show in full. */
-    accent(): string {
-      return themeAccent.value
+    /** What the presets that draw in an accent draw in: the same colour
+     * as the rest of Now Playing. */
+    accentColour(): string {
+      return this.accent ?? themeAccent.value
     },
   },
   watch: {
@@ -124,7 +130,7 @@ export default {
     coverArtId(id: string | null) {
       void this.showCover(id)
     },
-    accent() {
+    accentColour() {
       this.showAccent()
     },
   },
@@ -227,7 +233,7 @@ export default {
         // like the first one - a blend nobody gets to watch would leave the
         // old picture standing.
         const blend = this.rt.presetKey && this.playing ? BLEND_SECONDS : 0
-        this.rt.visualizer.loadPreset(withAccent(file.preset, this.accent), blend)
+        this.rt.visualizer.loadPreset(withAccent(file.preset, this.accentColour), blend)
         this.rt.presetKey = key
         this.rt.presetData = file.preset
         if (!this.playing) this.ready = false
@@ -237,16 +243,20 @@ export default {
         console.error('[milkdrop] Preset failed:', key, error)
       }
     },
-    /** The theme's accent, for the presets that draw in it. The waveform's
-     * colour is fixed when a preset loads, so the one on screen loads
-     * again in the new colour. */
+    /** The accent, for the presets that draw in it. The waveform's colour
+     * is fixed when a preset loads, so the one on screen loads again in the
+     * new colour - blended while playing, since a colour taken from the
+     * picture changes with every song and a cut would restart its trails. */
     showAccent(): void {
       const visualizer = this.rt.visualizer
       if (!visualizer) return
-      setTexture(visualizer, ACCENT_SAMPLER, accentPicture(this.accent))
+      setTexture(visualizer, ACCENT_SAMPLER, accentPicture(this.accentColour))
       const preset = this.rt.presetData
-      if (preset && withAccent(preset, this.accent) !== preset) {
-        visualizer.loadPreset(withAccent(preset, this.accent), 0)
+      if (preset && withAccent(preset, this.accentColour) !== preset) {
+        visualizer.loadPreset(
+          withAccent(preset, this.accentColour),
+          this.playing && this.ready ? BLEND_SECONDS : 0,
+        )
       }
     },
     async showCover(id: string | null): Promise<void> {

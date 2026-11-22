@@ -56,7 +56,7 @@ vi.mock('@/components/milkdrop/MilkdropVisualizer.vue', () => ({
   __esModule: true,
   default: {
     name: 'MilkdropVisualizer',
-    props: ['playing', 'preset'],
+    props: ['playing', 'preset', 'accent'],
     template: '<div class="milkdrop-stub" />',
   },
 }))
@@ -841,6 +841,18 @@ describe('NowPlayingView', () => {
         .click()
       await flushPromises()
       expect(shownPreset(wrapper)).not.toBe(second)
+    })
+
+    it('draws in the colour Now Playing takes from the picture, or the theme colour when that is off', async () => {
+      useAppearanceStore().setAdaptiveAccent(true)
+      const { wrapper } = await mountPlaying()
+      await switchOn(wrapper)
+      const visualizer = () => wrapper.findComponent(MilkdropVisualizer)
+      expect(visualizer().props('accent')).toMatch(/^\d+, \d+, \d+$/)
+
+      useAppearanceStore().setAdaptiveAccent(false)
+      await flushPromises()
+      expect(visualizer().props('accent')).toBeNull()
     })
 
     it('picks only from the preferred presets', async () => {
