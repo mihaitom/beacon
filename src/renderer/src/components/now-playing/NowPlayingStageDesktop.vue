@@ -124,6 +124,11 @@ export default {
    * Without it a short, wide stage (a tablet on its side) got artwork at
    * 70cqh plus the text under it, taller than the stage, which clips it at
    * both ends. The next-up line hangs in the bottom padding. */
+  /* The lyrics' height, short of the stage's bottom by enough for a
+   * visualizer's caption in the corner (Milkdrop's label, up to the title's
+   * size plus a line under it, 24px in) - centred, the panel is otherwise
+   * right on top of it. */
+  --now-playing-lyrics-height: min(85cqh, calc(100cqh - 240px));
   --now-playing-text-room: calc(
     136px + var(--now-playing-eyebrow-size) * 1.5 + var(--now-playing-title-size) * 2.3 +
       var(--now-playing-artist-size) * 1.3 + var(--now-playing-album-size) * 1.45
@@ -203,7 +208,7 @@ export default {
   flex-shrink: 1;
   min-width: 0;
   width: min(38cqw, 560px);
-  height: 85cqh;
+  height: var(--now-playing-lyrics-height);
   overflow: hidden;
 }
 
@@ -405,7 +410,11 @@ export default {
    * its full width instead of losing it to a long track title. */
   flex: none;
   width: min(38cqw, 560px);
-  height: 85cqh;
+  height: var(--now-playing-lyrics-height);
+  /* Centred, not down in the corner with the text: there its bottom - and
+   * the match picker on it - sat on a visualizer's caption, whatever its
+   * height. */
+  align-self: center;
   transform: none;
   backface-visibility: visible;
   -webkit-backface-visibility: visible;

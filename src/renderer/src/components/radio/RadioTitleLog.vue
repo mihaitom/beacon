@@ -14,7 +14,7 @@
        - list.
        -
        - Collapsed to a magnifier until it is wanted. A field standing open
-       - permanently would spend a row of a panel that is 85cqh tall on a
+       - permanently would spend a row of a panel that is a fixed height on a
        - question most readings of a log never ask, and it would draw the
        - eye to itself rather than to the title playing now, which is what
        - this panel is opened for. -->
@@ -523,7 +523,7 @@ export default {
 /* Fills whatever box it is put in; .title-log__scroll inside does the
  * scrolling. `overflow-y: auto` on the root alone did nothing in either
  * place this is used, for two different reasons. NowPlayingView's
- * .now-playing__lyrics is a fixed 85cqh with `overflow: hidden` and lands
+ * .now-playing__lyrics is a fixed height with `overflow: hidden` and lands
  * on this very element, so it both fixed the height and clipped what the
  * root would have scrolled — a thousand-entry log showed one screenful and
  * no way to reach the rest. In the drawer it is a flex child, whose
