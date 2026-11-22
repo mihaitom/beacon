@@ -711,7 +711,9 @@ async def lyrics(guest: Guest = Depends(require_guest)):
 
 
 @router.get("/api/backdrop")
-async def backdrop(index: int | None = None, guest: Guest = Depends(require_guest)):
+async def backdrop(
+    index: int | None = None, w: int | None = None, guest: Guest = Depends(require_guest)
+):
     """One of the playing artist's Fanart.tv backgrounds, from connect's own
     Fanart.tv cache: the one the host shows, or - for a guest stepping
     through them - one of the host's list by position. Never a URL a guest
@@ -725,16 +727,12 @@ async def backdrop(index: int | None = None, guest: Guest = Depends(require_gues
         url = None
     if not url:
         raise HTTPException(status_code=404)
-    data = fanart.get_cached_image(url)
+    data = await fanart.image(url, w)
     if data is None:
-        fetched = await fanart.fetch_image(url)
-        if fetched is None:
-            raise HTTPException(status_code=404)
-        data, _content_type = fetched
-        fanart.store_image(url, data)
+        raise HTTPException(status_code=404)
     return Response(
         content=data,
-        media_type=fanart.content_type_for(url),
+        media_type=fanart.media_type(data),
         headers={"Cache-Control": "private, max-age=3600"},
     )
 

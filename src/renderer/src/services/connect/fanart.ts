@@ -1,5 +1,6 @@
 import { fetchConnect } from './http'
 import { useAuthStore } from '@/stores/auth'
+import { fanartImageWidth } from './fanartWidth'
 
 /** The artist images Fanart.tv has, already picked down to one of each kind
  * by the backend (connect/core/fanart.py) — see that module for how the
@@ -19,10 +20,13 @@ export interface ArtistArt {
 /** Loads one of Fanart.tv's images through connect, which disk-caches it and
  * serves it with a long Cache-Control — see connect/routes/fanart.py. The
  * token rides in the query because an <img>/background cannot send a header;
- * require_token accepts it there for exactly this. */
+ * require_token accepts it there for exactly this. connect serves it as
+ * WebP, scaled down to this screen (fanartImageWidth). */
 export function fanartImageUrl(url: string): string {
   const auth = useAuthStore()
   const params = new URLSearchParams({ url, token: auth.connectToken })
+  const width = fanartImageWidth()
+  if (width) params.set('w', String(width))
   return `${auth.apiUrl}/fanart/image?${params.toString()}`
 }
 

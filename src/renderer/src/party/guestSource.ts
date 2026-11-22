@@ -10,6 +10,7 @@ import {
 import GuestCover from './components/GuestCover.vue'
 import { i18n } from '@/i18n'
 import { extractDominantColor } from '@/services/colorExtractor'
+import { fanartImageWidth } from '@/services/connect/fanartWidth'
 import { resampleBands } from '@/services/visualizerBands'
 import { visualizerBarColor } from '@/services/visualizerColor'
 import type { GuestRadio, GuestSong } from './api'
@@ -155,10 +156,11 @@ export function useGuestNowPlayingSource(
     if (snap?.backdrop && snap.current_song) {
       // Keyed by artist so a new artist's picture is a new URL; the host's
       // pick until this guest steps on.
-      const artist = encodeURIComponent(snap.current_song.artist ?? '')
-      return backdropIndex.value === null
-        ? `${BACKDROP_URL}?artist=${artist}`
-        : `${BACKDROP_URL}?artist=${artist}&index=${backdropIndex.value}`
+      const params = new URLSearchParams({ artist: snap.current_song.artist ?? '' })
+      if (backdropIndex.value !== null) params.set('index', String(backdropIndex.value))
+      const width = fanartImageWidth()
+      if (width) params.set('w', String(width))
+      return `${BACKDROP_URL}?${params.toString()}`
     }
     // A station logo is no backdrop, as in the app.
     return snap?.current_song?.cover ?? null

@@ -422,13 +422,9 @@ async def fanart_colours(url: str) -> PictureColours | None:
     from core import fanart
 
     try:
-        data = fanart.get_cached_image(url)
+        data = await fanart.image(url)
         if data is None:
-            fetched = await fanart.fetch_image(url)
-            if fetched is None:
-                return None
-            data = fetched[0]
-            fanart.store_image(url, data)
+            return None
         return await asyncio.to_thread(picture_colours, data)
     except Exception as e:
         logger.debug(f"[lights] No artist picture colours: {e}")

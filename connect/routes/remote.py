@@ -554,22 +554,18 @@ async def remote_cover_art(id: str, session: SessionState = Depends(get_session)
 
 
 @router.get("/fanart", dependencies=[Depends(require_remote_password)])
-async def remote_fanart(url: str = Query(...)):
+async def remote_fanart(url: str = Query(...), w: int | None = None):
     """A Fanart.tv image under the phone's own auth, the counterpart of
     /fanart/image for the app. The URL is Fanart.tv's own; core.fanart
     refuses anything else, and the bytes come from its disk cache where
     possible. The app's own route carries CONNECT_TOKEN in the URL, which a
     phone must never receive (see cover-art above)."""
-    data = fanart.get_cached_image(url)
+    data = await fanart.image(url, w)
     if data is None:
-        fetched = await fanart.fetch_image(url)
-        if fetched is None:
-            raise HTTPException(status_code=404, detail="Image not available")
-        data, _content_type = fetched
-        fanart.store_image(url, data)
+        raise HTTPException(status_code=404, detail="Image not available")
     return Response(
         content=data,
-        media_type=fanart.content_type_for(url),
+        media_type=fanart.media_type(data),
         headers={"Cache-Control": "public, max-age=2592000"},
     )
 
