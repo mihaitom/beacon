@@ -134,6 +134,15 @@ Traefik and Caddy:
 Jellyfin's API is not under one path, so a Jellyfin server
 has to stay outside the SSO login altogether.
 
+If the proxy instead lets only clients with a certificate through (mTLS),
+give Beacon one with `MEDIA_SERVER_CLIENT_CERT` and, for a separate key
+file, `MEDIA_SERVER_CLIENT_KEY`. Beacon then presents it for everything it
+fetches from the server, the audio included, with Navidrome, Jellyfin and
+Plex alike. Speakers load cover art from the server themselves and cannot
+present a certificate, so they need an address without mTLS (the internal
+address above) to show covers. The README's environment variables cover
+the details, such as a server certificate from your own CA.
+
 ## When a speaker stops or starts over
 
 1. **Set the log level to Debug** (Settings → Advanced). While casting, Now

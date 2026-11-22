@@ -69,7 +69,7 @@ from core.streamer import (
     SourceInfo,
     _probe_source,
     dsd_resample_args,
-    http_reconnect_args,
+    http_input_args,
     lossless_codec_args,
     lossless_encode_args,
     lossy_codec_args,
@@ -526,13 +526,13 @@ async def local_stream(
     cmd = [FFMPEG_BIN, "-hide_banner", "-loglevel", "warning"]
     # Lets a dropped connection to the media server be picked back up
     # inside ffmpeg rather than ending the encode — see
-    # http_reconnect_args(). It matters more here than on the cast path,
+    # http_input_args(). It matters more here than on the cast path,
     # because a track start is the one moment the browser has no buffer to
     # hide anything behind: everything after it is playing out of several
     # minutes of already-fetched audio (measured: Chromium holds around
     # 9.5 MiB of a length-less stream, seven minutes at 128k), while the
     # first second of a new track is playing out of nothing.
-    cmd += http_reconnect_args(source_url)
+    cmd += http_input_args(source_url)
     if start_seconds > 0:
         # Before -i, for input-side seeking — same as stream_tracks()'s
         # start_offset handling.
@@ -628,7 +628,7 @@ async def _new_hls_transcode(
 
     def command(start: float) -> list[str]:
         cmd = [FFMPEG_BIN, "-hide_banner", "-loglevel", "warning"]
-        cmd += http_reconnect_args(source_url)
+        cmd += http_input_args(source_url)
         if start > 0:
             # A segment boundary: whole encoder frames, not whole milliseconds.
             cmd += ["-ss", f"{start:.6f}"]

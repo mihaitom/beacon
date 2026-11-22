@@ -35,6 +35,8 @@ import httpx
 from fastapi import Request
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from core import client_cert
+
 from . import bridge
 from .base import (
     artwork_id,
@@ -58,7 +60,9 @@ _client: httpx.AsyncClient | None = None
 def _get_client() -> httpx.AsyncClient:
     global _client
     if _client is None:
-        _client = httpx.AsyncClient(follow_redirects=True, timeout=60)
+        _client = httpx.AsyncClient(
+            follow_redirects=True, timeout=60, verify=client_cert.ssl_context()
+        )
     return _client
 
 

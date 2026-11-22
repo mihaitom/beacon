@@ -51,7 +51,7 @@ from .audio_analysis import (
 )
 from .audio_fanout import AudioFanout
 from .ffmpeg import FFMPEG_BIN
-from .streamer import _HTTP_RECONNECT_ARGS, lossy_encode_args
+from .streamer import http_input_args, lossy_encode_args
 
 if TYPE_CHECKING:
     from .mix_engine import MixEngine
@@ -161,7 +161,7 @@ def encoder_cmd(bitrate_kbps: int) -> list[str]:
 def decoder_cmd(url: str, start: float, gain: float) -> list[str]:
     seek = ["-ss", f"{start:.3f}"] if start > 0 else []
     volume = ["-af", f"volume={gain}"] if gain != 1.0 else []
-    http = _HTTP_RECONNECT_ARGS if url.startswith(("http://", "https://")) else []
+    http = http_input_args(url)
     return [
         FFMPEG_BIN,
         "-hide_banner",

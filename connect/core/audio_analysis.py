@@ -69,6 +69,7 @@ from contextlib import suppress
 
 import numpy as np
 
+from . import client_cert
 from .ffmpeg import FFMPEG_BIN
 
 logger = logging.getLogger("connect.audio_analysis")
@@ -119,6 +120,7 @@ def _decode_cmd(source_url: str, start_offset: float, gain: float) -> list[str]:
         "-hide_banner",
         "-loglevel",
         "error",
+        *client_cert.ffmpeg_args(source_url),
         *seek,
         "-i",
         source_url,

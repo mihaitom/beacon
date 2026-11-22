@@ -27,7 +27,7 @@ from fastapi.responses import JSONResponse
 # or exported manually), never via a plain .env file alone.
 load_dotenv()
 
-from core import local_mixes, mdns, server_link, shared_claims
+from core import client_cert, local_mixes, mdns, server_link, shared_claims
 from core.device_volume import capture_main_loop
 from core.ffmpeg import FFMPEG_BIN, ffmpeg_available
 from core.http_diagnostics import UVICORN_INVALID_REQUEST_MESSAGE, DiagnosticHTTPProtocol
@@ -337,6 +337,7 @@ async def lifespan(_: FastAPI):
         logger.info(f"✅ ffmpeg found ({FFMPEG_BIN})")
     else:
         logger.error(f"❌ ffmpeg NOT FOUND at '{FFMPEG_BIN}' — streaming will fail!")
+    client_cert.check_at_startup()
 
     logger.info("⏳ Waiting for /config (media server credentials)")
 

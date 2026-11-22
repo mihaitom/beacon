@@ -8,6 +8,7 @@ import time
 from collections.abc import AsyncGenerator, Callable
 from dataclasses import dataclass, field
 
+from . import client_cert
 from .equalizer import audio_filter
 from .ffmpeg import FFMPEG_BIN
 
@@ -130,7 +131,7 @@ def pcm_decode_cmd(
     `duration` seconds (to the end if None). Filter-free: the bundled ffmpeg
     has only the components its contract names, and a missing one fails
     the whole decode."""
-    http = _HTTP_RECONNECT_ARGS if url.startswith(("http://", "https://")) else []
+    http = http_input_args(url)
     seek = ["-ss", f"{start:.3f}"] if start > 0 else []
     length = ["-t", f"{max(duration, 0.0):.3f}"] if duration is not None else []
     return [
@@ -224,10 +225,14 @@ def failure_reason(stderr: str, returncode: int) -> str:
     return reason[:200] if reason else f"ffmpeg exited with code {returncode}"
 
 
-def http_reconnect_args(url: str) -> list[str]:
-    """_HTTP_RECONNECT_ARGS for an http(s) `url`, nothing for anything else
-    — see that constant for why the distinction is load-bearing."""
-    return list(_HTTP_RECONNECT_ARGS) if url.lower().startswith(("http://", "https://")) else []
+def http_input_args(url: str) -> list[str]:
+    """Input options for an ffmpeg fetching `url` itself: _HTTP_RECONNECT_ARGS
+    and the media server's client certificate (core/client_cert.py) for an
+    http(s) `url`, nothing for anything else — see _HTTP_RECONNECT_ARGS for
+    why the distinction is load-bearing."""
+    if not url.lower().startswith(("http://", "https://")):
+        return []
+    return [*_HTTP_RECONNECT_ARGS, *client_cert.ffmpeg_args(url)]
 
 
 _FFMPEG_BASE_CMD = [
@@ -862,6 +867,7 @@ async def _probe_source(url: str) -> SourceInfo | None:
         proc = await asyncio.create_subprocess_exec(
             FFMPEG_BIN,
             "-hide_banner",
+            *client_cert.ffmpeg_args(url),
             "-i",
             url,
             stdout=asyncio.subprocess.DEVNULL,
@@ -1409,7 +1415,7 @@ async def stream_tracks(
         cmd = [arg if arg != "{url}" else url for arg in _FFMPEG_BASE_CMD]
         # Input options, so before -i — same insertion the -ss below does.
         i_pos = cmd.index("-i")
-        cmd = cmd[:i_pos] + _PROGRESS_ARGS + http_reconnect_args(url) + cmd[i_pos:]
+        cmd = cmd[:i_pos] + _PROGRESS_ARGS + http_input_args(url) + cmd[i_pos:]
         cmd = cmd + fmt_args + ["pipe:1"]
         seek = start_offset if i == 0 and start_offset > 0.5 else 0.0
         if seek:
