@@ -14,6 +14,7 @@ import {
   putMilkdropPreset,
 } from '@/services/connect/milkdropPresets'
 import { presetFromFile } from '@/services/milkdrop/convert'
+import { MILKY_WAY_DESTINATIONS, MILKY_WAY_KEY } from '@/services/milkdrop/milkyWayDebug'
 import { BUILTIN_PRESETS } from '@/services/milkdrop/presets'
 import { useMilkdropStore } from '@/stores/milkdrop'
 import MilkdropDialog from '../MilkdropDialog.vue'
@@ -90,6 +91,18 @@ describe('MilkdropDialog', () => {
     await flushPromises()
     expect(vi.mocked(deleteMilkdropPreset)).toHaveBeenCalledWith('p1')
     expect(wrapper.text()).not.toContain('My upload')
+  })
+
+  it('offers the Milky Way jumps while it is on screen, and for no other preset', async () => {
+    const jumps = (wrapper: Awaited<ReturnType<typeof open>>) =>
+      wrapper.find('.milkdrop-menu__debug').findAll('button')
+    const milkyWay = await open(MILKY_WAY_KEY)
+    await jumps(milkyWay)[0]!.trigger('click')
+    expect((globalThis as { beaconMilkyWayPick?: unknown }).beaconMilkyWayPick).toEqual(
+      MILKY_WAY_DESTINATIONS[0]!.pick,
+    )
+    const other = await open(BUILTIN_PRESETS.find((entry) => entry.key !== MILKY_WAY_KEY)!.key)
+    expect(other.find('.milkdrop-menu__debug').exists()).toBe(false)
   })
 
   it('marks the presets that are hard on the graphics card, and only those', async () => {

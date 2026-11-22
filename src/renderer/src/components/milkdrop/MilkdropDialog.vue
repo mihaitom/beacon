@@ -50,6 +50,21 @@
         </div>
         <p class="setting__hint">{{ switchHint }}</p>
 
+        <template v-if="debugDestinations.length">
+          <h3 class="section-title milkdrop-menu__heading">Debug: jump to</h3>
+          <div class="milkdrop-menu__debug">
+            <v-btn
+              v-for="destination in debugDestinations"
+              :key="destination.label"
+              size="x-small"
+              variant="tonal"
+              @click="jumpTo(destination)"
+            >
+              {{ destination.label }}
+            </v-btn>
+          </div>
+        </template>
+
         <h3 class="section-title milkdrop-menu__heading">{{ $t('milkdrop.presetsTitle') }}</h3>
         <p class="setting__hint milkdrop-menu__intro">{{ $t('milkdrop.presetsHint') }}</p>
         <v-text-field
@@ -141,6 +156,12 @@
 <script lang="ts">
 import { wheelStep } from '@/services/volumeWheel'
 import {
+  MILKY_WAY_DESTINATIONS,
+  MILKY_WAY_KEY,
+  jumpTo,
+  type MilkyWayDestination,
+} from '@/services/milkdrop/milkyWayDebug'
+import {
   INTERVAL_STEPS,
   intervalStep,
   useMilkdropStore,
@@ -193,6 +214,10 @@ export default {
       if (!query) return this.store.presets
       return this.store.presets.filter((entry) => entry.name.toLocaleLowerCase().includes(query))
     },
+    /** Only when running from source; a build replaces the condition. */
+    debugDestinations(): MilkyWayDestination[] {
+      return import.meta.env.DEV && this.current === MILKY_WAY_KEY ? MILKY_WAY_DESTINATIONS : []
+    },
     switchHint(): string {
       if (this.settings.switchMode === 'fixed') return this.$t('milkdrop.switchFixedHint')
       return this.settings.preferred.length > 0
@@ -215,6 +240,7 @@ export default {
     },
   },
   methods: {
+    jumpTo,
     /** Opens on the preset on screen, wherever it is in the list. */
     revealCurrent(): void {
       document.querySelector('.milkdrop-menu__row--current')?.scrollIntoView?.({ block: 'center' })
@@ -298,6 +324,12 @@ export default {
 
 .setting__hint {
   margin-top: 6px;
+}
+
+.milkdrop-menu__debug {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .milkdrop-menu__intro {
