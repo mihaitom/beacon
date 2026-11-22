@@ -7,7 +7,12 @@ import {
   putMilkdropPreset,
 } from '@/services/connect/milkdropPresets'
 import { presetFromFile } from '@/services/milkdrop/convert'
-import { sanitizeMilkdropSettings, useMilkdropStore } from '../milkdrop'
+import {
+  INTERVAL_STEPS,
+  intervalStep,
+  sanitizeMilkdropSettings,
+  useMilkdropStore,
+} from '../milkdrop'
 
 vi.mock('@/services/connect/accountSettings', () => ({
   pushAccountSettings: vi.fn().mockResolvedValue(undefined),
@@ -124,5 +129,16 @@ describe('the Milkdrop store', () => {
     const store = useMilkdropStore()
     store.adopt({ switchMode: 'fixed', intervalSeconds: 120 })
     expect(store.settings).toMatchObject({ switchMode: 'fixed', intervalSeconds: 120 })
+  })
+})
+
+describe('intervalStep', () => {
+  it('finds the timer step closest on a doubling scale', () => {
+    expect(INTERVAL_STEPS[intervalStep(60)]).toBe(60)
+    // Halfway between 60 and 90 on a plain scale, nearer 90 on a doubling one.
+    expect(INTERVAL_STEPS[intervalStep(75)]).toBe(90)
+    expect(INTERVAL_STEPS[intervalStep(500)]).toBe(420)
+    expect(INTERVAL_STEPS[intervalStep(5)]).toBe(15)
+    expect(INTERVAL_STEPS[intervalStep(1e9)]).toBe(600)
   })
 })

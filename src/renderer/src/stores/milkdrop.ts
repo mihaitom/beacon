@@ -31,8 +31,23 @@ export interface MilkdropSettings {
   preset: string | null
 }
 
-export const MIN_INTERVAL_SECONDS = 15
-export const MAX_INTERVAL_SECONDS = 600
+/** The timer's choices, roughly doubling: short times want fine steps,
+ * long ones don't - "4 or 5 minutes" matters, "9:15 or 9:30" does not. */
+export const INTERVAL_STEPS = [15, 20, 30, 45, 60, 90, 120, 180, 240, 300, 420, 600] as const
+const MIN_INTERVAL_SECONDS = INTERVAL_STEPS[0]
+const MAX_INTERVAL_SECONDS = INTERVAL_STEPS[INTERVAL_STEPS.length - 1]!
+
+/** The step closest to `seconds`, on the same doubling scale - a time
+ * stored before these steps, or synced from elsewhere, lands on the
+ * nearest. */
+export function intervalStep(seconds: number): number {
+  let best = 0
+  for (let index = 1; index < INTERVAL_STEPS.length; index++) {
+    const distance = Math.abs(Math.log(INTERVAL_STEPS[index]! / seconds))
+    if (distance < Math.abs(Math.log(INTERVAL_STEPS[best]! / seconds))) best = index
+  }
+  return best
+}
 
 const SETTINGS_KEY = 'beacon.milkdrop'
 

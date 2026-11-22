@@ -109,4 +109,15 @@ describe('MilkdropDialog', () => {
     expect(wrapper.get('.milkdrop-menu__status').text()).toContain('bad.milk')
     expect(wrapper.text()).toContain('Good')
   })
+
+  it('moves the timer one step per wheel notch, up for longer', async () => {
+    useMilkdropStore().set({ switchMode: 'time', intervalSeconds: 60 })
+    const wrapper = await open()
+    const interval = wrapper.get('.milkdrop-menu__interval')
+    await interval.trigger('wheel', { deltaY: -100 })
+    await interval.trigger('wheel', { deltaY: -100 })
+    expect(useMilkdropStore().settings.intervalSeconds).toBe(120)
+    await interval.trigger('wheel', { deltaY: 100 })
+    expect(useMilkdropStore().settings.intervalSeconds).toBe(90)
+  })
 })

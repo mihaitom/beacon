@@ -28,17 +28,21 @@
           <v-btn value="time">{{ $t('milkdrop.switchTime') }}</v-btn>
           <v-btn value="fixed">{{ $t('milkdrop.switchFixed') }}</v-btn>
         </v-btn-toggle>
-        <div v-if="settings.switchMode === 'time'" class="milkdrop-menu__interval">
+        <div
+          v-if="settings.switchMode === 'time'"
+          class="milkdrop-menu__interval"
+          @wheel="onIntervalWheel"
+        >
           <v-slider
-            :model-value="settings.intervalSeconds"
-            :min="minInterval"
-            :max="maxInterval"
-            :step="15"
+            :model-value="intervalIndex"
+            :min="0"
+            :max="lastInterval"
+            :step="1"
             color="primary"
             hide-details
             :aria-label="$t('milkdrop.interval')"
             class="milkdrop-menu__grow"
-            @update:model-value="store.set({ intervalSeconds: $event })"
+            @update:model-value="setInterval($event)"
           />
           <span class="text-body-medium milkdrop-menu__interval-value">
             {{ formatInterval(settings.intervalSeconds) }}
@@ -126,9 +130,10 @@
 </template>
 
 <script lang="ts">
+import { wheelStep } from '@/services/volumeWheel'
 import {
-  MAX_INTERVAL_SECONDS,
-  MIN_INTERVAL_SECONDS,
+  INTERVAL_STEPS,
+  intervalStep,
   useMilkdropStore,
   type MilkdropSettings,
 } from '@/stores/milkdrop'
@@ -159,8 +164,8 @@ export default {
       query: '' as string | null,
       uploading: false,
       uploadMessage: '',
-      minInterval: MIN_INTERVAL_SECONDS,
-      maxInterval: MAX_INTERVAL_SECONDS,
+      lastInterval: INTERVAL_STEPS.length - 1,
+      wheelCarry: 0,
     }
   },
   computed: {
@@ -169,6 +174,10 @@ export default {
     },
     settings(): MilkdropSettings {
       return this.store.settings
+    },
+    /** The timer on the slider's scale, which runs through INTERVAL_STEPS. */
+    intervalIndex(): number {
+      return intervalStep(this.settings.intervalSeconds)
     },
     shown(): MilkdropPresetEntry[] {
       const query = (this.query ?? '').trim().toLocaleLowerCase()
@@ -200,6 +209,18 @@ export default {
     /** Opens on the preset on screen, wherever it is in the list. */
     revealCurrent(): void {
       document.querySelector('.milkdrop-menu__row--current')?.scrollIntoView?.({ block: 'center' })
+    },
+    setInterval(index: number): void {
+      const step = INTERVAL_STEPS[Math.min(this.lastInterval, Math.max(0, Math.round(index)))]!
+      this.store.set({ intervalSeconds: step })
+    },
+    onIntervalWheel(event: WheelEvent): void {
+      // Sideways scrolling and ctrl+wheel (zoom) keep doing what they did.
+      if (event.ctrlKey || Math.abs(event.deltaX) > Math.abs(event.deltaY)) return
+      event.preventDefault()
+      const { step, carry } = wheelStep(event, this.wheelCarry)
+      this.wheelCarry = carry
+      if (step !== 0) this.setInterval(this.intervalIndex + step)
     },
     formatInterval(seconds: number): string {
       const minutes = Math.floor(seconds / 60)
