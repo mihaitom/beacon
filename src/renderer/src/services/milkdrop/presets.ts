@@ -1,6 +1,7 @@
 import type { MilkdropPreset } from 'butterchurn'
 import BUILTIN_INDEX from '@/assets/milkdrop/index.json'
 import { getMilkdropPreset } from '@/services/connect/milkdropPresets'
+import type { OrbitTarget } from '@/services/milkdrop/orbits'
 
 /** A preset file as it sits in assets/milkdrop/presets/: Butterchurn's
  * converted preset plus the name its author gave it, which the file name
@@ -8,6 +9,9 @@ import { getMilkdropPreset } from '@/services/connect/milkdropPresets'
 export interface MilkdropPresetFile {
   name: string
   preset: MilkdropPreset
+  /** Points a preset of Beacon's own zooms into deeper than floats reach,
+   * one row each of its `sampler_orbit` - see orbits.ts. */
+  orbits?: OrbitTarget[]
 }
 
 /** One preset to pick from: one Beacon ships (`builtin:<slug>`) or one the

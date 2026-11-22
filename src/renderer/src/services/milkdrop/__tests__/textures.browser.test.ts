@@ -4,7 +4,7 @@
 // picture without a single error.
 import { describe, expect, it } from 'vitest'
 import { butterchurn } from '@/services/milkdrop/butterchurn'
-import { setTexture } from '../textures'
+import { setDataTexture, setTexture } from '../textures'
 
 const SIZE = 64
 
@@ -60,5 +60,32 @@ describe('setTexture', () => {
     const [r2, , b2] = centre(canvas, visualizer)
     expect(b2).toBeGreaterThan(200)
     expect(r2).toBeLessThan(40)
+  })
+})
+
+// Shows the data texture's second texel, red from x and green from y.
+const DATA_ONLY = {
+  ...COVER_ONLY,
+  comp: 'uniform sampler2D sampler_orbit;\n shader_body { ret = vec3(texelFetch(sampler_orbit, ivec2(1, 0), 0).xy, 0.0); }',
+}
+
+describe('setDataTexture', () => {
+  it('hands a preset the numbers unfiltered, texel by texel', () => {
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = SIZE
+    const visualizer = butterchurn.createVisualizer(new OfflineAudioContext(2, 1, 44100), canvas, {
+      width: SIZE,
+      height: SIZE,
+      pixelRatio: 1,
+    })
+    visualizer.loadPreset(DATA_ONLY, 0)
+
+    const data = new Float32Array([0, 0, 0, 0, 0.75, 0.25, 1, 0, 0, 0, 0, 0])
+    expect(setDataTexture(visualizer, 'orbit', data, 3, 1)).toBe(true)
+    const [r, g] = centre(canvas, visualizer)
+    expect(r).toBeGreaterThan(185)
+    expect(r).toBeLessThan(197)
+    expect(g).toBeGreaterThan(58)
+    expect(g).toBeLessThan(70)
   })
 })

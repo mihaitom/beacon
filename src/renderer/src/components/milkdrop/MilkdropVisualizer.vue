@@ -26,9 +26,11 @@ import {
   accentPicture,
   loadCoverPicture,
   placeholderPicture,
+  setDataTexture,
   setTexture,
   withAccent,
 } from '@/services/milkdrop/textures'
+import { ORBIT_LENGTH, ORBIT_SAMPLER, orbitsFor } from '@/services/milkdrop/orbits'
 import { nextStep } from '@/services/milkdrop/pacing'
 import { loadPresetFile } from '@/services/milkdrop/presets'
 
@@ -233,6 +235,15 @@ export default {
         // like the first one - a blend nobody gets to watch would leave the
         // old picture standing.
         const blend = this.rt.presetKey && this.playing ? BLEND_SECONDS : 0
+        if (file.orbits?.length) {
+          setDataTexture(
+            this.rt.visualizer,
+            ORBIT_SAMPLER,
+            orbitsFor(file.orbits),
+            ORBIT_LENGTH,
+            file.orbits.length,
+          )
+        }
         this.rt.visualizer.loadPreset(withAccent(file.preset, this.accentColour), blend)
         this.rt.presetKey = key
         this.rt.presetData = file.preset

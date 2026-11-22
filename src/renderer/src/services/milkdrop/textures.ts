@@ -45,6 +45,32 @@ export function setTexture(
   return true
 }
 
+/** Numbers rather than a picture, at full float precision and read texel
+ * by texel (`texelFetch`): no filtering, no mipmaps, nothing rounded to
+ * 8 bits as a picture would be. */
+export function setDataTexture(
+  visualizer: MilkdropVisualizer,
+  name: string,
+  data: Float32Array,
+  width: number,
+  height: number,
+): boolean {
+  const renderer = (visualizer as unknown as RendererInternals).renderer
+  const gl = renderer?.gl
+  const image = renderer?.image
+  if (!gl || !image?.samplers) return false
+  image.samplers[name] ??= gl.createTexture() ?? undefined
+  const texture = image.samplers[name]
+  if (!texture) return false
+  gl.bindTexture(gl.TEXTURE_2D, texture)
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA32F, width, height, 0, gl.RGBA, gl.FLOAT, data)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
+  gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
+  return true
+}
+
 /** A song's cover, square, ready for the GPU. Through the app's cover cache,
  * and as a bitmap made from the bytes rather than an <img> pointing at
  * connect: that one would be cross-origin in the desktop app, and WebGL
