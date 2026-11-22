@@ -110,12 +110,22 @@ export function accentPicture(triplet: string): HTMLCanvasElement {
   return onePixel(`rgb(${triplet})`)
 }
 
+/** Whether the preset draws Milkdrop's own waveform: not when its alpha is
+ * zero and no equation turns it up. */
+function drawsWaveform(preset: MilkdropPreset): boolean {
+  const alpha = Number((preset.baseVals as Record<string, unknown> | undefined)?.wave_a ?? 1)
+  return alpha > 0 || /\bwave_a\s*=/.test(String(preset.frame_eqs_str ?? ''))
+}
+
 /** The preset with its waveform drawn in the accent, if it is one of those
  * that take the accent at all. The waveform's colour is a plain value the
- * shaders never see, so it is set here, on loading. */
+ * shaders never see, so it is set here, on loading. One that draws no
+ * waveform is handed back as it is: the accent reaches its shaders as a
+ * texture, and loading it again for a new accent would restart it. */
 export function withAccent(preset: MilkdropPreset, triplet: string): MilkdropPreset {
   const shaders = `${String(preset.warp ?? '')}${String(preset.comp ?? '')}`
   if (!shaders.includes(`sampler_${ACCENT_SAMPLER}`)) return preset
+  if (!drawsWaveform(preset)) return preset
   const [r, g, b] = triplet.split(',').map((part) => Number(part.trim()) / 255)
   if (![r, g, b].every((value) => Number.isFinite(value))) return preset
   const baseVals = {

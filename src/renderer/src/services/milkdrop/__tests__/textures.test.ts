@@ -18,6 +18,20 @@ describe('withAccent', () => {
     expect(withAccent(other, '255, 0, 0')).toBe(other)
   })
 
+  it('leaves a preset that draws no waveform alone, so a new accent does not restart it', () => {
+    const noWave = { ...TAKES_ACCENT, baseVals: { ...TAKES_ACCENT.baseVals, wave_a: 0 } }
+    expect(withAccent(noWave, '255, 0, 51')).toBe(noWave)
+  })
+
+  it('still colours a waveform its equations turn up', () => {
+    const later = {
+      ...TAKES_ACCENT,
+      baseVals: { ...TAKES_ACCENT.baseVals, wave_a: 0 },
+      frame_eqs_str: 'a.wave_a=a.bass;',
+    }
+    expect(withAccent(later, '255, 0, 51')).not.toBe(later)
+  })
+
   it('leaves the preset alone for an accent it cannot read', () => {
     expect(withAccent(TAKES_ACCENT, 'amber')).toBe(TAKES_ACCENT)
   })

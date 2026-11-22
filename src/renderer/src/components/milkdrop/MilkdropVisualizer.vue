@@ -300,9 +300,12 @@ export default {
       }
     },
     /** The accent, for the presets that draw in it. The waveform's colour
-     * is fixed when a preset loads, so the one on screen loads again in the
-     * new colour - blended while playing, since a colour taken from the
-     * picture changes with every song and a cut would restart its trails. */
+     * is fixed when a preset loads, so one that draws a waveform loads
+     * again in the new colour - blended while playing, since a colour taken
+     * from the picture changes with every song and a cut would restart its
+     * trails. Any other gets the accent through its texture alone and keeps
+     * running (withAccent leaves it as it is), so the song changing does not
+     * start it over. */
     showAccent(): void {
       const visualizer = this.rt.visualizer
       if (!visualizer) return
