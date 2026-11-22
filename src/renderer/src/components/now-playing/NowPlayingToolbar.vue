@@ -96,6 +96,10 @@
         :title="$t('nowPlaying.nextMilkdropPreset')"
         @click="source.nextMilkdropPreset()"
       />
+      <component
+        :is="source.milkdropMenuComponent"
+        v-if="source.milkdrop.active && source.milkdropMenuComponent"
+      />
       <!-- Brings the album artwork back, large, over the artist background
        - or Milkdrop. Only once there is one of those: without it the
        - artwork is already what the stage shows, so there is nothing to

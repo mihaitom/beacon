@@ -18,7 +18,7 @@ import { markRaw, type PropType } from 'vue'
 import type { MilkdropVisualizer } from 'butterchurn'
 import { butterchurn } from '@/services/milkdrop/butterchurn'
 import { getAudioEngine } from '@/services/audioEngine'
-import { MILKDROP_PRESET_KEYS, loadPresetFile, pickPresetKey } from '@/services/milkdrop/presets'
+import { loadPresetFile } from '@/services/milkdrop/presets'
 
 // Rendering at full size on a 4K screen costs a lot of GPU for no visible
 // gain: Milkdrop is all blur and feedback, and upscaling hides nothing
@@ -44,6 +44,8 @@ interface Runtime {
   presetKey: string | null
   /** Bumped per preset request, so a slow load cannot replace a newer one. */
   loadSeq: number
+  /** When the last frame was drawn, for the fps cap. */
+  lastFrameAt: number
 }
 
 export default {
@@ -54,10 +56,16 @@ export default {
       type: Boolean,
       default: false,
     },
-    /** In [0, 1): which preset to show. A new seed means a new preset. */
-    seed: {
+    /** The preset to show (see services/milkdrop/presets.ts's keys); a
+     * change blends over to the new one. */
+    preset: {
+      type: String as PropType<string | null>,
+      default: null,
+    },
+    /** Frames per second at most; 0 for the display's own rate. */
+    fps: {
       type: Number,
-      required: true,
+      default: 0,
     },
     /** While casting: the latest waveform connect sent, read every frame.
      * Null plays from this device's own audio graph instead. */
@@ -79,12 +87,13 @@ export default {
         labelTimer: undefined,
         presetKey: null,
         loadSeq: 0,
+        lastFrameAt: 0,
       }),
     }
   },
   watch: {
-    seed(seed: number) {
-      void this.showPreset(seed)
+    preset(key: string | null) {
+      void this.showPreset(key)
     },
   },
   mounted() {
@@ -111,7 +120,7 @@ export default {
     }
     this.rt.observer = new ResizeObserver(() => this.resize())
     this.rt.observer.observe(canvas)
-    void this.showPreset(this.seed)
+    void this.showPreset(this.preset)
     this.rt.frame = requestAnimationFrame(this.tick)
   },
   beforeUnmount() {
@@ -150,8 +159,12 @@ export default {
       canvas.height = height
       visualizer.setRendererSize(width, height, { pixelRatio: 1 })
     },
-    tick(): void {
+    tick(now: number): void {
       this.rt.frame = requestAnimationFrame(this.tick)
+      // A few ms of slack, or a 60 fps cap on a 60 Hz display would skip
+      // every frame that arrives a hair early and land on 30.
+      if (this.fps > 0 && now - this.rt.lastFrameAt < 1000 / this.fps - 4) return
+      this.rt.lastFrameAt = now
       // The first frame is drawn even while paused, so a paused song still
       // shows a picture instead of a black canvas.
       if (!this.rt.visualizer || !this.rt.presetKey) return
@@ -168,8 +181,7 @@ export default {
       }
       this.ready = true
     },
-    async showPreset(seed: number): Promise<void> {
-      const key = pickPresetKey(MILKDROP_PRESET_KEYS, seed, this.rt.presetKey)
+    async showPreset(key: string | null): Promise<void> {
       if (!key || key === this.rt.presetKey) return
       const seq = ++this.rt.loadSeq
       try {

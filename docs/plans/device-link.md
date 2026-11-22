@@ -113,6 +113,27 @@ The list follows the account as `customThemes` in the settings, whole, since a
 theme is rarely edited on two devices at once. Which theme is on stays with the
 device. A theme deleted elsewhere falls back to Beacon on this one.
 
+## Milkdrop
+
+The choices (when the preset changes, the pool, the frame rate, the preset
+picked by hand) follow the account as `milkdrop` in the settings, whole, like
+the themes. Whether Milkdrop is on stays with the device.
+
+Uploaded presets are rows of their own (`core/milkdrop_presets.py`), each with
+a stamp of when it last changed, the newer one winning. A deleted preset stays
+as a row without its contents, so the deletion reaches the other side. They go
+by id rather than whole: a preset can be hundreds of KB.
+
+- `GET /device-link/milkdrop-presets` lists every row with its stamp, without
+  contents; `GET .../rows?ids=` returns up to 10 whole rows; `PATCH` takes up
+  to 10, 4 MB (the Docker image's nginx limit under `/device-link/`).
+- The desktop queues the ids it changed (`pending_milkdrop_presets`) and sends
+  them 5 at a time. Pairing queues what is newer here than on the server.
+- Opening the list on the desktop first pulls what the server has newer, into
+  the local copy, which then answers on its own while the server is away.
+- A server from before presets were shared answers 404: nothing else in the
+  pass waits for it, and the queue stays for a newer one.
+
 ## API keys
 
 The server's administrator enters the Last.fm and Fanart keys once for everyone

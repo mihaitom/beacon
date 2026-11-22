@@ -395,7 +395,8 @@ export function useGuestNowPlayingSource(
       available: false,
       active: false,
       playing: false,
-      seed: 0,
+      preset: null,
+      fps: 0,
       mode: 'local',
       waveform: () => null,
     },
@@ -420,6 +421,7 @@ export function useGuestNowPlayingSource(
     equalizerComponent: null,
     lightsComponent: null,
     milkdropComponent: null,
+    milkdropMenuComponent: null,
     ui: reactive({
       lyricsOpen: computed(() => showLyrics.value),
       showVisualizer: computed(() => showVisualizer.value),

@@ -717,6 +717,33 @@ export default {
     needsRegenerate:
       'Il codice di associazione precedente non è più disponibile. Rigeneralo per associare un telefono: questo disconnetterà qualsiasi telefono associato in precedenza.',
   },
+  milkdrop: {
+    title: 'Milkdrop',
+    switchTitle: 'Cambia preset',
+    switchSong: 'A ogni brano',
+    switchTime: 'A tempo',
+    switchFixed: 'Mai',
+    interval: 'Intervallo',
+    switchFixedHint: 'Il preset scelto qui sotto resta sullo schermo.',
+    poolHint: 'Sceglie tra il {n} preset selezionato. | Sceglie tra i {n} preset selezionati.',
+    poolEmptyHint:
+      'Sceglie tra tutti i preset. Selezionane alcuni qui sotto per scegliere solo tra quelli.',
+    fpsTitle: 'Fotogrammi al secondo',
+    fpsDisplay: 'Schermo',
+    fpsHint: 'Una frequenza più bassa pesa meno sulla scheda grafica.',
+    presetsTitle: 'Preset',
+    presetsHint:
+      'Fai clic su un nome per mostrarlo subito. Quelli selezionati sono il gruppo da cui sceglie il cambio automatico.',
+    search: 'Cerca preset',
+    prefer: 'Scegli {name} automaticamente',
+    uploaded: 'Caricato',
+    delete: 'Elimina preset',
+    noMatch: 'Nessun preset corrisponde.',
+    upload: 'Carica preset',
+    uploadAdded: '{n} preset aggiunto. | {n} preset aggiunti.',
+    uploadFailed: 'Impossibile leggere: {files}.',
+    deleteFailed: 'Impossibile eliminare il preset.',
+  },
   lights: {
     title: 'Luci della stanza',
     loadFailed: 'Impossibile caricare le impostazioni delle luci.',

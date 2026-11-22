@@ -88,9 +88,11 @@ export interface NowPlayingMilkdrop {
   active: boolean
   /** Frames only advance while the music plays. */
   playing: boolean
-  /** In [0, 1): which preset to show; a new one per song and per press of
-   * the toolbar's next-preset button. */
-  seed: number
+  /** Which preset to show (services/milkdrop/presets.ts's keys); null
+   * until one is picked. */
+  preset: string | null
+  /** Frames per second at most; 0 for the display's own rate. */
+  fps: number
   /** Where the sound comes from: this device's own audio graph, or while
    * casting the waveform connect sends along with the bars' frames. */
   mode: 'local' | 'cast'
@@ -204,6 +206,9 @@ export interface NowPlayingSource {
   /** The Milkdrop canvas (host only), loaded on first use: it brings
    * Butterchurn and reads the audio engine. */
   milkdropComponent: Component | null
+  /** Milkdrop's settings button and dialog (host only): they read the
+   * Milkdrop store. */
+  milkdropMenuComponent: Component | null
   ui: NowPlayingUi
   /** The corner stack: the current song, then the next one near the end of
    * a track. The source decides when the next one shows. */

@@ -1,5 +1,15 @@
-import { describe, expect, it } from 'vitest'
-import { MILKDROP_PRESET_KEYS, loadPresetFile, pickPresetKey } from '../presets'
+import { describe, expect, it, vi } from 'vitest'
+import { getMilkdropPreset } from '@/services/connect/milkdropPresets'
+import {
+  BUILTIN_PRESETS,
+  customPresetId,
+  customPresetKey,
+  loadPresetFile,
+  pickPresetKey,
+  presetPool,
+} from '../presets'
+
+vi.mock('@/services/connect/milkdropPresets', () => ({ getMilkdropPreset: vi.fn() }))
 
 describe('pickPresetKey', () => {
   const keys = ['a', 'b', 'c', 'd']
@@ -21,12 +31,47 @@ describe('pickPresetKey', () => {
   })
 })
 
+describe('presetPool', () => {
+  const all = ['a', 'b', 'c'].map((key) => ({ key, name: key, custom: false }))
+
+  it('is the preferred presets that still exist', () => {
+    expect(presetPool(all, ['c', 'gone', 'a'])).toEqual(['a', 'c'])
+  })
+
+  it('is every preset while none of the preferred ones is there', () => {
+    expect(presetPool(all, [])).toEqual(['a', 'b', 'c'])
+    expect(presetPool(all, ['gone'])).toEqual(['a', 'b', 'c'])
+  })
+})
+
+describe('uploaded presets', () => {
+  it('are told apart from the shipped ones by their key', () => {
+    expect(customPresetId(customPresetKey('abc'))).toBe('abc')
+    expect(customPresetId(BUILTIN_PRESETS[0]!.key)).toBeNull()
+  })
+
+  it('come from connect, once each, and again after a failure', async () => {
+    const get = vi.mocked(getMilkdropPreset)
+    get.mockRejectedValueOnce(new Error('down'))
+    await expect(loadPresetFile(customPresetKey('x1'))).rejects.toThrow('down')
+    get.mockResolvedValue({ id: 'x1', name: 'Mine', preset: { baseVals: {} } })
+    await loadPresetFile(customPresetKey('x1'))
+    const again = await loadPresetFile(customPresetKey('x1'))
+    expect(again).toEqual({ name: 'Mine', preset: { baseVals: {} } })
+    expect(get).toHaveBeenCalledTimes(2)
+  })
+
+  it('an unknown key is an error, not a silent blank', async () => {
+    await expect(loadPresetFile('builtin:no-such-preset')).rejects.toThrow()
+  })
+})
+
 describe('the shipped presets', () => {
   // Butterchurn compiles a preset's equations the same way when loading it;
   // one that fails there would leave the previous preset frozen on screen.
   it('each load with a name and equations that compile', async () => {
-    expect(MILKDROP_PRESET_KEYS.length).toBeGreaterThan(0)
-    for (const key of MILKDROP_PRESET_KEYS) {
+    expect(BUILTIN_PRESETS.length).toBeGreaterThan(0)
+    for (const { key } of BUILTIN_PRESETS) {
       const { name, preset } = await loadPresetFile(key)
       expect(name, key).toBeTruthy()
       for (const field of ['init_eqs_str', 'frame_eqs_str', 'pixel_eqs_str']) {

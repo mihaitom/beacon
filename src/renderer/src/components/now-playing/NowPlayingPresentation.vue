@@ -25,7 +25,8 @@
           v-if="source.milkdrop.active && source.milkdropComponent"
           :key="source.milkdrop.mode"
           :playing="source.milkdrop.playing"
-          :seed="source.milkdrop.seed"
+          :preset="source.milkdrop.preset"
+          :fps="source.milkdrop.fps"
           :waveform="source.milkdrop.mode === 'cast' ? source.milkdrop.waveform : null"
         />
       </now-playing-backdrop>

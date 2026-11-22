@@ -26,6 +26,8 @@ export default defineConfigWithVueTs(
     '**/coverage/**',
     '**/out/**',
     'connect/static/party/**',
+    // Third-party bundles kept as published, see each folder's LICENSE.
+    'src/renderer/src/vendor/**',
   ]),
 
   ...pluginVue.configs['flat/essential'],

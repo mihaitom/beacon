@@ -7,6 +7,7 @@ import CastStreamDebugOverlay from '@/components/player/CastStreamDebugOverlay.v
 import VisualizerDebugOverlay from '@/components/player/VisualizerDebugOverlay.vue'
 import EqualizerButton from '@/components/equalizer/EqualizerButton.vue'
 import LightsButton from '@/components/lights/LightsButton.vue'
+import MilkdropButton from '@/components/milkdrop/MilkdropButton.vue'
 import type { Song, RadioStation } from '@/types/library'
 import type { RadioFaviconRequest } from '@/services/connect/radio'
 import type { RadioTitleEntry } from '@/services/connect/radioMetadata'
@@ -38,7 +39,8 @@ export interface HostNowPlayingApi {
   visualizerDebug: VisualizerFrame['debug'] | null
   milkdropAvailable: boolean
   milkdropActive: boolean
-  milkdropSeed: number
+  milkdropPreset: string | null
+  milkdropFps: number
   milkdropMode: 'local' | 'cast'
   milkdropWaveform: () => Uint8Array | null
   isPlaying: boolean
@@ -180,7 +182,8 @@ export function hostNowPlayingSource(api: HostNowPlayingApi): NowPlayingSource {
       available: computed(() => api.milkdropAvailable),
       active: computed(() => api.milkdropActive),
       playing: computed(() => api.isPlaying),
-      seed: computed(() => api.milkdropSeed),
+      preset: computed(() => api.milkdropPreset),
+      fps: computed(() => api.milkdropFps),
       mode: computed(() => api.milkdropMode),
       waveform: () => api.milkdropWaveform(),
     }),
@@ -211,6 +214,7 @@ export function hostNowPlayingSource(api: HostNowPlayingApi): NowPlayingSource {
     milkdropComponent: markRaw(
       defineAsyncComponent(() => import('@/components/milkdrop/MilkdropVisualizer.vue')),
     ),
+    milkdropMenuComponent: markRaw(MilkdropButton),
     ui: reactive({
       lyricsOpen: computed(() => api.showLyrics),
       showVisualizer: computed(() => api.showVisualizer),

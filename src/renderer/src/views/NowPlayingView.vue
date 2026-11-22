@@ -38,6 +38,8 @@ import { visualizerBarColor } from '@/services/visualizerColor'
 import { accountScopedKey } from '@/services/accountKey'
 import { reportForegroundPicture } from '@/services/lights/pictureReport'
 import { useLightsStore } from '@/stores/lights'
+import { useMilkdropStore } from '@/stores/milkdrop'
+import { pickPresetKey, presetPool } from '@/services/milkdrop/presets'
 import type { Song } from '@/types/library'
 import type { MixTransition, NoBeatmixReason } from '@/services/connect/types'
 
@@ -235,8 +237,9 @@ export default {
       // Fanart.tv background to reveal (see artworkHidden).
       hideArtwork: readHideArtwork(),
       milkdropEnabled: readMilkdrop(),
-      // Which preset Milkdrop shows - rerolled per song, see the watcher.
-      milkdropSeed: Math.random(),
+      // Which preset Milkdrop shows - see pickMilkdropPreset.
+      milkdropPreset: null as string | null,
+      milkdropTimer: undefined as ReturnType<typeof setInterval> | undefined,
     }
   },
   computed: {
@@ -254,6 +257,19 @@ export default {
     },
     authStore() {
       return useAuthStore()
+    },
+    milkdropStore() {
+      return useMilkdropStore()
+    },
+    milkdropFps(): number {
+      return this.milkdropStore.settings.fps
+    },
+    /** The interval of the timed change while it runs, 0 while it does
+     * not: only on screen and while the music plays, so a paused song does
+     * not come back to a picture that changed under it. */
+    milkdropTimerSeconds(): number {
+      const { switchMode, intervalSeconds } = this.milkdropStore.settings
+      return this.milkdropActive && this.isPlaying && switchMode === 'time' ? intervalSeconds : 0
     },
     lyricsStore() {
       return useLyricsStore()
@@ -703,10 +719,32 @@ export default {
         // Non-critical, as above.
       }
     },
-    // A new preset per song: the change of picture marks the change of
-    // music, the way the artist background does.
+    // A new preset per song, if asked for: the change of picture marks the
+    // change of music, the way the artist background does.
     'currentSong.id'() {
-      this.milkdropSeed = Math.random()
+      if (this.milkdropStore.settings.switchMode === 'song') this.pickMilkdropPreset()
+    },
+    milkdropActive: {
+      immediate: true,
+      handler(active: boolean) {
+        if (!active) return
+        if (!this.milkdropStore.customLoaded) void this.milkdropStore.loadCustom()
+        this.milkdropPreset = this.milkdropStore.settings.preset ?? this.milkdropPreset
+        if (this.milkdropPreset === null) this.pickMilkdropPreset()
+      },
+    },
+    // Picked in the menu: shown at once, even when it is the one picked
+    // before and an automatic change has moved on since.
+    'milkdropStore.chosen'() {
+      this.milkdropPreset = this.milkdropStore.settings.preset
+    },
+    milkdropTimerSeconds: {
+      immediate: true,
+      handler(seconds: number) {
+        clearInterval(this.milkdropTimer)
+        this.milkdropTimer =
+          seconds > 0 ? setInterval(() => this.pickMilkdropPreset(), seconds * 1000) : undefined
+      },
     },
     hideArtwork(value: boolean) {
       try {
@@ -726,6 +764,7 @@ export default {
   },
   beforeUnmount() {
     this.stopVisualizerEvents()
+    clearInterval(this.milkdropTimer)
   },
   mounted() {
     // Best-effort, exactly as VisualizerDebugOverlay.vue does it: a failed
@@ -789,8 +828,17 @@ export default {
     toggleMilkdrop(): void {
       this.milkdropEnabled = !this.milkdropEnabled
     },
+    /** Another preset from the pool, at random. */
+    pickMilkdropPreset(): void {
+      const pool = presetPool(this.milkdropStore.presets, this.milkdropStore.settings.preferred)
+      this.milkdropPreset = pickPresetKey(pool, Math.random(), this.milkdropPreset)
+    },
     nextMilkdropPreset(): void {
-      this.milkdropSeed = Math.random()
+      this.pickMilkdropPreset()
+      // In 'fixed' the press picks the new one to keep.
+      if (this.milkdropStore.settings.switchMode === 'fixed') {
+        this.milkdropStore.set({ preset: this.milkdropPreset })
+      }
     },
     loadOlderTitles(): void {
       void this.radioMeta.loadOlder()

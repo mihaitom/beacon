@@ -16,6 +16,8 @@ import { useAppearanceStore } from '@/stores/appearance'
 import NowPlayingView from '../NowPlayingView.vue'
 import NowPlayingPresentation from '@/components/now-playing/NowPlayingPresentation.vue'
 import MilkdropVisualizer from '@/components/milkdrop/MilkdropVisualizer.vue'
+import { BUILTIN_PRESETS } from '@/services/milkdrop/presets'
+import { useMilkdropStore } from '@/stores/milkdrop'
 import { getAudioEngine } from '@/services/audioEngine'
 import { getLogLevel, type LogLevel } from '@/services/connect/logLevel'
 import { getArtistArt } from '@/services/connect/fanart'
@@ -54,9 +56,17 @@ vi.mock('@/components/milkdrop/MilkdropVisualizer.vue', () => ({
   __esModule: true,
   default: {
     name: 'MilkdropVisualizer',
-    props: ['playing', 'seed'],
+    props: ['playing', 'preset', 'fps'],
     template: '<div class="milkdrop-stub" />',
   },
+}))
+
+// connect's list of uploaded presets; none unless a test says otherwise.
+vi.mock('@/services/connect/milkdropPresets', () => ({
+  listMilkdropPresets: vi.fn().mockResolvedValue([]),
+  getMilkdropPreset: vi.fn(),
+  putMilkdropPreset: vi.fn(),
+  deleteMilkdropPreset: vi.fn(),
 }))
 
 vi.mock('@/services/lights/pictureReport', () => ({ reportForegroundPicture: vi.fn() }))
@@ -806,24 +816,85 @@ describe('NowPlayingView', () => {
       expect(lavaLamp(wrapper).exists()).toBe(false)
     })
 
-    it('gets a new preset with the next song and on request', async () => {
-      const { wrapper } = await mountPlaying()
-      await switchOn(wrapper)
-      const seed = () => wrapper.findComponent(MilkdropVisualizer).props('seed')
-      const random = vi.spyOn(Math, 'random')
+    function shownPreset(wrapper: VueWrapper): string | null {
+      return wrapper.findComponent(MilkdropVisualizer).props('preset') as string | null
+    }
 
-      random.mockReturnValue(0.25)
+    async function nextSong() {
       usePlaybackStore().setQueue([makeSong('b'), makeSong('c')], 0)
       await flushPromises()
-      expect(seed()).toBe(0.25)
+    }
 
-      random.mockReturnValue(0.75)
+    it('starts on a preset and gets a new one with the next song and on request', async () => {
+      const { wrapper } = await mountPlaying()
+      await switchOn(wrapper)
+      const first = shownPreset(wrapper)
+      expect(BUILTIN_PRESETS.map((entry) => entry.key)).toContain(first)
+
+      await nextSong()
+      const second = shownPreset(wrapper)
+      expect(second).not.toBe(first)
+
       await wrapper
         .get('.now-playing__toolbar .mdi-shuffle-variant')
         .element.closest('button')!
         .click()
       await flushPromises()
-      expect(seed()).toBe(0.75)
+      expect(shownPreset(wrapper)).not.toBe(second)
+    })
+
+    it('picks only from the preferred presets', async () => {
+      const [a, b] = BUILTIN_PRESETS.slice(3, 5).map((entry) => entry.key)
+      useMilkdropStore().set({ preferred: [a!, b!] })
+      const { wrapper } = await mountPlaying()
+      await switchOn(wrapper)
+      for (let i = 0; i < 4; i++) {
+        expect([a, b]).toContain(shownPreset(wrapper))
+        await nextSong()
+      }
+    })
+
+    it('keeps a fixed preset through a change of song', async () => {
+      const key = BUILTIN_PRESETS[7]!.key
+      useMilkdropStore().set({ switchMode: 'fixed', preset: key })
+      const { wrapper } = await mountPlaying()
+      await switchOn(wrapper)
+      expect(shownPreset(wrapper)).toBe(key)
+
+      await nextSong()
+      expect(shownPreset(wrapper)).toBe(key)
+    })
+
+    it('shows a preset picked in the menu at once', async () => {
+      const { wrapper } = await mountPlaying()
+      await switchOn(wrapper)
+      await nextSong()
+      const key = BUILTIN_PRESETS.find((entry) => entry.key !== shownPreset(wrapper))!.key
+
+      useMilkdropStore().choose(key)
+      await flushPromises()
+      expect(shownPreset(wrapper)).toBe(key)
+    })
+
+    it('changes on the timer only while the music plays', async () => {
+      vi.useFakeTimers()
+      onTestFinished(() => {
+        vi.useRealTimers()
+      })
+      useMilkdropStore().set({ switchMode: 'time', intervalSeconds: 30 })
+      const { wrapper } = await mountPlaying()
+      await switchOn(wrapper)
+      const first = shownPreset(wrapper)
+
+      await nextSong()
+      expect(shownPreset(wrapper)).toBe(first)
+      await vi.advanceTimersByTimeAsync(31_000)
+      expect(shownPreset(wrapper)).toBe(first)
+
+      usePlaybackStore().isPlaying = true
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(31_000)
+      expect(shownPreset(wrapper)).not.toBe(first)
     })
 
     it('remembers being switched on', async () => {

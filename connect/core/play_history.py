@@ -104,6 +104,19 @@ _KEY_SCOPES_SCHEMA = (
     "ALTER TABLE device_keys DROP COLUMN may_read_api_keys",
 )
 
+# A row with no preset is one deleted, kept so that a paired device still
+# holding it hears it went (core/milkdrop_presets.py).
+_MILKDROP_PRESETS_SCHEMA = (
+    """CREATE TABLE milkdrop_presets (
+        account_id INTEGER NOT NULL REFERENCES accounts (id),
+        preset_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        preset TEXT,
+        updated_at REAL NOT NULL,
+        PRIMARY KEY (account_id, preset_id)
+    )""",
+)
+
 _HISTORY_EPOCH_SCHEMA = (
     "ALTER TABLE accounts ADD COLUMN history_epoch INTEGER NOT NULL DEFAULT 0",
 )
@@ -315,6 +328,11 @@ def _add_key_session(conn: sqlite3.Connection) -> None:
         conn.execute(statement)
 
 
+def _add_milkdrop_presets(conn: sqlite3.Connection) -> None:
+    for statement in _MILKDROP_PRESETS_SCHEMA:
+        conn.execute(statement)
+
+
 # PRAGMA user_version counts how many of these have run. Append only.
 _MIGRATIONS = (
     _create_log,
@@ -325,6 +343,7 @@ _MIGRATIONS = (
     _add_history_epoch,
     _add_key_media_login,
     _add_key_session,
+    _add_milkdrop_presets,
 )
 
 

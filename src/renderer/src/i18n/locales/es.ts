@@ -723,6 +723,33 @@ export default {
     needsRegenerate:
       'El código de emparejamiento anterior ya no está disponible. Genera uno nuevo para emparejar un teléfono - esto desconectará cualquier teléfono emparejado anteriormente.',
   },
+  milkdrop: {
+    title: 'Milkdrop',
+    switchTitle: 'Cambiar preset',
+    switchSong: 'Cada canción',
+    switchTime: 'Por tiempo',
+    switchFixed: 'Nunca',
+    interval: 'Intervalo',
+    switchFixedHint: 'El preset elegido abajo se queda en pantalla.',
+    poolHint: 'Elige entre el {n} preset marcado. | Elige entre los {n} presets marcados.',
+    poolEmptyHint:
+      'Elige entre todos los presets. Marca algunos abajo para elegir solo entre ellos.',
+    fpsTitle: 'Fotogramas por segundo',
+    fpsDisplay: 'Pantalla',
+    fpsHint: 'Una tasa más baja exige menos a la tarjeta gráfica.',
+    presetsTitle: 'Presets',
+    presetsHint:
+      'Haz clic en un nombre para mostrarlo ya. Los marcados son el grupo del que elige el cambio automático.',
+    search: 'Buscar presets',
+    prefer: 'Elegir {name} automáticamente',
+    uploaded: 'Subido',
+    delete: 'Eliminar preset',
+    noMatch: 'Ningún preset coincide.',
+    upload: 'Subir presets',
+    uploadAdded: '{n} preset añadido. | {n} presets añadidos.',
+    uploadFailed: 'No se pudo leer: {files}.',
+    deleteFailed: 'No se pudo eliminar el preset.',
+  },
   lights: {
     title: 'Luces de la sala',
     loadFailed: 'No se pudieron cargar los ajustes de las luces.',

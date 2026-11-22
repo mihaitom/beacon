@@ -27,7 +27,14 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from core import account_settings, api_keys, external_source, lyrics_offsets, play_history
+from core import (
+    account_settings,
+    api_keys,
+    external_source,
+    lyrics_offsets,
+    milkdrop_presets,
+    play_history,
+)
 from core.account_settings import LINKED_FIELDS
 from core.paths import data_dir
 from core.play_history import Account
@@ -57,10 +64,19 @@ KEY_OF_ANOTHER_ACCOUNT = "key_of_another_account"
 INVALID_URL = "invalid_url"
 INSECURE_URL = "insecure_url"
 
-_PENDING_FIELDS = ("pending_settings", "pending_milestones", "pending_lyrics_offsets")
+_PENDING_FIELDS = (
+    "pending_settings",
+    "pending_milestones",
+    "pending_lyrics_offsets",
+    "pending_milkdrop_presets",
+)
 
 _BATCH_SIZE = 500
 _OFFSET_BATCH_SIZE = 500
+# Milkdrop presets go a few at a time: each can be up to
+# milkdrop_presets.MAX_PRESET_BYTES, and the Docker image's nginx takes 4 MB
+# per request under /device-link/ (ng.conf.template).
+_PRESET_BATCH_SIZE = 5
 IDLE_SECONDS = 300.0
 _BACKOFF_BASE_SECONDS = 30.0
 _BACKOFF_MAX_SECONDS = 3600.0
@@ -340,6 +356,7 @@ def pair(
         for song, seconds in lyrics_offsets.load(account).items()
         if song not in remote_offsets
     }
+    pending_presets = _presets_newer_here(url, key, account)
     play_history.forget_sent(account)
     with _lock:
         _write(
@@ -353,6 +370,7 @@ def pair(
                 "pending_settings": pending,
                 "pending_milestones": {},
                 "pending_lyrics_offsets": pending_offsets,
+                "pending_milkdrop_presets": pending_presets,
                 "backfill": True,
                 "last_sync_at": None,
             }
@@ -486,6 +504,68 @@ def pull_lyrics_offsets(account: Account) -> dict[str, float] | None:
     return {**(remote.get("offsets") or {}), **(link.get("pending_lyrics_offsets") or {})}
 
 
+def _remote_preset_index(url: str, key: str) -> dict[str, float] | None:
+    """Each of the server's presets with its stamp, or None for a server
+    from before presets were shared."""
+    try:
+        remote = _call(url, key, "GET", "/milkdrop-presets", timeout=_SETTINGS_TIMEOUT)
+    except LinkError as e:
+        if e.state != SERVER_TOO_OLD:
+            raise
+        return None
+    return {row["id"]: row["updated_at"] for row in remote.get("presets") or []}
+
+
+def _presets_newer_here(url: str, key: str, account: Account) -> dict[str, float]:
+    remote = _remote_preset_index(url, key) or {}
+    return {
+        row["id"]: row["updated_at"]
+        for row in milkdrop_presets.index(account)
+        if row["updated_at"] > remote.get(row["id"], -1.0)
+    }
+
+
+def note_milkdrop_presets(account: Account, stamps: dict[str, float]) -> None:
+    """Presets changed here, by id with their new stamp: the rows
+    themselves are read again when they are sent, they can be large."""
+    with _lock:
+        link = _read()
+        if link is None or _account_of(link) != account:
+            return
+        link.setdefault("pending_milkdrop_presets", {}).update(stamps)
+        _write(link)
+    wake()
+
+
+def pull_milkdrop_presets(account: Account) -> None:
+    """Takes what the server has newer than here into the local copy,
+    which then answers - with the server away too. Unsent changes made here
+    are newer still, and stay."""
+    link = _read()
+    if link is None or _account_of(link) != account:
+        return
+    try:
+        remote = _remote_preset_index(link["url"], link["key"])
+        if remote is None:
+            return
+        local = {row["id"]: row["updated_at"] for row in milkdrop_presets.index(account)}
+        wanted = [pid for pid, stamp in remote.items() if stamp > local.get(pid, -1.0)]
+        for start in range(0, len(wanted), _PRESET_BATCH_SIZE):
+            batch = wanted[start : start + _PRESET_BATCH_SIZE]
+            answer = _call(
+                link["url"],
+                link["key"],
+                "GET",
+                f"/milkdrop-presets/rows?ids={','.join(batch)}",
+                timeout=_SETTINGS_TIMEOUT,
+            )
+            milkdrop_presets.merge(account, answer.get("presets") or [])
+    except LinkError as e:
+        _note(e.state)
+        return
+    _note_answered()
+
+
 def relay_now_playing(report: dict | None) -> bool:
     """Passes on what this desktop plays, None for nothing. Whether the
     server has a use for it; not reaching it counts as no, and the next song
@@ -543,6 +623,31 @@ def _send_lyrics_offsets(link: dict) -> None:
         sent = dict(items[start : start + _OFFSET_BATCH_SIZE])
         _call(link["url"], link["key"], "PATCH", "/lyrics-offsets", {"offsets": sent})
         _forget_sent(link, "pending_lyrics_offsets", sent)
+
+
+def _send_milkdrop_presets(link: dict, account: Account) -> None:
+    """A server from before presets were shared answers 404, which must not
+    hold up the rest of the sync; what is pending stays for a newer one."""
+    ids = list(link.get("pending_milkdrop_presets") or {})
+    for start in range(0, len(ids), _PRESET_BATCH_SIZE):
+        batch = milkdrop_presets.rows(account, ids[start : start + _PRESET_BATCH_SIZE])
+        if batch:
+            try:
+                _call(link["url"], link["key"], "PATCH", "/milkdrop-presets", {"presets": batch})
+            except LinkError as e:
+                if e.state != SERVER_TOO_OLD:
+                    raise
+                return
+        sent = {row["id"]: row["updated_at"] for row in batch}
+        # Gone from here altogether (never stored, say): nothing to send.
+        sent.update(
+            {
+                pid: link["pending_milkdrop_presets"][pid]
+                for pid in ids[start : start + _PRESET_BATCH_SIZE]
+                if pid not in sent
+            }
+        )
+        _forget_sent(link, "pending_milkdrop_presets", sent)
 
 
 def _send_milestones(link: dict) -> None:
@@ -613,6 +718,7 @@ def send_once(now: float | None = None) -> bool:
         _send_listens(link, _account_of(link))
         _send_settings(link)
         _send_lyrics_offsets(link)
+        _send_milkdrop_presets(link, _account_of(link))
         _send_milestones(link)
         _adopt_api_keys(link)
         _sync_sources(link, scopes)

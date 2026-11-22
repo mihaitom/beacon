@@ -74,6 +74,7 @@ from routes.local_stream import router as local_stream_router
 from routes.log_level import router as log_level_router
 from routes.lyrics import router as lyrics_router
 from routes.lyrics_offsets import router as lyrics_offsets_router
+from routes.milkdrop_presets import router as milkdrop_presets_router
 from routes.navidrome import router as navidrome_router
 from routes.now_playing import router as now_playing_router
 from routes.pairing import reap_stale_pairings
@@ -532,6 +533,7 @@ app.include_router(api_keys_router)
 app.include_router(pairing_router)
 app.include_router(lyrics_router)
 app.include_router(lyrics_offsets_router)
+app.include_router(milkdrop_presets_router)
 app.include_router(now_playing_router)
 app.include_router(waveform_router)
 app.include_router(radio_router)

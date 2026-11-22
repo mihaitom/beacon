@@ -27,6 +27,7 @@ from core import (
     external_source,
     lyrics_offsets,
     media_login,
+    milkdrop_presets,
     now_playing,
     play_history,
     server_link,
@@ -463,6 +464,9 @@ class FakeServer:
         self.requests: list[httpx.Request] = []
         self.settings: dict = {}
         self.offsets: dict = {}
+        # Milkdrop presets by id, whole rows; None answers 404 like a server
+        # from before they were shared.
+        self.presets: dict[str, dict] | None = {}
         self.api_keys: dict = {}
         self.sources: dict | None = {"sources": [], "removed": {}}
         self.summary: dict = {
@@ -516,6 +520,18 @@ class FakeServer:
             return httpx.Response(200, json=self.sources)
         if path == "/lyrics-offsets" and request.method == "GET":
             return httpx.Response(200, json={"offsets": self.offsets})
+        if path.startswith("/milkdrop-presets") and self.presets is None:
+            return httpx.Response(404, json={"detail": "Not Found"})
+        if path == "/milkdrop-presets" and request.method == "GET":
+            index = [
+                {"id": r["id"], "name": r["name"], "updated_at": r["updated_at"]}
+                for r in self.presets.values()
+            ]
+            return httpx.Response(200, json={"presets": index})
+        if path == "/milkdrop-presets/rows":
+            ids = request.url.params.get("ids", "").split(",")
+            rows = [self.presets[i] for i in ids if i in self.presets]
+            return httpx.Response(200, json={"presets": rows})
         return httpx.Response(200, json={"status": "ok"})
 
     def sent(self, method: str, path: str) -> list[dict]:
@@ -612,8 +628,9 @@ def test_a_setting_changed_with_no_list_of_pending_ones_is_kept(server):
         lambda: server_link.summary_for(ALICE),
         lambda: server_link.pull_lyrics_offsets(ALICE),
         lambda: server_link.charts_for(ALICE, "week"),
+        lambda: server_link.pull_milkdrop_presets(ALICE) or True,
     ],
-    ids=["settings", "summary", "lyrics offsets", "charts"],
+    ids=["settings", "summary", "lyrics offsets", "charts", "milkdrop presets"],
 )
 def test_a_pull_that_gets_through_ends_the_unreachable_state(paired, pull):
     paired.fail = httpx.ConnectError("down")
@@ -1223,6 +1240,15 @@ def test_custom_themes_are_shared_settings(public):
         "/device-link/settings", headers=auth(key), json={"settings": {"customThemes": themes}}
     )
     assert public.get("/device-link/settings", headers=auth(key)).json() == {"customThemes": themes}
+
+
+def test_milkdrops_choices_are_shared_settings(public):
+    key = key_for()
+    choices = {"switchMode": "time", "intervalSeconds": 60, "preferred": ["custom:p1"]}
+    public.patch(
+        "/device-link/settings", headers=auth(key), json={"settings": {"milkdrop": choices}}
+    )
+    assert public.get("/device-link/settings", headers=auth(key)).json() == {"milkdrop": choices}
 
 
 # ── API keys ─────────────────────────────────────────────────────────────
@@ -3569,3 +3595,142 @@ def test_an_admins_desktop_may_change_a_shared_source(client, signed_in, paired)
     [listed] = client.get("/external-source").json()["sources"]
     assert listed["read_only"] is False
     assert client.delete("/external-source/srv1").status_code == 200
+
+
+# ── Milkdrop presets ─────────────────────────────────────────────────────────
+
+PRESET = {"baseVals": {"zoom": 1.01}, "frame_eqs_str": "a.zoom=1;"}
+
+
+def preset_row(id_="p1", name="Mine", preset=PRESET, updated_at=100.0) -> dict:
+    return {"id": id_, "name": name, "preset": preset, "updated_at": updated_at}
+
+
+def test_a_newer_row_wins_and_an_older_one_does_not():
+    milkdrop_presets.merge(ALICE, [preset_row(updated_at=100.0)])
+    milkdrop_presets.merge(ALICE, [preset_row(name="Older", updated_at=50.0)])
+    milkdrop_presets.merge(BOB, [preset_row(name="Bob's", updated_at=200.0)])
+    assert milkdrop_presets.get(ALICE, "p1")["name"] == "Mine"
+    milkdrop_presets.merge(ALICE, [preset_row(name="Newer", updated_at=150.0)])
+    assert milkdrop_presets.get(ALICE, "p1")["name"] == "Newer"
+
+
+def test_a_deleted_preset_stays_as_a_row_for_the_other_side():
+    milkdrop_presets.put(ALICE, "p1", "Mine", PRESET)
+    milkdrop_presets.put(ALICE, "p1", "Mine", None)
+    assert milkdrop_presets.get(ALICE, "p1") is None
+    assert [r["deleted"] for r in milkdrop_presets.index(ALICE)] == [True]
+
+
+def test_a_change_here_is_newer_than_the_stamp_it_replaces_whatever_the_clock_says():
+    milkdrop_presets.merge(ALICE, [preset_row(updated_at=NOW * 10)])
+    milkdrop_presets.put(ALICE, "p1", "Renamed", PRESET)
+    assert milkdrop_presets.get(ALICE, "p1")["name"] == "Renamed"
+
+
+def test_presets_past_the_limit_are_left_out_but_changes_are_not(monkeypatch):
+    monkeypatch.setattr(milkdrop_presets, "MAX_PER_ACCOUNT", 1)
+    assert milkdrop_presets.put(ALICE, "p1", "One", PRESET)
+    assert not milkdrop_presets.put(ALICE, "p2", "Two", PRESET)
+    assert milkdrop_presets.put(ALICE, "p1", "One again", PRESET)
+
+
+def test_the_routes_keep_presets_under_the_sessions_account(client, on_server):
+    assert (
+        client.put("/milkdrop-presets/p1", json={"name": "Mine", "preset": PRESET}).status_code
+        == 200
+    )
+    assert client.get("/milkdrop-presets").json() == {"presets": [{"id": "p1", "name": "Mine"}]}
+    assert client.get("/milkdrop-presets/p1").json() == {
+        "id": "p1",
+        "name": "Mine",
+        "preset": PRESET,
+    }
+    assert milkdrop_presets.index(BOB) == []
+
+    assert client.delete("/milkdrop-presets/p1").status_code == 200
+    assert client.get("/milkdrop-presets").json() == {"presets": []}
+    assert client.get("/milkdrop-presets/p1").status_code == 404
+
+
+def test_the_preset_routes_need_a_verified_session(client):
+    assert client.get("/milkdrop-presets").status_code == 401
+    assert client.put("/milkdrop-presets/p1", json={"name": "x", "preset": {}}).status_code == 401
+
+
+@pytest.mark.parametrize(
+    "preset_id, body",
+    [
+        ("p1", {"name": "", "preset": PRESET}),
+        ("p1", {"name": "x" * 201, "preset": PRESET}),
+        ("p1", {"name": "Big", "preset": {"x": "y" * 600_000}}),
+        ("p 1", {"name": "Mine", "preset": PRESET}),
+    ],
+)
+def test_nonsense_presets_are_refused(client, on_server, preset_id, body):
+    assert client.put(f"/milkdrop-presets/{preset_id}", json=body).status_code in (404, 422)
+    assert milkdrop_presets.index(ALICE) == []
+
+
+def test_the_server_takes_presets_from_a_key_and_hands_them_back(public):
+    key = key_for()
+    sent = {"presets": [preset_row()]}
+    assert (
+        public.patch("/device-link/milkdrop-presets", headers=auth(key), json=sent).status_code
+        == 200
+    )
+    assert milkdrop_presets.get(ALICE, "p1")["preset"] == PRESET
+    index = public.get("/device-link/milkdrop-presets", headers=auth(key)).json()["presets"]
+    assert [(r["id"], r["deleted"]) for r in index] == [("p1", False)]
+    rows = public.get("/device-link/milkdrop-presets/rows?ids=p1,nope", headers=auth(key))
+    assert rows.json() == sent
+
+
+def test_the_server_refuses_an_id_it_could_not_have_given_out(public):
+    key = key_for()
+    answer = public.get("/device-link/milkdrop-presets/rows?ids=a/b", headers=auth(key))
+    assert answer.status_code == 422
+
+
+def test_an_upload_on_the_desktop_goes_to_the_server(client, signed_in, paired):
+    client.put("/milkdrop-presets/p1", json={"name": "Mine", "preset": PRESET})
+    assert server_link.send_once() is True
+    [batch] = paired.sent("PATCH", "/milkdrop-presets")
+    assert [(r["id"], r["preset"]) for r in batch["presets"]] == [("p1", PRESET)]
+    assert server_link._read()["pending_milkdrop_presets"] == {}
+
+
+def test_a_deletion_on_the_desktop_reaches_the_server_too(client, signed_in, paired):
+    client.put("/milkdrop-presets/p1", json={"name": "Mine", "preset": PRESET})
+    server_link.send_once()
+    client.delete("/milkdrop-presets/p1")
+    server_link.send_once()
+    last = paired.sent("PATCH", "/milkdrop-presets")[-1]
+    assert [(r["id"], r["preset"]) for r in last["presets"]] == [("p1", None)]
+
+
+def test_the_servers_presets_show_on_the_desktop_and_stay_without_it(client, signed_in, paired):
+    paired.presets = {"p9": preset_row("p9", "From the server")}
+    assert client.get("/milkdrop-presets").json() == {
+        "presets": [{"id": "p9", "name": "From the server"}]
+    }
+    paired.fail = httpx.ConnectError("down")
+    assert client.get("/milkdrop-presets/p9").json()["preset"] == PRESET
+
+
+def test_pairing_sends_the_presets_only_this_desktop_has(signed_in, server):
+    milkdrop_presets.merge(ALICE, [preset_row("here"), preset_row("both", updated_at=10.0)])
+    server.presets = {"both": preset_row("both", updated_at=10.0)}
+    server_link.pair(ALICE, ALICE_SETTINGS, URL, "the-key")
+    assert list(server_link._read()["pending_milkdrop_presets"]) == ["here"]
+
+
+def test_a_server_from_before_presets_holds_nothing_else_up(client, signed_in, paired):
+    paired.presets = None
+    client.put("/milkdrop-presets/p1", json={"name": "Mine", "preset": PRESET})
+    client.put("/lyrics-offsets", json={"offsets": {"s1": 1.5}})
+    assert server_link.send_once() is True
+    assert paired.sent("PATCH", "/lyrics-offsets") == [{"offsets": {"s1": 1.5}}]
+    # Kept for when the server learns about presets.
+    assert list(server_link._read()["pending_milkdrop_presets"]) == ["p1"]
+    assert client.get("/milkdrop-presets").json()["presets"] == [{"id": "p1", "name": "Mine"}]

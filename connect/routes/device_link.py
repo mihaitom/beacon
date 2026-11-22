@@ -15,6 +15,7 @@ to the desktop app and change with it.
 import asyncio
 import json
 import logging
+import re
 from collections import Counter
 from typing import Annotated, Literal
 
@@ -31,6 +32,7 @@ from core import (
     lyrics_offsets,
     mdns,
     media_login,
+    milkdrop_presets,
     now_playing,
     play_history,
     server_link,
@@ -50,6 +52,7 @@ from routes import player_desktop, player_server
 from routes.coverart import cover_image
 from routes.lyrics import auto_for_party
 from routes.lyrics_offsets import OffsetsPatch
+from routes.milkdrop_presets import PRESET_ID_PATTERN, PresetRow
 from routes.now_playing import NowPlayingReport, accept
 from routes.play_history import Listen, Milestones, Period, _own
 from routes.player_commands import LIBRARY_COMMANDS, TRANSPORT_COMMANDS
@@ -93,6 +96,9 @@ _MAX_LISTENS_BODY = 4 * 1024 * 1024
 _MAX_SETTINGS_BODY = 64 * 1024
 _MAX_MILESTONES_BODY = 1024
 _MAX_OFFSETS_BODY = 256 * 1024
+# A batch of core/server_link.py's _PRESET_BATCH_SIZE presets at their
+# largest, as far as the Docker image's nginx lets through anyway.
+_MAX_PRESETS_BODY = 4 * 1024 * 1024
 _MAX_REPORT_BODY = 16 * 1024
 _MAX_COMMAND_BODY = 8 * 1024
 _MAX_SOURCES_BODY = 64 * 1024
@@ -1020,6 +1026,36 @@ def get_lyrics_offsets(owner: KeyOwner = _syncing) -> dict:
 async def patch_lyrics_offsets(request: Request, owner: KeyOwner = _syncing) -> dict:
     patch = await _parsed(request, OffsetsPatch, _MAX_OFFSETS_BODY)
     await asyncio.to_thread(lyrics_offsets.save, owner.account, patch.offsets)
+    return {"status": "ok"}
+
+
+_PRESET_ID = re.compile(PRESET_ID_PATTERN)
+
+
+class PresetsPatch(BaseModel):
+    presets: list[PresetRow] = Field(max_length=10)
+
+
+@router.get("/milkdrop-presets")
+def get_milkdrop_presets(owner: KeyOwner = _syncing) -> dict:
+    """Every preset with its stamp, deleted ones included, without the
+    contents - the desktop asks for those it lacks by id."""
+    return {"presets": milkdrop_presets.index(owner.account)}
+
+
+@router.get("/milkdrop-presets/rows")
+def get_milkdrop_preset_rows(ids: str = "", owner: KeyOwner = _syncing) -> dict:
+    wanted = [pid for pid in ids.split(",") if pid][:10]
+    if any(not _PRESET_ID.fullmatch(pid) for pid in wanted):
+        raise HTTPException(status_code=422, detail="Invalid request")
+    return {"presets": milkdrop_presets.rows(owner.account, wanted)}
+
+
+@router.patch("/milkdrop-presets")
+async def patch_milkdrop_presets(request: Request, owner: KeyOwner = _syncing) -> dict:
+    patch = await _parsed(request, PresetsPatch, _MAX_PRESETS_BODY)
+    rows = [row.model_dump() for row in patch.presets]
+    await asyncio.to_thread(milkdrop_presets.merge, owner.account, rows)
     return {"status": "ok"}
 
 

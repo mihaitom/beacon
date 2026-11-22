@@ -38,6 +38,7 @@ import { useEqualizerStore } from '@/stores/equalizer'
 import { useLastfmStore } from '@/stores/lastfm'
 import { useListenbrainzStore } from '@/stores/listenbrainz'
 import { useFanartStore } from '@/stores/fanart'
+import { useMilkdropStore } from '@/stores/milkdrop'
 import { useDrawersStore } from '@/stores/drawers'
 import {
   useLyricsProvidersStore,
@@ -133,6 +134,10 @@ async function pullAccountSettings(): Promise<void> {
       useFanartStore().setEnabled(remote.fanartEnabled)
     }
 
+    if (remote.milkdrop && typeof remote.milkdrop === 'object') {
+      useMilkdropStore().adopt(remote.milkdrop)
+    }
+
     if (Array.isArray(remote.songColumns)) {
       const known = new Set<string>(OPTIONAL_SONG_COLUMNS.map((column) => column.key))
       const valid = remote.songColumns.filter((key): key is SongColumnKey => known.has(key))
@@ -207,6 +212,7 @@ export function initAccountScopedStores(): void {
     useLastfmStore().reloadForAccount()
     useListenbrainzStore().reloadForAccount()
     useFanartStore().reloadForAccount()
+    useMilkdropStore().reloadForAccount()
     useGroupVolumeStore().reloadForAccount()
     // Needs the signed-in session, and which ones this session may
     // configure differs per account.
