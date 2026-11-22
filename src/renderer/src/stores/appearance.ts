@@ -122,6 +122,11 @@ export function applyThemePreference(theme: ThemeInstance, preference: ThemePref
   }
   void theme.change(preference.theme)
   applyThemeAccents(preference)
+  // A colour Now Playing has lent stays lent: this runs on every change to
+  // the store, a list of themes arriving from the account included.
+  if (borrowed !== null) {
+    borrowAccent(theme.themes.value as unknown as ThemeColorsTable, preference, borrowed)
+  }
 }
 
 /** The accents the canvas components and Now Playing's fallbacks use,
@@ -149,6 +154,9 @@ export function initTheme(
 // read there, the same floor the presets' own accents keep.
 const BORROWED_ACCENT_CONTRAST = 4.5
 
+/** What borrowAccent() last lent, for applyThemePreference() to lend again. */
+let borrowed: string | null = null
+
 type ThemeColorsTable = Record<string, { colors: Record<string, unknown> }>
 
 /**
@@ -166,6 +174,7 @@ export function borrowAccent(
   preference: ThemePreference,
   color: string | null,
 ): void {
+  borrowed = color
   const definitions = themeDefinitions(preference)
   const night = nightTheme(preference)
   for (const name of new Set([preference.theme, night, dayTheme(preference)])) {
