@@ -88,6 +88,15 @@
                 {{ $t('milkdrop.uploaded') }}
               </span>
             </button>
+            <span
+              v-if="entry.demanding"
+              role="img"
+              class="milkdrop-menu__demanding"
+              :title="$t('milkdrop.demanding')"
+              :aria-label="$t('milkdrop.demanding')"
+            >
+              <v-icon icon="mdi-expansion-card" size="small" />
+            </span>
             <v-btn
               v-if="entry.custom"
               icon="mdi-delete-outline"
@@ -362,6 +371,13 @@ export default {
   outline: 2px solid rgb(var(--v-theme-primary));
   outline-offset: -2px;
   border-radius: 6px;
+}
+
+.milkdrop-menu__demanding {
+  display: inline-flex;
+  flex: none;
+  padding: 0 8px;
+  color: rgba(var(--v-theme-on-surface), var(--v-medium-emphasis-opacity));
 }
 
 .milkdrop-menu__status {

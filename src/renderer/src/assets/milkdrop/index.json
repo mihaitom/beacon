@@ -9,11 +9,13 @@
   },
   {
     "slug": "beacon-fractal-zoom",
-    "name": "Beacon - Fractal Zoom"
+    "name": "Beacon - Fractal Zoom",
+    "demanding": true
   },
   {
     "slug": "beacon-milky-way",
-    "name": "Beacon - Milky Way"
+    "name": "Beacon - Milky Way",
+    "demanding": true
   },
   {
     "slug": "an-adamfx-n-martin-infusion-2-flexi-why-the-sky-looks-diffrent-today-adamfx-n-ma",
@@ -29,7 +31,8 @@
   },
   {
     "slug": "eo-s-glowsticks-v2-05-and-proton-lights-krash-s-beat-code-phat-remix02b",
-    "name": "Eo.S. - glowsticks v2 05 and proton lights (+Krash\u2032s beat code) _Phat_remix02b"
+    "name": "Eo.S. - glowsticks v2 05 and proton lights (+Krash′s beat code) _Phat_remix02b",
+    "demanding": true
   },
   {
     "slug": "flexi-geiss-pogo-cubes-vs-tokamak-vs-game-of-life-stahls-jelly-4-5-finish",
@@ -73,7 +76,8 @@
   },
   {
     "slug": "martin-witchcraft-reloaded",
-    "name": "martin - witchcraft reloaded"
+    "name": "martin - witchcraft reloaded",
+    "demanding": true
   },
   {
     "slug": "martin-shadow-harlequins-shape-code-fata-morgana",
@@ -109,7 +113,8 @@
   },
   {
     "slug": "sawtooth-grin-roam",
-    "name": "sawtooth grin roam"
+    "name": "sawtooth grin roam",
+    "demanding": true
   },
   {
     "slug": "tonymilkdrop-leonardo-da-vinci-s-balloon-flexi-merry-go-round-techstyle",

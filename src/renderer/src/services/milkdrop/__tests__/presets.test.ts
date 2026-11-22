@@ -33,7 +33,7 @@ describe('pickPresetKey', () => {
 })
 
 describe('presetPool', () => {
-  const all = ['a', 'b', 'c'].map((key) => ({ key, name: key, custom: false }))
+  const all = ['a', 'b', 'c'].map((key) => ({ key, name: key, custom: false, demanding: false }))
 
   it('is the preferred presets that still exist', () => {
     expect(presetPool(all, ['c', 'gone', 'a'])).toEqual(['a', 'c'])

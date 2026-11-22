@@ -92,6 +92,16 @@ describe('MilkdropDialog', () => {
     expect(wrapper.text()).not.toContain('My upload')
   })
 
+  it('marks the presets that are hard on the graphics card, and only those', async () => {
+    const wrapper = await open()
+    const heavy = BUILTIN_PRESETS.find((entry) => entry.demanding)!
+    const light = BUILTIN_PRESETS.find((entry) => !entry.demanding)!
+    const mark = (name: string) => row(wrapper, name).find('[role=img][aria-label]')
+    expect(mark(heavy.name).exists()).toBe(true)
+    expect(mark(light.name).exists()).toBe(false)
+    expect(mark('My upload').exists()).toBe(false)
+  })
+
   it('says which uploaded files could not be read', async () => {
     vi.mocked(presetFromFile).mockImplementation(async (name) => {
       if (name === 'bad.milk') throw new Error('nope')

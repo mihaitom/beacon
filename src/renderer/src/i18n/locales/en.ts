@@ -729,6 +729,7 @@ export default {
     search: 'Search presets',
     prefer: 'Pick {name} automatically',
     uploaded: 'Uploaded',
+    demanding: 'Hard on the graphics card',
     delete: 'Delete preset',
     noMatch: 'No preset matches.',
     upload: 'Upload presets',

@@ -111,6 +111,8 @@ export const useMilkdropStore = defineStore('milkdrop', {
         key: customPresetKey(preset.id),
         name: preset.name,
         custom: true,
+        // Not known without measuring it.
+        demanding: false,
       }))
       return [...custom, ...BUILTIN_PRESETS]
     },

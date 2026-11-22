@@ -26,6 +26,8 @@ export interface MilkdropPresetEntry {
   key: string
   name: string
   custom: boolean
+  /** Whether it is hard on the graphics card - see index.json. */
+  demanding: boolean
 }
 
 const BUILTIN_PREFIX = 'builtin:'
@@ -41,10 +43,20 @@ function builtinFile(slug: string): (() => Promise<MilkdropPresetFile>) | undefi
   return Object.entries(PRESET_FILES).find(([path]) => path.endsWith(`/${slug}.json`))?.[1]
 }
 
-// In index.json's order: Beacon's own first, the rest by name.
+// In index.json's order: Beacon's own first, the rest by name. `demanding`
+// there marks the ones that took over 4 ms a frame at 2560x1440 on a
+// current graphics card (Nov 2026), where the rest took 0.8 to 3.7 -
+// measured at their most expensive, a Milky Way nebula or a Fractal Zoom
+// at full depth. On a weaker card that is the difference between smooth
+// and a lowered resolution.
 export const BUILTIN_PRESETS: readonly MilkdropPresetEntry[] = (
-  BUILTIN_INDEX as { slug: string; name: string }[]
-).map(({ slug, name }) => ({ key: BUILTIN_PREFIX + slug, name, custom: false }))
+  BUILTIN_INDEX as { slug: string; name: string; demanding?: boolean }[]
+).map(({ slug, name, demanding }) => ({
+  key: BUILTIN_PREFIX + slug,
+  name,
+  custom: false,
+  demanding: demanding === true,
+}))
 
 export function customPresetKey(id: string): string {
   return CUSTOM_PREFIX + id

@@ -89,7 +89,12 @@ describe('the Milkdrop store', () => {
     vi.mocked(listMilkdropPresets).mockResolvedValue([{ id: 'p1', name: 'Mine' }])
     const store = useMilkdropStore()
     await store.loadCustom()
-    expect(store.presets[0]).toEqual({ key: 'custom:p1', name: 'Mine', custom: true })
+    expect(store.presets[0]).toEqual({
+      key: 'custom:p1',
+      name: 'Mine',
+      custom: true,
+      demanding: false,
+    })
     expect(store.presets.length).toBeGreaterThan(1)
   })
 

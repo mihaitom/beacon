@@ -735,6 +735,7 @@ export default {
     search: 'Presets durchsuchen',
     prefer: '{name} automatisch wählen',
     uploaded: 'Hochgeladen',
+    demanding: 'Fordert die Grafikkarte',
     delete: 'Preset löschen',
     noMatch: 'Kein Preset passt.',
     upload: 'Presets hochladen',

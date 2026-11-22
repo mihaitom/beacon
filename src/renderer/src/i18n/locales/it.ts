@@ -734,6 +734,7 @@ export default {
     search: 'Cerca preset',
     prefer: 'Scegli {name} automaticamente',
     uploaded: 'Caricato',
+    demanding: 'Impegnativo per la scheda grafica',
     delete: 'Elimina preset',
     noMatch: 'Nessun preset corrisponde.',
     upload: 'Carica preset',

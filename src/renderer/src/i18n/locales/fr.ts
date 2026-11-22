@@ -741,6 +741,7 @@ export default {
     search: 'Rechercher des presets',
     prefer: 'Choisir {name} automatiquement',
     uploaded: 'Importé',
+    demanding: 'Exigeant pour la carte graphique',
     delete: 'Supprimer le preset',
     noMatch: 'Aucun preset ne correspond.',
     upload: 'Importer des presets',

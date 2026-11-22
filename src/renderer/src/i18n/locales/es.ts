@@ -740,6 +740,7 @@ export default {
     search: 'Buscar presets',
     prefer: 'Elegir {name} automáticamente',
     uploaded: 'Subido',
+    demanding: 'Exigente con la tarjeta gráfica',
     delete: 'Eliminar preset',
     noMatch: 'Ningún preset coincide.',
     upload: 'Subir presets',
