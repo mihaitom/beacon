@@ -24,6 +24,7 @@
           :is="source.milkdropComponent"
           v-if="source.milkdrop.active && source.milkdropComponent"
           :key="source.milkdrop.mode"
+          class="now-playing__milkdrop"
           :playing="source.milkdrop.playing"
           :preset="source.milkdrop.preset"
           :cover-art-id="source.milkdrop.coverArtId"
@@ -479,6 +480,23 @@ export default {
   pointer-events: auto;
 }
 
+/* The track text's type scale, so the desktop stage can leave room for it
+ * under the artwork (its artSize) with the same numbers the text is set
+ * in. The container units resolve where the sizes are used: inside the
+ * stage for the track text, inside the Milkdrop picture (as wide as the
+ * stage, and a container of its own) for what a preset names. The title
+ * follows the stage; artist and album follow the title, so a stage that
+ * shrinks the title shrinks them with it rather than leaving the artist
+ * nearly as large. Not on .now-playing as a whole: the sideways phone's
+ * text column sets its own sizes and must not pick these up. */
+.now-playing__stage,
+.now-playing__milkdrop {
+  --now-playing-eyebrow-size: clamp(0.65rem, min(1.6cqw, 2cqh), 0.85rem);
+  --now-playing-title-size: clamp(1.1rem, min(2.3cqw, 9cqh), 2.75rem);
+  --now-playing-artist-size: clamp(0.9rem, calc(var(--now-playing-title-size) * 0.55), 1.5rem);
+  --now-playing-album-size: clamp(0.75rem, calc(var(--now-playing-title-size) * 0.36), 1rem);
+}
+
 /* Row 1 of .now-playing's grid (minmax(0, 1fr), see above) — takes up
  * exactly "whatever's left" after the visualizer row has taken its share,
  * shrinkable below its own content's natural size like any minmax(0, ...)
@@ -495,16 +513,6 @@ export default {
   min-height: 0;
   container-type: size;
   container-name: now-playing-stage;
-  /* The track text's type scale, here so the desktop stage can leave room
-   * for it under the artwork (its artSize) with the same numbers the text
-   * is set in. The container units resolve where the sizes are used, all
-   * inside this container. The title follows the stage; artist and album
-   * follow the title, so a stage that shrinks the title shrinks them with
-   * it rather than leaving the artist nearly as large. */
-  --now-playing-eyebrow-size: clamp(0.65rem, min(1.6cqw, 2cqh), 0.85rem);
-  --now-playing-title-size: clamp(1.1rem, min(2.3cqw, 9cqh), 2.75rem);
-  --now-playing-artist-size: clamp(0.9rem, calc(var(--now-playing-title-size) * 0.55), 1.5rem);
-  --now-playing-album-size: clamp(0.75rem, calc(var(--now-playing-title-size) * 0.36), 1rem);
   display: flex;
   align-items: center;
   justify-content: center;

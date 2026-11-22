@@ -5,16 +5,13 @@
   <div class="milkdrop">
     <canvas ref="canvas" class="milkdrop__canvas" :class="{ 'milkdrop__canvas--ready': ready }" />
     <div class="milkdrop__corner">
-      <div
-        class="milkdrop__label"
-        :class="[
-          labelPlace ? 'display-title milkdrop__label--place' : 'text-title-large',
-          { 'milkdrop__label--visible': labelVisible },
-        ]"
-      >
-        {{ labelText }}
-      </div>
-      <div v-if="zoomText" class="milkdrop__zoom text-title-medium">{{ zoomText }}</div>
+      <!-- Keyed by its text: a new one fades in only once the last is gone. -->
+      <transition name="milkdrop-label" mode="out-in">
+        <div v-if="labelVisible" :key="labelText" class="milkdrop__label display-title">
+          {{ labelText }}
+        </div>
+      </transition>
+      <div v-if="zoomText" class="milkdrop__zoom">{{ zoomText }}</div>
     </div>
   </div>
 </template>
@@ -125,7 +122,6 @@ export default {
     return {
       ready: false,
       labelText: '',
-      labelPlace: false,
       labelVisible: false,
       zoomText: null as string | null,
       rt: markRaw<Runtime>({
@@ -351,7 +347,6 @@ export default {
     },
     showLabel(caption: MilkdropCaption, isName: boolean): void {
       this.labelText = caption.text
-      this.labelPlace = caption.place === true
       this.labelVisible = true
       this.rt.labelIsName = isName
       clearTimeout(this.rt.labelTimer)
@@ -375,6 +370,9 @@ export default {
   position: absolute;
   inset: 0;
   pointer-events: none;
+  /* What Now Playing's type scale measures against here (see its
+   * --now-playing-title-size), as the title does against the stage. */
+  container-type: size;
 }
 
 .milkdrop__canvas {
@@ -411,21 +409,25 @@ export default {
     0 0 12px rgba(0, 0, 0, 0.5);
 }
 
-.milkdrop__label {
+/* Half a second each way: a change, out and in, takes one. */
+.milkdrop-label-enter-active,
+.milkdrop-label-leave-active {
+  transition: opacity 0.5s ease;
+}
+
+.milkdrop-label-enter-from,
+.milkdrop-label-leave-to {
   opacity: 0;
-  transition: opacity 0.6s ease;
 }
 
-.milkdrop__label--visible {
-  opacity: 1;
-}
-
-/* A place arrived at: named in the song title's serif, a step below it. */
-.milkdrop__label--place {
-  font-size: 2rem;
+/* Set like the song title, at its size; the fallback is for a picture
+ * outside Now Playing. */
+.milkdrop__label {
+  font-size: var(--now-playing-title-size, 2rem);
 }
 
 .milkdrop__zoom {
+  font-size: var(--now-playing-album-size, 1rem);
   font-variant-numeric: tabular-nums;
 }
 </style>

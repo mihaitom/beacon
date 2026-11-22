@@ -24,7 +24,7 @@ vi.mock('@/services/milkdrop/presets', () => ({
       : {
           name: 'Beacon - Fractal Zoom',
           preset: { warp: '', comp: '' },
-          captions: [{ text: 'Mandelbrot set' }, { text: 'Seahorse Valley', place: true }],
+          captions: [{ text: 'Mandelbrot set' }, { text: 'Seahorse Valley' }],
           reportsZoom: true,
         },
 }))
@@ -47,8 +47,8 @@ async function frames() {
 }
 
 function label(wrapper: Awaited<ReturnType<typeof mountPlaying>>) {
-  const element = wrapper.get('.milkdrop__label')
-  return element.classes().includes('milkdrop__label--visible') ? element.text() : null
+  const element = wrapper.find('.milkdrop__label')
+  return element.exists() ? element.text() : null
 }
 
 describe('MilkdropVisualizer captions', () => {
@@ -90,8 +90,6 @@ describe('MilkdropVisualizer captions', () => {
     qs.q32 = 2
     await frames()
     expect(label(wrapper)).toBe('Seahorse Valley')
-    // A place arrived at stands out from the rest.
-    expect(wrapper.get('.milkdrop__label').classes()).toContain('milkdrop__label--place')
     await vi.advanceTimersByTimeAsync(LABEL_MS)
     // Still asked for, but already shown.
     expect(label(wrapper)).toBeNull()

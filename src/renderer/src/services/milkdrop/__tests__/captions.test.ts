@@ -8,7 +8,7 @@ function after(qs: Record<string, unknown> | null): MilkdropVisualizer {
   } as unknown as MilkdropVisualizer
 }
 
-const CAPTIONS = [{ text: 'Mandelbrot set' }, { text: 'Seahorse Valley', place: true }]
+const CAPTIONS = [{ text: 'Mandelbrot set' }, { text: 'Seahorse Valley' }]
 
 describe('currentCaption', () => {
   it('reads the caption the last frame asked for, counting from 1', () => {

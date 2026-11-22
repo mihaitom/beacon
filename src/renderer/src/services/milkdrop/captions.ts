@@ -10,8 +10,6 @@ const ZOOM_Q = 'q31'
 
 export interface MilkdropCaption {
   text: string
-  /** A place arrived at, shown larger than the rest. */
-  place?: boolean
 }
 
 /** The part of Butterchurn's renderer this reads. Pinned to 2.6.7 like
