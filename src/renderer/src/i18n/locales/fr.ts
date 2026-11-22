@@ -379,6 +379,8 @@ export default {
     showArtworkLarge: 'Afficher la pochette en grand',
     showArtworkSmall: 'Afficher la pochette en petit',
     nextBackground: 'Afficher un autre arrière-plan',
+    toggleMilkdrop: 'Afficher Milkdrop à la place de l’arrière-plan',
+    nextMilkdropPreset: 'Préréglage Milkdrop suivant',
     toggleFullscreen: 'Basculer le plein écran',
     reducedMotionToastTitle: 'Visualiseur',
     reducedMotionToastMessage: 'Non affiché car votre système a activé « Réduire les animations ».',

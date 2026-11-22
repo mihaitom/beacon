@@ -19,7 +19,14 @@
         :source="source.backdrop.source"
         :is-artist="source.backdrop.isArtist"
         :scrim-style="source.ambientStyle"
-      />
+      >
+        <component
+          :is="source.milkdropComponent"
+          v-if="source.milkdrop.active && source.milkdropComponent"
+          :playing="source.milkdrop.playing"
+          :seed="source.milkdrop.seed"
+        />
+      </now-playing-backdrop>
       <!-- Wherever the text (and on a phone held sideways the controls) sits
        - low over the picture: darkened from the bottom up, more over a light
        - photo than a dark one. -->

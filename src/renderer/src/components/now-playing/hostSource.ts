@@ -1,4 +1,4 @@
-import { computed, markRaw, reactive } from 'vue'
+import { computed, defineAsyncComponent, markRaw, reactive } from 'vue'
 import ArtistCredit from '@/components/library/ArtistCredit.vue'
 import CoverArt from '@/components/library/CoverArt.vue'
 import RadioTitleLog from '@/components/radio/RadioTitleLog.vue'
@@ -36,6 +36,10 @@ export interface HostNowPlayingApi {
   visualizerSmoothing: number
   visualizerSample: () => number[] | null
   visualizerDebug: VisualizerFrame['debug'] | null
+  milkdropAvailable: boolean
+  milkdropActive: boolean
+  milkdropSeed: number
+  isPlaying: boolean
   showLyrics: boolean
   showVisualizer: boolean
   artworkHidden: boolean
@@ -59,6 +63,8 @@ export interface HostNowPlayingApi {
   toggleVisualizer(): void
   toggleArtwork(): void
   cycleArtistBackground(): void
+  toggleMilkdrop(): void
+  nextMilkdropPreset(): void
   searchTitleLog(query: string): void
   loadOlderTitles(): void
   setLyricsOffset(offset: number): void
@@ -168,6 +174,12 @@ export function hostNowPlayingSource(api: HostNowPlayingApi): NowPlayingSource {
       sample: () => api.visualizerSample(),
       debug: computed(() => api.visualizerDebug),
     }),
+    milkdrop: reactive({
+      available: computed(() => api.milkdropAvailable),
+      active: computed(() => api.milkdropActive),
+      playing: computed(() => api.isPlaying),
+      seed: computed(() => api.milkdropSeed),
+    }),
     capabilities: reactive({
       fullscreen: true,
       artistLinks: true,
@@ -190,6 +202,11 @@ export function hostNowPlayingSource(api: HostNowPlayingApi): NowPlayingSource {
     artistCreditComponent: markRaw(ArtistCredit),
     equalizerComponent: markRaw(EqualizerButton),
     lightsComponent: markRaw(LightsButton),
+    // Async, so Butterchurn and the presets' index stay out of the main
+    // bundle until somebody switches Milkdrop on.
+    milkdropComponent: markRaw(
+      defineAsyncComponent(() => import('@/components/milkdrop/MilkdropVisualizer.vue')),
+    ),
     ui: reactive({
       lyricsOpen: computed(() => api.showLyrics),
       showVisualizer: computed(() => api.showVisualizer),
@@ -202,6 +219,8 @@ export function hostNowPlayingSource(api: HostNowPlayingApi): NowPlayingSource {
     toggleVisualizer: () => api.toggleVisualizer(),
     toggleArtwork: () => api.toggleArtwork(),
     cycleBackground: () => api.cycleArtistBackground(),
+    toggleMilkdrop: () => api.toggleMilkdrop(),
+    nextMilkdropPreset: () => api.nextMilkdropPreset(),
     seek: (seconds: number) => api.seek(seconds),
     setLyricsOffset: (offset: number) => api.setLyricsOffset(offset),
     resetLyricsOffset: () => api.setLyricsOffset(0),

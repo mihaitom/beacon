@@ -390,6 +390,8 @@ export function useGuestNowPlayingSource(
       sample: sampleBands,
       debug: null,
     }),
+    // Needs this device's own audio, which a guest does not play.
+    milkdrop: { available: false, active: false, playing: false, seed: 0 },
     capabilities: reactive({
       fullscreen: true,
       artistLinks: false,
@@ -410,6 +412,7 @@ export function useGuestNowPlayingSource(
     artistCreditComponent: null,
     equalizerComponent: null,
     lightsComponent: null,
+    milkdropComponent: null,
     ui: reactive({
       lyricsOpen: computed(() => showLyrics.value),
       showVisualizer: computed(() => showVisualizer.value),
@@ -436,6 +439,8 @@ export function useGuestNowPlayingSource(
       const current = backdropIndex.value ?? store.snapshot?.backdrop_index ?? 0
       backdropIndex.value = (current + 1) % count
     },
+    toggleMilkdrop: () => {},
+    nextMilkdropPreset: () => {},
     seek: () => {},
     setLyricsOffset: () => {},
     resetLyricsOffset: () => {},

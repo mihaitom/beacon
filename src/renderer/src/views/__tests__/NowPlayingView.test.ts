@@ -15,6 +15,7 @@ import { useAutoplayStore } from '@/stores/autoplay'
 import { useAppearanceStore } from '@/stores/appearance'
 import NowPlayingView from '../NowPlayingView.vue'
 import NowPlayingPresentation from '@/components/now-playing/NowPlayingPresentation.vue'
+import MilkdropVisualizer from '@/components/milkdrop/MilkdropVisualizer.vue'
 import { getAudioEngine } from '@/services/audioEngine'
 import { getLogLevel, type LogLevel } from '@/services/connect/logLevel'
 import { getArtistArt } from '@/services/connect/fanart'
@@ -45,6 +46,17 @@ vi.mock('@/services/connect/logLevel', () => ({ getLogLevel: vi.fn() }))
 vi.mock('@/services/connect/fanart', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/connect/fanart')>()),
   getArtistArt: vi.fn().mockResolvedValue(null),
+}))
+
+// The real one brings WebGL, which jsdom has none of. Its props are what
+// these tests read.
+vi.mock('@/components/milkdrop/MilkdropVisualizer.vue', () => ({
+  __esModule: true,
+  default: {
+    name: 'MilkdropVisualizer',
+    props: ['playing', 'seed'],
+    template: '<div class="milkdrop-stub" />',
+  },
 }))
 
 vi.mock('@/services/lights/pictureReport', () => ({ reportForegroundPicture: vi.fn() }))
@@ -322,6 +334,17 @@ describe('NowPlayingView', () => {
       expect((wrapper.vm as unknown as { visualizerAvailable: boolean }).visualizerAvailable).toBe(
         true,
       )
+    })
+
+    it('offers no Milkdrop while casting, where this device plays nothing', async () => {
+      const { wrapper } = await mountWithSongFor()
+      const vm = wrapper.vm as unknown as { milkdropAvailable: boolean }
+      expect(vm.milkdropAvailable).toBe(true)
+
+      useConnectStore().status = statusWithTargets([{ name: 'Living Room', type: 'sonos' }])
+      await wrapper.vm.$nextTick()
+
+      expect(vm.milkdropAvailable).toBe(false)
     })
 
     it('is available casting to AirPlay only', async () => {
@@ -708,6 +731,75 @@ describe('NowPlayingView', () => {
       await wrapper.vm.$nextTick()
 
       expect(setItemSpy).toHaveBeenCalledWith('beacon.showVisualizer', 'false')
+    })
+  })
+
+  describe('Milkdrop', () => {
+    // Both switches persist, and the tests before these flip them.
+    beforeEach(() => localStorage.clear())
+
+    async function mountPlaying() {
+      const mounted = await mountView()
+      usePlaybackStore().setQueue([makeSong('a'), makeSong('b')], 0)
+      await flushPromises()
+      return mounted
+    }
+
+    function lavaLamp(wrapper: VueWrapper) {
+      return wrapper.find('.now-playing__toolbar .mdi-lava-lamp')
+    }
+
+    async function switchOn(wrapper: VueWrapper) {
+      await lavaLamp(wrapper).element.closest('button')!.click()
+      await flushPromises()
+    }
+
+    it('takes the place of the bars once switched on', async () => {
+      const { wrapper } = await mountPlaying()
+      const vm = wrapper.vm as unknown as { visualizerActive: boolean }
+      expect(vm.visualizerActive).toBe(true)
+      expect(wrapper.find('.milkdrop-stub').exists()).toBe(false)
+
+      await switchOn(wrapper)
+
+      expect(wrapper.find('.milkdrop-stub').exists()).toBe(true)
+      expect(vm.visualizerActive).toBe(false)
+      expect(wrapper.find('.now-playing__toolbar .mdi-equalizer').exists()).toBe(false)
+    })
+
+    it('is not offered without a local audio graph', async () => {
+      withAnalyser(false)
+      const { wrapper } = await mountPlaying()
+
+      expect(lavaLamp(wrapper).exists()).toBe(false)
+    })
+
+    it('gets a new preset with the next song and on request', async () => {
+      const { wrapper } = await mountPlaying()
+      await switchOn(wrapper)
+      const seed = () => wrapper.findComponent(MilkdropVisualizer).props('seed')
+      const random = vi.spyOn(Math, 'random')
+
+      random.mockReturnValue(0.25)
+      usePlaybackStore().setQueue([makeSong('b'), makeSong('c')], 0)
+      await flushPromises()
+      expect(seed()).toBe(0.25)
+
+      random.mockReturnValue(0.75)
+      await wrapper
+        .get('.now-playing__toolbar .mdi-shuffle-variant')
+        .element.closest('button')!
+        .click()
+      await flushPromises()
+      expect(seed()).toBe(0.75)
+    })
+
+    it('remembers being switched on', async () => {
+      const setItemSpy = vi.spyOn(Storage.prototype, 'setItem')
+      const { wrapper } = await mountPlaying()
+      await switchOn(wrapper)
+
+      expect(setItemSpy).toHaveBeenCalledWith('beacon.nowPlayingMilkdrop', 'true')
     })
   })
 

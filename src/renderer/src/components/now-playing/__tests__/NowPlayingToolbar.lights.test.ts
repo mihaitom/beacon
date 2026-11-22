@@ -25,6 +25,7 @@ function mountToolbar({ compact = true, component = true } = {}) {
     radio: null,
     ui: { lyricsOpen: false, showVisualizer: false, artworkHidden: false },
     visualizer: { available: false },
+    milkdrop: { available: false, active: false },
     backdrop: { isArtist: false, backgrounds: [] },
     capabilities: { equalizer: false, fullscreen: false, autoplay: false, debug: false },
     equalizerComponent: null,

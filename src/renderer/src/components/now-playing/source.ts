@@ -79,6 +79,20 @@ export interface NowPlayingVisualizer {
   debug: VisualizerFrame['debug'] | null
 }
 
+/** Milkdrop in place of the backdrop picture. Host only: it needs this
+ * device's own Web Audio graph, which a guest (and a cast) does not have. */
+export interface NowPlayingMilkdrop {
+  /** Whether it can run here at all - the toolbar's switch shows then. */
+  available: boolean
+  /** Switched on, and available: it is on screen. */
+  active: boolean
+  /** Frames only advance while the music plays. */
+  playing: boolean
+  /** In [0, 1): which preset to show; a new one per song and per press of
+   * the toolbar's next-preset button. */
+  seed: number
+}
+
 /** What a given host allows the presentation to do. The app turns everything
  * on; the guest page turns all of it off except fullscreen. */
 export interface NowPlayingCapabilities {
@@ -149,6 +163,7 @@ export interface NowPlayingSource {
   backdrop: NowPlayingBackdrop
   lyrics: NowPlayingLyrics
   visualizer: NowPlayingVisualizer
+  milkdrop: NowPlayingMilkdrop
   capabilities: NowPlayingCapabilities
   /** The component the artwork and the corner panel render for a cover.
    * The app's batched CoverArt (which imports the library store, so it must
@@ -180,6 +195,9 @@ export interface NowPlayingSource {
   /** The room lights' button and dialog (host only), on the phone: they
    * read the lights store. Shown only once connect has a bridge. */
   lightsComponent: Component | null
+  /** The Milkdrop canvas (host only), loaded on first use: it brings
+   * Butterchurn and reads the audio engine. */
+  milkdropComponent: Component | null
   ui: NowPlayingUi
   /** The corner stack: the current song, then the next one near the end of
    * a track. The source decides when the next one shows. */
@@ -191,6 +209,8 @@ export interface NowPlayingSource {
   toggleVisualizer(): void
   toggleArtwork(): void
   cycleBackground(): void
+  toggleMilkdrop(): void
+  nextMilkdropPreset(): void
   seek(seconds: number): void
   setLyricsOffset(seconds: number): void
   resetLyricsOffset(): void

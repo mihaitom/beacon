@@ -84,6 +84,18 @@ function readHideArtwork(): boolean {
   }
 }
 
+// Milkdrop in place of the backdrop picture - off until switched on, since
+// it is a lot more to look at than a photo.
+const MILKDROP_KEY = 'beacon.nowPlayingMilkdrop'
+
+function readMilkdrop(): boolean {
+  try {
+    return localStorage.getItem(accountScopedKey(MILKDROP_KEY)) === 'true'
+  } catch {
+    return false
+  }
+}
+
 // How long before the next track takes over the corner starts announcing it
 // (see nextUpActive) - long enough to read, short enough to still feel like
 // "about to change".
@@ -213,6 +225,9 @@ export default {
       // The user's wish to hide the artwork; only honored while there is a
       // Fanart.tv background to reveal (see artworkHidden).
       hideArtwork: readHideArtwork(),
+      milkdropEnabled: readMilkdrop(),
+      // Which preset Milkdrop shows - rerolled per song, see the watcher.
+      milkdropSeed: Math.random(),
     }
   },
   computed: {
@@ -455,7 +470,31 @@ export default {
     /** Not on a phone held sideways: its bars only read as a floor along
      * the screen's own bottom edge, which the controls take there. */
     visualizerActive() {
-      return this.hasPlayable && this.showVisualizer && this.visualizerAvailable && !this.landscape
+      return (
+        this.hasPlayable &&
+        this.showVisualizer &&
+        this.visualizerAvailable &&
+        !this.landscape &&
+        !this.milkdropActive
+      )
+    },
+    isPlaying(): boolean {
+      return this.playbackStore.isPlaying
+    },
+    /** Milkdrop reads this device's own Web Audio graph, so not while
+     * casting (the speaker plays, not this device) and not on a phone,
+     * which has none. Nor for anyone who has asked for less motion: it is
+     * nothing but motion. */
+    milkdropAvailable(): boolean {
+      if (this.playbackStore.isCasting || !getAudioEngine().hasAnalyser) return false
+      try {
+        return !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      } catch {
+        return true
+      }
+    },
+    milkdropActive(): boolean {
+      return this.milkdropEnabled && this.milkdropAvailable && this.hasPlayable
     },
     /** 'local' has a real <audio> element to tap (services/audioEngine.ts),
      * 'cast' gets real data from the backend instead
@@ -530,7 +569,7 @@ export default {
      * Fanart.tv artist background that is loaded and ready to show instead.
      * Without one the artwork stays - hiding it would leave nothing. */
     artworkHidden(): boolean {
-      return this.hideArtwork && Boolean(this.artistBackground)
+      return this.hideArtwork && (Boolean(this.artistBackground) || this.milkdropActive)
     },
     // A soft, wide wash filling the whole screen — the "room" the artwork
     // sits in reacts to whatever's playing, the same idea as the lighthouse
@@ -545,7 +584,9 @@ export default {
       // Over the artist's photo the darkening stays but the colour does
       // not: the cover's colour (or the amber fallback) over a sharp photo
       // reads as a colour cast. The glow behind the artwork keeps the light.
-      if (this.backdropIsArtist) return { background: 'rgba(var(--v-theme-background), 0.55)' }
+      if (this.backdropIsArtist || this.milkdropActive) {
+        return { background: 'rgba(var(--v-theme-background), 0.55)' }
+      }
       return {
         background: `radial-gradient(ellipse 65% 55% at 50% 32%, rgba(${this.colorTriplet}, 0.35), rgba(var(--v-theme-background), 0) 70%), rgba(var(--v-theme-background), 0.55)`,
       }
@@ -634,6 +675,18 @@ export default {
         // next launch.
       }
     },
+    milkdropEnabled(value: boolean) {
+      try {
+        localStorage.setItem(accountScopedKey(MILKDROP_KEY), String(value))
+      } catch {
+        // Non-critical, as above.
+      }
+    },
+    // A new preset per song: the change of picture marks the change of
+    // music, the way the artist background does.
+    'currentSong.id'() {
+      this.milkdropSeed = Math.random()
+    },
     hideArtwork(value: boolean) {
       try {
         localStorage.setItem(accountScopedKey(HIDE_ARTWORK_KEY), String(value))
@@ -711,6 +764,12 @@ export default {
     },
     toggleArtwork(): void {
       this.hideArtwork = !this.hideArtwork
+    },
+    toggleMilkdrop(): void {
+      this.milkdropEnabled = !this.milkdropEnabled
+    },
+    nextMilkdropPreset(): void {
+      this.milkdropSeed = Math.random()
     },
     loadOlderTitles(): void {
       void this.radioMeta.loadOlder()

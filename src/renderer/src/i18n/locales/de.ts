@@ -376,6 +376,8 @@ export default {
     showArtworkLarge: 'Album-Cover groß anzeigen',
     showArtworkSmall: 'Album-Cover klein anzeigen',
     nextBackground: 'Anderes Hintergrundbild anzeigen',
+    toggleMilkdrop: 'Milkdrop statt Hintergrundbild zeigen',
+    nextMilkdropPreset: 'Nächstes Milkdrop-Preset',
     toggleFullscreen: 'Vollbild umschalten',
     reducedMotionToastTitle: 'Visualizer',
     reducedMotionToastMessage:

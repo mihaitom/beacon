@@ -376,6 +376,8 @@ export default {
     showArtworkLarge: 'Mostra la copertina in grande',
     showArtworkSmall: 'Mostra la copertina in piccolo',
     nextBackground: 'Mostra un altro sfondo',
+    toggleMilkdrop: 'Mostra Milkdrop al posto dello sfondo',
+    nextMilkdropPreset: 'Preset Milkdrop successivo',
     toggleFullscreen: 'Attiva/disattiva schermo intero',
     reducedMotionToastTitle: 'Visualizzatore',
     reducedMotionToastMessage:

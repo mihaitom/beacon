@@ -9,6 +9,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 ### Added
 
 - While casting to several speakers, the volume slider in the player bar moves all of them at once, on the desktop, on phones, in Remote Control and in Home Assistant. The cast menu sets whether it puts every speaker on the same level or keeps the balance between them; on the same level, a speaker you add joins at the level of the others (suggested and refined by [@b-r-y](https://github.com/b-r-y), [#97](https://github.com/mihaitom/beacon/discussions/97), [#98](https://github.com/mihaitom/beacon/pull/98))
+- Now Playing can show a Milkdrop visualization in place of the background picture, with a new preset for every song, wherever the music plays on the device itself (desktop app and desktop browsers)
 - A desktop app connected to a Beacon server shares the external sources with it: the server's show up as tabs in the desktop app, an administrator's desktop sends its own to the server, and their tokens only come along if you confirm it for that device
 - Phones have the Hue lights in Now Playing too
 - Beacon can reach a media server behind a reverse proxy that only lets clients with a certificate through (mTLS): set `MEDIA_SERVER_CLIENT_CERT`, and it presents that certificate for everything it fetches from Navidrome, Jellyfin or Plex

@@ -377,6 +377,8 @@ export default {
     showArtworkLarge: 'Show the album artwork large',
     showArtworkSmall: 'Show the album artwork small',
     nextBackground: 'Show another background',
+    toggleMilkdrop: 'Show Milkdrop instead of the background',
+    nextMilkdropPreset: 'Next Milkdrop preset',
     toggleFullscreen: 'Toggle fullscreen',
     reducedMotionToastTitle: 'Visualizer',
     reducedMotionToastMessage: 'Not shown because your system has "Reduce Motion" turned on.',

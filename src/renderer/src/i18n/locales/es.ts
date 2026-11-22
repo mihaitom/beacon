@@ -380,6 +380,8 @@ export default {
     showArtworkLarge: 'Mostrar la portada en grande',
     showArtworkSmall: 'Mostrar la portada en pequeño',
     nextBackground: 'Mostrar otro fondo',
+    toggleMilkdrop: 'Mostrar Milkdrop en lugar del fondo',
+    nextMilkdropPreset: 'Siguiente preset de Milkdrop',
     toggleFullscreen: 'Alternar pantalla completa',
     reducedMotionToastTitle: 'Visualizador',
     reducedMotionToastMessage:
