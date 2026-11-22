@@ -8,7 +8,7 @@
       class="milkdrop__preset text-body-small"
       :class="{ 'milkdrop__preset--visible': labelVisible }"
     >
-      {{ presetName }}
+      {{ labelText }}
     </div>
   </div>
 </template>
@@ -31,6 +31,7 @@ import {
   withAccent,
 } from '@/services/milkdrop/textures'
 import { ORBIT_LENGTH, ORBIT_SAMPLER, orbitsFor } from '@/services/milkdrop/orbits'
+import { currentCaption } from '@/services/milkdrop/captions'
 import { nextStep } from '@/services/milkdrop/pacing'
 import { loadPresetFile } from '@/services/milkdrop/presets'
 
@@ -40,7 +41,7 @@ import { loadPresetFile } from '@/services/milkdrop/presets'
 const MAX_RENDER_EDGE = 1280
 // How long a new preset blends in from the last one.
 const BLEND_SECONDS = 2.7
-// How long the preset's name stays up after it changes.
+// How long the preset's name, or a caption, stays up.
 const LABEL_MS = 5000
 // Butterchurn's own frame size: what it reads from an analyser per frame,
 // and what connect sends per frame while casting.
@@ -64,6 +65,13 @@ interface Runtime {
   coverLoad: AbortController | null
   /** The preset on screen as loaded, to load again in a new accent. */
   presetData: MilkdropPreset | null
+  /** What the preset on screen can say about itself (see captions.ts),
+   * the caption it last asked for, and one waiting for the preset's name
+   * to go - the name comes first. */
+  captions: string[] | undefined
+  caption: string | null
+  pendingCaption: string | null
+  labelIsName: boolean
 }
 
 export default {
@@ -102,7 +110,7 @@ export default {
   data() {
     return {
       ready: false,
-      presetName: '',
+      labelText: '',
       labelVisible: false,
       rt: markRaw<Runtime>({
         visualizer: null,
@@ -115,6 +123,10 @@ export default {
         nextStepAt: 0,
         coverLoad: null,
         presetData: null,
+        captions: undefined,
+        caption: null,
+        pendingCaption: null,
+        labelIsName: false,
       }),
     }
   },
@@ -222,6 +234,11 @@ export default {
       } else {
         this.rt.visualizer.render()
       }
+      const caption = currentCaption(this.rt.visualizer, this.rt.captions)
+      if (caption !== this.rt.caption) {
+        this.rt.caption = caption
+        if (caption) this.showCaption(caption)
+      }
       this.ready = true
     },
     async showPreset(key: string | null): Promise<void> {
@@ -247,6 +264,8 @@ export default {
         this.rt.visualizer.loadPreset(withAccent(file.preset, this.accentColour), blend)
         this.rt.presetKey = key
         this.rt.presetData = file.preset
+        this.rt.captions = file.captions
+        this.rt.caption = null
         if (!this.playing) this.ready = false
         this.announce(file.name)
       } catch (error) {
@@ -300,11 +319,27 @@ export default {
       }
     },
     announce(name: string): void {
-      this.presetName = name
+      this.rt.pendingCaption = null
+      this.showLabel(name, true)
+    },
+    showCaption(caption: string): void {
+      if (this.rt.labelIsName) this.rt.pendingCaption = caption
+      else this.showLabel(caption, false)
+    },
+    showLabel(text: string, isName: boolean): void {
+      this.labelText = text
       this.labelVisible = true
+      this.rt.labelIsName = isName
       clearTimeout(this.rt.labelTimer)
       this.rt.labelTimer = setTimeout(() => {
+        const pending = this.rt.pendingCaption
+        this.rt.pendingCaption = null
+        if (pending) {
+          this.showLabel(pending, false)
+          return
+        }
         this.labelVisible = false
+        this.rt.labelIsName = false
       }, LABEL_MS)
     },
   },
@@ -331,12 +366,14 @@ export default {
 }
 
 /* Where the preset's name shows for a moment after it changes - so a good
- * one can be told apart from the rest. Bottom left, clear of the toolbar
- * (top right) and the debug overlays (top left). */
+ * one can be told apart from the rest - and what a preset says about
+ * itself. Bottom right, clear of the toolbar (top right) and the debug
+ * overlays (top left). */
 .milkdrop__preset {
   position: absolute;
-  left: 24px;
+  right: 24px;
   bottom: 24px;
+  text-align: right;
   max-width: calc(100% - 48px);
   color: rgba(255, 255, 255, 0.75);
   text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);

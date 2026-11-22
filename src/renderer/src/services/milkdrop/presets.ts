@@ -12,6 +12,9 @@ export interface MilkdropPresetFile {
   /** Points a preset of Beacon's own zooms into deeper than floats reach,
    * one row each of its `sampler_orbit` - see orbits.ts. */
   orbits?: OrbitTarget[]
+  /** What a preset of Beacon's own can say about what is on screen - see
+   * captions.ts. */
+  captions?: string[]
 }
 
 /** One preset to pick from: one Beacon ships (`builtin:<slug>`) or one the
