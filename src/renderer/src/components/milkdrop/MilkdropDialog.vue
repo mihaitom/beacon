@@ -50,89 +50,15 @@
         </div>
         <p class="setting__hint">{{ switchHint }}</p>
 
-        <template v-if="destinations.length">
-          <h3 class="section-title milkdrop-menu__heading">{{ $t('milkdrop.jumpTitle') }}</h3>
-          <!-- Nothing stays picked: the preset moves on from there by itself. -->
-          <v-select
-            :model-value="null"
-            :items="destinations"
-            item-title="label"
-            item-value="index"
-            :placeholder="$t('milkdrop.jumpPlaceholder')"
-            :aria-label="$t('milkdrop.jumpTitle')"
-            prepend-inner-icon="mdi-map-marker-outline"
-            variant="solo-filled"
-            density="compact"
-            flat
-            hide-details
-            class="milkdrop-menu__jump"
-            @update:model-value="jump"
-          />
-          <p class="setting__hint">{{ $t('milkdrop.jumpHint') }}</p>
-        </template>
-
-        <h3 class="section-title milkdrop-menu__heading">{{ $t('milkdrop.presetsTitle') }}</h3>
-        <p class="setting__hint milkdrop-menu__intro">{{ $t('milkdrop.presetsHint') }}</p>
-        <v-text-field
-          v-model="query"
-          :placeholder="$t('milkdrop.search')"
-          prepend-inner-icon="mdi-magnify"
-          variant="solo-filled"
-          density="compact"
-          hide-details
-          clearable
-          class="milkdrop-menu__search"
+        <milkdrop-preset-picker
+          ref="picker"
+          :entries="store.presets"
+          :current="current"
+          :preferred="settings.preferred"
+          @choose="store.choose($event)"
+          @toggle-preferred="store.togglePreferred($event)"
+          @remove="remove($event)"
         />
-        <ul class="beacon-panel beacon-panel--flush milkdrop-menu__list">
-          <li
-            v-for="entry in shown"
-            :key="entry.key"
-            class="milkdrop-menu__row"
-            :class="{ 'milkdrop-menu__row--current': entry.key === current }"
-            @click="store.choose(entry.key)"
-          >
-            <v-checkbox-btn
-              :model-value="settings.preferred.includes(entry.key)"
-              :aria-label="$t('milkdrop.prefer', { name: entry.name })"
-              density="compact"
-              class="milkdrop-menu__tick"
-              @click.stop
-              @update:model-value="store.togglePreferred(entry.key)"
-            />
-            <button
-              type="button"
-              class="milkdrop-menu__name"
-              :aria-current="entry.key === current ? 'true' : undefined"
-            >
-              <span class="text-body-medium">{{ entry.name }}</span>
-              <span v-if="entry.custom" class="text-body-small text-medium-emphasis">
-                {{ $t('milkdrop.uploaded') }}
-              </span>
-            </button>
-            <span
-              v-if="entry.demanding"
-              role="img"
-              class="milkdrop-menu__demanding"
-              :title="$t('milkdrop.demanding')"
-              :aria-label="$t('milkdrop.demanding')"
-            >
-              <v-icon icon="mdi-expansion-card" size="small" />
-            </span>
-            <v-btn
-              v-if="entry.custom"
-              icon="mdi-delete-outline"
-              variant="text"
-              density="comfortable"
-              size="small"
-              :title="$t('milkdrop.delete')"
-              :aria-label="$t('milkdrop.delete')"
-              @click.stop="remove(entry.key)"
-            />
-          </li>
-          <li v-if="shown.length === 0" class="milkdrop-menu__row text-medium-emphasis">
-            {{ $t('milkdrop.noMatch') }}
-          </li>
-        </ul>
         <p v-if="uploadMessage" class="setting__status milkdrop-menu__status">
           {{ uploadMessage }}
         </p>
@@ -161,12 +87,7 @@
 
 <script lang="ts">
 import { wheelStep } from '@/services/volumeWheel'
-import { MILKY_WAY_DESTINATIONS, MILKY_WAY_KEY, jumpTo } from '@/services/milkdrop/milkyWayJumps'
-import {
-  FRACTAL_ZOOM_DESTINATIONS,
-  FRACTAL_ZOOM_KEY,
-  jumpToScene,
-} from '@/services/milkdrop/fractalZoomJumps'
+import MilkdropPresetPicker from './MilkdropPresetPicker.vue'
 import {
   INTERVAL_STEPS,
   intervalStep,
@@ -174,10 +95,10 @@ import {
   type MilkdropSettings,
 } from '@/stores/milkdrop'
 import type { PropType } from 'vue'
-import type { MilkdropPresetEntry } from '@/services/milkdrop/presets'
 
 export default {
   name: 'MilkdropDialog',
+  components: { MilkdropPresetPicker },
   props: {
     modelValue: {
       type: Boolean,
@@ -197,7 +118,6 @@ export default {
   emits: ['update:modelValue'],
   data() {
     return {
-      query: '' as string | null,
       uploading: false,
       uploadMessage: '',
       lastInterval: INTERVAL_STEPS.length - 1,
@@ -214,25 +134,6 @@ export default {
     /** The timer on the slider's scale, which runs through INTERVAL_STEPS. */
     intervalIndex(): number {
       return intervalStep(this.settings.intervalSeconds)
-    },
-    shown(): MilkdropPresetEntry[] {
-      const query = (this.query ?? '').trim().toLocaleLowerCase()
-      if (!query) return this.store.presets
-      return this.store.presets.filter((entry) => entry.name.toLocaleLowerCase().includes(query))
-    },
-    /** The places the preset on screen can be sent to, for the two of
-     * Beacon's own that roam; none for any other. */
-    destinations(): { label: string; index: number; jump: () => void }[] {
-      const jumps =
-        this.current === MILKY_WAY_KEY
-          ? MILKY_WAY_DESTINATIONS.map((to) => ({ label: to.label, jump: () => jumpTo(to) }))
-          : this.current === FRACTAL_ZOOM_KEY
-            ? FRACTAL_ZOOM_DESTINATIONS.map((to) => ({
-                label: to.label,
-                jump: () => jumpToScene(to),
-              }))
-            : []
-      return jumps.map((to, index) => ({ ...to, index }))
     },
     switchHint(): string {
       if (this.settings.switchMode === 'fixed') return this.$t('milkdrop.switchFixedHint')
@@ -258,7 +159,7 @@ export default {
   methods: {
     /** Opens on the preset on screen, wherever it is in the list. */
     revealCurrent(): void {
-      document.querySelector('.milkdrop-menu__row--current')?.scrollIntoView?.({ block: 'center' })
+      ;(this.$refs.picker as { revealCurrent(): void } | undefined)?.revealCurrent()
     },
     setInterval(index: number): void {
       const step = INTERVAL_STEPS[Math.min(this.lastInterval, Math.max(0, Math.round(index)))]!
@@ -298,9 +199,6 @@ export default {
       } finally {
         this.uploading = false
       }
-    },
-    jump(index: number | null): void {
-      if (index != null) this.destinations[index]?.jump()
     },
     async remove(key: string): Promise<void> {
       try {
@@ -342,86 +240,6 @@ export default {
 
 .setting__hint {
   margin-top: 6px;
-}
-
-.milkdrop-menu__intro {
-  margin-bottom: 10px;
-}
-
-.milkdrop-menu__search {
-  margin-bottom: 10px;
-}
-
-.milkdrop-menu__list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.milkdrop-menu__row {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-  min-height: 44px;
-  padding: 0 6px 0 2px;
-  border-bottom: 1px solid var(--beacon-hairline);
-  cursor: pointer;
-  transition: background-color 0.15s ease;
-}
-
-.milkdrop-menu__row:last-child {
-  border-bottom: 0;
-}
-
-.milkdrop-menu__row:hover {
-  background: rgba(var(--v-theme-on-surface), 0.05);
-}
-
-/* The amber of a selected segment, with a bar at the edge so it still
- * reads as "this one" in a long list scrolled past quickly. */
-.milkdrop-menu__row--current,
-.milkdrop-menu__row--current:hover {
-  background: rgba(var(--v-theme-primary), 0.14);
-  box-shadow: inset 3px 0 0 rgb(var(--v-theme-primary));
-}
-
-.milkdrop-menu__row--current .milkdrop-menu__name {
-  color: rgb(var(--v-theme-primary));
-  font-weight: 600;
-}
-
-/* Vuetify's selection control grows to fill its row by default. */
-.milkdrop-menu__tick {
-  flex: none;
-}
-
-.milkdrop-menu__name {
-  display: flex;
-  flex: 1;
-  flex-direction: column;
-  align-items: flex-start;
-  min-width: 0;
-  padding: 8px 4px;
-  border: 0;
-  background: none;
-  font: inherit;
-  text-align: left;
-  color: inherit;
-  cursor: pointer;
-  overflow-wrap: anywhere;
-}
-
-.milkdrop-menu__name:focus-visible {
-  outline: 2px solid rgb(var(--v-theme-primary));
-  outline-offset: -2px;
-  border-radius: 6px;
-}
-
-.milkdrop-menu__demanding {
-  display: inline-flex;
-  flex: none;
-  padding: 0 8px;
-  color: rgba(var(--v-theme-on-surface), var(--v-medium-emphasis-opacity));
 }
 
 .milkdrop-menu__status {

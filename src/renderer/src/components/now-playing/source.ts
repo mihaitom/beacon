@@ -227,6 +227,8 @@ export interface NowPlayingSource {
   cycleBackground(): void
   toggleMilkdrop(): void
   nextMilkdropPreset(): void
+  /** Shows `key` now, as a pick from the Milkdrop menu. */
+  chooseMilkdropPreset(key: string): void
   seek(seconds: number): void
   setLyricsOffset(seconds: number): void
   resetLyricsOffset(): void

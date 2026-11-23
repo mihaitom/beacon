@@ -726,6 +726,7 @@ export default {
     presetsTitle: 'Presets',
     presetsHint:
       'Click a name to show it now. The ticked ones are the pool an automatic change picks from.',
+    presetsHintPlain: 'Click a name to show it now. With the next song another one follows.',
     search: 'Search presets',
     prefer: 'Pick {name} automatically',
     uploaded: 'Uploaded',

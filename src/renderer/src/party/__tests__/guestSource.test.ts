@@ -254,7 +254,7 @@ describe('guest Now Playing source', () => {
       expect(built.source.milkdrop.available).toBe(false)
     })
 
-    it('puts the song in the corner while it plays, as the app does', async () => {
+    it('puts the song in the corner and the bars away while it plays, as the app does', async () => {
       usePartyGuestStore().applySnapshot(snapshot({ casting: true, current_song: SONG }))
       const built = useGuestNowPlayingSource()
       dispose = built.dispose
@@ -263,6 +263,7 @@ describe('guest Now Playing source', () => {
       await nextTick()
       expect(built.source.ui.artworkHidden).toBe(true)
       expect(built.source.ambientStyle).toEqual({ background: 'none' })
+      expect(built.source.visualizer.active).toBe(false)
     })
 
     it('stays away for a guest who asked for less motion', () => {
@@ -287,6 +288,8 @@ describe('guest Now Playing source', () => {
       expect(first).toMatch(/^builtin:/)
       built.source.nextMilkdropPreset()
       expect(built.source.milkdrop.preset).not.toBe(first)
+      built.source.chooseMilkdropPreset('builtin:beacon-milky-way')
+      expect(built.source.milkdrop.preset).toBe('builtin:beacon-milky-way')
 
       // A new song, a new preset - the app's own default.
       const second = built.source.milkdrop.preset

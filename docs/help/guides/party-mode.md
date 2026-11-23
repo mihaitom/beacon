@@ -20,7 +20,7 @@ the mobile layout with a tab bar. The lyrics are the host's, with the match
 and sync offset the host chose, and while the host casts, the visualizer runs
 on the guests' screens too. On a computer a guest can also switch on Milkdrop
 in place of the background, with a preset of their own from the ones Beacon
-ships (a new one with every song, or on request); it costs about 60 KB/s more
+ships - a new one with every song, or picked from the list; it costs about 60 KB/s more
 per guest. They cannot pause, skip on their own, reorder or
 remove anything, pick a speaker or change the volume. The host starts it from
 the party button in the player bar, in the desktop app and in the web build

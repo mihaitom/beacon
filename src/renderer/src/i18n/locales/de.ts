@@ -732,6 +732,8 @@ export default {
     presetsTitle: 'Presets',
     presetsHint:
       'Ein Klick auf den Namen zeigt das Preset sofort. Die angehakten sind der Pool für den automatischen Wechsel.',
+    presetsHintPlain:
+      'Ein Klick auf den Namen zeigt das Preset sofort. Mit dem nächsten Song folgt ein anderes.',
     search: 'Presets durchsuchen',
     prefer: '{name} automatisch wählen',
     uploaded: 'Hochgeladen',

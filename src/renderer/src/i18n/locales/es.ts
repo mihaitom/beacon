@@ -737,6 +737,8 @@ export default {
     presetsTitle: 'Presets',
     presetsHint:
       'Haz clic en un nombre para mostrarlo ya. Los marcados son el grupo del que elige el cambio automático.',
+    presetsHintPlain:
+      'Haz clic en un nombre para mostrarlo ya. Con la siguiente canción llega otro.',
     search: 'Buscar presets',
     prefer: 'Elegir {name} automáticamente',
     uploaded: 'Subido',

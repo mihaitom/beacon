@@ -731,6 +731,8 @@ export default {
     presetsTitle: 'Preset',
     presetsHint:
       'Fai clic su un nome per mostrarlo subito. Quelli selezionati sono il gruppo da cui sceglie il cambio automatico.',
+    presetsHintPlain:
+      'Fai clic su un nome per mostrarlo subito. Con il brano successivo ne segue un altro.',
     search: 'Cerca preset',
     prefer: 'Scegli {name} automaticamente',
     uploaded: 'Caricato',

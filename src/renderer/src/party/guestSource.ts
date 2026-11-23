@@ -9,6 +9,7 @@ import {
   type WatchStopHandle,
 } from 'vue'
 import GuestCover from './components/GuestCover.vue'
+import GuestMilkdropButton from './components/GuestMilkdropButton.vue'
 import { i18n } from '@/i18n'
 import { extractDominantColor } from '@/services/colorExtractor'
 import { fanartImageWidth } from '@/services/connect/fanartWidth'
@@ -242,8 +243,10 @@ export function useGuestNowPlayingSource(
   const visualizerAvailable = computed(() =>
     Boolean((store.listening || store.snapshot?.casting) && song.value),
   )
+  // Not under Milkdrop, as in the app: the picture is the visualization.
   const visualizerActive = computed(
-    () => showVisualizer.value && visualizerAvailable.value && playing.value,
+    () =>
+      showVisualizer.value && visualizerAvailable.value && playing.value && !milkdropActive.value,
   )
   // As in the app (NowPlayingView's milkdropAvailable): wherever the bars
   // have a feed, but not on a phone, nor for anyone who asked for less
@@ -520,7 +523,7 @@ export function useGuestNowPlayingSource(
     milkdropComponent: markRaw(
       defineAsyncComponent(() => import('@/components/milkdrop/MilkdropVisualizer.vue')),
     ),
-    milkdropMenuComponent: null,
+    milkdropMenuComponent: markRaw(GuestMilkdropButton),
     ui: reactive({
       lyricsOpen: computed(() => showLyrics.value),
       showVisualizer: computed(() => showVisualizer.value),
@@ -552,6 +555,9 @@ export function useGuestNowPlayingSource(
       persist('milkdrop', showMilkdrop.value)
     },
     nextMilkdropPreset: pickMilkdropPreset,
+    chooseMilkdropPreset: (key: string) => {
+      milkdropPreset.value = key
+    },
     seek: () => {},
     setLyricsOffset: () => {},
     resetLyricsOffset: () => {},

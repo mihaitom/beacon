@@ -738,6 +738,8 @@ export default {
     presetsTitle: 'Presets',
     presetsHint:
       'Cliquez sur un nom pour l’afficher tout de suite. Les presets cochés forment la sélection du changement automatique.',
+    presetsHintPlain:
+      'Cliquez sur un nom pour l’afficher tout de suite. Un autre suit avec le morceau suivant.',
     search: 'Rechercher des presets',
     prefer: 'Choisir {name} automatiquement',
     uploaded: 'Importé',
