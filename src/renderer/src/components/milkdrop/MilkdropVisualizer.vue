@@ -25,20 +25,19 @@
 import { markRaw, type PropType } from 'vue'
 import type { MilkdropPreset, MilkdropVisualizer } from 'butterchurn'
 import { butterchurn } from '@/services/milkdrop/butterchurn'
-import { getAudioEngine } from '@/services/audioEngine'
-import { NoCoverArtError } from '@/services/connect/coverArtBatch'
 import { themeAccent } from '@/services/appAccent'
 import {
   ACCENT_SAMPLER,
   COVER_SAMPLER,
   accentPicture,
-  loadCoverPicture,
+  coverPicture,
   loadShippedPicture,
   placeholderPicture,
   setDataTexture,
   setTexture,
   shippedPicturesFor,
   withAccent,
+  type MilkdropCover,
 } from '@/services/milkdrop/textures'
 import { ORBIT_LENGTH, ORBIT_SAMPLER, orbitsFor } from '@/services/milkdrop/orbits'
 import { BlaKeeper } from '@/services/milkdrop/bla'
@@ -112,8 +111,8 @@ export default {
     },
     /** The song's cover, for the presets that work it into the picture
      * (see services/milkdrop/textures.ts). */
-    coverArtId: {
-      type: String as PropType<string | null>,
+    cover: {
+      type: Object as PropType<MilkdropCover | null>,
       default: null,
     },
     /** The colour Now Playing takes from the picture, while that is
@@ -122,10 +121,16 @@ export default {
       type: String as PropType<string | null>,
       default: null,
     },
-    /** While casting: the latest waveform connect sent, read every frame.
-     * Null plays from this device's own audio graph instead. */
+    /** While casting (or on the party guest page): the latest waveform
+     * connect sent, read every frame. Null plays from `analyser` instead. */
     waveform: {
       type: Function as PropType<(() => Uint8Array | null) | null>,
+      default: null,
+    },
+    /** This device's own audio graph, for playing without `waveform` - a
+     * function, so the guest page never imports the app's audio engine. */
+    analyser: {
+      type: Function as PropType<(() => AnalyserNode) | null>,
       default: null,
     },
   },
@@ -171,8 +176,8 @@ export default {
     preset(key: string | null) {
       void this.showPreset(key)
     },
-    coverArtId(id: string | null) {
-      void this.showCover(id)
+    'cover.key'() {
+      void this.showCover(this.cover)
     },
     accentColour() {
       this.showAccent()
@@ -183,7 +188,7 @@ export default {
     try {
       // Butterchurn wants an audio context even when it is handed its
       // samples: an offline one opens no audio device and plays nothing.
-      const analyser = this.waveform ? null : getAudioEngine().getAnalyser()
+      const analyser = this.waveform || !this.analyser ? null : this.analyser()
       const context = analyser?.context ?? new OfflineAudioContext(2, 1, 44100)
       const { width, height } = this.canvasSize()
       canvas.width = width
@@ -204,7 +209,7 @@ export default {
     this.rt.observer = new ResizeObserver(() => this.resize())
     this.rt.observer.observe(canvas)
     this.showAccent()
-    void this.showCover(this.coverArtId)
+    void this.showCover(this.cover)
     void this.showPreset(this.preset)
     this.rt.frame = requestAnimationFrame(this.tick)
   },
@@ -329,32 +334,30 @@ export default {
         )
       }
     },
-    async showCover(id: string | null): Promise<void> {
+    async showCover(cover: MilkdropCover | null): Promise<void> {
       this.rt.coverLoad?.abort()
       this.rt.coverLoad = null
       const visualizer = this.rt.visualizer
       if (!visualizer) return
-      if (!id) {
+      if (!cover) {
         setTexture(visualizer, COVER_SAMPLER, placeholderPicture())
         return
       }
       const load = new AbortController()
       this.rt.coverLoad = load
       try {
-        const picture = await loadCoverPicture(id, load.signal)
+        const blob = await cover.load(load.signal)
+        const picture = blob ? await coverPicture(blob) : null
         if (load.signal.aborted || this.rt.visualizer !== visualizer) {
-          picture.close()
+          picture?.close()
           return
         }
-        setTexture(visualizer, COVER_SAMPLER, picture)
-        picture.close()
+        // No art for this song: calm grey rather than the last song's cover.
+        setTexture(visualizer, COVER_SAMPLER, picture ?? placeholderPicture())
+        picture?.close()
       } catch (error) {
         if (load.signal.aborted) return
-        // No art for this song, or none reachable: calm grey rather than
-        // the last song's cover.
-        if (!(error instanceof NoCoverArtError)) {
-          console.error('[milkdrop] Cover failed:', id, error)
-        }
+        console.error('[milkdrop] Cover failed:', cover.key, error)
         setTexture(visualizer, COVER_SAMPLER, placeholderPicture())
       }
     },

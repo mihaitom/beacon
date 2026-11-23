@@ -1,6 +1,5 @@
 import type { MilkdropPreset } from 'butterchurn'
 import BUILTIN_INDEX from '@/assets/milkdrop/index.json'
-import { getMilkdropPreset } from '@/services/connect/milkdropPresets'
 import type { OrbitTarget } from '@/services/milkdrop/orbits'
 import type { MilkdropCaption } from '@/services/milkdrop/captions'
 
@@ -110,7 +109,11 @@ export async function loadPresetFile(key: string): Promise<MilkdropPresetFile> {
   if (id !== null) {
     let pending = customCache.get(id)
     if (!pending) {
-      pending = getMilkdropPreset(id).then(({ name, preset }) => ({ name, preset }))
+      // Loaded on demand: the party guest page shows only shipped presets
+      // and must not pull in the app's connect client.
+      pending = import('@/services/connect/milkdropPresets')
+        .then(({ getMilkdropPreset }) => getMilkdropPreset(id))
+        .then(({ name, preset }) => ({ name, preset }))
       customCache.set(id, pending)
       pending.catch(() => customCache.delete(id))
     }

@@ -40,6 +40,7 @@ import { reportForegroundPicture } from '@/services/lights/pictureReport'
 import { useLightsStore } from '@/stores/lights'
 import { useMilkdropStore } from '@/stores/milkdrop'
 import { isRetiredPreset, pickPresetKey, presetPool } from '@/services/milkdrop/presets'
+import { decodeWaveform } from '@/services/milkdrop/waveform'
 import type { Song } from '@/types/library'
 import type { MixTransition, NoBeatmixReason } from '@/services/connect/types'
 
@@ -89,14 +90,6 @@ function readHideArtwork(): boolean {
 // Milkdrop in place of the backdrop picture - off until switched on, since
 // it is a lot more to look at than a photo.
 const MILKDROP_KEY = 'beacon.nowPlayingMilkdrop'
-
-/** A frame's base64 waveform as the bytes Butterchurn reads. */
-function decodeWaveform(base64: string): Uint8Array {
-  const text = atob(base64)
-  const bytes = new Uint8Array(text.length)
-  for (let i = 0; i < text.length; i++) bytes[i] = text.charCodeAt(i)
-  return bytes
-}
 
 function readMilkdrop(): boolean {
   try {

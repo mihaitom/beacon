@@ -29,7 +29,16 @@ vi.mock('@/services/milkdrop/presets', () => ({
         },
 }))
 
+const textures = vi.hoisted(() => ({ set: vi.fn() }))
+
+vi.mock('@/services/milkdrop/textures', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/services/milkdrop/textures')>()),
+  setTexture: textures.set,
+  coverPicture: async (blob: Blob) => ({ fromBlob: blob, close: vi.fn() }),
+}))
+
 import MilkdropVisualizer from '../MilkdropVisualizer.vue'
+import { COVER_SAMPLER } from '@/services/milkdrop/textures'
 
 const LABEL_MS = 5000
 
@@ -116,5 +125,63 @@ describe('MilkdropVisualizer captions', () => {
     const wrapper = await mountPlaying('builtin:other')
     await frames()
     expect(wrapper.find('.milkdrop__zoom').exists()).toBe(false)
+  })
+})
+
+describe('MilkdropVisualizer cover', () => {
+  beforeEach(() => {
+    vi.stubGlobal('OfflineAudioContext', class {})
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    )
+    textures.set.mockReset()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  function coversShown(): unknown[] {
+    return textures.set.mock.calls.filter(([, name]) => name === COVER_SAMPLER).map((c) => c[2])
+  }
+
+  it("shows the song's cover, and the next song's once it changes", async () => {
+    const first = new Blob(['a'])
+    const second = new Blob(['b'])
+    const wrapper = mount(MilkdropVisualizer, {
+      props: {
+        playing: true,
+        preset: 'builtin:other',
+        waveform: () => null,
+        cover: { key: 'a', load: async () => first },
+      },
+    })
+    await flushPromises()
+    expect(coversShown().at(-1)).toMatchObject({ fromBlob: first })
+
+    await wrapper.setProps({ cover: { key: 'b', load: async () => second } })
+    await flushPromises()
+    expect(coversShown().at(-1)).toMatchObject({ fromBlob: second })
+    wrapper.unmount()
+  })
+
+  it('falls back to the calm stand-in for a song without art', async () => {
+    const wrapper = mount(MilkdropVisualizer, {
+      props: {
+        playing: true,
+        preset: 'builtin:other',
+        waveform: () => null,
+        cover: { key: 'a', load: async () => new Blob(['a']) },
+      },
+    })
+    await flushPromises()
+    await wrapper.setProps({ cover: { key: 'none', load: async () => null } })
+    await flushPromises()
+    expect(coversShown().at(-1)).toBeInstanceOf(HTMLCanvasElement)
+    wrapper.unmount()
   })
 })

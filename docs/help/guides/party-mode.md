@@ -18,7 +18,10 @@ logo and the title it is currently playing. On a computer, what's next and the
 search sit in a side panel; on a phone,
 the mobile layout with a tab bar. The lyrics are the host's, with the match
 and sync offset the host chose, and while the host casts, the visualizer runs
-on the guests' screens too. They cannot pause, skip on their own, reorder or
+on the guests' screens too. On a computer a guest can also switch on Milkdrop
+in place of the background, with a preset of their own from the ones Beacon
+ships (a new one with every song, or on request); it costs about 60 KB/s more
+per guest. They cannot pause, skip on their own, reorder or
 remove anything, pick a speaker or change the volume. The host starts it from
 the party button in the player bar, in the desktop app and in the web build
 alike.
@@ -81,8 +84,8 @@ roughly, not exactly, in step with each other. In a voice chat that shows
 when somebody reacts to a song: the host hears the moment first, the others
 a few seconds later. The song card, the lyrics and the visualizer follow
 what each guest hears, not what the host hears, so they stay with the music;
-what's next, the search and the skip vote stay live. The visualizer works
-even while the host plays locally.
+what's next, the search and the skip vote stay live. The visualizer and
+Milkdrop work even while the host plays locally.
 
 Each listener costs upload bandwidth on the Beacon server: about the chosen
 bitrate per guest, so ten guests at 192 kbit/s are around 2 Mbit/s. The

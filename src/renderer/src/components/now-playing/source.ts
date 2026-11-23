@@ -3,6 +3,7 @@ import type { RadioFaviconRequest } from '@/services/connect/radio'
 import type { RadioTitleEntry } from '@/services/connect/radioMetadata'
 import type { VisualizerFrame } from '@/services/connect/types'
 import type { LyricLine } from '@/services/lyrics/parseLrc'
+import type { MilkdropCover } from '@/services/milkdrop/textures'
 
 /** A song as the Now Playing presentation needs it - the app's own Song
  * trimmed to what is shown, plus a ready image URL for the guest page, which
@@ -79,8 +80,9 @@ export interface NowPlayingVisualizer {
   debug: VisualizerFrame['debug'] | null
 }
 
-/** Milkdrop in place of the backdrop picture. Host only: it needs this
- * device's own Web Audio graph, which a guest (and a cast) does not have. */
+/** Milkdrop in place of the backdrop picture. Its sound comes from this
+ * device's own Web Audio graph, or - while casting, and always on the
+ * party guest page - from the waveform connect sends. */
 export interface NowPlayingMilkdrop {
   /** Whether it can run here at all - the toolbar's switch shows then. */
   available: boolean
@@ -92,13 +94,16 @@ export interface NowPlayingMilkdrop {
    * until one is picked. */
   preset: string | null
   /** The song's cover, which Beacon's own presets work into the picture. */
-  coverArtId: string | null
+  cover: MilkdropCover | null
   /** Where the sound comes from: this device's own audio graph, or while
    * casting the waveform connect sends along with the bars' frames. */
   mode: 'local' | 'cast'
   /** The latest cast waveform, read every frame; null locally and until
    * the first frame arrives. */
   waveform: () => Uint8Array | null
+  /** This device's audio graph, for mode 'local'; null where there is none
+   * (the guest page). */
+  analyser: (() => AnalyserNode) | null
 }
 
 /** What a given host allows the presentation to do. The app turns everything

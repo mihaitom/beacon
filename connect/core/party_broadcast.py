@@ -48,6 +48,7 @@ from .audio_analysis import (
     _SMOOTHING_TIME_CONSTANT,
     _smooth_bands,
     analyze_pcm,
+    waveform_snapshot,
 )
 from .audio_fanout import AudioFanout
 from .ffmpeg import FFMPEG_BIN
@@ -399,6 +400,8 @@ class Broadcaster:
         # The visualizer, from the very PCM the stream is encoded from, so
         # every frame carries its exact stream time (see watch_bands()).
         self._band_watchers: list[asyncio.Queue] = []
+        # Those that want each frame's raw samples too (Milkdrop).
+        self._waveform_watchers: set[asyncio.Queue] = set()
         self._analysis = bytearray()  # mono s16le, not analysed yet
         self._analysis_time = 0.0  # stream time of its first sample
         self._smoothed: list[float] | None = None
@@ -443,6 +446,7 @@ class Broadcaster:
                 q.get_nowait()
             q.put_nowait(None)
         self._band_watchers.clear()
+        self._waveform_watchers.clear()
         logger.info("[party-broadcast] stopped")
         if self._on_stopped is not None:
             self._on_stopped(self)
@@ -461,11 +465,12 @@ class Broadcaster:
     def listeners(self) -> int:
         return self.fanout.listeners
 
-    def watch_bands(self) -> asyncio.Queue:
+    def watch_bands(self, waveform: bool = False) -> asyncio.Queue:
         """Visualizer frames as lists of (stream time, bands), one list per
-        stretch of the stream written. A guest shows each frame once it
-        hears that stream time, wherever its own buffer has it. None means
-        the broadcast has ended."""
+        stretch of the stream written - (stream time, bands, samples) with
+        `waveform`, see waveform_snapshot(). A guest shows each frame once
+        it hears that stream time, wherever its own buffer has it. None
+        means the broadcast has ended."""
         q: asyncio.Queue = asyncio.Queue(maxsize=_BANDS_QUEUE_BATCHES)
         if self.stopped:
             q.put_nowait(None)
@@ -475,11 +480,14 @@ class Broadcaster:
             self._analysis_time = self.stream_time
             self._smoothed = None
         self._band_watchers.append(q)
+        if waveform:
+            self._waveform_watchers.add(q)
         return q
 
     def unwatch_bands(self, q: asyncio.Queue) -> None:
         if q in self._band_watchers:
             self._band_watchers.remove(q)
+        self._waveform_watchers.discard(q)
 
     @property
     def band_watchers(self) -> int:
@@ -561,20 +569,23 @@ class Broadcaster:
         self._analysis += ((stereo[:, 0] + stereo[:, 1]) // 2).astype("<i2").tobytes()
         window = _FFT_SIZE * 2
         hop = _HOP_SIZE * 2
-        frames: list[tuple[float, list[float]]] = []
+        frames: list[tuple[float, list[float], bytes | None]] = []
         while len(self._analysis) >= window:
-            bands = analyze_pcm(bytes(self._analysis[:window]))
+            pcm_window = bytes(self._analysis[:window])
+            bands = analyze_pcm(pcm_window)
             bands = _smooth_bands(self._smoothed, bands, _SMOOTHING_TIME_CONSTANT)
             self._smoothed = bands
-            frames.append((self._analysis_time, bands))
+            wave = waveform_snapshot(pcm_window) if self._waveform_watchers else None
+            frames.append((self._analysis_time, bands, wave))
             del self._analysis[:hop]
             self._analysis_time += _HOP_SIZE / SAMPLE_RATE
         if not frames:
             return
+        plain = [(t, bands) for t, bands, _ in frames]
         for q in self._band_watchers:
             if q.full():
                 q.get_nowait()
-            q.put_nowait(frames)
+            q.put_nowait(frames if q in self._waveform_watchers else plain)
 
     # ── Following the host ───────────────────────────────────────────────
 

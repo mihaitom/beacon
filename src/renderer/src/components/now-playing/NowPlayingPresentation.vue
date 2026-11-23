@@ -27,9 +27,10 @@
           class="now-playing__milkdrop"
           :playing="source.milkdrop.playing"
           :preset="source.milkdrop.preset"
-          :cover-art-id="source.milkdrop.coverArtId"
+          :cover="source.milkdrop.cover"
           :accent="borrowedAccent"
           :waveform="source.milkdrop.mode === 'cast' ? source.milkdrop.waveform : null"
+          :analyser="source.milkdrop.analyser"
         />
       </now-playing-backdrop>
       <!-- Wherever the text (and on a phone held sideways the controls) sits

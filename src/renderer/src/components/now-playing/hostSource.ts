@@ -12,10 +12,29 @@ import type { Song, RadioStation } from '@/types/library'
 import type { RadioFaviconRequest } from '@/services/connect/radio'
 import type { RadioTitleEntry } from '@/services/connect/radioMetadata'
 import type { VisualizerFrame } from '@/services/connect/types'
+import { NoCoverArtError, fetchCoverArtBatched } from '@/services/connect/coverArtBatch'
+import { getAudioEngine } from '@/services/audioEngine'
+import { COVER_SIZE, type MilkdropCover } from '@/services/milkdrop/textures'
 import { FILE_SOURCE, useLyricsStore } from '@/stores/lyrics'
 import { lyricsPageUrl } from '@/services/lyrics/providerUrl'
 import { i18n } from '@/i18n'
 import type { NowPlayingPanel, NowPlayingRadio, NowPlayingSong, NowPlayingSource } from './source'
+
+/** A song's cover for Milkdrop, through the app's cover cache. */
+function milkdropCover(coverArtId: string | null): MilkdropCover | null {
+  if (!coverArtId) return null
+  return {
+    key: coverArtId,
+    async load(signal) {
+      try {
+        return await fetchCoverArtBatched(coverArtId, COVER_SIZE, signal)
+      } catch (error) {
+        if (error instanceof NoCoverArtError) return null
+        throw error
+      }
+    },
+  }
+}
 
 /** The slice of NowPlayingView the host source is built from. The view keeps
  * owning all of it (the stores, the Fanart.tv lookups, the colour
@@ -184,8 +203,9 @@ export function hostNowPlayingSource(api: HostNowPlayingApi): NowPlayingSource {
       playing: computed(() => api.isPlaying),
       preset: computed(() => api.milkdropPreset),
       mode: computed(() => api.milkdropMode),
-      coverArtId: computed(() => api.milkdropCoverArtId),
+      cover: computed(() => milkdropCover(api.milkdropCoverArtId)),
       waveform: () => api.milkdropWaveform(),
+      analyser: () => getAudioEngine().getAnalyser(),
     }),
     capabilities: reactive({
       fullscreen: true,

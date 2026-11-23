@@ -1,5 +1,4 @@
 import type { MilkdropPreset, MilkdropVisualizer } from 'butterchurn'
-import { fetchCoverArtBatched } from '@/services/connect/coverArtBatch'
 
 /** The pictures Beacon hands its own presets, each read in their shaders as
  * `uniform sampler2D sampler_<name>;`: the song's cover, and the theme's
@@ -71,17 +70,20 @@ export function setDataTexture(
   return true
 }
 
-/** A song's cover, square, ready for the GPU. Through the app's cover cache,
- * and as a bitmap made from the bytes rather than an <img> pointing at
- * connect: that one would be cross-origin in the desktop app, and WebGL
- * refuses to read a picture from another origin. A cover that is not
- * square is cut to its middle, as the app shows covers everywhere else,
- * rather than squeezed. */
-export async function loadCoverPicture(
-  coverArtId: string,
-  signal: AbortSignal,
-): Promise<ImageBitmap> {
-  const blob = await fetchCoverArtBatched(coverArtId, COVER_SIZE, signal)
+/** Where the song's cover comes from - the app's cover cache, or the party
+ * guest page's own route. `key` tells one cover from the next; `load`
+ * fetches it at about COVER_SIZE, or null where the song has none. */
+export interface MilkdropCover {
+  key: string
+  load(signal: AbortSignal): Promise<Blob | null>
+}
+
+/** A cover's bytes, square, ready for the GPU: a bitmap made from them
+ * rather than an <img> pointing at connect, which would be cross-origin in
+ * the desktop app, and WebGL refuses to read a picture from another
+ * origin. A cover that is not square is cut to its middle, as the app
+ * shows covers everywhere else, rather than squeezed. */
+export async function coverPicture(blob: Blob): Promise<ImageBitmap> {
   const full = await createImageBitmap(blob)
   try {
     const side = Math.min(full.width, full.height)

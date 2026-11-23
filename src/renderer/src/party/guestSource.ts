@@ -1,5 +1,6 @@
 import {
   computed,
+  defineAsyncComponent,
   markRaw,
   reactive,
   ref,
@@ -13,6 +14,9 @@ import { extractDominantColor } from '@/services/colorExtractor'
 import { fanartImageWidth } from '@/services/connect/fanartWidth'
 import { resampleBands } from '@/services/visualizerBands'
 import { visualizerBarColor } from '@/services/visualizerColor'
+import { BUILTIN_PRESETS, pickPresetKey } from '@/services/milkdrop/presets'
+import type { MilkdropCover } from '@/services/milkdrop/textures'
+import { decodeWaveform } from '@/services/milkdrop/waveform'
 import type { GuestRadio, GuestSong } from './api'
 import { BACKDROP_URL, LISTEN_VISUALIZER_URL, VISUALIZER_URL } from './api'
 import { usePartyGuestStore } from './store'
@@ -36,24 +40,55 @@ const SMOOTHING_CAST = 0.3
 const LISTEN_FRAMES_BEHIND_SECONDS = 1
 const LISTEN_FRAMES_AHEAD_SECONDS = 30
 
-type ListenFrame = [number, number[]]
+// Stream time, bands, and for Milkdrop the samples (base64 as sent,
+// decoded in place the first time a frame is shown).
+type ListenFrame = [number, number[], (string | Uint8Array)?]
 
 /** The latest frame at or before `time`, dropping the ones before it. */
-export function takeListenFrame(frames: ListenFrame[], time: number): number[] | null {
+export function takeListenFrame(frames: ListenFrame[], time: number): ListenFrame | null {
   let index = -1
   for (let i = 0; i < frames.length && frames[i]![0] <= time; i++) index = i
   if (index < 0) return null
-  const bands = frames[index]![1]
+  const frame = frames[index]!
   const stale = frames.findIndex((frame) => frame[0] >= time - LISTEN_FRAMES_BEHIND_SECONDS)
   frames.splice(0, Math.min(stale < 0 ? frames.length : stale, index))
-  return bands
+  return frame
+}
+
+function frameWaveform(frame: ListenFrame | null): Uint8Array | null {
+  const wave = frame?.[2]
+  if (wave === undefined) return null
+  if (typeof wave === 'string') frame![2] = decodeWaveform(wave)
+  return frame![2] as Uint8Array
+}
+
+/** The song's cover for Milkdrop, the same URL the page shows it from (so
+ * usually from the browser's cache): same-origin bytes, which WebGL may
+ * read. */
+function guestMilkdropCover(url: string | null): MilkdropCover | null {
+  if (!url) return null
+  return {
+    key: url,
+    async load(signal) {
+      const response = await fetch(url, { credentials: 'include', signal })
+      return response.ok ? response.blob() : null
+    },
+  }
+}
+
+function prefersLessMotion(): boolean {
+  try {
+    return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  } catch {
+    return false
+  }
 }
 
 // How long before a track ends the corner starts announcing the next one,
 // matching NowPlayingView's own NEXT_UP_SECONDS.
 const NEXT_UP_SECONDS = 15
 
-type Preference = 'showLyrics' | 'showVisualizer' | 'largeArtwork'
+type Preference = 'showLyrics' | 'showVisualizer' | 'largeArtwork' | 'milkdrop'
 const PREFERENCE_KEY = 'beacon_party_view'
 
 function readPreferences(): Partial<Record<Preference, boolean>> {
@@ -123,7 +158,11 @@ export function useGuestNowPlayingSource(
   // Which of the artist's backgrounds this guest stepped to; null is the
   // host's.
   const backdropIndex = ref<number | null>(null)
+  const showMilkdrop = ref(readPreference('milkdrop', false))
+  const milkdropPreset = ref<string | null>(null)
   const bands = ref<number[] | null>(null)
+  // Milkdrop's samples from the cast feed: plain, read every frame.
+  let castWaveform: Uint8Array | null = null
   let visualizerEvents: EventSource | null = null
   // Listening along: the stream's own frames, by stream time, shown once
   // this guest hears them. Plain, not reactive - sampled per animation frame.
@@ -202,6 +241,24 @@ export function useGuestNowPlayingSource(
   const visualizerActive = computed(
     () => showVisualizer.value && visualizerAvailable.value && playing.value,
   )
+  // As in the app (NowPlayingView's milkdropAvailable): wherever the bars
+  // have a feed, but not on a phone, nor for anyone who asked for less
+  // motion. Always a shipped preset - the host's uploads are theirs.
+  const milkdropAvailable = computed(
+    () => visualizerAvailable.value && !isCompact() && !prefersLessMotion(),
+  )
+  const milkdropActive = computed(() => showMilkdrop.value && milkdropAvailable.value)
+  const builtinKeys = BUILTIN_PRESETS.map((entry) => entry.key)
+  function pickMilkdropPreset(): void {
+    milkdropPreset.value = pickPresetKey(builtinKeys, Math.random(), milkdropPreset.value)
+  }
+  /** Which feed the page needs: Milkdrop's takes the samples along, and
+   * keeps coming while the bars themselves are switched off. */
+  const feedKind = computed<'none' | 'bands' | 'waveform'>(() => {
+    if (!isOnScreen() || !playing.value || !visualizerAvailable.value) return 'none'
+    if (milkdropActive.value) return 'waveform'
+    return visualizerActive.value ? 'bands' : 'none'
+  })
   const visualizerColor = computed(() =>
     visualizerBarColor(store.snapshot?.backdrop ? backdropColor.value : coverColor.value),
   )
@@ -256,11 +313,19 @@ export function useGuestNowPlayingSource(
     return list
   })
 
-  function openVisualizer(): void {
+  function feedUrl(url: string, waveform: boolean): string {
+    return waveform ? `${url}?waveform=1` : url
+  }
+
+  function openVisualizer(waveform: boolean): void {
     if (visualizerEvents) return
-    visualizerEvents = new EventSource(VISUALIZER_URL, { withCredentials: true })
+    visualizerEvents = new EventSource(feedUrl(VISUALIZER_URL, waveform), {
+      withCredentials: true,
+    })
     visualizerEvents.onmessage = (event: MessageEvent<string>) => {
-      bands.value = (JSON.parse(event.data) as { bands: number[] }).bands
+      const frame = JSON.parse(event.data) as { bands: number[]; waveform?: string }
+      bands.value = frame.bands
+      castWaveform = frame.waveform ? decodeWaveform(frame.waveform) : null
     }
   }
 
@@ -268,12 +333,15 @@ export function useGuestNowPlayingSource(
     visualizerEvents?.close()
     visualizerEvents = null
     bands.value = null
+    castWaveform = null
   }
 
-  function openListenVisualizer(): void {
+  function openListenVisualizer(waveform: boolean): void {
     if (listenVisualizerEvents) return
     listenFrames = []
-    listenVisualizerEvents = new EventSource(LISTEN_VISUALIZER_URL, { withCredentials: true })
+    listenVisualizerEvents = new EventSource(feedUrl(LISTEN_VISUALIZER_URL, waveform), {
+      withCredentials: true,
+    })
     listenVisualizerEvents.onmessage = (event: MessageEvent<string>) => {
       const data = JSON.parse(event.data) as { frames: ListenFrame[] }
       listenFrames.push(...data.frames)
@@ -296,7 +364,13 @@ export function useGuestNowPlayingSource(
     if (!store.listening) return resampleBands(bands.value)
     const heard = store.heardTimeNow()
     if (heard === null) return null
-    return resampleBands(takeListenFrame(listenFrames, heard))
+    return resampleBands(takeListenFrame(listenFrames, heard)?.[1] ?? null)
+  }
+
+  function milkdropWaveform(): Uint8Array | null {
+    if (!store.listening) return castWaveform
+    const heard = store.heardTimeNow()
+    return heard === null ? null : frameWaveform(takeListenFrame(listenFrames, heard))
   }
 
   async function loadColor(url: string, target: 'coverColor' | 'backdropColor'): Promise<void> {
@@ -338,14 +412,29 @@ export function useGuestNowPlayingSource(
         backdropIndex.value = null
       },
     ),
+    // A change of kind opens the feed again: its URL says which it is.
     watch(
-      () => visualizerActive.value && isOnScreen() && !store.listening,
-      (live) => (live ? openVisualizer() : closeVisualizer()),
+      () => (store.listening ? 'none' : feedKind.value),
+      (kind) => {
+        closeVisualizer()
+        if (kind !== 'none') openVisualizer(kind === 'waveform')
+      },
       { immediate: true },
     ),
     watch(
-      () => visualizerActive.value && isOnScreen() && store.listening,
-      (live) => (live ? openListenVisualizer() : closeListenVisualizer()),
+      () => (store.listening ? feedKind.value : 'none'),
+      (kind) => {
+        closeListenVisualizer()
+        if (kind !== 'none') openListenVisualizer(kind === 'waveform')
+      },
+      { immediate: true },
+    ),
+    // A new preset with every song, the app's own default.
+    watch(
+      () => (milkdropActive.value ? (song.value?.id ?? null) : null),
+      (id) => {
+        if (id !== null) pickMilkdropPreset()
+      },
       { immediate: true },
     ),
   ]
@@ -390,16 +479,18 @@ export function useGuestNowPlayingSource(
       sample: sampleBands,
       debug: null,
     }),
-    // Needs this device's own audio, which a guest does not play.
-    milkdrop: {
-      available: false,
-      active: false,
-      playing: false,
-      preset: null,
-      coverArtId: null,
-      mode: 'local',
-      waveform: () => null,
-    },
+    // Always from the feed connect sends: the page's own <audio> (listening
+    // along) is never tapped, as the bars never tap it either.
+    milkdrop: reactive({
+      available: milkdropAvailable,
+      active: milkdropActive,
+      playing,
+      preset: milkdropPreset,
+      mode: 'cast' as const,
+      cover: computed(() => guestMilkdropCover(song.value?.coverUrl ?? null)),
+      waveform: milkdropWaveform,
+      analyser: null,
+    }),
     capabilities: reactive({
       fullscreen: true,
       artistLinks: false,
@@ -420,7 +511,11 @@ export function useGuestNowPlayingSource(
     artistCreditComponent: null,
     equalizerComponent: null,
     lightsComponent: null,
-    milkdropComponent: null,
+    // Async, so Butterchurn and the presets stay out of the page until a
+    // guest switches Milkdrop on.
+    milkdropComponent: markRaw(
+      defineAsyncComponent(() => import('@/components/milkdrop/MilkdropVisualizer.vue')),
+    ),
     milkdropMenuComponent: null,
     ui: reactive({
       lyricsOpen: computed(() => showLyrics.value),
@@ -448,8 +543,11 @@ export function useGuestNowPlayingSource(
       const current = backdropIndex.value ?? store.snapshot?.backdrop_index ?? 0
       backdropIndex.value = (current + 1) % count
     },
-    toggleMilkdrop: () => {},
-    nextMilkdropPreset: () => {},
+    toggleMilkdrop: () => {
+      showMilkdrop.value = !showMilkdrop.value
+      persist('milkdrop', showMilkdrop.value)
+    },
+    nextMilkdropPreset: pickMilkdropPreset,
     seek: () => {},
     setLyricsOffset: () => {},
     resetLyricsOffset: () => {},

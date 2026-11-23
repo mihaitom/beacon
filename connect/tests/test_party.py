@@ -1476,9 +1476,30 @@ def test_visualizer_frames_reach_every_watching_guest():
         # Both get frames, neither takes them from the other, and a slow one
         # keeps the freshest.
         assert first.qsize() == 4 and second.qsize() == 4
-        assert first.get_nowait() == [0.2]
+        assert first.get_nowait() == ([0.2], None)
     finally:
         party.visualizer_queues.clear()
+
+
+def test_only_the_guests_who_ask_get_the_waveform():
+    class Analyzer:
+        last_waveform = b"\x80\x81"
+
+    plain = asyncio.Queue(maxsize=4)
+    milkdrop = asyncio.Queue(maxsize=4)
+    party.visualizer_queues[:] = [plain, milkdrop]
+    party.waveform_queues.add(milkdrop)
+    party._visualizer_analyzer = Analyzer()
+    try:
+        party._on_frame([0.5])
+        assert plain.get_nowait() == ([0.5], None)
+        assert milkdrop.get_nowait() == ([0.5], b"\x80\x81")
+        party.unwatch_visualizer(milkdrop)
+        assert party.waveform_queues == set()
+    finally:
+        party.visualizer_queues.clear()
+        party.waveform_queues.clear()
+        party._visualizer_analyzer = None
 
 
 def test_visualizer_only_follows_a_cast(client):
@@ -1903,14 +1924,14 @@ async def test_the_stream_is_decoded_from_the_hosts_media_server(
 async def test_listening_guests_get_bars_from_the_stream_itself(fake_broadcaster):
     _sid, guest = _listening_party()
     with pytest.raises(party_routes.HTTPException) as e:
-        await party_routes.listen_visualizer(guest=guest)
+        await party_routes.listen_visualizer(with_waveform=False, guest=guest)
     assert e.value.status_code == 404  # nothing to analyse before anyone listens
 
     broadcaster = await party.listen()
     bands: asyncio.Queue = asyncio.Queue()
-    broadcaster.watch_bands = lambda: bands
+    broadcaster.watch_bands = lambda waveform: bands
     broadcaster.unwatch_bands = lambda q: None
-    resp = await party_routes.listen_visualizer(guest=guest)
+    resp = await party_routes.listen_visualizer(with_waveform=False, guest=guest)
     gen = resp.body_iterator
     try:
         await gen.__anext__()  # retry
@@ -1920,6 +1941,8 @@ async def test_listening_guests_get_bars_from_the_stream_itself(fake_broadcaster
         assert '"frames":[[10.0,[0.5,0.25]]]' in message
         assert '"epoch":"epoch-192"' in message
         assert party_routes._listen_visualizers == 1
+        bands.put_nowait([(10.5, [0.5], b"\x80")])
+        assert '"frames":[[10.5,[0.5],"gA=="]]' in await gen.__anext__()
         bands.put_nowait(None)
         with pytest.raises(StopAsyncIteration):
             await gen.__anext__()
@@ -2154,7 +2177,7 @@ async def test_the_visualizer_stream_sends_bars_and_idles_between_them():
 
     party.enable()
     _, guest = party.join("Anna", "203.0.113.5")
-    resp = await party_routes.visualizer(guest=guest)
+    resp = await party_routes.visualizer(with_waveform=False, guest=guest)
     gen = resp.body_iterator
     try:
         assert await gen.__anext__() == "retry: 3000\n\n"
@@ -2168,10 +2191,28 @@ async def test_the_visualizer_stream_sends_bars_and_idles_between_them():
     assert party.visualizer_queues == []
 
 
+async def test_the_visualizer_stream_carries_the_waveform_when_asked():
+    class Analyzer:
+        last_waveform = b"\x00\xff"
+
+    party.enable()
+    _, guest = party.join("Anna", "203.0.113.5")
+    resp = await party_routes.visualizer(with_waveform=True, guest=guest)
+    gen = resp.body_iterator
+    party._visualizer_analyzer = Analyzer()
+    try:
+        await gen.__anext__()
+        party._on_frame([0.5])
+        assert await gen.__anext__() == 'data: {"bands": [0.5], "waveform": "AP8="}\n\n'
+    finally:
+        party._visualizer_analyzer = None
+        await gen.aclose()
+
+
 async def test_the_visualizer_stream_ends_with_the_guest():
     party.enable()
     _, guest = party.join("Anna", "203.0.113.5")
-    resp = await party_routes.visualizer(guest=guest)
+    resp = await party_routes.visualizer(with_waveform=False, guest=guest)
     gen = resp.body_iterator
     await gen.__anext__()
     party.kick(guest.guest_id)

@@ -2,12 +2,9 @@
 // internals (see textures.ts), which only a real WebGL context can show: a
 // version that moved them would leave Beacon's presets on a stand-in
 // picture without a single error.
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import { butterchurn } from '@/services/milkdrop/butterchurn'
-import { fetchCoverArtBatched } from '@/services/connect/coverArtBatch'
-import { loadCoverPicture, loadShippedPicture, setDataTexture, setTexture } from '../textures'
-
-vi.mock('@/services/connect/coverArtBatch', () => ({ fetchCoverArtBatched: vi.fn() }))
+import { coverPicture, loadShippedPicture, setDataTexture, setTexture } from '../textures'
 
 const SIZE = 64
 
@@ -101,7 +98,7 @@ describe('loadShippedPicture', () => {
   })
 })
 
-describe('loadCoverPicture', () => {
+describe('coverPicture', () => {
   it('cuts a wide cover to its middle instead of squeezing it', async () => {
     // Red and blue bands either side of a green square: squeezed, the
     // bands would reach the picture's edges.
@@ -116,9 +113,7 @@ describe('loadCoverPicture', () => {
     context.fillStyle = 'blue'
     context.fillRect(150, 0, 50, 100)
     const blob = await new Promise<Blob>((resolve) => wide.toBlob((b) => resolve(b!), 'image/png'))
-    vi.mocked(fetchCoverArtBatched).mockResolvedValue(blob)
-
-    const picture = await loadCoverPicture('al-1', new AbortController().signal)
+    const picture = await coverPicture(blob)
 
     expect([picture.width, picture.height]).toEqual([512, 512])
     const read = document.createElement('canvas')
