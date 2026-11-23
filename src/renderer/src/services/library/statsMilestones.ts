@@ -9,6 +9,19 @@ export interface MilestoneValues {
   records?: number
 }
 
+/** What has been celebrated so far. A figure can be missing: records on what
+ * was saved before they were counted, the streak after an import or a
+ * desktop's backfill brought old plays in. A missing one is taken on silently
+ * on the next visit, the others are still compared. */
+export type SeenMilestones = Partial<MilestoneValues>
+
+const MILESTONE_FIELDS: (keyof MilestoneValues)[] = ['plays', 'hours', 'streak', 'records']
+
+/** Whether any figure still has to be taken on, see SeenMilestones. */
+export function hasMissingMilestones(seen: SeenMilestones | null): boolean {
+  return !seen || MILESTONE_FIELDS.some((field) => seen[field] === undefined)
+}
+
 export type MilestoneKind = 'hours' | 'streak'
 export type MilestoneSize = 's' | 'm' | 'l'
 
@@ -96,10 +109,11 @@ const SIZE_RANK: Record<MilestoneSize, number> = { s: 0, m: 1, l: 2 }
 const KIND_ORDER: MilestoneKind[] = ['hours', 'streak']
 
 /** The one milestone worth celebrating on this visit, if any: several passed
- * since the last one are one moment, the biggest. `seen` is null on the first
- * visit, which only sets the baseline, or a listener would be congratulated
- * on years of plays that were already there. */
-export function nextMoment(seen: MilestoneValues | null, values: MilestoneValues): Moment | null {
+ * since the last one are one moment, the biggest, however long ago they were
+ * passed. `seen` is null on the first visit, which only sets the baseline, or
+ * a listener would be congratulated on years of plays that were already
+ * there. */
+export function nextMoment(seen: SeenMilestones | null, values: MilestoneValues): Moment | null {
   if (!seen) return null
   // Ahead of any other: the turntable has just changed record, and this is
   // what says why.
@@ -117,7 +131,8 @@ export function nextMoment(seen: MilestoneValues | null, values: MilestoneValues
   let best: Moment | null = null
   for (const kind of KIND_ORDER) {
     const value = reached[kind]
-    if (value <= (seen[kind] ?? 0)) continue
+    const before = seen[kind]
+    if (before === undefined || value <= before) continue
     const moment = milestoneMoment(kind, value)
     if (!best || SIZE_RANK[moment.size] > SIZE_RANK[best.size]) best = moment
   }

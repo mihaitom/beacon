@@ -297,10 +297,23 @@ def test_an_import_keeps_everything_without_any_own_entry():
     assert play_history.replace_imported(ALICE, "lastfm", [imported(1), imported(2)]) == 2
 
 
-def test_an_import_forgets_what_was_seen_so_old_plays_are_not_celebrated():
-    play_history.save_milestones(ALICE, {"plays": 1000, "hours": 0, "streak": 0})
+def test_an_import_forgets_only_the_streak_so_old_plays_are_not_celebrated():
+    seen = {"plays": 1000, "hours": 100, "streak": 7, "records": 2}
+    play_history.save_milestones(ALICE, seen)
+    play_history.replace_imported(ALICE, "lastfm", [])
+    assert play_history.milestones(ALICE) == {"plays": 1000, "hours": 100, "records": 2}
+
+
+def test_an_import_before_the_first_visit_leaves_no_milestones():
     play_history.replace_imported(ALICE, "lastfm", [])
     assert play_history.milestones(ALICE) is None
+
+
+def test_milestones_saved_after_an_import_bring_the_streak_back():
+    play_history.save_milestones(ALICE, {"plays": 1000, "hours": 100, "streak": 7})
+    play_history.replace_imported(ALICE, "lastfm", [])
+    play_history.save_milestones(ALICE, {"plays": 1000, "hours": 100, "streak": 30})
+    assert play_history.milestones(ALICE)["streak"] == 30
 
 
 def test_an_import_replaces_the_previous_one():

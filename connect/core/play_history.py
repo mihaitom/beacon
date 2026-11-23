@@ -422,9 +422,7 @@ def replace_imported(account: Account, source: str, listens: list[dict]) -> int:
         _delete_listens(conn, account_id, "source != ?", (_OWN_SOURCE,))
         _insert_listens(conn, account_id, ({**entry, "source": source} for entry in kept))
         _write_account_field(conn, account_id, "import_state", {"status": "done", "source": source})
-        # Forgets what was seen, so the next visit sets a silent baseline: a
-        # streak that arrives with a year of old plays is nothing to celebrate.
-        _write_account_field(conn, account_id, "milestones", None)
+        _forget_streak(conn, account_id)
     return len(kept)
 
 
@@ -438,6 +436,20 @@ def import_state(account: Account) -> dict:
     with _lock, _database() as conn:
         state = _read_account_field(conn, account, "import_state")
     return state or {"status": "none"}
+
+
+def _forget_streak(conn: sqlite3.Connection, account_id: int) -> None:
+    """For when old plays arrive in bulk: a streak that comes with them is
+    nothing to celebrate, so the next visit takes it in silently. Only the
+    streak - plays, hours and records are the media server's counts, which no
+    import changes, and dropping them too would swallow whatever is passed
+    before that visit."""
+    row = conn.execute("SELECT milestones FROM accounts WHERE id = ?", (account_id,)).fetchone()
+    if row is None or row[0] is None:
+        return
+    seen = json.loads(row[0])
+    seen.pop("streak", None)
+    _write_account_field(conn, account_id, "milestones", seen)
 
 
 def milestones(account: Account) -> dict | None:
@@ -510,9 +522,8 @@ def receive_listens(
             # what is older than Beacon's first own play, and that just moved.
             _delete_listens(conn, account_id, "source != ? AND ts >= ?", (_OWN_SOURCE, first_after))
         if backfill and stored:
-            # A desktop's whole past arriving is not a moment either, see
-            # replace_imported().
-            _write_account_field(conn, account_id, "milestones", None)
+            # A desktop's whole past arriving is not a moment either.
+            _forget_streak(conn, account_id)
     return stored
 
 
