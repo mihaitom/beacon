@@ -742,6 +742,10 @@ export default {
     uploadAdded: '{n} Preset hinzugefügt. | {n} Presets hinzugefügt.',
     uploadFailed: 'Nicht lesbar: {files}.',
     deleteFailed: 'Das Preset konnte nicht gelöscht werden.',
+    depth: 'Tiefe',
+    jumpTitle: 'Direkt zu',
+    jumpPlaceholder: 'Ort auswählen',
+    jumpHint: 'Zeigt diesen Ort sofort; von dort geht das Preset von allein weiter.',
   },
   lights: {
     title: 'Raumlicht',

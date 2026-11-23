@@ -1,9 +1,9 @@
-// The debug jumps reach into the Milky Way preset's random draws: when its
+// The jumps reach into the Milky Way preset's random draws: when its
 // equations change what a draw decides, a jump would quietly land somewhere
 // else. Runs the preset's own equations and reads which sight it arrived at.
 import { afterEach, describe, expect, it } from 'vitest'
 import milkyWay from '@/assets/milkdrop/presets/beacon-milky-way.json'
-import { MILKY_WAY_DESTINATIONS, jumpTo } from '../milkyWayDebug'
+import { MILKY_WAY_DESTINATIONS, jumpTo } from '../milkyWayJumps'
 
 type Vars = Record<string, number>
 
@@ -32,7 +32,7 @@ function arriveAt(label: string): Vars {
 // 1-based into the preset's captions.
 const caption = (a: Vars) => milkyWay.captions[a.cap! - 1]!.text
 
-describe('Milky Way debug jumps', () => {
+describe('Milky Way jumps', () => {
   afterEach(() => {
     delete (globalThis as { beaconMilkyWayPick?: unknown }).beaconMilkyWayPick
   })

@@ -23,7 +23,8 @@ interface EquationInternals {
   }
 }
 
-function lastFrame(visualizer: MilkdropVisualizer, q: string): number | null {
+/** A value the preset on screen set in its last frame (q1 to q32). */
+export function lastFrame(visualizer: MilkdropVisualizer, q: string): number | null {
   const qs = (visualizer as unknown as EquationInternals).renderer?.presetEquationRunner
     ?.mdVSQAfterFrame
   const value = qs?.[q]
@@ -45,33 +46,15 @@ export function currentZoom(visualizer: MilkdropVisualizer): number | null {
   return lastFrame(visualizer, ZOOM_Q)
 }
 
-// Up to here the factor reads well in full; past it, as a power of ten.
-const FULL_BELOW = 10_000
-
-/** The factor - "1", "850", or "3.4" with a power of ten "24" to set
- * raised - in the locale's own digits. The power is plain digits for the
- * page to raise: of the superscript characters, a font often has only ¹ ² ³
- * and fetches the rest from another, which shows. */
+/** The factor as a power of two - how deep zooms are told apart - with
+ * the power "37" in the locale's own digits, for the page to set raised:
+ * of the superscript characters, a font often has only ¹ ² ³ and fetches
+ * the rest from another, which shows. */
 export interface ZoomText {
-  factor: string
-  exponent: string | null
+  exponent: string
 }
 
 export function formatZoom(doublings: number, locale: string): ZoomText {
-  const factor = 2 ** Math.max(0, doublings)
-  if (factor < FULL_BELOW) {
-    const whole = new Intl.NumberFormat(locale, { maximumFractionDigits: 0 }).format(factor)
-    return { factor: whole, exponent: null }
-  }
-  let exponent = Math.floor(Math.log10(factor))
-  let mantissa = Math.round((factor / 10 ** exponent) * 10) / 10
-  if (mantissa >= 10) {
-    mantissa /= 10
-    exponent += 1
-  }
-  const digits = new Intl.NumberFormat(locale, {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
-  }).format(mantissa)
-  return { factor: digits, exponent: String(exponent) }
+  const whole = Math.max(0, Math.round(doublings))
+  return { exponent: new Intl.NumberFormat(locale, { useGrouping: false }).format(whole) }
 }

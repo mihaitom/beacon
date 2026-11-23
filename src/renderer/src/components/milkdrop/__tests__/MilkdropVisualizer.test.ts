@@ -99,16 +99,16 @@ describe('MilkdropVisualizer captions', () => {
     const wrapper = await mountPlaying()
     expect(wrapper.find('.milkdrop__zoom').exists()).toBe(false)
 
+    // The power is raised by the page, not by superscript characters.
     qs.q31 = 3
     await frames()
-    expect(wrapper.get('.milkdrop__zoom').text()).toBe('×8')
+    expect(wrapper.get('.milkdrop__zoom sup').text()).toBe('3')
     await vi.advanceTimersByTimeAsync(3 * LABEL_MS)
-    expect(wrapper.get('.milkdrop__zoom').text()).toBe('×8')
+    expect(wrapper.get('.milkdrop__zoom sup').text()).toBe('3')
 
-    // Deep in, the power of ten is raised by the page, not by characters.
     qs.q31 = 80
     await frames()
-    expect(wrapper.get('.milkdrop__zoom sup').text()).toBe('24')
+    expect(wrapper.get('.milkdrop__zoom sup').text()).toBe('80')
   })
 
   it("reads no zoom into a preset that does not report one - q31 is any preset's to use", async () => {

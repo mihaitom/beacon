@@ -37,19 +37,13 @@ describe('currentZoom', () => {
 })
 
 describe('formatZoom', () => {
-  it('writes small factors in full', () => {
-    expect(formatZoom(0, 'en')).toEqual({ factor: '1', exponent: null })
-    expect(formatZoom(Math.log2(850), 'en')).toEqual({ factor: '850', exponent: null })
-    expect(formatZoom(Math.log2(9000), 'de')).toEqual({ factor: '9.000', exponent: null })
+  it('writes the factor as a whole power of two', () => {
+    expect(formatZoom(0, 'en')).toEqual({ exponent: '0' })
+    expect(formatZoom(36.6, 'en')).toEqual({ exponent: '37' })
+    expect(formatZoom(1000, 'de')).toEqual({ exponent: '1000' })
   })
 
-  it('writes large ones as a power of ten, in the locale', () => {
-    expect(formatZoom(Math.log2(3.4e24), 'en')).toEqual({ factor: '3.4', exponent: '24' })
-    expect(formatZoom(Math.log2(3.4e24), 'de')).toEqual({ factor: '3,4', exponent: '24' })
-    expect(formatZoom(Math.log2(20_000), 'en')).toEqual({ factor: '2.0', exponent: '4' })
-  })
-
-  it('carries a mantissa that rounds up to ten', () => {
-    expect(formatZoom(Math.log2(9.97e12), 'en')).toEqual({ factor: '1.0', exponent: '13' })
+  it('never goes below 2^0 while a zoom backs out past its start', () => {
+    expect(formatZoom(-1.4, 'en')).toEqual({ exponent: '0' })
   })
 })

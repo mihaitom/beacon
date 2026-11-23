@@ -747,6 +747,10 @@ export default {
     uploadAdded: '{n} preset añadido. | {n} presets añadidos.',
     uploadFailed: 'No se pudo leer: {files}.',
     deleteFailed: 'No se pudo eliminar el preset.',
+    depth: 'Profundidad',
+    jumpTitle: 'Saltar a',
+    jumpPlaceholder: 'Elige un lugar',
+    jumpHint: 'Muestra ese lugar ahora; el preset sigue solo desde allí.',
   },
   lights: {
     title: 'Luces de la sala',

@@ -1,5 +1,5 @@
-/** Development only: sending the Milky Way preset straight to one kind of
- * sight instead of waiting for the dice. Its frame equations read
+/** Sending the Milky Way preset straight to one kind of sight (the
+ * Milkdrop menu's "Jump to") instead of waiting for the dice. Its frame equations read
  * `globalThis.beaconMilkyWayPick` - values for its random draws (r1..r11) -
  * jump at once when one is waiting, and use them for the next sight. */
 export const MILKY_WAY_KEY = 'builtin:beacon-milky-way'

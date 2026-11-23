@@ -741,6 +741,10 @@ export default {
     uploadAdded: '{n} preset aggiunto. | {n} preset aggiunti.',
     uploadFailed: 'Impossibile leggere: {files}.',
     deleteFailed: 'Impossibile eliminare il preset.',
+    depth: 'Profondità',
+    jumpTitle: 'Vai a',
+    jumpPlaceholder: 'Scegli un luogo',
+    jumpHint: 'Mostra subito quel luogo; da lì il preset prosegue da solo.',
   },
   lights: {
     title: 'Luci della stanza',

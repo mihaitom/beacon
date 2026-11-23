@@ -50,19 +50,25 @@
         </div>
         <p class="setting__hint">{{ switchHint }}</p>
 
-        <template v-if="debugDestinations.length">
-          <h3 class="section-title milkdrop-menu__heading">Debug: jump to</h3>
-          <div class="milkdrop-menu__debug">
-            <v-btn
-              v-for="destination in debugDestinations"
-              :key="destination.label"
-              size="x-small"
-              variant="tonal"
-              @click="jumpTo(destination)"
-            >
-              {{ destination.label }}
-            </v-btn>
-          </div>
+        <template v-if="destinations.length">
+          <h3 class="section-title milkdrop-menu__heading">{{ $t('milkdrop.jumpTitle') }}</h3>
+          <!-- Nothing stays picked: the preset moves on from there by itself. -->
+          <v-select
+            :model-value="null"
+            :items="destinations"
+            item-title="label"
+            item-value="index"
+            :placeholder="$t('milkdrop.jumpPlaceholder')"
+            :aria-label="$t('milkdrop.jumpTitle')"
+            prepend-inner-icon="mdi-map-marker-outline"
+            variant="solo-filled"
+            density="compact"
+            flat
+            hide-details
+            class="milkdrop-menu__jump"
+            @update:model-value="jump"
+          />
+          <p class="setting__hint">{{ $t('milkdrop.jumpHint') }}</p>
         </template>
 
         <h3 class="section-title milkdrop-menu__heading">{{ $t('milkdrop.presetsTitle') }}</h3>
@@ -155,12 +161,12 @@
 
 <script lang="ts">
 import { wheelStep } from '@/services/volumeWheel'
+import { MILKY_WAY_DESTINATIONS, MILKY_WAY_KEY, jumpTo } from '@/services/milkdrop/milkyWayJumps'
 import {
-  MILKY_WAY_DESTINATIONS,
-  MILKY_WAY_KEY,
-  jumpTo,
-  type MilkyWayDestination,
-} from '@/services/milkdrop/milkyWayDebug'
+  FRACTAL_ZOOM_DESTINATIONS,
+  FRACTAL_ZOOM_KEY,
+  jumpToScene,
+} from '@/services/milkdrop/fractalZoomJumps'
 import {
   INTERVAL_STEPS,
   intervalStep,
@@ -214,9 +220,19 @@ export default {
       if (!query) return this.store.presets
       return this.store.presets.filter((entry) => entry.name.toLocaleLowerCase().includes(query))
     },
-    /** Only when running from source; a build replaces the condition. */
-    debugDestinations(): MilkyWayDestination[] {
-      return import.meta.env.DEV && this.current === MILKY_WAY_KEY ? MILKY_WAY_DESTINATIONS : []
+    /** The places the preset on screen can be sent to, for the two of
+     * Beacon's own that roam; none for any other. */
+    destinations(): { label: string; index: number; jump: () => void }[] {
+      const jumps =
+        this.current === MILKY_WAY_KEY
+          ? MILKY_WAY_DESTINATIONS.map((to) => ({ label: to.label, jump: () => jumpTo(to) }))
+          : this.current === FRACTAL_ZOOM_KEY
+            ? FRACTAL_ZOOM_DESTINATIONS.map((to) => ({
+                label: to.label,
+                jump: () => jumpToScene(to),
+              }))
+            : []
+      return jumps.map((to, index) => ({ ...to, index }))
     },
     switchHint(): string {
       if (this.settings.switchMode === 'fixed') return this.$t('milkdrop.switchFixedHint')
@@ -240,7 +256,6 @@ export default {
     },
   },
   methods: {
-    jumpTo,
     /** Opens on the preset on screen, wherever it is in the list. */
     revealCurrent(): void {
       document.querySelector('.milkdrop-menu__row--current')?.scrollIntoView?.({ block: 'center' })
@@ -284,6 +299,9 @@ export default {
         this.uploading = false
       }
     },
+    jump(index: number | null): void {
+      if (index != null) this.destinations[index]?.jump()
+    },
     async remove(key: string): Promise<void> {
       try {
         await this.store.remove(key)
@@ -324,12 +342,6 @@ export default {
 
 .setting__hint {
   margin-top: 6px;
-}
-
-.milkdrop-menu__debug {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
 }
 
 .milkdrop-menu__intro {

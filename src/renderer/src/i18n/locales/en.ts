@@ -736,6 +736,10 @@ export default {
     uploadAdded: '{n} preset added. | {n} presets added.',
     uploadFailed: 'Could not read: {files}.',
     deleteFailed: 'The preset could not be deleted.',
+    depth: 'Depth',
+    jumpTitle: 'Jump to',
+    jumpPlaceholder: 'Pick a place',
+    jumpHint: 'Shows that place now; the preset carries on from there by itself.',
   },
   lights: {
     title: 'Room lights',

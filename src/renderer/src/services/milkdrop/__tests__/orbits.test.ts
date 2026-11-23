@@ -15,14 +15,14 @@ function end(data: Float32Array, row: number): number {
 describe('referenceOrbits', () => {
   it('follows z -> z^2 + c from 0, one row per target', () => {
     const data = referenceOrbits([
-      ['-1', '0'],
+      ['-2', '0'],
       ['0', '1'],
     ])
     expect([0, 1, 2, 3].map((n) => texel(data, 0, n))).toEqual([
       [0, 0, 1],
-      [-1, 0, 1],
-      [0, 0, 1],
-      [-1, 0, 1],
+      [-2, 0, 1],
+      [2, 0, 1],
+      [2, 0, 1],
     ])
     // c = i: 0, i, -1 + i, -i, -1 + i, ...
     expect([1, 2, 3].map((n) => texel(data, 1, n).slice(0, 2))).toEqual([
@@ -32,15 +32,42 @@ describe('referenceOrbits', () => {
     ])
   })
 
-  it('ends a row where its orbit escapes, and at the last entry otherwise', () => {
-    // c = 1: 0, 1, 2, 5 - and 5 is out.
+  it('follows the Burning Ship where a target asks for it', () => {
+    // c = -1 + i: 0, -1 + i, then (1 + i)^2 + c = -1 + 3i, where the
+    // Mandelbrot set's (-1 + i)^2 + c would be -1 - i.
+    const data = referenceOrbits([['-1', '1', 'burning-ship']])
+    expect([1, 2].map((n) => texel(data, 0, n).slice(0, 2))).toEqual([
+      [-1, 1],
+      [-1, 3],
+    ])
+  })
+
+  it('follows the Multibrot sets and the Tricorn where a target asks for them', () => {
+    // c = i. z^3: 0, i, i - i = 0. z^4: 0, i, 1 + i. Tricorn, the
+    // conjugate squared: 0, i, -1 + i, (-1 - i)^2 + i = 3i, where the
+    // Mandelbrot set goes on to -i.
+    const data = referenceOrbits([
+      ['0', '1', 'multibrot3'],
+      ['0', '1', 'multibrot4'],
+      ['0', '1', 'tricorn'],
+    ])
+    expect(texel(data, 0, 2).slice(0, 2)).toEqual([0, 0])
+    expect(texel(data, 1, 2).slice(0, 2)).toEqual([1, 1])
+    expect(texel(data, 2, 3).slice(0, 2)).toEqual([0, 3])
+  })
+
+  it('ends a row where its orbit escapes or comes back to 0, and at the last entry otherwise', () => {
+    // c = 1: 0, 1, 2, 5 - and 5 is out. c = -1: 0, -1, 0 - a minibrot's
+    // centre, period 2. c = -2: 0, -2, 2, 2, ...
     const data = referenceOrbits([
       ['1', '0'],
       ['-1', '0'],
+      ['-2', '0'],
     ])
     expect(end(data, 0)).toBe(3)
     expect(texel(data, 0, 3)[0]).toBe(5)
-    expect(end(data, 1)).toBe(ORBIT_LENGTH - 1)
+    expect(end(data, 1)).toBe(2)
+    expect(end(data, 2)).toBe(ORBIT_LENGTH - 1)
   })
 
   it('counts digits no float holds', () => {

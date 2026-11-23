@@ -12,9 +12,9 @@
         </div>
       </transition>
       <div v-if="zoom" class="milkdrop__zoom">
-        <span>×{{ zoom.factor }}</span>
-        <span v-if="zoom.exponent"
-          >· 10<sup>{{ zoom.exponent }}</sup></span
+        <span class="eyebrow-label milkdrop__zoom-label">{{ depthLabel }}</span>
+        <span class="milkdrop__zoom-value"
+          >2<sup>{{ zoom.exponent }}</sup></span
         >
       </div>
     </div>
@@ -41,6 +41,7 @@ import {
   withAccent,
 } from '@/services/milkdrop/textures'
 import { ORBIT_LENGTH, ORBIT_SAMPLER, orbitsFor } from '@/services/milkdrop/orbits'
+import { BlaKeeper } from '@/services/milkdrop/bla'
 import { i18n } from '@/i18n'
 import {
   currentCaption,
@@ -90,6 +91,8 @@ interface Runtime {
   reportsZoom: boolean
   /** Fewer pixels while the GPU cannot keep up (see resolution.ts). */
   renderScale: RenderScale | null
+  /** A deep zoom's table for skipping steps (see bla.ts). */
+  bla: BlaKeeper
   labelIsName: boolean
 }
 
@@ -148,11 +151,16 @@ export default {
         pendingCaption: null,
         reportsZoom: false,
         renderScale: null,
+        bla: new BlaKeeper(),
         labelIsName: false,
       }),
     }
   },
   computed: {
+    // From the i18n instance, like the zoom's digits.
+    depthLabel(): string {
+      return i18n.global.t('milkdrop.depth')
+    },
     /** What the presets that draw in an accent draw in: the same colour
      * as the rest of Now Playing. */
     accentColour(): string {
@@ -253,6 +261,7 @@ export default {
         this.rt.visualizer.render()
       }
       if (this.rt.renderScale?.end(now) != null) this.resize()
+      this.rt.bla.update(this.rt.visualizer)
       const caption = currentCaption(this.rt.visualizer, this.rt.captions)
       if (caption !== this.rt.caption) {
         this.rt.caption = caption
@@ -260,8 +269,7 @@ export default {
       }
       const zoom = this.rt.reportsZoom ? currentZoom(this.rt.visualizer) : null
       const zoomText = zoom === null ? null : formatZoom(zoom, String(i18n.global.locale))
-      const changed =
-        zoomText?.factor !== this.zoom?.factor || zoomText?.exponent !== this.zoom?.exponent
+      const changed = zoomText?.exponent !== this.zoom?.exponent
       // Only on a change: most frames move the factor less than it shows.
       if (changed) this.zoom = zoomText
       this.ready = true
@@ -281,15 +289,12 @@ export default {
         // like the first one - a blend nobody gets to watch would leave the
         // old picture standing.
         const blend = this.rt.presetKey && this.playing ? BLEND_SECONDS : 0
-        if (file.orbits?.length) {
-          setDataTexture(
-            this.rt.visualizer,
-            ORBIT_SAMPLER,
-            orbitsFor(file.orbits),
-            ORBIT_LENGTH,
-            file.orbits.length,
-          )
+        const orbits = file.orbits?.length ? orbitsFor(file.orbits) : null
+        if (orbits) {
+          const rows = file.orbits!.length
+          setDataTexture(this.rt.visualizer, ORBIT_SAMPLER, orbits, ORBIT_LENGTH, rows)
         }
+        this.rt.bla.reset(this.rt.visualizer, orbits)
         this.rt.visualizer.loadPreset(withAccent(file.preset, this.accentColour), blend)
         this.rt.presetKey = key
         if (this.rt.renderScale?.presetChanged() != null) this.resize()
@@ -442,14 +447,36 @@ export default {
   font-size: var(--now-playing-title-size, 2rem);
 }
 
-.milkdrop__zoom sup {
-  /* Raised without pushing the line apart. */
-  font-size: 0.7em;
-  line-height: 0;
+/* A small label over a large, light figure - the zoom reads as a gauge
+ * rather than one more line of text. */
+.milkdrop__zoom {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  margin-top: 6px;
 }
 
-.milkdrop__zoom {
-  font-size: var(--now-playing-album-size, 1rem);
+/* The eyebrow's amber is lost on a bright fractal; white, toned down. */
+.milkdrop__zoom-label {
+  color: rgba(255, 255, 255, 0.72);
+}
+
+.milkdrop__zoom-value {
+  font-size: calc(var(--now-playing-album-size, 1rem) * 2);
+  font-weight: 300;
+  line-height: 1.1;
   font-variant-numeric: tabular-nums;
+}
+
+.milkdrop__zoom-value sup {
+  /* Raised without pushing the line apart, and as wide for 9 as for 99,
+   * so the 2 holds still while the power counts up. */
+  display: inline-block;
+  min-width: 2ch;
+  font-size: 0.5em;
+  font-weight: 500;
+  line-height: 0;
+  text-align: left;
+  vertical-align: 1.1em;
 }
 </style>

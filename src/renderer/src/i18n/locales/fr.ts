@@ -748,6 +748,10 @@ export default {
     uploadAdded: '{n} preset ajouté. | {n} presets ajoutés.',
     uploadFailed: 'Illisible : {files}.',
     deleteFailed: 'Le preset n’a pas pu être supprimé.',
+    depth: 'Profondeur',
+    jumpTitle: 'Aller à',
+    jumpPlaceholder: 'Choisir un lieu',
+    jumpHint: 'Affiche ce lieu tout de suite ; le preset continue ensuite tout seul.',
   },
   lights: {
     title: 'Lumières de la pièce',
