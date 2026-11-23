@@ -93,6 +93,14 @@ describe('nextMoment', () => {
     expect(nextMoment(seen, { ...zero, hours: 1500 })?.value).toBe(1500)
   })
 
+  it('still celebrates hours when the streak is being taken on again', () => {
+    const { streak: _, ...seen } = zero
+    expect(nextMoment(seen, { ...zero, hours: 100, streak: 300 })).toMatchObject({
+      kind: 'hours',
+      value: 100,
+    })
+  })
+
   it('lets a gold streak win over bronze hours', () => {
     expect(nextMoment(zero, { plays: 0, hours: 100, streak: 100 })?.kind).toBe('streak')
   })
@@ -128,6 +136,11 @@ describe('a new pressing', () => {
 
   it('needs something to compare against', () => {
     expect(nextMoment(at(undefined), at(2))).toBeNull()
+  })
+
+  it('is still announced after an import took the streak away', () => {
+    const { streak: _, ...seen } = at(9, 14900)
+    expect(nextMoment(seen, at(10, 15000))).toMatchObject({ kind: 'pressing', value: 10 })
   })
 })
 

@@ -363,10 +363,10 @@ def test_a_batch_that_does_not_move_the_first_play_leaves_the_import():
     assert own_timestamps() == [NOW - 300, NOW - 100, NOW]
 
 
-def test_a_backfill_is_not_a_moment():
-    play_history.save_milestones(ALICE, {"plays": 5})
+def test_a_backfill_forgets_only_the_streak():
+    play_history.save_milestones(ALICE, {"plays": 5, "streak": 7})
     play_history.receive_listens(ALICE, [row()], backfill=True, now=NOW)
-    assert play_history.milestones(ALICE) is None
+    assert play_history.milestones(ALICE) == {"plays": 5}
 
 
 def test_an_ordinary_batch_keeps_the_milestones():

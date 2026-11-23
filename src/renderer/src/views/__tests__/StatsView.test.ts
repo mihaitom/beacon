@@ -804,6 +804,32 @@ describe('StatsView milestones', () => {
     expect(playHistory.saveMilestones).toHaveBeenCalledWith(expect.objectContaining({ records: 4 }))
   })
 
+  it('takes on the streak silently after an import and still shows the rest', async () => {
+    vi.mocked(playHistory.getPlayHistorySummary).mockResolvedValue(
+      summary({ milestones: { plays: 0, hours: 0, records: 0 } }),
+    )
+    const wrapper = mountView([makeSong('1', { playCount: 600, duration: 60 })])
+    await settle()
+
+    expect(moment(wrapper)).toMatchObject({ kind: 'pressing', value: 1 })
+    expect(playHistory.saveMilestones).toHaveBeenCalledWith(
+      expect.objectContaining({ streak: expect.any(Number) }),
+    )
+  })
+
+  it('saves the streak again even when there is nothing to celebrate', async () => {
+    vi.mocked(playHistory.getPlayHistorySummary).mockResolvedValue(
+      summary({ milestones: { plays: 1000, hours: 100, records: 2 } }),
+    )
+    const wrapper = mountView(thousandPlays)
+    await settle()
+
+    expect(moment(wrapper)).toBeNull()
+    expect(playHistory.saveMilestones).toHaveBeenCalledWith(
+      expect.objectContaining({ streak: expect.any(Number) }),
+    )
+  })
+
   it('does not show it while looking at another account', async () => {
     const wrapper = mountView(thousandPlays)
     await flushPromises()

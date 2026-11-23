@@ -1,5 +1,5 @@
 import { fetchConnect } from './http'
-import type { MilestoneValues } from '@/services/library/statsMilestones'
+import type { MilestoneValues, SeenMilestones } from '@/services/library/statsMilestones'
 import type { ImportSource } from '@/services/library/playHistoryImport'
 import type { Song } from '@/types/library'
 
@@ -37,7 +37,7 @@ export interface PlayHistorySummary {
   recent_plays: Record<string, number>
   top: Record<'songs' | 'artists' | 'albums' | 'genres', PlayHistoryTop[]>
   /** Own account only, and null until the first visit has set a baseline. */
-  milestones?: MilestoneValues | null
+  milestones?: SeenMilestones | null
 }
 
 export interface PlayHistoryImportStatus {

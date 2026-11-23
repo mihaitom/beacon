@@ -123,6 +123,7 @@ import {
   type MilestoneValues,
   type Moment,
   milestoneMoment,
+  hasMissingMilestones,
 } from '@/services/library/statsMilestones'
 import { LibraryNames } from '@/services/library/libraryNames'
 import {
@@ -694,9 +695,8 @@ export default {
       const reached = reachedMilestones(this.milestoneValues)
       const moment = nextMoment(seen, this.milestoneValues)
       if (!moment) {
-        // Without a count yet: saved before records were counted, and there
-        // is nothing to compare against.
-        if (seen?.records === undefined) {
+        // A figure nothing can be compared against yet is taken on silently.
+        if (hasMissingMilestones(seen)) {
           this.ownHistory.milestones = reached
           void this.rememberMilestones(reached)
         }
