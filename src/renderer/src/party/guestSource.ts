@@ -188,7 +188,11 @@ export function useGuestNowPlayingSource(
   const playing = computed(() => store.displayPlaying)
   const duration = computed(() => store.displayDuration)
   const artworkLarge = computed(() => largeArtwork.value || !store.snapshot?.backdrop)
-  const artworkHidden = computed(() => Boolean(store.snapshot?.backdrop) && !artworkLarge.value)
+  // Under Milkdrop the song sits small in the corner, as in the app
+  // (NowPlayingView's artworkHidden): the picture is the visualization.
+  const artworkHidden = computed(
+    () => milkdropActive.value || (Boolean(store.snapshot?.backdrop) && !artworkLarge.value),
+  )
 
   const backdropSource = computed<string | null>(() => {
     const snap = store.snapshot
@@ -207,7 +211,7 @@ export function useGuestNowPlayingSource(
 
   const accentColor = computed(() => coverColor.value ?? FALLBACK_COLOR)
   const ambientStyle = computed<Record<string, string>>(() => {
-    if (store.snapshot?.backdrop && !artworkLarge.value) return { background: 'none' }
+    if (artworkHidden.value) return { background: 'none' }
     if (store.snapshot?.backdrop) return { background: 'rgba(18, 20, 28, 0.55)' }
     return {
       background: `radial-gradient(ellipse 65% 55% at 50% 32%, rgba(${accentColor.value}, 0.35), rgba(18, 20, 28, 0) 70%), rgba(18, 20, 28, 0.55)`,

@@ -34,7 +34,10 @@ const CUSTOM_PREFIX = 'custom:'
 
 // Lazy, one chunk per preset: only the one on screen is ever downloaded.
 // The names come from index.json, so the list needs none of these loaded.
+// Compiled (see vite.milkdrop-presets.ts): their equations arrive as real
+// functions, which the party guest page's Content-Security-Policy needs.
 const PRESET_FILES = import.meta.glob<MilkdropPresetFile>('@/assets/milkdrop/presets/*.json', {
+  query: '?compiled',
   import: 'default',
 })
 

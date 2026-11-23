@@ -254,6 +254,17 @@ describe('guest Now Playing source', () => {
       expect(built.source.milkdrop.available).toBe(false)
     })
 
+    it('puts the song in the corner while it plays, as the app does', async () => {
+      usePartyGuestStore().applySnapshot(snapshot({ casting: true, current_song: SONG }))
+      const built = useGuestNowPlayingSource()
+      dispose = built.dispose
+      expect(built.source.ui.artworkHidden).toBe(false)
+      built.source.toggleMilkdrop()
+      await nextTick()
+      expect(built.source.ui.artworkHidden).toBe(true)
+      expect(built.source.ambientStyle).toEqual({ background: 'none' })
+    })
+
     it('stays away for a guest who asked for less motion', () => {
       vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('reduce') }))
       usePartyGuestStore().applySnapshot(snapshot({ casting: true, current_song: SONG }))

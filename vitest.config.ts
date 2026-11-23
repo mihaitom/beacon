@@ -1,6 +1,7 @@
 import { resolve } from 'path';
 import { defineConfig } from 'vitest/config';
 import vue from '@vitejs/plugin-vue';
+import { milkdropPresets } from './vite.milkdrop-presets';
 
 // Renderer-only for now (src/main and src/preload are thin Electron glue,
 // not worth a second test environment) — mirrors the `@` alias and Vue
@@ -12,7 +13,7 @@ export default defineConfig({
             '@': resolve('src/renderer/src'),
         },
     },
-    plugins: [vue()],
+    plugins: [vue(), milkdropPresets()],
     test: {
         environment: 'jsdom',
         include: ['src/renderer/src/**/__tests__/**/*.test.ts'],

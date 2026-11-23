@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
+// Sets the helpers the equations call (pow, above, ...) on window.
+import '@/services/milkdrop/butterchurn'
 import { getMilkdropPreset } from '@/services/connect/milkdropPresets'
 import {
   BUILTIN_PRESETS,
@@ -81,6 +83,37 @@ describe('the shipped presets', () => {
         expect(() => new Function('a', `${code as string} return a;`), key).not.toThrow()
       }
     }
+  })
+
+  // The party guest page's Content-Security-Policy forbids `new Function`:
+  // Butterchurn builds none for a preset whose equations are functions
+  // already (see vite.milkdrop-presets.ts).
+  it('arrive with their equations compiled, and work the same', async () => {
+    for (const { key } of BUILTIN_PRESETS) {
+      const { preset } = await loadPresetFile(key)
+      expect(typeof preset.init_eqs, key).toBe('function')
+      expect(typeof preset.frame_eqs, key).toBe('function')
+      for (const shape of preset.shapes as {
+        baseVals: { enabled?: number }
+        frame_eqs?: unknown
+      }[]) {
+        if (shape.baseVals.enabled !== 0) expect(typeof shape.frame_eqs, key).toBe('function')
+      }
+    }
+    const { preset } = await loadPresetFile('builtin:geiss-spiral-artifact')
+    const run = (eqs: unknown) =>
+      (eqs as (a: Record<string, number>) => Record<string, number>)({
+        time: 1,
+        rot_sum: 0,
+        q2: 0.1,
+        q3: 1,
+        zoom: 1,
+        wave_r: 0,
+        wave_g: 0,
+        wave_b: 0,
+      })
+    const evaluated = new Function('a', `${preset.frame_eqs_str as string} return a;`)
+    expect(run(preset.frame_eqs)).toEqual(run(evaluated))
   })
 })
 

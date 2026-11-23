@@ -1,6 +1,7 @@
 import { resolve } from 'path';
 import { defineConfig } from 'vitest/config';
 import vue from '@vitejs/plugin-vue';
+import { milkdropPresets } from './vite.milkdrop-presets';
 import { playwright } from '@vitest/browser-playwright';
 
 // Separate config from vitest.config.ts's jsdom project, for the tests that
@@ -18,7 +19,7 @@ export default defineConfig({
             '@': resolve('src/renderer/src'),
         },
     },
-    plugins: [vue()],
+    plugins: [vue(), milkdropPresets()],
     test: {
         include: ['src/renderer/src/**/__tests__/**/*.browser.test.ts'],
         browser: {
