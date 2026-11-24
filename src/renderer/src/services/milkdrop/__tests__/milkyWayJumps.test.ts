@@ -43,6 +43,7 @@ describe('Milky Way jumps', () => {
     ['Ringed giant', 'Ringed gas giant'],
     ['Earth-like world', 'Earth-like world'],
     ['Binary star', 'Binary star'],
+    ['Triple star', 'Triple star'],
   ])('lands "%s" at the sight captioned "%s"', (label, expected) => {
     expect(caption(arriveAt(label))).toBe(expected)
   })
