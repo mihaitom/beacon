@@ -35,6 +35,7 @@ import { themeAccent } from '@/services/appAccent'
 import {
   ACCENT_SAMPLER,
   COVER_SAMPLER,
+  COVER_SIZE,
   accentPicture,
   coverPicture,
   loadShippedPicture,
@@ -47,6 +48,7 @@ import {
 } from '@/services/milkdrop/textures'
 import { ORBIT_LENGTH, ORBIT_SAMPLER, orbitsFor } from '@/services/milkdrop/orbits'
 import { BlaKeeper } from '@/services/milkdrop/bla'
+import { PictureFade, type FadePicture } from '@/services/milkdrop/pictureFade'
 import { i18n } from '@/i18n'
 import {
   currentCaption,
@@ -66,6 +68,8 @@ import type { PresetShaders } from 'butterchurn'
 
 // How long a new preset blends in from the last one.
 const BLEND_SECONDS = 2.7
+// How long a new song's cover and accent take to fade in over the last.
+const PICTURE_FADE_MS = 1500
 // How long the preset's name, or a caption, stays up.
 const LABEL_MS = 5000
 // Butterchurn's own frame size: what it reads from an analyser per frame,
@@ -101,6 +105,9 @@ interface Runtime {
   nextStepAt: number
   /** The cover being fetched, so a song change can call it off. */
   coverLoad: AbortController | null
+  /** The cover and the accent, each faded over from the last. */
+  coverFade: PictureFade
+  accentFade: PictureFade
   /** The preset on screen as loaded, to load again in a new accent. */
   presetData: MilkdropPreset | null
   /** What the preset on screen can say about itself (see captions.ts),
@@ -185,6 +192,8 @@ export default {
         gaveUp: false,
         nextStepAt: 0,
         coverLoad: null,
+        coverFade: new PictureFade(COVER_SIZE, PICTURE_FADE_MS),
+        accentFade: new PictureFade(1, PICTURE_FADE_MS),
         presetData: null,
         captions: undefined,
         caption: null,
@@ -255,6 +264,8 @@ export default {
   },
   beforeUnmount() {
     this.rt.coverLoad?.abort()
+    this.rt.coverFade.dispose()
+    this.rt.accentFade.dispose()
     this.rt.compile?.abort()
     window.removeEventListener('pagehide', this.pageHidden)
     ;(this.$refs.canvas as HTMLCanvasElement | undefined)?.removeEventListener(
@@ -297,6 +308,7 @@ export default {
       const next = nextStep(now, this.rt.nextStepAt)
       if (next === null) return
       this.rt.nextStepAt = next
+      this.stepFades(now)
       // The first frame is drawn even while paused, so a paused song still
       // shows a picture instead of a black canvas; showPreset asks for one
       // again for a preset picked while paused.
@@ -436,7 +448,11 @@ export default {
     showAccent(): void {
       const visualizer = this.rt.visualizer
       if (!visualizer) return
-      setTexture(visualizer, ACCENT_SAMPLER, accentPicture(this.accentColour))
+      setTexture(
+        visualizer,
+        ACCENT_SAMPLER,
+        this.rt.accentFade.show(accentPicture(this.accentColour), performance.now()),
+      )
       const preset = this.rt.presetData
       if (preset && withAccent(preset, this.accentColour) !== preset) {
         // The colour is no part of the shaders: the programs carry over.
@@ -453,7 +469,7 @@ export default {
       const visualizer = this.rt.visualizer
       if (!visualizer) return
       if (!cover) {
-        setTexture(visualizer, COVER_SAMPLER, placeholderPicture())
+        this.putCover(visualizer, placeholderPicture())
         return
       }
       const load = new AbortController()
@@ -466,13 +482,23 @@ export default {
           return
         }
         // No art for this song: calm grey rather than the last song's cover.
-        setTexture(visualizer, COVER_SAMPLER, picture ?? placeholderPicture())
-        picture?.close()
+        this.putCover(visualizer, picture ?? placeholderPicture())
       } catch (error) {
         if (load.signal.aborted) return
         console.error('[milkdrop] Cover failed:', cover.key, error)
-        setTexture(visualizer, COVER_SAMPLER, placeholderPicture())
+        this.putCover(visualizer, placeholderPicture())
       }
+    },
+    putCover(visualizer: MilkdropVisualizer, picture: FadePicture): void {
+      setTexture(visualizer, COVER_SAMPLER, this.rt.coverFade.show(picture, performance.now()))
+    },
+    stepFades(now: number): void {
+      const visualizer = this.rt.visualizer
+      if (!visualizer) return
+      const cover = this.rt.coverFade.step(now)
+      if (cover) setTexture(visualizer, COVER_SAMPLER, cover)
+      const accent = this.rt.accentFade.step(now)
+      if (accent) setTexture(visualizer, ACCENT_SAMPLER, accent)
     },
     announce(name: string): void {
       this.rt.pendingCaption = null
