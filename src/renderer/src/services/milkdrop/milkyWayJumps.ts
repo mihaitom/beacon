@@ -12,8 +12,7 @@ export interface MilkyWayDestination {
 
 // r9 0.8 keeps a companion star away wherever one could come up.
 export const MILKY_WAY_DESTINATIONS: MilkyWayDestination[] = [
-  { label: 'Pillars', pick: { r1: 0.2, r10: 0.1 } },
-  { label: 'Nebula', pick: { r1: 0.2, r10: 0.8 } },
+  { label: 'Nebula', pick: { r1: 0.2 } },
   { label: 'Black hole + disc', pick: { r1: 0.04, r9: 0.3 } },
   { label: 'Black hole', pick: { r1: 0.04, r9: 0.8 } },
   { label: 'Neutron star', pick: { r1: 0.1 } },

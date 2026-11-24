@@ -38,7 +38,6 @@ describe('Milky Way jumps', () => {
   })
 
   it.each([
-    ['Pillars', 'Pillars of gas and dust'],
     ['Nebula', 'Emission nebula'],
     ['Neutron star', 'Neutron star'],
     ['Ringed giant', 'Ringed gas giant'],
@@ -61,7 +60,7 @@ describe('Milky Way jumps', () => {
   })
 
   it('uses a pick once, then goes back to the dice', () => {
-    arriveAt('Pillars')
+    arriveAt('Nebula')
     expect((globalThis as { beaconMilkyWayPick?: unknown }).beaconMilkyWayPick).toBeNull()
   })
 })
