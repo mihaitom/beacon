@@ -16,6 +16,7 @@ import { fanartImageWidth } from '@/services/connect/fanartWidth'
 import { resampleBands } from '@/services/visualizerBands'
 import { visualizerBarColor } from '@/services/visualizerColor'
 import { BUILTIN_PRESETS, pickPresetKey } from '@/services/milkdrop/presets'
+import { drawableHere, forgetTooHeavy } from '@/services/milkdrop/deviceLimits'
 import type { MilkdropCover } from '@/services/milkdrop/textures'
 import { decodeWaveform } from '@/services/milkdrop/waveform'
 import type { GuestRadio, GuestSong } from './api'
@@ -257,7 +258,11 @@ export function useGuestNowPlayingSource(
   const milkdropActive = computed(() => showMilkdrop.value && milkdropAvailable.value)
   const builtinKeys = BUILTIN_PRESETS.map((entry) => entry.key)
   function pickMilkdropPreset(): void {
-    milkdropPreset.value = pickPresetKey(builtinKeys, Math.random(), milkdropPreset.value)
+    milkdropPreset.value = pickPresetKey(
+      drawableHere(builtinKeys),
+      Math.random(),
+      milkdropPreset.value,
+    )
   }
   /** Which feed the page needs: Milkdrop's takes the samples along, and
    * keeps coming while the bars themselves are switched off. */
@@ -556,7 +561,11 @@ export function useGuestNowPlayingSource(
     },
     nextMilkdropPreset: pickMilkdropPreset,
     chooseMilkdropPreset: (key: string) => {
+      forgetTooHeavy(key)
       milkdropPreset.value = key
+    },
+    milkdropTooHeavy: (key: string) => {
+      if (milkdropPreset.value === key) pickMilkdropPreset()
     },
     seek: () => {},
     setLyricsOffset: () => {},

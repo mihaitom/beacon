@@ -89,6 +89,7 @@ export interface HostNowPlayingApi {
   cycleArtistBackground(): void
   toggleMilkdrop(): void
   nextMilkdropPreset(): void
+  milkdropTooHeavy(key: string): void
   searchTitleLog(query: string): void
   loadOlderTitles(): void
   setLyricsOffset(offset: number): void
@@ -251,6 +252,7 @@ export function hostNowPlayingSource(api: HostNowPlayingApi): NowPlayingSource {
     toggleMilkdrop: () => api.toggleMilkdrop(),
     nextMilkdropPreset: () => api.nextMilkdropPreset(),
     chooseMilkdropPreset: (key: string) => useMilkdropStore().choose(key),
+    milkdropTooHeavy: (key: string) => api.milkdropTooHeavy(key),
     seek: (seconds: number) => api.seek(seconds),
     setLyricsOffset: (offset: number) => api.setLyricsOffset(offset),
     resetLyricsOffset: () => api.setLyricsOffset(0),

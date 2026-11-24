@@ -9,6 +9,7 @@ WORKDIR /app
 RUN npm install -g corepack && corepack enable && corepack prepare pnpm@11.5.0 --activate
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY patches ./patches
 
 # This stage only ever runs `pnpm run build:web` below (a Vite build) — it
 # never launches Electron itself, so the ~100MB Electron binary the

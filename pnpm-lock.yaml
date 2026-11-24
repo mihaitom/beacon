@@ -7,6 +7,9 @@ settings:
 overrides:
   shell-quote: ^1.11.0
 
+patchedDependencies:
+  butterchurn@2.6.7: ce67b0ad36a97ed9b66969e355b7deb986b8c733797b1729293fc9606fc7225b
+
 importers:
 
   .:
@@ -31,7 +34,7 @@ importers:
         version: 2.19.0
       butterchurn:
         specifier: 2.6.7
-        version: 2.6.7
+        version: 2.6.7(patch_hash=ce67b0ad36a97ed9b66969e355b7deb986b8c733797b1729293fc9606fc7225b)
       dotenv:
         specifier: ^18.0.10
         version: 18.0.10
@@ -4978,7 +4981,7 @@ snapshots:
     dependencies:
       run-applescript: 7.1.0
 
-  butterchurn@2.6.7:
+  butterchurn@2.6.7(patch_hash=ce67b0ad36a97ed9b66969e355b7deb986b8c733797b1729293fc9606fc7225b):
     dependencies:
       '@babel/runtime': 7.29.15
       ecma-proposal-math-extensions: 0.0.2

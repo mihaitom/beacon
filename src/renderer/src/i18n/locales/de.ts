@@ -745,6 +745,8 @@ export default {
     uploadFailed: 'Nicht lesbar: {files}.',
     deleteFailed: 'Das Preset konnte nicht gelöscht werden.',
     depth: 'Tiefe',
+    preparing: 'Visualisierung wird vorbereitet',
+    tooHeavy: '{name} ist für dieses Gerät zu aufwendig',
     jumpTitle: 'Direkt zu',
     jumpPlaceholder: 'Ort auswählen',
     jumpHint: 'Zeigt diesen Ort sofort; von dort geht das Preset von allein weiter.',

@@ -229,6 +229,9 @@ export interface NowPlayingSource {
   nextMilkdropPreset(): void
   /** Shows `key` now, as a pick from the Milkdrop menu. */
   chooseMilkdropPreset(key: string): void
+  /** The picture gave up on `key` on this device (it is remembered there
+   * already): another preset takes its place. */
+  milkdropTooHeavy(key: string): void
   seek(seconds: number): void
   setLyricsOffset(seconds: number): void
   resetLyricsOffset(): void

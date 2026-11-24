@@ -31,6 +31,7 @@
           :accent="borrowedAccent"
           :waveform="source.milkdrop.mode === 'cast' ? source.milkdrop.waveform : null"
           :analyser="source.milkdrop.analyser"
+          @too-heavy="source.milkdropTooHeavy"
         />
       </now-playing-backdrop>
       <!-- Wherever the text (and on a phone held sideways the controls) sits

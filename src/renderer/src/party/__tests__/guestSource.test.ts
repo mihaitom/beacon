@@ -303,6 +303,30 @@ describe('guest Now Playing source', () => {
       expect(again.source.milkdrop.active).toBe(true)
     })
 
+    it('moves on from a preset this device cannot draw, and never picks it again', async () => {
+      usePartyGuestStore().applySnapshot(snapshot({ casting: true, current_song: SONG }))
+      const built = useGuestNowPlayingSource()
+      dispose = built.dispose
+      built.source.toggleMilkdrop()
+      await nextTick()
+      const heavy = built.source.milkdrop.preset!
+      localStorage.setItem('beacon.milkdrop.tooHeavy', JSON.stringify([heavy]))
+      built.source.milkdropTooHeavy(heavy)
+      expect(built.source.milkdrop.preset).not.toBe(heavy)
+      // Every seed once: one of them stands for the heavy preset.
+      const random = vi.spyOn(Math, 'random')
+      for (let i = 0; i < 40; i++) {
+        random.mockReturnValueOnce(i / 40)
+        built.source.nextMilkdropPreset()
+        expect(built.source.milkdrop.preset).not.toBe(heavy)
+      }
+      random.mockRestore()
+      // Picked by hand, it gets another try.
+      built.source.chooseMilkdropPreset(heavy)
+      expect(built.source.milkdrop.preset).toBe(heavy)
+      expect(localStorage.getItem('beacon.milkdrop.tooHeavy')).toBe('[]')
+    })
+
     it('asks the cast feed for the samples, and plays them', async () => {
       usePartyGuestStore().applySnapshot(snapshot({ casting: true, current_song: SONG }))
       localStorage.setItem('beacon_party_view', JSON.stringify({ showVisualizer: false }))

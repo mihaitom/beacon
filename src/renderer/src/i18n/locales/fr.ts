@@ -751,6 +751,8 @@ export default {
     uploadFailed: 'Illisible : {files}.',
     deleteFailed: 'Le preset n’a pas pu être supprimé.',
     depth: 'Profondeur',
+    preparing: 'Préparation de la visualisation',
+    tooHeavy: '{name} est trop lourd pour cet appareil',
     jumpTitle: 'Aller à',
     jumpPlaceholder: 'Choisir un lieu',
     jumpHint: 'Affiche ce lieu tout de suite ; le preset continue ensuite tout seul.',

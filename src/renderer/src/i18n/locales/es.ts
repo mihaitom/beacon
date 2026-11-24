@@ -750,6 +750,8 @@ export default {
     uploadFailed: 'No se pudo leer: {files}.',
     deleteFailed: 'No se pudo eliminar el preset.',
     depth: 'Profundidad',
+    preparing: 'Preparando la visualización',
+    tooHeavy: '{name} es demasiado para este dispositivo',
     jumpTitle: 'Saltar a',
     jumpPlaceholder: 'Elige un lugar',
     jumpHint: 'Muestra ese lugar ahora; el preset sigue solo desde allí.',

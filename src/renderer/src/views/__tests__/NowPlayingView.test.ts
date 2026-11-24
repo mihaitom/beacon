@@ -916,6 +916,35 @@ describe('NowPlayingView', () => {
       expect(shownPreset(wrapper)).toBe(other)
     })
 
+    it('passes over a fixed preset this device could not draw, leaving the choice on the account', async () => {
+      const key = BUILTIN_PRESETS[7]!.key
+      useMilkdropStore().set({ switchMode: 'fixed', preset: key })
+      localStorage.setItem('beacon.milkdrop.tooHeavy', JSON.stringify([key]))
+      const { wrapper } = await mountPlaying()
+      await switchOn(wrapper)
+      expect(shownPreset(wrapper)).not.toBeNull()
+      expect(shownPreset(wrapper)).not.toBe(key)
+      expect(useMilkdropStore().settings.preset).toBe(key)
+    })
+
+    it('moves on from a preset the picture gave up on', async () => {
+      // A pool of two: without the device's list, every other pick would
+      // land on the heavy one again.
+      const [a, b] = BUILTIN_PRESETS.slice(3, 5).map((entry) => entry.key)
+      useMilkdropStore().set({ preferred: [a!, b!] })
+      const { wrapper } = await mountPlaying()
+      await switchOn(wrapper)
+      const heavy = shownPreset(wrapper)!
+      localStorage.setItem('beacon.milkdrop.tooHeavy', JSON.stringify([heavy]))
+      wrapper.findComponent(MilkdropVisualizer).vm.$emit('too-heavy', heavy)
+      await flushPromises()
+      expect(shownPreset(wrapper)).not.toBe(heavy)
+      for (let i = 0; i < 6; i++) {
+        await nextSong()
+        expect(shownPreset(wrapper)).not.toBe(heavy)
+      }
+    })
+
     it('shows a preset picked in the menu at once', async () => {
       const { wrapper } = await mountPlaying()
       await switchOn(wrapper)

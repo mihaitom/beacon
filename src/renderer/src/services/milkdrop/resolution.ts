@@ -22,10 +22,19 @@ const SLOW_FRAME_MS = 25
 // A gap this long is a pause or a hidden window, not a slow frame.
 const PAUSE_MS = 250
 const SAMPLES = 60
+// Twice the mark or more, a weak card drawing a heavy preset at a few
+// frames a second: the compositor shares that GPU, so the whole browser
+// stutters with it. A handful of samples is enough to tell, and the step is
+// sized to the overshoot instead of waiting a minute of 0.8s.
+const OVERLOAD = 2
+const QUICK_SAMPLES = 5
 
 const STEP_DOWN = 0.8
 const STEP_UP = 1.15
 export const MIN_SCALE = 0.35
+/** Where a preset marked demanding starts: a quarter of the pixels. One
+ * that a card can afford climbs back to full size within seconds. */
+export const DEMANDING_SCALE = 0.5
 
 function median(values: number[]): number {
   const sorted = [...values].sort((a, b) => a - b)
@@ -45,6 +54,9 @@ interface TimerQuery {
 export class RenderScale {
   /** Of the screen's own pixels, 1 for all of them. */
   scale = 1
+  /** Set once the preset is far too slow even at the smallest scale: it
+   * is more than this device can draw. Cleared by the next preset. */
+  overloaded = false
   private readonly gl: WebGL2RenderingContext | null
   private readonly timer: TimerQuery | null
   private pending: WebGLQuery | null = null
@@ -96,26 +108,39 @@ export class RenderScale {
     return this.decide()
   }
 
-  /** A new preset: without the GPU's clock there was no telling whether
-   * the last one's scale could go up again, so the new one starts at full
-   * size. */
-  presetChanged(): number | null {
-    if (this.timer || this.scale === 1) return null
-    this.scale = 1
+  /** A new preset. A demanding one starts small, whatever the last one
+   * got to. Otherwise, without the GPU's clock there was no telling
+   * whether the last one's scale could go up again, so the new one starts
+   * at full size; with it, the scale carries over. The new scale when it
+   * changed, otherwise null. */
+  presetChanged(demanding = false): number | null {
+    this.overloaded = false
+    this.gpuMs = []
     this.frameMs = []
-    return this.scale
+    let next = this.scale
+    if (demanding) next = Math.min(this.scale, DEMANDING_SCALE)
+    else if (!this.timer) next = 1
+    if (next === this.scale) return null
+    this.scale = next
+    return next
   }
 
   private decide(): number | null {
+    const samples = this.timer ? this.gpuMs : this.frameMs
+    const mark = this.timer ? SLOW_GPU_MS : SLOW_FRAME_MS
+    if (samples.length < QUICK_SAMPLES) return null
+    const took = median(samples)
     let next = this.scale
-    if (this.timer) {
-      if (this.gpuMs.length < SAMPLES) return null
-      const gpu = median(this.gpuMs)
-      if (gpu > SLOW_GPU_MS) next = this.scale * STEP_DOWN
-      else if (gpu < FAST_GPU_MS) next = this.scale * STEP_UP
-    } else {
-      if (this.frameMs.length < SAMPLES) return null
-      if (median(this.frameMs) > SLOW_FRAME_MS) next = this.scale * STEP_DOWN
+    if (took > mark * OVERLOAD) {
+      // Cost goes with the pixels, the square of the scale.
+      next = this.scale * Math.min(STEP_DOWN, Math.sqrt(mark / took))
+      if (this.scale === MIN_SCALE) this.overloaded = true
+    } else if (samples.length < SAMPLES) {
+      return null
+    } else if (took > mark) {
+      next = this.scale * STEP_DOWN
+    } else if (this.timer && took < FAST_GPU_MS) {
+      next = this.scale * STEP_UP
     }
     this.gpuMs = []
     this.frameMs = []

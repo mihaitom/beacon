@@ -40,6 +40,7 @@ import { reportForegroundPicture } from '@/services/lights/pictureReport'
 import { useLightsStore } from '@/stores/lights'
 import { useMilkdropStore } from '@/stores/milkdrop'
 import { isRetiredPreset, pickPresetKey, presetPool } from '@/services/milkdrop/presets'
+import { drawableHere, forgetTooHeavy, tooHeavyHere } from '@/services/milkdrop/deviceLimits'
 import { decodeWaveform } from '@/services/milkdrop/waveform'
 import type { Song } from '@/types/library'
 import type { MixTransition, NoBeatmixReason } from '@/services/connect/types'
@@ -725,9 +726,7 @@ export default {
         if (!active) return
         if (!this.milkdropStore.customLoaded) void this.milkdropStore.loadCustom()
         this.milkdropPreset = this.milkdropStore.settings.preset ?? this.milkdropPreset
-        if (this.milkdropPreset === null || isRetiredPreset(this.milkdropPreset)) {
-          this.pickMilkdropPreset()
-        }
+        if (!this.milkdropPresetUsable(this.milkdropPreset)) this.pickMilkdropPreset()
       },
     },
     // Settings taken over from another device while this is open: a fixed
@@ -735,17 +734,22 @@ export default {
     // on screen moves on to one of its own.
     'milkdropStore.settings.preset'(key: string | null) {
       if (!this.milkdropActive || this.milkdropStore.settings.switchMode !== 'fixed') return
-      if (key && !isRetiredPreset(key)) this.milkdropPreset = key
+      if (this.milkdropPresetUsable(key)) this.milkdropPreset = key
     },
     'milkdropStore.settings.preferred'() {
       if (!this.milkdropActive || this.milkdropStore.settings.switchMode === 'fixed') return
-      const pool = presetPool(this.milkdropStore.presets, this.milkdropStore.settings.preferred)
+      const pool = drawableHere(
+        presetPool(this.milkdropStore.presets, this.milkdropStore.settings.preferred),
+      )
       if (!this.milkdropPreset || !pool.includes(this.milkdropPreset)) this.pickMilkdropPreset()
     },
     // Picked in the menu: shown at once, even when it is the one picked
     // before and an automatic change has moved on since.
     'milkdropStore.chosen'() {
-      this.milkdropPreset = this.milkdropStore.settings.preset
+      const key = this.milkdropStore.settings.preset
+      // By hand, so worth another try on this device.
+      if (key) forgetTooHeavy(key)
+      this.milkdropPreset = key
     },
     milkdropTimerSeconds: {
       immediate: true,
@@ -837,10 +841,21 @@ export default {
     toggleMilkdrop(): void {
       this.milkdropEnabled = !this.milkdropEnabled
     },
-    /** Another preset from the pool, at random. */
+    /** Another preset from the pool, at random - of those this device
+     * can draw. */
     pickMilkdropPreset(): void {
-      const pool = presetPool(this.milkdropStore.presets, this.milkdropStore.settings.preferred)
+      const pool = drawableHere(
+        presetPool(this.milkdropStore.presets, this.milkdropStore.settings.preferred),
+      )
       this.milkdropPreset = pickPresetKey(pool, Math.random(), this.milkdropPreset)
+    },
+    milkdropPresetUsable(key: string | null): key is string {
+      return key !== null && !isRetiredPreset(key) && !tooHeavyHere().has(key)
+    },
+    /** Replaced here only: a fixed choice on the account stays, the
+     * account's other devices may well draw it. */
+    milkdropTooHeavy(key: string): void {
+      if (this.milkdropPreset === key) this.pickMilkdropPreset()
     },
     nextMilkdropPreset(): void {
       this.pickMilkdropPreset()

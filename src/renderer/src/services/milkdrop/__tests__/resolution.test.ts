@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { MilkdropVisualizer } from 'butterchurn'
-import { MIN_SCALE, RenderScale } from '../resolution'
+import { DEMANDING_SCALE, MIN_SCALE, RenderScale } from '../resolution'
 
 /** A visualizer whose GPU takes `gpuMs()` per frame - or, without
  * `gpuMs`, one that has no GPU clock to read. */
@@ -66,6 +66,36 @@ describe('RenderScale, with the GPU clock', () => {
     expect(draw(scale, 500)).toEqual([])
   })
 
+  it('drops at once, and by more, when the GPU is far behind', () => {
+    const scale = new RenderScale(visualizer(() => 48))
+    const [first] = draw(scale, 6)
+    // Four times the pixels' worth too slow: half the scale.
+    expect(first).toBeCloseTo(0.5)
+    expect(scale.overloaded).toBe(false)
+  })
+
+  it('gives up on a preset that is far too slow even at the floor', () => {
+    const scale = new RenderScale(visualizer(() => 96))
+    draw(scale, 30)
+    expect(scale.scale).toBe(MIN_SCALE)
+    expect(scale.overloaded).toBe(true)
+    scale.presetChanged()
+    expect(scale.overloaded).toBe(false)
+  })
+
+  it('does not give up on one that is merely slow at the floor', () => {
+    const scale = new RenderScale(visualizer(() => 15))
+    draw(scale, 2000)
+    expect(scale.overloaded).toBe(false)
+  })
+
+  it('starts a demanding preset small, and lets it climb when there is room', () => {
+    const scale = new RenderScale(visualizer(() => 3))
+    expect(scale.presetChanged(true)).toBe(DEMANDING_SCALE)
+    draw(scale, 2000)
+    expect(scale.scale).toBe(1)
+  })
+
   it('has its own measure for a new preset, so keeps its scale', () => {
     const scale = new RenderScale(visualizer(() => 15))
     draw(scale, 61)
@@ -93,6 +123,20 @@ describe('RenderScale, without it', () => {
     expect(scale.presetChanged()).toBe(1)
     expect(scale.scale).toBe(1)
     expect(scale.presetChanged()).toBeNull()
+  })
+
+  it('drops at once when frames come far too late, and gives up at the floor', () => {
+    const scale = new RenderScale(visualizer())
+    const clock = { at: 0 }
+    expect(draw(scale, 6, 200, clock)[0]).toBeLessThan(0.5)
+    draw(scale, 60, 200, clock)
+    expect(scale.overloaded).toBe(true)
+  })
+
+  it('starts a demanding preset small, and a light one at full size', () => {
+    const scale = new RenderScale(visualizer())
+    expect(scale.presetChanged(true)).toBe(DEMANDING_SCALE)
+    expect(scale.presetChanged(false)).toBe(1)
   })
 
   it('works without a renderer to read at all', () => {

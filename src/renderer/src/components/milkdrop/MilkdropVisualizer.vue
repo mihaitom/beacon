@@ -5,6 +5,12 @@
   <div class="milkdrop">
     <canvas ref="canvas" class="milkdrop__canvas" :class="{ 'milkdrop__canvas--ready': ready }" />
     <div class="milkdrop__corner">
+      <!-- Only before the first picture: later the last preset keeps
+       - running while the next one compiles. -->
+      <div v-if="preparing && !ready" class="milkdrop__preparing">
+        <v-progress-circular indeterminate size="18" width="2" />
+        <span class="text-body-medium">{{ preparingLabel }}</span>
+      </div>
       <!-- Keyed by its text: a new one fades in only once the last is gone. -->
       <transition name="milkdrop-label" mode="out-in">
         <div v-if="labelVisible" :key="labelText" class="milkdrop__label display-title">
@@ -52,7 +58,11 @@ import {
 import { nextStep } from '@/services/milkdrop/pacing'
 import { renderSize } from '@/services/milkdrop/renderSize'
 import { RenderScale } from '@/services/milkdrop/resolution'
-import { loadPresetFile } from '@/services/milkdrop/presets'
+import { isDemandingPreset, loadPresetFile } from '@/services/milkdrop/presets'
+import { compilePresetShaders } from '@/services/milkdrop/shaderCompile'
+import { keepLoopsRolled } from '@/services/milkdrop/loops'
+import { clearStarting, markTooHeavy, noteStarting } from '@/services/milkdrop/deviceLimits'
+import type { PresetShaders } from 'butterchurn'
 
 // How long a new preset blends in from the last one.
 const BLEND_SECONDS = 2.7
@@ -62,6 +72,9 @@ const LABEL_MS = 5000
 // and what connect sends per frame while casting.
 const WAVEFORM_SAMPLES = 1024
 const SILENCE = new Uint8Array(WAVEFORM_SAMPLES).fill(128)
+// Drawn this many frames, a preset has started: a hang would have come
+// before (see services/milkdrop/deviceLimits.ts).
+const STARTED_FRAMES = 60
 
 // Kept raw: Vue proxying Butterchurn's WebGL state would be slow, and the
 // render loop changes none of what the template shows.
@@ -74,6 +87,16 @@ interface Runtime {
   presetKey: string | null
   /** Bumped per preset request, so a slow load cannot replace a newer one. */
   loadSeq: number
+  /** The compile under way, called off by a newer preset or unmounting. */
+  compile: AbortController | null
+  /** The preset on screen's programs, for loading it again in a new
+   * accent without compiling anything. */
+  programs: PresetShaders<WebGLProgram> | null
+  presetName: string
+  /** Frames drawn of the preset on screen, up to STARTED_FRAMES. */
+  framesDrawn: number
+  /** Whether the preset on screen was found too heavy here already. */
+  gaveUp: boolean
   /** When the next step is due (see services/milkdrop/pacing.ts). */
   nextStepAt: number
   /** The cover being fetched, so a song change can call it off. */
@@ -134,9 +157,16 @@ export default {
       default: null,
     },
   },
+  emits: {
+    /** `key` is more than this device can draw; it is remembered as such
+     * here, and another preset should take its place. */
+    'too-heavy': (key: string) => typeof key === 'string',
+  },
   data() {
     return {
       ready: false,
+      /** A preset's shaders are compiling. */
+      preparing: false,
       labelText: '',
       labelVisible: false,
       zoom: null as ZoomText | null,
@@ -148,6 +178,11 @@ export default {
         labelTimer: undefined,
         presetKey: null,
         loadSeq: 0,
+        compile: null,
+        programs: null,
+        presetName: '',
+        framesDrawn: 0,
+        gaveUp: false,
         nextStepAt: 0,
         coverLoad: null,
         presetData: null,
@@ -165,6 +200,9 @@ export default {
     // From the i18n instance, like the zoom's digits.
     depthLabel(): string {
       return i18n.global.t('milkdrop.depth')
+    },
+    preparingLabel(): string {
+      return i18n.global.t('milkdrop.preparing')
     },
     /** What the presets that draw in an accent draw in: the same colour
      * as the rest of Now Playing. */
@@ -206,6 +244,8 @@ export default {
       console.error('[milkdrop] Could not start:', error)
       return
     }
+    canvas.addEventListener('webglcontextlost', this.contextLost)
+    window.addEventListener('pagehide', this.pageHidden)
     this.rt.observer = new ResizeObserver(() => this.resize())
     this.rt.observer.observe(canvas)
     this.showAccent()
@@ -215,6 +255,14 @@ export default {
   },
   beforeUnmount() {
     this.rt.coverLoad?.abort()
+    this.rt.compile?.abort()
+    window.removeEventListener('pagehide', this.pageHidden)
+    ;(this.$refs.canvas as HTMLCanvasElement | undefined)?.removeEventListener(
+      'webglcontextlost',
+      this.contextLost,
+    )
+    // Leaving is not hanging.
+    if (this.rt.presetKey) clearStarting(this.rt.presetKey)
     cancelAnimationFrame(this.rt.frame)
     clearTimeout(this.rt.labelTimer)
     this.rt.observer?.disconnect()
@@ -266,6 +314,10 @@ export default {
         this.rt.visualizer.render()
       }
       if (this.rt.renderScale?.end(now) != null) this.resize()
+      if (this.rt.renderScale?.overloaded) this.giveUp()
+      if (this.rt.framesDrawn < STARTED_FRAMES && ++this.rt.framesDrawn === STARTED_FRAMES) {
+        clearStarting(this.rt.presetKey)
+      }
       this.rt.bla.update(this.rt.visualizer)
       const caption = currentCaption(this.rt.visualizer, this.rt.captions)
       if (caption !== this.rt.caption) {
@@ -282,12 +334,30 @@ export default {
     async showPreset(key: string | null): Promise<void> {
       if (!key || key === this.rt.presetKey) return
       const seq = ++this.rt.loadSeq
+      this.rt.compile?.abort()
+      const compile = new AbortController()
+      this.rt.compile = compile
       try {
         const file = await loadPresetFile(key)
+        const preset = keepLoopsRolled(file.preset)
         // Before it starts, so its first frame has them.
-        const names = shippedPicturesFor(file.preset)
+        const names = shippedPicturesFor(preset)
         const pictures = await Promise.all(names.map((name) => loadShippedPicture(name)))
         if (seq !== this.rt.loadSeq || !this.rt.visualizer) return
+        const loaded = withAccent(preset, this.accentColour)
+        // From here on a hung GPU would take the page with it.
+        noteStarting(key)
+        this.preparing = true
+        let programs: PresetShaders<WebGLProgram> | null
+        try {
+          programs = await compilePresetShaders(this.rt.visualizer, loaded, compile.signal)
+        } finally {
+          if (seq === this.rt.loadSeq) this.preparing = false
+        }
+        if (seq !== this.rt.loadSeq || !this.rt.visualizer) {
+          clearStarting(key)
+          return
+        }
         names.forEach((name, i) => setTexture(this.rt.visualizer!, name, pictures[i]!))
         // The very first preset cuts in: there is nothing to blend from yet.
         // So does one picked while paused, drawn as a single still frame
@@ -300,10 +370,14 @@ export default {
           setDataTexture(this.rt.visualizer, ORBIT_SAMPLER, orbits, ORBIT_LENGTH, rows)
         }
         this.rt.bla.reset(this.rt.visualizer, orbits)
-        this.rt.visualizer.loadPreset(withAccent(file.preset, this.accentColour), blend)
+        this.rt.visualizer.loadPreset(loaded, blend, programs)
         this.rt.presetKey = key
-        if (this.rt.renderScale?.presetChanged() != null) this.resize()
-        this.rt.presetData = file.preset
+        this.rt.programs = programs
+        this.rt.presetName = file.name
+        this.rt.framesDrawn = 0
+        this.rt.gaveUp = false
+        if (this.rt.renderScale?.presetChanged(isDemandingPreset(key)) != null) this.resize()
+        this.rt.presetData = preset
         this.rt.captions = file.captions
         this.rt.caption = null
         this.rt.reportsZoom = file.reportsZoom === true
@@ -311,9 +385,46 @@ export default {
         if (!this.playing) this.ready = false
         this.announce(file.name)
       } catch (error) {
+        if (compile.signal.aborted) return
         // A preset Butterchurn cannot compile; the last one keeps running.
+        clearStarting(key)
         console.error('[milkdrop] Preset failed:', key, error)
       }
+    },
+    /** Far too slow even at the smallest size: remembered for this device,
+     * said in the corner, and handed back for another preset. */
+    giveUp(): void {
+      const key = this.rt.presetKey
+      if (!key || this.rt.gaveUp) return
+      this.rt.gaveUp = true
+      markTooHeavy(key)
+      clearStarting(key)
+      this.showLabel(
+        { text: i18n.global.t('milkdrop.tooHeavy', { name: this.rt.presetName }) },
+        true,
+      )
+      this.$emit('too-heavy', key)
+    },
+    /** The GPU process gave up on the context - a driver reset, most often
+     * under a preset too heavy for the card. Nothing draws from here on;
+     * the backdrop underneath shows again. */
+    contextLost(): void {
+      cancelAnimationFrame(this.rt.frame)
+      this.rt.compile?.abort()
+      this.rt.visualizer = null
+      this.ready = false
+      this.preparing = false
+      const key = this.rt.presetKey
+      if (key && !this.rt.gaveUp) {
+        this.rt.gaveUp = true
+        markTooHeavy(key)
+        clearStarting(key)
+        this.$emit('too-heavy', key)
+      }
+    },
+    /** Closed normally: not a hang. */
+    pageHidden(): void {
+      if (this.rt.presetKey) clearStarting(this.rt.presetKey)
     },
     /** The accent, for the presets that draw in it. The waveform's colour
      * is fixed when a preset loads, so one that draws a waveform loads
@@ -328,9 +439,11 @@ export default {
       setTexture(visualizer, ACCENT_SAMPLER, accentPicture(this.accentColour))
       const preset = this.rt.presetData
       if (preset && withAccent(preset, this.accentColour) !== preset) {
+        // The colour is no part of the shaders: the programs carry over.
         visualizer.loadPreset(
           withAccent(preset, this.accentColour),
           this.playing && this.ready ? BLEND_SECONDS : 0,
+          this.rt.programs,
         )
       }
     },
@@ -431,6 +544,12 @@ export default {
   text-shadow:
     0 1px 3px rgba(0, 0, 0, 0.8),
     0 0 12px rgba(0, 0, 0, 0.5);
+}
+
+.milkdrop__preparing {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 /* Half a second each way: a change, out and in, takes one. */

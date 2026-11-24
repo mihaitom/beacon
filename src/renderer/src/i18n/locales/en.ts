@@ -738,6 +738,8 @@ export default {
     uploadFailed: 'Could not read: {files}.',
     deleteFailed: 'The preset could not be deleted.',
     depth: 'Depth',
+    preparing: 'Preparing the visualization',
+    tooHeavy: '{name} is too much for this device',
     jumpTitle: 'Jump to',
     jumpPlaceholder: 'Pick a place',
     jumpHint: 'Shows that place now; the preset carries on from there by itself.',

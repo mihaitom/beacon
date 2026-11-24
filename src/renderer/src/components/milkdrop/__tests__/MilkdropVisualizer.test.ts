@@ -5,12 +5,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
 const qs: Record<string, number> = {}
+const loadPreset = vi.hoisted(() => vi.fn())
 
 vi.mock('@/services/milkdrop/butterchurn', () => ({
   butterchurn: {
     createVisualizer: () => ({
       renderer: { presetEquationRunner: { mdVSQAfterFrame: qs } },
-      loadPreset: vi.fn(),
+      loadPreset,
       render: vi.fn(),
       setRendererSize: vi.fn(),
     }),
@@ -18,18 +19,43 @@ vi.mock('@/services/milkdrop/butterchurn', () => ({
 }))
 
 vi.mock('@/services/milkdrop/presets', () => ({
+  isDemandingPreset: () => false,
   loadPresetFile: async (key: string) =>
     key === 'builtin:other'
       ? { name: 'Other', preset: { warp: '', comp: '' } }
-      : {
-          name: 'Beacon - Fractal Zoom',
-          preset: { warp: '', comp: '' },
-          captions: [{ text: 'Mandelbrot set' }, { text: 'Seahorse Valley' }],
-          reportsZoom: true,
-        },
+      : key === 'builtin:loops'
+        ? {
+            name: 'Loops',
+            preset: { warp: '', comp: 'shader_body { for (int i = 0; i < 9; i++) {} }' },
+          }
+        : {
+            name: 'Beacon - Fractal Zoom',
+            preset: { warp: '', comp: '' },
+            captions: [{ text: 'Mandelbrot set' }, { text: 'Seahorse Valley' }],
+            reportsZoom: true,
+          },
 }))
 
 const textures = vi.hoisted(() => ({ set: vi.fn() }))
+
+// What the render scale would conclude from the GPU's timings.
+const scaleState = vi.hoisted(() => ({ overloaded: false }))
+
+vi.mock('@/services/milkdrop/resolution', () => ({
+  RenderScale: class {
+    scale = 1
+    get overloaded() {
+      return scaleState.overloaded
+    }
+    begin() {}
+    end() {
+      return null
+    }
+    presetChanged() {
+      return null
+    }
+  },
+}))
 
 vi.mock('@/services/milkdrop/textures', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/milkdrop/textures')>()),
@@ -182,6 +208,90 @@ describe('MilkdropVisualizer cover', () => {
     await wrapper.setProps({ cover: { key: 'none', load: async () => null } })
     await flushPromises()
     expect(coversShown().at(-1)).toBeInstanceOf(HTMLCanvasElement)
+    wrapper.unmount()
+  })
+})
+
+describe('MilkdropVisualizer on a device that cannot keep up', () => {
+  const STARTING = 'beacon.milkdrop.starting'
+  const TOO_HEAVY = 'beacon.milkdrop.tooHeavy'
+
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.stubGlobal('OfflineAudioContext', class {})
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    )
+    localStorage.clear()
+    scaleState.overloaded = false
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  it('notes a preset as starting until it has drawn for a while', async () => {
+    const wrapper = await mountPlaying('builtin:other')
+    expect(localStorage.getItem(STARTING)).toBe('builtin:other')
+    await vi.advanceTimersByTimeAsync(2000)
+    expect(localStorage.getItem(STARTING)).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('takes leaving before then for leaving, not for a hang', async () => {
+    const wrapper = await mountPlaying('builtin:other')
+    wrapper.unmount()
+    expect(localStorage.getItem(STARTING)).toBeNull()
+  })
+
+  it('gives up on a preset far too slow even at the smallest size, once', async () => {
+    const wrapper = await mountPlaying('builtin:other')
+    scaleState.overloaded = true
+    await frames()
+    await frames()
+    expect(wrapper.emitted('too-heavy')).toEqual([['builtin:other']])
+    expect(JSON.parse(localStorage.getItem(TOO_HEAVY)!)).toEqual(['builtin:other'])
+    expect(label(wrapper)).toContain('Other')
+    wrapper.unmount()
+  })
+
+  it('gives up on the preset the context was lost under', async () => {
+    const wrapper = await mountPlaying('builtin:other')
+    wrapper.get('canvas').element.dispatchEvent(new Event('webglcontextlost'))
+    expect(wrapper.emitted('too-heavy')).toEqual([['builtin:other']])
+    expect(JSON.parse(localStorage.getItem(TOO_HEAVY)!)).toEqual(['builtin:other'])
+    wrapper.unmount()
+  })
+})
+
+describe('MilkdropVisualizer shaders', () => {
+  beforeEach(() => {
+    vi.stubGlobal('OfflineAudioContext', class {})
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    )
+    loadPreset.mockClear()
+  })
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it("keeps a preset's loops from being unrolled (see services/milkdrop/loops.ts)", async () => {
+    const wrapper = mount(MilkdropVisualizer, {
+      props: { playing: true, preset: 'builtin:loops', waveform: () => null },
+    })
+    await flushPromises()
+    expect(loadPreset.mock.calls.at(-1)![0].comp).toContain('BEACON_ZERO')
     wrapper.unmount()
   })
 })

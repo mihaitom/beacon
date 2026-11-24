@@ -60,6 +60,12 @@ export const BUILTIN_PRESETS: readonly MilkdropPresetEntry[] = (
   demanding: demanding === true,
 }))
 
+/** Whether `key` is a built-in preset marked demanding; an uploaded one is
+ * not known without measuring it. */
+export function isDemandingPreset(key: string): boolean {
+  return BUILTIN_PRESETS.some((entry) => entry.key === key && entry.demanding)
+}
+
 export function customPresetKey(id: string): string {
   return CUSTOM_PREFIX + id
 }
