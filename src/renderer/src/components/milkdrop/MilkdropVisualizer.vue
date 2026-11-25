@@ -3,14 +3,18 @@
    - which stays underneath: it shows while the first preset loads, and for
    - good where WebGL 2 is missing and this never draws a frame. -->
   <div class="milkdrop">
-    <canvas ref="canvas" class="milkdrop__canvas" :class="{ 'milkdrop__canvas--ready': ready }" />
+    <!-- The canvas is put in from script: it outlives this component
+     - (see services/milkdrop/parking.ts). -->
+    <div ref="stage" class="milkdrop__stage" :class="{ 'milkdrop__stage--ready': ready }" />
     <div class="milkdrop__corner">
-      <!-- Only before the first picture: later the last preset keeps
-       - running while the next one compiles. -->
-      <div v-if="preparing && !ready" class="milkdrop__preparing">
-        <v-progress-circular indeterminate size="18" width="2" />
-        <span class="text-body-medium">{{ preparingLabel }}</span>
-      </div>
+      <!-- The last preset keeps running while the next one loads; this
+       - says that a change is on its way. -->
+      <transition name="milkdrop-label">
+        <div v-if="preparing" class="milkdrop__preparing">
+          <v-progress-circular indeterminate size="18" width="2" />
+          <span class="text-body-medium">{{ preparingLabel }}</span>
+        </div>
+      </transition>
       <!-- Keyed by its text: a new one fades in only once the last is gone. -->
       <transition name="milkdrop-label" mode="out-in">
         <div v-if="labelVisible" :key="labelText" class="milkdrop__label display-title">
@@ -64,6 +68,7 @@ import { isDemandingPreset, loadPresetFile } from '@/services/milkdrop/presets'
 import { compilePresetShaders } from '@/services/milkdrop/shaderCompile'
 import { keepLoopsRolled } from '@/services/milkdrop/loops'
 import { clearStarting, markTooHeavy, noteStarting } from '@/services/milkdrop/deviceLimits'
+import { park, unpark } from '@/services/milkdrop/parking'
 import type { PresetShaders } from 'butterchurn'
 
 // How long a new preset blends in from the last one.
@@ -79,15 +84,22 @@ const SILENCE = new Uint8Array(WAVEFORM_SAMPLES).fill(128)
 // Drawn this many frames, a preset has started: a hang would have come
 // before (see services/milkdrop/deviceLimits.ts).
 const STARTED_FRAMES = 60
+// A preset loaded before is back within a frame or two: saying it is on
+// its way only past this keeps that from flickering.
+const PREPARING_DELAY_MS = 400
 
 // Kept raw: Vue proxying Butterchurn's WebGL state would be slow, and the
 // render loop changes none of what the template shows.
 interface Runtime {
+  canvas: HTMLCanvasElement | null
   visualizer: MilkdropVisualizer | null
+  /** The audio context the visualizer was made with. */
+  audio: BaseAudioContext | null
   analyser: AnalyserNode | null
   frame: number
   observer: ResizeObserver | null
   labelTimer: ReturnType<typeof setTimeout> | undefined
+  preparingTimer: ReturnType<typeof setTimeout> | undefined
   presetKey: string | null
   /** Bumped per preset request, so a slow load cannot replace a newer one. */
   loadSeq: number
@@ -172,17 +184,20 @@ export default {
   data() {
     return {
       ready: false,
-      /** A preset's shaders are compiling. */
+      /** A preset is loading, for longer than a moment. */
       preparing: false,
       labelText: '',
       labelVisible: false,
       zoom: null as ZoomText | null,
       rt: markRaw<Runtime>({
+        canvas: null,
         visualizer: null,
+        audio: null,
         analyser: null,
         frame: 0,
         observer: null,
         labelTimer: undefined,
+        preparingTimer: undefined,
         presetKey: null,
         loadSeq: 0,
         compile: null,
@@ -231,20 +246,31 @@ export default {
     },
   },
   mounted() {
-    const canvas = this.$refs.canvas as HTMLCanvasElement
+    const stage = this.$refs.stage as HTMLElement
+    let canvas: HTMLCanvasElement
     try {
-      // Butterchurn wants an audio context even when it is handed its
-      // samples: an offline one opens no audio device and plays nothing.
       const analyser = this.waveform || !this.analyser ? null : this.analyser()
-      const context = analyser?.context ?? new OfflineAudioContext(2, 1, 44100)
+      const reused = unpark(analyser?.context ?? null)
+      canvas = reused?.canvas ?? document.createElement('canvas')
+      stage.appendChild(canvas)
       const { width, height } = this.canvasSize()
       canvas.width = width
       canvas.height = height
-      this.rt.visualizer = butterchurn.createVisualizer(context, canvas, {
-        width,
-        height,
-        pixelRatio: 1,
-      })
+      if (reused) {
+        this.rt.visualizer = reused.visualizer
+        this.rt.audio = reused.audio
+        this.rt.visualizer.setRendererSize(width, height, { pixelRatio: 1 })
+      } else {
+        // Butterchurn wants an audio context even when it is handed its
+        // samples: an offline one opens no audio device and plays nothing.
+        this.rt.audio = analyser?.context ?? new OfflineAudioContext(2, 1, 44100)
+        this.rt.visualizer = butterchurn.createVisualizer(this.rt.audio, canvas, {
+          width,
+          height,
+          pixelRatio: 1,
+        })
+      }
+      this.rt.canvas = canvas
       this.rt.renderScale = new RenderScale(this.rt.visualizer)
       if (analyser) this.rt.visualizer.connectAudio(analyser)
       this.rt.analyser = analyser
@@ -268,35 +294,35 @@ export default {
     this.rt.accentFade.dispose()
     this.rt.compile?.abort()
     window.removeEventListener('pagehide', this.pageHidden)
-    ;(this.$refs.canvas as HTMLCanvasElement | undefined)?.removeEventListener(
-      'webglcontextlost',
-      this.contextLost,
-    )
+    this.rt.canvas?.removeEventListener('webglcontextlost', this.contextLost)
     // Leaving is not hanging.
     if (this.rt.presetKey) clearStarting(this.rt.presetKey)
     cancelAnimationFrame(this.rt.frame)
     clearTimeout(this.rt.labelTimer)
+    clearTimeout(this.rt.preparingTimer)
     this.rt.observer?.disconnect()
     if (this.rt.visualizer && this.rt.analyser) {
       this.rt.visualizer.disconnectAudio(this.rt.analyser)
     }
+    // Kept, with every preset it compiled, for the next time Milkdrop
+    // shows; parking hands back the GPU memory it draws into.
+    if (this.rt.visualizer && this.rt.canvas && this.rt.audio) {
+      this.rt.canvas.remove()
+      park({ canvas: this.rt.canvas, visualizer: this.rt.visualizer, audio: this.rt.audio })
+    }
     this.rt.visualizer = null
-    // Hands the GPU memory back now rather than whenever the canvas is
-    // collected - switching Milkdrop off and on would otherwise pile up
-    // contexts until the browser starts dropping the oldest.
-    const canvas = this.$refs.canvas as HTMLCanvasElement | undefined
-    canvas?.getContext('webgl2')?.getExtension('WEBGL_lose_context')?.loseContext()
   },
   methods: {
     canvasSize(): { width: number; height: number } {
-      const rect = (this.$refs.canvas as HTMLCanvasElement).getBoundingClientRect()
+      const rect = (this.$refs.stage as HTMLElement).getBoundingClientRect()
       const scale = this.rt.renderScale?.scale ?? 1
       return renderSize(rect.width, rect.height, window.devicePixelRatio * scale)
     },
     resize(): void {
       const visualizer = this.rt.visualizer
       if (!visualizer) return
-      const canvas = this.$refs.canvas as HTMLCanvasElement
+      const canvas = this.rt.canvas
+      if (!canvas) return
       const { width, height } = this.canvasSize()
       if (canvas.width === width && canvas.height === height) return
       canvas.width = width
@@ -349,6 +375,10 @@ export default {
       this.rt.compile?.abort()
       const compile = new AbortController()
       this.rt.compile = compile
+      clearTimeout(this.rt.preparingTimer)
+      this.rt.preparingTimer = setTimeout(() => {
+        if (seq === this.rt.loadSeq) this.preparing = true
+      }, PREPARING_DELAY_MS)
       try {
         const file = await loadPresetFile(key)
         const preset = keepLoopsRolled(file.preset)
@@ -359,13 +389,7 @@ export default {
         const loaded = withAccent(preset, this.accentColour)
         // From here on a hung GPU would take the page with it.
         noteStarting(key)
-        this.preparing = true
-        let programs: PresetShaders<WebGLProgram> | null
-        try {
-          programs = await compilePresetShaders(this.rt.visualizer, loaded, compile.signal)
-        } finally {
-          if (seq === this.rt.loadSeq) this.preparing = false
-        }
+        const programs = await compilePresetShaders(this.rt.visualizer, loaded, compile.signal)
         if (seq !== this.rt.loadSeq || !this.rt.visualizer) {
           clearStarting(key)
           return
@@ -401,6 +425,11 @@ export default {
         // A preset Butterchurn cannot compile; the last one keeps running.
         clearStarting(key)
         console.error('[milkdrop] Preset failed:', key, error)
+      } finally {
+        if (seq === this.rt.loadSeq) {
+          clearTimeout(this.rt.preparingTimer)
+          this.preparing = false
+        }
       }
     },
     /** Far too slow even at the smallest size: remembered for this device,
@@ -425,6 +454,7 @@ export default {
       this.rt.compile?.abort()
       this.rt.visualizer = null
       this.ready = false
+      clearTimeout(this.rt.preparingTimer)
       this.preparing = false
       const key = this.rt.presetKey
       if (key && !this.rt.gaveUp) {
@@ -538,16 +568,21 @@ export default {
   container-type: size;
 }
 
-.milkdrop__canvas {
-  width: 100%;
-  height: 100%;
-  display: block;
+.milkdrop__stage {
+  position: absolute;
+  inset: 0;
   opacity: 0;
   transition: opacity 0.6s ease;
 }
 
-.milkdrop__canvas--ready {
+.milkdrop__stage--ready {
   opacity: 1;
+}
+
+.milkdrop__stage :deep(canvas) {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 /* Where the preset's name shows for a moment after it changes - so a good

@@ -6,22 +6,37 @@ import { flushPromises, mount } from '@vue/test-utils'
 
 const qs: Record<string, number> = {}
 const loadPreset = vi.hoisted(() => vi.fn())
+const createVisualizer = vi.hoisted(() => vi.fn())
 
 vi.mock('@/services/milkdrop/butterchurn', () => ({
   butterchurn: {
-    createVisualizer: () => ({
+    createVisualizer: createVisualizer.mockImplementation(() => ({
       renderer: { presetEquationRunner: { mdVSQAfterFrame: qs } },
       loadPreset,
       render: vi.fn(),
       setRendererSize: vi.fn(),
-    }),
+      connectAudio: vi.fn(),
+      disconnectAudio: vi.fn(),
+    })),
   },
 }))
 
+// Holds 'builtin:slow' back until a test lets it through.
+const slowLoad = vi.hoisted(() => ({ release: () => {} }))
+
 vi.mock('@/services/milkdrop/presets', () => ({
   isDemandingPreset: () => false,
-  loadPresetFile: async (key: string) =>
-    key === 'builtin:other'
+  loadPresetFile: async (key: string) => {
+    if (key === 'builtin:slow') {
+      await new Promise<void>((resolve) => (slowLoad.release = resolve))
+      return { name: 'Slow', preset: { warp: '', comp: '' } }
+    }
+    // Compiled before: back in a moment, not at once.
+    if (key === 'builtin:quick') {
+      await new Promise((resolve) => setTimeout(resolve, 100))
+      return { name: 'Quick', preset: { warp: '', comp: '' } }
+    }
+    return key === 'builtin:other'
       ? { name: 'Other', preset: { warp: '', comp: '' } }
       : key === 'builtin:loops'
         ? {
@@ -33,7 +48,8 @@ vi.mock('@/services/milkdrop/presets', () => ({
             preset: { warp: '', comp: '' },
             captions: [{ text: 'Mandelbrot set' }, { text: 'Seahorse Valley' }],
             reportsZoom: true,
-          },
+          }
+  },
 }))
 
 const textures = vi.hoisted(() => ({ set: vi.fn() }))
@@ -65,6 +81,7 @@ vi.mock('@/services/milkdrop/textures', async (importOriginal) => ({
 
 import MilkdropVisualizer from '../MilkdropVisualizer.vue'
 import { COVER_SAMPLER } from '@/services/milkdrop/textures'
+import { unpark } from '@/services/milkdrop/parking'
 
 const LABEL_MS = 5000
 
@@ -293,5 +310,103 @@ describe('MilkdropVisualizer shaders', () => {
     await flushPromises()
     expect(loadPreset.mock.calls.at(-1)![0].comp).toContain('BEACON_ZERO')
     wrapper.unmount()
+  })
+})
+
+describe('MilkdropVisualizer switching presets', () => {
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.stubGlobal('OfflineAudioContext', class {})
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    )
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    vi.unstubAllGlobals()
+  })
+
+  const preparing = (wrapper: Awaited<ReturnType<typeof mountPlaying>>) =>
+    wrapper.find('.milkdrop__preparing').exists()
+
+  it('says a slow preset is on its way while the last one keeps running', async () => {
+    const wrapper = await mountPlaying('builtin:other')
+    await frames()
+    await wrapper.setProps({ preset: 'builtin:slow' })
+    await vi.advanceTimersByTimeAsync(1000)
+    expect(preparing(wrapper)).toBe(true)
+    expect(wrapper.get('.milkdrop__stage').classes()).toContain('milkdrop__stage--ready')
+    slowLoad.release()
+    await flushPromises()
+    expect(preparing(wrapper)).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('says nothing for a preset that is back in a moment', async () => {
+    const wrapper = await mountPlaying('builtin:other')
+    await frames()
+    await wrapper.setProps({ preset: 'builtin:quick' })
+    for (let ms = 0; ms < 200; ms += 20) {
+      await vi.advanceTimersByTimeAsync(20)
+      expect(preparing(wrapper)).toBe(false)
+    }
+    wrapper.unmount()
+  })
+})
+
+describe('MilkdropVisualizer coming back', () => {
+  beforeEach(() => {
+    vi.stubGlobal('OfflineAudioContext', class {})
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        observe() {}
+        disconnect() {}
+      },
+    )
+    // jsdom has no WebGL; a context that is still alive is all parking asks.
+    const getContext = HTMLCanvasElement.prototype.getContext
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(function (
+      this: HTMLCanvasElement,
+      type: string,
+    ) {
+      if (type !== 'webgl2') return getContext.call(this, type)
+      return { isContextLost: () => false, getExtension: () => null }
+    } as typeof getContext)
+    // Whatever an earlier test left parked.
+    unpark(null)
+    createVisualizer.mockClear()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+  })
+
+  it('takes up the visualizer it left, with what it compiled', async () => {
+    const first = await mountPlaying('builtin:other')
+    const canvas = first.get('canvas').element
+    first.unmount()
+    const second = await mountPlaying('builtin:other')
+    expect(createVisualizer).toHaveBeenCalledTimes(1)
+    expect(second.get('canvas').element).toBe(canvas)
+    second.unmount()
+  })
+
+  it('starts afresh when the parked one would need another audio context', async () => {
+    const analyser = (context: object) => () => ({ context }) as unknown as AnalyserNode
+    const props = { playing: true, preset: 'builtin:other' }
+    const first = mount(MilkdropVisualizer, { props: { ...props, analyser: analyser({}) } })
+    await flushPromises()
+    first.unmount()
+    const second = mount(MilkdropVisualizer, { props: { ...props, analyser: analyser({}) } })
+    await flushPromises()
+    expect(createVisualizer).toHaveBeenCalledTimes(2)
+    second.unmount()
   })
 })

@@ -22,6 +22,25 @@ interface RendererInternals {
 
 // Asking costs nothing, but there is no event for "done".
 const POLL_MS = 30
+// Linked programs kept per context, so a preset shown before comes back
+// without compiling - the heaviest takes half a minute on a laptop. Kept
+// for as long as the context lives (parking.ts keeps it past Now Playing),
+// with no limit: each preset is in here once, and the presets are a
+// fixed set.
+const kept = new WeakMap<WebGL2RenderingContext, Map<string, PresetShaders<WebGLProgram>>>()
+
+function keptFor(gl: WebGL2RenderingContext): Map<string, PresetShaders<WebGLProgram>> {
+  let programs = kept.get(gl)
+  if (!programs) {
+    programs = new Map()
+    kept.set(gl, programs)
+  }
+  return programs
+}
+
+function sourceKey(sources: { warp: ShaderSources; comp: ShaderSources }): string {
+  return [sources.warp.vert, sources.warp.frag, sources.comp.vert, sources.comp.frag].join('\0')
+}
 
 interface Pending {
   program: WebGLProgram
@@ -59,7 +78,8 @@ function wait(ms: number, signal: AbortSignal): Promise<void> {
 
 /** The preset's warp and comp programs, linked - or null where the
  * browser cannot compile in the background, and Butterchurn has to do it
- * the old way. Rejects when a shader does not compile, the context is
+ * the old way. A preset compiled before on this context comes back at
+ * once. Rejects when a shader does not compile, the context is
  * lost, or `signal` calls it off; whatever was made by then is deleted. */
 export async function compilePresetShaders(
   visualizer: MilkdropVisualizer,
@@ -70,6 +90,11 @@ export async function compilePresetShaders(
   const parallel = gl?.getExtension('KHR_parallel_shader_compile') as ParallelCompile | null
   if (!gl || !parallel) return null
   const sources = visualizer.shaderSources(preset)
+  const key = sourceKey(sources)
+  const programs = keptFor(gl)
+  if (gl.isContextLost()) programs.clear()
+  const hit = programs.get(key)
+  if (hit) return hit
   const warp = startLink(gl, sources.warp)
   const comp = startLink(gl, sources.comp)
   const pending = [warp, comp].filter((entry): entry is Pending => entry !== null)
@@ -91,7 +116,9 @@ export async function compilePresetShaders(
       }
     }
     done = true
-    return { warp: warp.program, comp: comp.program }
+    const linked = { warp: warp.program, comp: comp.program }
+    programs.set(key, linked)
+    return linked
   } finally {
     for (const entry of pending) {
       // A linked program keeps working without its shaders.

@@ -81,6 +81,33 @@ describe('compilePresetShaders', () => {
     expect(r + b).toBeLessThan(40)
   })
 
+  it('hands back a preset compiled before without compiling it again', async () => {
+    const { visualizer, gl } = setup()
+    const preset = solidPreset('0.0, 0.0, 1.0')
+    const signal = new AbortController().signal
+    const first = await compilePresetShaders(visualizer, preset, signal)
+    await compilePresetShaders(visualizer, solidPreset('1.0, 0.0, 0.0'), signal)
+    let linked = 0
+    const link = gl.linkProgram.bind(gl)
+    gl.linkProgram = (program) => {
+      linked++
+      link(program)
+    }
+    expect(await compilePresetShaders(visualizer, preset, signal)).toBe(first)
+    expect(linked).toBe(0)
+  })
+
+  it('keeps a heavy preset however many others come after it', async () => {
+    const { visualizer } = setup()
+    const signal = new AbortController().signal
+    const heavy = solidPreset('0.5, 0.5, 0.5')
+    const first = await compilePresetShaders(visualizer, heavy, signal)
+    for (let i = 0; i < 40; i++) {
+      await compilePresetShaders(visualizer, solidPreset(`${i / 40}, 0.0, 0.0`), signal)
+    }
+    expect(await compilePresetShaders(visualizer, heavy, signal)).toBe(first)
+  })
+
   it('makes the same sources Butterchurn compiles itself', () => {
     const { visualizer, gl } = setup()
     const preset = solidPreset('1.0, 0.0, 0.0')
