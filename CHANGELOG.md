@@ -20,6 +20,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Pairing an AirPlay speaker says that it is looking for the speaker, takes the PIN the speaker shows as well as a password set for it, and after a wrong PIN offers to try again instead of having to close and reopen the dialog
 - Fanart.tv backgrounds come in 4K where the artist has them, topped up with the regular ones. All Fanart.tv images now load as much smaller WebP files, scaled down to the screen, so a phone on mobile data no longer pulls several megabytes per photo
 - Settings that follow your account now reach a Beacon window that is already open on another device as soon as you return to it, not only after it is restarted
+- The party guest page is about a tenth smaller to download
 - The Docker image is built on Alpine 3.24 with up-to-date system packages, and ships nginx 1.30.7, which closes two HTTP/2 security holes (CVE-2026-123007, CVE-2026-123633). Beacon's own setup does not use HTTP/2, so it was not exposed
 
 ### Fixed

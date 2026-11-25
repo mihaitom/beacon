@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { reactive } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
+import { useAppearanceStore } from '@/stores/appearance'
 import { hostNowPlayingSource, type HostNowPlayingApi } from '../hostSource'
 
 /** Just the slice of the view a test reaches for; the source reads the
@@ -43,5 +45,19 @@ describe('host Now Playing source', () => {
 
     expect(source.capabilities.favorite).toBe(true)
     expect(toggleFavorite).toHaveBeenCalledOnce()
+  })
+
+  it("follows the listener's theme and adaptive accent", () => {
+    setActivePinia(createPinia())
+    const appearance = useAppearanceStore()
+    appearance.theme = 'graphite'
+    appearance.adaptiveAccent = true
+    const source = hostNowPlayingSource(fakeApi())
+    expect(source.appearance.preference.theme).toBe('graphite')
+    expect(source.appearance.adaptiveAccent).toBe(true)
+
+    appearance.adaptiveAccent = false
+
+    expect(source.appearance.adaptiveAccent).toBe(false)
   })
 })

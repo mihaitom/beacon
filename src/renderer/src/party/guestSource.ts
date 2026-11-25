@@ -503,6 +503,9 @@ export function useGuestNowPlayingSource(
       waveform: milkdropWaveform,
       analyser: null,
     }),
+    // Always Beacon: the listener's own theme on this same origin is not
+    // the guest's, and this page's Vuetify has only Beacon's definitions.
+    appearance: { preference: { theme: 'beacon', customThemes: [] }, adaptiveAccent: true },
     capabilities: reactive({
       fullscreen: true,
       artistLinks: false,

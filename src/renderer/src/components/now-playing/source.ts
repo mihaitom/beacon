@@ -4,6 +4,7 @@ import type { RadioTitleEntry } from '@/services/connect/radioMetadata'
 import type { VisualizerFrame } from '@/services/connect/types'
 import type { LyricLine } from '@/services/lyrics/parseLrc'
 import type { MilkdropCover } from '@/services/milkdrop/textures'
+import type { ThemePreference } from '@/plugins/theme'
 
 /** A song as the Now Playing presentation needs it - the app's own Song
  * trimmed to what is shown, plus a ready image URL for the guest page, which
@@ -165,6 +166,14 @@ export interface NextUpTransition {
 /** Everything the Now Playing presentation reads, so no part of it has to
  * import the host's stores. Built by `hostSource.ts` for the app and
  * `party/guestSource.ts` for the party guests. */
+/** The theme Now Playing draws in and lends its colour to. */
+export interface NowPlayingAppearance {
+  preference: ThemePreference
+  /** Whether the bars' colour is lent to the whole page while this is
+   * open (Settings -> Appearance). */
+  adaptiveAccent: boolean
+}
+
 export interface NowPlayingSource {
   song: NowPlayingSong | null
   radio: NowPlayingRadio | null
@@ -178,6 +187,8 @@ export interface NowPlayingSource {
   visualizer: NowPlayingVisualizer
   milkdrop: NowPlayingMilkdrop
   capabilities: NowPlayingCapabilities
+  /** The listener's own in the app; Beacon, adaptive, for a guest. */
+  appearance: NowPlayingAppearance
   /** The component the artwork and the corner panel render for a cover.
    * The app's batched CoverArt (which imports the library store, so it must
    * not reach the guest bundle), or the guest page's own store-free image.

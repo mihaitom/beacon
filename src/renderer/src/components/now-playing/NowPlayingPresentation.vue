@@ -140,7 +140,8 @@ import NowPlayingVisualizer from '@/components/now-playing/NowPlayingVisualizer.
 import NowPlayingToolbar from '@/components/now-playing/NowPlayingToolbar.vue'
 import NowPlayingTrackPanels from '@/components/now-playing/NowPlayingTrackPanels.vue'
 import { nowPlayingSourceMixin } from '@/components/now-playing/useSource'
-import { borrowAccent, useAppearanceStore } from '@/stores/appearance'
+import { borrowAccent } from '@/services/borrowedAccent'
+import { nightTheme } from '@/plugins/theme'
 import {
   bottomScrimStrength,
   colourBehindControls,
@@ -201,7 +202,7 @@ export default {
   },
   computed: {
     nightTheme(): string {
-      return useAppearanceStore().nightTheme
+      return nightTheme(this.source.appearance.preference)
     },
     isLandscape(): boolean {
       return this.compact && this.landscape
@@ -241,7 +242,7 @@ export default {
      * colour, or nothing where that is switched off (Settings ->
      * Appearance) and the theme keeps its own. */
     borrowedAccent(): string | null {
-      return useAppearanceStore().adaptiveAccent ? this.accent : null
+      return this.source.appearance.adaptiveAccent ? this.accent : null
     },
   },
   watch: {
@@ -291,7 +292,7 @@ export default {
     /** Lends `color` - an "r, g, b" triplet - to the theme's primary, or
      * with null gives the theme its own back (see borrowAccent()). */
     applyPrimary(color: string | null): void {
-      borrowAccent(this.$vuetify.theme.themes, useAppearanceStore().$state, color)
+      borrowAccent(this.$vuetify.theme.themes, this.source.appearance.preference, color)
     },
     /** Requests fullscreen on this view's own root element, not
      * document.documentElement — the point is hiding the rest of the app

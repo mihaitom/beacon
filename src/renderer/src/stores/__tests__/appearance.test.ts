@@ -3,11 +3,11 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify, type ThemeInstance } from 'vuetify'
 import {
   applyThemePreference,
-  borrowAccent,
   initTheme,
   loadThemePreference,
   useAppearanceStore,
 } from '../appearance'
+import { borrowAccent } from '@/services/borrowedAccent'
 import {
   DEFAULT_CUSTOM_COLORS,
   MAX_CUSTOM_THEMES,

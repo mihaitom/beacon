@@ -24,10 +24,6 @@ on a device, what is decided and what is not.
 
 - [Radio stations are global instead of per account](radio/stations-per-account.md) - the migration is decided (every account branches off the existing list), not built
 
-## Party mode
-
-- [The guest page bundles the app's whole store layer](party/guest-page-bundles-the-app-stores.md) - harmless, about 10 % of the guest page's download; Now Playing should take appearance from its source, not the store
-
 ## Library
 
 - [Deezer lookups fail or go wrong when an artist was renamed](library/deezer-lookup-with-renamed-artists.md) - seen with one artist only, deliberately not built; ISRC lookup is the smallest step

@@ -17,6 +17,7 @@ import { getAudioEngine } from '@/services/audioEngine'
 import { COVER_SIZE, type MilkdropCover } from '@/services/milkdrop/textures'
 import { FILE_SOURCE, useLyricsStore } from '@/stores/lyrics'
 import { useMilkdropStore } from '@/stores/milkdrop'
+import { useAppearanceStore } from '@/stores/appearance'
 import { lyricsPageUrl } from '@/services/lyrics/providerUrl'
 import { i18n } from '@/i18n'
 import type { NowPlayingPanel, NowPlayingRadio, NowPlayingSong, NowPlayingSource } from './source'
@@ -208,6 +209,10 @@ export function hostNowPlayingSource(api: HostNowPlayingApi): NowPlayingSource {
       cover: computed(() => milkdropCover(api.milkdropCoverArtId)),
       waveform: () => api.milkdropWaveform(),
       analyser: () => getAudioEngine().getAnalyser(),
+    }),
+    appearance: computed(() => {
+      const appearance = useAppearanceStore()
+      return { preference: appearance.$state, adaptiveAccent: appearance.adaptiveAccent }
     }),
     capabilities: reactive({
       fullscreen: true,
