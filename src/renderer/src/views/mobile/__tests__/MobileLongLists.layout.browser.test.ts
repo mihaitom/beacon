@@ -76,6 +76,10 @@ async function settle() {
   await new Promise((resolve) => setTimeout(resolve, 80))
 }
 
+/** On a busy machine the scroller can take longer than any fixed wait, so
+ * the checks below wait for the state they read instead. */
+const POLL = { timeout: 5000 }
+
 /** Mounts `view`, checks that only part of the list is in the DOM, and that
  * scrolling to the end brings its last entry in. */
 async function expectWindowed(
@@ -88,11 +92,13 @@ async function expectWindowed(
   await settle()
 
   const rows = () => [...document.querySelectorAll(rowSelector)]
-  expect(rows().length).toBeGreaterThan(0)
+  await expect.poll(() => rows().length, POLL).toBeGreaterThan(0)
   expect(rows().length).toBeLessThan(SONG_COUNT / 4)
 
   await scrollToEnd()
-  expect(rows().some((row) => row.textContent?.includes(lastText))).toBe(true)
+  await expect
+    .poll(() => rows().some((row) => row.textContent?.includes(lastText)), POLL)
+    .toBe(true)
 }
 
 /** Scrolls the pane to its end and waits for the scroller to catch up. */
@@ -120,14 +126,15 @@ describe('long mobile lists', () => {
     mountShell(MobileQueueView)
     await settle()
 
-    const rows = () => document.querySelectorAll('.mobile-queue-row')
-    expect(rows().length).toBeGreaterThan(0)
+    const rows = () => document.querySelectorAll<HTMLElement>('.mobile-queue-row')
+    await expect.poll(() => rows().length, POLL).toBeGreaterThan(0)
     expect(rows().length).toBeLessThan(SONG_COUNT / 4)
 
     // ...and still reaches the end of a long one.
     await scrollToEnd()
-    const last = rows()[rows().length - 1] as HTMLElement
-    expect(last.dataset.index).toBe(String(SONG_COUNT - 1))
+    await expect
+      .poll(() => rows()[rows().length - 1]?.dataset.index, POLL)
+      .toBe(String(SONG_COUNT - 1))
   })
 
   it('mounts only the playlist rows near the screen', async () => {
@@ -213,16 +220,21 @@ describe('long mobile lists', () => {
       at('pointermove', targetY)
       at('pointerup', targetY)
       await settle()
-      await new Promise((resolve) => setTimeout(resolve, 200))
-
-      const divider = [...document.querySelectorAll('.letter-divider')].find(
-        (d) => d.textContent?.trim() === 'G',
-      ) as HTMLElement
-      expect(divider).toBeTruthy()
+      // The jump lands over two animation frames after the scroller's own.
       const controls = document.querySelector('.mobile-library__controls') as HTMLElement
-      const gap = divider.getBoundingClientRect().top - controls.getBoundingClientRect().bottom
-      expect(gap).toBeGreaterThanOrEqual(-2)
-      expect(gap).toBeLessThan(40)
+      const gapUnderControls = () => {
+        const divider = [...document.querySelectorAll('.letter-divider')].find(
+          (d) => d.textContent?.trim() === 'G',
+        )
+        if (!divider) return null
+        return divider.getBoundingClientRect().top - controls.getBoundingClientRect().bottom
+      }
+      await expect
+        .poll(() => {
+          const gap = gapUnderControls()
+          return gap !== null && gap >= -2 && gap < 40
+        }, POLL)
+        .toBe(true)
     })
 
     // Rows of cards with a divider between the letters, each measured as it

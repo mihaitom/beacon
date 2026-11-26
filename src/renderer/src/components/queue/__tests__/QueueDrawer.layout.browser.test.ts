@@ -334,9 +334,11 @@ describe('QueueDrawer reveal animation layout', () => {
     // having quietly entered and settled while it was shut.
     expect(getComputedStyle(firstRow).opacity).toBe('0')
 
-    await new Promise((resolve) => setTimeout(resolve, 800))
-    expect(getComputedStyle(firstRow).opacity).toBe('1')
-    expect(getComputedStyle(firstRow).transform).toBe('none')
+    await expect
+      .poll(() => [getComputedStyle(firstRow).opacity, getComputedStyle(firstRow).transform], {
+        timeout: 5000,
+      })
+      .toEqual(['1', 'none'])
   })
 
   it('staggers a full-queue replacement into an already-open drawer', async () => {
