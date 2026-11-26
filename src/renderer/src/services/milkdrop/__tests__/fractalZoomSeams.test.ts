@@ -1,8 +1,10 @@
-// A Mandelbrot scene that goes on into another ends on its minibrot,
-// framed as the next scene opens on the whole set, and cuts there. Runs
-// the preset's own equations up to the cut and checks that the frames on
-// either side of it show the same points - whatever the shader does with
-// them, a cut between two different views would show.
+// How one scene of the Fractal Zoom gives way to the next. A Mandelbrot
+// scene going on into another Mandelbrot scene or a Julia set ends on its
+// minibrot, framed as the next scene opens on the whole set, and cuts
+// there; every other scene drains away into black and the next comes up
+// out of it. Runs the preset's own equations through the cut and checks
+// that the frames on either side of it show the same points - whatever the
+// shader does with them, a cut between two different views would show.
 import { describe, expect, it } from 'vitest'
 import fractalZoom from '@/assets/milkdrop/presets/beacon-fractal-zoom.json'
 
@@ -10,8 +12,8 @@ type Vars = Record<string, number>
 
 const preset = fractalZoom.preset as { init_eqs_str: string; frame_eqs_str: string }
 const MANDELBROT_SCENES = [0, 1, 2, 3, 4]
-// The Douady rabbit, a Julia set: nothing to go on into.
-const JULIA_SCENE = 5
+const RABBIT = 5
+const BURNING_SHIP = 14
 
 function zoom(scene: number, next: number, depth: number): () => Vars {
   const init = new Function('a', preset.init_eqs_str) as (a: Vars) => void
@@ -24,6 +26,13 @@ function zoom(scene: number, next: number, depth: number): () => Vars {
     frame(a)
     return { ...a }
   }
+}
+
+/** The fewest steps (its 2nd percentile) a scene's end view takes to
+ * escape, as measured into its row of the scene table. */
+function fewestSteps(scene: number): number {
+  const table = preset.frame_eqs_str.match(/var S=(\[[\s\S]*?\]\]);/)![1]!
+  return (JSON.parse(table) as number[][])[scene]![24]!
 }
 
 type C = [number, number]
@@ -44,7 +53,8 @@ function wholeSetBefore(q: Vars, s: C): C {
 }
 function wholeSetAfter(q: Vars, s: C): C {
   const [x, y] = offsetAt(q, s)
-  return [q.q23! + x, q.q24! + y]
+  // A Julia scene's centre is a point of the plane itself.
+  return q.q5 === 1 ? [x, y] : [q.q23! + x, q.q24! + y]
 }
 
 function runToCut(step: () => Vars): { before: Vars; after: Vars } {
@@ -58,8 +68,12 @@ function runToCut(step: () => Vars): { before: Vars; after: Vars } {
 }
 
 describe('Fractal Zoom seams', () => {
-  it.each(MANDELBROT_SCENES)('scene %i goes on into the next through its minibrot', (scene) => {
-    const next = (scene + 1) % MANDELBROT_SCENES.length
+  const SEAMS = MANDELBROT_SCENES.flatMap((scene) => [
+    [scene, (scene + 1) % MANDELBROT_SCENES.length],
+    [scene, RABBIT],
+  ])
+
+  it.each(SEAMS)('scene %i goes on into scene %i through its minibrot', (scene, next) => {
     const step = zoom(scene, next, 30)
     let lowest = 1
     let earlier = step()
@@ -89,11 +103,48 @@ describe('Fractal Zoom seams', () => {
     }
   })
 
-  it('fades out as before where the next scene is not a Mandelbrot scene', () => {
-    const { after } = runToCut(zoom(0, JULIA_SCENE, 79))
-    expect(after.q12).toBe(0)
-    expect(after.sc).toBe(JULIA_SCENE)
-    expect(after.q26).toBe(0)
+  it('opens a Julia set out of the whole set, then zooms', () => {
+    const { after } = runToCut(zoom(4, RABBIT, 37))
+    const step = zoom(4, RABBIT, 37)
+    let q = step()
+    while (!q.cut) q = step()
+    expect(q.q29).toBe(0)
+    let shaping = 0
+    while (q.q29! < 1) {
+      expect(q.D).toBe(0)
+      q = step()
+      shaping++
+    }
+    expect(after.sc).toBe(RABBIT)
+    // Some seconds of it, at 60 steps a second.
+    expect(shaping).toBeGreaterThan(60)
+    q = step()
+    expect(q.D).toBeGreaterThan(0)
+  })
+
+  it('drains away into black where the next scene is no Mandelbrot or Julia scene', () => {
+    const step = zoom(0, BURNING_SHIP, 79)
+    let q = step()
+    let last = q.q9!
+    let lowest = 1
+    while (!q.cut) {
+      last = q.q9!
+      q = step()
+      lowest = Math.min(lowest, q.fade!)
+      if (!q.cut) expect(q.q9!).toBeLessThanOrEqual(last + 1e-9)
+    }
+    expect(lowest).toBe(1)
+    expect(q.sc).toBe(BURNING_SHIP)
+    // Black on both sides of the cut: before it, a limit far below the
+    // fewest steps the scene's end measured; after it, a step or two,
+    // which nothing in the next scene's first view escapes in.
+    expect(last).toBeLessThan(fewestSteps(0) / 10)
+    expect(q.q9).toBeLessThan(2)
+    expect(q.q26).toBe(0)
+    // And up out of it to the scene's own limit.
+    let rising = q.q9!
+    for (let i = 0; i < 600; i++) rising = step().q9!
+    expect(rising).toBeGreaterThan(250)
   })
 
   it('picks the scene after next at each cut', () => {
