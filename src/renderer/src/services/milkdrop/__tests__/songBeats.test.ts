@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import fractalZoom from '@/assets/milkdrop/presets/beacon-fractal-zoom.json'
+import milkyWay from '@/assets/milkdrop/presets/beacon-milky-way.json'
+import coverStage from '@/assets/milkdrop/presets/beacon-cover-stage.json'
+import coverGlow from '@/assets/milkdrop/presets/beacon-cover-glow.json'
 import type { SongAnalysis, SongAnalysisReply } from '@/services/connect/lights'
 import { showBeat } from '../beatSignal'
 import { SongBeats } from '../songBeats'
@@ -98,39 +101,67 @@ describe('SongBeats', () => {
   })
 })
 
-describe('the Fractal Zoom on the analysed beat', () => {
-  type Vars = Record<string, number>
-  const preset = fractalZoom.preset as { init_eqs_str: string; frame_eqs_str: string }
+type Vars = Record<string, number>
+type Equations = { init_eqs_str: string; frame_eqs_str: string }
 
-  function zoom(bass = 1): Vars & { step(): Vars } {
-    const init = new Function('a', preset.init_eqs_str) as (a: Vars) => void
-    const frame = new Function('a', preset.frame_eqs_str) as (a: Vars) => void
-    const a: Vars = { bass, mid: 1, treb: 1, bass_att: 1, mid_att: 1, treb_att: 1 }
-    init(a)
-    return Object.assign(a, { step: () => (frame(a), a) })
+/** Runs a preset's own equations a frame at a time, at 60 steps a second. */
+function run(preset: Equations, bass = 1): () => Vars {
+  const init = new Function('a', preset.init_eqs_str) as (a: Vars) => void
+  const frame = new Function('a', preset.frame_eqs_str) as (a: Vars) => void
+  const a: Vars = { bass, mid: 1, treb: 1, bass_att: 1, mid_att: 1, treb_att: 1, time: 1 }
+  init(a)
+  return () => {
+    a.time = a.time! + 1 / 60
+    frame(a)
+    return a
   }
+}
 
+// What each of Beacon's own presets lights on the beat, 0 for nothing.
+const PRESETS: [string, Equations, (a: Vars) => number][] = [
+  ['Fractal Zoom', fractalZoom.preset, (a) => a.q10!],
+  ['Milky Way', milkyWay.preset, (a) => a.q21!],
+  ['Cover Glow', coverGlow.preset, (a) => a.q3!],
+  // The ripple and the lift start at the beat's time.
+  ['Cover Stage', coverStage.preset, (a) => Math.max(0, 1 - a.q4! * 2.2)],
+]
+
+describe.each(PRESETS)('%s on the analysed beat', (_, preset, lit) => {
   afterEach(() => showBeat(null))
 
-  it('flashes once per beat, as strongly as it is heard', () => {
-    const a = zoom()
-    showBeat({ index: 4, strength: 0.8 })
-    expect(a.step().q10).toBeCloseTo(0.8)
-    // The same beat on the next frame: dying away, not flashing again.
-    expect(a.step().q10).toBeLessThan(0.8)
-    showBeat({ index: 5, strength: 1 })
-    expect(a.step().q10).toBe(1)
+  it('lights up on a beat heard, once', () => {
+    const step = run(preset)
+    showBeat({ index: 4, strength: 1 })
+    const levels = Array.from({ length: 40 }, () => lit(step()))
+    const peak = Math.max(...levels)
+    expect(peak).toBeGreaterThan(0.2)
+    // The same beat frame after frame: dying away, not lit again.
+    expect(levels.at(-1)!).toBeLessThan(peak * 0.2)
   })
 
-  it('takes no flash from the bass while it has the analysed beats', () => {
-    const a = zoom(2)
+  it('takes nothing from the bass while it has the analysed beats', () => {
+    const step = run(preset, 2)
     showBeat({ index: 4, strength: 0 })
-    a.step()
-    expect(a.step().q10).toBe(0)
+    const levels = Array.from({ length: 10 }, () => lit(step()))
+    expect(Math.max(...levels)).toBe(0)
   })
 
   it('goes by the bass without them', () => {
-    expect(zoom(2).step().q10).toBe(1)
-    expect(zoom(1).step().q10).toBe(0)
+    const loud = run(preset, 2)
+    expect(Math.max(...Array.from({ length: 10 }, () => lit(loud())))).toBeGreaterThan(0.2)
+    const quiet = run(preset, 1)
+    expect(Math.max(...Array.from({ length: 10 }, () => lit(quiet())))).toBe(0)
+  })
+})
+
+describe('the Fractal Zoom on the analysed beat', () => {
+  afterEach(() => showBeat(null))
+
+  it('flashes as strongly as the beat is heard', () => {
+    const step = run(fractalZoom.preset)
+    showBeat({ index: 4, strength: 0.8 })
+    expect(step().q10).toBeCloseTo(0.8)
+    showBeat({ index: 5, strength: 1 })
+    expect(step().q10).toBe(1)
   })
 })
