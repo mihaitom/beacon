@@ -622,6 +622,25 @@ sections (letters, decades, stars, and the filter's ranges), the list draws
 them as `.letter-divider` headings and the index bar lists the same
 sections in short form.
 
+The phone's Library (`MobileLibraryView.vue`) is browsed with the same
+controls in one row under the Songs/Albums/Artists switch, but has no search
+of its own - the top bar's search is the one place to search on a phone. A
+heart pill at the start of the row stands in for it as the way to the
+favourites. The filter is the icon alone there, its count a badge on it, so
+the sort select gets the room. The grid uses `MobileGridTile.vue`, the
+desktop cards' rules at a phone's column width (at least 140px, two columns
+at the least), and the dividers are the same `.letter-divider`.
+
+The desktop's index bar is no target for a thumb - 10px letters in a 20px
+column, always on screen. The phone has `MobileSectionScrubber.vue` instead:
+nothing until the list scrolls, then a 48px grip at the right edge, riding
+at the scroll position and showing the section on screen. Dragging it opens
+a rail of the sections between the sticky controls and the bars and jumps
+section by section, with the section in a large amber bubble left of the
+thumb (the thumb covers the rail itself) and, on Android, a short vibration
+per section. A tap opens the rail to pick from instead. The list keeps its
+full width, since the grip only lies over it while it is in use.
+
 A playlist's page starts in the playlist's own order, offered first in the
 sort select and not remembered between playlists. Dragging a row needs the
 whole list in that order, so a search, a filter or another order turns it off.
@@ -905,21 +924,21 @@ what the app does is not drift - each of these is a different _kind_ of
 movement, and they are listed here so the next one reuses a duration instead
 of inventing a neighbouring one:
 
-| Duration           | Where                                        | Why not 0.15s                                                                       |
-| ------------------ | -------------------------------------------- | ----------------------------------------------------------------------------------- |
-| 0.1s               | Device rows in the cast pickers              | A dense list; the standard speed reads as lag when the pointer crosses several rows |
-| 0.3s in / 0.2s out | Toasts, queue rows entering and leaving      | Something arriving should be noticed, something leaving should get out of the way   |
-| 0.2s               | The login form swapping between server types | A whole panel changing, not one control                                             |
-| 0.25s              | Lyrics lines, a queue row being cleared      | Reads as the line changing rather than blinking                                     |
-| 0.26s              | The login card's own height                  | Paired with the 0.2s form swap inside it                                            |
-| 0.35s / 0.45s      | The lyrics column opening beside the artwork | A layout change, and the artwork drifts sideways with it                            |
-| 0.4s               | The visualizer row's height                  | Same: layout, not feedback                                                          |
-| 0.5s               | A queue row landing after a drag             | Confirms a drop the person made themselves                                          |
-| 0.7s               | Now Playing's flip card (artwork <-> lyrics) | The one deliberate showpiece; it is meant to be watched                             |
-| 0.9s               | The release-notes icon                       | A one-off flourish on a dialog seen once per version                                |
-| 1.2s               | Now Playing's scrim and glow                 | Follows the colour extracted from the cover; a fast change reads as a flicker       |
-| 1.1s / 1.3s        | The Stats hero: tonearm, count-up            | The page's one entrance, once per visit                                             |
-| 3.7s in all        | A Stats milestone moment                     | Rare by design (round numbers only) and closed by a click or Esc                    |
+| Duration           | Where                                                                     | Why not 0.15s                                                                       |
+| ------------------ | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| 0.1s               | Device rows in the cast pickers                                           | A dense list; the standard speed reads as lag when the pointer crosses several rows |
+| 0.3s in / 0.2s out | Toasts, queue rows entering and leaving, the phone library's section grip | Something arriving should be noticed, something leaving should get out of the way   |
+| 0.2s               | The login form swapping between server types                              | A whole panel changing, not one control                                             |
+| 0.25s              | Lyrics lines, a queue row being cleared                                   | Reads as the line changing rather than blinking                                     |
+| 0.26s              | The login card's own height                                               | Paired with the 0.2s form swap inside it                                            |
+| 0.35s / 0.45s      | The lyrics column opening beside the artwork                              | A layout change, and the artwork drifts sideways with it                            |
+| 0.4s               | The visualizer row's height                                               | Same: layout, not feedback                                                          |
+| 0.5s               | A queue row landing after a drag                                          | Confirms a drop the person made themselves                                          |
+| 0.7s               | Now Playing's flip card (artwork <-> lyrics)                              | The one deliberate showpiece; it is meant to be watched                             |
+| 0.9s               | The release-notes icon                                                    | A one-off flourish on a dialog seen once per version                                |
+| 1.2s               | Now Playing's scrim and glow                                              | Follows the colour extracted from the cover; a fast change reads as a flicker       |
+| 1.1s / 1.3s        | The Stats hero: tonearm, count-up                                         | The page's one entrance, once per visit                                             |
+| 3.7s in all        | A Stats milestone moment                                                  | Rare by design (round numbers only) and closed by a click or Esc                    |
 
 Loops are their own thing - they show a state rather than a change, so they
 are slow enough not to nag: 1.8s for the page loader, 2.4s for radio's "on
