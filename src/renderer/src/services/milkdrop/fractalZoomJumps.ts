@@ -23,6 +23,7 @@ export const FRACTAL_ZOOM_DESTINATIONS: FractalZoomDestination[] = [
   { label: 'Julia set · c = −0.54 + 0.54i', scene: 10 },
   { label: 'Julia set · c = −0.62 + 0.43i', scene: 11 },
   { label: 'Julia set · Siegel disk', scene: 12 },
+  { label: 'Julia set · Airplane', scene: 18 },
   { label: 'Julia set · Basilica', scene: 13 },
   { label: 'Burning Ship', scene: 14 },
   { label: 'Cubic Multibrot', scene: 15 },

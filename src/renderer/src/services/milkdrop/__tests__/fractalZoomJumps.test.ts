@@ -50,6 +50,7 @@ describe('Fractal Zoom jumps', () => {
     'Cubic Multibrot set',
     'Quartic Multibrot set',
     'Tricorn',
+    'Julia set · Airplane',
   ]
 
   it('has a jump to every scene, each landing on its own', () => {

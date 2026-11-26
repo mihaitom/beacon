@@ -151,6 +151,6 @@ describe('Fractal Zoom seams', () => {
     const { after } = runToCut(zoom(4, 0, 37))
     expect(after.nx).not.toBe(after.sc)
     expect(after.nx).toBeGreaterThanOrEqual(0)
-    expect(after.nx).toBeLessThan(18)
+    expect(after.nx).toBeLessThan(19)
   })
 })
