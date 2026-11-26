@@ -208,6 +208,8 @@ export default {
     searchSongs: 'Cerca brani…',
     searchAlbums: 'Cerca album…',
     searchArtists: 'Cerca artisti…',
+    jumpToSection: 'Vai a una sezione',
+    showAllMatches: 'Mostra tutti e {count}',
     noSongsForQuery: 'Nessun brano per "{query}".',
     album1: 'album',
     albumsN: 'album',
@@ -1715,6 +1717,7 @@ export default {
     noAlbumsYet: 'Nessun album preferito ancora.',
   },
   search: {
+    everythingHint: 'Trova artisti, album, brani, playlist e stazioni radio.',
     noResultsHint: "Controlla l'ortografia o prova con meno parole.",
     label: 'Cerca',
     resultsFor: 'Risultati per "{query}"',

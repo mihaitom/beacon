@@ -11,8 +11,8 @@ import type { RouteLocationNormalizedLoaded, RouteLocationRaw } from 'vue-router
  * own on the desktop - the queue is a drawer there.
  *
  * Null for a page that stays where it is: one already in the right shell,
- * and the desktop pages with no phone design (artists, genres, search,
- * stats, settings), which the phone shell shows as they are. */
+ * and the desktop pages with no phone design (artists, genres, stats,
+ * settings), which the phone shell shows as they are. */
 export function routeInOtherShell(
   route: Pick<RouteLocationNormalizedLoaded, 'name' | 'params' | 'query'>,
   mobile: boolean,
@@ -38,6 +38,8 @@ export function routeInOtherShell(
         return { to: { name: 'm-library', query: { favorites: '1' } } }
       case 'radio':
         return { to: { name: 'm-radio' } }
+      case 'search':
+        return { to: { name: 'm-search', query: route.query } }
       default:
         return null
     }
@@ -60,6 +62,8 @@ export function routeInOtherShell(
       return { to: { name: 'album-detail', params: { id } } }
     case 'm-radio':
       return { to: { name: 'radio' } }
+    case 'm-search':
+      return { to: { name: 'search', query: route.query } }
     default:
       return null
   }

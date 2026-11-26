@@ -208,6 +208,8 @@ export default {
     searchSongs: 'Titel durchsuchen…',
     searchAlbums: 'Alben durchsuchen…',
     searchArtists: 'Künstler durchsuchen…',
+    jumpToSection: 'Zu einem Abschnitt springen',
+    showAllMatches: 'Alle {count} anzeigen',
     noSongsForQuery: 'Keine Titel für „{query}“.',
     album1: 'Album',
     albumsN: 'Alben',
@@ -1718,6 +1720,7 @@ export default {
     noAlbumsYet: 'Noch keine Lieblingsalben.',
   },
   search: {
+    everythingHint: 'Finde Künstler, Alben, Titel, Playlists und Radiosender.',
     noResultsHint: 'Prüf die Schreibweise oder versuch es mit weniger Wörtern.',
     label: 'Suche',
     resultsFor: 'Ergebnisse für „{query}“',

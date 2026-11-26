@@ -212,6 +212,8 @@ export default {
     searchSongs: 'Buscar canciones…',
     searchAlbums: 'Buscar álbumes…',
     searchArtists: 'Buscar artistas…',
+    jumpToSection: 'Saltar a una sección',
+    showAllMatches: 'Mostrar los {count}',
     noSongsForQuery: 'No hay canciones para "{query}".',
     album1: 'álbum',
     albumsN: 'álbumes',
@@ -1723,6 +1725,7 @@ export default {
     noAlbumsYet: 'Todavía no hay álbumes favoritos.',
   },
   search: {
+    everythingHint: 'Encuentra artistas, álbumes, canciones, listas y emisoras.',
     noResultsHint: 'Revisa la ortografía o prueba con menos palabras.',
     label: 'Buscar',
     resultsFor: 'Resultados para "{query}"',

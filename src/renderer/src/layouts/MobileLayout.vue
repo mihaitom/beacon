@@ -23,8 +23,12 @@
         size="24"
         class="mobile-app-bar__logo beacon-glow"
       />
-      <v-app-bar-title class="mobile-app-bar__title">Beacon</v-app-bar-title>
-      <v-spacer />
+      <!-- The search field takes the name's place, the same field the
+         - desktop keeps in its top bar. Now Playing keeps the name: its own
+         - actions sit in this bar there, and it is not a page to search from. -->
+      <v-app-bar-title v-if="onNowPlaying" class="mobile-app-bar__title">Beacon</v-app-bar-title>
+      <mobile-top-bar-search v-else />
+      <v-spacer v-if="onNowPlaying" />
       <!-- Where a view can hang its own actions instead of floating them
          - over its content. Now Playing is the one that does (see
          - NowPlayingView.vue's toolbar Teleport): its two buttons used to
@@ -55,6 +59,7 @@
 <script lang="ts">
 import MobileTabBar from '@/components/mobile/MobileTabBar.vue'
 import MobilePlayerBar from '@/components/mobile/MobilePlayerBar.vue'
+import MobileTopBarSearch from '@/components/mobile/MobileTopBarSearch.vue'
 import CastTakeoverConfirmDialog from '@/components/connect/CastTakeoverConfirmDialog.vue'
 import { phoneLandscapeMixin } from '@/composables/phoneLandscape'
 
@@ -67,6 +72,7 @@ export default {
   components: {
     MobileTabBar,
     MobilePlayerBar,
+    MobileTopBarSearch,
     CastTakeoverConfirmDialog,
   },
   mixins: [phoneLandscapeMixin],

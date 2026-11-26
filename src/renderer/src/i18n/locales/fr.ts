@@ -210,6 +210,8 @@ export default {
     searchSongs: 'Rechercher des titres…',
     searchAlbums: 'Rechercher des albums…',
     searchArtists: 'Rechercher des artistes…',
+    jumpToSection: 'Aller à une section',
+    showAllMatches: 'Afficher les {count}',
     noSongsForQuery: 'Aucun titre pour « {query} ».',
     album1: 'album',
     albumsN: 'albums',
@@ -1724,6 +1726,7 @@ export default {
     noAlbumsYet: 'Aucun album favori pour le moment.',
   },
   search: {
+    everythingHint: 'Trouve des artistes, albums, titres, playlists et radios.',
     noResultsHint: "Vérifiez l'orthographe ou essayez avec moins de mots.",
     label: 'Rechercher',
     resultsFor: 'Résultats pour « {query} »',

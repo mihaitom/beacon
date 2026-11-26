@@ -158,7 +158,7 @@ describe('RadioTitleLog', () => {
     })
   })
 
-  it('goes to the phone library rather than the desktop search page on mobile', async () => {
+  it("goes to the phone's search page rather than the desktop one on mobile", async () => {
     // The desktop search page does render inside the mobile shell, which
     // is how a tap on the phone landed on a view built for a window.
     vi.mocked(isMobileWebNow).mockReturnValue(true)
@@ -167,7 +167,7 @@ describe('RadioTitleLog', () => {
     await wrapper.find('.title-log__item--searchable').trigger('click')
     await flushPromises()
 
-    expect(push).toHaveBeenCalledWith({ name: 'm-library', query: { q: 'Show Me Love' } })
+    expect(push).toHaveBeenCalledWith({ name: 'm-search', query: { q: 'Show Me Love' } })
   })
 
   it('offers no search on a row that is not a song', () => {

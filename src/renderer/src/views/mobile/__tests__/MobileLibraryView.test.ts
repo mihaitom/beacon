@@ -40,6 +40,16 @@ function makeAlbum(id: string, overrides: Partial<Album> = {}): Album {
   }
 }
 
+/** flushPromises, and one timer tick on top: an open-able menu in the view
+ * (Vuetify's overlays, for closing on the back button) holds every
+ * navigation for a setTimeout, which promises alone never wait for. */
+async function settle() {
+  await flushPromises()
+  if (vi.isFakeTimers()) await vi.advanceTimersByTimeAsync(1)
+  else await new Promise((resolve) => setTimeout(resolve, 0))
+  await flushPromises()
+}
+
 function mountView() {
   return mount(MobileLibraryView, {
     global: {
@@ -62,12 +72,14 @@ function stubStore() {
 async function switchTo(wrapper: ReturnType<typeof mountView>, label: string) {
   const button = wrapper.findAll('.segmented__option').find((b) => b.text() === label)!
   await button.trigger('click')
-  await flushPromises()
+  await settle()
 }
 
 describe('MobileLibraryView', () => {
   beforeEach(async () => {
     setActivePinia(createPinia())
+    // Orders and layouts are remembered on the device.
+    localStorage.clear()
     // The view writes its search and its half into the address (see
     // rememberSearch) and reads them back on mount, so a route left over
     // from the previous test would decide where this one starts.
@@ -79,7 +91,7 @@ describe('MobileLibraryView', () => {
     library.allSongs = [makeSong('a', { title: 'Track A' })]
     library.albums = [makeAlbum('1')]
     const wrapper = mountView()
-    await flushPromises()
+    await settle()
 
     expect(wrapper.findAllComponents({ name: 'MobileSongRow' })).toHaveLength(1)
     expect(wrapper.findAllComponents({ name: 'MobileAlbumRow' })).toHaveLength(0)
@@ -90,7 +102,7 @@ describe('MobileLibraryView', () => {
     library.allSongs = [makeSong('a')]
     library.albums = [makeAlbum('1'), makeAlbum('2')]
     const wrapper = mountView()
-    await flushPromises()
+    await settle()
 
     await switchTo(wrapper, 'Albums')
 
@@ -98,46 +110,6 @@ describe('MobileLibraryView', () => {
     expect(wrapper.findAllComponents({ name: 'MobileSongRow' })).toHaveLength(0)
     // The albums half is not fetched until it is actually asked for.
     expect(library.fetchAlbums).toHaveBeenCalled()
-  })
-
-  it('searches whichever half is showing', async () => {
-    vi.useFakeTimers()
-    const library = stubStore()
-    library.allSongs = [makeSong('a', { title: 'Blue' }), makeSong('b', { title: 'Red' })]
-    library.albums = [makeAlbum('1', { name: 'Blue Album' }), makeAlbum('2', { name: 'Red Album' })]
-    const wrapper = mountView()
-    await flushPromises()
-
-    await switchTo(wrapper, 'Albums')
-    await wrapper.get('input[type="text"]').setValue('blue')
-    await vi.advanceTimersByTimeAsync(250)
-
-    expect(wrapper.findAllComponents({ name: 'MobileAlbumRow' })).toHaveLength(1)
-    vi.useRealTimers()
-  })
-
-  /** Noticing you are in the wrong half is usually what makes you switch,
-   * so the term survives the switch and is applied to the other list -
-   * retyping it would be the price of one tap. The field is clearable for
-   * the rarer "start over" case. */
-  it('keeps the search when the halves are switched and applies it to the other list', async () => {
-    vi.useFakeTimers()
-    const library = stubStore()
-    library.allSongs = [makeSong('a', { title: 'Blue' }), makeSong('b', { title: 'Red' })]
-    library.albums = [makeAlbum('1', { name: 'Blue Album' }), makeAlbum('2', { name: 'Red Album' })]
-    const wrapper = mountView()
-    await flushPromises()
-
-    await wrapper.get('input[type="text"]').setValue('blue')
-    await vi.advanceTimersByTimeAsync(250)
-    expect(wrapper.findAllComponents({ name: 'MobileSongRow' })).toHaveLength(1)
-
-    await switchTo(wrapper, 'Albums')
-    await vi.advanceTimersByTimeAsync(250)
-
-    expect((wrapper.get('input[type="text"]').element as HTMLInputElement).value).toBe('blue')
-    expect(wrapper.findAllComponents({ name: 'MobileAlbumRow' })).toHaveLength(1)
-    vi.useRealTimers()
   })
 
   /** The library list is the whole catalogue, or whatever the search
@@ -149,10 +121,10 @@ describe('MobileLibraryView', () => {
     library.allSongs = [makeSong('a'), makeSong('b'), makeSong('c')]
     const playSongList = vi.spyOn(usePlaybackStore(), 'playSongList').mockResolvedValue()
     const wrapper = mountView()
-    await flushPromises()
+    await settle()
 
     await wrapper.findAllComponents({ name: 'MobileSongRow' })[1]!.trigger('click')
-    await flushPromises()
+    await settle()
 
     expect(playSongList).toHaveBeenCalledTimes(1)
     const [songs, index] = playSongList.mock.calls[0]!
@@ -169,11 +141,11 @@ describe('MobileLibraryView', () => {
     const playback = usePlaybackStore()
     const playSongList = vi.spyOn(playback, 'playSongList').mockResolvedValue()
     const wrapper = mountView()
-    await flushPromises()
+    await settle()
     await switchTo(wrapper, 'Albums')
 
     await wrapper.get('.mobile-album-row button').trigger('click')
-    await flushPromises()
+    await settle()
 
     // startIndex 0, pinFirst false, peek true — an album is a sequenced
     // work, not a pick made row by row.
@@ -185,57 +157,42 @@ describe('MobileLibraryView', () => {
   // live: a search, an album, back, and the results were the whole library
   // again on the wrong half.
   describe('coming back from an album', () => {
-    async function searchThenLeave() {
+    it('finds the half it was on still there', async () => {
       const library = stubStore()
-      library.allSongs = [makeSong('a', { title: 'Blue Song' })]
-      library.albums = [makeAlbum('1', { name: 'Blue Album' }), makeAlbum('2', { name: 'Red' })]
-      const wrapper = mountView()
-      await flushPromises()
-      await switchTo(wrapper, 'Albums')
-      await wrapper.get('input[type="text"]').setValue('Blue')
-      await new Promise((resolve) => setTimeout(resolve, 250))
-      await flushPromises()
-      expect(wrapper.findAllComponents({ name: 'MobileAlbumRow' })).toHaveLength(1)
-      wrapper.unmount()
-      return library
-    }
-
-    it('finds the search and the half it was on still there', async () => {
-      await searchThenLeave()
+      library.allSongs = [makeSong('a')]
+      library.albums = [makeAlbum('1'), makeAlbum('2')]
+      const first = mountView()
+      await settle()
+      await switchTo(first, 'Albums')
 
       // The address is what survives the unmount, so a fresh mount on the
-      // same route is exactly what the back button produces.
+      // same route is what the back button produces. Mounted before the
+      // first goes: the router forgets its route once no app is left on it,
+      // which in the app never happens.
       const wrapper = mountView()
-      await flushPromises()
+      first.unmount()
+      await settle()
 
-      expect(wrapper.findAllComponents({ name: 'MobileAlbumRow' })).toHaveLength(1)
+      expect(wrapper.findAllComponents({ name: 'MobileAlbumRow' })).toHaveLength(2)
       expect(wrapper.findAllComponents({ name: 'MobileSongRow' })).toHaveLength(0)
-      expect((wrapper.get('input[type="text"]').element as HTMLInputElement).value).toBe('Blue')
     })
 
-    it('does not turn every keystroke into a step on the way back', async () => {
+    it('does not make a switch of half a step on the way back', async () => {
       // A real entry to go back to, so "one step back" has somewhere to
       // land other than the start of the history.
       await router.push('/m/now-playing')
       await router.push('/m/library')
-
       const library = stubStore()
       library.allSongs = []
-      library.albums = [makeAlbum('1', { name: 'Blue Album' }), makeAlbum('2', { name: 'Red' })]
+      library.albums = [makeAlbum('1')]
       const wrapper = mountView()
-      await flushPromises()
+      await settle()
       await switchTo(wrapper, 'Albums')
-      for (const term of ['B', 'Bl', 'Blu', 'Blue']) {
-        await wrapper.get('input[type="text"]').setValue(term)
-        await new Promise((resolve) => setTimeout(resolve, 250))
-      }
-      await flushPromises()
-      expect(router.currentRoute.value.query.q).toBe('Blue')
+      await switchTo(wrapper, 'Artists')
+      expect(router.currentRoute.value.query.tab).toBe('artists')
 
-      // replace(), not push(): one step leaves the library instead of
-      // walking the search backwards a letter at a time.
       router.back()
-      await flushPromises()
+      await settle()
       expect(router.currentRoute.value.path).toBe('/m/now-playing')
     })
   })
@@ -250,14 +207,13 @@ describe('MobileLibraryView', () => {
     vi.spyOn(library, 'fetchAlbum').mockResolvedValue(makeAlbum('1', { songs: [makeSong('x')] }))
     vi.spyOn(usePlaybackStore(), 'playSongList').mockResolvedValue()
     const wrapper = mountView()
-    await flushPromises()
+    await settle()
     await switchTo(wrapper, 'Albums')
 
     expect(wrapper.get('.mobile-album-row').attributes('href')).toBe('/m/albums/1')
   })
 
   it('lists the artists, loading them on the way, each leading to its page', async () => {
-    vi.useFakeTimers()
     const library = stubStore()
     library.allSongs = []
     library.artists = [
@@ -265,19 +221,162 @@ describe('MobileLibraryView', () => {
       { id: 'ar2', name: 'Red Band', albumCount: 1 } as Artist,
     ]
     const wrapper = mountView()
-    await flushPromises()
+    await settle()
 
     await switchTo(wrapper, 'Artists')
 
     expect(library.fetchArtists).toHaveBeenCalled()
     const rows = wrapper.findAll('.mobile-artist-row')
     expect(rows.map((row) => row.attributes('href'))).toEqual(['/m/artists/ar1', '/m/artists/ar2'])
-
-    await wrapper.get('input[type="text"]').setValue('red')
-    await vi.advanceTimersByTimeAsync(250)
-
-    expect(wrapper.findAll('.mobile-artist-row')).toHaveLength(1)
     expect(router.currentRoute.value.query.tab).toBe('artists')
-    vi.useRealTimers()
+  })
+
+  // The desktop's controls for a library list (discussion #103): how it is
+  // laid out, what it is narrowed to, and in which order.
+  describe('browsing like the desktop', () => {
+    it('puts the albums in the order picked, and remembers it', async () => {
+      const library = stubStore()
+      library.allSongs = []
+      library.albums = [
+        makeAlbum('1', { name: 'A Old', year: 1970 }),
+        makeAlbum('2', { name: 'B New', year: 2020 }),
+      ]
+      const wrapper = mountView()
+      await settle()
+      await switchTo(wrapper, 'Albums')
+      const names = (w: ReturnType<typeof mountView>) =>
+        w.findAll('.mobile-album-row .text-body-medium').map((row) => row.text())
+
+      wrapper.getComponent({ name: 'LibrarySortSelect' }).vm.$emit('update:modelValue', 'year')
+      await settle()
+      // Newest first, the desktop's own default for a year.
+      expect(names(wrapper)).toEqual(['B New', 'A Old'])
+
+      const again = mountView()
+      await settle()
+      await switchTo(again, 'Albums')
+      expect(names(again)).toEqual(['B New', 'A Old'])
+
+      again.getComponent({ name: 'LibrarySortSelect' }).vm.$emit('toggle-direction')
+      await settle()
+      expect(names(again)).toEqual(['A Old', 'B New'])
+    })
+
+    it('puts the songs in the order picked', async () => {
+      const library = stubStore()
+      library.allSongs = [makeSong('a', { title: 'Alpha' }), makeSong('b', { title: 'Beta' })]
+      const wrapper = mountView()
+      await settle()
+
+      wrapper.getComponent({ name: 'LibrarySortSelect' }).vm.$emit('toggle-direction')
+      await settle()
+
+      const titles = wrapper.findAll('.mobile-song-row .text-body-medium').map((row) => row.text())
+      expect(titles).toEqual(['Beta', 'Alpha'])
+    })
+
+    it('narrows a half to what the filter picks, and only that half', async () => {
+      const library = stubStore()
+      library.allSongs = [
+        makeSong('a', { title: 'Rock One', genre: 'Rock' }),
+        makeSong('b', { title: 'Jazz One', genre: 'Jazz' }),
+      ]
+      library.albums = [makeAlbum('1'), makeAlbum('2')]
+      const wrapper = mountView()
+      await settle()
+
+      wrapper
+        .getComponent({ name: 'LibraryFilterMenu' })
+        .vm.$emit('update:modelValue', { genre: ['Jazz'] })
+      await settle()
+      const songs = wrapper.findAllComponents({ name: 'MobileSongRow' })
+      expect(songs).toHaveLength(1)
+      expect(songs[0]!.text()).toContain('Jazz One')
+      // The phone's filter is an icon without a label, so its count is the
+      // one sign that the list is narrowed at all.
+      expect(wrapper.get('.library-filter-button').text()).toContain('1')
+
+      await switchTo(wrapper, 'Albums')
+      expect(wrapper.findAllComponents({ name: 'MobileAlbumRow' })).toHaveLength(2)
+      expect(wrapper.get('.library-filter-button').text()).not.toContain('1')
+    })
+
+    it('lays the albums out as cards that open them, remembered per half', async () => {
+      const library = stubStore()
+      library.allSongs = [makeSong('x')]
+      library.albums = [makeAlbum('1')]
+      const wrapper = mountView()
+      await settle()
+      await switchTo(wrapper, 'Albums')
+
+      wrapper.getComponent({ name: 'VBtnToggle' }).vm.$emit('update:modelValue', 'grid')
+      await settle()
+      expect(wrapper.get('.mobile-grid-tile').attributes('href')).toBe('/m/albums/1')
+      expect(wrapper.findAllComponents({ name: 'MobileAlbumRow' })).toHaveLength(0)
+
+      // The songs keep their own layout.
+      await switchTo(wrapper, 'Songs')
+      expect(wrapper.findAllComponents({ name: 'MobileSongRow' })).toHaveLength(1)
+
+      const again = mountView()
+      await settle()
+      await switchTo(again, 'Albums')
+      expect(again.findAll('.mobile-grid-tile')).toHaveLength(1)
+    })
+
+    it("plays a song from its card's cover, and leads to its album from the title", async () => {
+      const library = stubStore()
+      library.allSongs = [makeSong('a'), makeSong('b', { albumId: 'al-b' })]
+      const playSongList = vi.spyOn(usePlaybackStore(), 'playSongList').mockResolvedValue()
+      const wrapper = mountView()
+      await settle()
+
+      wrapper.getComponent({ name: 'VBtnToggle' }).vm.$emit('update:modelValue', 'grid')
+      await settle()
+      const card = wrapper.findAll('.mobile-grid-tile')[1]!
+      await card.get('.mobile-grid-tile__cover').trigger('click')
+      await settle()
+
+      expect(playSongList).toHaveBeenCalledWith([library.allSongs[1]], 0)
+      expect(card.get('a.mobile-grid-tile__title').attributes('href')).toBe('/m/albums/al-b')
+    })
+
+    it('puts a divider before each section, in either layout', async () => {
+      const library = stubStore()
+      library.allSongs = []
+      library.albums = [
+        makeAlbum('1', { name: 'Abba Gold' }),
+        makeAlbum('2', { name: 'Arrival' }),
+        makeAlbum('3', { name: 'Beatles 1' }),
+      ]
+      const wrapper = mountView()
+      await settle()
+      await switchTo(wrapper, 'Albums')
+      const dividers = () => wrapper.findAll('.letter-divider').map((d) => d.text())
+
+      expect(dividers()).toEqual(['A', 'B'])
+
+      wrapper.getComponent({ name: 'VBtnToggle' }).vm.$emit('update:modelValue', 'grid')
+      await settle()
+      expect(dividers()).toEqual(['A', 'B'])
+      // That a row never spans two sections is sectionedRows.test.ts's.
+    })
+
+    it('names a decade in the dividers when sorted by year', async () => {
+      const library = stubStore()
+      library.allSongs = []
+      library.albums = [makeAlbum('1', { year: 1985 }), makeAlbum('2', { year: null as never })]
+      const wrapper = mountView()
+      await settle()
+      await switchTo(wrapper, 'Albums')
+
+      wrapper.getComponent({ name: 'LibrarySortSelect' }).vm.$emit('update:modelValue', 'year')
+      await settle()
+
+      expect(wrapper.findAll('.letter-divider').map((d) => d.text())).toEqual([
+        i18n.global.t('library.decade', { decade: '1980' }),
+        i18n.global.t('library.unknownYear'),
+      ])
+    })
   })
 })

@@ -208,6 +208,8 @@ export default {
     searchSongs: 'Search songs…',
     searchAlbums: 'Search albums…',
     searchArtists: 'Search artists…',
+    jumpToSection: 'Jump to a section',
+    showAllMatches: 'Show all {count}',
     noSongsForQuery: 'No songs for "{query}".',
     album1: 'album',
     albumsN: 'albums',
@@ -1702,6 +1704,7 @@ export default {
     noAlbumsYet: 'No favorite albums yet.',
   },
   search: {
+    everythingHint: 'Find artists, albums, songs, playlists and radio stations.',
     noResultsHint: 'Check the spelling or try fewer words.',
     label: 'Search',
     resultsFor: 'Results for "{query}"',

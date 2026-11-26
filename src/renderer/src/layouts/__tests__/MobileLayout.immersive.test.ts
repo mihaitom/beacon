@@ -44,6 +44,7 @@ function mountLayout(routeName: string) {
         RouterView: true,
         MobileTabBar: true,
         MobilePlayerBar: true,
+        MobileTopBarSearch: true,
         CastTakeoverConfirmDialog: true,
         PartyModeDialog: true,
       },

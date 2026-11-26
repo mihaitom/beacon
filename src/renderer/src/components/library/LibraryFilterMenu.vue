@@ -1,7 +1,25 @@
 <template>
   <v-menu :close-on-content-click="false" location="bottom start">
     <template #activator="{ props: menuProps }">
+      <!-- The icon alone where the row is short of room (the phone), the
+         - count riding on it as a badge; the label beside it otherwise. -->
       <v-btn
+        v-if="iconOnly"
+        v-bind="menuProps"
+        icon
+        variant="flat"
+        class="library-filter-button library-filter-button--icon"
+        :class="{ 'library-filter-button--active': activeCount > 0 }"
+        :title="$t('library.songFilter.button')"
+        :aria-label="$t('library.songFilter.button')"
+      >
+        <v-badge v-if="activeCount" :content="activeCount" color="primary" floating>
+          <v-icon icon="mdi-filter-variant" />
+        </v-badge>
+        <v-icon v-else icon="mdi-filter-variant" />
+      </v-btn>
+      <v-btn
+        v-else
         v-bind="menuProps"
         rounded="pill"
         variant="flat"
@@ -80,6 +98,7 @@ export default {
     items: { type: Array as PropType<unknown[]>, required: true },
     fields: { type: Array as PropType<FilterFieldDef<never>[]>, required: true },
     modelValue: { type: Object as PropType<LibraryFilters>, required: true },
+    iconOnly: { type: Boolean, default: false },
   },
   emits: ['update:modelValue'],
   computed: {
@@ -134,6 +153,10 @@ export default {
   height: 40px;
   background: color-mix(in srgb, rgb(var(--v-theme-on-surface)) 4%, rgb(var(--v-theme-surface)));
   color: rgba(var(--v-theme-on-surface), 0.75);
+}
+
+.library-filter-button--icon.v-btn {
+  width: 40px;
 }
 
 .library-filter-button--active.v-btn {

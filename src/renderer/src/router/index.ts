@@ -177,6 +177,12 @@ const router = createRouter({
       name: 'm-library',
       component: () => import('../views/mobile/MobileLibraryView.vue'),
     },
+    // The app bar's search field (MobileTopBarSearch.vue) lands here.
+    {
+      path: '/m/search',
+      name: 'm-search',
+      component: () => import('../views/mobile/MobileSearchView.vue'),
+    },
     // Reached from the album name on Now Playing.
     {
       path: '/m/albums/:id',

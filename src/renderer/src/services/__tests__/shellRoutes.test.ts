@@ -115,7 +115,7 @@ describe('routeInOtherShell', () => {
 
     /** No phone design for these; the phone shell shows them as they are,
      * the way it does when Now Playing links to an artist. */
-    it.each(['artists', 'artist-detail', 'genres', 'search', 'stats', 'settings'])(
+    it.each(['artists', 'artist-detail', 'genres', 'stats', 'settings'])(
       'leaves %s where it is',
       (name) => {
         expect(routeInOtherShell(route(name), true)).toBeNull()
@@ -137,6 +137,7 @@ describe('routeInOtherShell', () => {
     route('m-library', {}, { tab: 'albums' }),
     route('m-album-detail', { id: 'a1' }),
     route('m-radio'),
+    route('m-search', {}, { q: 'blue' }),
     route('m-library', {}, { favorites: '1' }),
   ])('round-trips $name', (start) => {
     const there = landing(start, false)!

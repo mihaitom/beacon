@@ -491,8 +491,7 @@ export default {
      * for it — on each layout, the screen that layout actually uses for that.
      * The desktop search page does render inside the mobile shell, which is
      * how a tap on the phone used to land on a view built for a window; the
-     * phone has its own library screen (MobileLibraryView.vue) and that is
-     * where a search belongs there.
+     * phone has its own (MobileSearchView.vue).
      *
      * The entry's own spelling is not the file's, so the library matcher
      * resolves it first (see stores/library.ts's findLibrarySong). When the
@@ -505,7 +504,7 @@ export default {
       const song = await useLibraryStore().findLibrarySong(parts.artist, parts.track)
       const query = song ? `${song.artist} ${song.title}` : parts.track
       this.$router.push({
-        name: isMobileWebNow() ? 'm-library' : 'search',
+        name: isMobileWebNow() ? 'm-search' : 'search',
         query: { q: query },
       })
     },
