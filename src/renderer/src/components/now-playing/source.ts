@@ -4,6 +4,7 @@ import type { RadioTitleEntry } from '@/services/connect/radioMetadata'
 import type { VisualizerFrame } from '@/services/connect/types'
 import type { LyricLine } from '@/services/lyrics/parseLrc'
 import type { MilkdropCover } from '@/services/milkdrop/textures'
+import type { BeatNow } from '@/services/milkdrop/beatSignal'
 import type { ThemePreference } from '@/plugins/theme'
 
 /** A song as the Now Playing presentation needs it - the app's own Song
@@ -105,6 +106,10 @@ export interface NowPlayingMilkdrop {
   /** This device's audio graph, for mode 'local'; null where there is none
    * (the guest page). */
   analyser: (() => AnalyserNode) | null
+  /** The song's analysed beat right now, read every frame; null where
+   * there is none (and always on the guest page), which leaves the preset
+   * to its own detection. */
+  beat: () => BeatNow | null
 }
 
 /** What a given host allows the presentation to do. The app turns everything

@@ -1869,8 +1869,7 @@ def test_the_preview_gets_the_songs_beats_and_loudness(client, monkeypatch):
     )
     asked = []
     monkeypatch.setattr(controller, "preview_song", lambda *a: asked.append(a) or ("ready", song))
-    assert client.get("/lights/analysis", params={"song_id": "s"}).status_code == 409
-    _paired()
+    # Milkdrop follows the beats with no bridge set up.
     body = client.get("/lights/analysis", params={"song_id": "s"}).json()
     assert asked[0][1] == "s"
     assert body["status"] == "ready"

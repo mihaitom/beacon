@@ -5,6 +5,7 @@
 </template>
 
 <script lang="ts">
+import { markRaw } from 'vue'
 import { useAppearanceStore } from '@/stores/appearance'
 import { themeAccent } from '@/services/appAccent'
 import { usePlaybackStore } from '@/stores/playback'
@@ -42,6 +43,8 @@ import { useMilkdropStore } from '@/stores/milkdrop'
 import { isRetiredPreset, pickPresetKey, presetPool } from '@/services/milkdrop/presets'
 import { drawableHere, forgetTooHeavy, tooHeavyHere } from '@/services/milkdrop/deviceLimits'
 import { decodeWaveform } from '@/services/milkdrop/waveform'
+import { SongBeats } from '@/services/milkdrop/songBeats'
+import type { BeatNow } from '@/services/milkdrop/beatSignal'
 import type { Song } from '@/types/library'
 import type { MixTransition, NoBeatmixReason } from '@/services/connect/types'
 
@@ -234,6 +237,7 @@ export default {
       // Which preset Milkdrop shows - see pickMilkdropPreset.
       milkdropPreset: null as string | null,
       milkdropTimer: undefined as ReturnType<typeof setInterval> | undefined,
+      milkdropBeats: markRaw(new SongBeats()),
     }
   },
   computed: {
@@ -521,6 +525,12 @@ export default {
       if (this.milkdropActive) return 'waveform'
       return this.visualizerMode === 'cast' ? 'bands' : 'none'
     },
+    /** The song whose beats Milkdrop follows: none for radio, which
+     * connect does not analyse. */
+    milkdropBeatSongId(): string | null {
+      if (!this.milkdropActive || this.playbackStore.radioStation) return null
+      return this.currentSong?.id ?? null
+    },
     milkdropCoverArtId(): string | null {
       return this.currentSong?.coverArtId ?? null
     },
@@ -720,6 +730,12 @@ export default {
     'currentSong.id'() {
       if (this.milkdropStore.settings.switchMode === 'song') this.pickMilkdropPreset()
     },
+    milkdropBeatSongId: {
+      immediate: true,
+      handler(songId: string | null) {
+        this.milkdropBeats.follow(songId)
+      },
+    },
     milkdropActive: {
       immediate: true,
       handler(active: boolean) {
@@ -776,6 +792,7 @@ export default {
     },
   },
   beforeUnmount() {
+    this.milkdropBeats.stop()
     this.stopVisualizerEvents()
     clearInterval(this.milkdropTimer)
   },
@@ -925,6 +942,11 @@ export default {
     /** What Milkdrop reads every frame while casting. */
     milkdropWaveform(): Uint8Array | null {
       return this.castWaveform
+    },
+    /** What Milkdrop reads every frame: the beat the lights land on. */
+    milkdropBeat(): BeatNow | null {
+      const playback = this.playbackStore
+      return this.milkdropBeats.at(performance.now(), playback.localPosition, playback.isPlaying)
     },
     /** What VisualizerBars reads every frame. */
     visualizerSample(): number[] | null {

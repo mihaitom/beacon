@@ -218,9 +218,9 @@ class LightController:
         return picture if picture is not None else self._covers.get(song_id)
 
     def preview_song(self, session_id: str, song_id: str) -> tuple[str, SongLights | None]:
-        """A song's analysis for the dialog's preview - "ready", "pending"
-        (set going now if it was not) or "failed". The same cache as the
-        show's, so a song the lights follow is not decoded twice."""
+        """A song's analysis for the dialog's preview and Milkdrop - "ready",
+        "pending" (set going now if it was not) or "failed". The same cache
+        as the show's, so a song the lights follow is not decoded twice."""
         if self._analysis.has(song_id):
             song = self._analysis.get(song_id)
             return ("ready", song) if song is not None else ("failed", None)

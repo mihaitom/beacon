@@ -66,6 +66,7 @@ import { renderSize } from '@/services/milkdrop/renderSize'
 import { RenderScale } from '@/services/milkdrop/resolution'
 import { isDemandingPreset, loadPresetFile } from '@/services/milkdrop/presets'
 import { compilePresetShaders } from '@/services/milkdrop/shaderCompile'
+import { showBeat, type BeatNow } from '@/services/milkdrop/beatSignal'
 import { keepLoopsRolled } from '@/services/milkdrop/loops'
 import { clearStarting, markTooHeavy, noteStarting } from '@/services/milkdrop/deviceLimits'
 import { park, unpark } from '@/services/milkdrop/parking'
@@ -173,6 +174,11 @@ export default {
      * function, so the guest page never imports the app's audio engine. */
     analyser: {
       type: Function as PropType<(() => AnalyserNode) | null>,
+      default: null,
+    },
+    /** The song's analysed beat, read every frame (beatSignal.ts). */
+    beat: {
+      type: Function as PropType<(() => BeatNow | null) | null>,
       default: null,
     },
   },
@@ -341,6 +347,7 @@ export default {
       if (!this.rt.visualizer || !this.rt.presetKey) return
       if (!this.playing && this.ready) return
       this.rt.renderScale?.begin()
+      showBeat(this.beat?.() ?? null)
       if (this.waveform) {
         // Mono: connect decodes one channel. Frames come at ~43/s, so a
         // frame at 60 Hz sometimes draws the same samples twice.

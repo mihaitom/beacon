@@ -501,6 +501,7 @@ export function useGuestNowPlayingSource(
       mode: 'cast' as const,
       cover: computed(() => guestMilkdropCover(song.value?.coverUrl ?? null)),
       waveform: milkdropWaveform,
+      beat: () => null,
       analyser: null,
     }),
     // Always Beacon: the listener's own theme on this same origin is not

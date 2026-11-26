@@ -31,6 +31,7 @@
           :accent="borrowedAccent"
           :waveform="source.milkdrop.mode === 'cast' ? source.milkdrop.waveform : null"
           :analyser="source.milkdrop.analyser"
+          :beat="source.milkdrop.beat"
           @too-heavy="source.milkdropTooHeavy"
         />
       </now-playing-backdrop>

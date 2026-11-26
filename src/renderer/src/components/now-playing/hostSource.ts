@@ -15,6 +15,7 @@ import type { VisualizerFrame } from '@/services/connect/types'
 import { NoCoverArtError, fetchCoverArtBatched } from '@/services/connect/coverArtBatch'
 import { getAudioEngine } from '@/services/audioEngine'
 import { COVER_SIZE, type MilkdropCover } from '@/services/milkdrop/textures'
+import type { BeatNow } from '@/services/milkdrop/beatSignal'
 import { FILE_SOURCE, useLyricsStore } from '@/stores/lyrics'
 import { useMilkdropStore } from '@/stores/milkdrop'
 import { useAppearanceStore } from '@/stores/appearance'
@@ -64,6 +65,7 @@ export interface HostNowPlayingApi {
   milkdropMode: 'local' | 'cast'
   milkdropCoverArtId: string | null
   milkdropWaveform: () => Uint8Array | null
+  milkdropBeat: () => BeatNow | null
   isPlaying: boolean
   showLyrics: boolean
   showVisualizer: boolean
@@ -209,6 +211,7 @@ export function hostNowPlayingSource(api: HostNowPlayingApi): NowPlayingSource {
       cover: computed(() => milkdropCover(api.milkdropCoverArtId)),
       waveform: () => api.milkdropWaveform(),
       analyser: () => getAudioEngine().getAnalyser(),
+      beat: () => api.milkdropBeat(),
     }),
     appearance: computed(() => {
       const appearance = useAppearanceStore()

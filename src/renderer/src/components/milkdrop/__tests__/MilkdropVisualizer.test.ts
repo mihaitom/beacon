@@ -169,6 +169,26 @@ describe('MilkdropVisualizer captions', () => {
     await frames()
     expect(wrapper.find('.milkdrop__zoom').exists()).toBe(false)
   })
+
+  it('hands the preset the analysed beat every frame', async () => {
+    const shown = () => (globalThis as { beaconBeat?: unknown }).beaconBeat
+    let beat: { index: number; strength: number } | null = { index: 3, strength: 0.7 }
+    const wrapper = mount(MilkdropVisualizer, {
+      props: {
+        playing: true,
+        preset: 'builtin:beacon-fractal-zoom',
+        waveform: () => null,
+        beat: () => beat,
+      },
+    })
+    await flushPromises()
+    await frames()
+    expect(shown()).toEqual({ index: 3, strength: 0.7 })
+    beat = null
+    await frames()
+    expect(shown()).toBeNull()
+    wrapper.unmount()
+  })
 })
 
 describe('MilkdropVisualizer cover', () => {
