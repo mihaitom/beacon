@@ -31,7 +31,9 @@ function solidPreset(rgb: string): MilkdropPreset {
 
 const COMPLETION_STATUS_KHR = 0x91b1
 
-function standInParallelCompile(gl: WebGL2RenderingContext): void {
+/** `finished()` false stands in for a driver still at work: anything but
+ * asking for completion is then what would make the GPU process wait. */
+function standInParallelCompile(gl: WebGL2RenderingContext, finished = () => true): void {
   const extension = gl.getExtension.bind(gl)
   const parameter = gl.getProgramParameter.bind(gl)
   gl.getExtension = ((name: string) =>
@@ -39,10 +41,10 @@ function standInParallelCompile(gl: WebGL2RenderingContext): void {
       ? { COMPLETION_STATUS_KHR }
       : extension(name)) as typeof gl.getExtension
   gl.getProgramParameter = (program, pname) =>
-    pname === COMPLETION_STATUS_KHR ? true : parameter(program, pname)
+    pname === COMPLETION_STATUS_KHR ? finished() : parameter(program, pname)
 }
 
-function setup(withParallel = true) {
+function setup(withParallel = true, finished?: () => boolean) {
   const canvas = document.createElement('canvas')
   canvas.width = canvas.height = SIZE
   const visualizer = butterchurn.createVisualizer(new OfflineAudioContext(2, 1, 44100), canvas, {
@@ -51,7 +53,7 @@ function setup(withParallel = true) {
     pixelRatio: 1,
   })
   const gl = canvas.getContext('webgl2')!
-  if (withParallel) standInParallelCompile(gl)
+  if (withParallel) standInParallelCompile(gl, finished)
   const centre = (): [number, number, number] => {
     visualizer.render()
     const pixel = new Uint8Array(4)
@@ -190,5 +192,44 @@ describe('compilePresetShaders', () => {
     await expect(
       compilePresetShaders(visualizer, solidPreset('0.0, 0.0, 1.0'), stop.signal),
     ).rejects.toBeDefined()
+  })
+
+  it('leaves a compile called off alone until the driver is done, and keeps it', async () => {
+    let finished = false
+    const { visualizer, gl } = setup(true, () => finished)
+    let touched = 0
+    const remove = gl.deleteProgram.bind(gl)
+    gl.deleteProgram = (program) => {
+      touched++
+      remove(program)
+    }
+    const preset = solidPreset('0.0, 1.0, 0.0')
+    const stop = new AbortController()
+    const waiting = compilePresetShaders(visualizer, preset, stop.signal)
+    stop.abort()
+    await expect(waiting).rejects.toBeDefined()
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(touched).toBe(0)
+    finished = true
+    const later = await compilePresetShaders(visualizer, preset, new AbortController().signal)
+    expect(later).not.toBeNull()
+    expect(touched).toBe(0)
+  })
+
+  it('waits for a preset still compiling instead of starting it again', async () => {
+    let finished = false
+    const { visualizer, gl } = setup(true, () => finished)
+    let linked = 0
+    const link = gl.linkProgram.bind(gl)
+    gl.linkProgram = (program) => {
+      linked++
+      link(program)
+    }
+    const preset = solidPreset('0.0, 0.0, 1.0')
+    const first = compilePresetShaders(visualizer, preset, new AbortController().signal)
+    const second = compilePresetShaders(visualizer, preset, new AbortController().signal)
+    finished = true
+    expect(await second).toBe(await first)
+    expect(linked).toBe(2)
   })
 })

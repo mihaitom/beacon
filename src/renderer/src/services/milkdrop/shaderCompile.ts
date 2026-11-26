@@ -62,25 +62,77 @@ function startLink(gl: WebGL2RenderingContext, sources: ShaderSources): Pending 
   return { program, shaders: [vert, frag] }
 }
 
-function wait(ms: number, signal: AbortSignal): Promise<void> {
+/** Deleting a program, or reading its status, before the driver is done
+ * with it makes the GPU process wait for the compile to finish - the same
+ * freeze as compiling in the foreground. So a compile nobody waits for any
+ * more runs to its end all the same, and goes into `kept` for next time. */
+const compiling = new WeakMap<
+  WebGL2RenderingContext,
+  Map<string, Promise<PresetShaders<WebGLProgram>>>
+>()
+
+function compilingFor(
+  gl: WebGL2RenderingContext,
+): Map<string, Promise<PresetShaders<WebGLProgram>>> {
+  let running = compiling.get(gl)
+  if (!running) {
+    running = new Map()
+    compiling.set(gl, running)
+  }
+  return running
+}
+
+async function link(
+  gl: WebGL2RenderingContext,
+  parallel: ParallelCompile,
+  sources: { warp: ShaderSources; comp: ShaderSources },
+): Promise<PresetShaders<WebGLProgram>> {
+  const warp = startLink(gl, sources.warp)
+  const comp = startLink(gl, sources.comp)
+  const pending = [warp, comp].filter((entry): entry is Pending => entry !== null)
+  let done = false
+  try {
+    if (!warp || !comp) throw new Error('Could not create a shader program')
+    for (;;) {
+      if (gl.isContextLost()) throw new Error('WebGL context lost while compiling')
+      const ready = pending.every((entry) =>
+        gl.getProgramParameter(entry.program, parallel.COMPLETION_STATUS_KHR),
+      )
+      if (ready) break
+      await new Promise((resolve) => setTimeout(resolve, POLL_MS))
+    }
+    for (const entry of pending) {
+      if (!gl.getProgramParameter(entry.program, gl.LINK_STATUS)) {
+        throw new Error(gl.getProgramInfoLog(entry.program) || 'Shader did not link')
+      }
+    }
+    done = true
+    return { warp: warp.program, comp: comp.program }
+  } finally {
+    // Only reached once the driver is done, or the context is gone.
+    for (const entry of pending) {
+      // A linked program keeps working without its shaders.
+      for (const shader of entry.shaders) gl.deleteShader(shader)
+      if (!done) gl.deleteProgram(entry.program)
+    }
+  }
+}
+
+function untilAborted<T>(work: Promise<T>, signal: AbortSignal): Promise<T> {
+  signal.throwIfAborted()
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(resolve, ms)
-    signal.addEventListener(
-      'abort',
-      () => {
-        clearTimeout(timer)
-        reject(signal.reason)
-      },
-      { once: true },
-    )
+    const abort = (): void => reject(signal.reason)
+    signal.addEventListener('abort', abort, { once: true })
+    work.then(resolve, reject).finally(() => signal.removeEventListener('abort', abort))
   })
 }
 
 /** The preset's warp and comp programs, linked - or null where the
  * browser cannot compile in the background, and Butterchurn has to do it
  * the old way. A preset compiled before on this context comes back at
- * once. Rejects when a shader does not compile, the context is
- * lost, or `signal` calls it off; whatever was made by then is deleted. */
+ * once, one still compiling is waited for rather than started again.
+ * Rejects when a shader does not compile, the context is lost, or
+ * `signal` calls it off - which stops the waiting, not the compile. */
 export async function compilePresetShaders(
   visualizer: MilkdropVisualizer,
   preset: MilkdropPreset,
@@ -89,41 +141,24 @@ export async function compilePresetShaders(
   const gl = (visualizer as unknown as RendererInternals).renderer?.gl
   const parallel = gl?.getExtension('KHR_parallel_shader_compile') as ParallelCompile | null
   if (!gl || !parallel) return null
+  signal.throwIfAborted()
   const sources = visualizer.shaderSources(preset)
   const key = sourceKey(sources)
   const programs = keptFor(gl)
   if (gl.isContextLost()) programs.clear()
   const hit = programs.get(key)
   if (hit) return hit
-  const warp = startLink(gl, sources.warp)
-  const comp = startLink(gl, sources.comp)
-  const pending = [warp, comp].filter((entry): entry is Pending => entry !== null)
-  let done = false
-  try {
-    if (!warp || !comp) throw new Error('Could not create a shader program')
-    for (;;) {
-      signal.throwIfAborted()
-      if (gl.isContextLost()) throw new Error('WebGL context lost while compiling')
-      const ready = pending.every((entry) =>
-        gl.getProgramParameter(entry.program, parallel.COMPLETION_STATUS_KHR),
+  const running = compilingFor(gl)
+  let work = running.get(key)
+  if (!work) {
+    work = link(gl, parallel, sources)
+    running.set(key, work)
+    work
+      .then(
+        (linked) => programs.set(key, linked),
+        () => {},
       )
-      if (ready) break
-      await wait(POLL_MS, signal)
-    }
-    for (const entry of pending) {
-      if (!gl.getProgramParameter(entry.program, gl.LINK_STATUS)) {
-        throw new Error(gl.getProgramInfoLog(entry.program) || 'Shader did not link')
-      }
-    }
-    done = true
-    const linked = { warp: warp.program, comp: comp.program }
-    programs.set(key, linked)
-    return linked
-  } finally {
-    for (const entry of pending) {
-      // A linked program keeps working without its shaders.
-      for (const shader of entry.shaders) gl.deleteShader(shader)
-      if (!done) gl.deleteProgram(entry.program)
-    }
+      .finally(() => running.delete(key))
   }
+  return untilAborted(work, signal)
 }
