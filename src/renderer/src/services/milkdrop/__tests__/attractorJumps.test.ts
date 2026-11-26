@@ -14,8 +14,8 @@ function running(): (frames: number) => Vars {
   const levels = { bass: 1, mid: 1, treb: 1, bass_att: 1, mid_att: 1, treb_att: 1 }
   const screen = { time: 0, pixelsx: 1920, pixelsy: 1080 }
   // Butterchurn's memory every equation shares (1M floats there; the
-  // preset uses the first 42k).
-  const a: Vars = { ...levels, ...screen, gmegabuf: Array.from({ length: 65536 }, () => 0) }
+  // preset's lines end below 256k).
+  const a: Vars = { ...levels, ...screen, gmegabuf: Array.from({ length: 262144 }, () => 0) }
   init(a)
   return (frames) => {
     for (let i = 0; i < frames; i++) frame(a)
@@ -51,6 +51,6 @@ describe('Strange Attractors jumps', () => {
     expect(caption(a)).toBe('Rössler attractor')
     expect(a.fly).toBe(0)
     expect(a.ofade).toBe(0)
-    expect(a.built).toBeGreaterThanOrEqual(1536)
+    expect(a.built).toBeGreaterThanOrEqual(4096)
   })
 })

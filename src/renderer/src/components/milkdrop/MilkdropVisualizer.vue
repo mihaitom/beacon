@@ -52,6 +52,7 @@ import {
 } from '@/services/milkdrop/textures'
 import { ORBIT_LENGTH, ORBIT_SAMPLER, orbitsFor } from '@/services/milkdrop/orbits'
 import { BlaKeeper } from '@/services/milkdrop/bla'
+import { LineLayer, showLines } from '@/services/milkdrop/lineLayer'
 import { PictureFade, type FadePicture } from '@/services/milkdrop/pictureFade'
 import { i18n } from '@/i18n'
 import {
@@ -135,6 +136,8 @@ interface Runtime {
   renderScale: RenderScale | null
   /** A deep zoom's table for skipping steps (see bla.ts). */
   bla: BlaKeeper
+  /** Lines a preset draws in its shader (see lineLayer.ts). */
+  lines: LineLayer
   labelIsName: boolean
 }
 
@@ -222,6 +225,7 @@ export default {
         reportsZoom: false,
         renderScale: null,
         bla: new BlaKeeper(),
+        lines: new LineLayer(),
         labelIsName: false,
       }),
     }
@@ -304,6 +308,7 @@ export default {
     // Leaving is not hanging.
     if (this.rt.presetKey) clearStarting(this.rt.presetKey)
     cancelAnimationFrame(this.rt.frame)
+    showLines(null)
     clearTimeout(this.rt.labelTimer)
     clearTimeout(this.rt.preparingTimer)
     this.rt.observer?.disconnect()
@@ -319,6 +324,11 @@ export default {
     this.rt.visualizer = null
   },
   methods: {
+    /** Called by the preset from inside render(), before the frame is
+     * drawn: its lines reach the shader in the same frame. */
+    drawLines(buffer: ArrayLike<number>, at: number): void {
+      if (this.rt.visualizer) this.rt.lines.upload(this.rt.visualizer, buffer, at)
+    },
     canvasSize(): { width: number; height: number } {
       const rect = (this.$refs.stage as HTMLElement).getBoundingClientRect()
       const scale = this.rt.renderScale?.scale ?? 1
@@ -348,6 +358,7 @@ export default {
       if (!this.playing && this.ready) return
       this.rt.renderScale?.begin()
       showBeat(this.beat?.() ?? null)
+      showLines(this.drawLines)
       if (this.waveform) {
         // Mono: connect decodes one channel. Frames come at ~43/s, so a
         // frame at 60 Hz sometimes draws the same samples twice.
