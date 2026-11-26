@@ -96,6 +96,11 @@ import {
   FRACTAL_ZOOM_KEY,
   jumpToScene,
 } from '@/services/milkdrop/fractalZoomJumps'
+import {
+  ATTRACTOR_DESTINATIONS,
+  STRANGE_ATTRACTORS_KEY,
+  jumpToSystem,
+} from '@/services/milkdrop/attractorJumps'
 import type { MilkdropPresetEntry } from '@/services/milkdrop/presets'
 
 /** The presets to pick from, and the places the one on screen can be sent
@@ -130,7 +135,7 @@ export default {
       if (!query) return this.entries
       return this.entries.filter((entry) => entry.name.toLocaleLowerCase().includes(query))
     },
-    /** The places the preset on screen can be sent to, for the two of
+    /** The places the preset on screen can be sent to, for the three of
      * Beacon's own that roam; none for any other. */
     destinations(): { label: string; index: number; jump: () => void }[] {
       const jumps =
@@ -141,7 +146,12 @@ export default {
                 label: to.label,
                 jump: () => jumpToScene(to),
               }))
-            : []
+            : this.current === STRANGE_ATTRACTORS_KEY
+              ? ATTRACTOR_DESTINATIONS.map((to) => ({
+                  label: to.label,
+                  jump: () => jumpToSystem(to),
+                }))
+              : []
       return jumps.map((to, index) => ({ ...to, index }))
     },
   },

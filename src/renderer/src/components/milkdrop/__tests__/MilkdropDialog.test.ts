@@ -16,6 +16,7 @@ import {
 import { presetFromFile } from '@/services/milkdrop/convert'
 import { MILKY_WAY_DESTINATIONS, MILKY_WAY_KEY } from '@/services/milkdrop/milkyWayJumps'
 import { FRACTAL_ZOOM_DESTINATIONS, FRACTAL_ZOOM_KEY } from '@/services/milkdrop/fractalZoomJumps'
+import { ATTRACTOR_DESTINATIONS, STRANGE_ATTRACTORS_KEY } from '@/services/milkdrop/attractorJumps'
 import { BUILTIN_PRESETS } from '@/services/milkdrop/presets'
 import { useMilkdropStore } from '@/stores/milkdrop'
 import MilkdropDialog from '../MilkdropDialog.vue'
@@ -94,7 +95,7 @@ describe('MilkdropDialog', () => {
     expect(wrapper.text()).not.toContain('My upload')
   })
 
-  it('offers the Milky Way and Fractal Zoom jumps while on screen, and for no other preset', async () => {
+  it('offers the Milky Way, Fractal Zoom and Strange Attractors jumps while on screen, and for no other preset', async () => {
     const pick = async (wrapper: Awaited<ReturnType<typeof open>>, index: number) => {
       wrapper.findComponent({ name: 'VSelect' }).vm.$emit('update:modelValue', index)
       await flushPromises()
@@ -109,8 +110,15 @@ describe('MilkdropDialog', () => {
     expect((globalThis as { beaconFractalZoomPick?: unknown }).beaconFractalZoomPick).toBe(
       FRACTAL_ZOOM_DESTINATIONS[5]!.scene,
     )
+    const attractors = await open(STRANGE_ATTRACTORS_KEY)
+    await pick(attractors, 3)
+    expect((globalThis as { beaconAttractorPick?: unknown }).beaconAttractorPick).toBe(
+      ATTRACTOR_DESTINATIONS[3]!.system,
+    )
     const other = await open(
-      BUILTIN_PRESETS.find((entry) => ![MILKY_WAY_KEY, FRACTAL_ZOOM_KEY].includes(entry.key))!.key,
+      BUILTIN_PRESETS.find(
+        (entry) => ![MILKY_WAY_KEY, FRACTAL_ZOOM_KEY, STRANGE_ATTRACTORS_KEY].includes(entry.key),
+      )!.key,
     )
     expect(other.findComponent({ name: 'VSelect' }).exists()).toBe(false)
   })
