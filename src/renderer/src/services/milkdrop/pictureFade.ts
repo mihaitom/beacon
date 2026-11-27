@@ -51,11 +51,18 @@ export class PictureFade {
     }
     const context = this.blend.getContext('2d')
     if (!context) return null
-    context.globalAlpha = 1
-    context.drawImage(this.from, 0, 0)
     // Eased, so it neither starts nor lands with a jolt.
-    context.globalAlpha = Math.max(t, 0) * Math.max(t, 0) * (3 - 2 * Math.max(t, 0))
+    const share = Math.max(t, 0) * Math.max(t, 0) * (3 - 2 * Math.max(t, 0))
+    // Added rather than drawn over, so the alpha fades too: drawn over an
+    // opaque cover, the half-transparent placeholder would stay opaque to
+    // the last frame and then jump.
+    context.clearRect(0, 0, this.size, this.size)
+    context.globalCompositeOperation = 'lighter'
+    context.globalAlpha = 1 - share
+    context.drawImage(this.from, 0, 0)
+    context.globalAlpha = share
     context.drawImage(this.current, 0, 0, this.size, this.size)
+    context.globalCompositeOperation = 'source-over'
     return this.blend
   }
 

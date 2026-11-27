@@ -4,7 +4,13 @@
 // picture without a single error.
 import { describe, expect, it } from 'vitest'
 import { butterchurn } from '@/services/milkdrop/butterchurn'
-import { coverPicture, loadShippedPicture, setDataTexture, setTexture } from '../textures'
+import {
+  coverPicture,
+  loadShippedPicture,
+  placeholderPicture,
+  setDataTexture,
+  setTexture,
+} from '../textures'
 
 const SIZE = 64
 
@@ -60,6 +66,31 @@ describe('setTexture', () => {
     const [r2, , b2] = centre(canvas, visualizer)
     expect(b2).toBeGreaterThan(200)
     expect(r2).toBeLessThan(40)
+  })
+})
+
+// The cover's alpha in red, its red (times four) in green.
+const COVER_ALPHA = {
+  ...COVER_ONLY,
+  comp: 'uniform sampler2D sampler_cover;\n shader_body { vec4 c = texture(sampler_cover, uv); ret = vec3(c.a, c.r * 4.0, 0.0); }',
+}
+
+describe('placeholderPicture', () => {
+  it('reaches a preset half transparent, its grey kept', () => {
+    const canvas = document.createElement('canvas')
+    canvas.width = canvas.height = SIZE
+    const visualizer = butterchurn.createVisualizer(new OfflineAudioContext(2, 1, 44100), canvas, {
+      width: SIZE,
+      height: SIZE,
+      pixelRatio: 1,
+    })
+    visualizer.loadPreset(COVER_ALPHA, 0)
+    setTexture(visualizer, 'cover', placeholderPicture())
+    const [alpha, grey] = centre(canvas, visualizer)
+    expect(alpha).toBeGreaterThan(120)
+    expect(alpha).toBeLessThan(136)
+    expect(grey).toBeGreaterThan(100)
+    expect(grey).toBeLessThan(125)
   })
 })
 

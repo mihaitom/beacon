@@ -11,12 +11,16 @@ function solid(colour: string): HTMLCanvasElement {
   return canvas
 }
 
-function red(picture: CanvasImageSource): number {
+function pixel(picture: CanvasImageSource): Uint8ClampedArray {
   const canvas = document.createElement('canvas')
   canvas.width = canvas.height = 4
   const context = canvas.getContext('2d')!
   context.drawImage(picture, 0, 0, 4, 4)
-  return context.getImageData(1, 1, 1, 1).data[0]!
+  return context.getImageData(1, 1, 1, 1).data
+}
+
+function red(picture: CanvasImageSource): number {
+  return pixel(picture)[0]!
 }
 
 describe('PictureFade', () => {
@@ -37,6 +41,19 @@ describe('PictureFade', () => {
     expect(halfway).toBeLessThan(155)
     expect(fade.step(1000)).toBe(next)
     expect(fade.step(1100)).toBeNull()
+  })
+
+  it('fades the alpha too, to a half-transparent picture and back', () => {
+    const fade = new PictureFade(4, 1000)
+    fade.show(solid('rgb(255, 0, 0)'), 0)
+    fade.show(solid('rgba(255, 0, 0, 0.5)'), 0)
+    const halfway = pixel(fade.step(500)!)
+    expect(halfway[3]).toBeGreaterThan(180)
+    expect(halfway[3]).toBeLessThan(205)
+    expect(halfway[0]).toBeGreaterThan(250)
+    fade.step(1000)
+    fade.show(solid('rgb(0, 0, 255)'), 1000)
+    expect(pixel(fade.step(1500)!)[3]).toBeGreaterThan(180)
   })
 
   it('starts a fade from where the one under way had got to', () => {
