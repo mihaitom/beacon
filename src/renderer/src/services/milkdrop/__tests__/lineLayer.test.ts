@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { LineLayer, MAX_LINE_POINTS, TILES_X, TILES_Y, TILE_ENTRIES } from '../lineLayer'
+import strangeAttractors from '@/assets/milkdrop/presets/beacon-strange-attractors.json'
+import {
+  LINES_WIDTH,
+  LineLayer,
+  MAX_ENTRIES,
+  MAX_LINE_POINTS,
+  TILES_X,
+  TILES_Y,
+  TILE_ENTRIES,
+} from '../lineLayer'
 
 // 10 x 10 pixels a tile.
 const W = TILES_X * 10
@@ -109,6 +118,33 @@ describe('LineLayer.pack', () => {
     const kept = line.stretchesIn(105, 105)
     expect(kept).toHaveLength(TILE_ENTRIES)
     expect(kept[0]).toBe(back.length - 2)
+  })
+
+  it('never hands out more entries than the texture has room for', () => {
+    // Lines across the whole picture, each into every tile of its row.
+    const across: Point[] = []
+    for (let i = 0; i * TILES_X < MAX_ENTRIES * 1.5; i++) {
+      const y = 5 + (i % TILES_Y) * 10
+      across.push([0, y, 1], [W - 1, y, -1])
+    }
+    const lines = new LineLayer()
+    const p = lines.pack(buffer(across), 0)
+    let total = 0
+    for (let t = 0; t < TILES_X * TILES_Y; t++) {
+      expect(p.tiles[t * 4]! + p.tiles[t * 4 + 1]!).toBeLessThanOrEqual(MAX_ENTRIES)
+      total += p.tiles[t * 4 + 1]!
+    }
+    expect(total).toBe(MAX_ENTRIES)
+    expect(p.tileRows * LINES_WIDTH * 4).toBeLessThanOrEqual(p.tiles.length)
+  })
+
+  it('has the same layout as the shader that draws the lines', () => {
+    const define = (name: string) =>
+      Number(new RegExp(`#define ${name} (\\d+)`).exec(strangeAttractors.preset.warp)?.[1])
+    expect(define('LINES_WIDTH')).toBe(LINES_WIDTH)
+    expect(define('TILES_X')).toBe(TILES_X)
+    expect(define('TILES_Y')).toBe(TILES_Y)
+    expect(define('TILE_ENTRIES')).toBe(TILE_ENTRIES)
   })
 
   it('reads the points from where the preset put them', () => {

@@ -27,12 +27,17 @@ export const MAX_LINE_POINTS = 16384
 export const TILES_X = 64
 export const TILES_Y = 36
 // A tile in the thick of a figure holds this many stretches at most, the
-// newest first: past it, the oldest - the faintest - go.
-export const TILE_ENTRIES = 192
+// newest first: past it, the oldest go, and the tile shows as a square
+// with lines missing. The Dadras attractor puts some 1150 into the tiles
+// at its centre (the others stay under 500), so this sits well above.
+export const TILE_ENTRIES = 2048
+// All tiles together, the room the texture has. A frame of Strange
+// Attractors fills 6000 to 12000; past this, the last tiles go short.
+export const MAX_ENTRIES = 65536
 
 const TILES = TILES_X * TILES_Y
 const POINT_ROWS = (MAX_LINE_POINTS * 2) / LINES_WIDTH
-const MAX_ENTRY_TEXELS = Math.ceil((TILES * TILE_ENTRIES) / 4)
+const MAX_ENTRY_TEXELS = MAX_ENTRIES / 4
 const TILE_ROWS = Math.ceil((TILES + MAX_ENTRY_TEXELS) / LINES_WIDTH)
 
 /** In the preset's buffer: the number of points, the picture's width and
@@ -173,7 +178,7 @@ export class LineLayer {
     // Header texels, then each tile's run of entries.
     let next = 0
     for (let t = 0; t < TILES; t++) {
-      const n = Math.min(TILE_ENTRIES, counts[t]!)
+      const n = Math.min(TILE_ENTRIES, counts[t]!, MAX_ENTRIES - next)
       tiles[t * 4] = next
       tiles[t * 4 + 1] = n
       tiles[t * 4 + 2] = 0
