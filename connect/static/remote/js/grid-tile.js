@@ -12,6 +12,7 @@ import { navigate } from './router.js';
 import { createArt } from './art.js';
 import { state } from './state.js';
 import { n, t } from './i18n.js';
+import { fillSplitLine } from './split-line.js';
 
 const FAVORITE_COMMAND = {
   song: (item, favorite) => ['set-favorite', { songId: item.id, favorite }],
@@ -52,7 +53,8 @@ function heartButton(kind, item) {
 }
 
 /** `onPlay` plays a song card; album and artist cards open their page. */
-export function renderGridTile(kind, item, { onPlay } = {}) {
+/** `detail` is what the library is sorted by, on the card's second line. */
+export function renderGridTile(kind, item, { onPlay, detail } = {}) {
   const tile = document.createElement('div');
   tile.className = 'grid-tile';
   const title = kind === 'song' ? item.title : item.name;
@@ -93,8 +95,15 @@ export function renderGridTile(kind, item, { onPlay } = {}) {
         `<span><i class="mdi mdi-music-note"></i>${n(item.song_count)}</span>`,
       );
     }
+    if (detail) {
+      const value = document.createElement('span');
+      value.className = 'grid-tile__detail';
+      meta.classList.add('grid-tile__meta--counts');
+      value.textContent = detail;
+      meta.appendChild(value);
+    }
   } else {
-    meta.textContent = item.artist || '';
+    fillSplitLine(meta, item.artist || '', detail);
   }
   tile.appendChild(meta);
 

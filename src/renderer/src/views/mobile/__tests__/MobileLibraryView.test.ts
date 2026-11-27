@@ -362,6 +362,31 @@ describe('MobileLibraryView', () => {
       // That a row never spans two sections is sectionedRows.test.ts's.
     })
 
+    it('says on each row what the list is sorted by', async () => {
+      const library = stubStore()
+      library.allSongs = [
+        makeSong('a', { title: 'Often', artist: 'Band', playCount: 12 }),
+        makeSong('b', { title: 'Once', artist: 'Band', playCount: 1 }),
+      ]
+      const wrapper = mountView()
+      await settle()
+      const subtitles = () =>
+        wrapper
+          .findAll('.mobile-song-row .text-body-small')
+          .map((line) => line.findAll(':scope > *').map((part) => part.text()))
+      // By title, the row's own two lines already say it all.
+      expect(subtitles()).toEqual([['Band'], ['Band']])
+
+      wrapper.getComponent({ name: 'LibrarySortSelect' }).vm.$emit('update:modelValue', 'playCount')
+      await settle()
+
+      // The artist, and at the line's end what the order goes by.
+      expect(subtitles()).toEqual([
+        ['Band', i18n.global.t('home.playCount', { n: 12 }, 12)],
+        ['Band', i18n.global.t('home.playCount', { n: 1 }, 1)],
+      ])
+    })
+
     it('names a decade in the dividers when sorted by year', async () => {
       const library = stubStore()
       library.allSongs = []

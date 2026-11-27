@@ -573,6 +573,11 @@ grid of them, each one jumping as it was entered and left.
 so a long title has nowhere to wrap to. No list component says
 `text-truncate` on its own lines.
 
+In a sorted library list the second line carries what the order goes by
+(a year, the plays, the date added) at its far end: `.mobile-split-line`
+puts the line's own text left and the value right, and clips only the
+text. The grid cards do the same on their second line.
+
 Two more shared classes serve the library pages, for the same reason
 `.beacon-panel` does - they had been copied into six views each:
 

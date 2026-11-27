@@ -60,9 +60,15 @@
         <v-icon icon="mdi-music-note" size="13" />
         {{ $n(songCount) }}
       </span>
+      <!-- What the list is sorted by, at the line's far end. -->
+      <span v-if="detail" class="mobile-grid-tile__detail">{{ detail }}</span>
     </span>
-    <span v-else class="mobile-grid-tile__meta text-body-small text-medium-emphasis">
-      {{ (item as Song | Album).artist }}
+    <span
+      v-else
+      class="mobile-split-line mobile-grid-tile__meta text-body-small text-medium-emphasis"
+    >
+      <span>{{ (item as Song | Album).artist }}</span>
+      <span v-if="detail">{{ detail }}</span>
     </span>
   </component>
 </template>
@@ -88,6 +94,9 @@ export default {
     item: { type: Object as PropType<Song | Album | Artist>, required: true },
     /** An artist's songs in the library, null until they are counted. */
     songCount: { type: Number as PropType<number | null>, default: null },
+    /** What the list is sorted by, after the second line's own text (see
+     * libraryBrowse.ts's sortDetail()). */
+    detail: { type: String as PropType<string | null>, default: null },
   },
   emits: ['play'],
   data() {
@@ -193,6 +202,11 @@ export default {
 .mobile-grid-tile__counts {
   display: flex;
   gap: 10px;
+}
+
+.mobile-grid-tile__detail {
+  margin-left: auto;
+  flex-shrink: 0;
 }
 
 .mobile-grid-tile__count {

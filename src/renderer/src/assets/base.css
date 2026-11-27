@@ -239,6 +239,26 @@ body {
   white-space: nowrap;
 }
 
+/* A second line with what the list is sorted by at its far end (the
+ * library's rows and cards): the line's own text clips, the value keeps
+ * its width. After the rule above, which it has to win over. */
+.mobile-split-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mobile-split-line > :first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-split-line > :last-child:not(:first-child) {
+  flex-shrink: 0;
+}
+
 /* The search box above a library grid - Albums, Artists, Songs, Playlists,
  * Radio and a genre's own page all put the same one there. It was six
  * copies of `class="mb-4" style="max-width: 320px"`, which is how the six

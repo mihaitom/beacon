@@ -296,13 +296,16 @@ export function renderLibrary(root, _params, queryParams) {
   function renderItem(item, index) {
     let element;
     if (grid) {
-      element = renderGridTile(VIEWS[view].tile, item, { onPlay: () => playSong(item, index) });
+      element = renderGridTile(VIEWS[view].tile, item, {
+        onPlay: () => playSong(item, index),
+        detail: item.sort_detail,
+      });
     } else if (view === 'songs') {
-      element = renderSongRow(item, { onPlay: () => playSong(item, index) });
+      element = renderSongRow(item, { onPlay: () => playSong(item, index), detail: item.sort_detail });
     } else if (view === 'albums') {
-      element = renderAlbumRow(item);
+      element = renderAlbumRow(item, { detail: item.sort_detail });
     } else {
-      element = renderArtistRow(item);
+      element = renderArtistRow(item, { detail: item.sort_detail });
     }
     element.dataset.index = String(index);
     return element;

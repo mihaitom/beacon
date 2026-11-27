@@ -50,6 +50,8 @@ import {
   type LibraryFilters,
 } from '@/services/library/libraryFilter'
 import { ratingSectionLabel } from '@/services/ratingSort'
+import { songColumn, type SongColumnKey } from '@/services/library/songColumns'
+import { formatDate, formatDuration } from '@/services/library/songFormat'
 import type { ArtistStatsOf } from '@/services/library/artistStats'
 import type { ServerType } from '@/services/capabilities'
 import type { Album, Artist, Song } from '@/types/library'
@@ -204,4 +206,111 @@ export function sectionShortLabel(
 ): string {
   const range = rangeFieldOf(view, key)
   return range ? filterOptionShortLabel(range, section, t) : section
+}
+
+/** How a value is written for the row's second line: in the reader's
+ * language, with a plural where a count needs one. */
+export interface DetailFormat {
+  t: Translate
+  /** `key`'s plural form for `count`, `{n}` filled with it. */
+  plural: (key: string, count: number) => string
+  locale: string
+}
+
+/** The stars a rating reads as, or null for none - an unrated item says
+ * nothing rather than "Unrated" on every other row. */
+function stars(rating: number | null | undefined): string | null {
+  return rating && rating > 0 ? ratingSectionLabel(String(rating), () => '') : null
+}
+
+function songDetail(song: Song, key: string, format: DetailFormat): string | null {
+  switch (key) {
+    // The row's own two lines already are the title and the artist.
+    case 'title':
+    case 'artist':
+      return null
+    case 'album':
+      return song.album || null
+    case 'rating':
+      return stars(song.rating)
+    case 'playCount':
+      return format.plural('home.playCount', song.playCount ?? 0)
+    case 'bpm':
+      return song.bpm ? `${song.bpm} BPM` : null
+    case 'disc':
+    case 'track': {
+      const value = key === 'disc' ? song.discNumber : song.trackNumber
+      return value ? `${format.t(songColumn(key)!.labelKey)} ${value}` : null
+    }
+    default: {
+      const value = songColumn(key as SongColumnKey)?.text?.(song, format.locale)
+      // The table's empty cell is a dash; on a row it is simply nothing.
+      return value && value !== '—' ? value : null
+    }
+  }
+}
+
+function albumDetail(album: Album, key: string, format: DetailFormat): string | null {
+  switch (key) {
+    case 'year':
+      return album.year ? String(album.year) : null
+    case 'added':
+      return formatDate(album.created, format.locale)
+    case 'rating':
+      return stars(album.rating)
+    case 'songCount':
+      return format.plural('favorites.countSongs', album.songCount ?? 0)
+    case 'duration':
+      return formatDuration(album.duration)
+    default:
+      return null
+  }
+}
+
+function artistDetail(
+  artist: Artist,
+  key: string,
+  format: DetailFormat,
+  ctx: BrowseContext,
+): string | null {
+  if (key === 'rating') return stars(artist.rating)
+  const stats = ctx.statsOf(artist)
+  if (!stats) return null
+  switch (key) {
+    case 'songCount':
+      return format.plural('favorites.countSongs', stats.songCount)
+    case 'genre':
+      return stats.genre
+    case 'years': {
+      const { firstYear, lastYear } = stats
+      if (!firstYear) return null
+      return lastYear && lastYear !== firstYear ? `${firstYear}–${lastYear}` : String(firstYear)
+    }
+    case 'duration':
+      return `${(stats.duration / 3600).toLocaleString(format.locale, { maximumFractionDigits: 1 })} h`
+    case 'playCount':
+      return format.plural('home.playCount', stats.playCount)
+    case 'lastPlayed':
+      return formatDate(stats.lastPlayed, format.locale)
+    case 'added':
+      return formatDate(stats.added, format.locale)
+    default:
+      return null
+  }
+}
+
+/** What the list is sorted by, for an item's second line - so a list put
+ * in order of plays or of the date added says why each item is where it
+ * is. Null where the order is what the row shows anyway (a name, a title,
+ * an artist, an album count) or the item has no value for it. */
+export function sortDetail(
+  view: LibraryTab,
+  key: string,
+  item: LibraryItem,
+  format: DetailFormat,
+  ctx: BrowseContext,
+): string | null {
+  if (view === 'artists') return artistDetail(item as Artist, key, format, ctx)
+  if (view === 'albums') return albumDetail(item as Album, key, format)
+  return songDetail(item as Song, key, format)
 }

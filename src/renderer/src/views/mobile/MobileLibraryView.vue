@@ -102,6 +102,7 @@
               :kind="tileKind"
               :item="cell.item"
               :song-count="songCountOf(cell.item)"
+              :detail="detailOf(cell.item)"
               @play="play(cell.item as Song, cell.index)"
             />
           </div>
@@ -116,15 +117,21 @@
               <mobile-song-row
                 v-if="showingSongs"
                 :song="cell.item as Song"
+                :detail="detailOf(cell.item)"
                 @play="play(cell.item as Song, cell.index)"
                 @open-actions="openActions(cell.item as Song)"
               />
               <mobile-album-row
                 v-else-if="view === 'albums'"
                 :album="cell.item as Album"
+                :detail="detailOf(cell.item)"
                 @play="playAlbum(cell.item as Album)"
               />
-              <mobile-artist-row v-else :artist="cell.item as Artist" />
+              <mobile-artist-row
+                v-else
+                :artist="cell.item as Artist"
+                :detail="detailOf(cell.item)"
+              />
             </template>
           </div>
         </template>
@@ -179,6 +186,7 @@ import {
   sectionLabel as browseSectionLabel,
   sectionOfFn,
   sectionShortLabel,
+  sortDetail,
   sortItems as browseSortItems,
   sortKeysOf,
   sortLabelKeyOf,
@@ -607,6 +615,20 @@ export default {
     },
     sectionLabel(section: string): string {
       return browseSectionLabel(this.view, this.currentSort.key, section, this.$t)
+    },
+    /** What the list is sorted by, on the item's second line. */
+    detailOf(item: Song | Album | Artist): string | null {
+      return sortDetail(
+        this.view,
+        this.currentSort.key,
+        item,
+        {
+          t: this.$t,
+          plural: (key, count) => this.$t(key, { n: this.$n(count) }, count),
+          locale: this.$i18n.locale,
+        },
+        this.browseContext,
+      )
     },
     songCountOf(item: Song | Album | Artist): number | null {
       if (this.view !== 'artists') return null

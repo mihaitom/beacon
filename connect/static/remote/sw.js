@@ -32,6 +32,7 @@ const SHELL_PATHS = [
   './js/artist-row.js',
   './js/song-row.js',
   './js/grid-tile.js',
+  './js/split-line.js',
   './js/playlist-row.js',
   './js/radio-row.js',
   './js/section-scrubber.js',

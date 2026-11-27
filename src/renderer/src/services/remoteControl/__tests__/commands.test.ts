@@ -23,6 +23,7 @@ import type { SubsonicClient } from '@/services/subsonic/client'
 import type { Playlist, RadioStation, Artist } from '@/types/library'
 import { RADIO_FAVICON_CACHE_VERSION } from '@/services/connect/radio'
 import { saveSongSort } from '@/services/library/songBrowse'
+import { i18n } from '@/i18n'
 
 // library.client() constructs a fresh SubsonicClient per call (see
 // stores/library.ts) — spying on a specific instance's method is pointless
@@ -974,6 +975,21 @@ describe('resolveRemoteQuery', () => {
       expect(de.sections[0]!.label).toBe('2000er')
       expect(de.sort_options.find((o) => o.value === 'title')?.label).not.toBe(
         en.sort_options.find((o) => o.value === 'title')?.label,
+      )
+    })
+
+    it("says on each item what the list is sorted by, in the phone's language", async () => {
+      loadSongs([makeSong('a', { title: 'Alpha', playCount: 2 })])
+      const request = (sort: string) =>
+        resolveRemoteQuery('songs-request', {
+          browse: true,
+          sort: { key: sort, direction: 'desc' },
+          locale: 'de',
+        }) as Promise<{ items: { sort_detail: string | null }[] }>
+
+      expect((await request('title')).items[0]!.sort_detail).toBeNull()
+      expect((await request('playCount')).items[0]!.sort_detail).toBe(
+        i18n.global.t('home.playCount', { n: '2' }, { locale: 'de', plural: 2 }),
       )
     })
 

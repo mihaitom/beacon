@@ -47,9 +47,11 @@ import {
   sectionOfFn,
   sectionShortLabel,
   sortItems,
+  sortDetail,
   sortKeysOf,
   sortLabelKeyOf,
   type AnySort,
+  type DetailFormat,
   type BrowseContext,
   type LibraryItem,
   type LibraryTab,
@@ -223,13 +225,21 @@ function toRemoteItem(view: LibraryTab, item: LibraryItem) {
 /** In the phone's language rather than the desktop's: the remote picks its
  * own (connect/static/remote/js/i18n.js), and every label sent from here
  * sits among its words. */
-function translatorFor(locale: unknown) {
+function detailFormatFor(locale: unknown): DetailFormat {
   const target = parseLocale(typeof locale === 'string' ? locale : null) ?? getLocale()
   const global = i18n.global as unknown as {
-    t(key: string, named: Record<string, unknown>, options: { locale: string }): string
+    t(
+      key: string,
+      named: Record<string, unknown>,
+      options: { locale: string; plural?: number },
+    ): string
   }
-  return (key: string, named: Record<string, unknown> = {}) =>
-    global.t(key, named, { locale: target })
+  return {
+    t: (key, named = {}) => global.t(key, named, { locale: target }),
+    plural: (key, count) =>
+      global.t(key, { n: count.toLocaleString(target) }, { locale: target, plural: count }),
+    locale: target,
+  }
 }
 
 /** A direction left out is the one picking the order starts in. */
@@ -305,7 +315,8 @@ async function browseHalf(view: LibraryTab, payload: Record<string, unknown>) {
   const filters = readFilters(payload.filters, fields)
   const sorted = sortItems(view, whole, sort, ctx)
   const shown = filterList(view, sorted, filters, ctx)
-  const t = translatorFor(payload.locale)
+  const format = detailFormatFor(payload.locale)
+  const t = format.t
 
   const now = Date.now()
   const sectionOf = sectionOfFn(view, sort, ctx, now)
@@ -348,7 +359,11 @@ async function browseHalf(view: LibraryTab, payload: Record<string, unknown>) {
   const limit = Math.max(1, Number(payload.limit ?? 50) || 50)
   return {
     items: shown.slice(offset, offset + limit).map((item) => {
-      const remote = toRemoteItem(view, item)
+      // What the list is sorted by, for the row's second line.
+      const remote = {
+        ...toRemoteItem(view, item),
+        sort_detail: sortDetail(view, sort.key, item, format, ctx),
+      }
       if (view !== 'artists') return remote
       // Counted out of the song catalogue, which the artist card shows
       // beside the albums once it is there - as the app's does.

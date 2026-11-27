@@ -2093,6 +2093,41 @@ button.back-link {
   margin-right: 10px;
 }
 
+/* An artist card's counts, then what the list is sorted by at the end. */
+.grid-tile__meta .grid-tile__detail {
+  display: inline;
+  margin: 0 0 0 auto;
+}
+
+.grid-tile__meta--counts {
+  display: flex;
+}
+
+/* A second line with what the library is sorted by at its far end
+ * (js/split-line.js, the app's .mobile-split-line): the line's own text
+ * clips, the value keeps its width. */
+.split-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.split-line > :first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.grid-tile__meta.split-line > span {
+  display: block;
+  margin: 0;
+}
+
+.split-line > :last-child:not(:first-child) {
+  flex-shrink: 0;
+}
+
 /* ── The library's section grip (MobileSectionScrubber.vue) ── */
 
 .scrubber {

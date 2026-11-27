@@ -8,8 +8,10 @@ import { openActionSheet } from './sheet.js';
 import { createArt } from './art.js';
 import { favoriteAction } from './favorite.js';
 import { t } from './i18n.js';
+import { fillSplitLine } from './split-line.js';
 
-export function renderSongRow(song, { onPlay } = {}) {
+/** `detail` is what the library is sorted by, at the line's end. */
+export function renderSongRow(song, { onPlay, detail } = {}) {
   const row = document.createElement('div');
   row.className = 'row';
 
@@ -30,7 +32,7 @@ export function renderSongRow(song, { onPlay } = {}) {
 
   const subtitle = document.createElement('div');
   subtitle.className = 'row-subtitle';
-  subtitle.textContent = song.artist || '';
+  fillSplitLine(subtitle, song.artist || '', detail);
   main.appendChild(subtitle);
 
   row.appendChild(main);
