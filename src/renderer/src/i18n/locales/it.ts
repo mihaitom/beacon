@@ -1728,6 +1728,11 @@ export default {
     searching: 'Ricerca in corso …',
     noResults: 'Nessun risultato per "{query}".',
   },
+  buildCheck: {
+    title: 'Beacon è stato aggiornato',
+    message: 'Ricarica per usare la nuova versione.',
+    reload: 'Ricarica',
+  },
   releaseNotes: {
     notInstalled: 'non ancora installata',
     englishOnly: 'Le note di rilascio sono disponibili solo in inglese.',

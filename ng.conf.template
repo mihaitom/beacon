@@ -46,6 +46,14 @@ server {
     root /usr/share/nginx/html;
   }
 
+  # The deployed build's id, which open tabs compare their own against to
+  # offer a reload (see vite.build-id.ts). A cached copy would hide exactly
+  # the update it exists to announce.
+  location = /build.json {
+    add_header Cache-Control "no-cache";
+    root /usr/share/nginx/html;
+  }
+
   location = /settings.js {
     alias /etc/nginx/conf.d/settings.js;
     add_header Cache-Control "no-store";

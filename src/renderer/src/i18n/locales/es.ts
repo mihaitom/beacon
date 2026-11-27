@@ -1736,6 +1736,11 @@ export default {
     searching: 'Buscando …',
     noResults: 'No hay resultados para "{query}".',
   },
+  buildCheck: {
+    title: 'Beacon se ha actualizado',
+    message: 'Recarga para usar la nueva versión.',
+    reload: 'Recargar',
+  },
   releaseNotes: {
     notInstalled: 'aún no instalada',
     englishOnly: 'Las notas de la versión solo están disponibles en inglés.',

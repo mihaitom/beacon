@@ -31,6 +31,7 @@ import { initKeyboardShortcuts } from '@/services/keyboardShortcuts'
 import { initNavigationHistory } from '@/services/navigationHistory'
 import { initWindowTitle } from '@/services/windowTitle'
 import { initTaskbar } from '@/services/taskbar'
+import { initBuildCheck } from '@/services/buildCheck'
 import { initServerQueueSync, saveServerQueue } from '@/services/playback/serverQueueSync'
 import { initLightsReport } from '@/services/lights/localPlaybackReport'
 import { initNowPlayingReport } from '@/services/playback/nowPlayingReport'
@@ -133,6 +134,7 @@ export default {
     initNavigationHistory()
     initWindowTitle()
     initTaskbar()
+    initBuildCheck()
     // Not gated on media-server auth — same reasoning as the Remote Control
     // status refresh below, just checking GitHub instead of connect. Not
     // awaited: the settings dot and AboutSection.vue both read the store

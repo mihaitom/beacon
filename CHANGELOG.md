@@ -4,6 +4,12 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- The web version notices when the server has been updated while it was open and offers a reload, instead of carrying on with the old version until a page fails to load
+
 ## [1.13.0] - 2026-11-27
 
 ### Added

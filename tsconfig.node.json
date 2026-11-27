@@ -6,6 +6,7 @@
     "web.vite.config.*",
     "vite.vuetify-deps.ts",
     "vite.milkdrop-presets.ts",
+    "vite.build-id.ts",
     "eslint.config.*",
     "src/main/**/*",
     "src/preload/**/*"

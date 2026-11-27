@@ -1715,6 +1715,11 @@ export default {
     searching: 'Searching …',
     noResults: 'No results for "{query}".',
   },
+  buildCheck: {
+    title: 'Beacon has been updated',
+    message: 'Reload to use the new version.',
+    reload: 'Reload',
+  },
   releaseNotes: {
     notInstalled: 'not installed yet',
     englishOnly: 'The release notes are only available in English.',

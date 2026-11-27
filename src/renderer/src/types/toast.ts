@@ -18,4 +18,7 @@ export default interface Toast {
    * and move on", which is not enough time to notice a question, read it,
    * and act on it. */
   timeoutMs?: number
+  /** Stays until closed or acted on - for a toast whose question does not
+   * go away by itself. */
+  sticky?: boolean
 }

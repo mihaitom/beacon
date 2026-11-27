@@ -6,6 +6,7 @@ import vuetify from 'vite-plugin-vuetify';
 import { config as loadDotenv } from 'dotenv';
 import { vuetifyComponentModules } from './vite.vuetify-deps';
 import { milkdropPresets } from './vite.milkdrop-presets';
+import { buildId } from './vite.build-id';
 
 // Mirrors src/main/index.ts's readConnectDefaults() — the backend's own
 // persisted connect/.connect-token, same PORT default — so this config's dev-server
@@ -41,7 +42,7 @@ export default defineConfig(() => {
                 '@': resolve('src/renderer/src'),
             },
         },
-        plugins: [vue(), vuetify({ autoImport: true }), milkdropPresets()],
+        plugins: [vue(), vuetify({ autoImport: true }), milkdropPresets(), buildId()],
         root: 'src/renderer',
         optimizeDeps: {
             include: vuetifyComponentModules,

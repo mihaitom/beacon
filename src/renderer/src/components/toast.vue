@@ -90,6 +90,7 @@ export default defineComponent({
       this.startDismiss(newToast)
     },
     startDismiss(toast: ToastInternal) {
+      if (toast.sticky) return
       toast.timer = setTimeout(
         () => this.removeToast(toast.id),
         toast.timeoutMs ?? DEFAULT_TIMEOUT_MS,
