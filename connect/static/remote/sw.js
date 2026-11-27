@@ -31,6 +31,12 @@ const SHELL_PATHS = [
   './js/album-tile.js',
   './js/artist-row.js',
   './js/song-row.js',
+  './js/grid-tile.js',
+  './js/playlist-row.js',
+  './js/radio-row.js',
+  './js/section-scrubber.js',
+  './js/filter-sheet.js',
+  './js/top-bar-search.js',
   './js/favorite.js',
   './js/i18n.js',
   './js/long-press.js',
@@ -48,6 +54,7 @@ const SHELL_PATHS = [
   './js/views/album.js',
   './js/views/radio.js',
   './js/views/artist.js',
+  './js/views/search.js',
 ]
 
 self.addEventListener('install', (event) => {

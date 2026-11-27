@@ -106,3 +106,18 @@
 .mdi-speaker-multiple::before { content: "\F0D38"; }
 .mdi-laptop::before { content: "\F0322"; }
 .mdi-check-circle::before { content: "\F05E0"; }
+/* The library's toolbar, filter sheet and section grip. */
+.mdi-arrow-down::before { content: "\F0045"; }
+.mdi-arrow-up::before { content: "\F005D"; }
+.mdi-checkbox-blank-outline::before { content: "\F0131"; }
+.mdi-checkbox-marked::before { content: "\F0132"; }
+.mdi-filter-off-outline::before { content: "\F14F0"; }
+.mdi-filter-variant::before { content: "\F0236"; }
+.mdi-sort::before { content: "\F04BA"; }
+.mdi-unfold-more-horizontal::before { content: "\F054F"; }
+.mdi-view-grid-outline::before { content: "\F11D9"; }
+.mdi-view-list::before { content: "\F0572"; }
+/* Holds an icon's place in a sheet row without drawing one (the sort
+ * sheet's orders that are not picked). */
+.mdi-blank { width: 1em; }
+.mdi-blank::before { content: "\F68C"; visibility: hidden; }

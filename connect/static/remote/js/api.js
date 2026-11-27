@@ -2,7 +2,7 @@
 // (see routes/remote.py's serve_remote_app — the shell is always served by
 // connect itself, so every fetch/EventSource here is same-origin, no CORS).
 
-import { t } from './i18n.js';
+import { locale, t } from './i18n.js';
 
 const STORAGE_KEY = 'beacon_remote_password';
 
@@ -105,19 +105,34 @@ export function sendReportedCommand(type, payload = {}) {
   });
 }
 
-export function fetchSongs(search, offset, limit) {
-  const params = new URLSearchParams({ search, offset: String(offset), limit: String(limit) });
-  return request(`/remote/songs?${params}`);
+/** A page of one library half (`songs`, `albums` or `artists`) as the
+ * library browses it: in `sort` (null for the order Beacon itself last
+ * browsed by), through `filters`, the favourites alone with `favorites`.
+ * The answer carries the order's sections, the orders on offer and the
+ * filter menu, labelled in this phone's language. */
+export function fetchLibrary(view, { sort, favorites, filters, offset, limit }) {
+  const params = new URLSearchParams({
+    sort: sort?.key ?? '',
+    direction: sort?.direction ?? '',
+    favorites: favorites ? 'true' : 'false',
+    filters: JSON.stringify(filters ?? {}),
+    locale,
+    offset: String(offset),
+    limit: String(limit),
+  });
+  return request(`/remote/${view}?${params}`);
 }
 
-export function fetchAlbums(search, offset, limit) {
-  const params = new URLSearchParams({ search, offset: String(offset), limit: String(limit) });
-  return request(`/remote/albums?${params}`);
-}
-
-export function fetchArtists(search, offset, limit) {
-  const params = new URLSearchParams({ search, offset: String(offset), limit: String(limit) });
-  return request(`/remote/artists?${params}`);
+/** Every kind at once for `q`, or with `kind` a page of that one kind's
+ * every match. */
+export function fetchSearch(q, { kind, offset = 0, limit = 50 } = {}) {
+  const params = new URLSearchParams({ q });
+  if (kind) {
+    params.set('kind', kind);
+    params.set('offset', String(offset));
+    params.set('limit', String(limit));
+  }
+  return request(`/remote/search?${params}`);
 }
 
 export function fetchArtist(id) {
@@ -176,10 +191,6 @@ export function fetchPlaylists() {
 
 export function fetchPlaylist(id) {
   return request(`/remote/playlists/${encodeURIComponent(id)}`);
-}
-
-export function fetchFavorites() {
-  return request('/remote/favorites');
 }
 
 export function fetchRadioStations() {

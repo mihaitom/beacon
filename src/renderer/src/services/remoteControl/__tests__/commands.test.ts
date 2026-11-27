@@ -22,6 +22,7 @@ import { makeSong, makeStatus } from '@/stores/__tests__/fixtures'
 import type { SubsonicClient } from '@/services/subsonic/client'
 import type { Playlist, RadioStation, Artist } from '@/types/library'
 import { RADIO_FAVICON_CACHE_VERSION } from '@/services/connect/radio'
+import { saveSongSort } from '@/services/library/songBrowse'
 
 // library.client() constructs a fresh SubsonicClient per call (see
 // stores/library.ts) — spying on a specific instance's method is pointless
@@ -444,6 +445,24 @@ describe('handleRemoteCommand', () => {
       await handleRemoteCommand('play-favorites', { songId: 'b', startIndex: 1 })
 
       expect(playSongList).toHaveBeenCalledWith(songs, 2, true, true)
+    })
+
+    it('plays on in the order and through the filter the phone had on', async () => {
+      const songs = [
+        makeSong('old', { year: 1971, genre: 'Rock' }),
+        makeSong('jazz', { year: 1999, genre: 'Jazz' }),
+        makeSong('new', { year: 2021, genre: 'Rock' }),
+      ]
+      const playSongList = stubFavorites(songs)
+
+      await handleRemoteCommand('play-favorites', {
+        songId: 'old',
+        startIndex: 1,
+        sort: { key: 'year', direction: 'desc' },
+        filters: { genre: ['Rock'] },
+      })
+
+      expect(playSongList).toHaveBeenCalledWith([songs[2], songs[0]], 1, true, true)
     })
 
     it('does nothing for a song that is no longer a favourite', async () => {
@@ -892,6 +911,202 @@ describe('resolveRemoteQuery', () => {
 
       expect(result.items.map((s) => s.id)).toEqual(['s2', 's3'])
       expect(result.total).toBe(5)
+    })
+  })
+
+  describe('browsing the library (the remote library view)', () => {
+    type Browse = {
+      items: { id: string }[]
+      total: number
+      sort: { key: string; direction: string }
+      sort_options: { value: string; label: string }[]
+      sections: { key: string; label: string; short: string; offset: number | null }[]
+      filters: Record<string, string[]>
+      filter_count: number
+      filter_fields: {
+        field: string
+        label: string
+        options: { option: string; count: number }[]
+      }[]
+    }
+
+    function loadSongs(songs: ReturnType<typeof makeSong>[]) {
+      const library = useLibraryStore()
+      library.allSongs = songs
+      library.allSongsLoaded = true
+    }
+
+    const songs = () => [
+      makeSong('a', { title: 'Alpha', year: 1985, genre: 'Rock' }),
+      makeSong('b', { title: 'Bravo', year: 2003, genre: 'Jazz' }),
+      makeSong('c', { title: 'Charlie', year: 1989, genre: 'Rock' }),
+    ]
+
+    it('sorts by the order the phone picked and starts a section at each decade', async () => {
+      loadSongs(songs())
+
+      const result = (await resolveRemoteQuery('songs-request', {
+        browse: true,
+        sort: { key: 'year', direction: 'desc' },
+        locale: 'en',
+      })) as Browse
+
+      expect(result.items.map((s) => s.id)).toEqual(['b', 'c', 'a'])
+      expect(result.sort).toEqual({ key: 'year', direction: 'desc' })
+      expect(result.sections.map(({ key, offset }) => [key, offset])).toEqual([
+        ['2000', 0],
+        ['1980', 1],
+      ])
+    })
+
+    it("labels the sections in the phone's language, not the desktop's", async () => {
+      loadSongs(songs())
+      const request = (locale: string) =>
+        resolveRemoteQuery('songs-request', {
+          browse: true,
+          sort: { key: 'year', direction: 'desc' },
+          locale,
+        }) as Promise<Browse>
+
+      const [en, de] = await Promise.all([request('en'), request('de')])
+
+      expect(en.sections[0]!.label).toBe('2000s')
+      expect(de.sections[0]!.label).toBe('2000er')
+      expect(de.sort_options.find((o) => o.value === 'title')?.label).not.toBe(
+        en.sort_options.find((o) => o.value === 'title')?.label,
+      )
+    })
+
+    it('filters the list, keeps every section and counts options over the whole half', async () => {
+      loadSongs(songs())
+
+      const result = (await resolveRemoteQuery('songs-request', {
+        browse: true,
+        sort: { key: 'year', direction: 'desc' },
+        filters: { genre: ['Rock'], nonsense: ['x'], year: 'not a list' },
+      })) as Browse
+
+      expect(result.items.map((s) => s.id)).toEqual(['c', 'a'])
+      expect(result.total).toBe(2)
+      expect(result.filters).toEqual({ genre: ['Rock'] })
+      expect(result.filter_count).toBe(1)
+      expect(result.sections.find((s) => s.key === '2000')?.offset).toBeNull()
+      const genre = result.filter_fields.find((f) => f.field === 'genre')
+      expect(genre?.options).toEqual([
+        expect.objectContaining({ option: 'Rock', count: 2 }),
+        expect.objectContaining({ option: 'Jazz', count: 1 }),
+      ])
+    })
+
+    it('without an order of its own, browses by the one this desktop last used', async () => {
+      loadSongs(songs())
+      saveSongSort({ key: 'title', direction: 'desc' })
+
+      const result = (await resolveRemoteQuery('songs-request', { browse: true })) as Browse
+
+      expect(result.sort).toEqual({ key: 'title', direction: 'desc' })
+      expect(result.items.map((s) => s.id)).toEqual(['c', 'b', 'a'])
+    })
+
+    it('starts a newly picked order the way the app does: years newest first', async () => {
+      loadSongs(songs())
+
+      const result = (await resolveRemoteQuery('songs-request', {
+        browse: true,
+        sort: { key: 'year', direction: '' },
+      })) as Browse
+
+      expect(result.sort).toEqual({ key: 'year', direction: 'desc' })
+    })
+
+    it('reads an order this server has nothing for as the title', async () => {
+      loadSongs(songs())
+
+      const result = (await resolveRemoteQuery('songs-request', {
+        browse: true,
+        sort: { key: 'bogus', direction: 'desc' },
+      })) as Browse
+
+      expect(result.sort).toEqual({ key: 'title', direction: 'asc' })
+    })
+
+    it('browses the favourites with the heart on', async () => {
+      const library = useLibraryStore()
+      loadSongs(songs())
+      vi.spyOn(library, 'fetchStarred').mockImplementation(async () => {
+        library.starred = { artists: [], albums: [], songs: [makeSong('fav', { title: 'Zulu' })] }
+      })
+
+      const result = (await resolveRemoteQuery('songs-request', {
+        browse: true,
+        favorites: true,
+      })) as Browse
+
+      expect(result.items.map((s) => s.id)).toEqual(['fav'])
+    })
+
+    it('pages the sorted list', async () => {
+      loadSongs(songs())
+
+      const result = (await resolveRemoteQuery('songs-request', {
+        browse: true,
+        sort: { key: 'title', direction: 'asc' },
+        offset: 1,
+        limit: 1,
+      })) as Browse
+
+      expect(result.items.map((s) => s.id)).toEqual(['b'])
+      expect(result.total).toBe(3)
+    })
+  })
+
+  describe('search-request', () => {
+    function loadLibrary() {
+      const library = useLibraryStore()
+      library.allSongs = [
+        makeSong('s1', { title: 'Moonlight', artist: 'Someone' }),
+        makeSong('s2', { title: 'Blue Moon', artist: 'Someone' }),
+        makeSong('s3', { title: 'Sunrise', artist: 'Someone' }),
+      ]
+      library.allSongsLoaded = true
+      library.albums = [{ id: 'al1', name: 'Moon Safari', artist: 'Air' }] as never
+      library.artists = [{ id: 'ar1', name: 'Moonlight Trio', albumCount: 1 }] as Artist[]
+      library.playlists = [{ id: 'p1', name: 'Other' }] as Playlist[]
+      library.radioStations = [{ id: 'r1', name: 'Radio Other' }] as RadioStation[]
+    }
+
+    it('answers every kind that matches, without fetching what is already loaded', async () => {
+      loadLibrary()
+      const library = useLibraryStore()
+      const fetchAll = vi.spyOn(library, 'fetchAllSongs')
+
+      const result = (await resolveRemoteQuery('search-request', { q: 'moon' })) as {
+        sections: { kind: string; items: { id: string }[]; total: number }[]
+      }
+
+      expect(fetchAll).not.toHaveBeenCalled()
+      expect(result.sections.map((s) => s.kind).sort()).toEqual(['albums', 'artists', 'songs'])
+      expect(result.sections.find((s) => s.kind === 'songs')?.total).toBe(2)
+    })
+
+    it("pages one kind's every match for its show all", async () => {
+      loadLibrary()
+
+      const result = (await resolveRemoteQuery('search-request', {
+        q: 'moon',
+        kind: 'songs',
+        offset: 1,
+        limit: 5,
+      })) as { items: { id: string }[]; total: number }
+
+      expect(result.total).toBe(2)
+      expect(result.items).toHaveLength(1)
+    })
+
+    it('answers nothing for an empty query', async () => {
+      loadLibrary()
+
+      expect(await resolveRemoteQuery('search-request', { q: '  ' })).toEqual({ sections: [] })
     })
   })
 

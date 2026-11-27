@@ -383,17 +383,92 @@ async def relay_query(query_type: str, payload: dict) -> dict:
         remote.drop_pending(request_id)
 
 
+def list_payload(
+    search: str,
+    offset: int,
+    limit: int,
+    sort: str | None,
+    direction: str,
+    favorites: bool,
+    filters: str,
+    locale: str,
+) -> dict:
+    """What the three library lists hand the desktop.
+
+    Without `sort` it is a search, the way the party guests and integrations
+    ask (in the library's own order). With it - empty meaning the order the
+    desktop last browsed by - it is the remote's library being browsed:
+    sorted, filtered and cut into sections the way the phone shell's library
+    does, labelled in the phone's `locale`. `filters` is the filter menu's
+    picks as JSON, `{"genre": ["Rock"], ...}`.
+    """
+    payload: dict = {"search": search, "offset": offset, "limit": limit}
+    if sort is None:
+        return payload
+    try:
+        picked = json.loads(filters) if filters else {}
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="filters is not valid JSON")
+    if not isinstance(picked, dict):
+        raise HTTPException(status_code=400, detail="filters must be an object")
+    payload.update(
+        {
+            "browse": True,
+            "sort": {"key": sort, "direction": direction} if sort else None,
+            "favorites": favorites,
+            "filters": picked,
+            "locale": locale,
+        }
+    )
+    return payload
+
+
 @router.get("/songs", dependencies=[Depends(require_remote_password)])
-async def list_songs(search: str = "", offset: int = 0, limit: int = 50):
-    return await relay_query("songs-request", {"search": search, "offset": offset, "limit": limit})
+async def list_songs(
+    search: str = "",
+    offset: int = 0,
+    limit: int = 50,
+    sort: str | None = None,
+    direction: str = "",
+    favorites: bool = False,
+    filters: str = "",
+    locale: str = "",
+):
+    return await relay_query(
+        "songs-request",
+        list_payload(search, offset, limit, sort, direction, favorites, filters, locale),
+    )
 
 
 @router.get("/albums", dependencies=[Depends(require_remote_password)])
-async def list_albums(search: str = "", offset: int = 0, limit: int = 50):
+async def list_albums(
+    search: str = "",
+    offset: int = 0,
+    limit: int = 50,
+    sort: str | None = None,
+    direction: str = "",
+    favorites: bool = False,
+    filters: str = "",
+    locale: str = "",
+):
     """The albums half of the phone's library view — same shape and same
     paging as /songs above, answered by the desktop out of its own already-
     loaded catalog (see resolveRemoteQuery's albums-request)."""
-    return await relay_query("albums-request", {"search": search, "offset": offset, "limit": limit})
+    return await relay_query(
+        "albums-request",
+        list_payload(search, offset, limit, sort, direction, favorites, filters, locale),
+    )
+
+
+@router.get("/search", dependencies=[Depends(require_remote_password)])
+async def search_library(q: str = "", kind: str = "", offset: int = 0, limit: int = 50):
+    """The remote's search page: artists, albums, songs, playlists and
+    stations at once, best fit first - or, with `kind`, every match of that
+    one kind, paged like the library lists."""
+    payload: dict = {"q": q}
+    if kind:
+        payload.update({"kind": kind, "offset": offset, "limit": limit})
+    return await relay_query("search-request", payload)
 
 
 @router.get("/albums/{album_id}", dependencies=[Depends(require_remote_password)])
@@ -483,10 +558,20 @@ async def get_discover():
 
 
 @router.get("/artists", dependencies=[Depends(require_remote_password)])
-async def list_artists(search: str = "", offset: int = 0, limit: int = 50):
+async def list_artists(
+    search: str = "",
+    offset: int = 0,
+    limit: int = 50,
+    sort: str | None = None,
+    direction: str = "",
+    favorites: bool = False,
+    filters: str = "",
+    locale: str = "",
+):
     """The artists half of the phone's library view, paged like /albums."""
     return await relay_query(
-        "artists-request", {"search": search, "offset": offset, "limit": limit}
+        "artists-request",
+        list_payload(search, offset, limit, sort, direction, favorites, filters, locale),
     )
 
 

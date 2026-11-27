@@ -2,6 +2,7 @@ import { login, getStoredPassword, setStoredPassword, clearStoredPassword, conne
 import { state, setSnapshot, setConnected, subscribe } from './js/state.js';
 import { startRouter } from './js/router.js';
 import { initMiniPlayer } from './js/mini-player.js';
+import { initTopBarSearch } from './js/top-bar-search.js';
 import { t, translateDocument } from './js/i18n.js';
 import { applyTheme, restoreTheme } from './js/theme.js';
 
@@ -16,6 +17,7 @@ import './js/views/library.js';
 import './js/views/album.js';
 import './js/views/radio.js';
 import './js/views/artist.js';
+import './js/views/search.js';
 
 // Registering this is what actually makes Chrome/Android offer "Add to Home
 // Screen" for the manifest above — a manifest alone isn't enough for
@@ -115,8 +117,10 @@ function startApp() {
 
   startRouter();
   // After the router, so the strip's first render already knows which
-  // route it is on (it hides itself on Now Playing).
+  // route it is on (it hides itself on Now Playing), and so does the
+  // search field.
   initMiniPlayer();
+  initTopBarSearch();
 }
 
 document.getElementById('login-form').addEventListener('submit', async (event) => {

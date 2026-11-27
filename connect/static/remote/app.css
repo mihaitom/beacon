@@ -1060,6 +1060,12 @@ button.back-link {
   background: var(--surface);
   border-radius: 16px 16px 0 0;
   padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
+  /* A long one (the songs' sort orders) scrolls inside itself rather than
+   * running off the top of the screen; sheet.js marks it data-scrolls so
+   * scroll-lock.js lets the swipe through. */
+  max-height: 85dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .sheet button {
@@ -1813,34 +1819,540 @@ button.back-link {
   line-height: 1.3;
 }
 
-/* ── Library's favourites filter ── */
+/* ── Library ── */
 
-/* Two buttons share the field's end: the heart and, once there is text,
- * the clear button beside it. */
-#library-search {
-  padding-right: 84px;
-}
-#library-search-clear {
-  right: 40px;
+/* The toggle and the toolbar stay at the top while the list runs - a whole
+ * catalogue long, and a switch you have to scroll back up to reach is a
+ * switch you stop using. Out to #view-root's padding, so nothing scrolls
+ * past above or beside it. */
+.library-controls {
+  position: sticky;
+  top: -16px;
+  z-index: 3;
+  margin: 0 -16px;
+  padding: 16px 16px 10px;
+  background: var(--bg);
 }
 
-.search-favorite {
-  position: absolute;
-  top: 0;
-  right: 0;
+.library-controls .segmented {
+  margin-bottom: 8px;
+}
+
+/* How it is laid out, what it is narrowed to, how it is put in order - the
+ * desktop's order, with the favourites in front (MobileLibraryView.vue). */
+.library-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.library-tool {
+  position: relative;
+  flex-shrink: 0;
   width: 40px;
   height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 9999px;
+  background: rgba(var(--text-rgb), 0.06);
+  color: rgba(var(--text-rgb), 0.7);
+  font-size: 1.2rem;
+}
+
+.library-tool.active {
+  background: rgba(var(--accent-rgb), 0.14);
+  color: var(--accent);
+}
+
+/* Grid and list as one pill of two. */
+.library-layout {
+  display: flex;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  background: rgba(var(--text-rgb), 0.06);
+}
+
+.library-layout .library-tool {
+  background: none;
+}
+
+.library-layout .library-tool.active {
+  background: rgba(var(--accent-rgb), 0.14);
+}
+
+/* The filter's count rides on its icon, the phone's badge. */
+.library-filter__count {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-on);
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+/* The sort pill takes the rest of the row: which order, and an arrow in its
+ * end that turns it round (LibrarySortSelect.vue). */
+.library-sort {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  border-radius: 9999px;
+  background: rgba(var(--text-rgb), 0.06);
+}
+
+.library-sort__pick {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px 0 14px;
+  background: none;
+  color: var(--text);
+  font-size: 0.875rem;
+}
+
+.library-sort__pick .mdi {
+  color: var(--text-muted);
+  font-size: 1.1rem;
+}
+
+.library-sort__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-sort__direction {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  margin-right: 2px;
+  border-radius: 9999px;
   background: none;
   color: var(--text-muted);
   font-size: 1.1rem;
-  border-radius: 9999px;
 }
 
-.search-favorite.active {
+.library-sort button:disabled {
+  opacity: 0.5;
+}
+
+/* A page loaded above the window moves the scroll itself (library.js); the
+ * browser's own anchoring would move it a second time. */
+.library-scroller {
+  overflow-anchor: none;
+}
+
+/* base.css's .letter-divider: the section in small amber capitals, then a
+ * hairline to the edge. The desktop list's spacing (SongTable.vue). */
+.letter-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 4px 6px;
+}
+
+.letter-divider__label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
   color: var(--accent);
+}
+
+.letter-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.library-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--grid-columns, 2), minmax(0, 1fr));
+  gap: 16px 12px;
+  padding: 4px 0 8px;
+}
+
+/* ── Grid cards (MobileGridTile.vue) ── */
+
+.grid-tile {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.grid-tile--link {
+  cursor: pointer;
+}
+
+.grid-tile--filler {
+  visibility: hidden;
+}
+
+.grid-tile__cover {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--surface-2);
+}
+
+.grid-tile__art {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 2.4rem;
+}
+
+.grid-tile__art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* A song's cover plays it, as on the desktop; the overlay is what says so. */
+.grid-tile__play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
+  color: #fff;
+  background: rgba(11, 13, 19, 0.35);
+  pointer-events: none;
+}
+
+.grid-tile__star {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: rgba(11, 13, 19, 0.75);
+  color: #fff;
+  font-size: 1.05rem;
+}
+
+.grid-tile__star--on {
+  background: transparent;
+  color: var(--accent);
+}
+
+.grid-tile__title {
+  display: block;
+  margin-top: 8px;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.875rem;
+  line-height: 1.43;
+  text-align: left;
+}
+
+.grid-tile__meta {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1.33;
+}
+
+.grid-tile__title,
+.grid-tile__meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.grid-tile__meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-right: 10px;
+}
+
+/* ── The library's section grip (MobileSectionScrubber.vue) ── */
+
+.scrubber {
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+}
+
+.scrubber__scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+}
+
+/* The rail: a surface panel down the right edge, only while open. Its
+ * sections share the height evenly, so the whole rail is the scrub area
+ * however few there are. */
+.scrubber__rail {
+  position: absolute;
+  top: var(--rail-top);
+  right: 6px;
+  height: var(--rail-height);
+  width: 48px;
+  display: flex;
+  flex-direction: column;
+  padding: 6px 0;
+  border-radius: 24px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  touch-action: none;
+}
+
+.scrubber--open .scrubber__rail {
+  opacity: 1;
+  pointer-events: auto;
+  transition-duration: 0.3s;
+}
+
+.scrubber__section {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: none;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: rgba(var(--text-rgb), 0.72);
+}
+
+.scrubber__section--off {
+  color: rgba(var(--text-rgb), 0.22);
+}
+
+.scrubber__section--here {
+  color: var(--accent);
+}
+
+/* The grip rides the right edge at the list's scroll position. */
+.scrubber__grip {
+  position: absolute;
+  right: 6px;
+  width: 48px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 26px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  color: var(--text);
+  font-size: 1.25rem;
+  opacity: 0;
+  transform: translateX(12px);
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+  touch-action: none;
+}
+
+.scrubber--shown .scrubber__grip {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+  transition-duration: 0.3s;
+}
+
+.scrubber--open .scrubber__grip {
+  border-color: rgba(var(--accent-rgb), 0.6);
+}
+
+.scrubber__grip-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* Beside the thumb, not under it: 72px of amber with the section in it,
+ * far enough left of the rail for a right thumb not to cover it. */
+.scrubber__bubble {
+  position: absolute;
+  right: 76px;
+  min-width: 72px;
+  height: 72px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: translateY(-50%);
+  border-radius: 36px;
+  background: var(--accent);
+  color: var(--accent-on);
+  font-size: 1.9rem;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scrubber__rail,
+  .scrubber__grip {
+    transition: none;
+  }
+}
+
+/* ── The library's filter sheet (LibraryFilterMenu.vue) ── */
+
+.sheet .filter-sheet__field,
+.sheet .filter-sheet__option {
+  gap: 12px;
+}
+
+.filter-sheet__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.filter-sheet__field--on .filter-sheet__text > :first-child {
+  color: var(--accent);
+}
+
+.filter-sheet__summary {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-sheet__chevron,
+.filter-sheet__count {
+  color: var(--text-muted);
+}
+
+.filter-sheet__count {
+  font-size: 0.8rem;
+}
+
+.filter-sheet__option .mdi-checkbox-marked {
+  color: var(--accent);
+}
+
+.sheet .filter-sheet__back {
+  gap: 6px;
+  padding: 4px 20px 10px;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+/* ── Search ── */
+
+/* The app bar's field takes the wordmark's place on every page but Now
+ * Playing, as in the app (MobileTopBarSearch.vue). */
+.app-bar__search {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.app-bar__search-icon {
+  position: absolute;
+  left: 10px;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  pointer-events: none;
+}
+
+/* 16px, not smaller: iOS zooms into a field that renders below that. */
+.app-bar__search-input {
+  width: 100%;
+  height: 34px;
+  padding: 0 36px 0 34px;
+  border: none;
+  border-radius: 9999px;
+  background: rgba(var(--text-rgb), 0.08);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+}
+
+.app-bar__search-input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.app-bar__search-clear {
+  position: absolute;
+  right: 2px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  color: var(--text-muted);
+  font-size: 1rem;
+}
+
+.search-section + .search-section {
+  margin-top: 16px;
+}
+
+.search-section__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 4px;
+}
+
+.search-section__head .section-heading {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.search-section__all {
+  flex-shrink: 0;
+  padding: 6px 8px;
+  background: none;
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.search-kind {
+  margin-top: 0;
+}
+
+.empty-state__hint {
+  margin-top: 6px;
+  font-size: 0.85rem;
 }
 
 /* ── Album / artist pages ── */

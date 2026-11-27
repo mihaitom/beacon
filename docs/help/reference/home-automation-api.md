@@ -138,12 +138,15 @@ after a start can take a moment.
 | `GET /remote/playlists/<id>` | `playlist` (`id`, `name`, `cover_art_id`) and `songs`                                                                               |
 | `GET /remote/albums`         | `items`: `id`, `name`, `artist`, `year`, `cover_art_id`; `total`                                                                    |
 | `GET /remote/songs`          | `items` (songs), `total`                                                                                                            |
+| `GET /remote/search`         | `sections`: `kind` (`artists`, `albums`, `songs`, `playlists`, `stations`), `items`, `total`; best fit first                        |
 | `GET /remote/radio-stations` | `items`: `id`, `name`, `home_page_url`, `favicon_hint`                                                                              |
 | `GET /remote/devices`        | `items`: `type`, `name`, `in_use_by_name`, `in_use_by_song`, `claimed` (held by another session), `needs_pairing`, `volume_capable` |
 | `GET /remote/device-volume`  | `volume` (0 to 100) of the speaker given as `type` and `name`                                                                       |
 
 `/remote/albums` and `/remote/songs` take `search`, `offset` and `limit`
-(default 50). `/remote/devices?rescan=true` looks for speakers again, which
+(default 50). `/remote/search` takes `q`; with `kind` (`songs`, `albums` or
+`artists`) it pages that one kind's every match by `offset` and `limit`
+instead. `/remote/devices?rescan=true` looks for speakers again, which
 takes a few seconds; without it the app answers from its last search. A
 speaker with `needs_pairing` has to be paired in the desktop app first.
 

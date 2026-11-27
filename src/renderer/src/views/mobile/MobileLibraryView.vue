@@ -161,58 +161,32 @@ import EmptyState from '@/components/EmptyState.vue'
 import { usePlaybackStore } from '@/stores/playback'
 import { artistNameKey } from '@/services/artistCredits'
 import { readBooleanPreference, writeBooleanPreference } from '@/services/booleanPreference'
+import { loadAlbumSort, saveAlbumSort, type AlbumSort } from '@/services/albumSort'
+import { loadArtistSort, saveArtistSort, type ArtistSort } from '@/services/artistSort'
 import {
-  ALBUM_FILTER_FIELDS,
-  ALBUM_SORT_KEYS,
-  UNKNOWN_YEAR_SECTION,
-  albumRangeField,
-  defaultAlbumDirection,
-  loadAlbumSort,
-  saveAlbumSort,
-  sectionFor as albumSectionFor,
-  sectionsFor as albumSectionsFor,
-  sortAlbums,
-  type AlbumSort,
-  type AlbumSortKey,
-} from '@/services/albumSort'
-import {
-  ARTIST_SORT_KEYS,
-  artistFilterFields,
-  artistSectionField,
-  artistSectionFor,
-  artistSectionsFor,
-  defaultArtistDirection,
-  loadArtistSort,
-  saveArtistSort,
-  sortArtists,
-  type ArtistSort,
-  type ArtistSortKey,
-} from '@/services/artistSort'
-import {
-  defaultDirection,
-  filterFieldsFor,
   filterSongs,
-  isRangeSectioned,
   loadSongSort,
-  sectionFn,
-  sectionsFor as songSectionsFor,
   saveSongSort,
-  sortKeysFor,
-  sortLabelKey,
-  sortSongs,
   type SongSort,
-  type SongSortKey,
 } from '@/services/library/songBrowse'
+import type { FilterFieldDef, LibraryFilters } from '@/services/library/libraryFilter'
 import {
-  filterItems,
-  filterOptionLabel,
-  filterOptionShortLabel,
-  type FilterField,
-  type FilterFieldDef,
-  type LibraryFilters,
-} from '@/services/library/libraryFilter'
+  barSectionsOf,
+  defaultDirectionOf,
+  effectiveSort,
+  filterFieldsOf,
+  filterList,
+  sectionLabel as browseSectionLabel,
+  sectionOfFn,
+  sectionShortLabel,
+  sortItems as browseSortItems,
+  sortKeysOf,
+  sortLabelKeyOf,
+  type AnySort,
+  type BrowseContext,
+  type LibraryTab,
+} from '@/services/library/libraryBrowse'
 import { sectionedRows, type SectionedEntry } from '@/services/library/sectionedRows'
-import { ratingSectionLabel } from '@/services/ratingSort'
 import { observeActiveLetter, type ActiveLetterHandle } from '@/services/activeLetter'
 import MobileSectionScrubber from '@/components/mobile/MobileSectionScrubber.vue'
 import type { ArtistStatsOf } from '@/services/library/artistStats'
@@ -227,10 +201,6 @@ import SegmentedControl from '@/components/SegmentedControl.vue'
 import StickyFilter from '@/components/StickyFilter.vue'
 import { MOBILE_ROW_HEIGHT } from '@/components/mobile/rowMetrics'
 import type { Album, Artist, Song } from '@/types/library'
-
-type LibraryTab = 'songs' | 'albums' | 'artists'
-
-type AnySort = { key: string; direction: 'asc' | 'desc' }
 
 /** Tiles at least this wide: two across a phone, more on a tablet. */
 const GRID_MIN_TILE = 140
@@ -333,27 +303,16 @@ export default {
       const stats = store.artistStatsByName
       return (artist) => stats.get(artistNameKey(artist.name)) ?? null
     },
-    songFilterFields(): FilterFieldDef<Song>[] {
-      return filterFieldsFor(this.authStore.serverType).filter(
-        (def) => def.field !== 'rating' || this.rated,
-      )
-    },
-    albumFilterFields(): FilterFieldDef<Album>[] {
-      const { favorites } = this.authStore.capabilities
-      return ALBUM_FILTER_FIELDS.filter(
-        (def) => (def.field !== 'rating' || this.rated) && (def.field !== 'starred' || favorites),
-      )
-    },
-    artistFilterFields(): FilterFieldDef<Artist>[] {
-      const { favorites } = this.authStore.capabilities
-      return artistFilterFields(this.statsOf).filter(
-        (def) => (def.field !== 'rating' || this.rated) && (def.field !== 'starred' || favorites),
-      )
+    browseContext(): BrowseContext {
+      return {
+        serverType: this.authStore.serverType,
+        rated: this.rated,
+        favorites: this.authStore.capabilities.favorites,
+        statsOf: this.statsOf,
+      }
     },
     currentFilterFields(): FilterFieldDef<never>[] {
-      if (this.view === 'artists') return this.artistFilterFields as FilterFieldDef<never>[]
-      if (this.view === 'albums') return this.albumFilterFields as FilterFieldDef<never>[]
-      return this.songFilterFields as FilterFieldDef<never>[]
+      return filterFieldsOf(this.view, this.browseContext)
     },
     /** The whole half, for the filter menu's counts. */
     currentItems(): unknown[] {
@@ -361,21 +320,10 @@ export default {
       return this.view === 'albums' ? this.albums : this.songs
     },
     sortItems(): { title: string; value: string }[] {
-      if (this.view === 'artists') {
-        return ARTIST_SORT_KEYS.filter((key) => key !== 'rating' || this.rated).map((key) => ({
-          title: this.$t(`library.artistSort.${key}`),
-          value: key,
-        }))
-      }
-      if (this.view === 'albums') {
-        return ALBUM_SORT_KEYS.filter((key) => key !== 'rating' || this.rated).map((key) => ({
-          title: this.$t(`library.albumSort.${key}`),
-          value: key,
-        }))
-      }
-      return sortKeysFor(this.authStore.serverType)
-        .filter((key) => key !== 'rating' || this.rated)
-        .map((key) => ({ title: this.$t(sortLabelKey(key)), value: key }))
+      return sortKeysOf(this.view, this.browseContext).map((key) => ({
+        title: this.$t(sortLabelKeyOf(this.view, key)),
+        value: key,
+      }))
     },
     currentSort(): AnySort {
       return this.currentSortFor(this.view)
@@ -404,17 +352,7 @@ export default {
     /** Which section an item sits in under the current order, or null for
      * an order without sections - the desktop's own rules, per half. */
     sectionOf(): ((item: Song | Album | Artist) => string) | null {
-      const now = Date.now()
-      if (this.view === 'artists') {
-        const sort = this.currentSort as ArtistSort
-        return (artist) => artistSectionFor(artist as Artist, sort, this.statsOf, now)
-      }
-      if (this.view === 'albums') {
-        const sort = this.currentSort as AlbumSort
-        return (album) => albumSectionFor(album as Album, sort, now)
-      }
-      const section = sectionFn(this.currentSort.key as SongSortKey, now)
-      return section ? (song) => section(song as Song) : null
+      return sectionOfFn(this.view, this.currentSort, this.browseContext)
     },
     shownList(): (Song | Album | Artist)[] {
       if (this.view === 'artists') return this.filteredArtists
@@ -428,14 +366,13 @@ export default {
      * library reaches - the desktop's own sets, from the unfiltered list so
      * the bar keeps its shape while a filter greys parts of it out. */
     barSections(): string[] {
-      if (this.view === 'artists') {
-        return artistSectionsFor(this.sortedArtists, this.currentSort as ArtistSort, this.statsOf)
-      }
-      if (this.view === 'albums') {
-        return albumSectionsFor(this.sortedAlbums, this.currentSort as AlbumSort)
-      }
-      if (!this.sectionOf) return []
-      return songSectionsFor(this.sortedSongs, this.currentSort as SongSort)
+      const sorted =
+        this.view === 'artists'
+          ? this.sortedArtists
+          : this.view === 'albums'
+            ? this.sortedAlbums
+            : this.sortedSongs
+      return barSectionsOf(this.view, sorted, this.currentSort, this.browseContext)
     },
     availableSections(): Set<string> {
       return new Set(this.sectionEntryIndex.keys())
@@ -470,22 +407,47 @@ export default {
       ]
     },
     sortedSongs(): Song[] {
-      return sortSongs(this.songs, this.currentSortFor('songs') as SongSort)
+      return browseSortItems(
+        'songs',
+        this.songs,
+        this.currentSortFor('songs'),
+        this.browseContext,
+      ) as Song[]
     },
     sortedAlbums(): Album[] {
-      return sortAlbums(this.albums, this.currentSortFor('albums') as AlbumSort)
+      return browseSortItems(
+        'albums',
+        this.albums,
+        this.currentSortFor('albums'),
+        this.browseContext,
+      ) as Album[]
     },
     sortedArtists(): Artist[] {
-      return sortArtists(this.artists, this.currentSortFor('artists') as ArtistSort, this.statsOf)
+      return browseSortItems(
+        'artists',
+        this.artists,
+        this.currentSortFor('artists'),
+        this.browseContext,
+      ) as Artist[]
     },
     filteredSongs(): Song[] {
       return filterSongs(this.sortedSongs, this.filters.songs)
     },
     filteredAlbums(): Album[] {
-      return filterItems(this.sortedAlbums, this.albumFilterFields, this.filters.albums)
+      return filterList(
+        'albums',
+        this.sortedAlbums,
+        this.filters.albums,
+        this.browseContext,
+      ) as Album[]
     },
     filteredArtists(): Artist[] {
-      return filterItems(this.sortedArtists, this.artistFilterFields, this.filters.artists)
+      return filterList(
+        'artists',
+        this.sortedArtists,
+        this.filters.artists,
+        this.browseContext,
+      ) as Artist[]
     },
     showEmptyState(): boolean {
       if (this.libraryStore.loading) return false
@@ -615,27 +577,13 @@ export default {
       const full = await this.libraryStore.fetchAlbum(album.id)
       await usePlaybackStore().playSongList(full.songs, 0, false, true)
     },
-    /** A rating order remembered from a server with stars reads as name or
-     * title on one without them, without being forgotten for the other. */
     currentSortFor(view: LibraryTab): AnySort {
       const sort: AnySort =
         view === 'artists' ? this.artistSort : view === 'albums' ? this.albumSort : this.songSort
-      if (sort.key === 'rating' && !this.rated) {
-        return { key: view === 'songs' ? 'title' : 'name', direction: 'asc' }
-      }
-      return sort
+      return effectiveSort(view, sort, this.browseContext)
     },
     pickSort(key: string) {
-      if (this.view === 'artists') {
-        const sortKey = key as ArtistSortKey
-        this.setSort({ key: sortKey, direction: defaultArtistDirection(sortKey) })
-      } else if (this.view === 'albums') {
-        const sortKey = key as AlbumSortKey
-        this.setSort({ key: sortKey, direction: defaultAlbumDirection(sortKey) })
-      } else {
-        const sortKey = key as SongSortKey
-        this.setSort({ key: sortKey, direction: defaultDirection(sortKey) })
-      }
+      this.setSort({ key, direction: defaultDirectionOf(this.view, key) })
     },
     toggleDirection() {
       const { key, direction } = this.currentSort
@@ -657,32 +605,15 @@ export default {
       this.grid[this.view] = on
       writeBooleanPreference(GRID_KEY[this.view], on)
     },
-    /** A divider's text: the letter itself, or what a range or a rating
-     * reads as - the desktop's labels (AlbumsView, ArtistsView, SongTable). */
     sectionLabel(section: string): string {
-      const key = this.currentSort.key
-      if (key === 'rating') return ratingSectionLabel(section, this.$t)
-      const range = this.rangeField()
-      if (range) return filterOptionLabel(range, section, this.$t)
-      if (key !== 'year') return section
-      if (section === UNKNOWN_YEAR_SECTION) return this.$t('library.unknownYear')
-      return this.$t('library.decade', { decade: section })
+      return browseSectionLabel(this.view, this.currentSort.key, section, this.$t)
     },
     songCountOf(item: Song | Album | Artist): number | null {
       if (this.view !== 'artists') return null
       return this.statsOf(item as Artist)?.songCount ?? null
     },
-    /** The bar's short form of a section: the letter, or "80s" for a
-     * decade where the divider says "1980s". */
     barLabel(section: string): string {
-      const range = this.rangeField()
-      return range ? filterOptionShortLabel(range, section, this.$t) : section
-    },
-    rangeField(): FilterField | null {
-      const key = this.currentSort.key
-      if (this.view === 'artists') return artistSectionField(key as ArtistSortKey)
-      if (this.view === 'albums') return albumRangeField(key as AlbumSortKey)
-      return isRangeSectioned(key as SongSortKey) ? (key as FilterField) : null
+      return sectionShortLabel(this.view, this.currentSort.key, section, this.$t)
     },
     /** Onto the section's divider, clear of the sticky controls above the
      * list - the scroller lands its target at the very top of the pane,

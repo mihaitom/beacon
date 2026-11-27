@@ -18,6 +18,7 @@ export function openActionSheet(actions, { title } = {}) {
 
   const sheet = document.createElement('div');
   sheet.className = 'sheet';
+  sheet.dataset.scrolls = '';
 
   const unlockScroll = lockScroll();
 
