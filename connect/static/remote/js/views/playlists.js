@@ -52,6 +52,7 @@ export function renderPlaylists(root) {
   let all = [];
   let username = '';
   let query = '';
+  let debounceTimer = null;
 
   function render() {
     list.innerHTML = '';

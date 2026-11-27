@@ -59,5 +59,3 @@ export function renderPlaylistRow(playlist, { showOwner = false } = {}) {
   row.appendChild(play);
   return row;
 }
-
-let debounceTimer = null;
