@@ -239,6 +239,153 @@ describe('guest Now Playing source', () => {
     expect(feed.readyState).toBe(FakeEventSource.CLOSED)
   })
 
+  describe('Milkdrop', () => {
+    it('is there on a wide screen while the bars have a feed, never on a phone', async () => {
+      const store = usePartyGuestStore()
+      store.applySnapshot(snapshot({ casting: false, current_song: SONG }))
+      const compact = ref(false)
+      const built = useGuestNowPlayingSource({ isCompact: () => compact.value })
+      dispose = built.dispose
+      expect(built.source.milkdrop.available).toBe(false)
+
+      store.applySnapshot(snapshot({ casting: true, current_song: SONG }))
+      expect(built.source.milkdrop.available).toBe(true)
+      compact.value = true
+      expect(built.source.milkdrop.available).toBe(false)
+    })
+
+    it('puts the song in the corner and the bars away while it plays, as the app does', async () => {
+      usePartyGuestStore().applySnapshot(snapshot({ casting: true, current_song: SONG }))
+      const built = useGuestNowPlayingSource()
+      dispose = built.dispose
+      expect(built.source.ui.artworkHidden).toBe(false)
+      built.source.toggleMilkdrop()
+      await nextTick()
+      expect(built.source.ui.artworkHidden).toBe(true)
+      expect(built.source.ambientStyle).toEqual({ background: 'none' })
+      expect(built.source.visualizer.active).toBe(false)
+    })
+
+    it('stays away for a guest who asked for less motion', () => {
+      vi.stubGlobal('matchMedia', (query: string) => ({ matches: query.includes('reduce') }))
+      usePartyGuestStore().applySnapshot(snapshot({ casting: true, current_song: SONG }))
+      const built = useGuestNowPlayingSource()
+      dispose = built.dispose
+      expect(built.source.milkdrop.available).toBe(false)
+    })
+
+    it('is switched on by the guest, remembered, with a shipped preset of its own', async () => {
+      const store = usePartyGuestStore()
+      store.applySnapshot(snapshot({ casting: true, current_song: SONG }))
+      const built = useGuestNowPlayingSource()
+      dispose = built.dispose
+      expect(built.source.milkdrop.active).toBe(false)
+
+      built.source.toggleMilkdrop()
+      await nextTick()
+      expect(built.source.milkdrop.active).toBe(true)
+      const first = built.source.milkdrop.preset
+      expect(first).toMatch(/^builtin:/)
+      built.source.nextMilkdropPreset()
+      expect(built.source.milkdrop.preset).not.toBe(first)
+      built.source.chooseMilkdropPreset('builtin:beacon-milky-way')
+      expect(built.source.milkdrop.preset).toBe('builtin:beacon-milky-way')
+
+      // A new song, a new preset - the app's own default.
+      const second = built.source.milkdrop.preset
+      store.applySnapshot(snapshot({ casting: true, current_song: { ...SONG, id: 's2' } }))
+      await nextTick()
+      expect(built.source.milkdrop.preset).not.toBe(second)
+
+      built.dispose()
+      const again = useGuestNowPlayingSource()
+      dispose = again.dispose
+      expect(again.source.milkdrop.active).toBe(true)
+    })
+
+    it('moves on from a preset this device cannot draw, and never picks it again', async () => {
+      usePartyGuestStore().applySnapshot(snapshot({ casting: true, current_song: SONG }))
+      const built = useGuestNowPlayingSource()
+      dispose = built.dispose
+      built.source.toggleMilkdrop()
+      await nextTick()
+      const heavy = built.source.milkdrop.preset!
+      localStorage.setItem('beacon.milkdrop.tooHeavy', JSON.stringify([heavy]))
+      built.source.milkdropTooHeavy(heavy)
+      expect(built.source.milkdrop.preset).not.toBe(heavy)
+      // Every seed once: one of them stands for the heavy preset.
+      const random = vi.spyOn(Math, 'random')
+      for (let i = 0; i < 40; i++) {
+        random.mockReturnValueOnce(i / 40)
+        built.source.nextMilkdropPreset()
+        expect(built.source.milkdrop.preset).not.toBe(heavy)
+      }
+      random.mockRestore()
+      // Picked by hand, it gets another try.
+      built.source.chooseMilkdropPreset(heavy)
+      expect(built.source.milkdrop.preset).toBe(heavy)
+      expect(localStorage.getItem('beacon.milkdrop.tooHeavy')).toBe('[]')
+    })
+
+    it('asks the cast feed for the samples, and plays them', async () => {
+      usePartyGuestStore().applySnapshot(snapshot({ casting: true, current_song: SONG }))
+      localStorage.setItem('beacon_party_view', JSON.stringify({ showVisualizer: false }))
+      const built = useGuestNowPlayingSource()
+      dispose = built.dispose
+      expect(FakeEventSource.instances).toHaveLength(0)
+
+      // Bars off, Milkdrop on: the feed is Milkdrop's alone.
+      built.source.toggleMilkdrop()
+      await nextTick()
+      const feed = FakeEventSource.instances.at(-1)!
+      expect(feed.url).toBe(`${VISUALIZER_URL}?waveform=1`)
+      feed.onmessage?.({
+        data: JSON.stringify({ bands: [0.5], waveform: 'gP8=' }),
+      } as MessageEvent<string>)
+      expect(Array.from(built.source.milkdrop.waveform()!)).toEqual([128, 255])
+
+      built.source.toggleMilkdrop()
+      await nextTick()
+      expect(feed.readyState).toBe(FakeEventSource.CLOSED)
+      expect(built.source.milkdrop.waveform()).toBeNull()
+    })
+
+    it('plays a listening guest the samples of what it hears', async () => {
+      const store = usePartyGuestStore()
+      store.applySnapshot(snapshot({ casting: false, current_song: SONG }))
+      store.listenState = 'playing'
+      const heard = vi.spyOn(store, 'heardTimeNow').mockReturnValue(10.05)
+      const built = useGuestNowPlayingSource()
+      dispose = built.dispose
+      built.source.toggleMilkdrop()
+      await nextTick()
+      const feed = FakeEventSource.instances.at(-1)!
+      expect(feed.url).toBe(`${LISTEN_VISUALIZER_URL}?waveform=1`)
+      const frames = [
+        [10.0, [0.2], 'AQ=='],
+        [10.1, [0.9], 'Ag=='],
+      ]
+      feed.onmessage?.({ data: JSON.stringify({ frames }) } as MessageEvent<string>)
+      expect(Array.from(built.source.milkdrop.waveform()!)).toEqual([1])
+      heard.mockReturnValue(10.12)
+      expect(Array.from(built.source.milkdrop.waveform()!)).toEqual([2])
+    })
+
+    it("takes the cover from the page's own cover route", async () => {
+      usePartyGuestStore().applySnapshot(snapshot({ casting: true, current_song: SONG }))
+      const built = useGuestNowPlayingSource()
+      dispose = built.dispose
+      const blob = new Blob(['x'])
+      const fetchMock = vi.fn().mockResolvedValue({ ok: true, blob: async () => blob })
+      vi.stubGlobal('fetch', fetchMock)
+      const cover = built.source.milkdrop.cover!
+      expect(await cover.load(new AbortController().signal)).toBe(blob)
+      expect(fetchMock.mock.calls[0]![0]).toBe(SONG.cover)
+      fetchMock.mockResolvedValue({ ok: false })
+      expect(await cover.load(new AbortController().signal)).toBeNull()
+    })
+  })
+
   it('drops frames nobody can hear any more, never the one shown', () => {
     const frames: [number, number[]][] = [
       [1, [1]],
@@ -247,7 +394,7 @@ describe('guest Now Playing source', () => {
       [6, [6]],
     ]
     expect(takeListenFrame(frames, 0.5)).toBeNull()
-    expect(takeListenFrame(frames, 5.5)).toEqual([5])
+    expect(takeListenFrame(frames, 5.5)).toEqual([5, [5]])
     expect(frames.map((frame) => frame[0])).toEqual([5, 6])
   })
 

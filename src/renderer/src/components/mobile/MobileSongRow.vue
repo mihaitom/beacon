@@ -13,12 +13,10 @@
       <div class="text-body-medium" :class="{ 'text-primary': isCurrentSong }">
         {{ song.title }}
       </div>
-      <artist-credit
-        :credit="song.artist"
-        :artist-id="song.artistId"
-        :linked="false"
-        class="text-body-small text-medium-emphasis"
-      />
+      <div class="mobile-split-line text-body-small text-medium-emphasis">
+        <artist-credit :credit="song.artist" :artist-id="song.artistId" :linked="false" />
+        <span v-if="detail">{{ detail }}</span>
+      </div>
     </div>
     <!-- The favourite toggle is in the song's actions behind this button
      - rather than a second button on every row. -->
@@ -33,6 +31,7 @@
 </template>
 
 <script lang="ts">
+import type { PropType } from 'vue'
 import ArtistCredit from '@/components/library/ArtistCredit.vue'
 import CoverArt from '@/components/library/CoverArt.vue'
 import { MOBILE_ROW_ART_SIZE } from './rowMetrics'
@@ -49,6 +48,9 @@ export default {
       type: Object,
       required: true,
     },
+    /** What the list is sorted by, after the second line's own text (see
+     * libraryBrowse.ts's sortDetail()). */
+    detail: { type: String as PropType<string | null>, default: null },
   },
   emits: ['play', 'open-actions'],
   computed: {

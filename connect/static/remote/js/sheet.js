@@ -10,14 +10,20 @@
 // place — a user unsure whether a tap took effect has every reason to tap
 // again, doubling up a queue-add.
 
+import { lockScroll } from './scroll-lock.js';
+
 export function openActionSheet(actions, { title } = {}) {
   const backdrop = document.createElement('div');
   backdrop.className = 'sheet-backdrop';
 
   const sheet = document.createElement('div');
   sheet.className = 'sheet';
+  sheet.dataset.scrolls = '';
+
+  const unlockScroll = lockScroll();
 
   function close() {
+    unlockScroll();
     backdrop.remove();
     sheet.remove();
   }

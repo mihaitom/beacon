@@ -28,6 +28,8 @@ import threading
 
 import httpx
 
+from core import client_cert
+
 # Generous enough for a library view loading many covers at once, bounded so
 # a runaway caller cannot exhaust the media server's own connection limit.
 # keepalive_expiry outlives the gaps between requests while someone scrolls,
@@ -48,7 +50,9 @@ def client() -> httpx.Client:
     if _client is None:
         with _lock:
             if _client is None:
-                _client = httpx.Client(limits=_LIMITS, follow_redirects=True)
+                _client = httpx.Client(
+                    limits=_LIMITS, follow_redirects=True, verify=client_cert.ssl_context()
+                )
     return _client
 
 

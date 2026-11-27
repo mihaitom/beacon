@@ -45,7 +45,7 @@ describe('volumeControl', () => {
   it('means local playback while nothing is being cast to', async () => {
     const { volumeScope } = await freshModule()
 
-    expect(volumeScope()).toEqual({ device: null, max: 1 })
+    expect(volumeScope()).toEqual({ device: null, group: null, max: 1 })
   })
 
   it('means the device while casting to exactly one that has a volume', async () => {
@@ -57,9 +57,7 @@ describe('volumeControl', () => {
     expect(volumeScope().max).toBe(100)
   })
 
-  it('stays out of it while several devices are active', async () => {
-    // With two targets "the" volume is ambiguous — that's what the
-    // per-device sliders in the picker are for.
+  it('means the master over all of them while several devices are active', async () => {
     const { volumeScope } = await freshModule()
     useConnectStore().status = {
       targets: [
@@ -69,6 +67,8 @@ describe('volumeControl', () => {
     } as ConnectStatus
 
     expect(volumeScope().device).toBeNull()
+    expect(volumeScope().group?.map((t) => t.name)).toEqual(['Kitchen', 'Study'])
+    expect(volumeScope().max).toBe(100)
   })
 
   it('steps local volume by 5%, snapped to the same grid the wheel uses', async () => {
@@ -172,5 +172,94 @@ describe('volumeControl', () => {
     recordDeviceVolume(device, 35)
 
     expect(knownDeviceVolume(device)).toBe(35)
+  })
+
+  describe('master volume over several devices', () => {
+    function castToRooms(kitchen: number | null, study: number | null): void {
+      useConnectStore().status = {
+        targets: [
+          { type: 'sonos', name: 'Kitchen', volume_push: true, volume: kitchen },
+          { type: 'sonos', name: 'Study', volume_push: true, volume: study },
+        ],
+      } as ConnectStatus
+    }
+
+    async function setup(mode: 'equal' | 'relative') {
+      const module = await freshModule()
+      const { useGroupVolumeStore } = await import('@/stores/groupVolume')
+      useGroupVolumeStore().setMode(mode)
+      vi.spyOn(useConnectStore(), 'setDeviceVolume').mockResolvedValue()
+      const levels = () => ({
+        kitchen: module.knownDeviceVolume({ type: 'sonos', name: 'Kitchen' }),
+        study: module.knownDeviceVolume({ type: 'sonos', name: 'Study' }),
+      })
+      return { ...module, levels }
+    }
+
+    it('shows the loudest speaker', async () => {
+      const { currentVolume, volumeScope } = await setup('equal')
+      castToRooms(20, 40)
+
+      expect(await currentVolume(volumeScope())).toBe(40)
+    })
+
+    it('puts every speaker on the same level in equal mode', async () => {
+      const { setVolume, volumeScope, levels } = await setup('equal')
+      castToRooms(20, 40)
+
+      await setVolume(volumeScope(), 37)
+
+      expect(levels()).toEqual({ kitchen: 37, study: 37 })
+      expect(useConnectStore().setDeviceVolume).toHaveBeenCalledWith('sonos', 'Kitchen', 37)
+      expect(useConnectStore().setDeviceVolume).toHaveBeenCalledWith('sonos', 'Study', 37)
+    })
+
+    it('keeps the balance in relative mode, back from 0 too', async () => {
+      const { setVolume, volumeScope, levels } = await setup('relative')
+      castToRooms(20, 40)
+
+      await setVolume(volumeScope(), 20)
+      expect(levels()).toEqual({ kitchen: 10, study: 20 })
+
+      await setVolume(volumeScope(), 0)
+      expect(levels()).toEqual({ kitchen: 0, study: 0 })
+
+      await setVolume(volumeScope(), 40)
+      expect(levels()).toEqual({ kitchen: 20, study: 40 })
+    })
+
+    it('starts from the new levels once a speaker was set on its own', async () => {
+      const { setVolume, volumeScope, levels, recordDeviceVolume } = await setup('relative')
+      castToRooms(20, 40)
+
+      await setVolume(volumeScope(), 20)
+      // Its own slider, in the picker.
+      recordDeviceVolume({ type: 'sonos', name: 'Kitchen' }, 20)
+      await setVolume(volumeScope(), 40)
+
+      expect(levels()).toEqual({ kitchen: 40, study: 40 })
+    })
+
+    it('mutes and restores the whole group, balance included', async () => {
+      const { toggleMute, levels } = await setup('relative')
+      castToRooms(20, 40)
+
+      await toggleMute()
+      expect(levels()).toEqual({ kitchen: 0, study: 0 })
+
+      await toggleMute()
+      expect(levels()).toEqual({ kitchen: 20, study: 40 })
+    })
+
+    it('leaves a speaker without a reading alone', async () => {
+      const { setVolume, volumeScope } = await setup('equal')
+      vi.spyOn(useConnectStore(), 'getDeviceVolume').mockResolvedValue(null)
+      castToRooms(30, null)
+
+      await setVolume(volumeScope(), 50)
+
+      expect(useConnectStore().setDeviceVolume).toHaveBeenCalledTimes(1)
+      expect(useConnectStore().setDeviceVolume).toHaveBeenCalledWith('sonos', 'Kitchen', 50)
+    })
   })
 })

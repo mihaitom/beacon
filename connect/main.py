@@ -27,7 +27,7 @@ from fastapi.responses import JSONResponse
 # or exported manually), never via a plain .env file alone.
 load_dotenv()
 
-from core import local_mixes, mdns, server_link, shared_claims
+from core import client_cert, local_mixes, mdns, server_link, shared_claims
 from core.device_volume import capture_main_loop
 from core.ffmpeg import FFMPEG_BIN, ffmpeg_available
 from core.http_diagnostics import UVICORN_INVALID_REQUEST_MESSAGE, DiagnosticHTTPProtocol
@@ -74,6 +74,7 @@ from routes.local_stream import router as local_stream_router
 from routes.log_level import router as log_level_router
 from routes.lyrics import router as lyrics_router
 from routes.lyrics_offsets import router as lyrics_offsets_router
+from routes.milkdrop_presets import router as milkdrop_presets_router
 from routes.navidrome import router as navidrome_router
 from routes.now_playing import router as now_playing_router
 from routes.pairing import reap_stale_pairings
@@ -337,6 +338,7 @@ async def lifespan(_: FastAPI):
         logger.info(f"✅ ffmpeg found ({FFMPEG_BIN})")
     else:
         logger.error(f"❌ ffmpeg NOT FOUND at '{FFMPEG_BIN}' — streaming will fail!")
+    client_cert.check_at_startup()
 
     logger.info("⏳ Waiting for /config (media server credentials)")
 
@@ -531,6 +533,7 @@ app.include_router(api_keys_router)
 app.include_router(pairing_router)
 app.include_router(lyrics_router)
 app.include_router(lyrics_offsets_router)
+app.include_router(milkdrop_presets_router)
 app.include_router(now_playing_router)
 app.include_router(waveform_router)
 app.include_router(radio_router)

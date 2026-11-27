@@ -24,6 +24,7 @@ import { makeSong } from '@/stores/__tests__/fixtures'
 import MobileLayout from '@/layouts/MobileLayout.vue'
 import MobileQueueView from '../MobileQueueView.vue'
 import MobilePlaylistDetailView from '../MobilePlaylistDetailView.vue'
+import { writeBooleanPreference } from '@/services/booleanPreference'
 import MobileLibraryView from '../MobileLibraryView.vue'
 import MobileRadioView from '../MobileRadioView.vue'
 import type { Album, RadioStation } from '@/types/library'
@@ -75,6 +76,10 @@ async function settle() {
   await new Promise((resolve) => setTimeout(resolve, 80))
 }
 
+/** On a busy machine the scroller can take longer than any fixed wait, so
+ * the checks below wait for the state they read instead. */
+const POLL = { timeout: 5000 }
+
 /** Mounts `view`, checks that only part of the list is in the DOM, and that
  * scrolling to the end brings its last entry in. */
 async function expectWindowed(
@@ -87,11 +92,13 @@ async function expectWindowed(
   await settle()
 
   const rows = () => [...document.querySelectorAll(rowSelector)]
-  expect(rows().length).toBeGreaterThan(0)
+  await expect.poll(() => rows().length, POLL).toBeGreaterThan(0)
   expect(rows().length).toBeLessThan(SONG_COUNT / 4)
 
   await scrollToEnd()
-  expect(rows().some((row) => row.textContent?.includes(lastText))).toBe(true)
+  await expect
+    .poll(() => rows().some((row) => row.textContent?.includes(lastText)), POLL)
+    .toBe(true)
 }
 
 /** Scrolls the pane to its end and waits for the scroller to catch up. */
@@ -119,14 +126,15 @@ describe('long mobile lists', () => {
     mountShell(MobileQueueView)
     await settle()
 
-    const rows = () => document.querySelectorAll('.mobile-queue-row')
-    expect(rows().length).toBeGreaterThan(0)
+    const rows = () => document.querySelectorAll<HTMLElement>('.mobile-queue-row')
+    await expect.poll(() => rows().length, POLL).toBeGreaterThan(0)
     expect(rows().length).toBeLessThan(SONG_COUNT / 4)
 
     // ...and still reaches the end of a long one.
     await scrollToEnd()
-    const last = rows()[rows().length - 1] as HTMLElement
-    expect(last.dataset.index).toBe(String(SONG_COUNT - 1))
+    await expect
+      .poll(() => rows()[rows().length - 1]?.dataset.index, POLL)
+      .toBe(String(SONG_COUNT - 1))
   })
 
   it('mounts only the playlist rows near the screen', async () => {
@@ -148,14 +156,21 @@ describe('long mobile lists', () => {
   })
 
   describe('the library', () => {
+    // Titles that sort in catalogue order: the library puts its songs in
+    // the remembered order, by title unless another is picked.
+    const titled = songs.map((song, index) => ({
+      ...song,
+      title: `Song ${String(index).padStart(5, '0')}`,
+    }))
+
     beforeEach(() => {
       const library = useLibraryStore()
-      library.allSongs = [...songs]
+      library.allSongs = [...titled]
       vi.spyOn(library, 'fetchAllSongs').mockResolvedValue()
     })
 
     it('mounts only the song rows near the screen', async () => {
-      await expectWindowed(MobileLibraryView, '.mobile-song-row', songs.at(-1)!.title)
+      await expectWindowed(MobileLibraryView, '.mobile-song-row', titled.at(-1)!.title)
     })
 
     it('mounts only the album rows near the screen', async () => {
@@ -165,6 +180,77 @@ describe('long mobile lists', () => {
       await expectWindowed(MobileLibraryView, '.mobile-album-row', albums.at(-1)!.name, {
         tab: 'albums',
       })
+    })
+
+    // The scrubber's jump has to land the section's divider in sight: the
+    // virtual scroller puts its target at the very top of the pane, which
+    // is where the sticky controls sit.
+    it('jumps to a section dragged to, its divider right under the controls', async () => {
+      const library = useLibraryStore()
+      const letters = 'ABCDEFGHIJ'
+      library.albums = Array.from(
+        { length: 200 },
+        (_, index) =>
+          ({
+            id: `al${index}`,
+            name: `${letters[Math.floor(index / 20)]} album ${index}`,
+            artist: 'A',
+            coverArtId: null,
+          }) as Album,
+      )
+      vi.spyOn(library, 'fetchAlbums').mockResolvedValue()
+      mountShell(MobileLibraryView, { tab: 'albums' })
+      await settle()
+
+      const pane = document.querySelector('.v-main') as HTMLElement
+      pane.scrollTop = 200
+      pane.dispatchEvent(new Event('scroll'))
+      await settle()
+      const grip = document.querySelector('.mobile-scrubber__grip') as HTMLElement
+      const rail = document.querySelector('.mobile-scrubber__rail') as HTMLElement
+      const g = grip.getBoundingClientRect()
+      const r = rail.getBoundingClientRect()
+      // The letter G, 6 of the alphabet's 27 sections in (# first).
+      const targetY = r.top + ((7 + 0.5) / 27) * r.height
+      const at = (type: string, y: number) =>
+        grip.dispatchEvent(
+          new PointerEvent(type, { clientX: g.left + 10, clientY: y, bubbles: true, pointerId: 1 }),
+        )
+      at('pointerdown', g.top + 10)
+      at('pointermove', targetY)
+      at('pointerup', targetY)
+      await settle()
+      // The jump lands over two animation frames after the scroller's own.
+      const controls = document.querySelector('.mobile-library__controls') as HTMLElement
+      const gapUnderControls = () => {
+        const divider = [...document.querySelectorAll('.letter-divider')].find(
+          (d) => d.textContent?.trim() === 'G',
+        )
+        if (!divider) return null
+        return divider.getBoundingClientRect().top - controls.getBoundingClientRect().bottom
+      }
+      await expect
+        .poll(() => {
+          const gap = gapUnderControls()
+          return gap !== null && gap >= -2 && gap < 40
+        }, POLL)
+        .toBe(true)
+    })
+
+    // Rows of cards with a divider between the letters, each measured as it
+    // is drawn - the grid must stay windowed the same as the list.
+    it('mounts only the album cards near the screen', async () => {
+      const library = useLibraryStore()
+      library.albums = [...albums]
+      vi.spyOn(library, 'fetchAlbums').mockResolvedValue()
+      writeBooleanPreference('beacon.mobileLibraryGrid.albums', true)
+      try {
+        await expectWindowed(MobileLibraryView, '.mobile-grid-tile', albums.at(-1)!.name, {
+          tab: 'albums',
+        })
+      } finally {
+        writeBooleanPreference('beacon.mobileLibraryGrid.albums', false)
+      }
     })
   })
 

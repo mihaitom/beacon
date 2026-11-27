@@ -6,7 +6,8 @@ search plus one request. A collaboration credit ("Cardi B & Bruno Mars") has
 no MusicBrainz artist of its own, so it falls back to its first performer -
 who is who the track gets dressed with. Its images fill the gap the Deezer
 artist photo leaves: a wide banner and a background, up to ten candidates
-of each (see _top_urls() for which).
+of each (see _top_urls() for which), 4K backgrounds first where an
+artist has them.
 
 Two keys, as Fanart.tv's terms require of a publicly available program: a
 project ("client") key that identifies Beacon, set once for the project (see
@@ -20,7 +21,7 @@ artwork caches: Fanart.tv is a third party on the far side of the internet,
 so an in-memory cache lost on every restart means re-asking it (and
 MusicBrainz) for the same artists again. The metadata (which images an
 artist has, keyed by MBID) is a small JSON file; the image bytes are files
-under fanart_images/. The list is asked for again after _REFRESH; an image
+under fanart_images/, stored as WebP (see image()). The list is asked for again after _REFRESH; an image
 is deleted only once no cached artist lists it any more, and an artist is
 dropped once unused for _UNUSED - bar the _KEEP_RECENT latest, so an
 occasional user still has something to show - so neither grows without
@@ -36,6 +37,7 @@ come back as None rather than an error nobody could act on.
 
 import asyncio
 import hashlib
+import io
 import json
 import logging
 import os
@@ -43,6 +45,7 @@ import random
 import time
 
 import httpx
+from PIL import Image
 
 from core import api_keys
 from core.paths import data_dir
@@ -84,7 +87,8 @@ _UNUSED = 30 * 86400.0
 # old: pruning runs on the first lookup after a break, so someone who opens
 # the app once a month would otherwise lose every other artist at that
 # moment and find the list pages' headers with next to nothing to show. At
-# up to ten backgrounds each this is a few hundred MB at most.
+# up to ten backgrounds each, about 1 MB apiece as 4K WebP, this stays a few
+# hundred MB at worst.
 _KEEP_RECENT = 30
 
 # How stale an entry's "used" stamp may get before it is written to disk:
@@ -99,15 +103,16 @@ _USED_RESOLUTION = 86400.0
 # a nudge towards fresh images, not a replacement of the community's pick.
 _KEEP_BY_LIKES = 7
 _KEEP_NEWEST = 3
+_KEEP = _KEEP_BY_LIKES + _KEEP_NEWEST
 
 # Bumped whenever _pick() chooses differently, so metadata cached by an
 # older version is asked for again right away rather than after _REFRESH.
-_CACHE_VERSION = 2
+_CACHE_VERSION = 3
 
 # The candidates beyond the one shown are downloaded one at a time with this
 # pause between them: they are only needed once someone cycles or a list
-# page shows them, and Fanart.tv's CDN does not need a burst of ten 1 MB
-# images.
+# page shows them, and Fanart.tv's CDN does not need a burst of ten images
+# of up to 4 MB each.
 _PREFETCH_GAP = 2.0
 
 # The in-memory half, filled from disk on a miss and written through on a
@@ -169,7 +174,8 @@ def _save_cache(cache: dict) -> None:
     wanted = {os.path.basename(_image_path(url)) for v in live.values() for url in _urls(v["art"])}
     try:
         for name in os.listdir(_IMAGE_DIR):
-            if name not in wanted:
+            # A scaled copy ("<hash>.w1280") goes with its image.
+            if name.split(".")[0] not in wanted:
                 os.unlink(os.path.join(_IMAGE_DIR, name))
     except FileNotFoundError:
         pass
@@ -216,6 +222,15 @@ def _top_urls(entries: object) -> list[str]:
     return [e["url"] for e in liked + rest[:_KEEP_NEWEST]]
 
 
+def _backgrounds(data: dict) -> list[str]:
+    """The 4K backgrounds (`artist4kbackground`, 3840x2160) ahead of the
+    regular 1920x1080 ones, which only fill the slots the 4K ones leave -
+    few artists have ten 4K images yet, and many have none."""
+    uhd = _top_urls(data.get("artist4kbackground"))
+    regular = _top_urls(data.get("artistbackground"))
+    return (uhd + regular)[:_KEEP]
+
+
 def _pick(data: dict) -> dict | None:
     """The candidate images the artist page can use, each from whichever of
     its Fanart.tv names is present - a banner is `artistbanner` on most
@@ -223,7 +238,7 @@ def _pick(data: dict) -> dict | None:
     high-resolution one exists. Lists of URLs, best first; _choose() makes
     the actual pick."""
     banner = _top_urls(data.get("artistbanner") or data.get("musicbanner"))
-    background = _top_urls(data.get("artistbackground"))
+    background = _backgrounds(data)
     logo = _top_urls(data.get("hdmusiclogo") or data.get("musiclogo"))
     if not (banner or background or logo):
         return None
@@ -272,9 +287,7 @@ async def _prefetch_images(mbid: str, urls: list[str]) -> None:
         for url in urls:
             if is_image_cached(url):
                 continue
-            fetched = await fetch_image(url)
-            if fetched:
-                store_image(url, fetched[0])
+            await image(url)
             await asyncio.sleep(_PREFETCH_GAP)
     finally:
         _prefetching.pop(mbid, None)
@@ -445,17 +458,116 @@ def is_allowed_image_url(url: str) -> bool:
     return host == _ALLOWED_IMAGE_SUFFIX.lstrip(".") or host.endswith(_ALLOWED_IMAGE_SUFFIX)
 
 
-def _image_path(url: str) -> str:
-    return os.path.join(_IMAGE_DIR, hashlib.sha256(url.encode("utf-8")).hexdigest())
+# The widths connect scales an image down to on request, for a screen that
+# cannot show more (a phone): a fixed few, so each image has at most this
+# many scaled copies on disk. The clients round up to one of these.
+IMAGE_WIDTHS = (1280, 1920, 2560)
+
+# WebP quality for photos. Measured on a 4K background, 3.8 MB as Fanart.tv's
+# JPEG: 1.4 MB at 90 (0.9 at 85, 2.3 at 95), about 200 KB scaled to 1280 and
+# 700 KB to 2560. Past 90 the file grows fast for little to see. A PNG (a
+# logo, a transparent clear-art) is encoded losslessly instead - barely
+# bigger than the PNG, and its hard edges stay clean.
+_WEBP_QUALITY = 90
 
 
-def content_type_for(url: str) -> str:
-    path = httpx.URL(url).path.lower()
-    if path.endswith(".png"):
-        return "image/png"
-    if path.endswith(".webp"):
+def _image_path(url: str, width: int | None = None) -> str:
+    name = hashlib.sha256(url.encode("utf-8")).hexdigest()
+    return os.path.join(_IMAGE_DIR, f"{name}.w{width}" if width else name)
+
+
+def _is_webp(data: bytes) -> bool:
+    return data[:4] == b"RIFF" and data[8:12] == b"WEBP"
+
+
+def media_type(data: bytes) -> str:
+    """The type of stored bytes, from their own signature: an image stored
+    before the WebP conversion, or one Pillow could not read, is still
+    Fanart.tv's JPEG or PNG."""
+    if _is_webp(data):
         return "image/webp"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
     return "image/jpeg"
+
+
+def _encode(data: bytes, width: int | None = None) -> bytes | None:
+    """`data` as WebP, scaled down to `width` if given. None when there is
+    nothing to do (already WebP and no wider than `width`) or Pillow cannot
+    read it."""
+    try:
+        with Image.open(io.BytesIO(data)) as img:
+            lossless = img.format == "PNG"
+            scale = bool(width) and img.width > width
+            if not scale and img.format == "WEBP":
+                return None
+            size = (width, round(img.height * width / img.width)) if scale else img.size
+            # JPEG only: decodes at a fraction of the size straight away.
+            img.draft("RGB", size)
+            alpha = img.mode in ("RGBA", "LA", "PA") or "transparency" in img.info
+            frame = img.convert("RGBA" if alpha else "RGB")
+            if frame.size != size:
+                frame = frame.resize(size, Image.LANCZOS)
+            out = io.BytesIO()
+            if lossless:
+                frame.save(out, "WEBP", lossless=True)
+            else:
+                frame.save(out, "WEBP", quality=_WEBP_QUALITY)
+            return out.getvalue()
+    except Exception as e:
+        logger.warning(f"[fanart] Could not convert an image: {e}")
+        return None
+
+
+def _read(path: str) -> bytes | None:
+    try:
+        with open(path, "rb") as f:
+            return f.read()
+    except FileNotFoundError:
+        return None
+    except Exception as e:
+        logger.warning(f"[fanart] Could not read a cached image: {e}")
+        return None
+
+
+def _write(path: str, data: bytes) -> None:
+    try:
+        os.makedirs(_IMAGE_DIR, exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(data)
+    except Exception as e:
+        logger.error(f"[fanart] Could not store an image: {e}")
+
+
+async def image(url: str, width: int | None = None) -> bytes | None:
+    """The image to serve for a Fanart.tv URL, as WebP: from disk, else
+    fetched, converted once and stored that way. With one of IMAGE_WIDTHS,
+    a copy scaled down to it, itself kept on disk; a width not among them
+    gets the full image. None when the URL is not one this backend fetches
+    or the image cannot be had. The conversions run off the event loop -
+    a 4K one takes most of a second."""
+    stored = get_cached_image(url)
+    if stored is None or not _is_webp(stored):
+        if stored is None:
+            fetched = await fetch_image(url)
+            if fetched is None:
+                return None
+            stored = fetched[0]
+        # An image stored before the conversion existed is converted on
+        # its first ask; one Pillow cannot read is kept as it came.
+        converted = await asyncio.to_thread(_encode, stored)
+        stored = converted or stored
+        store_image(url, stored)
+    if width not in IMAGE_WIDTHS:
+        return stored
+    path = _image_path(url, width)
+    scaled = _read(path)
+    if scaled is None:
+        scaled = await asyncio.to_thread(_encode, stored, width)
+        if scaled is None:
+            return stored
+        _write(path, scaled)
+    return scaled
 
 
 def is_image_cached(url: str) -> bool:
@@ -466,23 +578,11 @@ def get_cached_image(url: str) -> bytes | None:
     """The stored bytes for `url`, or None if it was never fetched. They do
     not age: a Fanart.tv image URL never changes content, so the bytes stay
     until no artist lists the URL any more (see _save_cache())."""
-    try:
-        with open(_image_path(url), "rb") as f:
-            return f.read()
-    except FileNotFoundError:
-        return None
-    except Exception as e:
-        logger.warning(f"[fanart] Could not read a cached image: {e}")
-        return None
+    return _read(_image_path(url))
 
 
 def store_image(url: str, data: bytes) -> None:
-    try:
-        os.makedirs(_IMAGE_DIR, exist_ok=True)
-        with open(_image_path(url), "wb") as f:
-            f.write(data)
-    except Exception as e:
-        logger.error(f"[fanart] Could not store an image: {e}")
+    _write(_image_path(url), data)
 
 
 async def fetch_image(url: str) -> tuple[bytes, str] | None:
@@ -496,4 +596,4 @@ async def fetch_image(url: str) -> tuple[bytes, str] | None:
     except httpx.HTTPError as e:
         logger.warning(f"[fanart] Image fetch failed for {url!r}: {e}")
         return None
-    return r.content, r.headers.get("content-type") or content_type_for(url)
+    return r.content, r.headers.get("content-type") or media_type(r.content)

@@ -32,6 +32,16 @@ the computer and sent when it can be reached again.
 - **The Last.fm and Fanart keys,** if you confirmed that when creating the
   key for this device. A key you entered in the desktop app stays in charge, and the
   server's keys stop being used when you disconnect.
+- **External sources.** The server's sources show up in the desktop app as
+  tabs of their own, and each side then connects to the app itself, so its
+  address has to be one the computer can reach too (not a Docker container
+  name, for example). Their tokens only come along if you confirmed that when
+  creating the key; otherwise enter a source's token in the desktop app, where
+  it stays. Only a key made by an administrator also sends the desktop app's
+  own sources to the server and lets them be changed from there; with anyone
+  else's, the server's sources are changed on the server and the desktop
+  app's own stay on the computer. A source at `localhost` is never shared,
+  since it means a different machine on each side.
 
 Things that belong to one computer or one installation stay there: audio
 quality, this device's own equalizer, Hue lights and casting permissions. Your queue, favourites and playlists already live on your media
@@ -42,8 +52,8 @@ server.
 1. Open Beacon on the server in a browser, signed in with your account, and
    go to Settings > Account > Apps and devices.
 2. Choose **New key**, give it a name, decide whether this device also gets the server's
-   Last.fm and Fanart keys, and create it. The key is shown once, and changing
-   that decision takes a new key.
+   Last.fm and Fanart keys and the external sources' tokens, and create it. The
+   key is shown once, and changing those decisions takes a new key.
 3. In the desktop app, signed in with the same account, go to Settings >
    Account > Beacon server and enter the server's address and the key.
 
@@ -86,7 +96,8 @@ accepted for addresses on your own network or a private one like Tailscale.
 
 ## Disconnecting
 
-Disconnecting in the desktop app leaves everything on the computer as it is.
+Disconnecting in the desktop app leaves everything on the computer as it is,
+external sources included, only tokens the server lent are removed.
 Settings the server had already replaced do not come back. What only the
 server has stays there: plays from other devices or imported on the server,
 and settings, themes and lyrics corrections last changed there. Revoking the key on

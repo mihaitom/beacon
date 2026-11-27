@@ -442,6 +442,9 @@ export interface ConnectStatus {
 // docstring); NowPlayingView.vue's 'cast' mode is the only consumer.
 export interface VisualizerFrame {
   bands: number[]
+  /** Base64 of the frame's raw samples, as getByteTimeDomainData() would
+   * give them - only on a connection that asked for it (Milkdrop). */
+  waveform?: string
   // Debug-overlay data (VisualizerDebugOverlay.vue, gated on the account's log
   // level being DEBUG/TRACE) — both track and radio casts carry one, see
   // core/audio_analysis.py's AudioAnalyzer.last_release_debug for what

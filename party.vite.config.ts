@@ -2,6 +2,7 @@ import { resolve } from 'path';
 import { defineConfig } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import vuetify from 'vite-plugin-vuetify';
+import { milkdropPresets } from './vite.milkdrop-presets';
 
 // The party-mode guest page (src/renderer/src/party/), built into
 // connect/static/party/ where connect serves it under /party/ - in the
@@ -15,7 +16,7 @@ export default defineConfig({
             '@': resolve('src/renderer/src'),
         },
     },
-    plugins: [vue(), vuetify({ autoImport: true })],
+    plugins: [vue(), vuetify({ autoImport: true }), milkdropPresets()],
     root: 'src/renderer/party',
     build: {
         outDir: resolve('connect/static/party'),

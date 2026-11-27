@@ -31,6 +31,26 @@ function toPixels(event: WheelEvent): number {
 }
 
 /**
+ * Which way a wheel event moves a slider by one step: 1 up, -1 down, 0
+ * while the scroll so far hasn't added up to a full step yet. `carry` is
+ * that unspent scroll: keep it on the component and hand the same field
+ * back in on the next event.
+ */
+export function wheelStep(event: WheelEvent, carry: number): { step: number; carry: number } {
+  const delta = toPixels(event)
+  // A reversal starts over rather than first having to work off scroll
+  // that was headed the other way.
+  const total = carry !== 0 && Math.sign(delta) !== Math.sign(carry) ? delta : carry + delta
+  if (Math.abs(total) < STEP_THRESHOLD) return { step: 0, carry: total }
+  // Exactly one step per event, no matter how big the delta was: a fast
+  // spin is already several events, while a single notch reported as 120
+  // shouldn't move three times as far as one reported as 53. Whatever is
+  // left over is dropped for the same reason - carrying it would make the
+  // very next event fire early. Scrolling up (negative deltaY) is more.
+  return { step: total < 0 ? 1 : -1, carry: 0 }
+}
+
+/**
  * The volume a wheel event leaves the slider at, or null while the scroll
  * so far hasn't added up to a full step yet. `carry` is that unspent
  * scroll: keep it on the component and hand the same field back in on the
@@ -46,18 +66,8 @@ export function volumeAfterWheel(
   max: number,
   carry: number,
 ): { volume: number | null; carry: number } {
-  const delta = toPixels(event)
-  // A reversal starts over rather than first having to work off scroll
-  // that was headed the other way.
-  const total = carry !== 0 && Math.sign(delta) !== Math.sign(carry) ? delta : carry + delta
-  if (Math.abs(total) < STEP_THRESHOLD) return { volume: null, carry: total }
-
-  // Exactly one step per event, no matter how big the delta was: a fast
-  // spin is already several events, while a single notch reported as 120
-  // shouldn't move three times as far as one reported as 53. Whatever is
-  // left over is dropped for the same reason — carrying it would make the
-  // very next event fire early.
-  const steps = total < 0 ? 1 : -1 // scrolling up (negative deltaY) is louder
+  const { step: steps, carry: left } = wheelStep(event, carry)
+  if (steps === 0) return { volume: null, carry: left }
   const stepSize = max * STEP_FRACTION
   // The epsilon absorbs float error (0.6 / 0.05 is 11.999999999999998),
   // which would otherwise cost a step whenever the current value came out

@@ -6,6 +6,18 @@
     :copy-text="readingText"
   >
     <DebugReadings :rows="rows" />
+    <!-- Milkdrop while casting: the samples it is handed, as a light, next
+     - to connect's test tone - hear the beep, watch the light. -->
+    <div v-if="waveform" class="visualizer-debug-overlay__signal">
+      <span
+        class="visualizer-debug-overlay__lamp"
+        :class="{ 'visualizer-debug-overlay__lamp--on': signal }"
+      />
+      <span class="text-body-small">Milkdrop signal</span>
+      <v-btn size="x-small" variant="tonal" :loading="toneStarting" @click="startTestTone">
+        Test tone
+      </v-btn>
+    </div>
 
     <template #legend>
       <dt>Visualizer</dt>
@@ -19,6 +31,13 @@
         both sides are re-based to the same zero, so it should settle near it. Red past 0.75s. It
         says the clocks disagree, not which one is wrong.
       </dd>
+      <template v-if="waveform">
+        <dt>Milkdrop signal</dt>
+        <dd>
+          Lights while the samples Milkdrop is drawing from carry sound. With the test tone (a beep
+          every two seconds on the speaker) the light and the beep should start together.
+        </dd>
+      </template>
       <template v-if="debug.lead">
         <dt>Lead</dt>
         <dd>
@@ -31,7 +50,9 @@
 </template>
 
 <script lang="ts">
+import type { PropType } from 'vue'
 import { getLogLevel } from '@/services/connect/logLevel'
+import { playTestTone } from '@/services/connect/debugTone'
 import type { VisualizerFrame } from '@/services/connect/types'
 import DebugPanel from './DebugPanel.vue'
 import DebugReadings, { readingsText, type DebugReading } from './DebugReadings.vue'
@@ -39,6 +60,10 @@ import DebugReadings, { readingsText, type DebugReading } from './DebugReadings.
 // Above this the delta is flagged: a difference this size is audible, not
 // a rounding curiosity.
 const DELTA_OFF_SECONDS = 0.75
+// How far from silence (128) a sample has to swing for the signal light:
+// about -15 dBFS, well clear of a decoder's noise, well under the test
+// tone's full-scale beep.
+const SIGNAL_SWING = 24
 
 // The visualizer's 'cast'-mode sync debug readout — its own component,
 // positioned absolutely by NowPlayingPresentation.vue rather than drawn
@@ -62,9 +87,17 @@ export default {
       type: Object as () => VisualizerFrame['debug'] | null,
       default: null,
     },
+    /** Milkdrop's cast samples, read every frame - see the signal light. */
+    waveform: {
+      type: Function as PropType<(() => Uint8Array | null) | null>,
+      default: null,
+    },
   },
   data() {
     return {
+      signal: false,
+      toneStarting: false,
+      frame: 0,
       // Whether the account's backend log level is DEBUG/TRACE, fetched once
       // at mount: this gates a diagnostic, not something that has to follow
       // Settings being changed in another window mid-session.
@@ -109,6 +142,19 @@ export default {
       return rows
     },
   },
+  watch: {
+    waveform: {
+      immediate: true,
+      handler(waveform: (() => Uint8Array | null) | null) {
+        cancelAnimationFrame(this.frame)
+        this.signal = false
+        if (waveform) this.frame = requestAnimationFrame(this.readSignal)
+      },
+    },
+  },
+  beforeUnmount() {
+    cancelAnimationFrame(this.frame)
+  },
   mounted() {
     // Best-effort: a failed GET /log-level leaves the overlay off, same as
     // for anyone not chasing a sync bug in the first place.
@@ -122,6 +168,45 @@ export default {
     readingText(): string {
       return readingsText(this.rows)
     },
+    readSignal(): void {
+      if (!this.waveform) return
+      this.frame = requestAnimationFrame(this.readSignal)
+      const samples = this.waveform()
+      let swing = 0
+      if (samples) for (const s of samples) swing = Math.max(swing, Math.abs(s - 128))
+      this.signal = swing >= SIGNAL_SWING
+    },
+    async startTestTone(): Promise<void> {
+      this.toneStarting = true
+      try {
+        await playTestTone()
+      } catch (error) {
+        console.error('[visualizer-debug] Test tone failed:', error)
+      } finally {
+        this.toneStarting = false
+      }
+    },
   },
 }
 </script>
+
+<style scoped>
+.visualizer-debug-overlay__signal {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* No transition: the moment it lights is the reading. */
+.visualizer-debug-overlay__lamp {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: rgba(var(--v-theme-on-surface), 0.2);
+}
+
+.visualizer-debug-overlay__lamp--on {
+  background: rgb(var(--v-theme-success));
+}
+</style>

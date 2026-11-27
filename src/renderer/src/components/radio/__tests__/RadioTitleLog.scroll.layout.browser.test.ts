@@ -4,7 +4,7 @@
 // whatever the CSS says.
 //
 // Both places it goes are fixed boxes, and `overflow-y: auto` on its own is
-// not enough in either: NowPlayingView gives it a fixed 85cqh with
+// not enough in either: NowPlayingView gives it a fixed height with
 // `overflow: hidden`, where a shorter child is simply clipped, and the
 // drawer gives it a flex slot, where the default `min-height: auto` keeps
 // it from shrinking below its content so there is never anything to

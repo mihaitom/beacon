@@ -6,6 +6,7 @@ from urllib.parse import urlencode, urlsplit, urlunsplit
 
 import httpx
 
+from core import client_cert
 from core.local_address import get_local_ip, on_default_address
 
 from . import credentials as creds_store
@@ -61,6 +62,15 @@ def _is_device_failure(error: BaseException) -> bool:
     return any(cls.__module__ in ("pyatv.exceptions", "miniaudio") for cls in type(error).__mro__)
 
 
+def _media_server_client(timeout: float) -> httpx.AsyncClient:
+    """For the cover, which comes straight from the media server and so
+    needs its client certificate (core/client_cert.py). The audio does not:
+    that is connect's own /stream, or a station."""
+    return httpx.AsyncClient(
+        follow_redirects=True, timeout=timeout, verify=client_cert.ssl_context()
+    )
+
+
 async def _fetch_artwork(url: str | None) -> bytes | None:
     """Raw JPEG bytes for `url`, or None if it can't be had.
 
@@ -71,9 +81,7 @@ async def _fetch_artwork(url: str | None) -> bytes | None:
     if not url:
         return None
     try:
-        async with httpx.AsyncClient(
-            follow_redirects=True, timeout=_ARTWORK_TIMEOUT_SECONDS
-        ) as http:
+        async with _media_server_client(_ARTWORK_TIMEOUT_SECONDS) as http:
             resp = await http.get(url)
             resp.raise_for_status()
             if len(resp.content) > _MAX_ARTWORK_BYTES:

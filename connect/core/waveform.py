@@ -17,6 +17,7 @@ import logging
 
 import numpy as np
 
+from . import client_cert
 from .ffmpeg import FFMPEG_BIN
 
 logger = logging.getLogger("connect.waveform")
@@ -114,6 +115,8 @@ async def get_waveform(track_id: str, url: str) -> list[float]:
     builder, no network call of its own, so callers don't need get_track()
     first."""
     cmd = [arg if arg != "{url}" else url for arg in _DECODE_CMD]
+    i_pos = cmd.index("-i")
+    cmd[i_pos:i_pos] = client_cert.ffmpeg_args(url)
     try:
         proc = await asyncio.create_subprocess_exec(
             *cmd,

@@ -6,6 +6,7 @@ import { useConnectStore } from '@/stores/connect'
 import { useRemoteControlStore } from '@/stores/remoteControl'
 import { useAutoplayStore } from '@/stores/autoplay'
 import { useAuthStore } from '@/stores/auth'
+import { useGroupVolumeStore } from '@/stores/groupVolume'
 import { useFanartStore } from '@/stores/fanart'
 import { useEqualizerStore } from '@/stores/equalizer'
 import { useLightsStore } from '@/stores/lights'
@@ -21,6 +22,8 @@ import { makeSong, makeStatus } from '@/stores/__tests__/fixtures'
 import type { SubsonicClient } from '@/services/subsonic/client'
 import type { Playlist, RadioStation, Artist } from '@/types/library'
 import { RADIO_FAVICON_CACHE_VERSION } from '@/services/connect/radio'
+import { saveSongSort } from '@/services/library/songBrowse'
+import { i18n } from '@/i18n'
 
 // library.client() constructs a fresh SubsonicClient per call (see
 // stores/library.ts) — spying on a specific instance's method is pointless
@@ -165,22 +168,42 @@ describe('handleRemoteCommand', () => {
       expect(reportSpy).toHaveBeenCalledWith(42)
     })
 
-    it('is a no-op with two or more active targets — no single device to represent', async () => {
+    it('with several active targets, moves them all through the master volume', async () => {
       const connect = useConnectStore()
       connect.status = makeStatus({
         targets: [
-          { name: 'A', type: 'sonos' },
-          { name: 'B', type: 'sonos' },
+          { name: 'A', type: 'sonos', volume_push: true, volume: 20 },
+          { name: 'B', type: 'sonos', volume_push: true, volume: 60 },
         ],
       })
-      const playback = usePlaybackStore()
-      const setVolumeSpy = vi.spyOn(playback, 'setVolume')
-      const setDeviceVolumeSpy = vi.spyOn(connect, 'setDeviceVolume')
+      const setVolumeSpy = vi.spyOn(usePlaybackStore(), 'setVolume')
+      const setDeviceVolumeSpy = vi.spyOn(connect, 'setDeviceVolume').mockResolvedValue()
+      const reportSpy = vi.spyOn(useRemoteControlStore(), 'reportDeviceVolume')
 
       await handleRemoteCommand('volume', { volume: 0.5 })
 
       expect(setVolumeSpy).not.toHaveBeenCalled()
-      expect(setDeviceVolumeSpy).not.toHaveBeenCalled()
+      expect(setDeviceVolumeSpy).toHaveBeenCalledWith('sonos', 'A', 50)
+      expect(setDeviceVolumeSpy).toHaveBeenCalledWith('sonos', 'B', 50)
+      expect(reportSpy).toHaveBeenCalledWith(50)
+    })
+  })
+
+  describe('group-volume-mode', () => {
+    it("switches how the master moves several speakers from the phone's cast sheet", async () => {
+      await handleRemoteCommand('group-volume-mode', { mode: 'relative' })
+      expect(useGroupVolumeStore().mode).toBe('relative')
+
+      await handleRemoteCommand('group-volume-mode', { mode: 'equal' })
+      expect(useGroupVolumeStore().mode).toBe('equal')
+    })
+
+    it('ignores a mode it does not know', async () => {
+      useGroupVolumeStore().setMode('relative')
+
+      await handleRemoteCommand('group-volume-mode', { mode: 'loud' })
+
+      expect(useGroupVolumeStore().mode).toBe('relative')
     })
   })
 
@@ -423,6 +446,24 @@ describe('handleRemoteCommand', () => {
       await handleRemoteCommand('play-favorites', { songId: 'b', startIndex: 1 })
 
       expect(playSongList).toHaveBeenCalledWith(songs, 2, true, true)
+    })
+
+    it('plays on in the order and through the filter the phone had on', async () => {
+      const songs = [
+        makeSong('old', { year: 1971, genre: 'Rock' }),
+        makeSong('jazz', { year: 1999, genre: 'Jazz' }),
+        makeSong('new', { year: 2021, genre: 'Rock' }),
+      ]
+      const playSongList = stubFavorites(songs)
+
+      await handleRemoteCommand('play-favorites', {
+        songId: 'old',
+        startIndex: 1,
+        sort: { key: 'year', direction: 'desc' },
+        filters: { genre: ['Rock'] },
+      })
+
+      expect(playSongList).toHaveBeenCalledWith([songs[2], songs[0]], 1, true, true)
     })
 
     it('does nothing for a song that is no longer a favourite', async () => {
@@ -871,6 +912,217 @@ describe('resolveRemoteQuery', () => {
 
       expect(result.items.map((s) => s.id)).toEqual(['s2', 's3'])
       expect(result.total).toBe(5)
+    })
+  })
+
+  describe('browsing the library (the remote library view)', () => {
+    type Browse = {
+      items: { id: string }[]
+      total: number
+      sort: { key: string; direction: string }
+      sort_options: { value: string; label: string }[]
+      sections: { key: string; label: string; short: string; offset: number | null }[]
+      filters: Record<string, string[]>
+      filter_count: number
+      filter_fields: {
+        field: string
+        label: string
+        options: { option: string; count: number }[]
+      }[]
+    }
+
+    function loadSongs(songs: ReturnType<typeof makeSong>[]) {
+      const library = useLibraryStore()
+      library.allSongs = songs
+      library.allSongsLoaded = true
+    }
+
+    const songs = () => [
+      makeSong('a', { title: 'Alpha', year: 1985, genre: 'Rock' }),
+      makeSong('b', { title: 'Bravo', year: 2003, genre: 'Jazz' }),
+      makeSong('c', { title: 'Charlie', year: 1989, genre: 'Rock' }),
+    ]
+
+    it('sorts by the order the phone picked and starts a section at each decade', async () => {
+      loadSongs(songs())
+
+      const result = (await resolveRemoteQuery('songs-request', {
+        browse: true,
+        sort: { key: 'year', direction: 'desc' },
+        locale: 'en',
+      })) as Browse
+
+      expect(result.items.map((s) => s.id)).toEqual(['b', 'c', 'a'])
+      expect(result.sort).toEqual({ key: 'year', direction: 'desc' })
+      expect(result.sections.map(({ key, offset }) => [key, offset])).toEqual([
+        ['2000', 0],
+        ['1980', 1],
+      ])
+    })
+
+    it("labels the sections in the phone's language, not the desktop's", async () => {
+      loadSongs(songs())
+      const request = (locale: string) =>
+        resolveRemoteQuery('songs-request', {
+          browse: true,
+          sort: { key: 'year', direction: 'desc' },
+          locale,
+        }) as Promise<Browse>
+
+      const [en, de] = await Promise.all([request('en'), request('de')])
+
+      expect(en.sections[0]!.label).toBe('2000s')
+      expect(de.sections[0]!.label).toBe('2000er')
+      expect(de.sort_options.find((o) => o.value === 'title')?.label).not.toBe(
+        en.sort_options.find((o) => o.value === 'title')?.label,
+      )
+    })
+
+    it("says on each item what the list is sorted by, in the phone's language", async () => {
+      loadSongs([makeSong('a', { title: 'Alpha', playCount: 2 })])
+      const request = (sort: string) =>
+        resolveRemoteQuery('songs-request', {
+          browse: true,
+          sort: { key: sort, direction: 'desc' },
+          locale: 'de',
+        }) as Promise<{ items: { sort_detail: string | null }[] }>
+
+      expect((await request('title')).items[0]!.sort_detail).toBeNull()
+      expect((await request('playCount')).items[0]!.sort_detail).toBe(
+        i18n.global.t('home.playCount', { n: '2' }, { locale: 'de', plural: 2 }),
+      )
+    })
+
+    it('filters the list, keeps every section and counts options over the whole half', async () => {
+      loadSongs(songs())
+
+      const result = (await resolveRemoteQuery('songs-request', {
+        browse: true,
+        sort: { key: 'year', direction: 'desc' },
+        filters: { genre: ['Rock'], nonsense: ['x'], year: 'not a list' },
+      })) as Browse
+
+      expect(result.items.map((s) => s.id)).toEqual(['c', 'a'])
+      expect(result.total).toBe(2)
+      expect(result.filters).toEqual({ genre: ['Rock'] })
+      expect(result.filter_count).toBe(1)
+      expect(result.sections.find((s) => s.key === '2000')?.offset).toBeNull()
+      const genre = result.filter_fields.find((f) => f.field === 'genre')
+      expect(genre?.options).toEqual([
+        expect.objectContaining({ option: 'Rock', count: 2 }),
+        expect.objectContaining({ option: 'Jazz', count: 1 }),
+      ])
+    })
+
+    it('without an order of its own, browses by the one this desktop last used', async () => {
+      loadSongs(songs())
+      saveSongSort({ key: 'title', direction: 'desc' })
+
+      const result = (await resolveRemoteQuery('songs-request', { browse: true })) as Browse
+
+      expect(result.sort).toEqual({ key: 'title', direction: 'desc' })
+      expect(result.items.map((s) => s.id)).toEqual(['c', 'b', 'a'])
+    })
+
+    it('starts a newly picked order the way the app does: years newest first', async () => {
+      loadSongs(songs())
+
+      const result = (await resolveRemoteQuery('songs-request', {
+        browse: true,
+        sort: { key: 'year', direction: '' },
+      })) as Browse
+
+      expect(result.sort).toEqual({ key: 'year', direction: 'desc' })
+    })
+
+    it('reads an order this server has nothing for as the title', async () => {
+      loadSongs(songs())
+
+      const result = (await resolveRemoteQuery('songs-request', {
+        browse: true,
+        sort: { key: 'bogus', direction: 'desc' },
+      })) as Browse
+
+      expect(result.sort).toEqual({ key: 'title', direction: 'asc' })
+    })
+
+    it('browses the favourites with the heart on', async () => {
+      const library = useLibraryStore()
+      loadSongs(songs())
+      vi.spyOn(library, 'fetchStarred').mockImplementation(async () => {
+        library.starred = { artists: [], albums: [], songs: [makeSong('fav', { title: 'Zulu' })] }
+      })
+
+      const result = (await resolveRemoteQuery('songs-request', {
+        browse: true,
+        favorites: true,
+      })) as Browse
+
+      expect(result.items.map((s) => s.id)).toEqual(['fav'])
+    })
+
+    it('pages the sorted list', async () => {
+      loadSongs(songs())
+
+      const result = (await resolveRemoteQuery('songs-request', {
+        browse: true,
+        sort: { key: 'title', direction: 'asc' },
+        offset: 1,
+        limit: 1,
+      })) as Browse
+
+      expect(result.items.map((s) => s.id)).toEqual(['b'])
+      expect(result.total).toBe(3)
+    })
+  })
+
+  describe('search-request', () => {
+    function loadLibrary() {
+      const library = useLibraryStore()
+      library.allSongs = [
+        makeSong('s1', { title: 'Moonlight', artist: 'Someone' }),
+        makeSong('s2', { title: 'Blue Moon', artist: 'Someone' }),
+        makeSong('s3', { title: 'Sunrise', artist: 'Someone' }),
+      ]
+      library.allSongsLoaded = true
+      library.albums = [{ id: 'al1', name: 'Moon Safari', artist: 'Air' }] as never
+      library.artists = [{ id: 'ar1', name: 'Moonlight Trio', albumCount: 1 }] as Artist[]
+      library.playlists = [{ id: 'p1', name: 'Other' }] as Playlist[]
+      library.radioStations = [{ id: 'r1', name: 'Radio Other' }] as RadioStation[]
+    }
+
+    it('answers every kind that matches, without fetching what is already loaded', async () => {
+      loadLibrary()
+      const library = useLibraryStore()
+      const fetchAll = vi.spyOn(library, 'fetchAllSongs')
+
+      const result = (await resolveRemoteQuery('search-request', { q: 'moon' })) as {
+        sections: { kind: string; items: { id: string }[]; total: number }[]
+      }
+
+      expect(fetchAll).not.toHaveBeenCalled()
+      expect(result.sections.map((s) => s.kind).sort()).toEqual(['albums', 'artists', 'songs'])
+      expect(result.sections.find((s) => s.kind === 'songs')?.total).toBe(2)
+    })
+
+    it("pages one kind's every match for its show all", async () => {
+      loadLibrary()
+
+      const result = (await resolveRemoteQuery('search-request', {
+        q: 'moon',
+        kind: 'songs',
+        offset: 1,
+        limit: 5,
+      })) as { items: { id: string }[]; total: number }
+
+      expect(result.total).toBe(2)
+      expect(result.items).toHaveLength(1)
+    })
+
+    it('answers nothing for an empty query', async () => {
+      loadLibrary()
+
+      expect(await resolveRemoteQuery('search-request', { q: '  ' })).toEqual({ sections: [] })
     })
   })
 
@@ -1418,6 +1670,41 @@ describe('resolveRemoteQuery', () => {
       type: 'dlna',
       in_use_by_name: 'Someone',
     })
+  })
+
+  /** The sheet offers "Take over" only for a speaker somebody else holds -
+   * one this window holds itself is just playing. */
+  it('devices-request tells a speaker held elsewhere apart from one held here', async () => {
+    const connect = useConnectStore()
+    vi.spyOn(connect, 'refreshDevices').mockResolvedValue()
+    useAuthStore().sessionId = 'mine'
+    connect.devices = {
+      sonos: [
+        { name: 'Held here', in_use_by_session_id: 'mine', in_use_by_name: 'Me' },
+        {
+          name: 'Held elsewhere',
+          in_use_by_session_id: 'theirs',
+          in_use_by_name: 'Anna',
+          in_use_by_song: 'One More Time',
+        },
+        { name: 'Free' },
+      ],
+      airplay: [],
+      chromecast: [],
+      dlna: [],
+    }
+
+    const result = (await resolveRemoteQuery('devices-request', {})) as {
+      items: Record<string, unknown>[]
+    }
+    const byName = Object.fromEntries(result.items.map((d) => [d.name, d]))
+
+    expect(byName['Held here']).toMatchObject({ claimed: false })
+    expect(byName['Held elsewhere']).toMatchObject({
+      claimed: true,
+      in_use_by_song: 'One More Time',
+    })
+    expect(byName['Free']).toMatchObject({ claimed: false })
   })
 
   it('device-volume-request forwards straight to connect.getDeviceVolume', async () => {

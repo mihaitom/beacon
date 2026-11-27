@@ -114,10 +114,10 @@
         @click="toggleMute"
       />
       <touch-volume-slider
-        v-if="singleActiveTarget"
-        :model-value="deviceVolume ?? 0"
+        v-if="castVolumeShown"
+        :model-value="castVolume ?? 0"
         :max="100"
-        :disabled="deviceVolume == null"
+        :disabled="castVolume == null"
         :aria-label="$t('player.volume')"
         @update:model-value="onDeviceVolumeInput"
         @commit="onDeviceVolumeCommit"
@@ -161,10 +161,13 @@ import RadioLiveStatus from '@/components/player/RadioLiveStatus.vue'
 import { getAudioEngine } from '@/services/audioEngine'
 import MobileDevicePicker from './MobileDevicePicker.vue'
 import TouchVolumeSlider from './TouchVolumeSlider.vue'
+import { setVolume, toggleMute as toggleVolumeMute, volumeScope } from '@/services/volumeControl'
+import { groupVolumeMixin } from '@/components/player/groupVolumeMixin'
 import type { ConnectDeviceRef } from '@/services/connect/types'
 
 export default {
   name: 'MobileTransportControls',
+  mixins: [groupVolumeMixin],
   components: {
     SongWaveform,
     RadioLiveStatus,
@@ -193,6 +196,9 @@ export default {
       // its own comment.
       volumeBeforeMute: 1,
       deviceVolumeBeforeMute: 50,
+      // The master under the finger, shown until it lifts - nothing is sent
+      // before then (see onDeviceVolumeInput).
+      groupVolumeDraft: null as number | null,
     }
   },
   computed: {
@@ -233,16 +239,22 @@ export default {
       const target = this.singleActiveTarget
       return target ? `${target.type}:${target.name}` : null
     },
+    /** One device's volume, or the master's over several. */
+    castVolumeShown(): boolean {
+      return !!this.singleActiveTarget || !!this.volumeGroup
+    },
+    castVolume(): number | null {
+      if (this.singleActiveTarget) return this.deviceVolume
+      return this.groupVolumeDraft ?? this.groupVolumeLevel
+    },
     volumePercentLabel() {
-      if (this.singleActiveTarget) {
-        return this.deviceVolume == null ? '—' : `${this.deviceVolume}%`
+      if (this.castVolumeShown) {
+        return this.castVolume == null ? '—' : `${this.castVolume}%`
       }
       return `${Math.round(this.playbackStore.volume * 100)}%`
     },
     volumeIcon() {
-      const muted = this.singleActiveTarget
-        ? this.deviceVolume === 0
-        : this.playbackStore.volume === 0
+      const muted = this.castVolumeShown ? this.castVolume === 0 : this.playbackStore.volume === 0
       return muted ? 'mdi-volume-mute' : 'mdi-volume-high'
     },
     /** Whether there is any volume here worth offering a control for. On a
@@ -250,14 +262,13 @@ export default {
      * element's volume is read-only there and the Web Audio graph that
      * could do it is deliberately absent, see AudioEngine.canSetVolume) —
      * the system volume buttons own it instead, and a slider that moves
-     * without doing anything is worse than none. Casting to a single
-     * speaker is unrelated: that level is set on the device over the
-     * network. */
+     * without doing anything is worse than none. Casting is unrelated:
+     * that level is set on the speakers over the network. */
     volumeControlAvailable() {
-      return !!this.singleActiveTarget || getAudioEngine().canSetVolume
+      return this.castVolumeShown || getAudioEngine().canSetVolume
     },
     muteDisabled() {
-      return this.singleActiveTarget ? this.deviceVolume == null : this.playbackStore.isCasting
+      return this.castVolumeShown ? this.castVolume == null : this.playbackStore.isCasting
     },
     // Pushed reading for push-capable types (Sonos today - see
     // connectStore.isVolumePushCapable()'s own comment), null for
@@ -351,6 +362,10 @@ export default {
      * too.
      */
     onDeviceVolumeInput(value: number) {
+      if (this.volumeGroup) {
+        this.groupVolumeDraft = Math.round(value)
+        return
+      }
       const target = this.singleActiveTarget
       if (!target) return
       this.deviceVolume = Math.round(value)
@@ -364,6 +379,11 @@ export default {
      * touchend (see sliderTouchCancel.ts) makes Vuetify emit `end` - and by
      * the mute button, neither of which should leave the level unsent. */
     onDeviceVolumeCommit(value: number) {
+      if (this.volumeGroup) {
+        this.groupVolumeDraft = null
+        void setVolume(volumeScope(), Math.round(value))
+        return
+      }
       const target = this.singleActiveTarget
       if (!target) return
       const rounded = Math.round(value)
@@ -379,6 +399,12 @@ export default {
       this.seekPreviewPosition = null
     },
     toggleMute() {
+      // Shared with the desktop bar, so the master's pre-mute level is one
+      // value however it was muted.
+      if (this.volumeGroup) {
+        void toggleVolumeMute()
+        return
+      }
       if (this.singleActiveTarget) {
         if (this.deviceVolume === 0) {
           this.onDeviceVolumeCommit(this.deviceVolumeBeforeMute || 50)

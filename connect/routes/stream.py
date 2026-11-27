@@ -1,6 +1,7 @@
 """routes/stream.py — GET /stream/{session_id}, GET /status, GET /events, GET /visualizer"""
 
 import asyncio
+import base64
 import json
 import logging
 import re
@@ -1571,7 +1572,10 @@ _VISUALIZER_QUEUE_FRAMES = 8
 
 
 @router.get("/visualizer", dependencies=[Depends(require_token)])
-async def visualizer_events(session: SessionState = Depends(get_session)):
+async def visualizer_events(
+    session: SessionState = Depends(get_session),
+    waveform: bool = False,
+):
     """Frequency-band frames for the fullscreen visualizer's 'cast' mode
     (AudioVisualizer.vue) — see core/audio_analysis.py.
 
@@ -1584,24 +1588,35 @@ async def visualizer_events(session: SessionState = Depends(get_session)):
     analyzable is playing (nothing streaming at all, or streaming to
     radio) — those periods just heartbeat with no data, same as this
     producing nothing is the frontend's own signal to render nothing rather
-    than a fake idle animation."""
+    than a fake idle animation.
+
+    `waveform` adds each frame's raw samples (base64, see
+    core/audio_analysis.py's waveform_snapshot()) for Milkdrop, which reads
+    the signal itself rather than the bands. Opt-in: it is about 60 KB/s,
+    and the bars need none of it."""
     feed = session.visualizer
     # This connection's own frames: every connection gets every frame, so
     # Now Playing's bars and the equalizer's backdrop can watch together.
-    frames: asyncio.Queue[list[float]] = asyncio.Queue(maxsize=_VISUALIZER_QUEUE_FRAMES)
+    frames: asyncio.Queue[tuple[list[float], bytes | None]] = asyncio.Queue(
+        maxsize=_VISUALIZER_QUEUE_FRAMES
+    )
+    attached = None
 
     def on_frame(bands: list[float]) -> None:
         if frames.full():
             frames.get_nowait()  # drop oldest — always show freshest
-        frames.put_nowait(bands)
+        # Read now: the analyzer sets it for exactly the frame it is calling
+        # this with, and the next frame replaces it.
+        wave = attached.last_waveform if waveform and attached is not None else None
+        frames.put_nowait((bands, wave))
 
     def detach(analyzer) -> None:
         if analyzer is not None and on_frame in analyzer.listeners:
             analyzer.listeners.remove(on_frame)
 
     async def generator():
+        nonlocal attached
         feed.subscribe()
-        attached = None
         try:
             while True:
                 analyzer = feed.analyzer
@@ -1611,16 +1626,19 @@ async def visualizer_events(session: SessionState = Depends(get_session)):
                     # position that is no longer playing.
                     while not frames.empty():
                         frames.get_nowait()
+                    # Before attaching: on_frame reads its waveform from it.
+                    attached = analyzer
                     if analyzer is not None:
                         analyzer.listeners.append(on_frame)
-                    attached = analyzer
                 if analyzer is None:
                     await asyncio.sleep(0.5)
                     yield ": idle\n\n"
                     continue
                 try:
-                    bands = await asyncio.wait_for(frames.get(), timeout=1.0)
+                    bands, wave = await asyncio.wait_for(frames.get(), timeout=1.0)
                     payload: dict = {"bands": bands}
+                    if wave is not None:
+                        payload["waveform"] = base64.b64encode(wave).decode("ascii")
                     # (visualizer_position, cast_position) as of the most
                     # recently *released* frame — see AudioAnalyzer.
                     # last_release_debug's own comment. Not guaranteed to be

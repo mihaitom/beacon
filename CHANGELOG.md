@@ -4,6 +4,32 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.13.0] - 2026-11-27
+
+### Added
+
+- Now Playing on the desktop can show a Milkdrop visualization instead of the background picture, with five presets made for Beacon that pulse on the same beats as the Hue lights, room for your own `.milk` presets, and a switch for party guests on a computer too
+- While casting to several speakers, the volume slider moves all of them at once, in the app, in Remote Control and in Home Assistant, either keeping their balance or putting them on the same level, as chosen in the cast menu (suggested and refined by [@b-r-y](https://github.com/b-r-y), [#97](https://github.com/mihaitom/beacon/discussions/97), [#98](https://github.com/mihaitom/beacon/pull/98))
+- A desktop app connected to a Beacon server shares the external sources with it, their tokens only if you confirm it for that device
+- Phones have the Hue lights in Now Playing too
+- Beacon can reach a media server behind a reverse proxy that requires a client certificate (mTLS), set with `MEDIA_SERVER_CLIENT_CERT`
+
+### Changed
+
+- The cast menu is rebuilt: each playing speaker's row doubles as its volume slider, a tap adds or stops a speaker without a confirm step, and "Play on this device instead" carries the music on right here; on phones and in Remote Control it is a sheet, where an AirPlay speaker can be paired too
+- Phones and Remote Control have a search field at the top that looks through artists, albums, songs, playlists and radio stations at once, and their Library is browsed like the desktop's, sorted, filtered or as a grid, with a grip to drag through it and a heart button for your favourites (suggested by [@b-r-y](https://github.com/b-r-y), [#103](https://github.com/mihaitom/beacon/discussions/103))
+- Fanart.tv backgrounds come in 4K where available, and all Fanart.tv images load as much smaller WebP files, so a phone on mobile data no longer pulls several megabytes per photo
+- Pairing an AirPlay speaker takes a password as well as the PIN, and a wrong PIN can be retried without reopening the dialog
+- Settings that follow your account reach a Beacon window already open on another device as soon as you return to it, not only after a restart
+- The party guest page is about a tenth smaller to download
+- The Docker image is built on Alpine 3.24 and ships nginx 1.30.7, which closes two HTTP/2 security holes (CVE-2026-123007, CVE-2026-123633) that Beacon's own setup was not exposed to
+
+### Fixed
+
+- On DLNA speakers that report no playback position (LinkPlay-based ones such as the Audiocast M5), the position no longer jumps back to 0:00, the next song starts without a long silence, and a pause right after a song starts really pauses (reported by [@jolny](https://github.com/jolny), [#94](https://github.com/mihaitom/beacon/issues/94))
+- Records filled and hours milestones passed are celebrated on the Stats page even after a Last.fm or ListenBrainz import or connecting a desktop app to the server in between
+- In Remote Control, the page behind an open menu no longer scrolls along when you swipe on the menu
+
 ## [1.12.0] - 2026-11-17
 
 ### Highlights

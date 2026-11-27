@@ -160,6 +160,15 @@ textarea {
   padding: 16px 16px calc(16px + env(safe-area-inset-bottom));
 }
 
+/* A sheet is open (js/scroll-lock.js): the page behind it stays where it
+ * is. */
+.scroll-locked,
+.scroll-locked body,
+.scroll-locked #view-root {
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
 /* Docks directly above the tab bar, as a sibling flex item of #view-root
  * rather than an overlay — the scroll area shrinks by exactly this height,
  * so nothing is ever hidden behind it and no padding has to be kept in
@@ -1051,6 +1060,12 @@ button.back-link {
   background: var(--surface);
   border-radius: 16px 16px 0 0;
   padding: 8px 0 calc(8px + env(safe-area-inset-bottom));
+  /* A long one (the songs' sort orders) scrolls inside itself rather than
+   * running off the top of the screen; sheet.js marks it data-scrolls so
+   * scroll-lock.js lets the swipe through. */
+  max-height: 85dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .sheet button {
@@ -1082,9 +1097,7 @@ button.back-link {
   color: var(--text-muted);
 }
 
-/* The sheet's own title. Distinct from .sheet-header below, which is the
- * small uppercase label a *group* of rows gets — with both using that, a
- * sheet had no heading, only a first group label. */
+/* An action sheet's own title, above its actions. */
 .sheet-title {
   padding: 4px 20px 10px;
   font-size: 1.05rem;
@@ -1092,146 +1105,10 @@ button.back-link {
   color: var(--text);
 }
 
-/* Title on the left, every action the sheet has on the right: rescan, the
- * destructive one, then the confirming one. The list below holds nothing
- * but destinations. Same arrangement as the desktop picker's action bar
- * and MobileDevicePicker.vue's header. */
-.sheet-title-row {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  padding-right: 12px;
-  padding-bottom: 8px;
-}
-
-/* The standalone .sheet-title carries its own gap to the list below; in
- * this row that spacing belongs to the row, or the title sits off-centre
- * against the buttons beside it. */
-.sheet-title-row .sheet-title {
-  flex: 1;
-  padding-bottom: 0;
-  white-space: nowrap;
-}
-
-/* Scoped like the two action buttons below, and for the same reason: the
- * generic ".sheet button" rule's width:100% otherwise makes each of these
- * claim the whole row and squeeze the title into a two-line column. */
-.sheet-title-row button {
-  width: auto;
-  flex-shrink: 0;
-}
-
-.btn-sheet-icon {
-  border: none;
-  background: none;
-  padding: 6px;
-  font-size: 1.2rem;
-  line-height: 1;
-  color: var(--text-muted);
-}
-
-.btn-sheet-icon:disabled {
-  opacity: 0.5;
-}
-
-/* Turns while a sweep runs - the only feedback a sweep of several seconds
- * gets, since the list underneath deliberately keeps showing the previous
- * result until the new one arrives. */
-.btn-sheet-icon--busy i {
-  animation: sheet-icon-spin 1s linear infinite;
-  display: inline-block;
-}
-
-@keyframes sheet-icon-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.sheet-header {
-  padding: 10px 20px 4px;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  color: var(--text-muted);
-}
-
-.device-list {
-  display: flex;
-  flex-direction: column;
-  max-height: 50vh;
-  overflow-y: auto;
-}
-
-.device-list button i:first-child {
-  font-size: 1.2rem;
-  margin-right: 14px;
-  color: var(--text-muted);
-  flex-shrink: 0;
-}
-.device-row-check {
-  margin-left: auto;
-  color: var(--accent) !important;
-  font-size: 1.1rem !important;
-  flex-shrink: 0;
-}
-
-/* Local playback while it *is* where the sound goes — the same accent the
- * checked speakers get, so the list has one way of saying "this one".
- * Out-specifies .device-list button i:first-child above, which would
- * otherwise grey the icon out. */
-.device-list .device-row-local--active {
-  color: var(--text);
-}
-.device-list .device-row-local--active i:first-child {
-  color: var(--accent);
-}
-
-.device-row-disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-.device-row-disabled .device-row-check {
-  color: var(--text-muted) !important;
-}
-.device-row-hint {
-  font-size: 0.72rem;
-}
-
-/* Belongs to the row above it, not between two devices — the pair is
- * indented past the device icon and closed up so it reads as one block. */
-.device-list .device-row-has-volume {
-  padding-bottom: 6px;
-}
-
-.device-volume-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  /* Was 14px at the bottom; the slider's own hit area now supplies most of
-   * that space itself. */
-  padding: 0 20px 4px 54px;
-  color: var(--text-muted);
-}
-.device-volume-row i {
-  font-size: 1rem;
-  flex-shrink: 0;
-}
-.device-volume-row input[type='range'] {
-  flex: 1;
-}
-
-.sheet-loading {
-  padding: 20px;
-  color: var(--text-muted);
-  text-align: center;
-}
-
 /* base.css's own .eyebrow-label, copied value for value: the small accent
- * heading the app gives a section of its own. Deliberately not .sheet-header
- * above - that is the muted label a *group* of device rows gets, which is a
- * plain list subheader in the app too, and using one class for both left
- * this sheet unable to tell a section from a group. */
+ * heading the app gives a section of its own. A *group* of rows inside a
+ * section gets the muted .cast-sheet-type instead, so the two never read
+ * as the same thing. */
 .eyebrow-label {
   font-size: 0.72rem;
   font-weight: 700;
@@ -1241,7 +1118,7 @@ button.back-link {
 }
 
 /* The two lines that describe the stream, below the device list - the same
- * place the desktop's own cast sheet keeps them. */
+ * place the app's own cast menus keep them. */
 .sheet-stream-info {
   padding: 4px 20px;
 }
@@ -1283,39 +1160,429 @@ button.back-link {
   color: var(--success);
 }
 
-.sheet-title-row button.btn-sheet-stop {
-  padding: 8px 8px;
-  font-size: 0.9rem;
+/* ── Cast sheet (devices.js) ──
+ * The app's phone sheet, MobileDevicePicker.vue, value for value where it
+ * can be: a grabber to pull it down by, the speakers playing as rows that
+ * are their own volume sliders, and the rest in grouped panels. */
+
+.sheet-backdrop {
+  transition: opacity 0.25s ease;
+}
+
+.sheet-backdrop--leaving {
+  opacity: 0;
+}
+
+.cast-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 201;
+  display: flex;
+  flex-direction: column;
+  max-height: 88dvh;
+  background: var(--surface);
+  border-radius: 20px 20px 0 0;
+  box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.45);
+  transform: translateY(100%);
+  transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.cast-sheet.cast-sheet--open {
+  transform: translateY(0);
+}
+
+.cast-sheet.cast-sheet--leaving {
+  transform: translateY(100%);
+}
+
+/* Under the finger, not easing after it. */
+.cast-sheet.cast-sheet--dragging {
+  transition: none;
+}
+
+.cast-sheet-top {
+  flex: none;
+  /* The browser would otherwise take a downward pull as a page scroll. */
+  touch-action: none;
+}
+
+.cast-sheet-grabber {
+  display: block;
+  width: 36px;
+  height: 5px;
+  margin: 8px auto 0;
+  border-radius: 3px;
+  background: rgba(var(--text-rgb), 0.22);
+}
+
+.cast-sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px 14px 20px;
+}
+
+.cast-sheet-titles {
+  flex: 1;
+  min-width: 0;
+}
+
+.cast-sheet-title {
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.cast-sheet-subtitle {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.cast-sheet-round {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(var(--text-rgb), 0.08);
+  color: rgba(var(--text-rgb), 0.75);
+  font-size: 1.2rem;
+}
+
+.cast-sheet-round:active {
+  background: rgba(var(--text-rgb), 0.14);
+}
+
+/* Turns while a sweep runs - the list keeps the previous result until the
+ * new one arrives, so this is the only sign one is under way. */
+.cast-sheet-round--busy i {
+  animation: cast-sheet-spin 1s linear infinite;
+}
+
+@keyframes cast-sheet-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.cast-sheet-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 16px calc(16px + env(safe-area-inset-bottom));
+}
+
+.cast-sheet-playing .segmented {
+  margin-bottom: 10px;
+}
+
+.cast-sheet-faders {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* Local playback, playing: lit the way a playing speaker is. */
+.cast-sheet-here {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  height: 60px;
+  padding: 0 16px;
+  border-radius: 12px;
+  background: rgba(var(--accent-rgb), 0.12);
+  color: var(--accent);
+  font-size: 1.3rem;
+}
+
+.cast-sheet-here span {
+  flex: 1;
+  font-size: 1rem;
   font-weight: 600;
+  color: var(--text);
+}
+
+.cast-sheet-local {
+  background: none;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  min-height: 48px;
+  margin-top: 6px;
+  padding: 0 16px;
+  border-radius: 12px;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  text-align: left;
+}
+
+.cast-sheet-local i {
+  font-size: 1.25rem;
+}
+
+.cast-sheet-local:active {
+  background: rgba(var(--text-rgb), 0.06);
+}
+
+.cast-sheet-available {
+  margin-top: 22px;
+}
+
+.cast-sheet-heading {
+  padding: 0 4px 2px;
+}
+
+.cast-sheet-type {
+  padding: 10px 4px 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: rgba(var(--text-rgb), 0.45);
+}
+
+.cast-sheet-empty {
+  padding: 10px 4px;
+  color: var(--text-muted);
+}
+
+/* One grouped list per kind of speaker, like a phone's settings. */
+.cast-sheet-panel {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  overflow: hidden;
+}
+
+.cast-sheet-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding-right: 10px;
+}
+
+.cast-sheet-row + .cast-sheet-row {
+  border-top: 1px solid var(--border);
+}
+
+.cast-sheet-row-main {
+  background: none;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 58px;
+  padding: 8px 2px 8px 12px;
+  color: var(--text);
+  text-align: left;
+}
+
+.cast-sheet-row-main:active:not(:disabled) {
+  background: rgba(var(--text-rgb), 0.05);
+}
+
+.cast-sheet-row--blocked .cast-sheet-row-main {
+  opacity: 0.5;
+}
+
+/* The kind of speaker in a small tile, the way a phone's settings mark a
+ * row. */
+.cast-sheet-tile {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 35px;
+  height: 35px;
+  border-radius: 8px;
+  background: rgba(var(--text-rgb), 0.07);
+  color: rgba(var(--text-rgb), 0.75);
+  font-size: 1.2rem;
+}
+
+.cast-sheet-row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.cast-sheet-row-text > span {
+  overflow: hidden;
   white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.cast-sheet-row-claimed {
+  font-size: 0.78rem;
   color: var(--error);
 }
 
-/* Scoped through .sheet-title-row (not just .btn-sheet-action alone) so this
- * actually outranks the generic ".sheet button" rule above — that one's
- * element+class specificity otherwise wins over a single class, silently
- * forcing this button back to width:100%/background:none/color:var(--text)
- * regardless of what's written here (confirmed live: the button rendered
- * full-width with no accent color ever showing, exactly what that
- * specificity loss looks like). */
-.sheet-title-row button.btn-sheet-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 8px 16px;
-  border-radius: 10px;
-  font-size: 0.9rem;
-  font-weight: 600;
-  white-space: nowrap;
-  background: var(--surface-2);
+.cast-sheet-row-note {
+  font-size: 0.78rem;
   color: var(--text-muted);
-  transition:
-    background 0.15s ease,
-    color 0.15s ease;
 }
-.sheet-title-row button.btn-sheet-action.btn-sheet-action--active {
+
+.cast-sheet-add {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(var(--accent-rgb), 0.16);
+  color: var(--accent);
+  font-size: 1.1rem;
+}
+
+.cast-sheet-takeover {
+  flex: none;
+  padding: 7px 12px;
+  border-radius: 8px;
+  background: rgba(229, 72, 77, 0.14);
+  color: var(--error);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.cast-sheet-stream {
+  margin-top: 22px;
+}
+
+.cast-sheet-stream .sheet-stream-info {
+  padding: 0 4px;
+}
+
+.cast-sheet-stop {
+  width: 100%;
+  margin-top: 20px;
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(229, 72, 77, 0.14);
+  color: var(--error);
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.cast-sheet-stop[hidden] {
+  display: none;
+}
+
+/* ── Fader (fader.js) - a speaker's row as its own volume slider, the
+ * app's VolumeFader.vue ── */
+
+.fader {
+  --fader-level: 0;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 56px;
+  padding: 0 10px 0 14px;
+  border-radius: 12px;
+  background: rgba(var(--text-rgb), 0.025);
+  overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+  /* Vertical swipes still scroll the list; sideways ones are the row's. */
+  touch-action: pan-y;
+}
+
+.fader > :not(.fader-fill) {
+  position: relative;
+}
+
+.fader-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: calc(var(--fader-level) * 1%);
+  background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.07), rgba(var(--accent-rgb), 0.2));
+  pointer-events: none;
+  transition: width 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.fader--dragging .fader-fill {
+  transition: none;
+}
+
+/* The level's edge, lit like a meter's needle. */
+.fader-fill::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 8px;
+  bottom: 8px;
+  width: 2px;
+  border-radius: 1px;
   background: var(--accent);
-  color: var(--accent-on);
+  box-shadow: 0 0 10px 1px rgba(var(--accent-rgb), 0.7);
+}
+
+.fader-icon {
+  font-size: 1.25rem;
+  color: var(--accent);
+}
+
+.fader-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 500;
+}
+
+.fader-value {
+  min-width: 40px;
+  text-align: right;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  color: rgba(var(--text-rgb), 0.75);
+}
+
+.fader-remove {
+  background: none;
+  display: flex;
+  padding: 4px;
+  border-radius: 8px;
+  font-size: 1.15rem;
+  color: rgba(var(--text-rgb), 0.45);
+}
+
+.fader-remove:active {
+  background: rgba(var(--text-rgb), 0.08);
+}
+
+/* The one large thing in the sheet: the volume of everything at once. */
+.fader--master {
+  height: 68px;
+  margin-bottom: 4px;
+  background: rgba(var(--accent-rgb), 0.05);
+}
+
+.fader--master .fader-fill {
+  background: linear-gradient(90deg, rgba(var(--accent-rgb), 0.12), rgba(var(--accent-rgb), 0.3));
+}
+
+.fader--master .fader-label {
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.fader--master .fader-value {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cast-sheet,
+  .fader-fill {
+    transition: none;
+  }
 }
 
 /* ── Home ── */
@@ -1552,34 +1819,575 @@ button.back-link {
   line-height: 1.3;
 }
 
-/* ── Library's favourites filter ── */
+/* ── Library ── */
 
-/* Two buttons share the field's end: the heart and, once there is text,
- * the clear button beside it. */
-#library-search {
-  padding-right: 84px;
-}
-#library-search-clear {
-  right: 40px;
+/* The toggle and the toolbar stay at the top while the list runs - a whole
+ * catalogue long, and a switch you have to scroll back up to reach is a
+ * switch you stop using. Out to #view-root's padding, so nothing scrolls
+ * past above or beside it. */
+.library-controls {
+  position: sticky;
+  top: -16px;
+  z-index: 3;
+  margin: 0 -16px;
+  padding: 16px 16px 10px;
+  background: var(--bg);
 }
 
-.search-favorite {
-  position: absolute;
-  top: 0;
-  right: 0;
+.library-controls .segmented {
+  margin-bottom: 8px;
+}
+
+/* How it is laid out, what it is narrowed to, how it is put in order - the
+ * desktop's order, with the favourites in front (MobileLibraryView.vue). */
+.library-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.library-tool {
+  position: relative;
+  flex-shrink: 0;
   width: 40px;
   height: 40px;
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 9999px;
+  background: rgba(var(--text-rgb), 0.06);
+  color: rgba(var(--text-rgb), 0.7);
+  font-size: 1.2rem;
+}
+
+.library-tool.active {
+  background: rgba(var(--accent-rgb), 0.14);
+  color: var(--accent);
+}
+
+/* Grid and list as one pill of two. */
+.library-layout {
+  display: flex;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  background: rgba(var(--text-rgb), 0.06);
+}
+
+.library-layout .library-tool {
+  background: none;
+}
+
+.library-layout .library-tool.active {
+  background: rgba(var(--accent-rgb), 0.14);
+}
+
+/* The filter's count rides on its icon, the phone's badge. */
+.library-filter__count {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 8px;
+  background: var(--accent);
+  color: var(--accent-on);
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 16px;
+  text-align: center;
+}
+
+/* The sort pill takes the rest of the row: which order, and an arrow in its
+ * end that turns it round (LibrarySortSelect.vue). */
+.library-sort {
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  border-radius: 9999px;
+  background: rgba(var(--text-rgb), 0.06);
+}
+
+.library-sort__pick {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 4px 0 14px;
+  background: none;
+  color: var(--text);
+  font-size: 0.875rem;
+}
+
+.library-sort__pick .mdi {
+  color: var(--text-muted);
+  font-size: 1.1rem;
+}
+
+.library-sort__label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.library-sort__direction {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  margin-right: 2px;
+  border-radius: 9999px;
   background: none;
   color: var(--text-muted);
   font-size: 1.1rem;
-  border-radius: 9999px;
 }
 
-.search-favorite.active {
+.library-sort button:disabled {
+  opacity: 0.5;
+}
+
+/* A page loaded above the window moves the scroll itself (library.js); the
+ * browser's own anchoring would move it a second time. */
+.library-scroller {
+  overflow-anchor: none;
+}
+
+/* base.css's .letter-divider: the section in small amber capitals, then a
+ * hairline to the edge. The desktop list's spacing (SongTable.vue). */
+.letter-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 4px 6px;
+}
+
+.letter-divider__label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
   color: var(--accent);
+}
+
+.letter-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.library-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--grid-columns, 2), minmax(0, 1fr));
+  gap: 16px 12px;
+  padding: 4px 0 8px;
+}
+
+/* ── Grid cards (MobileGridTile.vue) ── */
+
+.grid-tile {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.grid-tile--link {
+  cursor: pointer;
+}
+
+.grid-tile--filler {
+  visibility: hidden;
+}
+
+.grid-tile__cover {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--surface-2);
+}
+
+.grid-tile__art {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: 2.4rem;
+}
+
+.grid-tile__art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* A song's cover plays it, as on the desktop; the overlay is what says so. */
+.grid-tile__play {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40px;
+  color: #fff;
+  background: rgba(11, 13, 19, 0.35);
+  pointer-events: none;
+}
+
+.grid-tile__star {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: rgba(11, 13, 19, 0.75);
+  color: #fff;
+  font-size: 1.05rem;
+}
+
+.grid-tile__star--on {
+  background: transparent;
+  color: var(--accent);
+}
+
+.grid-tile__title {
+  display: block;
+  margin-top: 8px;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 0.875rem;
+  line-height: 1.43;
+  text-align: left;
+}
+
+.grid-tile__meta {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1.33;
+}
+
+.grid-tile__title,
+.grid-tile__meta {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.grid-tile__meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-right: 10px;
+}
+
+/* An artist card's counts, then what the list is sorted by at the end. */
+.grid-tile__meta .grid-tile__detail {
+  display: inline;
+  margin: 0 0 0 auto;
+}
+
+.grid-tile__meta--counts {
+  display: flex;
+}
+
+/* A second line with what the library is sorted by at its far end
+ * (js/split-line.js, the app's .mobile-split-line): the line's own text
+ * clips, the value keeps its width. */
+.split-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.split-line > :first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.grid-tile__meta.split-line > span {
+  display: block;
+  margin: 0;
+}
+
+.split-line > :last-child:not(:first-child) {
+  flex-shrink: 0;
+}
+
+/* ── The library's section grip (MobileSectionScrubber.vue) ── */
+
+.scrubber {
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+}
+
+.scrubber__scrim {
+  position: absolute;
+  inset: 0;
+  pointer-events: auto;
+}
+
+/* The rail: a surface panel down the right edge, only while open. Its
+ * sections share the height evenly, so the whole rail is the scrub area
+ * however few there are. */
+.scrubber__rail {
+  position: absolute;
+  top: var(--rail-top);
+  right: 6px;
+  height: var(--rail-height);
+  width: 48px;
+  display: flex;
+  flex-direction: column;
+  padding: 6px 0;
+  border-radius: 24px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  touch-action: none;
+}
+
+.scrubber--open .scrubber__rail {
+  opacity: 1;
+  pointer-events: auto;
+  transition-duration: 0.3s;
+}
+
+.scrubber__section {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  background: none;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: rgba(var(--text-rgb), 0.72);
+}
+
+.scrubber__section--off {
+  color: rgba(var(--text-rgb), 0.22);
+}
+
+.scrubber__section--here {
+  color: var(--accent);
+}
+
+/* The grip rides the right edge at the list's scroll position. */
+.scrubber__grip {
+  position: absolute;
+  right: 6px;
+  width: 48px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border-radius: 26px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  color: var(--text);
+  font-size: 1.25rem;
+  opacity: 0;
+  transform: translateX(12px);
+  transition:
+    opacity 0.2s ease,
+    transform 0.2s ease;
+  touch-action: none;
+}
+
+.scrubber--shown .scrubber__grip {
+  opacity: 1;
+  transform: none;
+  pointer-events: auto;
+  transition-duration: 0.3s;
+}
+
+.scrubber--open .scrubber__grip {
+  border-color: rgba(var(--accent-rgb), 0.6);
+}
+
+.scrubber__grip-label {
+  font-size: 0.85rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* Beside the thumb, not under it: 72px of amber with the section in it,
+ * far enough left of the rail for a right thumb not to cover it. */
+.scrubber__bubble {
+  position: absolute;
+  right: 76px;
+  min-width: 72px;
+  height: 72px;
+  padding: 0 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: translateY(-50%);
+  border-radius: 36px;
+  background: var(--accent);
+  color: var(--accent-on);
+  font-size: 1.9rem;
+  font-weight: 700;
+  white-space: nowrap;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scrubber__rail,
+  .scrubber__grip {
+    transition: none;
+  }
+}
+
+/* ── The library's filter sheet (LibraryFilterMenu.vue) ── */
+
+.sheet .filter-sheet__field,
+.sheet .filter-sheet__option {
+  gap: 12px;
+}
+
+.filter-sheet__text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.filter-sheet__field--on .filter-sheet__text > :first-child {
+  color: var(--accent);
+}
+
+.filter-sheet__summary {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-sheet__chevron,
+.filter-sheet__count {
+  color: var(--text-muted);
+}
+
+.filter-sheet__count {
+  font-size: 0.8rem;
+}
+
+.filter-sheet__option .mdi-checkbox-marked {
+  color: var(--accent);
+}
+
+.sheet .filter-sheet__back {
+  gap: 6px;
+  padding: 4px 20px 10px;
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+/* ── Search ── */
+
+/* The app bar's field takes the wordmark's place on every page but Now
+ * Playing, as in the app (MobileTopBarSearch.vue). */
+.app-bar__search {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.app-bar__search-icon {
+  position: absolute;
+  left: 10px;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  pointer-events: none;
+}
+
+/* 16px, not smaller: iOS zooms into a field that renders below that. */
+.app-bar__search-input {
+  width: 100%;
+  height: 34px;
+  padding: 0 36px 0 34px;
+  border: none;
+  border-radius: 9999px;
+  background: rgba(var(--text-rgb), 0.08);
+  color: var(--text);
+  font: inherit;
+  font-size: 16px;
+}
+
+.app-bar__search-input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.app-bar__search-clear {
+  position: absolute;
+  right: 2px;
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  color: var(--text-muted);
+  font-size: 1rem;
+}
+
+.search-section + .search-section {
+  margin-top: 16px;
+}
+
+.search-section__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0 4px;
+}
+
+.search-section__head .section-heading {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.search-section__all {
+  flex-shrink: 0;
+  padding: 6px 8px;
+  background: none;
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.search-kind {
+  margin-top: 0;
+}
+
+.empty-state__hint {
+  margin-top: 6px;
+  font-size: 0.85rem;
 }
 
 /* ── Album / artist pages ── */

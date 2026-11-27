@@ -69,7 +69,8 @@ The fields an integration is likely to need:
 | `position`             | Seconds into the current track                                                                                                                           |
 | `duration`             | Length of the current track in seconds                                                                                                                   |
 | `volume`               | Local volume, 0 to 1                                                                                                                                     |
-| `device_volume`        | Volume of the one speaker being cast to, 0 to 100, else null                                                                                             |
+| `device_volume`        | Volume of the speaker being cast to, 0 to 100; with several, the master over all of them; else null                                                      |
+| `group_volume_mode`    | How the master moves several speakers: `equal` (one level for all) or `relative` (keeps their balance)                                                   |
 | `shuffle`, `repeat`    | `repeat` is `off`, `all` or `one`                                                                                                                        |
 | `current_song`         | `id`, `title`, `artist`, `album`, `duration`, `cover_art_id`                                                                                             |
 | `radio`                | `name`, `now_playing`, `home_page_url`, `favicon_hint` while a station plays, else null                                                                  |
@@ -108,8 +109,9 @@ once the app has carried the command out.
 | `next`               |                                                                                  |
 | `previous`           |                                                                                  |
 | `seek`               | `position` in seconds                                                            |
-| `volume`             | `volume`, 0 to 1. Casting to one speaker: that speaker's; to several: ignored    |
+| `volume`             | `volume`, 0 to 1. Casting: that speaker's, or the master over several            |
 | `set-device-volume`  | `deviceType`, `name`, `volume` 0 to 100: one speaker, casting or not             |
+| `group-volume-mode`  | `mode`: `equal` or `relative`, see `group_volume_mode`                           |
 | `shuffle`            | toggles                                                                          |
 | `repeat`             | cycles off, all, one                                                             |
 | `autoplay`           | toggles                                                                          |
@@ -130,18 +132,21 @@ once the app has carried the command out.
 These are answered by the app from what it has loaded, so the first call
 after a start can take a moment.
 
-| Request                      | Returns                                                                      |
-| ---------------------------- | ---------------------------------------------------------------------------- |
-| `GET /remote/playlists`      | `items`: `id`, `name`, `song_count`, `cover_art_id`                          |
-| `GET /remote/playlists/<id>` | `playlist` (`id`, `name`, `cover_art_id`) and `songs`                        |
-| `GET /remote/albums`         | `items`: `id`, `name`, `artist`, `year`, `cover_art_id`; `total`             |
-| `GET /remote/songs`          | `items` (songs), `total`                                                     |
-| `GET /remote/radio-stations` | `items`: `id`, `name`, `home_page_url`, `favicon_hint`                       |
-| `GET /remote/devices`        | `items`: `type`, `name`, `in_use_by_name`, `needs_pairing`, `volume_capable` |
-| `GET /remote/device-volume`  | `volume` (0 to 100) of the speaker given as `type` and `name`                |
+| Request                      | Returns                                                                                                                             |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /remote/playlists`      | `items`: `id`, `name`, `song_count`, `cover_art_id`                                                                                 |
+| `GET /remote/playlists/<id>` | `playlist` (`id`, `name`, `cover_art_id`) and `songs`                                                                               |
+| `GET /remote/albums`         | `items`: `id`, `name`, `artist`, `year`, `cover_art_id`; `total`                                                                    |
+| `GET /remote/songs`          | `items` (songs), `total`                                                                                                            |
+| `GET /remote/search`         | `sections`: `kind` (`artists`, `albums`, `songs`, `playlists`, `stations`), `items`, `total`; best fit first                        |
+| `GET /remote/radio-stations` | `items`: `id`, `name`, `home_page_url`, `favicon_hint`                                                                              |
+| `GET /remote/devices`        | `items`: `type`, `name`, `in_use_by_name`, `in_use_by_song`, `claimed` (held by another session), `needs_pairing`, `volume_capable` |
+| `GET /remote/device-volume`  | `volume` (0 to 100) of the speaker given as `type` and `name`                                                                       |
 
 `/remote/albums` and `/remote/songs` take `search`, `offset` and `limit`
-(default 50). `/remote/devices?rescan=true` looks for speakers again, which
+(default 50). `/remote/search` takes `q`; with `kind` (`songs`, `albums` or
+`artists`) it pages that one kind's every match by `offset` and `limit`
+instead. `/remote/devices?rescan=true` looks for speakers again, which
 takes a few seconds; without it the app answers from its last search. A
 speaker with `needs_pairing` has to be paired in the desktop app first.
 

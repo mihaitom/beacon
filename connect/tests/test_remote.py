@@ -307,6 +307,112 @@ def test_artists_query_relays_search_and_paging_to_the_renderer(client, monkeypa
     assert seen["payload"] == {"search": "tide", "offset": 50, "limit": 25}
 
 
+def _capture_query(client, monkeypatch):
+    client.post("/remote/enable")
+    remote.renderer_connected = True
+    seen = {}
+
+    async def capture(event, payload):
+        seen["event"] = event
+        seen["payload"] = payload
+        return {"items": [], "total": 0}
+
+    monkeypatch.setattr(remote_routes, "relay_query", capture)
+    return seen
+
+
+@pytest.mark.parametrize(
+    "path,event",
+    [
+        ("songs", "songs-request"),
+        ("albums", "albums-request"),
+        ("artists", "artists-request"),
+    ],
+)
+def test_library_lists_relay_browsing_when_a_sort_is_given(client, monkeypatch, path, event):
+    """The remote's library browses (sort, favourites, filters, the phone's
+    language); the guests' and integrations' search must stay as it was."""
+    seen = _capture_query(client, monkeypatch)
+    filters = '{"genre": ["Rock", "Jazz"]}'
+    resp = client.get(
+        f"/remote/{path}",
+        params={
+            "sort": "year",
+            "direction": "desc",
+            "favorites": "true",
+            "filters": filters,
+            "locale": "de",
+            "offset": 60,
+            "limit": 60,
+        },
+        headers={"X-Remote-Password": remote.password},
+    )
+
+    assert resp.status_code == 200
+    assert seen["event"] == event
+    assert seen["payload"] == {
+        "search": "",
+        "offset": 60,
+        "limit": 60,
+        "browse": True,
+        "sort": {"key": "year", "direction": "desc"},
+        "favorites": True,
+        "filters": {"genre": ["Rock", "Jazz"]},
+        "locale": "de",
+    }
+
+
+def test_an_empty_sort_browses_in_the_desktops_own_order(client, monkeypatch):
+    seen = _capture_query(client, monkeypatch)
+    resp = client.get("/remote/songs?sort=", headers={"X-Remote-Password": remote.password})
+
+    assert resp.status_code == 200
+    assert seen["payload"]["browse"] is True
+    assert seen["payload"]["sort"] is None
+    assert seen["payload"]["filters"] == {}
+
+
+@pytest.mark.parametrize("filters", ["{not json", "[1, 2]"])
+def test_library_lists_refuse_filters_that_are_not_an_object(client, monkeypatch, filters):
+    seen = _capture_query(client, monkeypatch)
+    resp = client.get(
+        "/remote/albums",
+        params={"sort": "name", "filters": filters},
+        headers={"X-Remote-Password": remote.password},
+    )
+
+    assert resp.status_code == 400
+    assert "event" not in seen
+
+
+def test_search_relays_the_query_for_every_kind_at_once(client, monkeypatch):
+    seen = _capture_query(client, monkeypatch)
+    resp = client.get(
+        "/remote/search?q=blue%20moon", headers={"X-Remote-Password": remote.password}
+    )
+
+    assert resp.status_code == 200
+    assert seen["event"] == "search-request"
+    assert seen["payload"] == {"q": "blue moon"}
+
+
+def test_search_pages_one_kinds_every_match(client, monkeypatch):
+    seen = _capture_query(client, monkeypatch)
+    resp = client.get(
+        "/remote/search?q=blue&kind=songs&offset=50&limit=50",
+        headers={"X-Remote-Password": remote.password},
+    )
+
+    assert resp.status_code == 200
+    assert seen["payload"] == {"q": "blue", "kind": "songs", "offset": 50, "limit": 50}
+
+
+def test_search_401_with_a_wrong_password(client):
+    client.post("/remote/enable")
+    resp = client.get("/remote/search?q=x", headers={"X-Remote-Password": "wrong"})
+    assert resp.status_code == 401
+
+
 def test_artist_query_relays_the_artist_id(client, monkeypatch):
     client.post("/remote/enable")
     remote.renderer_connected = True

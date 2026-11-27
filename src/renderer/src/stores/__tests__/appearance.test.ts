@@ -3,11 +3,11 @@ import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify, type ThemeInstance } from 'vuetify'
 import {
   applyThemePreference,
-  borrowAccent,
   initTheme,
   loadThemePreference,
   useAppearanceStore,
 } from '../appearance'
+import { borrowAccent } from '@/services/borrowedAccent'
 import {
   DEFAULT_CUSTOM_COLORS,
   MAX_CUSTOM_THEMES,
@@ -508,6 +508,32 @@ describe('borrowAccent', () => {
     borrowAccent(themes, preference, null)
 
     expect(themes.graphite!.colors.primary).toBe('#4FD1C5')
+  })
+
+  it('keeps the colour lent while the store changes underneath it', () => {
+    const preference = prefer('graphite')
+    const vuetify = createVuetify({ theme: themeOptions(preference) })
+    const themes = vuetify.theme.themes.value as unknown as Parameters<typeof borrowAccent>[0]
+    borrowAccent(themes, preference, PALE)
+
+    // What a list of themes arriving from the account sets off.
+    applyThemePreference(vuetify.theme, preference)
+
+    expect(appAccent.value).toBe(PALE)
+    expect(themes.graphite!.colors.primary).toBe('#FAE678')
+    borrowAccent(themes, preference, null)
+  })
+
+  it('keeps it lent to a self-made theme whose colours are put in again', () => {
+    const preference = prefer('custom-a', { background: '#101014', primary: '#7B3FC4' })
+    const vuetify = createVuetify({ theme: themeOptions(preference) })
+    const themes = vuetify.theme.themes.value as unknown as Parameters<typeof borrowAccent>[0]
+    borrowAccent(themes, preference, PALE)
+
+    applyThemePreference(vuetify.theme, preference)
+
+    expect(themes['custom-a']!.colors.primary).toBe('#FAE678')
+    borrowAccent(themes, preference, null)
   })
 
   it("gives the theme its own accent back, not Beacon's amber", () => {

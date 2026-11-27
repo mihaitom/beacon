@@ -24,8 +24,10 @@ from core import (
     account_settings,
     api_keys,
     device_keys,
+    external_source,
     lyrics_offsets,
     media_login,
+    milkdrop_presets,
     now_playing,
     play_history,
     server_link,
@@ -361,10 +363,10 @@ def test_a_batch_that_does_not_move_the_first_play_leaves_the_import():
     assert own_timestamps() == [NOW - 300, NOW - 100, NOW]
 
 
-def test_a_backfill_is_not_a_moment():
-    play_history.save_milestones(ALICE, {"plays": 5})
+def test_a_backfill_forgets_only_the_streak():
+    play_history.save_milestones(ALICE, {"plays": 5, "streak": 7})
     play_history.receive_listens(ALICE, [row()], backfill=True, now=NOW)
-    assert play_history.milestones(ALICE) is None
+    assert play_history.milestones(ALICE) == {"plays": 5}
 
 
 def test_an_ordinary_batch_keeps_the_milestones():
@@ -462,7 +464,11 @@ class FakeServer:
         self.requests: list[httpx.Request] = []
         self.settings: dict = {}
         self.offsets: dict = {}
+        # Milkdrop presets by id, whole rows; None answers 404 like a server
+        # from before they were shared.
+        self.presets: dict[str, dict] | None = {}
         self.api_keys: dict = {}
+        self.sources: dict | None = {"sources": [], "removed": {}}
         self.summary: dict = {
             "available": True,
             "total": 1,
@@ -508,8 +514,24 @@ class FakeServer:
             return httpx.Response(200, json=self.charts)
         if path == "/api-keys":
             return httpx.Response(200, json={"keys": self.api_keys})
+        if path == "/external-sources":
+            if self.sources is None:
+                return httpx.Response(404, json={"detail": "Not Found"})
+            return httpx.Response(200, json=self.sources)
         if path == "/lyrics-offsets" and request.method == "GET":
             return httpx.Response(200, json={"offsets": self.offsets})
+        if path.startswith("/milkdrop-presets") and self.presets is None:
+            return httpx.Response(404, json={"detail": "Not Found"})
+        if path == "/milkdrop-presets" and request.method == "GET":
+            index = [
+                {"id": r["id"], "name": r["name"], "updated_at": r["updated_at"]}
+                for r in self.presets.values()
+            ]
+            return httpx.Response(200, json={"presets": index})
+        if path == "/milkdrop-presets/rows":
+            ids = request.url.params.get("ids", "").split(",")
+            rows = [self.presets[i] for i in ids if i in self.presets]
+            return httpx.Response(200, json={"presets": rows})
         return httpx.Response(200, json={"status": "ok"})
 
     def sent(self, method: str, path: str) -> list[dict]:
@@ -606,8 +628,9 @@ def test_a_setting_changed_with_no_list_of_pending_ones_is_kept(server):
         lambda: server_link.summary_for(ALICE),
         lambda: server_link.pull_lyrics_offsets(ALICE),
         lambda: server_link.charts_for(ALICE, "week"),
+        lambda: server_link.pull_milkdrop_presets(ALICE) or True,
     ],
-    ids=["settings", "summary", "lyrics offsets", "charts"],
+    ids=["settings", "summary", "lyrics offsets", "charts", "milkdrop presets"],
 )
 def test_a_pull_that_gets_through_ends_the_unreachable_state(paired, pull):
     paired.fail = httpx.ConnectError("down")
@@ -1217,6 +1240,15 @@ def test_custom_themes_are_shared_settings(public):
         "/device-link/settings", headers=auth(key), json={"settings": {"customThemes": themes}}
     )
     assert public.get("/device-link/settings", headers=auth(key)).json() == {"customThemes": themes}
+
+
+def test_milkdrops_choices_are_shared_settings(public):
+    key = key_for()
+    choices = {"switchMode": "time", "intervalSeconds": 60, "preferred": ["custom:p1"]}
+    public.patch(
+        "/device-link/settings", headers=auth(key), json={"settings": {"milkdrop": choices}}
+    )
+    assert public.get("/device-link/settings", headers=auth(key)).json() == {"milkdrop": choices}
 
 
 # ── API keys ─────────────────────────────────────────────────────────────
@@ -3419,3 +3451,286 @@ def test_volume_reaches_every_speaker_the_window_casts_to(public, default_sessio
         ("set-device-volume", {"deviceType": "sonos", "name": "Den", "volume": 40}),
         ("set-device-volume", {"deviceType": "dlna", "name": "Hall", "volume": 40}),
     ]
+
+
+# ── external sources ─────────────────────────────────────────────────────
+
+APP = "http://10.9.9.9:8800"
+
+
+def shared_source(source_id="srv1", name="Folder", updated_at=NOW, **over) -> dict:
+    return {
+        "id": source_id,
+        "name": name,
+        "icon": "mdi-folder",
+        "base_url": APP,
+        "updated_at": updated_at,
+        **over,
+    }
+
+
+def test_external_sources_need_a_device_key(public):
+    assert public.get("/device-link/external-sources").status_code == 401
+
+
+def test_a_desktop_gets_the_sources_but_a_token_only_when_confirmed(public):
+    external_source.save_source(None, "Folder", "mdi-folder", APP, "app-token")
+    plain = public.get("/device-link/external-sources", headers=auth(key_for())).json()
+    assert [s["name"] for s in plain["sources"]] == ["Folder"]
+    assert "token" not in plain["sources"][0]
+    lending = device_keys.create(ALICE, "Laptop", ALICE_SETTINGS, scopes=("sync", "source_tokens"))
+    lent = public.get("/device-link/external-sources", headers=auth(lending["key"])).json()
+    assert lent["sources"][0]["token"] == "app-token"
+
+
+def test_only_an_admins_key_may_set_up_the_servers_sources(public):
+    body = {"sources": [shared_source()], "removed": {}}
+    refused = public.patch("/device-link/external-sources", headers=auth(key_for()), json=body)
+    assert refused.status_code == 403
+    assert external_source.load_sources() == []
+    admins = device_keys.create(ALICE, "Laptop", ALICE_SETTINGS, scopes=("sync", "sources"))
+    answer = public.patch("/device-link/external-sources", headers=auth(admins["key"]), json=body)
+    assert answer.status_code == 200
+    assert [s["id"] for s in answer.json()["sources"]] == ["srv1"]
+    assert external_source.get_source("srv1")["name"] == "Folder"
+
+
+@pytest.mark.parametrize("is_admin", [True, False])
+def test_the_sources_right_follows_the_role_not_the_request(client, on_server, is_admin):
+    on_server.account_is_admin = is_admin
+    made = client.post(
+        "/device-keys", json={"label": "Laptop", "scopes": ["sync", "sources"]}
+    ).json()
+    assert ("sources" in device_keys.resolve(made["key"]).scopes) is is_admin
+
+
+def test_an_app_key_never_gets_the_sources_right(client, on_server):
+    on_server.account_is_admin = True
+    made = client.post("/device-keys", json={"label": "Display", "scopes": ["history"]}).json()
+    assert "sources" not in device_keys.resolve(made["key"]).scopes
+
+
+def test_a_desktop_cannot_lend_source_tokens(client, signed_in):
+    made = client.post("/device-keys", json={"label": "L", "scopes": ["sync", "source_tokens"]})
+    assert made.status_code == 422
+
+
+def test_a_token_lending_key_must_be_a_desktops():
+    with pytest.raises(device_keys.InvalidScopes):
+        device_keys.create(ALICE, "L", ALICE_SETTINGS, scopes=("source_tokens",))
+
+
+def test_a_desktop_takes_the_servers_sources_and_keeps_its_own(paired):
+    own = external_source.save_source(None, "Mine", "mdi-web", "http://10.1.1.1:9000", "")
+    paired.sources = {"sources": [shared_source()], "removed": {}}
+    assert server_link.send_once()
+    assert {s["id"]: s["synced"] for s in external_source.load_sources()} == {
+        own["id"]: False,
+        "srv1": True,
+    }
+    # Without the right, nothing of this desktop's goes up.
+    assert paired.sent("PATCH", "/external-sources") == []
+
+
+def test_an_admins_desktop_sends_its_sources_and_a_token_only_once(paired):
+    paired.scopes = ["sync", "sources"]
+    own = external_source.save_source(None, "Mine", "mdi-web", "http://10.1.1.1:9000", "tok")
+    server_link.send_once()
+    [sent] = paired.sent("PATCH", "/external-sources")
+    assert sent["sources"][0]["id"] == own["id"]
+    assert sent["sources"][0]["token"] == "tok"
+    paired.requests.clear()
+    server_link.send_once()
+    [again] = paired.sent("PATCH", "/external-sources")
+    assert "token" not in again["sources"][0]
+
+
+def test_a_server_without_shared_sources_holds_up_nothing(paired):
+    paired.sources = None
+    play()
+    assert server_link.send_once()
+    assert server_link.status(ALICE)["state"] == server_link.CONNECTED
+    assert paired.sent("POST", "/listens")
+
+
+def test_lent_tokens_go_back_when_the_key_is_refused(paired):
+    paired.sources = {"sources": [shared_source(token="lent")], "removed": {}}
+    server_link.send_once()
+    assert external_source.get_source("srv1")["token"] == "lent"
+    paired.fail = httpx.Response(401, json={"detail": server_link.INVALID_KEY_DETAIL})
+    server_link.send_once()
+    assert external_source.get_source("srv1")["token"] == ""
+
+
+def test_lent_tokens_go_back_on_disconnecting_and_the_sources_stay(paired):
+    paired.sources = {"sources": [shared_source(token="lent")], "removed": {}}
+    server_link.send_once()
+    server_link.unpair()
+    [kept] = external_source.load_sources()
+    assert (kept["id"], kept["token"], kept["synced"]) == ("srv1", "", False)
+
+
+def test_a_shared_source_is_changed_on_the_server_only_its_token_here(client, signed_in, paired):
+    paired.sources = {"sources": [shared_source()], "removed": {}}
+    server_link.send_once()
+    [listed] = client.get("/external-source").json()["sources"]
+    assert listed["read_only"] is True
+    changed = client.put(
+        "/external-source/srv1",
+        json={"name": "Renamed", "icon": "mdi-web", "base_url": "http://x:1", "token": "mine"},
+    )
+    assert changed.status_code == 200
+    stored = external_source.get_source("srv1")
+    assert (stored["name"], stored["base_url"], stored["token"]) == ("Folder", APP, "mine")
+    assert client.delete("/external-source/srv1").status_code == 403
+    # A token entered here outlives the next sync, the server lent none.
+    server_link.send_once()
+    assert external_source.get_source("srv1")["token"] == "mine"
+
+
+def test_an_admins_desktop_may_change_a_shared_source(client, signed_in, paired):
+    paired.scopes = ["sync", "sources"]
+    paired.sources = {"sources": [shared_source()], "removed": {}}
+    server_link.send_once()
+    [listed] = client.get("/external-source").json()["sources"]
+    assert listed["read_only"] is False
+    assert client.delete("/external-source/srv1").status_code == 200
+
+
+# ── Milkdrop presets ─────────────────────────────────────────────────────────
+
+PRESET = {"baseVals": {"zoom": 1.01}, "frame_eqs_str": "a.zoom=1;"}
+
+
+def preset_row(id_="p1", name="Mine", preset=PRESET, updated_at=100.0) -> dict:
+    return {"id": id_, "name": name, "preset": preset, "updated_at": updated_at}
+
+
+def test_a_newer_row_wins_and_an_older_one_does_not():
+    milkdrop_presets.merge(ALICE, [preset_row(updated_at=100.0)])
+    milkdrop_presets.merge(ALICE, [preset_row(name="Older", updated_at=50.0)])
+    milkdrop_presets.merge(BOB, [preset_row(name="Bob's", updated_at=200.0)])
+    assert milkdrop_presets.get(ALICE, "p1")["name"] == "Mine"
+    milkdrop_presets.merge(ALICE, [preset_row(name="Newer", updated_at=150.0)])
+    assert milkdrop_presets.get(ALICE, "p1")["name"] == "Newer"
+
+
+def test_a_deleted_preset_stays_as_a_row_for_the_other_side():
+    milkdrop_presets.put(ALICE, "p1", "Mine", PRESET)
+    milkdrop_presets.put(ALICE, "p1", "Mine", None)
+    assert milkdrop_presets.get(ALICE, "p1") is None
+    assert [r["deleted"] for r in milkdrop_presets.index(ALICE)] == [True]
+
+
+def test_a_change_here_is_newer_than_the_stamp_it_replaces_whatever_the_clock_says():
+    milkdrop_presets.merge(ALICE, [preset_row(updated_at=NOW * 10)])
+    milkdrop_presets.put(ALICE, "p1", "Renamed", PRESET)
+    assert milkdrop_presets.get(ALICE, "p1")["name"] == "Renamed"
+
+
+def test_presets_past_the_limit_are_left_out_but_changes_are_not(monkeypatch):
+    monkeypatch.setattr(milkdrop_presets, "MAX_PER_ACCOUNT", 1)
+    assert milkdrop_presets.put(ALICE, "p1", "One", PRESET)
+    assert not milkdrop_presets.put(ALICE, "p2", "Two", PRESET)
+    assert milkdrop_presets.put(ALICE, "p1", "One again", PRESET)
+
+
+def test_the_routes_keep_presets_under_the_sessions_account(client, on_server):
+    assert (
+        client.put("/milkdrop-presets/p1", json={"name": "Mine", "preset": PRESET}).status_code
+        == 200
+    )
+    assert client.get("/milkdrop-presets").json() == {"presets": [{"id": "p1", "name": "Mine"}]}
+    assert client.get("/milkdrop-presets/p1").json() == {
+        "id": "p1",
+        "name": "Mine",
+        "preset": PRESET,
+    }
+    assert milkdrop_presets.index(BOB) == []
+
+    assert client.delete("/milkdrop-presets/p1").status_code == 200
+    assert client.get("/milkdrop-presets").json() == {"presets": []}
+    assert client.get("/milkdrop-presets/p1").status_code == 404
+
+
+def test_the_preset_routes_need_a_verified_session(client):
+    assert client.get("/milkdrop-presets").status_code == 401
+    assert client.put("/milkdrop-presets/p1", json={"name": "x", "preset": {}}).status_code == 401
+
+
+@pytest.mark.parametrize(
+    "preset_id, body",
+    [
+        ("p1", {"name": "", "preset": PRESET}),
+        ("p1", {"name": "x" * 201, "preset": PRESET}),
+        ("p1", {"name": "Big", "preset": {"x": "y" * 600_000}}),
+        ("p 1", {"name": "Mine", "preset": PRESET}),
+    ],
+)
+def test_nonsense_presets_are_refused(client, on_server, preset_id, body):
+    assert client.put(f"/milkdrop-presets/{preset_id}", json=body).status_code in (404, 422)
+    assert milkdrop_presets.index(ALICE) == []
+
+
+def test_the_server_takes_presets_from_a_key_and_hands_them_back(public):
+    key = key_for()
+    sent = {"presets": [preset_row()]}
+    assert (
+        public.patch("/device-link/milkdrop-presets", headers=auth(key), json=sent).status_code
+        == 200
+    )
+    assert milkdrop_presets.get(ALICE, "p1")["preset"] == PRESET
+    index = public.get("/device-link/milkdrop-presets", headers=auth(key)).json()["presets"]
+    assert [(r["id"], r["deleted"]) for r in index] == [("p1", False)]
+    rows = public.get("/device-link/milkdrop-presets/rows?ids=p1,nope", headers=auth(key))
+    assert rows.json() == sent
+
+
+def test_the_server_refuses_an_id_it_could_not_have_given_out(public):
+    key = key_for()
+    answer = public.get("/device-link/milkdrop-presets/rows?ids=a/b", headers=auth(key))
+    assert answer.status_code == 422
+
+
+def test_an_upload_on_the_desktop_goes_to_the_server(client, signed_in, paired):
+    client.put("/milkdrop-presets/p1", json={"name": "Mine", "preset": PRESET})
+    assert server_link.send_once() is True
+    [batch] = paired.sent("PATCH", "/milkdrop-presets")
+    assert [(r["id"], r["preset"]) for r in batch["presets"]] == [("p1", PRESET)]
+    assert server_link._read()["pending_milkdrop_presets"] == {}
+
+
+def test_a_deletion_on_the_desktop_reaches_the_server_too(client, signed_in, paired):
+    client.put("/milkdrop-presets/p1", json={"name": "Mine", "preset": PRESET})
+    server_link.send_once()
+    client.delete("/milkdrop-presets/p1")
+    server_link.send_once()
+    last = paired.sent("PATCH", "/milkdrop-presets")[-1]
+    assert [(r["id"], r["preset"]) for r in last["presets"]] == [("p1", None)]
+
+
+def test_the_servers_presets_show_on_the_desktop_and_stay_without_it(client, signed_in, paired):
+    paired.presets = {"p9": preset_row("p9", "From the server")}
+    assert client.get("/milkdrop-presets").json() == {
+        "presets": [{"id": "p9", "name": "From the server"}]
+    }
+    paired.fail = httpx.ConnectError("down")
+    assert client.get("/milkdrop-presets/p9").json()["preset"] == PRESET
+
+
+def test_pairing_sends_the_presets_only_this_desktop_has(signed_in, server):
+    milkdrop_presets.merge(ALICE, [preset_row("here"), preset_row("both", updated_at=10.0)])
+    server.presets = {"both": preset_row("both", updated_at=10.0)}
+    server_link.pair(ALICE, ALICE_SETTINGS, URL, "the-key")
+    assert list(server_link._read()["pending_milkdrop_presets"]) == ["here"]
+
+
+def test_a_server_from_before_presets_holds_nothing_else_up(client, signed_in, paired):
+    paired.presets = None
+    client.put("/milkdrop-presets/p1", json={"name": "Mine", "preset": PRESET})
+    client.put("/lyrics-offsets", json={"offsets": {"s1": 1.5}})
+    assert server_link.send_once() is True
+    assert paired.sent("PATCH", "/lyrics-offsets") == [{"offsets": {"s1": 1.5}}]
+    # Kept for when the server learns about presets.
+    assert list(server_link._read()["pending_milkdrop_presets"]) == ["p1"]
+    assert client.get("/milkdrop-presets").json()["presets"] == [{"id": "p1", "name": "Mine"}]

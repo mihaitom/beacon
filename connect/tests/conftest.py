@@ -196,6 +196,12 @@ def _isolated_server_link(monkeypatch, tmp_path):
 
     monkeypatch.setattr(server_link, "_DATA_DIR", str(tmp_path / "link"))
     monkeypatch.setattr(server_link, "AVAILABLE", True)
+    # A sync pass reads and writes the external sources too.
+    from core import external_source
+
+    monkeypatch.setattr(
+        external_source, "_CONFIG_PATH", str(tmp_path / "link" / "external_sources.json")
+    )
 
     async def not_running() -> None:
         return None

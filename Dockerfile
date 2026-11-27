@@ -9,6 +9,7 @@ WORKDIR /app
 RUN npm install -g corepack && corepack enable && corepack prepare pnpm@11.5.0 --activate
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY patches ./patches
 
 # This stage only ever runs `pnpm run build:web` below (a Vite build) — it
 # never launches Electron itself, so the ~100MB Electron binary the
@@ -23,7 +24,7 @@ RUN pnpm install
 # Only what `pnpm run build:web` actually touches — an unrelated repo change
 # (e.g. in connect/) shouldn't bust this layer and trigger a needless rebuild.
 COPY src ./src
-COPY CHANGELOG.md web.vite.config.ts party.vite.config.ts vite.vuetify-deps.ts tsconfig.json tsconfig.app.json tsconfig.node.json ./
+COPY CHANGELOG.md web.vite.config.ts party.vite.config.ts vite.vuetify-deps.ts vite.milkdrop-presets.ts tsconfig.json tsconfig.app.json tsconfig.node.json ./
 # The docs the in-app help bundles (src/renderer/src/services/help/docs.ts).
 COPY docs/help ./docs/help
 
@@ -144,7 +145,16 @@ RUN sh /build/verify-ffmpeg.sh /usr/local/bin/ffmpeg /build/ffmpeg/required-comp
 # wheel at all, so it is compiled here on amd64 too, against Alpine's own
 # Rubber Band and fmt - which is why the final stage installs their runtime
 # libraries.
-FROM ghcr.io/astral-sh/uv:python3.14-alpine AS python-builder
+#
+# The official Python image rather than uv's own, so the Alpine release is
+# ours to name: uv's image follows Alpine with a lag, and the final stage's
+# nginx comes from Alpine's repository, so a lagging base means a lagging
+# nginx (1.28 on 3.23, without the HTTP/2 fixes of 1.30.7). The final stage
+# has to match this one exactly - the venv points at its Python and was
+# linked against its Rubber Band.
+FROM python:3.14-alpine3.24 AS python-builder
+
+COPY --from=ghcr.io/astral-sh/uv:0.13 /uv /usr/local/bin/uv
 
 WORKDIR /app
 
@@ -158,12 +168,20 @@ RUN uv sync --locked --no-dev
 
 
 # --- Final image
-FROM ghcr.io/astral-sh/uv:python3.14-alpine
+# Same base as python-builder (see there). uv itself isn't needed here:
+# start.sh runs the venv's Python directly.
+FROM python:3.14-alpine3.24
 
 WORKDIR /app
 
 # rubberband-libs and fmt: what the venv's pylibrb links against (see above).
-RUN apk add --no-cache nginx gettext rubberband-libs fmt
+# apk upgrade: the Python image is only rebuilt every few weeks, so its own
+# Alpine packages (OpenSSL, zlib) lag behind the fixes already in the
+# repository. pip goes: nothing here installs anything at runtime, and the
+# old urllib3/msgpack/setuptools it vendors are what scanners report.
+RUN apk upgrade --no-cache \
+    && apk add --no-cache nginx gettext rubberband-libs fmt \
+    && python -m pip uninstall --yes --quiet pip
 COPY --from=ffmpeg-builder /usr/local/bin/ffmpeg /usr/local/bin/ffmpeg
 COPY --chown=nginx:nginx --from=frontend-builder /app/out/web /usr/share/nginx/html
 COPY --chown=nginx:nginx ./settings.js.template /etc/nginx/templates/settings.js.template

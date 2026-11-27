@@ -12,6 +12,7 @@ See docs/plans/external-source.md and docs/help/guides/external-sources.md.
 """
 
 import hashlib
+import ipaddress
 import json
 import logging
 import os
@@ -40,6 +41,10 @@ _ITEMS_PATH = os.path.join(data_dir(), "external_items.sqlite")
 _ITEM_MAX_AGE_SECONDS = 90 * 24 * 3600
 
 _TEXT_LIMIT = 500
+
+# How long a removal is remembered for a paired side that has not heard of it
+# yet; as long as the songs are kept.
+_REMOVED_MAX_AGE_SECONDS = _ITEM_MAX_AGE_SECONDS
 
 # Each source is a tab in the navigation; past a dozen that is no longer a
 # navigation.
@@ -91,20 +96,43 @@ def _clean(entry: object) -> dict | None:
     if not isinstance(entry, dict) or not entry.get("base_url") or not entry.get("id"):
         return None
     icon = str(entry.get("icon") or "")
+    try:
+        updated_at = float(entry.get("updated_at") or 0)
+    except (TypeError, ValueError):
+        updated_at = 0.0
     return {
         "id": str(entry["id"]),
         "name": str(entry.get("name") or ""),
         "icon": icon if _ICON.match(icon) else DEFAULT_ICON,
         "base_url": str(entry["base_url"]),
         "token": str(entry.get("token") or ""),
+        "updated_at": updated_at,
+        # The rest is about a paired server, see the sync section below.
+        "synced": bool(entry.get("synced")),
+        "token_lent": bool(entry.get("token_lent")),
+        "token_pending": bool(entry.get("token_pending")),
     }
 
 
-def _write(sources: list[dict]) -> None:
+def _clean_removed(removed: object, now: float) -> dict[str, float]:
+    if not isinstance(removed, dict):
+        return {}
+    kept = {}
+    for source_id, stamp in removed.items():
+        try:
+            stamp = float(stamp)
+        except (TypeError, ValueError):
+            continue
+        if now - stamp < _REMOVED_MAX_AGE_SECONDS:
+            kept[str(source_id)] = stamp
+    return kept
+
+
+def _write(sources: list[dict], removed: dict[str, float] | None = None) -> None:
     os.makedirs(os.path.dirname(_CONFIG_PATH), exist_ok=True)
     tmp = f"{_CONFIG_PATH}.tmp"
     with open(tmp, "w", encoding="utf-8") as f:
-        json.dump({"sources": sources}, f, indent=2)
+        json.dump({"sources": sources, "removed": removed or {}}, f, indent=2)
     # The tokens are credentials for the user's apps.
     os.chmod(tmp, 0o600)
     os.replace(tmp, _CONFIG_PATH)
@@ -126,22 +154,29 @@ def _read_old() -> list[dict]:
     return sources
 
 
-def _read() -> list[dict]:
+def _read_all() -> tuple[list[dict], dict[str, float]]:
+    """The sources and, by id, when one was removed."""
     try:
         with open(_CONFIG_PATH, encoding="utf-8") as f:
             data = json.load(f)
     except FileNotFoundError:
-        return _read_old()
+        return _read_old(), {}
     except Exception as e:
         logger.warning(f"[external-source] Could not read the configuration: {e}")
-        return []
-    entries = data.get("sources") if isinstance(data, dict) else None
-    return [s for s in map(_clean, entries or []) if s]
+        return [], {}
+    if not isinstance(data, dict):
+        return [], {}
+    sources = [s for s in map(_clean, data.get("sources") or []) if s]
+    return sources, _clean_removed(data.get("removed"), time.time())
+
+
+def _read() -> list[dict]:
+    return _read_all()[0]
 
 
 def load_sources() -> list[dict]:
     """Every source, in the order they were added: {"id", "name", "icon",
-    "base_url", "token"}."""
+    "base_url", "token"} and the sync fields."""
     with _lock:
         return _read()
 
@@ -150,43 +185,63 @@ def get_source(source_id: str) -> dict | None:
     return next((s for s in load_sources() if s["id"] == source_id), None)
 
 
-def save_source(source_id: str | None, name: str, icon: str, base_url: str, token: str) -> dict:
-    """Adds a source (`source_id` None) or changes one."""
+def _checked(name: str, icon: str, base_url: str) -> tuple[str, str, str]:
     name = (name or "").strip()[:60]
     if not name:
         raise ExternalSourceError("The source needs a name")
     icon = (icon or "").strip() or DEFAULT_ICON
     if not _ICON.match(icon):
         raise ExternalSourceError("Unknown icon")
-    source = {
-        "id": source_id or secrets.token_hex(4),
-        "name": name,
-        "icon": icon,
-        "base_url": normalize_base_url(base_url),
-        "token": (token or "").strip(),
-    }
+    return name, icon, normalize_base_url(base_url)
+
+
+def save_source(source_id: str | None, name: str, icon: str, base_url: str, token: str) -> dict:
+    """Adds a source (`source_id` None) or changes one."""
+    name, icon, base_url = _checked(name, icon, base_url)
+    token = (token or "").strip()
     with _lock:
-        sources = _read()
+        sources, removed = _read_all()
         index = next((i for i, s in enumerate(sources) if s["id"] == source_id), None)
         if source_id is not None and index is None:
             raise KeyError(source_id)
-        if index is None:
-            if len(sources) >= MAX_SOURCES:
-                raise ExternalSourceError(f"At most {MAX_SOURCES} sources")
-            sources.append(source)
-        else:
+        old = sources[index] if index is not None else None
+        if old is None and len(sources) >= MAX_SOURCES:
+            raise ExternalSourceError(f"At most {MAX_SOURCES} sources")
+        source = {
+            "id": source_id or secrets.token_hex(4),
+            "name": name,
+            "icon": icon,
+            "base_url": base_url,
+            "token": token,
+            # Only what the other side shows counts as a change: a token
+            # entered here must not make an older copy of the rest win.
+            "updated_at": time.time(),
+            "synced": False,
+            "token_lent": False,
+            "token_pending": bool(token),
+        }
+        if old is not None:
+            if (old["name"], old["icon"], old["base_url"]) == (name, icon, base_url):
+                source["updated_at"] = old["updated_at"]
+            source["synced"] = old["synced"]
+            if old["token"] == token:
+                source["token_lent"] = old["token_lent"]
+                source["token_pending"] = old["token_pending"]
             sources[index] = source
-        _write(sources)
+        else:
+            sources.append(source)
+        _write(sources, removed)
     return source
 
 
 def remove_source(source_id: str) -> bool:
     with _lock:
-        sources = _read()
+        sources, removed = _read_all()
         kept = [s for s in sources if s["id"] != source_id]
         if len(kept) == len(sources):
             return False
-        _write(kept)
+        removed[source_id] = time.time()
+        _write(kept, removed)
     return True
 
 
@@ -336,3 +391,195 @@ def subsonic_song(track: Track) -> dict:
     if track.cover_art_id:
         song["coverArt"] = track.cover_art_id
     return song
+
+
+# --- a paired server ---------------------------------------------------------
+#
+# Only the setup travels between a desktop app and the server it is paired
+# with; each side then talks to the app itself. Ids are shared, the newer
+# change of a source wins, and a removal is remembered so the other side
+# hears of it instead of sending the source back (docs/plans/device-link.md,
+# "External sources").
+
+
+def _is_loopback(base_url: str) -> bool:
+    """`localhost` names a different machine on each side of a pairing."""
+    host = (urlsplit(base_url).hostname or "").lower()
+    if host == "localhost" or host.endswith(".localhost"):
+        return True
+    try:
+        return ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        return False
+
+
+def _shared_fields(source: dict) -> dict:
+    return {k: source[k] for k in ("id", "name", "icon", "base_url", "updated_at")}
+
+
+def for_link(include_tokens: bool) -> dict:
+    """What the server hands a paired desktop."""
+    with _lock:
+        sources, removed = _read_all()
+    shared = []
+    for source in sources:
+        if _is_loopback(source["base_url"]):
+            continue
+        entry = _shared_fields(source)
+        if include_tokens:
+            entry["token"] = source["token"]
+        shared.append(entry)
+    return {"sources": shared, "removed": removed}
+
+
+def outgoing() -> dict:
+    """What a desktop allowed to set up the server's sources sends: all of
+    its own, a token only where it was changed here."""
+    with _lock:
+        sources, removed = _read_all()
+    sent = []
+    for source in sources:
+        if _is_loopback(source["base_url"]):
+            continue
+        entry = _shared_fields(source)
+        if source["token_pending"]:
+            entry["token"] = source["token"]
+        sent.append(entry)
+    return {"sources": sent, "removed": removed}
+
+
+def _incoming(entry: dict) -> dict | None:
+    """An entry from the other side, checked like one entered here."""
+    try:
+        name, icon, base_url = _checked(entry.get("name"), entry.get("icon"), entry.get("base_url"))
+        updated_at = float(entry.get("updated_at") or 0)
+    except (ExternalSourceError, TypeError, ValueError):
+        return None
+    source_id = str(entry.get("id") or "")
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,40}", source_id) or _is_loopback(base_url):
+        return None
+    checked = {
+        "id": source_id,
+        "name": name,
+        "icon": icon,
+        "base_url": base_url,
+        "updated_at": updated_at,
+    }
+    if isinstance(entry.get("token"), str):
+        checked["token"] = entry["token"].strip()
+    return checked
+
+
+def _same_app(a: str, b: str) -> bool:
+    return a.rstrip("/").lower() == b.rstrip("/").lower()
+
+
+def merge_from_desktop(incoming: list, incoming_removed: dict, now: float | None = None) -> None:
+    """On the server: what a desktop allowed to set up sources sent. A source
+    whose address is already set up here is the same app under the id it has
+    here; the desktop takes that id over when it reads the answer."""
+    now = time.time() if now is None else now
+    with _lock:
+        sources, removed = _read_all()
+        for source_id, stamp in _clean_removed(incoming_removed, now).items():
+            source = next((s for s in sources if s["id"] == source_id), None)
+            if source is not None and source["updated_at"] > stamp:
+                continue
+            sources = [s for s in sources if s["id"] != source_id]
+            removed[source_id] = max(stamp, removed.get(source_id, 0))
+        for entry in filter(None, map(_incoming, incoming if isinstance(incoming, list) else [])):
+            if removed.get(entry["id"], 0) >= entry["updated_at"]:
+                continue
+            source = next((s for s in sources if s["id"] == entry["id"]), None) or next(
+                (s for s in sources if _same_app(s["base_url"], entry["base_url"])), None
+            )
+            if source is None:
+                if len(sources) >= MAX_SOURCES:
+                    continue
+                source = {**entry, "token": entry.get("token", "")}
+                source.update(synced=False, token_lent=False, token_pending=False)
+                sources.append(source)
+                continue
+            if entry["updated_at"] > source["updated_at"]:
+                source.update({k: entry[k] for k in ("name", "icon", "base_url", "updated_at")})
+            if "token" in entry:
+                source["token"] = entry["token"]
+        _write(sources, removed)
+
+
+def adopt_from_server(remote: dict) -> None:
+    """On a desktop: the server's sources after a sync. What only this
+    desktop has stays as it is; a source that came from the server and is no
+    longer there goes."""
+    entries = remote.get("sources") if isinstance(remote, dict) else None
+    theirs = [e for e in map(_incoming, entries if isinstance(entries, list) else []) if e]
+    their_removed = _clean_removed(
+        remote.get("removed") if isinstance(remote, dict) else None, time.time()
+    )
+    with _lock:
+        sources, removed = _read_all()
+        kept: list[dict] = []
+        matched: set[str] = set()
+        for source in sources:
+            entry = next((e for e in theirs if e["id"] == source["id"]), None)
+            if entry is None and not source["synced"]:
+                entry = next(
+                    (
+                        e
+                        for e in theirs
+                        if e["id"] not in matched and _same_app(e["base_url"], source["base_url"])
+                    ),
+                    None,
+                )
+            if entry is None:
+                gone = their_removed.get(source["id"], -1) >= source["updated_at"]
+                if not source["synced"] and not gone:
+                    kept.append(source)
+                continue
+            matched.add(entry["id"])
+            if source["id"] != entry["id"] or entry["updated_at"] > source["updated_at"]:
+                source.update({k: entry[k] for k in ("id", "name", "icon", "base_url")})
+                source["updated_at"] = max(entry["updated_at"], source["updated_at"])
+            source["synced"] = True
+            if "token" in entry and not source["token_pending"]:
+                source["token"] = entry["token"]
+                source["token_lent"] = True
+            kept.append(source)
+        for entry in theirs:
+            if entry["id"] in matched or removed.get(entry["id"], -1) >= entry["updated_at"]:
+                continue
+            if len(kept) >= MAX_SOURCES:
+                continue
+            kept.append(
+                {
+                    **entry,
+                    "token": entry.get("token", ""),
+                    "synced": True,
+                    "token_lent": "token" in entry,
+                    "token_pending": False,
+                }
+            )
+        _write(kept, removed)
+
+
+def tokens_sent(sent: dict) -> None:
+    """The tokens in `sent` arrived; unless changed again since."""
+    tokens = {e["id"]: e["token"] for e in sent.get("sources", []) if "token" in e}
+    with _lock:
+        sources, removed = _read_all()
+        for source in sources:
+            if tokens.get(source["id"]) == source["token"]:
+                source["token_pending"] = False
+        _write(sources, removed)
+
+
+def forget_pairing() -> None:
+    """Disconnected or refused: lent tokens go back, the sources stay, as
+    the settings do, now as this desktop's own."""
+    with _lock:
+        sources, removed = _read_all()
+        for source in sources:
+            if source["token_lent"]:
+                source["token"] = ""
+            source.update(synced=False, token_lent=False)
+        _write(sources, removed)

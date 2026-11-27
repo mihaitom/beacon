@@ -31,11 +31,13 @@ from core.audio_analysis import (
     _PREBUFFER_SECONDS,
     _SAMPLE_RATE,
     LIVE_ANALYSIS_TARGET_TYPES,
+    WAVEFORM_SAMPLES,
     AudioAnalyzer,
     _decode_cmd,
     _smooth_bands,
     analyze_pcm,
     should_analyze,
+    waveform_snapshot,
 )
 
 
@@ -224,6 +226,96 @@ def test_live_analysis_target_types_includes_airplay():
     assert "airplay" in LIVE_ANALYSIS_TARGET_TYPES
 
 
+# ── waveform_snapshot — what Milkdrop reads while casting ────────────────────
+
+
+def _pcm(samples: list[int]) -> bytes:
+    return struct.pack(f"<{len(samples)}h", *samples)
+
+
+def test_waveform_snapshot_is_web_audio_byte_time_domain_data():
+    """Silence sits at 128 and full scale reaches the ends, as
+    AnalyserNode.getByteTimeDomainData() reports it locally."""
+    wave = waveform_snapshot(_pcm([0, 32767, -32768] * _FFT_SIZE))
+    assert len(wave) == WAVEFORM_SAMPLES
+    assert set(wave) == {128, 255, 0}
+
+
+def test_waveform_snapshot_is_the_latest_samples():
+    """What an analyser reads at a moment is what played just before it."""
+    older = [-32768] * WAVEFORM_SAMPLES
+    latest = [0] * WAVEFORM_SAMPLES
+    assert set(waveform_snapshot(_pcm(older + latest))) == {128}
+
+
+def test_waveform_snapshot_pads_short_input_with_silence_before_it():
+    wave = waveform_snapshot(_pcm([32767] * 10))
+    assert len(wave) == WAVEFORM_SAMPLES
+    assert wave[:-10] == bytes([128]) * (WAVEFORM_SAMPLES - 10)
+    assert set(wave[-10:]) == {255}
+
+
+async def _frames_for(pcm: bytes, read_size: int) -> list[tuple[float, list[float], bytes]]:
+    """Every frame _read_pcm() queues for `pcm`, arriving in `read_size`
+    pieces the way the decoder's pipe hands them over."""
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, source_url="http://media/track.flac")
+    stdout = asyncio.StreamReader()
+    for i in range(0, len(pcm), read_size):
+        stdout.feed_data(pcm[i : i + read_size])
+    stdout.feed_eof()
+    analyzer._proc = MagicMock(stdout=stdout)
+    await analyzer._read_pcm()
+    return list(analyzer._pending)
+
+
+@pytest.mark.parametrize("read_size", [512, 2048, 4096, 10000])
+async def test_read_pcm_waveform_is_the_audio_up_to_each_frames_position(read_size):
+    """A click shows in exactly one frame's waveform: the first one whose
+    position it precedes, at its own place among the samples - whatever
+    size the reads come in. Reads of more than one hop once analyzed the
+    same tail several times and skipped the audio between, so a click
+    could fall through every waveform."""
+    click = 9000
+    samples = [0] * 20000
+    samples[click] = 30000
+    frames = await _frames_for(_pcm(samples), read_size)
+    hits = [
+        (round(position * _SAMPLE_RATE), wave.index(max(wave)))
+        for position, _, wave in frames
+        if max(wave) > 128
+    ]
+    first_after = (click // _HOP_SIZE + 1) * _HOP_SIZE
+    assert hits == [(first_after, click - (first_after - WAVEFORM_SAMPLES))]
+
+
+@pytest.mark.parametrize("read_size", [512, 4096, 10000])
+async def test_read_pcm_analyzes_each_window_once_in_order(read_size, monkeypatch):
+    """The bands of the frame at position p come from the window starting
+    at p, one hop further each frame - not the same tail of the buffer
+    over and over, which a read bigger than a hop used to produce."""
+    analyzed: list[bytes] = []
+    monkeypatch.setattr(
+        audio_analysis_mod, "analyze_pcm", lambda w: analyzed.append(w) or _some_bands()
+    )
+    pcm = _pcm([i % 30000 for i in range(_FFT_SIZE + 6 * _HOP_SIZE)])
+    frames = await _frames_for(pcm, read_size)
+    hop = _HOP_SIZE * 2
+    expected = [pcm[i * hop : i * hop + _FFT_SIZE * 2] for i in range(7)]
+    assert analyzed == expected
+    assert [round(p * _SAMPLE_RATE) for p, _, _ in frames] == [i * _HOP_SIZE for i in range(7)]
+
+
+async def test_release_frames_hands_each_frame_its_waveform():
+    analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, source_url="http://media/track.flac")
+    seen: list[bytes | None] = []
+    analyzer.listeners.append(lambda _bands: seen.append(analyzer.last_waveform))
+    analyzer._pending.append((0.0, _some_bands(), b"first"))
+    analyzer._pending.append((0.0, _some_bands(), b"second"))
+    analyzer._reading_done = True
+    await analyzer._release_frames()
+    assert seen == [b"first", b"second"]
+
+
 # ── AudioAnalyzer._release_frames — this is where pacing actually happens ────
 
 
@@ -242,7 +334,7 @@ def _some_bands() -> list[float]:
 async def test_release_frames_sends_first_pending_frame_immediately():
     analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, source_url="http://media/track.flac")
     released = _collect(analyzer)
-    analyzer._pending.append((0.0, _some_bands()))
+    analyzer._pending.append((0.0, _some_bands(), b""))
     # Prebuffering (see test_release_frames_waits_for_prebuffer_*  below) is
     # a separate concern from the pacing this test covers — mark decoding
     # already finished so _release_frames() skips straight to pacing.
@@ -261,7 +353,7 @@ async def test_release_frames_last_release_debug_is_none_without_a_cast_clock():
     (both VisualizerFeed call sites pass debug_cast_elapsed_fn now), but the
     parameter stays optional — see AudioAnalyzer's own docstring."""
     analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, source_url="http://media/track.flac")
-    analyzer._pending.append((0.0, _some_bands()))
+    analyzer._pending.append((0.0, _some_bands(), b""))
     analyzer._reading_done = True
     task = asyncio.create_task(analyzer._release_frames())
     try:
@@ -282,7 +374,7 @@ async def test_release_frames_sets_last_release_debug_when_given_a_cast_clock():
         start_offset=45.0,  # opened 45s into an already-playing track
         debug_cast_elapsed_fn=lambda: cast_elapsed,
     )
-    analyzer._pending.append((45.0, _some_bands()))
+    analyzer._pending.append((45.0, _some_bands(), b""))
     analyzer._reading_done = True
     task = asyncio.create_task(analyzer._release_frames())
     try:
@@ -313,7 +405,7 @@ async def test_release_frames_debug_shows_a_real_lag_instead_of_a_baselined_zero
     # What _read_pcm() records right after on_first_byte() — the cast clock
     # at this run's own zero. Radio's content_position counts from there.
     analyzer._debug_baseline = 0.0
-    analyzer._pending.append((0.0, _some_bands()))
+    analyzer._pending.append((0.0, _some_bands(), b""))
     analyzer._reading_done = True
     task = asyncio.create_task(analyzer._release_frames())
     try:
@@ -335,7 +427,7 @@ async def test_release_frames_debug_baseline_re_bases_a_late_opened_radio_run():
         debug_cast_elapsed_fn=lambda: 600.0,
     )
     analyzer._debug_baseline = 600.0  # cast clock at this run's first byte
-    analyzer._pending.append((0.0, _some_bands()))
+    analyzer._pending.append((0.0, _some_bands(), b""))
     analyzer._reading_done = True
     task = asyncio.create_task(analyzer._release_frames())
     try:
@@ -354,7 +446,7 @@ async def test_release_frames_last_release_lead_is_none_without_a_lead_fn():
         source_url="http://media/track.flac",
         debug_cast_elapsed_fn=lambda: 0.0,
     )
-    analyzer._pending.append((0.0, _some_bands()))
+    analyzer._pending.append((0.0, _some_bands(), b""))
     analyzer._reading_done = True
     task = asyncio.create_task(analyzer._release_frames())
     try:
@@ -374,7 +466,7 @@ async def test_release_frames_sets_last_release_lead_when_given_a_lead_fn():
         debug_cast_elapsed_fn=lambda: 0.0,
         debug_lead_fn=lambda: (4.7, False),
     )
-    analyzer._pending.append((0.0, _some_bands()))
+    analyzer._pending.append((0.0, _some_bands(), b""))
     analyzer._reading_done = True
     task = asyncio.create_task(analyzer._release_frames())
     try:
@@ -395,8 +487,8 @@ async def test_release_frames_lead_updates_live_once_a_real_measurement_lands():
         debug_cast_elapsed_fn=lambda: 0.0,
         debug_lead_fn=lambda: lead,
     )
-    analyzer._pending.append((0.0, _some_bands()))
-    analyzer._pending.append((1.0, _some_bands()))
+    analyzer._pending.append((0.0, _some_bands(), b""))
+    analyzer._pending.append((1.0, _some_bands(), b""))
     task = asyncio.create_task(analyzer._release_frames())
     try:
         await asyncio.sleep(0.05)
@@ -427,8 +519,8 @@ async def test_release_frames_debug_cast_position_advances_with_the_cast_clock()
         debug_cast_elapsed_fn=lambda: cast_elapsed,
     )
     analyzer._debug_baseline = 100.0  # what _read_pcm() records at first byte
-    analyzer._pending.append((5.0, _some_bands()))
-    analyzer._pending.append((10.0, _some_bands()))
+    analyzer._pending.append((5.0, _some_bands(), b""))
+    analyzer._pending.append((10.0, _some_bands(), b""))
     task = asyncio.create_task(analyzer._release_frames())
     try:
         await asyncio.sleep(0.05)
@@ -458,8 +550,8 @@ async def test_release_frames_holds_back_frames_ahead_of_playback():
     elapsed = 0.0
     analyzer = AudioAnalyzer(elapsed_fn=lambda: elapsed, source_url="http://media/track.flac")
     released = _collect(analyzer)
-    analyzer._pending.append((0.0, _some_bands()))
-    analyzer._pending.append((1.0, _some_bands()))
+    analyzer._pending.append((0.0, _some_bands(), b""))
+    analyzer._pending.append((1.0, _some_bands(), b""))
     analyzer._reading_done = True  # bypass prebuffering — not this test's concern
     task = asyncio.create_task(analyzer._release_frames())
     try:
@@ -475,8 +567,8 @@ async def test_release_frames_releases_once_playback_catches_up():
     elapsed = 0.0
     analyzer = AudioAnalyzer(elapsed_fn=lambda: elapsed, source_url="http://media/track.flac")
     released = _collect(analyzer)
-    analyzer._pending.append((0.0, _some_bands()))
-    analyzer._pending.append((1.0, _some_bands()))
+    analyzer._pending.append((0.0, _some_bands(), b""))
+    analyzer._pending.append((1.0, _some_bands(), b""))
     analyzer._reading_done = True  # bypass prebuffering — not this test's concern
     task = asyncio.create_task(analyzer._release_frames())
     try:
@@ -493,7 +585,7 @@ async def test_release_frames_releases_once_playback_catches_up():
 async def test_release_frames_exits_once_drained_and_reading_done():
     analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, source_url="http://media/track.flac")
     released = _collect(analyzer)
-    analyzer._pending.append((0.0, _some_bands()))
+    analyzer._pending.append((0.0, _some_bands(), b""))
     analyzer._reading_done = True  # decoding already finished
     task = asyncio.create_task(analyzer._release_frames())
     try:
@@ -510,7 +602,7 @@ async def test_release_frames_withholds_everything_until_prebuffer_fills():
     # _PREBUFFER_SECONDS exists for — nothing should go out yet.
     analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, source_url="http://media/track.flac")
     released = _collect(analyzer)
-    analyzer._pending.append((0.0, _some_bands()))
+    analyzer._pending.append((0.0, _some_bands(), b""))
     task = asyncio.create_task(analyzer._release_frames())
     try:
         await asyncio.sleep(0.1)
@@ -524,8 +616,8 @@ async def test_release_frames_releases_once_prebuffer_fills():
     # frame(s) should start going out even though decoding is still ongoing.
     analyzer = AudioAnalyzer(elapsed_fn=lambda: 0.0, source_url="http://media/track.flac")
     released = _collect(analyzer)
-    analyzer._pending.append((0.0, _some_bands()))
-    analyzer._pending.append((_PREBUFFER_SECONDS, _some_bands()))
+    analyzer._pending.append((0.0, _some_bands(), b""))
+    analyzer._pending.append((_PREBUFFER_SECONDS, _some_bands(), b""))
     task = asyncio.create_task(analyzer._release_frames())
     try:
         await asyncio.sleep(0.1)
@@ -558,8 +650,8 @@ async def test_release_frames_keeps_polling_after_pending_drains_mid_stream():
     position = [0.0]
     analyzer = AudioAnalyzer(elapsed_fn=lambda: position[0], source_url="http://media/track.flac")
     released = _collect(analyzer)
-    analyzer._pending.append((0.0, _some_bands()))
-    analyzer._pending.append((_PREBUFFER_SECONDS, _some_bands()))
+    analyzer._pending.append((0.0, _some_bands(), b""))
+    analyzer._pending.append((_PREBUFFER_SECONDS, _some_bands(), b""))
     task = asyncio.create_task(analyzer._release_frames())
     try:
         await asyncio.sleep(0.1)
@@ -569,7 +661,7 @@ async def test_release_frames_keeps_polling_after_pending_drains_mid_stream():
         await asyncio.sleep(_PREBUFFER_SECONDS + 0.1)
         assert len(released) == 2  # pending has now drained fully
 
-        analyzer._pending.append((_PREBUFFER_SECONDS, _some_bands()))
+        analyzer._pending.append((_PREBUFFER_SECONDS, _some_bands(), b""))
         await asyncio.sleep(0.1)
         assert len(released) == 3
         assert not task.done()  # still polling, not exited
@@ -585,8 +677,8 @@ async def test_release_frames_drops_frames_playback_has_already_passed():
     _MAX_LATENESS_SECONDS."""
     analyzer = AudioAnalyzer(elapsed_fn=lambda: 30.0, source_url="http://media/track.flac")
     released = _collect(analyzer)
-    analyzer._pending.append((29.0, [1.0] * _BAND_COUNT))  # a second late
-    analyzer._pending.append((30.0 - _MAX_LATENESS_SECONDS / 2, [2.0] * _BAND_COUNT))
+    analyzer._pending.append((29.0, [1.0] * _BAND_COUNT, b""))  # a second late
+    analyzer._pending.append((30.0 - _MAX_LATENESS_SECONDS / 2, [2.0] * _BAND_COUNT, b""))
     analyzer._reading_done = True
     task = asyncio.create_task(analyzer._release_frames())
     try:
@@ -614,7 +706,7 @@ async def test_release_frames_yields_between_consecutive_drops():
     analyzer = AudioAnalyzer(elapsed_fn=lambda: 100.0, source_url="http://media/track.flac")
     released = _collect(analyzer)
     for i in range(5):
-        analyzer._pending.append((float(i), [1.0] * _BAND_COUNT))  # all ~100s late
+        analyzer._pending.append((float(i), [1.0] * _BAND_COUNT, b""))  # all ~100s late
     analyzer._reading_done = True
     with patch("asyncio.sleep", new=AsyncMock()) as sleep_mock:
         await asyncio.wait_for(analyzer._release_frames(), timeout=1.0)
@@ -735,7 +827,7 @@ async def test_read_pcm_produces_one_frame_from_exactly_one_window():
     await analyzer._read_pcm()
 
     assert len(analyzer._pending) == 1
-    position, bands = analyzer._pending[0]
+    position, bands, _ = analyzer._pending[0]
     assert position == 0.0
     assert len(bands) == _BAND_COUNT
     assert analyzer._reading_done is True
@@ -748,7 +840,7 @@ async def test_read_pcm_advances_position_by_one_frame_per_hop():
 
     await analyzer._read_pcm()
 
-    positions = [p for p, _ in analyzer._pending]
+    positions = [p for p, *_ in analyzer._pending]
     assert positions == pytest.approx([0.0, _FRAME_SECONDS, 2 * _FRAME_SECONDS])
 
 
@@ -978,7 +1070,7 @@ async def test_a_live_source_rejoins_instead_of_working_through_a_backlog():
     clock = 0.0
     queue: asyncio.Queue[bytes | None] = asyncio.Queue()
     analyzer = AudioAnalyzer(elapsed_fn=lambda: clock, source_queue=queue)
-    analyzer._pending.extend([(1.0, [0.0]), (2.0, [0.0])])
+    analyzer._pending.extend([(1.0, [0.0], b""), (2.0, [0.0], b"")])
     analyzer._pcm_position = 5.0
     clock = 60.0  # a stall put the clock 55s ahead of what has been decoded
 
@@ -994,7 +1086,7 @@ async def test_a_live_source_tolerates_ordinary_jitter():
     constantly."""
     queue: asyncio.Queue[bytes | None] = asyncio.Queue()
     analyzer = AudioAnalyzer(elapsed_fn=lambda: 1.0, source_queue=queue)
-    analyzer._pending.append((0.4, [0.0]))
+    analyzer._pending.append((0.4, [0.0], b""))
     analyzer._pcm_position = 0.5  # half a second behind
 
     analyzer._resync_if_behind()
@@ -1007,7 +1099,7 @@ async def test_a_file_source_never_skips_its_backlog():
     """A track is a file: decode outruns real time, so a backlog really is
     temporary and skipping it would drop audio that is about to be needed."""
     analyzer = AudioAnalyzer(elapsed_fn=lambda: 60.0, source_url="http://media/track.mp3")
-    analyzer._pending.append((1.0, [0.0]))
+    analyzer._pending.append((1.0, [0.0], b""))
     analyzer._pcm_position = 5.0
 
     analyzer._resync_if_behind()

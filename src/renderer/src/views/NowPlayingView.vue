@@ -5,6 +5,7 @@
 </template>
 
 <script lang="ts">
+import { markRaw } from 'vue'
 import { useAppearanceStore } from '@/stores/appearance'
 import { themeAccent } from '@/services/appAccent'
 import { usePlaybackStore } from '@/stores/playback'
@@ -38,6 +39,12 @@ import { visualizerBarColor } from '@/services/visualizerColor'
 import { accountScopedKey } from '@/services/accountKey'
 import { reportForegroundPicture } from '@/services/lights/pictureReport'
 import { useLightsStore } from '@/stores/lights'
+import { useMilkdropStore } from '@/stores/milkdrop'
+import { isRetiredPreset, pickPresetKey, presetPool } from '@/services/milkdrop/presets'
+import { drawableHere, forgetTooHeavy, tooHeavyHere } from '@/services/milkdrop/deviceLimits'
+import { decodeWaveform } from '@/services/milkdrop/waveform'
+import { SongBeats } from '@/services/milkdrop/songBeats'
+import type { BeatNow } from '@/services/milkdrop/beatSignal'
 import type { Song } from '@/types/library'
 import type { MixTransition, NoBeatmixReason } from '@/services/connect/types'
 
@@ -81,6 +88,18 @@ function readHideArtwork(): boolean {
     return localStorage.getItem(accountScopedKey(HIDE_ARTWORK_KEY)) !== 'false'
   } catch {
     return true
+  }
+}
+
+// Milkdrop in place of the backdrop picture - off until switched on, since
+// it is a lot more to look at than a photo.
+const MILKDROP_KEY = 'beacon.nowPlayingMilkdrop'
+
+function readMilkdrop(): boolean {
+  try {
+    return localStorage.getItem(accountScopedKey(MILKDROP_KEY)) === 'true'
+  } catch {
+    return false
   }
 }
 
@@ -186,6 +205,7 @@ export default {
       frequencyData: null as Uint8Array<ArrayBuffer> | null,
       visualizerEvents: null as VisualizerEventSource | null,
       castBands: null as number[] | null,
+      castWaveform: null as Uint8Array | null,
       visualizerDebug: null as VisualizerFrame['debug'] | null,
       // The current song's artist background from Fanart.tv, when the
       // installation has a key and the artist has one. Shown crisp behind
@@ -213,6 +233,11 @@ export default {
       // The user's wish to hide the artwork; only honored while there is a
       // Fanart.tv background to reveal (see artworkHidden).
       hideArtwork: readHideArtwork(),
+      milkdropEnabled: readMilkdrop(),
+      // Which preset Milkdrop shows - see pickMilkdropPreset.
+      milkdropPreset: null as string | null,
+      milkdropTimer: undefined as ReturnType<typeof setInterval> | undefined,
+      milkdropBeats: markRaw(new SongBeats()),
     }
   },
   computed: {
@@ -230,6 +255,16 @@ export default {
     },
     authStore() {
       return useAuthStore()
+    },
+    milkdropStore() {
+      return useMilkdropStore()
+    },
+    /** The interval of the timed change while it runs, 0 while it does
+     * not: only on screen and while the music plays, so a paused song does
+     * not come back to a picture that changed under it. */
+    milkdropTimerSeconds(): number {
+      const { switchMode, intervalSeconds } = this.milkdropStore.settings
+      return this.milkdropActive && this.isPlaying && switchMode === 'time' ? intervalSeconds : 0
     },
     lyricsStore() {
       return useLyricsStore()
@@ -455,7 +490,52 @@ export default {
     /** Not on a phone held sideways: its bars only read as a floor along
      * the screen's own bottom edge, which the controls take there. */
     visualizerActive() {
-      return this.hasPlayable && this.showVisualizer && this.visualizerAvailable && !this.landscape
+      return (
+        this.hasPlayable &&
+        this.showVisualizer &&
+        this.visualizerAvailable &&
+        !this.landscape &&
+        !this.milkdropActive
+      )
+    },
+    isPlaying(): boolean {
+      return this.playbackStore.isPlaying
+    },
+    /** Milkdrop reads this device's own Web Audio graph, or while casting
+     * the waveform connect decodes alongside the speaker - wherever the
+     * bars would have something to show. Not on a phone: a full-screen
+     * WebGL canvas there costs battery and heat for a small picture, and
+     * locally it has no graph anyway. Nor for anyone who has asked for less
+     * motion: it is nothing but motion. */
+    milkdropAvailable(): boolean {
+      if (this.compact || !this.visualizerAvailable) return false
+      try {
+        return !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      } catch {
+        return true
+      }
+    },
+    milkdropActive(): boolean {
+      return this.milkdropEnabled && this.milkdropAvailable && this.hasPlayable
+    },
+    /** Which frames connect has to send: the bars' bands, or for Milkdrop
+     * the waveform with them. Nothing while not casting or not playing. */
+    castFeed(): 'none' | 'bands' | 'waveform' {
+      if (!this.playbackStore.isCasting || !this.playbackStore.isPlaying) return 'none'
+      if (this.milkdropActive) return 'waveform'
+      return this.visualizerMode === 'cast' ? 'bands' : 'none'
+    },
+    /** The song whose beats Milkdrop follows: none for radio, which
+     * connect does not analyse. */
+    milkdropBeatSongId(): string | null {
+      if (!this.milkdropActive || this.playbackStore.radioStation) return null
+      return this.currentSong?.id ?? null
+    },
+    milkdropCoverArtId(): string | null {
+      return this.currentSong?.coverArtId ?? null
+    },
+    milkdropMode(): 'local' | 'cast' {
+      return this.playbackStore.isCasting ? 'cast' : 'local'
     },
     /** 'local' has a real <audio> element to tap (services/audioEngine.ts),
      * 'cast' gets real data from the backend instead
@@ -526,11 +606,13 @@ export default {
       if (!useAppearanceStore().adaptiveAccent) return visualizerBarColor(null)
       return visualizerBarColor(this.artistBackground ? this.artistColor : this.extractedColor)
     },
-    /** Whether the artwork is actually hidden right now: the wish, and a
-     * Fanart.tv artist background that is loaded and ready to show instead.
-     * Without one the artwork stays - hiding it would leave nothing. */
+    /** Whether the artwork is actually hidden right now: always under
+     * Milkdrop, whose presets already draw the cover themselves, otherwise
+     * the wish, and a Fanart.tv artist background that is loaded and ready
+     * to show instead. Without one the artwork stays - hiding it would
+     * leave nothing. */
     artworkHidden(): boolean {
-      return this.hideArtwork && Boolean(this.artistBackground)
+      return this.milkdropActive || (this.hideArtwork && Boolean(this.artistBackground))
     },
     // A soft, wide wash filling the whole screen — the "room" the artwork
     // sits in reacts to whatever's playing, the same idea as the lighthouse
@@ -545,7 +627,9 @@ export default {
       // Over the artist's photo the darkening stays but the colour does
       // not: the cover's colour (or the amber fallback) over a sharp photo
       // reads as a colour cast. The glow behind the artwork keeps the light.
-      if (this.backdropIsArtist) return { background: 'rgba(var(--v-theme-background), 0.55)' }
+      if (this.backdropIsArtist) {
+        return { background: 'rgba(var(--v-theme-background), 0.55)' }
+      }
       return {
         background: `radial-gradient(ellipse 65% 55% at 50% 32%, rgba(${this.colorTriplet}, 0.35), rgba(var(--v-theme-background), 0) 70%), rgba(var(--v-theme-background), 0.55)`,
       }
@@ -634,6 +718,63 @@ export default {
         // next launch.
       }
     },
+    milkdropEnabled(value: boolean) {
+      try {
+        localStorage.setItem(accountScopedKey(MILKDROP_KEY), String(value))
+      } catch {
+        // Non-critical, as above.
+      }
+    },
+    // A new preset per song, if asked for: the change of picture marks the
+    // change of music, the way the artist background does.
+    'currentSong.id'() {
+      if (this.milkdropStore.settings.switchMode === 'song') this.pickMilkdropPreset()
+    },
+    milkdropBeatSongId: {
+      immediate: true,
+      handler(songId: string | null) {
+        this.milkdropBeats.follow(songId)
+      },
+    },
+    milkdropActive: {
+      immediate: true,
+      handler(active: boolean) {
+        if (!active) return
+        if (!this.milkdropStore.customLoaded) void this.milkdropStore.loadCustom()
+        this.milkdropPreset = this.milkdropStore.settings.preset ?? this.milkdropPreset
+        if (!this.milkdropPresetUsable(this.milkdropPreset)) this.pickMilkdropPreset()
+      },
+    },
+    // Settings taken over from another device while this is open: a fixed
+    // preset is shown at once, and a new pool that leaves out the preset
+    // on screen moves on to one of its own.
+    'milkdropStore.settings.preset'(key: string | null) {
+      if (!this.milkdropActive || this.milkdropStore.settings.switchMode !== 'fixed') return
+      if (this.milkdropPresetUsable(key)) this.milkdropPreset = key
+    },
+    'milkdropStore.settings.preferred'() {
+      if (!this.milkdropActive || this.milkdropStore.settings.switchMode === 'fixed') return
+      const pool = drawableHere(
+        presetPool(this.milkdropStore.presets, this.milkdropStore.settings.preferred),
+      )
+      if (!this.milkdropPreset || !pool.includes(this.milkdropPreset)) this.pickMilkdropPreset()
+    },
+    // Picked in the menu: shown at once, even when it is the one picked
+    // before and an automatic change has moved on since.
+    'milkdropStore.chosen'() {
+      const key = this.milkdropStore.settings.preset
+      // By hand, so worth another try on this device.
+      if (key) forgetTooHeavy(key)
+      this.milkdropPreset = key
+    },
+    milkdropTimerSeconds: {
+      immediate: true,
+      handler(seconds: number) {
+        clearInterval(this.milkdropTimer)
+        this.milkdropTimer =
+          seconds > 0 ? setInterval(() => this.pickMilkdropPreset(), seconds * 1000) : undefined
+      },
+    },
     hideArtwork(value: boolean) {
       try {
         localStorage.setItem(accountScopedKey(HIDE_ARTWORK_KEY), String(value))
@@ -642,16 +783,18 @@ export default {
         // next launch.
       }
     },
-    visualizerMode: {
+    castFeed: {
       immediate: true,
-      handler(mode: 'local' | 'cast' | 'idle') {
-        if (mode === 'cast') this.startVisualizerEvents()
-        else this.stopVisualizerEvents()
+      handler(feed: 'none' | 'bands' | 'waveform') {
+        this.stopVisualizerEvents()
+        if (feed !== 'none') this.startVisualizerEvents(feed === 'waveform')
       },
     },
   },
   beforeUnmount() {
+    this.milkdropBeats.stop()
     this.stopVisualizerEvents()
+    clearInterval(this.milkdropTimer)
   },
   mounted() {
     // Best-effort, exactly as VisualizerDebugOverlay.vue does it: a failed
@@ -712,6 +855,32 @@ export default {
     toggleArtwork(): void {
       this.hideArtwork = !this.hideArtwork
     },
+    toggleMilkdrop(): void {
+      this.milkdropEnabled = !this.milkdropEnabled
+    },
+    /** Another preset from the pool, at random - of those this device
+     * can draw. */
+    pickMilkdropPreset(): void {
+      const pool = drawableHere(
+        presetPool(this.milkdropStore.presets, this.milkdropStore.settings.preferred),
+      )
+      this.milkdropPreset = pickPresetKey(pool, Math.random(), this.milkdropPreset)
+    },
+    milkdropPresetUsable(key: string | null): key is string {
+      return key !== null && !isRetiredPreset(key) && !tooHeavyHere().has(key)
+    },
+    /** Replaced here only: a fixed choice on the account stays, the
+     * account's other devices may well draw it. */
+    milkdropTooHeavy(key: string): void {
+      if (this.milkdropPreset === key) this.pickMilkdropPreset()
+    },
+    nextMilkdropPreset(): void {
+      this.pickMilkdropPreset()
+      // In 'fixed' the press picks the new one to keep.
+      if (this.milkdropStore.settings.switchMode === 'fixed') {
+        this.milkdropStore.set({ preset: this.milkdropPreset })
+      }
+    },
     loadOlderTitles(): void {
       void this.radioMeta.loadOlder()
     },
@@ -747,16 +916,18 @@ export default {
       ]
     },
     /** Starts the backend's real-time frames while casting. */
-    startVisualizerEvents() {
+    startVisualizerEvents(waveform: boolean) {
       if (this.visualizerEvents) return
       const auth = this.authStore
       this.visualizerEvents = new VisualizerEventSource(
         auth.apiUrl,
         auth.connectToken,
         auth.sessionId,
+        waveform,
       )
       this.visualizerEvents.onFrame = (frame: VisualizerFrame) => {
         this.castBands = frame.bands
+        this.castWaveform = frame.waveform ? decodeWaveform(frame.waveform) : null
         this.visualizerDebug = frame.debug ?? null
       }
       this.visualizerEvents.start()
@@ -765,7 +936,17 @@ export default {
       this.visualizerEvents?.stop()
       this.visualizerEvents = null
       this.castBands = null
+      this.castWaveform = null
       this.visualizerDebug = null
+    },
+    /** What Milkdrop reads every frame while casting. */
+    milkdropWaveform(): Uint8Array | null {
+      return this.castWaveform
+    },
+    /** What Milkdrop reads every frame: the beat the lights land on. */
+    milkdropBeat(): BeatNow | null {
+      const playback = this.playbackStore
+      return this.milkdropBeats.at(performance.now(), playback.localPosition, playback.isPlaying)
     },
     /** What VisualizerBars reads every frame. */
     visualizerSample(): number[] | null {

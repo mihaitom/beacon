@@ -14,7 +14,7 @@
 //    exists to prevent: artwork and lyrics wrapping into two stacked rows
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { page } from 'vitest/browser'
-import { mount, type VueWrapper } from '@vue/test-utils'
+import { config, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { createVuetify } from 'vuetify'
@@ -595,6 +595,35 @@ describe('NowPlayingView layout', () => {
       expect(getComputedStyle(el).whiteSpace).toBe('nowrap')
       expect(getComputedStyle(el).display).toBe('block')
     }
+  })
+
+  it('keeps the lyrics clear of the bottom-right corner a visualizer captions', async () => {
+    await page.viewport(1280, 900)
+    vi.mocked(getArtistArt).mockResolvedValue({
+      banner: null,
+      background:
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      backgrounds: [
+        'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
+      ],
+      logo: null,
+    })
+    // The real <transition>: the default stub wraps the panel in an element
+    // of its own, which becomes the flex item instead and hides how the
+    // panel itself is aligned.
+    config.global.stubs.transition = false
+    const { wrapper } = await mountWithSongAndLyrics().finally(() => {
+      config.global.stubs.transition = true
+    })
+    await new Promise((resolve) => setTimeout(resolve, 600))
+
+    expect(wrapper.classes()).toContain('now-playing--artwork-hidden')
+    // Milkdrop's caption: 24px in, the title's size and a line under it -
+    // about 100px at its largest. The match picker sits on the panel's
+    // bottom edge, so the panel has to end above that.
+    const stage = rect(wrapper.get('.now-playing__stage').element)
+    const lyrics = rect(wrapper.get('.now-playing__lyrics').element)
+    expect(stage.bottom - lyrics.bottom).toBeGreaterThanOrEqual(100)
   })
 
   it('keeps the next-up card clear of the lyrics beside it', async () => {

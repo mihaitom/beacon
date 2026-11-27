@@ -273,10 +273,8 @@ async def song_analysis(
     session: SessionState = Depends(get_session),
 ):
     """What the lights know about a song - its beats and loudness - for the
-    dialog's preview to play along with what is playing. Asked again while
-    "pending"."""
-    if not lights_config.get().paired:
-        raise HTTPException(status_code=409, detail="not_paired")
+    dialog's preview and Milkdrop to play along with what is playing, so
+    without a bridge too. Asked again while "pending"."""
     status, song = controller.preview_song(session.session_id, song_id)
     if song is None:
         return {"status": status}

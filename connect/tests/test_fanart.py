@@ -1,13 +1,16 @@
 """Tests for core/fanart.py — artist banners/backgrounds from Fanart.tv."""
 
 import asyncio
+import io
 import itertools
 import json
+import os
 import time
 from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
+from PIL import Image
 
 from core import api_keys, fanart
 
@@ -219,6 +222,22 @@ def test_pick_keeps_everything_when_there_are_ten_or_fewer():
     picked = fanart._pick(_backgrounds({i: 0 for i in range(1, 11)}))
 
     assert len(picked["background"]) == 10
+
+
+def test_4k_backgrounds_come_first_and_regular_ones_fill_the_rest():
+    payload = _backgrounds({i: 0 for i in range(1, 11)}) | {
+        "artist4kbackground": [{"id": "1", "url": "uhd1", "likes": "0"}]
+    }
+    picked = fanart._pick(payload)
+
+    assert picked["background"][0] == "uhd1"
+    assert len(picked["background"]) == 10
+
+
+def test_4k_backgrounds_alone_are_enough():
+    payload = {"artist4kbackground": [{"id": "1", "url": "uhd1", "likes": "0"}]}
+
+    assert fanart._pick(payload)["background"] == ["uhd1"]
 
 
 async def test_shows_the_most_liked_when_nothing_is_on_disk(key):
@@ -770,13 +789,112 @@ async def test_a_failed_image_download_is_none():
         assert await fanart.fetch_image(url) is None
 
 
-@pytest.mark.parametrize(
-    ("path", "expected"),
-    [("bg.png", "image/png"), ("bg.WEBP", "image/webp"), ("bg.jpg", "image/jpeg")],
-)
-def test_images_are_served_as_their_type(path, expected):
-    url = f"https://assets.fanart.tv/fanart/music/x/{path}"
-    assert fanart.content_type_for(url) == expected
+# ── WebP conversion ─────────────────────────────────────────────────────
+
+_IMG = "https://assets.fanart.tv/fanart/music/x/bg.jpg"
+
+
+def _picture(fmt: str, size=(3840, 2160), mode="RGB") -> bytes:
+    colour = (200, 40, 40, 128) if mode == "RGBA" else (200, 40, 40)
+    out = io.BytesIO()
+    Image.new(mode, size, colour).save(out, fmt)
+    return out.getvalue()
+
+
+def _opened(data: bytes) -> Image.Image:
+    img = Image.open(io.BytesIO(data))
+    img.load()
+    return img
+
+
+def _serving(data: bytes):
+    fetched = httpx.Response(200, content=data, request=httpx.Request("GET", _IMG))
+    return patch.object(fanart._client, "get", AsyncMock(return_value=fetched))
+
+
+async def test_a_fetched_photo_is_stored_and_served_as_webp():
+    with _serving(_picture("JPEG")):
+        data = await fanart.image(_IMG)
+
+    img = _opened(data)
+    assert img.format == "WEBP" and img.size == (3840, 2160)
+    assert fanart.get_cached_image(_IMG) == data
+    assert fanart.media_type(data) == "image/webp"
+
+
+async def test_a_transparent_png_keeps_its_transparency_losslessly():
+    with _serving(_picture("PNG", (80, 30), "RGBA")):
+        img = _opened(await fanart.image(_IMG))
+
+    assert img.format == "WEBP"
+    assert img.convert("RGBA").getpixel((0, 0)) == (200, 40, 40, 128)
+
+
+async def test_an_image_stored_before_the_conversion_is_converted_on_its_first_ask():
+    fanart.store_image(_IMG, _picture("JPEG", (64, 36)))
+
+    with patch.object(fanart._client, "get", AsyncMock(side_effect=AssertionError("refetched"))):
+        data = await fanart.image(_IMG)
+
+    assert _opened(data).format == "WEBP"
+    assert fanart.get_cached_image(_IMG) == data
+
+
+async def test_a_scaled_copy_keeps_the_aspect_and_is_kept_on_disk():
+    with _serving(_picture("JPEG")):
+        scaled = await fanart.image(_IMG, 1280)
+
+    img = _opened(scaled)
+    assert img.format == "WEBP" and img.size == (1280, 720)
+    with patch.object(fanart, "_encode", side_effect=AssertionError("encoded again")):
+        assert await fanart.image(_IMG, 1280) == scaled
+
+
+async def test_a_width_outside_the_fixed_steps_gets_the_full_image():
+    """Each width is a file on disk; any number a caller makes up must not
+    become one."""
+    with _serving(_picture("JPEG")):
+        data = await fanart.image(_IMG, 1000)
+
+    assert _opened(data).size == (3840, 2160)
+    assert not os.path.exists(fanart._image_path(_IMG, 1000))
+
+
+async def test_an_image_narrower_than_the_width_is_not_copied():
+    with _serving(_picture("JPEG", (1920, 1080))):
+        full = await fanart.image(_IMG)
+        assert await fanart.image(_IMG, 2560) == full
+
+    assert not os.path.exists(fanart._image_path(_IMG, 2560))
+
+
+async def test_bytes_pillow_cannot_read_are_kept_as_they_came():
+    with _serving(b"\x89PNG\r\n\x1a\nnot really"):
+        data = await fanart.image(_IMG, 1280)
+
+    assert data == b"\x89PNG\r\n\x1a\nnot really"
+    assert fanart.media_type(data) == "image/png"
+
+
+async def test_a_scaled_copy_goes_with_its_image(key):
+    _write_cache({"abc": _entry({"background": [_IMG]}, fetched=time.time())})
+    with _serving(_picture("JPEG")):
+        await fanart.image(_IMG, 1280)
+    fanart._save_cache(fanart._load_cache())
+    assert os.path.exists(fanart._image_path(_IMG, 1280))
+
+    fanart._save_cache({})
+
+    assert not os.path.exists(fanart._image_path(_IMG, 1280))
+    assert fanart.get_cached_image(_IMG) is None
+
+
+def test_the_image_route_scales_for_a_small_screen(client, key):
+    with _serving(_picture("JPEG")):
+        resp = client.get("/fanart/image", params={"url": _IMG, "w": 1920})
+
+    assert resp.headers["content-type"] == "image/webp"
+    assert _opened(resp.content).size == (1920, 1080)
 
 
 def test_a_url_that_does_not_parse_is_not_fetched():

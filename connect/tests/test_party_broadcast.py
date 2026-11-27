@@ -426,6 +426,25 @@ def test_bands_carry_the_stream_time_of_what_they_analysed():
     assert max(frames[-1][1]) > 0.3  # the tone shows up
 
 
+def test_only_a_waveform_watcher_gets_the_samples():
+    from core.audio_analysis import _FFT_SIZE, WAVEFORM_SAMPLES
+
+    rig = Rig(Host(song_id="a", position=0.0, playing=True))
+    rig.produce(0)
+    plain = rig.b.watch_bands()
+    milkdrop = rig.b.watch_bands(waveform=True)
+    feed(rig.source, _sine(_FFT_SIZE))
+    rig.b.produce(_FFT_SIZE, rig.now())
+    (frame,) = plain.get_nowait()
+    assert len(frame) == 2
+    (frame,) = milkdrop.get_nowait()
+    _t, _bands, wave = frame
+    assert len(wave) == WAVEFORM_SAMPLES
+    assert max(wave) - min(wave) > 50  # the tone, not silence at 128
+    rig.b.unwatch_bands(milkdrop)
+    assert rig.b._waveform_watchers == set()
+
+
 def test_nothing_is_analysed_while_nobody_watches():
     rig = Rig(Host(song_id="a", position=0.0, playing=True))
     q = rig.b.watch_bands()

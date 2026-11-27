@@ -1,4 +1,5 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import { nextTick } from 'vue'
 import { initAccountScopedStores, syncWithAccount } from '../accountScopedStores'
@@ -330,5 +331,43 @@ describe('accountScopedStores — local reload on account change', () => {
     await nextTick()
 
     expect(useRadioSettingsStore().castDirectly).toBe(true)
+  })
+})
+
+describe('accountScopedStores - pull on coming back to the window', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+    localStorage.clear()
+    vi.mocked(fetchAccountSettings).mockReset()
+    vi.useFakeTimers({ toFake: ['Date'] })
+  })
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it("takes over another device's changes on focus, not more often than every few seconds", async () => {
+    vi.mocked(fetchAccountSettings).mockResolvedValue({})
+    initAccountScopedStores()
+    signIn()
+    await vi.waitFor(() => expect(fetchAccountSettings).toHaveBeenCalledTimes(1))
+
+    vi.mocked(fetchAccountSettings).mockResolvedValue({ recommendationsEnabled: false })
+    window.dispatchEvent(new Event('focus'))
+    await flushPromises()
+    // Right after the pull at sign-in: nothing new yet.
+    expect(fetchAccountSettings).toHaveBeenCalledTimes(1)
+
+    vi.advanceTimersByTime(60_000)
+    window.dispatchEvent(new Event('focus'))
+    await vi.waitFor(() => expect(useRecommendationsStore().enabled).toBe(false))
+  })
+
+  it('asks nothing while signed out', async () => {
+    initAccountScopedStores()
+    // Well past the spacing left by the test before.
+    vi.advanceTimersByTime(600_000)
+    window.dispatchEvent(new Event('focus'))
+    await flushPromises()
+    expect(fetchAccountSettings).not.toHaveBeenCalled()
   })
 })

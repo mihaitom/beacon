@@ -6,36 +6,27 @@ import * as components from 'vuetify/components'
 import { VBtn } from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
+import { useAuthStore } from '@/stores/auth'
 import { useConnectStore } from '@/stores/connect'
-import { _resetVolumeWrites } from '@/services/connect/volumeWrite'
+import { useGroupVolumeStore } from '@/stores/groupVolume'
 import { usePlaybackStore } from '@/stores/playback'
-import ConnectDevicePicker from '../ConnectDevicePicker.vue'
+import { _resetVolumeWrites } from '@/services/connect/volumeWrite'
+import { _resetVolumeGuards } from '@/services/connect/volumeGuard'
+import { _resetVolumeControl } from '@/services/volumeControl'
 import { _resetPollGate, noteResponseStatus } from '@/services/connect/pollGate'
-import type { DiscoverResponse } from '@/services/connect/types'
+import ConnectDevicePicker from '../ConnectDevicePicker.vue'
+import VolumeFader from '../VolumeFader.vue'
+import AvailableDeviceRow from '../AvailableDeviceRow.vue'
+import type { ConnectStatusTarget, DiscoverResponse } from '@/services/connect/types'
 import { makeStatus } from '@/stores/__tests__/fixtures'
 
 const vuetify = createVuetify({ components, directives })
-
-// DeviceListItem.vue has its own considerable logic (volume polling, pairing
-// state, ...) that's out of scope for what ConnectDevicePicker itself is
-// responsible for (grouping/sorting devices, selection, the apply/
-// take-over/pair wiring) — a minimal stand-in that still exposes the
-// real props/events contract keeps these tests about that wiring, not
-// DeviceListItem's internals.
-const DeviceListItemStub = {
-  name: 'DeviceListItem',
-  props: ['device', 'type', 'selected'],
-  emits: ['update:selected', 'take-over', 'pair', 'volume-change'],
-  template: `<div class="device-list-item-stub" :data-name="device.name" :data-type="type">
-    {{ device.name }}
-  </div>`,
-}
 
 function mountPicker() {
   return mount(ConnectDevicePicker, {
     global: {
       plugins: [vuetify, i18n],
-      stubs: { DeviceListItem: DeviceListItemStub, AirplayPairingDialog: true },
+      stubs: { AirplayPairingDialog: true },
     },
   })
 }
@@ -44,13 +35,32 @@ function makeDevices(overrides: Partial<DiscoverResponse> = {}): DiscoverRespons
   return { sonos: [], airplay: [], chromecast: [], dlna: [], ...overrides }
 }
 
+function castTo(targets: Partial<ConnectStatusTarget>[]): void {
+  useConnectStore().status = makeStatus({
+    targets: targets.map((t) => ({ type: 'sonos', volume_push: true, ...t })),
+  } as never)
+}
+
+function availableNames(wrapper: ReturnType<typeof mountPicker>): string[] {
+  return wrapper
+    .findAllComponents(AvailableDeviceRow)
+    .map((row) => row.props('device').name as string)
+}
+
+function faders(wrapper: ReturnType<typeof mountPicker>) {
+  return wrapper.findAllComponents(VolumeFader)
+}
+
 describe('ConnectDevicePicker', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
     vi.useFakeTimers()
-    // Module state that outlives a test, both of them — a leftover backoff
-    // or a hidden document would silently stop the polling tests below.
+    // Module state that outlives a test — a leftover backoff, a hidden
+    // document, a settle window or a reading would leak into the next one.
     _resetPollGate()
+    _resetVolumeGuards()
+    _resetVolumeControl()
+    _resetVolumeWrites()
     Object.defineProperty(document, 'visibilityState', {
       value: 'visible',
       configurable: true,
@@ -63,32 +73,340 @@ describe('ConnectDevicePicker', () => {
     _resetPollGate()
   })
 
-  it('shows "no devices found" when the scan came back empty', () => {
-    const wrapper = mountPicker()
+  describe('speakers to add', () => {
+    it('shows "no devices found" when the scan came back empty', () => {
+      const wrapper = mountPicker()
 
-    expect(wrapper.text()).toContain('No devices found')
-    expect(wrapper.findAllComponents(DeviceListItemStub)).toHaveLength(0)
+      expect(wrapper.text()).toContain('No devices found')
+      expect(wrapper.findAllComponents(AvailableDeviceRow)).toHaveLength(0)
+    })
+
+    it('says an empty list is still being scanned rather than empty', async () => {
+      const connect = useConnectStore()
+      const wrapper = mountPicker()
+
+      connect.isScanning = true
+      await wrapper.vm.$nextTick()
+
+      expect(wrapper.text()).toContain('Looking for devices')
+      expect(wrapper.text()).not.toContain('No devices found')
+    })
+
+    it('lists every speaker not yet playing, by type and then by name', () => {
+      const connect = useConnectStore()
+      connect.devices = makeDevices({
+        dlna: [{ name: 'Living Room DLNA' }],
+        airplay: [{ name: 'Zulu Speaker' }, { name: 'Alpha Speaker' }],
+        sonos: [{ name: 'Kitchen' }, { name: 'Study' }],
+      })
+      castTo([{ name: 'Study' }])
+      const wrapper = mountPicker()
+
+      expect(availableNames(wrapper)).toEqual([
+        'Kitchen',
+        'Alpha Speaker',
+        'Zulu Speaker',
+        'Living Room DLNA',
+      ])
+    })
+
+    it('says so when every speaker found is already playing', () => {
+      const connect = useConnectStore()
+      connect.devices = makeDevices({ sonos: [{ name: 'Kitchen' }] })
+      castTo([{ name: 'Kitchen' }])
+      const wrapper = mountPicker()
+
+      expect(wrapper.text()).toContain('Every speaker found is playing')
+    })
+
+    it('adds a speaker to what is already playing with one click', async () => {
+      const connect = useConnectStore()
+      connect.devices = makeDevices({ sonos: [{ name: 'Kitchen' }, { name: 'Study' }] })
+      castTo([{ name: 'Study' }])
+      const apply = vi.spyOn(usePlaybackStore(), 'applyTargets').mockResolvedValue()
+      const wrapper = mountPicker()
+
+      await wrapper.get('.available__main').trigger('click')
+
+      expect(apply).toHaveBeenCalledWith([
+        expect.objectContaining({ type: 'sonos', name: 'Study' }),
+        { type: 'sonos', name: 'Kitchen' },
+      ])
+    })
+
+    it('swallows a failed add instead of leaving an unhandled rejection', async () => {
+      const connect = useConnectStore()
+      connect.devices = makeDevices({ sonos: [{ name: 'Kitchen' }] })
+      vi.spyOn(usePlaybackStore(), 'applyTargets').mockRejectedValue(new Error('nope'))
+      const wrapper = mountPicker()
+
+      await wrapper.get('.available__main').trigger('click')
+      await flushPromises()
+
+      // The row is usable again for another try.
+      expect(wrapper.getComponent(AvailableDeviceRow).props('busy')).toBe(false)
+    })
+
+    it('takes over a speaker someone else is using, in addition to what plays', async () => {
+      const connect = useConnectStore()
+      useAuthStore().sessionId = 'mine'
+      connect.devices = makeDevices({
+        sonos: [{ name: 'Kitchen', in_use_by_session_id: 'theirs', in_use_by_name: 'Sam' }],
+      })
+      castTo([{ name: 'Study' }])
+      const apply = vi.spyOn(usePlaybackStore(), 'applyTargets').mockResolvedValue()
+      const wrapper = mountPicker()
+
+      expect(wrapper.text()).toContain('In use by Sam')
+      // Not by clicking the row - that is someone else's music.
+      expect(wrapper.get('.available__main').attributes('disabled')).toBeDefined()
+
+      await wrapper.getComponent(AvailableDeviceRow).vm.$emit('take-over')
+
+      expect(apply).toHaveBeenCalledWith(
+        [expect.objectContaining({ name: 'Study' }), { type: 'sonos', name: 'Kitchen' }],
+        true,
+      )
+    })
+
+    it('opens the AirPlay pairing dialog for the speaker that asked for it', async () => {
+      const connect = useConnectStore()
+      connect.devices = makeDevices({ airplay: [{ name: 'Office', needs_pairing: true }] })
+      const wrapper = mountPicker()
+
+      await wrapper.getComponent(AvailableDeviceRow).vm.$emit('pair')
+
+      const dialog = wrapper.findComponent({ name: 'AirplayPairingDialog' })
+      expect(dialog.props('modelValue')).toBe(true)
+      expect(dialog.props('deviceName')).toBe('Office')
+    })
+
+    it('kicks off a fresh scan from the rescan button, and locks it while one runs', async () => {
+      const connect = useConnectStore()
+      const wrapper = mountPicker()
+      const refreshSpy = vi.spyOn(connect, 'refreshDevices').mockResolvedValue()
+
+      const rescan = wrapper.getComponent<typeof VBtn>('.connect-picker__rescan')
+      await rescan.trigger('click')
+      expect(refreshSpy).toHaveBeenCalledWith(true)
+
+      // Disabled while scanning, so a second click can't start an
+      // overlapping scan whose earlier-finishing sibling would clear
+      // isScanning while the later one is still running.
+      connect.isScanning = true
+      await wrapper.vm.$nextTick()
+      expect(rescan.props('disabled')).toBe(true)
+    })
   })
 
-  it('groups devices by type in the fixed Sonos/AirPlay/Chromecast/DLNA order, sorted by name within each group', () => {
-    const connect = useConnectStore()
-    connect.devices = makeDevices({
-      dlna: [{ name: 'Living Room DLNA' }],
-      airplay: [{ name: 'Zulu Speaker' }, { name: 'Alpha Speaker' }],
-      sonos: [{ name: 'Kitchen' }],
+  describe('speakers playing', () => {
+    it('stops one speaker and keeps the others playing', async () => {
+      castTo([{ name: 'Kitchen' }, { name: 'Study' }])
+      const apply = vi.spyOn(usePlaybackStore(), 'applyTargets').mockResolvedValue()
+      const wrapper = mountPicker()
+
+      const kitchen = faders(wrapper).find((f) => f.props('label') === 'Kitchen')!
+      await kitchen.vm.$emit('remove')
+
+      expect(apply).toHaveBeenCalledWith([expect.objectContaining({ name: 'Study' })])
     })
-    const wrapper = mountPicker()
 
-    const headings = wrapper.findAll('.device-group-heading').map((h) => h.text())
-    expect(headings).toEqual(['Sonos', 'AirPlay', 'DLNA'])
+    it('brings playback back here by stopping every cast target', async () => {
+      castTo([{ name: 'Kitchen' }])
+      const stopAll = vi.spyOn(useConnectStore(), 'stopAll').mockResolvedValue()
+      const wrapper = mountPicker()
 
-    const items = wrapper.findAllComponents(DeviceListItemStub)
-    expect(items.map((i) => i.props('device').name)).toEqual([
-      'Kitchen',
-      'Alpha Speaker',
-      'Zulu Speaker',
-      'Living Room DLNA',
-    ])
+      await wrapper.get('.connect-picker__local').trigger('click')
+
+      expect(stopAll).toHaveBeenCalled()
+    })
+
+    it('names this device as the one playing while nothing is cast', () => {
+      const wrapper = mountPicker()
+
+      expect(wrapper.find('.connect-picker__here').text()).toContain('This device')
+      expect(wrapper.find('.connect-picker__local').exists()).toBe(false)
+    })
+
+    it('offers stop-all only while casting', async () => {
+      const connect = useConnectStore()
+      const stopAll = vi.spyOn(connect, 'stopAll').mockResolvedValue()
+      const wrapper = mountPicker()
+      expect(wrapper.text()).not.toContain('Stop all')
+
+      castTo([{ name: 'Kitchen' }])
+      await wrapper.vm.$nextTick()
+      const button = wrapper.findAllComponents(VBtn).find((b) => b.text().includes('Stop all'))!
+      await button.trigger('click')
+
+      expect(stopAll).toHaveBeenCalled()
+    })
+
+    it('keeps the stream info section, casting or not', () => {
+      castTo([{ name: 'Kitchen' }])
+      const wrapper = mountPicker()
+
+      expect(wrapper.findComponent({ name: 'StreamInfoSection' }).exists()).toBe(true)
+    })
+  })
+
+  describe('volume', () => {
+    it("sets a single speaker's volume from its row", async () => {
+      const connect = useConnectStore()
+      vi.spyOn(connect, 'getDeviceVolume').mockResolvedValue(30)
+      const setVolume = vi.spyOn(connect, 'setDeviceVolume').mockResolvedValue()
+      castTo([{ name: 'Kitchen', volume_push: false }])
+      const wrapper = mountPicker()
+      await flushPromises()
+
+      const row = faders(wrapper)[0]!
+      expect(row.props('modelValue')).toBe(30)
+
+      row.vm.$emit('update:modelValue', 55)
+      await flushPromises()
+
+      expect(setVolume).toHaveBeenCalledWith('sonos', 'Kitchen', 55)
+      expect(row.props('modelValue')).toBe(55)
+    })
+
+    it('collapses a drag into one request at a time, ending on the released level', async () => {
+      const connect = useConnectStore()
+      vi.spyOn(connect, 'getDeviceVolume').mockResolvedValue(30)
+      let release: () => void = () => {}
+      const setVolume = vi
+        .spyOn(connect, 'setDeviceVolume')
+        .mockImplementation(() => new Promise<void>((resolve) => (release = resolve)))
+      castTo([{ name: 'Kitchen', volume_push: false }])
+      const wrapper = mountPicker()
+      await flushPromises()
+
+      const row = faders(wrapper)[0]!
+      for (const level of [40, 50, 60, 70]) row.vm.$emit('update:modelValue', level)
+      expect(setVolume).toHaveBeenCalledTimes(1)
+
+      release()
+      await flushPromises()
+
+      expect(setVolume).toHaveBeenCalledTimes(2)
+      expect(setVolume).toHaveBeenLastCalledWith('sonos', 'Kitchen', 70)
+    })
+
+    describe('several speakers', () => {
+      function castToTwo() {
+        const connect = useConnectStore()
+        vi.spyOn(connect, 'getDeviceVolume').mockImplementation(async (_type, name) =>
+          name === 'Kitchen' ? 20 : 40,
+        )
+        const setVolume = vi.spyOn(connect, 'setDeviceVolume').mockResolvedValue()
+        castTo([
+          { name: 'Kitchen', volume: 20 },
+          { name: 'Study', volume: 40 },
+        ])
+        return setVolume
+      }
+
+      it('has a master that evens them out in "same level" mode, and no level per speaker', async () => {
+        useGroupVolumeStore().setMode('equal')
+        const setVolume = castToTwo()
+        const wrapper = mountPicker()
+        await flushPromises()
+
+        const [master, ...rooms] = faders(wrapper)
+        expect(master!.props('master')).toBe(true)
+        expect(rooms.every((room) => room.props('plain'))).toBe(true)
+
+        master!.vm.$emit('update:modelValue', 37)
+        await flushPromises()
+
+        expect(setVolume).toHaveBeenCalledWith('sonos', 'Kitchen', 37)
+        expect(setVolume).toHaveBeenCalledWith('sonos', 'Study', 37)
+      })
+
+      it('keeps every speaker adjustable in "keep balance" mode, the master showing the spread', async () => {
+        useGroupVolumeStore().setMode('relative')
+        const setVolume = castToTwo()
+        const wrapper = mountPicker()
+        await flushPromises()
+
+        const [master, kitchen] = faders(wrapper)
+        expect(master!.text()).toContain('20–40%')
+        expect(kitchen!.props('plain')).toBe(false)
+
+        master!.vm.$emit('update:modelValue', 20)
+        await flushPromises()
+        expect(setVolume).toHaveBeenCalledWith('sonos', 'Kitchen', 10)
+        expect(setVolume).toHaveBeenCalledWith('sonos', 'Study', 20)
+
+        kitchen!.vm.$emit('update:modelValue', 15)
+        await flushPromises()
+        expect(setVolume).toHaveBeenLastCalledWith('sonos', 'Kitchen', 15)
+      })
+
+      it('switches the mode from the menu, and remembers it', async () => {
+        castToTwo()
+        const wrapper = mountPicker()
+        await flushPromises()
+
+        await wrapper
+          .findComponent({ name: 'SegmentedControl' })
+          .vm.$emit('update:modelValue', 'relative')
+
+        expect(useGroupVolumeStore().mode).toBe('relative')
+      })
+
+      it('offers no mode switch for a single speaker, where both would do the same', () => {
+        castTo([{ name: 'Kitchen' }])
+        const wrapper = mountPicker()
+
+        expect(wrapper.findComponent({ name: 'SegmentedControl' }).exists()).toBe(false)
+      })
+    })
+  })
+
+  describe('keeping the list fresh', () => {
+    it('polls refreshDevices() every 4s while mounted, and stops on unmount', async () => {
+      const connect = useConnectStore()
+      const refreshSpy = vi.spyOn(connect, 'refreshDevices').mockResolvedValue()
+      const wrapper = mountPicker()
+
+      await vi.advanceTimersByTimeAsync(4000)
+      expect(refreshSpy).toHaveBeenCalledTimes(1)
+      expect(refreshSpy).toHaveBeenLastCalledWith()
+
+      wrapper.unmount()
+      refreshSpy.mockClear()
+      await vi.advanceTimersByTimeAsync(8000)
+      expect(refreshSpy).not.toHaveBeenCalled()
+    })
+
+    it('skips the poll while the app is being denied, and resumes when it stops', async () => {
+      // Nothing can arrive during a ban, but the asking is what keeps the
+      // ban's own bucket topped up — see pollGate.ts.
+      const connect = useConnectStore()
+      const refreshSpy = vi.spyOn(connect, 'refreshDevices').mockResolvedValue()
+      mountPicker()
+
+      noteResponseStatus(403, { get: () => null }, null)
+      await vi.advanceTimersByTimeAsync(8000)
+      expect(refreshSpy).not.toHaveBeenCalled()
+
+      noteResponseStatus(200, { get: () => null }, null)
+      await vi.advanceTimersByTimeAsync(4000)
+      expect(refreshSpy).toHaveBeenCalled()
+    })
+
+    it('skips the poll while nobody can see the picker', async () => {
+      const connect = useConnectStore()
+      const refreshSpy = vi.spyOn(connect, 'refreshDevices').mockResolvedValue()
+      mountPicker()
+
+      Object.defineProperty(document, 'visibilityState', {
+        value: 'hidden',
+        configurable: true,
+      })
+      await vi.advanceTimersByTimeAsync(8000)
+      expect(refreshSpy).not.toHaveBeenCalled()
+    })
   })
 
   it('shows the api-unreachable banner and retries a fresh scan from it', async () => {
@@ -97,407 +415,8 @@ describe('ConnectDevicePicker', () => {
     const wrapper = mountPicker()
     const refreshSpy = vi.spyOn(connect, 'refreshDevices').mockResolvedValue()
 
-    await wrapper
-      .get('.connect-picker')
-      .findComponent({ name: 'ConnectErrorBanner' })
-      .vm.$emit('retry')
+    await wrapper.findComponent({ name: 'ConnectErrorBanner' }).vm.$emit('retry')
 
     expect(refreshSpy).toHaveBeenCalledWith(true)
-  })
-
-  it('says an empty list is still being scanned rather than empty', async () => {
-    const connect = useConnectStore()
-    const wrapper = mountPicker()
-
-    expect(wrapper.text()).toContain('No devices found')
-
-    connect.isScanning = true
-    await wrapper.vm.$nextTick()
-
-    expect(wrapper.text()).toContain('Looking for devices')
-    expect(wrapper.text()).not.toContain('No devices found')
-  })
-
-  it('kicks off a fresh scan from the rescan button, and locks it while one runs', async () => {
-    const connect = useConnectStore()
-    const wrapper = mountPicker()
-    const refreshSpy = vi.spyOn(connect, 'refreshDevices').mockResolvedValue()
-
-    const rescan = wrapper.getComponent<typeof VBtn>('.connect-picker__rescan')
-    await rescan.trigger('click')
-
-    expect(refreshSpy).toHaveBeenCalledWith(true)
-
-    // Disabled while scanning, so a second click can't start an overlapping
-    // scan whose earlier-finishing sibling would clear isScanning — and drop
-    // the spinner — while the later one is still running.
-    connect.isScanning = true
-    await wrapper.vm.$nextTick()
-
-    expect(rescan.props('loading')).toBe(true)
-    expect(rescan.props('disabled')).toBe(true)
-  })
-
-  describe('selection and connecting', () => {
-    beforeEach(() => {
-      const connect = useConnectStore()
-      connect.devices = makeDevices({ sonos: [{ name: 'Kitchen' }, { name: 'Living Room' }] })
-    })
-
-    it('labels the action by what applying would actually do, and hides it when there is nothing to do', async () => {
-      const connect = useConnectStore()
-      const wrapper = mountPicker()
-      const items = wrapper.findAllComponents(DeviceListItemStub)
-
-      // Nothing casting, nothing checked: no action.
-      expect(wrapper.text()).not.toContain('Connect')
-
-      await items[0]!.vm.$emit('update:selected', true)
-      expect(wrapper.text()).toContain('Connect')
-
-      // That device is now actually casting, so the checked set matches
-      // reality and there is nothing left to apply.
-      connect.status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
-      await wrapper.vm.$nextTick()
-      expect(wrapper.get('.connect-picker__actions').text()).not.toContain('Apply')
-
-      // Checking a second device is a real change again — and "Apply", not
-      // "+1 more": it reconciles the whole set rather than only adding.
-      await items[1]!.vm.$emit('update:selected', true)
-      await wrapper.vm.$nextTick()
-      expect(wrapper.text()).toContain('Apply')
-    })
-
-    it('seeds the checkboxes from the live targets, so an untouched picker mirrors reality', async () => {
-      const connect = useConnectStore()
-      connect.status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
-      const wrapper = mountPicker()
-      await wrapper.vm.$nextTick()
-
-      expect(wrapper.findAllComponents(DeviceListItemStub).map((i) => i.props('selected'))).toEqual(
-        [true, false],
-      )
-      // Nothing to apply yet — it already matches what is casting.
-      expect(wrapper.get('.connect-picker__actions').text()).not.toContain('Apply')
-    })
-
-    it('unchecking an active device stages a removal instead of stopping it immediately', async () => {
-      const connect = useConnectStore()
-      connect.status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
-      const stopSpy = vi.spyOn(connect, 'stopDevice').mockResolvedValue()
-      const wrapper = mountPicker()
-      await wrapper.vm.$nextTick()
-
-      await wrapper.findAllComponents(DeviceListItemStub)[0]!.vm.$emit('update:selected', false)
-
-      // Regression test: this used to stop the device on the spot, which is
-      // what made switching devices fall back to local playback in between.
-      expect(stopSpy).not.toHaveBeenCalled()
-      expect(wrapper.get('.connect-picker__actions').text()).toContain('Stop all')
-    })
-
-    it('applies the checked set as the desired targets', async () => {
-      const wrapper = mountPicker()
-      const applySpy = vi.spyOn(usePlaybackStore(), 'applyTargets').mockResolvedValue()
-      const items = wrapper.findAllComponents(DeviceListItemStub)
-      await items[0]!.vm.$emit('update:selected', true)
-      await items[1]!.vm.$emit('update:selected', true)
-
-      await wrapper.get('.connect-picker__actions').findAll('button').at(-1)!.trigger('click')
-      await wrapper.vm.$nextTick()
-
-      // applyTargets(), not castTo(): on a running session castTo() would
-      // replace the target set, dropping devices that are already playing.
-      expect(applySpy).toHaveBeenCalledWith([
-        { name: 'Kitchen', type: 'sonos' },
-        { name: 'Living Room', type: 'sonos' },
-      ])
-      // Not re-seeded from the live targets here (still empty, since
-      // applyTargets is mocked — but in production the SSE stream that
-      // feeds them has no ordering guarantee against the HTTP calls that
-      // just returned either). Reading them back at this point re-ticks a
-      // device the apply just removed, which is what made a device switch
-      // visibly flicker. The checkboxes stay where the user put them...
-      expect(wrapper.findAllComponents(DeviceListItemStub).map((i) => i.props('selected'))).toEqual(
-        [true, true],
-      )
-      // ...and the apply button is gone, because nothing is unapplied.
-      expect(wrapper.get('.connect-picker__actions').text()).not.toContain('Apply')
-    })
-
-    it('re-seeds from the live targets once the status actually catches up', async () => {
-      const connect = useConnectStore()
-      const wrapper = mountPicker()
-      vi.spyOn(usePlaybackStore(), 'applyTargets').mockResolvedValue()
-      const items = wrapper.findAllComponents(DeviceListItemStub)
-      await items[0]!.vm.$emit('update:selected', true)
-      await wrapper.get('.connect-picker__actions').findAll('button').at(-1)!.trigger('click')
-      await wrapper.vm.$nextTick()
-
-      // The other client's cast, a device dropping, or simply this apply's
-      // own status frame landing late — either way the applied selection
-      // must give way to reality, since the user has no unapplied edit
-      // left to protect.
-      connect.status = makeStatus({ targets: [{ name: 'Living Room', type: 'sonos' }] })
-      await wrapper.vm.$nextTick()
-
-      expect(wrapper.findAllComponents(DeviceListItemStub).map((i) => i.props('selected'))).toEqual(
-        [false, true],
-      )
-    })
-
-    it('swallows an apply failure instead of leaving an unhandled rejection', async () => {
-      const wrapper = mountPicker()
-      vi.spyOn(usePlaybackStore(), 'applyTargets').mockRejectedValue(new Error('device in use'))
-      const items = wrapper.findAllComponents(DeviceListItemStub)
-      await items[0]!.vm.$emit('update:selected', true)
-
-      await expect(
-        wrapper.get('.connect-picker__actions').findAll('button').at(-1)!.trigger('click'),
-      ).resolves.not.toThrow()
-    })
-  })
-
-  it('take-over from a row adds that device to what is already playing', async () => {
-    const connect = useConnectStore()
-    connect.devices = makeDevices({ sonos: [{ name: 'Kitchen' }, { name: 'Living Room' }] })
-    connect.status = makeStatus({ targets: [{ name: 'Living Room', type: 'sonos' }] })
-    const wrapper = mountPicker()
-    await wrapper.vm.$nextTick()
-    const applySpy = vi.spyOn(usePlaybackStore(), 'applyTargets').mockResolvedValue()
-
-    await wrapper.getComponent(DeviceListItemStub).vm.$emit('take-over')
-    await wrapper.vm.$nextTick()
-
-    // A claimed row's checkbox is inert (DeviceListItem.vue's onToggle()),
-    // so this button is the only way to pick such a device — going through
-    // castTo(), which replaces the whole target set, made it the only way
-    // to lose every other speaker at the same time.
-    expect(applySpy).toHaveBeenCalledWith(
-      [
-        expect.objectContaining({ name: 'Living Room', type: 'sonos' }),
-        { name: 'Kitchen', type: 'sonos' },
-      ],
-      true,
-    )
-    // Ticked even though the checkbox was never touched, and counted as
-    // applied — not as an edit still waiting for the apply button.
-    expect(wrapper.findAllComponents(DeviceListItemStub).map((i) => i.props('selected'))).toEqual([
-      true,
-      true,
-    ])
-    expect(wrapper.get('.connect-picker__actions').text()).not.toContain('Apply')
-  })
-
-  it('stop-all is only shown while casting, and calls connectStore.stopAll()', async () => {
-    const connect = useConnectStore()
-    const wrapper = mountPicker()
-    expect(wrapper.text()).not.toContain('Stop all')
-
-    connect.status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
-    await wrapper.vm.$nextTick()
-    const stopAllSpy = vi.spyOn(connect, 'stopAll').mockResolvedValue()
-
-    const stopBtn = [...wrapper.get('.connect-picker__actions').findAll('button')].find((b) =>
-      b.text().includes('Stop all'),
-    )!
-    await stopBtn.trigger('click')
-
-    expect(stopAllSpy).toHaveBeenCalledOnce()
-  })
-
-  it('opens the AirPlay pairing dialog for the row that asked for it', async () => {
-    const connect = useConnectStore()
-    connect.devices = makeDevices({ airplay: [{ name: 'Bedroom' }] })
-    const wrapper = mountPicker()
-
-    await wrapper.getComponent(DeviceListItemStub).vm.$emit('pair')
-
-    const dialog = wrapper.getComponent({ name: 'AirplayPairingDialog' })
-    expect(dialog.props('modelValue')).toBe(true)
-    expect(dialog.props('deviceName')).toBe('Bedroom')
-  })
-
-  it("a volume-change event sets that device's volume", async () => {
-    const connect = useConnectStore()
-    connect.devices = makeDevices({ sonos: [{ name: 'Kitchen' }] })
-    const wrapper = mountPicker()
-    const setVolumeSpy = vi.spyOn(connect, 'setDeviceVolume').mockResolvedValue()
-
-    await wrapper
-      .getComponent(DeviceListItemStub)
-      .vm.$emit('volume-change', { type: 'sonos', device: { name: 'Kitchen' }, volume: 42 })
-
-    expect(setVolumeSpy).toHaveBeenCalledWith('sonos', 'Kitchen', 42)
-  })
-
-  // This slider reports every drag tick like the others, and sending each
-  // one straight out left the speaker at whichever request it answered
-  // last - see services/connect/volumeWrite.ts.
-  it('collapses a drag into one request at a time, ending on the released level', async () => {
-    _resetVolumeWrites()
-    const connect = useConnectStore()
-    connect.devices = makeDevices({ sonos: [{ name: 'Kitchen' }] })
-    const wrapper = mountPicker()
-    let answer!: () => void
-    const setVolumeSpy = vi
-      .spyOn(connect, 'setDeviceVolume')
-      .mockImplementation(() => new Promise<void>((resolve) => (answer = resolve)))
-
-    const item = wrapper.getComponent(DeviceListItemStub)
-    for (const volume of [31, 45, 58, 66, 85]) {
-      item.vm.$emit('volume-change', { type: 'sonos', device: { name: 'Kitchen' }, volume })
-    }
-
-    // Only the first is out; the rest replaced each other while it was.
-    expect(setVolumeSpy).toHaveBeenCalledTimes(1)
-    answer()
-    await flushPromises()
-
-    expect(setVolumeSpy).toHaveBeenCalledTimes(2)
-    expect(setVolumeSpy).toHaveBeenLastCalledWith('sonos', 'Kitchen', 85)
-  })
-
-  it('polls refreshDevices() every 4s while mounted, and stops on unmount', async () => {
-    const connect = useConnectStore()
-    const refreshSpy = vi.spyOn(connect, 'refreshDevices').mockResolvedValue()
-    const wrapper = mountPicker()
-
-    expect(refreshSpy).not.toHaveBeenCalled()
-    await vi.advanceTimersByTimeAsync(4000)
-    expect(refreshSpy).toHaveBeenCalledTimes(1)
-    expect(refreshSpy).toHaveBeenLastCalledWith()
-
-    wrapper.unmount()
-    refreshSpy.mockClear()
-    await vi.advanceTimersByTimeAsync(8000)
-    expect(refreshSpy).not.toHaveBeenCalled()
-  })
-
-  it('skips the poll while the app is being denied, and resumes when it stops', async () => {
-    // Nothing can arrive during a ban, but the asking is what keeps the
-    // ban's own bucket topped up — see pollGate.ts.
-    const connect = useConnectStore()
-    const refreshSpy = vi.spyOn(connect, 'refreshDevices').mockResolvedValue()
-    mountPicker()
-
-    noteResponseStatus(403, { get: () => null }, null)
-    await vi.advanceTimersByTimeAsync(8000)
-    expect(refreshSpy).not.toHaveBeenCalled()
-
-    noteResponseStatus(200, { get: () => null }, null)
-    await vi.advanceTimersByTimeAsync(4000)
-    expect(refreshSpy).toHaveBeenCalled()
-  })
-
-  it('skips the poll while nobody can see the picker', async () => {
-    const connect = useConnectStore()
-    const refreshSpy = vi.spyOn(connect, 'refreshDevices').mockResolvedValue()
-    mountPicker()
-
-    Object.defineProperty(document, 'visibilityState', {
-      value: 'hidden',
-      configurable: true,
-    })
-    await vi.advanceTimersByTimeAsync(8000)
-    expect(refreshSpy).not.toHaveBeenCalled()
-  })
-
-  // Local playback used to be "nothing is ticked" — implicit, and with
-  // nothing on the card naming it. The stream-info section below now
-  // describes it, which needs something visible to attach to.
-  describe('this device', () => {
-    it('is marked as the one playing while nothing is cast', () => {
-      const wrapper = mountPicker()
-
-      const entry = wrapper.get('.this-device')
-      expect(entry.classes()).toContain('this-device--active')
-      expect(entry.attributes('aria-pressed')).toBe('true')
-    })
-
-    it('is not marked while a speaker has playback', () => {
-      const connect = useConnectStore()
-      connect.status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
-      const wrapper = mountPicker()
-
-      const entry = wrapper.get('.this-device')
-      expect(entry.classes()).not.toContain('this-device--active')
-      expect(entry.attributes('aria-pressed')).toBe('false')
-    })
-
-    it('brings playback back here by stopping every cast target', async () => {
-      // The same call "Stop all" makes — stopping every target *is*
-      // playing here. Two labels for one action, so the affordance can
-      // read as "play here" rather than as something destructive.
-      const connect = useConnectStore()
-      connect.status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
-      const stopAll = vi.spyOn(connect, 'stopAll').mockResolvedValue()
-      const wrapper = mountPicker()
-
-      await wrapper.get('.this-device').trigger('click')
-
-      expect(stopAll).toHaveBeenCalled()
-    })
-
-    it('does nothing when playback is already here', async () => {
-      const connect = useConnectStore()
-      const stopAll = vi.spyOn(connect, 'stopAll').mockResolvedValue()
-      const wrapper = mountPicker()
-
-      await wrapper.get('.this-device').trigger('click')
-
-      expect(stopAll).not.toHaveBeenCalled()
-    })
-  })
-
-  describe('stream info', () => {
-    // It used to be gated on casting, because a format only existed for a
-    // cast. Since the quality setting arrived, local playback has one too,
-    // so the section is always here — see StreamInfoSection.vue, which
-    // decides for itself what it can say about each.
-    it('is shown while nothing is casting', () => {
-      const wrapper = mountPicker()
-
-      expect(wrapper.findComponent({ name: 'StreamInfoSection' }).exists()).toBe(true)
-    })
-
-    it('is shown once casting to a device — no separate button needed to reach it', () => {
-      const connect = useConnectStore()
-      connect.status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
-      const wrapper = mountPicker()
-
-      expect(wrapper.findComponent({ name: 'StreamInfoSection' }).exists()).toBe(true)
-    })
-
-    describe('the divider above it', () => {
-      it('is hidden before a track has ever loaded, same as the section below it', () => {
-        const wrapper = mountPicker()
-
-        expect(wrapper.find('.v-divider').exists()).toBe(false)
-      })
-
-      it('is shown once casting to a device, which always has something to describe', () => {
-        useConnectStore().status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
-        const wrapper = mountPicker()
-
-        expect(wrapper.find('.v-divider').exists()).toBe(true)
-      })
-
-      it('is hidden again while radio plays, which the section never describes', async () => {
-        useConnectStore().status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
-        const wrapper = mountPicker()
-        expect(wrapper.find('.v-divider').exists()).toBe(true)
-
-        usePlaybackStore().radioStation = {
-          id: 'r1',
-          name: 'Chill FM',
-          streamUrl: 'https://stream.example/chill',
-          homePageUrl: null,
-        }
-        await wrapper.vm.$nextTick()
-
-        expect(wrapper.find('.v-divider').exists()).toBe(false)
-      })
-    })
   })
 })

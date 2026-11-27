@@ -1,6 +1,7 @@
 import { fetchConnect } from './http'
 import { useAuthStore } from '@/stores/auth'
 import type { CustomTheme } from '@/plugins/theme'
+import type { MilkdropSettings } from '@/stores/milkdrop'
 
 /** The settings that follow an account across devices — see
  * connect/core/account_settings.py's own docstring. Every field optional:
@@ -44,6 +45,10 @@ export interface AccountSettingsPayload {
   // The themes made from two colours - see stores/appearance.ts. Which theme
   // is on stays with the device.
   customThemes?: CustomTheme[]
+  // Milkdrop's choices in Now Playing - see stores/milkdrop.ts. Whether it
+  // is on stays with the device; the uploaded presets have a store of their
+  // own in connect.
+  milkdrop?: MilkdropSettings
   // The last app version whose "what's new" dialog this account has seen -
   // see components/releaseNotes.vue. Follows the account, so it is not shown
   // again on another browser or device after it was closed once.

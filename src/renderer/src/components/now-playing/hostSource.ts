@@ -1,4 +1,4 @@
-import { computed, markRaw, reactive } from 'vue'
+import { computed, defineAsyncComponent, markRaw, reactive } from 'vue'
 import ArtistCredit from '@/components/library/ArtistCredit.vue'
 import CoverArt from '@/components/library/CoverArt.vue'
 import RadioTitleLog from '@/components/radio/RadioTitleLog.vue'
@@ -6,14 +6,38 @@ import LyricsCandidateList from '@/components/lyrics/LyricsCandidateList.vue'
 import CastStreamDebugOverlay from '@/components/player/CastStreamDebugOverlay.vue'
 import VisualizerDebugOverlay from '@/components/player/VisualizerDebugOverlay.vue'
 import EqualizerButton from '@/components/equalizer/EqualizerButton.vue'
+import LightsButton from '@/components/lights/LightsButton.vue'
+import MilkdropButton from '@/components/milkdrop/MilkdropButton.vue'
 import type { Song, RadioStation } from '@/types/library'
 import type { RadioFaviconRequest } from '@/services/connect/radio'
 import type { RadioTitleEntry } from '@/services/connect/radioMetadata'
 import type { VisualizerFrame } from '@/services/connect/types'
+import { NoCoverArtError, fetchCoverArtBatched } from '@/services/connect/coverArtBatch'
+import { getAudioEngine } from '@/services/audioEngine'
+import { COVER_SIZE, type MilkdropCover } from '@/services/milkdrop/textures'
+import type { BeatNow } from '@/services/milkdrop/beatSignal'
 import { FILE_SOURCE, useLyricsStore } from '@/stores/lyrics'
+import { useMilkdropStore } from '@/stores/milkdrop'
+import { useAppearanceStore } from '@/stores/appearance'
 import { lyricsPageUrl } from '@/services/lyrics/providerUrl'
 import { i18n } from '@/i18n'
 import type { NowPlayingPanel, NowPlayingRadio, NowPlayingSong, NowPlayingSource } from './source'
+
+/** A song's cover for Milkdrop, through the app's cover cache. */
+function milkdropCover(coverArtId: string | null): MilkdropCover | null {
+  if (!coverArtId) return null
+  return {
+    key: coverArtId,
+    async load(signal) {
+      try {
+        return await fetchCoverArtBatched(coverArtId, COVER_SIZE, signal)
+      } catch (error) {
+        if (error instanceof NoCoverArtError) return null
+        throw error
+      }
+    },
+  }
+}
 
 /** The slice of NowPlayingView the host source is built from. The view keeps
  * owning all of it (the stores, the Fanart.tv lookups, the colour
@@ -35,6 +59,14 @@ export interface HostNowPlayingApi {
   visualizerSmoothing: number
   visualizerSample: () => number[] | null
   visualizerDebug: VisualizerFrame['debug'] | null
+  milkdropAvailable: boolean
+  milkdropActive: boolean
+  milkdropPreset: string | null
+  milkdropMode: 'local' | 'cast'
+  milkdropCoverArtId: string | null
+  milkdropWaveform: () => Uint8Array | null
+  milkdropBeat: () => BeatNow | null
+  isPlaying: boolean
   showLyrics: boolean
   showVisualizer: boolean
   artworkHidden: boolean
@@ -58,6 +90,9 @@ export interface HostNowPlayingApi {
   toggleVisualizer(): void
   toggleArtwork(): void
   cycleArtistBackground(): void
+  toggleMilkdrop(): void
+  nextMilkdropPreset(): void
+  milkdropTooHeavy(key: string): void
   searchTitleLog(query: string): void
   loadOlderTitles(): void
   setLyricsOffset(offset: number): void
@@ -167,6 +202,21 @@ export function hostNowPlayingSource(api: HostNowPlayingApi): NowPlayingSource {
       sample: () => api.visualizerSample(),
       debug: computed(() => api.visualizerDebug),
     }),
+    milkdrop: reactive({
+      available: computed(() => api.milkdropAvailable),
+      active: computed(() => api.milkdropActive),
+      playing: computed(() => api.isPlaying),
+      preset: computed(() => api.milkdropPreset),
+      mode: computed(() => api.milkdropMode),
+      cover: computed(() => milkdropCover(api.milkdropCoverArtId)),
+      waveform: () => api.milkdropWaveform(),
+      analyser: () => getAudioEngine().getAnalyser(),
+      beat: () => api.milkdropBeat(),
+    }),
+    appearance: computed(() => {
+      const appearance = useAppearanceStore()
+      return { preference: appearance.$state, adaptiveAccent: appearance.adaptiveAccent }
+    }),
     capabilities: reactive({
       fullscreen: true,
       artistLinks: true,
@@ -188,6 +238,13 @@ export function hostNowPlayingSource(api: HostNowPlayingApi): NowPlayingSource {
     streamDebugComponent: markRaw(CastStreamDebugOverlay),
     artistCreditComponent: markRaw(ArtistCredit),
     equalizerComponent: markRaw(EqualizerButton),
+    lightsComponent: markRaw(LightsButton),
+    // Async, so Butterchurn and the presets' index stay out of the main
+    // bundle until somebody switches Milkdrop on.
+    milkdropComponent: markRaw(
+      defineAsyncComponent(() => import('@/components/milkdrop/MilkdropVisualizer.vue')),
+    ),
+    milkdropMenuComponent: markRaw(MilkdropButton),
     ui: reactive({
       lyricsOpen: computed(() => api.showLyrics),
       showVisualizer: computed(() => api.showVisualizer),
@@ -200,6 +257,10 @@ export function hostNowPlayingSource(api: HostNowPlayingApi): NowPlayingSource {
     toggleVisualizer: () => api.toggleVisualizer(),
     toggleArtwork: () => api.toggleArtwork(),
     cycleBackground: () => api.cycleArtistBackground(),
+    toggleMilkdrop: () => api.toggleMilkdrop(),
+    nextMilkdropPreset: () => api.nextMilkdropPreset(),
+    chooseMilkdropPreset: (key: string) => useMilkdropStore().choose(key),
+    milkdropTooHeavy: (key: string) => api.milkdropTooHeavy(key),
     seek: (seconds: number) => api.seek(seconds),
     setLyricsOffset: (offset: number) => api.setLyricsOffset(offset),
     resetLyricsOffset: () => api.setLyricsOffset(0),

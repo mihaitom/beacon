@@ -99,7 +99,10 @@ class StartRequest(BaseModel):
 
 class FinishRequest(BaseModel):
     name: str
-    pin: int | None = None
+    # Text: besides the PIN a device shows, an AirPort Express takes the
+    # password its owner set, of any length and with letters; and as a
+    # number a PIN's leading zero would be lost.
+    pin: str | None = None
 
 
 @router.get("")
@@ -223,6 +226,8 @@ async def finish_pairing(req: FinishRequest):
     pairing, _ = session
     try:
         if req.pin is not None:
+            # Typed int, but pyatv only runs it through str(), so a password
+            # passes as it is.
             pairing.pin(req.pin)  # synchronous method, no await
         await pairing.finish()
     except Exception as e:

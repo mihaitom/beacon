@@ -1,0 +1,4 @@
+# Third-party Milkdrop presets, kept byte-for-byte as converted upstream.
+src/renderer/src/assets/milkdrop/presets/
+# Third-party bundles kept as published.
+src/renderer/src/vendor/

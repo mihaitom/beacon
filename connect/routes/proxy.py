@@ -23,7 +23,7 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from starlette.requests import ClientDisconnect
 
-from core import external_source
+from core import client_cert, external_source
 from core.auth import require_token
 from core.session import SessionState, get_session
 from media import (
@@ -95,7 +95,12 @@ _LIMITS = httpx.Limits(max_connections=100, max_keepalive_connections=100, keepa
 def _get_client() -> httpx.AsyncClient:
     global _client
     if _client is None:
-        _client = httpx.AsyncClient(follow_redirects=True, timeout=60, limits=_LIMITS)
+        _client = httpx.AsyncClient(
+            follow_redirects=True,
+            timeout=60,
+            limits=_LIMITS,
+            verify=client_cert.ssl_context(),
+        )
     return _client
 
 

@@ -18,6 +18,10 @@ export interface ExternalSource {
   /** Only for a session that may configure it. */
   base_url?: string
   has_token?: boolean
+  /** Shared with the paired Beacon server (desktop app only). */
+  synced?: boolean
+  /** Shared by the server and changed there; only the token is set here. */
+  read_only?: boolean
 }
 
 export interface ExternalSources {

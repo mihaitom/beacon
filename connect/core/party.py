@@ -165,9 +165,12 @@ class PartyState:
         self.radio_logo: tuple[str, str] | None = None
         # The current song's lyrics as the host has them (match, offset).
         self.lyrics: dict | None = None
-        # Guests watching the visualizer, and the task feeding them.
+        # Guests watching the visualizer, and the task feeding them. Those
+        # in waveform_queues get each frame's raw samples too (Milkdrop).
         self.visualizer_queues: list[asyncio.Queue] = []
+        self.waveform_queues: set[asyncio.Queue] = set()
         self._visualizer_task: asyncio.Task | None = None
+        self._visualizer_analyzer = None
         # The host's last snapshot as it came, and the songs it named.
         self.tab_snapshot: dict = {}
         # When it arrived, by this server's clock: its position is as of then.
@@ -904,12 +907,15 @@ class PartyState:
 
     # ── Visualizer ───────────────────────────────────────────────────────
 
-    def watch_visualizer(self) -> asyncio.Queue:
-        """A guest starts watching the bars. They only ever come from a
+    def watch_visualizer(self, waveform: bool = False) -> asyncio.Queue:
+        """A guest starts watching the bars: (bands, waveform) per frame,
+        the waveform None unless asked for. They only ever come from a
         cast, where connect analyses what the speakers play anyway; local
         playback has its analyser in the host's browser."""
         queue: asyncio.Queue = asyncio.Queue(maxsize=4)
         self.visualizer_queues.append(queue)
+        if waveform:
+            self.waveform_queues.add(queue)
         if self._visualizer_task is None or self._visualizer_task.done():
             self._visualizer_task = asyncio.create_task(self._feed_visualizer())
         return queue
@@ -917,12 +923,16 @@ class PartyState:
     def unwatch_visualizer(self, queue: asyncio.Queue) -> None:
         if queue in self.visualizer_queues:
             self.visualizer_queues.remove(queue)
+        self.waveform_queues.discard(queue)
 
     def _on_frame(self, bands: list[float]) -> None:
+        # Read now: the analyzer sets it for exactly this frame.
+        analyzer = self._visualizer_analyzer
+        wave = getattr(analyzer, "last_waveform", None) if self.waveform_queues else None
         for queue in self.visualizer_queues:
             if queue.full():
                 queue.get_nowait()  # drop the oldest - show the freshest
-            queue.put_nowait(bands)
+            queue.put_nowait((bands, wave if queue in self.waveform_queues else None))
 
     def _host_feed(self):
         from .session import registry
@@ -953,12 +963,14 @@ class PartyState:
                     if analyzer is not None and self._on_frame in analyzer.listeners:
                         analyzer.listeners.remove(self._on_frame)
                     analyzer = current
+                    self._visualizer_analyzer = analyzer
                     if analyzer is not None:
                         analyzer.listeners.append(self._on_frame)
                 await asyncio.sleep(0.25)
         finally:
             if analyzer is not None and self._on_frame in analyzer.listeners:
                 analyzer.listeners.remove(self._on_frame)
+            self._visualizer_analyzer = None
             if feed is not None:
                 feed.unsubscribe()
 

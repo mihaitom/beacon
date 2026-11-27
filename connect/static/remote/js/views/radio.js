@@ -1,6 +1,6 @@
-import { fireCommand, fetchRadioStations } from '../api.js';
+import { fetchRadioStations } from '../api.js';
 import { navigate, registerRoute } from '../router.js';
-import { createArt } from '../art.js';
+import { renderRadioRow } from '../radio-row.js';
 import { t } from '../i18n.js';
 
 export function renderRadio(root) {
@@ -14,20 +14,7 @@ export function renderRadio(root) {
         list.innerHTML = `<div class="empty-state">${t('radio.empty')}</div>`;
         return;
       }
-      for (const station of items) {
-        const row = document.createElement('div');
-        row.className = 'row';
-
-        row.appendChild(createArt(station.favicon_url, 'mdi-radio'));
-
-        const main = document.createElement('div');
-        main.className = 'row-main';
-        main.innerHTML = `<div class="row-title">${escapeHtml(station.name)}</div>`;
-        row.appendChild(main);
-
-        row.addEventListener('click', () => fireCommand('play-radio-station', { stationId: station.id }));
-        list.appendChild(row);
-      }
+      for (const station of items) list.appendChild(renderRadioRow(station));
     })
     .catch(() => {
       list.innerHTML = `<div class="empty-state">${t('radio.failed')}</div>`;
@@ -38,9 +25,3 @@ registerRoute('/radio', renderRadio);
 // More held only Radio; an installed shell left on the old hash lands on
 // the Radio tab instead of a blank page.
 registerRoute('/more', () => navigate('/radio'));
-
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}

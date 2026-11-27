@@ -1,22 +1,16 @@
 <template>
-  <v-card min-width="380" max-width="420" class="connect-picker">
-    <v-toolbar
-      density="compact"
-      color="chrome"
-      class="connect-picker__toolbar"
-      :title="$t('connect.playingOn')"
-    >
-      <template #append>
-        <v-icon
-          v-if="connectStore.isActive"
-          icon="mdi-cast-connected"
-          color="primary"
-          size="18"
-          class="connect-picker__active-glow"
-        />
-      </template>
-    </v-toolbar>
-    <v-card-text>
+  <v-card class="connect-picker">
+    <header class="connect-picker__head">
+      <v-icon
+        :icon="connectStore.isActive ? 'mdi-cast-connected' : 'mdi-cast'"
+        :color="connectStore.isActive ? 'primary' : undefined"
+        size="20"
+        :class="{ 'connect-picker__active-glow': connectStore.isActive }"
+      />
+      <span class="connect-picker__title">{{ $t('connect.playingOn') }}</span>
+    </header>
+
+    <div v-if="hasNotices" class="connect-picker__notices">
       <connect-error-banner
         v-if="connectStore.errors.apiUnreachable"
         variant="api-unreachable"
@@ -29,7 +23,6 @@
         variant="tonal"
         density="compact"
         closable
-        class="connect-picker__notice"
         @click:close="connectStore.clearError()"
       >
         {{ connectStore.errors.message }}
@@ -37,60 +30,98 @@
           {{ connectStore.errors.detail }}
         </div>
       </v-alert>
+    </div>
 
-      <!-- No separate progress bar: the rescan button below carries the
-       - spinner, and this line is the only place an empty card needs to
-       - say anything at all. It covers the first scan after login too,
-       - which blocks for the full sweep (see refreshDevices()). -->
-      <div
-        v-if="allDevices.length === 0"
-        class="text-body-medium text-medium-emphasis connect-picker__empty"
-      >
-        {{
-          connectStore.isScanning ? $t('connect.searchingDevices') : $t('connect.noDevicesFound')
-        }}
-      </div>
-
-      <!-- Local playback as a real entry rather than "nothing ticked",
-       - matching MobileDevicePicker.vue, which has had one all along.
-       - Since the stream-info section below now describes local playback
-       - too, the card needed something for it to refer to — a panel
-       - explaining a format with no visible sign of what is playing it
-       - reads as belonging to whichever device is listed first. -->
-      <button
-        type="button"
-        class="this-device"
-        :class="{ 'this-device--active': !connectStore.isActive }"
-        :aria-pressed="!connectStore.isActive"
-        @click="playHere"
-      >
-        <v-icon
-          :icon="connectStore.isActive ? 'mdi-laptop' : 'mdi-circle-slice-8'"
-          :color="connectStore.isActive ? undefined : 'primary'"
-          size="small"
+    <!-- Two halves: what is playing, with its volumes, and what could be
+     - added. The menu's height follows the speakers in use rather than
+     - every one the network has. -->
+    <div class="connect-picker__body">
+      <section class="connect-picker__playing">
+        <div v-if="connectStore.isActive" class="eyebrow-label connect-picker__heading">
+          {{ playingHeading }}
+        </div>
+        <segmented-control
+          v-if="showModeSwitch"
+          class="connect-picker__mode"
+          dense
+          :model-value="groupVolumeStore.mode"
+          :options="modeOptions"
+          :label="$t('connect.groupVolume')"
+          @update:model-value="onModeChange"
         />
-        {{ $t('connect.thisDevice') }}
-      </button>
 
-      <template v-for="group in deviceGroups" :key="group.type">
-        <div class="eyebrow-label device-group-heading">{{ group.label }}</div>
-        <device-list-item
-          v-for="entry in group.entries"
-          :key="`${entry.type}:${entry.device.name}`"
-          :device="entry.device"
-          :type="entry.type"
-          :selected="selectedKeys.has(`${entry.type}:${entry.device.name}`)"
-          @update:selected="toggleSelected(entry, $event)"
-          @take-over="takeOver(entry)"
-          @pair="openPairing(entry.device.name)"
-          @volume-change="onVolumeChange"
-        />
-      </template>
+        <template v-if="connectStore.isActive">
+          <volume-fader
+            v-if="volumeGroup"
+            master
+            class="connect-picker__fader"
+            :label="$t('connect.allSpeakers')"
+            :model-value="groupVolumeLevel"
+            :floor="groupVolumeStore.mode === 'relative' ? groupVolumeFloor : null"
+            @update:model-value="onMasterChange"
+            @start="volumeGroup.forEach(startVolumeDrag)"
+            @end="volumeGroup.forEach(endVolumeDrag)"
+          >
+            <template #icon><v-icon icon="mdi-speaker-multiple" size="20" /></template>
+          </volume-fader>
+          <volume-fader
+            v-for="target in connectStore.activeTargets"
+            :key="`${target.type}:${target.name}`"
+            class="connect-picker__fader"
+            :label="target.name"
+            :model-value="deviceLevel(target)"
+            :adjustable="connectStore.isVolumeCapable(target.type)"
+            :plain="perSpeakerPlain || !connectStore.isVolumeCapable(target.type)"
+            :remove-label="$t('connect.removeSpeaker', { name: target.name })"
+            @update:model-value="onDeviceChange(target, $event)"
+            @start="startVolumeDrag(target)"
+            @end="endVolumeDrag(target)"
+            @remove="remove(target)"
+          >
+            <template #icon>
+              <airplay-icon v-if="target.type === 'airplay'" />
+              <v-icon v-else :icon="typeIcon(target.type)" size="20" />
+            </template>
+          </volume-fader>
+          <button type="button" class="connect-picker__local" @click="playHere">
+            <v-icon icon="mdi-laptop" size="19" />
+            {{ $t('connect.playHereInstead') }}
+          </button>
+        </template>
+        <div v-else class="connect-picker__here">
+          <v-icon icon="mdi-laptop" size="20" color="primary" />
+          <span class="text-body-medium">{{ $t('connect.thisDevice') }}</span>
+        </div>
 
-      <v-divider v-if="showStreamInfo" class="connect-picker__rule" />
-      <stream-info-section />
-    </v-card-text>
-    <v-card-actions class="connect-picker__actions">
+        <stream-info-section class="connect-picker__stream-info" />
+      </section>
+
+      <section class="connect-picker__available">
+        <div class="eyebrow-label connect-picker__heading">{{ $t('connect.addHeading') }}</div>
+        <!-- No separate progress bar: the rescan button below carries the
+         - spinner, and this line is the only place an empty list needs to
+         - say anything at all. It covers the first scan after login too,
+         - which blocks for the full sweep (see refreshDevices()). -->
+        <div v-if="availableGroups.length === 0" class="text-body-small connect-picker__empty">
+          {{ emptyAvailableText }}
+        </div>
+        <template v-for="group in availableGroups" :key="group.type">
+          <div class="text-body-small connect-picker__type">{{ group.label }}</div>
+          <available-device-row
+            v-for="entry in group.entries"
+            :key="`${entry.type}:${entry.device.name}`"
+            :device="entry.device"
+            :type="entry.type"
+            :busy="busyKey === `${entry.type}:${entry.device.name}`"
+            @add="add(entry)"
+            @take-over="takeOver(entry)"
+            @pair="openPairing(entry.device.name)"
+          />
+        </template>
+      </section>
+    </div>
+
+    <footer class="connect-picker__actions">
       <v-btn
         class="connect-picker__rescan"
         size="small"
@@ -111,287 +142,75 @@
       >
         {{ $t('connect.stopAll') }}
       </v-btn>
-      <v-btn
-        v-if="hasPendingChanges && selectedKeys.size > 0"
-        size="small"
-        color="primary"
-        :loading="connecting"
-        :disabled="connecting"
-        @click="connectSelected"
-      >
-        {{ applyLabel }}
-      </v-btn>
-    </v-card-actions>
+    </footer>
 
     <airplay-pairing-dialog v-model="pairingOpen" :device-name="pairingDeviceName" />
   </v-card>
 </template>
 
 <script lang="ts">
-import { useConnectStore } from '@/stores/connect'
-import { pollingAllowed } from '@/services/connect/pollGate'
-import { writeDeviceVolume } from '@/services/connect/volumeWrite'
-import { useAuthStore } from '@/stores/auth'
-import { usePlaybackStore } from '@/stores/playback'
+import SegmentedControl from '@/components/SegmentedControl.vue'
 import ConnectErrorBanner from './ConnectErrorBanner.vue'
-import DeviceListItem from './DeviceListItem.vue'
 import AirplayPairingDialog from './AirplayPairingDialog.vue'
-import StreamInfoSection, { hasStreamInfo } from './StreamInfoSection.vue'
-import type { DeviceType, DiscoveredDevice } from '@/services/connect/types'
+import AirplayIcon from './AirplayIcon.vue'
+import AvailableDeviceRow from './AvailableDeviceRow.vue'
+import VolumeFader from './VolumeFader.vue'
+import StreamInfoSection from './StreamInfoSection.vue'
+import { castMenuMixin } from './castMenuMixin'
 
-interface DeviceEntry {
-  device: DiscoveredDevice
-  type: DeviceType
-}
-
-interface DeviceGroup {
-  type: DeviceType
-  label: string
-  entries: DeviceEntry[]
-}
-
-// Fixed display order (not alphabetical) — Sonos/AirPlay are this app's
-// primary, best-supported casting targets.
-const TYPE_ORDER: DeviceType[] = ['sonos', 'airplay', 'chromecast', 'dlna']
-const TYPE_LABELS: Record<DeviceType, string> = {
-  sonos: 'Sonos',
-  airplay: 'AirPlay',
-  chromecast: 'Chromecast',
-  dlna: 'DLNA',
-}
-
+/** The desktop's cast menu: what is playing on the left, what could be
+ * added on the right. What it does lives in castMenuMixin, shared with the
+ * phone's sheet. */
 export default {
   name: 'ConnectDevicePicker',
-  components: { ConnectErrorBanner, DeviceListItem, AirplayPairingDialog, StreamInfoSection },
-  data() {
-    return {
-      selectedKeys: new Set<string>(),
-      connecting: false,
-      // What the checked set was when this picker last agreed with
-      // reality — seeded from the live targets (syncFromActiveTargets())
-      // and re-marked whenever an apply goes through. The diff against
-      // selectedKeys is what "the user has an unapplied edit" means: it
-      // gates the apply button, and it is what stops an outside change
-      // (another client casting, a device dropping) from re-seeding the
-      // checkboxes out from under someone mid-edit.
-      appliedKeys: new Set<string>(),
-      pairingOpen: false,
-      pairingDeviceName: '',
-      devicesPollTimer: null as ReturnType<typeof setInterval> | null,
-    }
+  components: {
+    AirplayIcon,
+    AirplayPairingDialog,
+    AvailableDeviceRow,
+    ConnectErrorBanner,
+    SegmentedControl,
+    StreamInfoSection,
+    VolumeFader,
   },
-  computed: {
-    connectStore() {
-      return useConnectStore()
-    },
-    authStore() {
-      return useAuthStore()
-    },
-    // Whether stream-info-section actually renders anything below the
-    // divider — see hasStreamInfo()'s own comment (StreamInfoSection.vue)
-    // for why that answer lives there rather than being re-derived here.
-    showStreamInfo(): boolean {
-      return hasStreamInfo()
-    },
-    // Grouped by type (fixed order, see TYPE_ORDER) with each group sorted
-    // alphabetically by name — the per-device type label this replaced is
-    // gone from DeviceListItem.vue since the group heading already says it.
-    deviceGroups(): DeviceGroup[] {
-      const d = this.connectStore.devices
-      const byType: Record<DeviceType, DiscoveredDevice[]> = {
-        sonos: d.sonos,
-        airplay: d.airplay,
-        chromecast: d.chromecast,
-        dlna: d.dlna,
-      }
-      return TYPE_ORDER.map((type) => ({
-        type,
-        label: TYPE_LABELS[type],
-        entries: [...byType[type]]
-          .sort((a, b) => a.name.localeCompare(b.name))
-          .map((device) => ({ device, type })),
-      })).filter((group) => group.entries.length > 0)
-    },
-    allDevices(): DeviceEntry[] {
-      return this.deviceGroups.flatMap((group) => group.entries)
-    },
-    activeKeys(): string[] {
-      return this.connectStore.activeTargets.map(
-        (t: { name: string; type: string }) => `${t.type}:${t.name}`,
-      )
-    },
-    /** Whether the checked set has been touched since it was last seeded
-     * from — or marked applied against — reality. Two jobs: it protects an
-     * in-progress selection from being re-seeded out from under the user
-     * by an outside change (see the activeKeys watcher), and it is the
-     * local half of hasPendingChanges() below. */
-    userHasEdited(): boolean {
-      if (this.appliedKeys.size !== this.selectedKeys.size) return true
-      return [...this.selectedKeys].some((key) => !this.appliedKeys.has(key))
-    },
-    hasPendingChanges(): boolean {
-      // Both halves, and the first one carries most of the weight: the
-      // second compares against the live targets, which arrive over SSE
-      // with no ordering guarantee against the calls that just returned —
-      // on its own it makes the apply button flash straight back after a
-      // successful apply, until the status catches up. userHasEdited is
-      // settled locally the moment the apply lands, so it closes that
-      // window. The live comparison still earns its place for the case it
-      // was written for: an edit that another client happens to make first
-      // (same device ticked here and cast there) is no longer anything for
-      // this button to do.
-      if (!this.userHasEdited) return false
-      const active = new Set(this.activeKeys)
-      if (active.size !== this.selectedKeys.size) return true
-      return [...this.selectedKeys].some((key) => !active.has(key))
-    },
-    /** Unticking everything is a removal like any other, but it needs no
-     * button of its own: the destructive "Stop all" next to this one
-     * already says exactly that, and showing both read as two different
-     * actions. So this only labels the case where something stays playing. */
-    applyLabel(): string {
-      return this.connectStore.isActive ? this.$t('connect.apply') : this.$t('connect.connect')
-    },
-  },
-  watch: {
-    // Re-seed while the user has no unapplied edits, so the checkboxes keep
-    // reflecting reality (another client casting, a device dropping out)
-    // without ever discarding a selection someone is in the middle of
-    // making.
-    activeKeys: {
-      immediate: true,
-      handler() {
-        if (!this.userHasEdited) this.syncFromActiveTargets()
-      },
-    },
-  },
-  mounted() {
-    // Keeps in_use_by_name/in_use_by_song fresh while the picker is open —
-    // someone else's cast session changing songs, or a device becoming
-    // free again, should show up without the user having to hit "Scan
-    // again". Cheap: this omits fresh=true, so the backend just re-derives
-    // claim/song annotations for the already-cached device list (see
-    // routes/discovery.py's _annotate_claims()) rather than doing a real
-    // mDNS/SSDP rescan — same 4s cadence as DeviceListItem.vue's volume poll.
-    // Not while the window is hidden or the app is being denied by
-    // whatever sits in front of the backend — see pollGate.ts. Nobody can
-    // be watching a picker in a hidden window, and a re-annotation nothing
-    // renders is the kind of steady baseline that keeps a ban alive.
-    this.devicesPollTimer = setInterval(() => {
-      if (pollingAllowed()) void this.connectStore.refreshDevices()
-    }, 4000)
-  },
-  beforeUnmount() {
-    if (this.devicesPollTimer) clearInterval(this.devicesPollTimer)
-  },
-  methods: {
-    syncFromActiveTargets() {
-      this.selectedKeys = new Set(this.activeKeys)
-      this.appliedKeys = new Set(this.activeKeys)
-    },
-    toggleSelected(entry: DeviceEntry, value: boolean) {
-      const key = `${entry.type}:${entry.device.name}`
-      if (value) this.selectedKeys.add(key)
-      else this.selectedKeys.delete(key)
-      // Set isn't deeply reactive-triggering on add/delete alone in all cases — force refresh.
-      this.selectedKeys = new Set(this.selectedKeys)
-    },
-    async connectSelected() {
-      this.connecting = true
-      try {
-        const targets = this.allDevices
-          .filter((e) => this.selectedKeys.has(`${e.type}:${e.device.name}`))
-          .map((e) => ({ name: e.device.name, type: e.type }))
-        // Not castTo(): the checked set is the desired *end state*, and on
-        // an already-running session castTo() would replace the targets
-        // rather than reconcile them. See applyTargets()'s own docstring.
-        await usePlaybackStore().applyTargets(targets)
-        // Deliberately not syncFromActiveTargets(): activeTargets comes off
-        // the SSE stream, which has no ordering guarantee against the HTTP
-        // calls that just returned — re-seeding from it here can read a
-        // status that still lists the device this very call removed, and
-        // visibly re-tick its checkbox until the next tick corrects it.
-        // Marking the applied set instead leaves the checkboxes where the
-        // user put them and hands the re-seed back to the activeKeys
-        // watcher, which runs when reality actually lands.
-        //
-        // Skipped while a takeover is pending: applyTargets() stopped
-        // short and is waiting on the dialog, so this selection is still
-        // unapplied — claiming otherwise would drop the apply button out
-        // from under a user who then cancels the dialog.
-        if (!this.connectStore.pendingTakeover) this.appliedKeys = new Set(this.selectedKeys)
-      } catch {
-        // A device-in-use conflict already opened the takeover dialog (see
-        // castTo()/withTakeoverHandling()); any other failure already set
-        // connectStore.errors.message, shown via the v-alert above — this
-        // catch just stops it from becoming an unhandled rejection.
-      } finally {
-        this.connecting = false
-      }
-    },
-    /** Claim a device another session is holding, *in addition to*
-     * whatever is already playing. Not castTo(), which replaces the whole
-     * target set: since a claimed row's checkbox is inert
-     * (DeviceListItem.vue's onToggle()), this button is the only way to
-     * pick such a device at all, and going through castTo() made that the
-     * only way to lose every other speaker at the same time. */
-    async takeOver(entry: DeviceEntry) {
-      const target = { name: entry.device.name, type: entry.type }
-      const key = `${entry.type}:${entry.device.name}`
-      try {
-        await usePlaybackStore().applyTargets([...this.connectStore.activeTargets, target], true)
-        // The row reads its tick from the staged selection, not from the
-        // live targets, so a takeover that bypassed the checkbox has to
-        // put it there itself — on both sets, since this is applied, not
-        // an edit waiting for the apply button.
-        this.selectedKeys = new Set(this.selectedKeys).add(key)
-        this.appliedKeys = new Set(this.appliedKeys).add(key)
-      } catch {
-        // Already recorded on connectStore.errors and rendered by the
-        // v-alert above — same reasoning as connectSelected()'s catch.
-      }
-    },
-    async stopAll() {
-      await this.connectStore.stopAll()
-    },
-    /** Bring playback back to this device. Same call as "Stop all" — the
-     * two differ in what they say, not in what they do: stopping every
-     * cast target *is* playing here. Kept separate so the affordance reads
-     * as "play here" rather than as a destructive action, and it's a no-op
-     * when nothing is casting. */
-    async playHere() {
-      if (!this.connectStore.isActive) return
-      await this.connectStore.stopAll()
-    },
-    openPairing(name: string) {
-      this.pairingDeviceName = name
-      this.pairingOpen = true
-    },
-    onVolumeChange({
-      type,
-      device,
-      volume,
-    }: {
-      type: DeviceType
-      device: DiscoveredDevice
-      volume: number
-    }) {
-      // Not awaited per move - see services/connect/volumeWrite.ts.
-      // DeviceListItem.vue reports every drag tick up here too, so this
-      // slider floods a speaker exactly the way the others did.
-      writeDeviceVolume({ type, name: device.name }, volume, (level) =>
-        this.connectStore.setDeviceVolume(type, device.name, level),
-      )
-    },
-  },
+  mixins: [castMenuMixin],
 }
 </script>
 
 <style scoped>
-/* The library's own text behind the message above (a UPnP fault code, a
- * socket error) — present so it can be read out to whoever is asked about
- * it, deliberately quiet enough not to compete with the sentence that
- * actually tells the listener what happened. */
+.connect-picker {
+  /* Two columns want room; a narrow window still gets the whole menu,
+   * stacked (see the container query below). */
+  width: min(800px, calc(100vw - 16px));
+  display: flex;
+  flex-direction: column;
+  max-height: inherit;
+  border: 1px solid var(--beacon-hairline);
+  container-type: inline-size;
+}
+
+.connect-picker__head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 18px 10px;
+}
+
+.connect-picker__title {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.connect-picker__active-glow {
+  filter: drop-shadow(0 0 6px rgba(var(--v-theme-primary), 0.55));
+}
+
+.connect-picker__notices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 14px 8px;
+}
+
 .connect-error-detail {
   margin-top: 4px;
   font-size: 0.75rem;
@@ -399,99 +218,139 @@ export default {
   word-break: break-word;
 }
 
-/* Same dark-chrome system as QueueDrawer.vue's own
- * .beacon-drawer/.beacon-drawer__toolbar (Vue scoped styles don't share
- * across components just by reusing a class name, so this redeclares it
- * rather than actually reusing theirs) — this floats the same way those
- * do (a v-menu popover, not docked), so the same "reads as part of the
- * app's own chrome, not a generic Material card" treatment applies. */
-.connect-picker {
-  border: 1px solid var(--beacon-hairline);
+.connect-picker__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  min-height: 0;
+  flex: 1;
 }
 
-.connect-picker__toolbar {
-  border-bottom: 1px solid var(--beacon-hairline);
+.connect-picker__playing,
+.connect-picker__available {
+  min-height: 0;
+  overflow-y: auto;
+  padding-bottom: 10px;
 }
 
-.connect-picker__active-glow {
-  filter: drop-shadow(0 0 5px rgba(var(--v-theme-primary), 0.5));
+.connect-picker__playing {
+  display: flex;
+  flex-direction: column;
+  padding-inline: 10px;
 }
 
-.connect-picker__actions {
-  border-top: 1px solid var(--beacon-hairline);
+.connect-picker__available {
+  padding-inline: 8px;
+  border-left: 1px solid var(--beacon-hairline);
+  background: rgba(0, 0, 0, 0.12);
 }
 
-.device-group-heading {
-  padding: 8px 12px 4px;
+.connect-picker__heading {
+  padding: 10px 8px 8px;
 }
 
-/* Deliberately built to DeviceListItem.vue's own .device-row measurements
- * (46px min-height, 4px 12px padding, the same hover tint and lit edge)
- * rather than reusing that component: this row has no volume slider, no
- * claim state and no checkbox — a props-driven variant of it would be more
- * branching than the twenty lines below. Scoped styles don't cross
- * components anyway, so either way the values are restated. */
-.this-device {
+/* Local playback, playing: lit the way a speaker's row is. */
+.connect-picker__here {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 10px;
-  width: 100%;
-  min-height: 46px;
-  padding: 4px 12px;
-  margin-bottom: 4px;
-  border-radius: 4px;
-  font-size: 0.875rem;
-  text-align: left;
-  transition: background 0.1s;
-}
-
-.this-device:hover {
-  background: var(--beacon-hover);
-}
-
-.this-device--active {
-  position: relative;
+  gap: 12px;
+  height: 48px;
+  margin-top: 8px;
+  padding: 0 12px;
+  border-radius: 10px;
   background: rgba(var(--v-theme-primary), 0.08);
+  font-weight: 500;
 }
 
-.this-device--active:hover {
-  background: rgba(var(--v-theme-primary), 0.12);
-}
-
-/* The same beam the active cast target gets — playing here is a state
- * worth marking as clearly as playing on a speaker. */
-.this-device--active::before {
+.connect-picker__here::before {
   content: '';
   position: absolute;
   left: 0;
-  top: 6px;
-  bottom: 6px;
+  top: 10px;
+  bottom: 10px;
   width: 3px;
   border-radius: 0 2px 2px 0;
   background: rgb(var(--v-theme-primary));
   box-shadow: 0 0 10px 1px rgba(var(--v-theme-primary), 0.55);
 }
 
-.this-device--active .v-icon {
-  filter: drop-shadow(0 0 5px rgba(var(--v-theme-primary), 0.4));
+.connect-picker__mode {
+  margin: 0 0 8px;
 }
 
-.connect-picker__active-glow {
-  margin-right: 12px;
+.connect-picker__fader {
+  margin-bottom: 4px;
 }
 
-/* A banner above the device list. */
-.connect-picker__notice {
+.connect-picker__fader.fader--master {
   margin-bottom: 8px;
 }
 
-.connect-picker__rule {
-  margin-block: 8px;
+.connect-picker__local {
+  appearance: none;
+  border: 0;
+  background: none;
+  font: inherit;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 42px;
+  margin-top: 4px;
+  padding: 0 12px;
+  border-radius: 10px;
+  color: rgba(var(--v-theme-on-surface), 0.7);
+  text-align: left;
 }
 
-/* The "searching"/"none found" line, indented like the rows it stands
- * in for. */
+.connect-picker__local:hover {
+  background: rgba(var(--v-theme-on-surface), 0.04);
+}
+
+.connect-picker__local:focus-visible {
+  outline: 2px solid rgb(var(--v-theme-primary));
+  outline-offset: -2px;
+}
+
+/* At the foot of its half, under however many speakers there are. */
+.connect-picker__stream-info {
+  margin-top: auto;
+  padding: 16px 8px 0;
+}
+
+.connect-picker__type {
+  padding: 10px 8px 4px;
+  font-weight: 600;
+  color: rgba(var(--v-theme-on-surface), 0.45);
+}
+
 .connect-picker__empty {
-  padding: 8px;
+  padding: 4px 8px;
+  color: rgba(var(--v-theme-on-surface), 0.55);
+}
+
+.connect-picker__actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--beacon-hairline);
+}
+
+@container (max-width: 620px) {
+  .connect-picker__body {
+    grid-template-columns: minmax(0, 1fr);
+    overflow-y: auto;
+  }
+
+  .connect-picker__playing,
+  .connect-picker__available {
+    overflow: visible;
+  }
+
+  .connect-picker__available {
+    border-left: none;
+    border-top: 1px solid var(--beacon-hairline);
+  }
 }
 </style>

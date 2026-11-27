@@ -123,6 +123,12 @@ The room lights playing along (connect/lights/).
 - **FIXED** [The lights switch between the kick and the bass](lights/lights-switch-between-kick-and-bass.md) (2026-11-06, unreleased) - on a log spectrum a quiet bass note reads like a loud kick, so the beats moved onto the bassline for whole sections, and every beat flashed whatever was on it. Beats and flashes now follow the level in the bass band. Has the 88-song measurement against separated stems, what got worse, and why the kick alone does not work
 - **FIXED** [The lights are not in time with the song](lights/lights-not-in-time-with-the-song.md) (2026-11-01, unreleased) - the beatmix grid turned a quarter of songs down (a played tempo, sections leaning on different parts) and sat half a beat off the kick for 16 of the rest. The lights place their own beats now. Has the 120-song measurement against BPM tags, four tests for "has a beat" that did not work, and the same half-beat fault still open in the beatmix grid
 
+## Visualizer
+
+The Milkdrop presets that Beacon ships.
+
+- **REFERENCE** [How deep the Fractal Zoom can go](visualizer/fractal-zoom-deep-minibrots.md) - 2026-11-23; the float's exponent (2^-126) and its digits over thousands of steps, checked pixel by pixel against an exact count. Why the period-1000+ minibrots were taken out again (iterations per pixel). Has the split-orbit and earlier-rebase attempts ruled out, the straight edges from the 8-bit history blend, and what the step skipping costs and saves
+
 ## Tools and method
 
 - **REFERENCE** [Instrumentation](instrumentation.md) - what's built into the app and what's scripted on the media host

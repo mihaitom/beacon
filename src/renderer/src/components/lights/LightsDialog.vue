@@ -2,10 +2,11 @@
   <v-dialog
     :model-value="modelValue"
     max-width="420"
+    :fullscreen="compact"
     scrollable
     @update:model-value="$emit('update:modelValue', $event)"
   >
-    <v-card class="beacon-dialog">
+    <v-card :class="compact ? 'lights--fullscreen' : 'beacon-dialog'">
       <v-card-title class="lights__head">
         <span class="lights__grow">{{ $t('lights.title') }}</span>
         <v-btn
@@ -25,6 +26,16 @@
           hide-details
           class="lights__switch"
           @update:model-value="save({ enabled: !!$event })"
+        />
+        <!-- Fullscreen on a phone the title carries the close button, as in
+           - EqualizerDialog.vue. -->
+        <v-btn
+          v-if="compact"
+          icon="mdi-close"
+          variant="text"
+          density="comfortable"
+          :title="$t('common.close')"
+          @click="$emit('update:modelValue', false)"
         />
       </v-card-title>
 
@@ -66,23 +77,33 @@
         </template>
 
         <template v-else-if="state">
-          <lights-stage
-            v-if="modelValue"
-            :lights="lightCount"
-            :light-style="state.style"
-            :palette="previewPalette"
-            :brightness="brightness / 100"
-            :rotate="state.colour_mode === 'rotate'"
-            :on="state.enabled"
-            :song="previewSong"
-            :clock="previewClock"
-          />
-          <p class="lights__caption">
-            {{ $t('lights.follows') }}
-            {{ $t(livePreview ? 'lights.previewLive' : 'lights.previewMadeUp') }}
-          </p>
+          <!-- The phone leaves the preview out, as the remote does: it is
+             - there to switch the lights or move them to another room. -->
+          <template v-if="!compact">
+            <lights-stage
+              v-if="modelValue"
+              :lights="lightCount"
+              :light-style="state.style"
+              :palette="previewPalette"
+              :brightness="brightness / 100"
+              :rotate="state.colour_mode === 'rotate'"
+              :on="state.enabled"
+              :song="previewSong"
+              :clock="previewClock"
+            />
+            <p class="lights__caption">
+              {{ $t('lights.follows') }}
+              {{ $t(livePreview ? 'lights.previewLive' : 'lights.previewMadeUp') }}
+            </p>
+          </template>
 
-          <div v-if="warning" class="status-row lights__warning">
+          <!-- Without the advanced section the bridge's state goes up
+             - here, problem or not. -->
+          <div v-if="compact" class="status-row lights__warning">
+            <span class="status-dot" :class="warning ? 'status-dot--warn' : 'status-dot--ok'" />
+            <span class="setting__hint setting__hint--inline">{{ warning || statusLine }}</span>
+          </div>
+          <div v-else-if="warning" class="status-row lights__warning">
             <span class="status-dot status-dot--warn" />
             <span class="setting__hint setting__hint--inline">{{ warning }}</span>
           </div>
@@ -221,7 +242,20 @@
                - only sends that at the end of a drag, never for the arrow
                - keys. Not disabled while saving either, which would end a
                - drag that pauses long enough for a save. -->
+            <!-- The phone's own native range, see TouchVolumeSlider. -->
+            <div v-if="compact" class="lights__brightness">
+              <v-icon icon="mdi-brightness-5" />
+              <touch-volume-slider
+                v-model="brightness"
+                :min="MIN_BRIGHTNESS"
+                :max="100"
+                :step="5"
+                :aria-label="$t('lights.brightness')"
+              />
+              <v-icon icon="mdi-brightness-7" />
+            </div>
             <v-slider
+              v-else
               v-model="brightness"
               :min="MIN_BRIGHTNESS"
               :max="100"
@@ -234,7 +268,7 @@
             />
           </section>
 
-          <div class="lights__advanced">
+          <div v-if="!compact" class="lights__advanced">
             <v-btn
               variant="text"
               size="small"
@@ -280,10 +314,12 @@
         <v-btn v-if="state?.paired" variant="text" :disabled="saving" @click="forget">
           {{ $t('lights.forget') }}
         </v-btn>
-        <v-spacer />
-        <v-btn variant="text" @click="$emit('update:modelValue', false)">
-          {{ $t('common.close') }}
-        </v-btn>
+        <template v-if="!compact">
+          <v-spacer />
+          <v-btn variant="text" @click="$emit('update:modelValue', false)">
+            {{ $t('common.close') }}
+          </v-btn>
+        </template>
       </v-card-actions>
     </v-card>
   </v-dialog>
@@ -320,6 +356,7 @@ import { themeColour, themeSettings, useLightsStore } from '@/stores/lights'
 import { usePlaybackStore } from '@/stores/playback'
 import LightsColourWheel from './LightsColourWheel.vue'
 import LightsStage from './LightsStage.vue'
+import TouchVolumeSlider from '@/components/mobile/TouchVolumeSlider.vue'
 
 // connect's own bounds (lights/config.py).
 const MAX_LEAD_MS = 1000
@@ -352,9 +389,11 @@ const STYLES: { value: LightsStyle; icon: string }[] = [
  */
 export default {
   name: 'LightsDialog',
-  components: { LightsColourWheel, LightsStage },
+  components: { LightsColourWheel, LightsStage, TouchVolumeSlider },
   props: {
     modelValue: { type: Boolean, default: false },
+    /** The phone's fullscreen form, without the preview and the lead. */
+    compact: { type: Boolean, default: false },
   },
   emits: ['update:modelValue'],
   data() {
@@ -448,7 +487,7 @@ export default {
     /** The song the preview plays along with: whatever plays here, paused
      * or radio aside. */
     playingSongId(): string | null {
-      if (!this.modelValue || !this.state?.paired) return null
+      if (!this.modelValue || this.compact || !this.state?.paired) return null
       const playback = usePlaybackStore()
       if (!playback.isPlaying || playback.radioStation) return null
       return playback.currentSong?.id ?? null
@@ -696,6 +735,17 @@ export default {
 
 .lights__switch {
   flex: none;
+}
+
+.lights--fullscreen {
+  background: var(--beacon-chrome);
+}
+
+.lights__brightness {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: rgba(var(--v-theme-on-surface), 0.7);
 }
 
 .lights__intro {

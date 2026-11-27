@@ -15,6 +15,7 @@ party-wish, party-withdraw and - when a skip vote passes - next.
 """
 
 import asyncio
+import base64
 import json
 import logging
 import re
@@ -711,7 +712,9 @@ async def lyrics(guest: Guest = Depends(require_guest)):
 
 
 @router.get("/api/backdrop")
-async def backdrop(index: int | None = None, guest: Guest = Depends(require_guest)):
+async def backdrop(
+    index: int | None = None, w: int | None = None, guest: Guest = Depends(require_guest)
+):
     """One of the playing artist's Fanart.tv backgrounds, from connect's own
     Fanart.tv cache: the one the host shows, or - for a guest stepping
     through them - one of the host's list by position. Never a URL a guest
@@ -725,39 +728,43 @@ async def backdrop(index: int | None = None, guest: Guest = Depends(require_gues
         url = None
     if not url:
         raise HTTPException(status_code=404)
-    data = fanart.get_cached_image(url)
+    data = await fanart.image(url, w)
     if data is None:
-        fetched = await fanart.fetch_image(url)
-        if fetched is None:
-            raise HTTPException(status_code=404)
-        data, _content_type = fetched
-        fanart.store_image(url, data)
+        raise HTTPException(status_code=404)
     return Response(
         content=data,
-        media_type=fanart.content_type_for(url),
+        media_type=fanart.media_type(data),
         headers={"Cache-Control": "private, max-age=3600"},
     )
 
 
 @router.get("/api/visualizer")
-async def visualizer(guest: Guest = Depends(require_guest)):
+async def visualizer(
+    with_waveform: bool = Query(False, alias="waveform"),
+    guest: Guest = Depends(require_guest),
+):
     """The bars while the host casts - see core/party.py's
     watch_visualizer. Idle comments otherwise, so the page can tell a
-    quiet stream from a dropped one."""
+    quiet stream from a dropped one. `waveform` adds each frame's raw
+    samples for Milkdrop (base64, see core/audio_analysis.py's
+    waveform_snapshot()): about 60 KB/s, so only when asked for."""
     if len(party.visualizer_queues) >= MAX_VISUALIZER_STREAMS:
         raise HTTPException(status_code=429, detail="Too many open connections")
-    queue = party.watch_visualizer()
+    queue = party.watch_visualizer(with_waveform)
 
     async def generator():
         try:
             yield "retry: 3000\n\n"
             while party.guest_alive(guest):
                 try:
-                    bands = await asyncio.wait_for(queue.get(), timeout=1.0)
+                    bands, wave = await asyncio.wait_for(queue.get(), timeout=1.0)
                 except TimeoutError:
                     yield ": idle\n\n"
                     continue
-                yield f"data: {json.dumps({'bands': [round(b, 3) for b in bands]})}\n\n"
+                payload: dict = {"bands": [round(b, 3) for b in bands]}
+                if wave is not None:
+                    payload["waveform"] = base64.b64encode(wave).decode("ascii")
+                yield f"data: {json.dumps(payload)}\n\n"
         finally:
             party.unwatch_visualizer(queue)
 
@@ -864,18 +871,31 @@ async def listen_start(c: str = Query(...), guest: Guest = Depends(require_guest
 _listen_visualizers = 0
 
 
+def _listen_frame(frame: tuple) -> list:
+    """(stream time, bands[, samples]) as the page reads it."""
+    out: list = [round(frame[0], 3), [round(b, 2) for b in frame[1]]]
+    if len(frame) > 2:
+        out.append(base64.b64encode(frame[2]).decode("ascii"))
+    return out
+
+
 @router.get("/api/listen/visualizer")
-async def listen_visualizer(guest: Guest = Depends(require_guest)):
+async def listen_visualizer(
+    with_waveform: bool = Query(False, alias="waveform"),
+    guest: Guest = Depends(require_guest),
+):
     """The bars for a guest listening along, from the stream's own audio:
     batches of [stream time, bands], which the page shows once it hears
-    that stream time. Counted against the same cap as /api/visualizer."""
+    that stream time - with `waveform`, [stream time, bands, samples] for
+    Milkdrop (base64, as /api/visualizer). Counted against the same cap as
+    /api/visualizer."""
     global _listen_visualizers
     if len(party.visualizer_queues) + _listen_visualizers >= MAX_VISUALIZER_STREAMS:
         raise HTTPException(status_code=429, detail="Too many open connections")
     broadcaster = party.broadcaster
     if broadcaster is None or broadcaster.stopped:
         raise HTTPException(status_code=404)
-    queue = broadcaster.watch_bands()
+    queue = broadcaster.watch_bands(with_waveform)
     _listen_visualizers += 1
 
     async def generator():
@@ -892,7 +912,7 @@ async def listen_visualizer(guest: Guest = Depends(require_guest)):
                     return
                 payload = {
                     "epoch": broadcaster.epoch,
-                    "frames": [[round(t, 3), [round(b, 2) for b in bands]] for t, bands in frames],
+                    "frames": [_listen_frame(frame) for frame in frames],
                 }
                 yield f"data: {json.dumps(payload, separators=(',', ':'))}\n\n"
         finally:

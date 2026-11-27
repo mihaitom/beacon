@@ -3,9 +3,9 @@
     ref="input"
     type="range"
     class="touch-volume-slider"
-    :min="0"
+    :min="min"
     :max="max"
-    :step="1"
+    :step="step"
     :value="modelValue"
     :disabled="disabled"
     :aria-label="ariaLabel"
@@ -42,7 +42,9 @@ export default {
   name: 'TouchVolumeSlider',
   props: {
     modelValue: { type: Number, required: true },
+    min: { type: Number, default: 0 },
     max: { type: Number, default: 100 },
+    step: { type: Number, default: 1 },
     disabled: { type: Boolean, default: false },
     ariaLabel: { type: String, default: '' },
   },
@@ -52,8 +54,9 @@ export default {
      * is painted as a gradient on the element - same approach as the
      * remote's range.js. */
     fillStyle(): string {
+      const span = this.max - this.min
       const percent =
-        this.max > 0 ? Math.max(0, Math.min(100, (this.modelValue / this.max) * 100)) : 0
+        span > 0 ? Math.max(0, Math.min(100, ((this.modelValue - this.min) / span) * 100)) : 0
       return `--fill: ${percent}%`
     },
   },

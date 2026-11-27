@@ -41,7 +41,7 @@ export function unpairServerLink(): Promise<ServerLinkStatus> {
   return fetchConnect<ServerLinkStatus>('/server-link', { method: 'DELETE' })
 }
 
-export type DeviceKeyScope = 'sync' | 'api_keys' | AppScope
+export type DeviceKeyScope = 'sync' | 'api_keys' | 'sources' | 'source_tokens' | AppScope
 export type AppScope = 'history' | 'stats' | 'now_playing' | 'lyrics' | 'control' | 'library'
 
 export const APP_SCOPES: readonly AppScope[] = [

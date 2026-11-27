@@ -3,29 +3,31 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createVuetify } from 'vuetify'
 import * as components from 'vuetify/components'
-import { VBtn } from 'vuetify/components'
 import * as directives from 'vuetify/directives'
 import { i18n } from '@/i18n'
 import { useConnectStore } from '@/stores/connect'
 import { usePlaybackStore } from '@/stores/playback'
 import { makeStatus } from '@/stores/__tests__/fixtures'
 import { emitter } from '@/emitter'
+import { _resetPollGate } from '@/services/connect/pollGate'
 import MobileDevicePicker from '../MobileDevicePicker.vue'
-import MobileDeviceRow from '../MobileDeviceRow.vue'
+import AvailableDeviceRow from '@/components/connect/AvailableDeviceRow.vue'
 import ConnectErrorBanner from '@/components/connect/ConnectErrorBanner.vue'
 import StreamInfoSection from '@/components/connect/StreamInfoSection.vue'
+import VolumeFader from '@/components/connect/VolumeFader.vue'
 
 const vuetify = createVuetify({ components, directives })
 
-// v-bottom-sheet teleports its content to the document body, so the usual
-// wrapper queries find nothing — attaching to the document and querying it
-// directly is what actually reaches the rendered sheet.
-function mountPicker() {
+// v-bottom-sheet teleports its content to the document body, so the sheet's
+// own elements are found through document, its components through the
+// wrapper.
+function mountPicker(open = true) {
   return mount(MobileDevicePicker, {
-    props: { modelValue: true },
+    props: { modelValue: open },
     attachTo: document.body,
     global: {
       plugins: [vuetify, i18n],
+      stubs: { AirplayPairingDialog: true },
       // $emitter is a global property (see main.ts), not something a
       // bare mount() sets up.
       mocks: { $emitter: emitter },
@@ -33,21 +35,10 @@ function mountPicker() {
   })
 }
 
-function rescanButton(wrapper: ReturnType<typeof mountPicker>) {
-  return wrapper.getComponent<typeof VBtn>('.mobile-device-picker__rescan')
-}
-
-// By its own class, not by position: the sheet grew notices and a stream
-// info section around the header, and "the last button" stopped being this
-// one the moment an error alert with a close button rendered above it.
-// Still found through the component list rather than a DOM query, for the
-// teleport reason above.
-function doneButton(wrapper: ReturnType<typeof mountPicker>) {
-  const done = wrapper
-    .findAllComponents<typeof VBtn>(VBtn)
-    .find((button) => button.classes().includes('mobile-device-picker__done'))
-  if (!done) throw new Error('the sheet has no Done button')
-  return done
+function $(selector: string): HTMLElement {
+  const element = document.querySelector<HTMLElement>(selector)
+  if (!element) throw new Error(`nothing matches ${selector}`)
+  return element
 }
 
 function withDevices(sonos: string[]) {
@@ -58,165 +49,206 @@ function withDevices(sonos: string[]) {
     chromecast: [],
     dlna: [],
   } as unknown as typeof connect.devices
+  vi.spyOn(connect, 'refreshDevices').mockResolvedValue()
   return connect
+}
+
+function closed(wrapper: ReturnType<typeof mountPicker>): boolean {
+  return (wrapper.emitted('update:modelValue') ?? []).some(([value]) => value === false)
+}
+
+function pointer(type: string, clientY: number, timeStamp: number): PointerEvent {
+  const event = new MouseEvent(type, { bubbles: true, clientY, button: 0 }) as PointerEvent
+  Object.defineProperty(event, 'pointerId', { value: 1 })
+  Object.defineProperty(event, 'timeStamp', { value: timeStamp })
+  return event
+}
+
+function pull(distance: number, durationMs: number) {
+  const top = $('.cast-sheet__top')
+  top.dispatchEvent(pointer('pointerdown', 100, 0))
+  top.dispatchEvent(pointer('pointermove', 100 + distance, durationMs))
+  top.dispatchEvent(pointer('pointerup', 100 + distance, durationMs))
 }
 
 describe('MobileDevicePicker', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    _resetPollGate()
   })
 
   afterEach(() => {
     document.body.innerHTML = ''
+    vi.useRealTimers()
     vi.restoreAllMocks()
   })
 
-  it('re-seeds an untouched sheet while it stays open', async () => {
-    const connect = withDevices(['Kitchen', 'Living Room'])
-    vi.spyOn(connect, 'refreshDevices').mockResolvedValue()
+  it('adds a speaker with one tap and stays open to set its volume', async () => {
+    withDevices(['Kitchen', 'Living Room'])
+    const apply = vi.spyOn(usePlaybackStore(), 'applyTargets').mockResolvedValue()
     const wrapper = mountPicker()
     await wrapper.vm.$nextTick()
 
-    // Another client casting, or a device dropping off the network. The
-    // sheet only ever seeded on open before, so anything happening after
-    // that left it describing a target set that no longer existed — and
-    // "Done" then applied that stale set as the user's intent.
+    await wrapper.findAllComponents(AvailableDeviceRow)[0]!.vm.$emit('add')
+    await flushPromises()
+
+    expect(apply).toHaveBeenCalledWith([{ type: 'sonos', name: 'Kitchen' }])
+    expect(closed(wrapper)).toBe(false)
+  })
+
+  it('lists the speakers playing as volume rows and the rest to add', async () => {
+    const connect = withDevices(['Kitchen', 'Living Room'])
     connect.status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
-    await wrapper.vm.$nextTick()
-
-    expect(wrapper.findAllComponents(MobileDeviceRow).map((r) => r.props('selected'))).toEqual([
-      true,
-      false,
-    ])
-  })
-
-  it('never re-seeds over a selection the user is in the middle of making', async () => {
-    const connect = withDevices(['Kitchen', 'Living Room'])
-    vi.spyOn(connect, 'refreshDevices').mockResolvedValue()
     const wrapper = mountPicker()
     await wrapper.vm.$nextTick()
 
-    await wrapper.findAllComponents(MobileDeviceRow)[1]!.vm.$emit('toggle')
-    connect.status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
-    await wrapper.vm.$nextTick()
-
-    expect(wrapper.findAllComponents(MobileDeviceRow).map((r) => r.props('selected'))).toEqual([
-      false,
-      true,
-    ])
+    expect(wrapper.findAllComponents(VolumeFader).map((f) => f.props('label'))).toEqual(['Kitchen'])
+    expect(
+      wrapper.findAllComponents(AvailableDeviceRow).map((r) => r.props('device').name),
+    ).toEqual(['Living Room'])
   })
 
-  it('take-over adds the device to what is already playing', async () => {
-    const connect = withDevices(['Kitchen', 'Living Room'])
-    vi.spyOn(connect, 'refreshDevices').mockResolvedValue()
-    connect.status = makeStatus({ targets: [{ name: 'Living Room', type: 'sonos' }] })
-    const wrapper = mountPicker()
-    await wrapper.vm.$nextTick()
-    const applySpy = vi.spyOn(usePlaybackStore(), 'applyTargets').mockResolvedValue()
-
-    await wrapper.findAllComponents(MobileDeviceRow)[0]!.vm.$emit('take-over')
-    await wrapper.vm.$nextTick()
-
-    // A claimed row's tap is inert (MobileDeviceRow.vue's onRowClick()), so
-    // this is the only way to pick such a device — castTo() made it the
-    // only way to lose every other speaker at the same time.
-    expect(applySpy).toHaveBeenCalledWith(
-      [
-        expect.objectContaining({ name: 'Living Room', type: 'sonos' }),
-        { name: 'Kitchen', type: 'sonos' },
-      ],
-      true,
-    )
-    // Ticked even though nothing was tapped, and counted as applied — so
-    // a later "Done" doesn't turn round and stop the device just taken.
-    expect(wrapper.findAllComponents(MobileDeviceRow).map((r) => r.props('selected'))).toEqual([
-      true,
-      true,
-    ])
-  })
-
-  it('reports a failed apply and keeps the sheet open to retry from', async () => {
-    const connect = withDevices(['Kitchen'])
-    vi.spyOn(connect, 'refreshDevices').mockResolvedValue()
-    const wrapper = mountPicker()
-    await wrapper.vm.$nextTick()
-    vi.spyOn(usePlaybackStore(), 'applyTargets').mockRejectedValue(new Error('offline'))
-    connect.errors.message = 'Speaker unreachable.'
+  it('toasts a failure that left nothing for its own alert', async () => {
+    withDevices(['Kitchen'])
+    vi.spyOn(usePlaybackStore(), 'applyTargets').mockRejectedValue(new Error('boom'))
     const toast = vi.fn()
     emitter.on('toast', toast)
-
-    await wrapper.findAllComponents(MobileDeviceRow)[0]!.vm.$emit('toggle')
-    await doneButton(wrapper).trigger('click')
+    const wrapper = mountPicker()
     await wrapper.vm.$nextTick()
 
-    // Shown in the sheet itself now, the same alert the desktop picker
-    // has — and not *also* toasted, which would report one failure twice
-    // on a screen this size.
-    // Through the document, not the wrapper: the sheet is teleported (see
-    // mountPicker's own note).
-    expect(document.body.textContent).toContain('Speaker unreachable.')
-    expect(toast).not.toHaveBeenCalled()
-    // Still open, so the selection is there to retry from.
-    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+    await wrapper.getComponent(AvailableDeviceRow).vm.$emit('add')
+    await flushPromises()
+
+    expect(toast).toHaveBeenCalledTimes(1)
     emitter.off('toast', toast)
   })
 
-  it('stays open on a takeover conflict so the dialog says which device', async () => {
+  it('does not toast what the alert at the top already says', async () => {
     const connect = withDevices(['Kitchen'])
-    vi.spyOn(connect, 'refreshDevices').mockResolvedValue()
+    vi.spyOn(usePlaybackStore(), 'applyTargets').mockImplementation(async () => {
+      connect.errors.message = 'Kitchen did not answer'
+      throw new Error('boom')
+    })
+    const toast = vi.fn()
+    emitter.on('toast', toast)
     const wrapper = mountPicker()
     await wrapper.vm.$nextTick()
-    vi.spyOn(usePlaybackStore(), 'applyTargets').mockImplementation(async () => {
-      connect.pendingTakeover = {
-        device: { name: 'Kitchen', type: 'sonos' },
-        owner: 'someone else',
-        retry: async () => {},
-      }
+
+    await wrapper.getComponent(AvailableDeviceRow).vm.$emit('add')
+    await flushPromises()
+
+    expect(toast).not.toHaveBeenCalled()
+    expect(document.body.textContent).toContain('Kitchen did not answer')
+    emitter.off('toast', toast)
+  })
+
+  it('stops everything and closes, nothing being left to adjust', async () => {
+    const connect = withDevices(['Kitchen'])
+    connect.status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
+    const stop = vi.spyOn(connect, 'stopAll').mockResolvedValue()
+    const wrapper = mountPicker()
+    await wrapper.vm.$nextTick()
+
+    $('.cast-sheet__stop').click()
+    await flushPromises()
+
+    expect(stop).toHaveBeenCalledTimes(1)
+    expect(closed(wrapper)).toBe(true)
+  })
+
+  it('brings the sound back to the phone from its own row, and closes', async () => {
+    const connect = withDevices(['Kitchen'])
+    connect.status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
+    const stop = vi.spyOn(connect, 'stopAll').mockResolvedValue()
+    const wrapper = mountPicker()
+    await wrapper.vm.$nextTick()
+
+    $('.cast-sheet__local').click()
+    await flushPromises()
+
+    expect(stop).toHaveBeenCalledTimes(1)
+    expect(closed(wrapper)).toBe(true)
+  })
+
+  it('names the phone as where the sound is while nothing is cast, with nothing to stop', async () => {
+    withDevices(['Kitchen'])
+    const wrapper = mountPicker()
+    await wrapper.vm.$nextTick()
+
+    expect(document.querySelector('.cast-sheet__here')).not.toBeNull()
+    expect(document.querySelector('.cast-sheet__stop')).toBeNull()
+    expect(wrapper.findComponent(VolumeFader).exists()).toBe(false)
+  })
+
+  describe('closing', () => {
+    it('closes from its close button', async () => {
+      withDevices([])
+      const wrapper = mountPicker()
+      await wrapper.vm.$nextTick()
+
+      $('.cast-sheet__head button[aria-label="Close"]').click()
+
+      expect(closed(wrapper)).toBe(true)
     })
 
-    await wrapper.findAllComponents(MobileDeviceRow)[0]!.vm.$emit('toggle')
-    await doneButton(wrapper).trigger('click')
-    await wrapper.vm.$nextTick()
+    it('closes when pulled down far enough', async () => {
+      withDevices([])
+      const wrapper = mountPicker()
+      await wrapper.vm.$nextTick()
 
-    expect(wrapper.emitted('update:modelValue')).toBeUndefined()
+      pull(150, 600)
+
+      expect(closed(wrapper)).toBe(true)
+    })
+
+    it('closes on a quick flick that travels only a little', async () => {
+      withDevices([])
+      const wrapper = mountPicker()
+      await wrapper.vm.$nextTick()
+
+      pull(40, 40)
+
+      expect(closed(wrapper)).toBe(true)
+    })
+
+    it('springs back from a short, slow pull', async () => {
+      withDevices([])
+      const wrapper = mountPicker()
+      await wrapper.vm.$nextTick()
+
+      pull(40, 600)
+      await wrapper.vm.$nextTick()
+
+      expect(closed(wrapper)).toBe(false)
+      expect($('.cast-sheet').style.transform).toBe('')
+    })
   })
 
-  it('closes without applying anything when the selection was never touched', async () => {
-    const connect = withDevices(['Kitchen'])
-    vi.spyOn(connect, 'refreshDevices').mockResolvedValue()
-    const wrapper = mountPicker()
-    await wrapper.vm.$nextTick()
-    const applySpy = vi.spyOn(usePlaybackStore(), 'applyTargets').mockResolvedValue()
+  it('asks for the device list when it opens', async () => {
+    const connect = withDevices([])
+    const refresh = connect.refreshDevices as unknown as ReturnType<typeof vi.fn>
+    const wrapper = mountPicker(false)
+    expect(refresh).not.toHaveBeenCalled()
 
-    await doneButton(wrapper).trigger('click')
-    await wrapper.vm.$nextTick()
+    await wrapper.setProps({ modelValue: true })
 
-    expect(applySpy).not.toHaveBeenCalled()
-    expect(wrapper.emitted('update:modelValue')?.[0]).toEqual([false])
+    expect(refresh).toHaveBeenCalledTimes(1)
   })
 
-  /** The sheet used to end at the device list: no stream info, no error
-   * banners, where the desktop picker had all three. Reported 2026-09-07
-   * as "stream info sehe ich in mobile überhaupt nicht". */
-  it('shows what is playing and how, the same section the desktop picker ends with', async () => {
-    const connect = withDevices(['Kitchen'])
-    vi.spyOn(connect, 'refreshDevices').mockResolvedValue()
-    // Casting at all is what the section keys off (hasStreamInfo()); what
-    // it then puts in its rows is StreamInfoSection's own business.
-    connect.status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
-    const wrapper = mountPicker()
-    await wrapper.vm.$nextTick()
+  it('does not keep polling the device list while it is closed', async () => {
+    vi.useFakeTimers()
+    Object.defineProperty(document, 'visibilityState', { value: 'visible', configurable: true })
+    const connect = withDevices([])
+    const refresh = connect.refreshDevices as unknown as ReturnType<typeof vi.fn>
+    mountPicker(false)
 
-    // The section's own contents are its own tests' business (see
-    // StreamInfoSection.test.ts) - what is new here is that the sheet
-    // renders it at all, above the safe area and below the list.
-    expect(wrapper.findComponent(StreamInfoSection).exists()).toBe(true)
-    expect(document.querySelector('.stream-info-section')).not.toBeNull()
+    await vi.advanceTimersByTimeAsync(8000)
+
+    expect(refresh).not.toHaveBeenCalled()
   })
 
   it('says the backend is unreachable rather than showing an empty sheet', async () => {
     const connect = withDevices([])
-    vi.spyOn(connect, 'refreshDevices').mockResolvedValue()
     connect.errors.apiUnreachable = true
     const wrapper = mountPicker()
     await wrapper.vm.$nextTick()
@@ -224,132 +256,24 @@ describe('MobileDevicePicker', () => {
     expect(wrapper.findComponent(ConnectErrorBanner).exists()).toBe(true)
   })
 
-  it('kicks off a fresh scan from the rescan button, and locks it while one runs', async () => {
-    const connect = useConnectStore()
-    // Before mounting: an open sheet refreshes on its own (see the
-    // modelValue watcher), and a real call there leaves isScanning true
-    // long enough to disable the button this test is about to click.
-    const refreshSpy = vi.spyOn(connect, 'refreshDevices').mockResolvedValue()
+  it('kicks off a fresh scan from the rescan button', async () => {
+    const connect = withDevices([])
+    const refresh = connect.refreshDevices as unknown as ReturnType<typeof vi.fn>
     const wrapper = mountPicker()
     await wrapper.vm.$nextTick()
-    refreshSpy.mockClear()
+    refresh.mockClear()
 
-    const rescan = rescanButton(wrapper)
-    expect(rescan.props('icon')).toBe('mdi-refresh')
+    $('.mobile-device-picker__rescan').click()
 
-    await rescan.trigger('click')
-    expect(refreshSpy).toHaveBeenCalledWith(true)
-
-    // Same reason as ConnectDevicePicker.vue's: overlapping scans would let
-    // the first one to return clear isScanning while the second still runs.
-    connect.isScanning = true
-    await wrapper.vm.$nextTick()
-
-    expect(rescan.props('loading')).toBe(true)
-    expect(rescan.props('disabled')).toBe(true)
+    expect(refresh).toHaveBeenCalledWith(true)
   })
 
-  describe('where the actions live', () => {
-    // The sheet used to carry two rows at the top of the device list,
-    // "Stop all" and "This device", firing the identical command — one red
-    // and one not. What is left is a list of destinations with the current
-    // one ticked, and every action in the header row above it.
-    /** The sheet only renders its list once there is something to list —
-     * an empty, still-scanning picker shows a spinner instead (and every
-     * DOM query below would find nothing). */
-    function openSheet() {
-      const connect = withDevices(['Kitchen'])
-      vi.spyOn(connect, 'refreshDevices').mockResolvedValue()
-      return connect
-    }
+  it('ends with what is being sent while casting', async () => {
+    const connect = withDevices(['Kitchen'])
+    connect.status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
+    const wrapper = mountPicker()
+    await wrapper.vm.$nextTick()
 
-    function rowTexts(): string[] {
-      return [...document.querySelectorAll('.v-list-item')].map((row) => row.textContent ?? '')
-    }
-
-    function localRow(): HTMLElement {
-      return document.querySelector('.mobile-device-picker__local') as HTMLElement
-    }
-
-    function stopButton(wrapper: ReturnType<typeof mountPicker>) {
-      return wrapper
-        .findAllComponents<typeof VBtn>(VBtn)
-        .find((button) => button.text() === 'Stop all')
-    }
-
-    it('offers local playback as a destination, not as a second stop button', async () => {
-      openSheet()
-      const wrapper = mountPicker()
-      await flushPromises()
-
-      expect(rowTexts().filter((text) => text.includes('This device'))).toHaveLength(1)
-      expect(rowTexts().some((text) => text.includes('Stop all'))).toBe(false)
-      wrapper.unmount()
-    })
-
-    it('ticks local playback while nothing is casting', async () => {
-      openSheet()
-      const wrapper = mountPicker()
-      await flushPromises()
-
-      expect(localRow().querySelector('.mdi-check-circle')).not.toBeNull()
-      wrapper.unmount()
-    })
-
-    it('keeps stopping everything as an action beside Done, while casting', async () => {
-      const connect = openSheet()
-      connect.status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
-      const stopAll = vi.spyOn(connect, 'stopAll').mockResolvedValue()
-      const wrapper = mountPicker()
-      await flushPromises()
-
-      // No longer ticked — the sound is somewhere else.
-      expect(localRow().querySelector('.mdi-check-circle')).toBeNull()
-
-      await stopButton(wrapper)!.trigger('click')
-      expect(stopAll).toHaveBeenCalled()
-      expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([false])
-      wrapper.unmount()
-    })
-
-    it('offers no stop action at all when nothing is casting', async () => {
-      openSheet()
-      const wrapper = mountPicker()
-      await flushPromises()
-
-      expect(stopButton(wrapper)).toBeUndefined()
-      wrapper.unmount()
-    })
-
-    it('just closes when local playback is already where the sound goes', async () => {
-      // Nothing to apply — firing a stop at nothing would still run the
-      // whole cast teardown.
-      const connect = openSheet()
-      const stopAll = vi.spyOn(connect, 'stopAll').mockResolvedValue()
-      const wrapper = mountPicker()
-      await flushPromises()
-
-      localRow().click()
-      await flushPromises()
-
-      expect(stopAll).not.toHaveBeenCalled()
-      expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([false])
-      wrapper.unmount()
-    })
-
-    it('goes back to local playback when it is picked while casting', async () => {
-      const connect = openSheet()
-      connect.status = makeStatus({ targets: [{ name: 'Kitchen', type: 'sonos' }] })
-      const stopAll = vi.spyOn(connect, 'stopAll').mockResolvedValue()
-      const wrapper = mountPicker()
-      await flushPromises()
-
-      localRow().click()
-      await flushPromises()
-
-      expect(stopAll).toHaveBeenCalled()
-      expect(wrapper.emitted('update:modelValue')?.at(-1)).toEqual([false])
-      wrapper.unmount()
-    })
+    expect(wrapper.findComponent(StreamInfoSection).exists()).toBe(true)
   })
 })

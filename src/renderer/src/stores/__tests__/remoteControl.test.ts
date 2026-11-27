@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { useRemoteControlStore } from '../remoteControl'
 import { usePlaybackStore } from '../playback'
 import { useConnectStore } from '../connect'
+import { useGroupVolumeStore } from '../groupVolume'
 import { useAutoplayStore } from '../autoplay'
 import * as remoteHttp from '@/services/remoteControl/http'
 import * as commands from '@/services/remoteControl/commands'
@@ -811,6 +812,31 @@ describe('remoteControl store', () => {
       })
     })
 
+    /** The phone's cast sheet shows the same switch, and has to follow it
+     * being flipped here. */
+    it('sends how the master moves several speakers, and again when that changes', async () => {
+      vi.useFakeTimers()
+      vi.mocked(remoteHttp.enableRemoteControl).mockResolvedValue({
+        password: 'secret',
+        pin: '1',
+        lan_ip: '',
+        port: 0,
+      })
+      const store = useRemoteControlStore()
+      useConnectStore().status = makeStatus({ targets: [] })
+
+      await store.enable()
+      await vi.advanceTimersByTimeAsync(300)
+      const first = vi.mocked(remoteHttp.pushRemoteState).mock.calls.at(-1)![0]
+      expect((first as Record<string, unknown>).group_volume_mode).toBe('equal')
+
+      useGroupVolumeStore().setMode('relative')
+      await vi.advanceTimersByTimeAsync(300)
+
+      const next = vi.mocked(remoteHttp.pushRemoteState).mock.calls.at(-1)![0]
+      expect((next as Record<string, unknown>).group_volume_mode).toBe('relative')
+    })
+
     it('leaves the stream lines out entirely when nothing is being cast', async () => {
       vi.useFakeTimers()
       vi.mocked(remoteHttp.enableRemoteControl).mockResolvedValue({
@@ -909,7 +935,7 @@ describe('remoteControl store', () => {
     // Regression test: Sonos volume/mute reaches connectStore.status by
     // push (see connectStore.isVolumePushCapable()) - this poll used to
     // call getDeviceVolume() every tick regardless of type, one of several
-    // surfaces that silently kept doing so after DeviceListItem.vue's own
+    // surfaces that silently kept doing so after the device list's own
     // fix, caught live 2026-08-25.
     it('stops calling getDeviceVolume for a push-capable target once a pushed reading exists', async () => {
       vi.useFakeTimers()
@@ -955,8 +981,7 @@ describe('remoteControl store', () => {
         radio: null,
         radio_buffering: false,
         streaming: false,
-        // No volume field yet — the first tick still has nothing pushed,
-        // same gap DeviceListItem.vue's always-on-activation fetch covers.
+        // No volume field yet — nothing pushed, so the first tick has to ask.
         targets: [{ name: 'Kitchen', type: 'sonos', volume_push: true }],
         total_songs: 0,
         displaced: false,

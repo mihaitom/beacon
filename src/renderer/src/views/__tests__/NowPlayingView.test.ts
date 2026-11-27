@@ -1,4 +1,4 @@
-import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, afterEach, describe, expect, it, onTestFinished, vi } from 'vitest'
 import { mount, flushPromises, type VueWrapper } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
@@ -15,6 +15,9 @@ import { useAutoplayStore } from '@/stores/autoplay'
 import { useAppearanceStore } from '@/stores/appearance'
 import NowPlayingView from '../NowPlayingView.vue'
 import NowPlayingPresentation from '@/components/now-playing/NowPlayingPresentation.vue'
+import MilkdropVisualizer from '@/components/milkdrop/MilkdropVisualizer.vue'
+import { BUILTIN_PRESETS } from '@/services/milkdrop/presets'
+import { useMilkdropStore } from '@/stores/milkdrop'
 import { getAudioEngine } from '@/services/audioEngine'
 import { getLogLevel, type LogLevel } from '@/services/connect/logLevel'
 import { getArtistArt } from '@/services/connect/fanart'
@@ -45,6 +48,25 @@ vi.mock('@/services/connect/logLevel', () => ({ getLogLevel: vi.fn() }))
 vi.mock('@/services/connect/fanart', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/connect/fanart')>()),
   getArtistArt: vi.fn().mockResolvedValue(null),
+}))
+
+// The real one brings WebGL, which jsdom has none of. Its props are what
+// these tests read.
+vi.mock('@/components/milkdrop/MilkdropVisualizer.vue', () => ({
+  __esModule: true,
+  default: {
+    name: 'MilkdropVisualizer',
+    props: ['playing', 'preset', 'accent'],
+    template: '<div class="milkdrop-stub" />',
+  },
+}))
+
+// connect's list of uploaded presets; none unless a test says otherwise.
+vi.mock('@/services/connect/milkdropPresets', () => ({
+  listMilkdropPresets: vi.fn().mockResolvedValue([]),
+  getMilkdropPreset: vi.fn(),
+  putMilkdropPreset: vi.fn(),
+  deleteMilkdropPreset: vi.fn(),
 }))
 
 vi.mock('@/services/lights/pictureReport', () => ({ reportForegroundPicture: vi.fn() }))
@@ -321,6 +343,49 @@ describe('NowPlayingView', () => {
 
       expect((wrapper.vm as unknown as { visualizerAvailable: boolean }).visualizerAvailable).toBe(
         true,
+      )
+    })
+
+    it('feeds Milkdrop the waveform from connect while casting', async () => {
+      // No local graph needed: the speaker plays, connect decodes alongside.
+      withAnalyser(false)
+      vi.stubGlobal(
+        'EventSource',
+        class {
+          close(): void {}
+        },
+      )
+      onTestFinished(() => {
+        vi.unstubAllGlobals()
+        // Switching it on persists, and would carry into the tests after.
+        localStorage.removeItem('beacon.nowPlayingMilkdrop')
+      })
+      const { wrapper } = await mountWithSongFor()
+      const vm = wrapper.vm as unknown as {
+        milkdropEnabled: boolean
+        milkdropActive: boolean
+        castFeed: string
+      }
+      useConnectStore().status = statusWithTargets([{ name: 'Living Room', type: 'sonos' }])
+      usePlaybackStore().isPlaying = true
+      await wrapper.vm.$nextTick()
+      expect(vm.castFeed).toBe('bands')
+
+      vm.milkdropEnabled = true
+      await wrapper.vm.$nextTick()
+
+      expect(vm.milkdropActive).toBe(true)
+      expect(vm.castFeed).toBe('waveform')
+    })
+
+    it('offers no Milkdrop on a phone, cast or not', async () => {
+      const { wrapper } = await mountView({ compact: true })
+      usePlaybackStore().setQueue([makeSong('a')], 0)
+      useConnectStore().status = statusWithTargets([{ name: 'Living Room', type: 'sonos' }])
+      await wrapper.vm.$nextTick()
+
+      expect((wrapper.vm as unknown as { milkdropAvailable: boolean }).milkdropAvailable).toBe(
+        false,
       )
     })
 
@@ -708,6 +773,216 @@ describe('NowPlayingView', () => {
       await wrapper.vm.$nextTick()
 
       expect(setItemSpy).toHaveBeenCalledWith('beacon.showVisualizer', 'false')
+    })
+  })
+
+  describe('Milkdrop', () => {
+    // Both switches persist, and the tests before these flip them.
+    beforeEach(() => localStorage.clear())
+
+    async function mountPlaying() {
+      const mounted = await mountView()
+      usePlaybackStore().setQueue([makeSong('a'), makeSong('b')], 0)
+      await flushPromises()
+      return mounted
+    }
+
+    function lavaLamp(wrapper: VueWrapper) {
+      return wrapper.find('.now-playing__toolbar .mdi-lava-lamp')
+    }
+
+    async function switchOn(wrapper: VueWrapper) {
+      await lavaLamp(wrapper).element.closest('button')!.click()
+      await flushPromises()
+    }
+
+    it('takes the place of the bars once switched on', async () => {
+      const { wrapper } = await mountPlaying()
+      const vm = wrapper.vm as unknown as { visualizerActive: boolean }
+      expect(vm.visualizerActive).toBe(true)
+      expect(wrapper.find('.milkdrop-stub').exists()).toBe(false)
+
+      await switchOn(wrapper)
+
+      expect(wrapper.find('.milkdrop-stub').exists()).toBe(true)
+      expect(vm.visualizerActive).toBe(false)
+      expect(wrapper.find('.now-playing__toolbar .mdi-equalizer').exists()).toBe(false)
+    })
+
+    it('hides the album artwork and its switch, since the presets draw the cover', async () => {
+      // Asked to show the artwork, which still must not double up with the
+      // cover Milkdrop draws.
+      localStorage.setItem('beacon.nowPlayingHideArtwork', 'false')
+      const { wrapper } = await mountPlaying()
+      expect(wrapper.find('.now-playing__art-wrap').exists()).toBe(true)
+
+      await switchOn(wrapper)
+
+      expect(wrapper.find('.now-playing__art-wrap').exists()).toBe(false)
+      expect(wrapper.find('.now-playing__toolbar .mdi-album').exists()).toBe(false)
+    })
+
+    it('is not offered without a local audio graph', async () => {
+      withAnalyser(false)
+      const { wrapper } = await mountPlaying()
+
+      expect(lavaLamp(wrapper).exists()).toBe(false)
+    })
+
+    function shownPreset(wrapper: VueWrapper): string | null {
+      return wrapper.findComponent(MilkdropVisualizer).props('preset') as string | null
+    }
+
+    async function nextSong() {
+      usePlaybackStore().setQueue([makeSong('b'), makeSong('c')], 0)
+      await flushPromises()
+    }
+
+    it('starts on a preset and gets a new one with the next song and on request', async () => {
+      const { wrapper } = await mountPlaying()
+      await switchOn(wrapper)
+      const first = shownPreset(wrapper)
+      expect(BUILTIN_PRESETS.map((entry) => entry.key)).toContain(first)
+
+      await nextSong()
+      const second = shownPreset(wrapper)
+      expect(second).not.toBe(first)
+
+      await wrapper
+        .get('.now-playing__toolbar .mdi-shuffle-variant')
+        .element.closest('button')!
+        .click()
+      await flushPromises()
+      expect(shownPreset(wrapper)).not.toBe(second)
+    })
+
+    it('draws in the colour Now Playing takes from the picture, or the theme colour when that is off', async () => {
+      useAppearanceStore().setAdaptiveAccent(true)
+      const { wrapper } = await mountPlaying()
+      await switchOn(wrapper)
+      const visualizer = () => wrapper.findComponent(MilkdropVisualizer)
+      expect(visualizer().props('accent')).toMatch(/^\d+, \d+, \d+$/)
+
+      useAppearanceStore().setAdaptiveAccent(false)
+      await flushPromises()
+      expect(visualizer().props('accent')).toBeNull()
+    })
+
+    it('picks only from the preferred presets', async () => {
+      const [a, b] = BUILTIN_PRESETS.slice(3, 5).map((entry) => entry.key)
+      useMilkdropStore().set({ preferred: [a!, b!] })
+      const { wrapper } = await mountPlaying()
+      await switchOn(wrapper)
+      for (let i = 0; i < 4; i++) {
+        expect([a, b]).toContain(shownPreset(wrapper))
+        await nextSong()
+      }
+    })
+
+    it('keeps a fixed preset through a change of song', async () => {
+      const key = BUILTIN_PRESETS[7]!.key
+      useMilkdropStore().set({ switchMode: 'fixed', preset: key })
+      const { wrapper } = await mountPlaying()
+      await switchOn(wrapper)
+      expect(shownPreset(wrapper)).toBe(key)
+
+      await nextSong()
+      expect(shownPreset(wrapper)).toBe(key)
+    })
+
+    it('shows another preset when the fixed one is no longer shipped', async () => {
+      useMilkdropStore().set({ switchMode: 'fixed', preset: 'builtin:retired-preset' })
+      const { wrapper } = await mountPlaying()
+      await switchOn(wrapper)
+      expect(BUILTIN_PRESETS.map((entry) => entry.key)).toContain(shownPreset(wrapper))
+    })
+
+    it('moves into a pool of favourites taken over from another device', async () => {
+      const { wrapper } = await mountPlaying()
+      await switchOn(wrapper)
+      const favourite = BUILTIN_PRESETS.find((entry) => entry.key !== shownPreset(wrapper))!.key
+      useMilkdropStore().adopt({ ...useMilkdropStore().settings, preferred: [favourite] })
+      await flushPromises()
+      expect(shownPreset(wrapper)).toBe(favourite)
+    })
+
+    it('shows a fixed preset taken over from another device', async () => {
+      useMilkdropStore().set({ switchMode: 'fixed' })
+      const { wrapper } = await mountPlaying()
+      await switchOn(wrapper)
+      const other = BUILTIN_PRESETS.find((entry) => entry.key !== shownPreset(wrapper))!.key
+      useMilkdropStore().adopt({ ...useMilkdropStore().settings, preset: other })
+      await flushPromises()
+      expect(shownPreset(wrapper)).toBe(other)
+    })
+
+    it('passes over a fixed preset this device could not draw, leaving the choice on the account', async () => {
+      const key = BUILTIN_PRESETS[7]!.key
+      useMilkdropStore().set({ switchMode: 'fixed', preset: key })
+      localStorage.setItem('beacon.milkdrop.tooHeavy', JSON.stringify([key]))
+      const { wrapper } = await mountPlaying()
+      await switchOn(wrapper)
+      expect(shownPreset(wrapper)).not.toBeNull()
+      expect(shownPreset(wrapper)).not.toBe(key)
+      expect(useMilkdropStore().settings.preset).toBe(key)
+    })
+
+    it('moves on from a preset the picture gave up on', async () => {
+      // A pool of two: without the device's list, every other pick would
+      // land on the heavy one again.
+      const [a, b] = BUILTIN_PRESETS.slice(3, 5).map((entry) => entry.key)
+      useMilkdropStore().set({ preferred: [a!, b!] })
+      const { wrapper } = await mountPlaying()
+      await switchOn(wrapper)
+      const heavy = shownPreset(wrapper)!
+      localStorage.setItem('beacon.milkdrop.tooHeavy', JSON.stringify([heavy]))
+      wrapper.findComponent(MilkdropVisualizer).vm.$emit('too-heavy', heavy)
+      await flushPromises()
+      expect(shownPreset(wrapper)).not.toBe(heavy)
+      for (let i = 0; i < 6; i++) {
+        await nextSong()
+        expect(shownPreset(wrapper)).not.toBe(heavy)
+      }
+    })
+
+    it('shows a preset picked in the menu at once', async () => {
+      const { wrapper } = await mountPlaying()
+      await switchOn(wrapper)
+      await nextSong()
+      const key = BUILTIN_PRESETS.find((entry) => entry.key !== shownPreset(wrapper))!.key
+
+      useMilkdropStore().choose(key)
+      await flushPromises()
+      expect(shownPreset(wrapper)).toBe(key)
+    })
+
+    it('changes on the timer only while the music plays', async () => {
+      vi.useFakeTimers()
+      onTestFinished(() => {
+        vi.useRealTimers()
+      })
+      useMilkdropStore().set({ switchMode: 'time', intervalSeconds: 30 })
+      const { wrapper } = await mountPlaying()
+      await switchOn(wrapper)
+      const first = shownPreset(wrapper)
+
+      await nextSong()
+      expect(shownPreset(wrapper)).toBe(first)
+      await vi.advanceTimersByTimeAsync(31_000)
+      expect(shownPreset(wrapper)).toBe(first)
+
+      usePlaybackStore().isPlaying = true
+      await flushPromises()
+      await vi.advanceTimersByTimeAsync(31_000)
+      expect(shownPreset(wrapper)).not.toBe(first)
+    })
+
+    it('remembers being switched on', async () => {
+      const setItemSpy = vi.spyOn(Storage.prototype, 'setItem')
+      const { wrapper } = await mountPlaying()
+      await switchOn(wrapper)
+
+      expect(setItemSpy).toHaveBeenCalledWith('beacon.nowPlayingMilkdrop', 'true')
     })
   })
 

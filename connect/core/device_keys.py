@@ -40,6 +40,10 @@ _NO_SUCH_KEY_HASH = hashlib.sha256(b"").hexdigest()
 
 SYNC = server_link.SYNC_SCOPE
 API_KEYS = "api_keys"
+# Change the server's external sources from the desktop: only ever given to
+# a key an admin made, never chosen.
+SOURCES = server_link.SOURCES_SCOPE
+SOURCE_TOKENS = "source_tokens"
 HISTORY = "history"
 STATS = "stats"
 NOW_PLAYING = "now_playing"
@@ -48,7 +52,8 @@ CONTROL = "control"
 LIBRARY = "library"
 _APP_SCOPES = {HISTORY, STATS, NOW_PLAYING, LYRICS, CONTROL, LIBRARY}
 # What only a server hands out: a desktop does not pair with another desktop.
-SERVER_ONLY_SCOPES = frozenset({SYNC, API_KEYS})
+SERVER_ONLY_SCOPES = frozenset({SYNC, API_KEYS, SOURCES, SOURCE_TOKENS})
+_DESKTOP_EXTRAS = {API_KEYS, SOURCES, SOURCE_TOKENS}
 
 
 class TooManyKeys(Exception):
@@ -77,11 +82,11 @@ def _stored_scopes(scopes: Iterable[str]) -> str:
     """A key is a desktop's or an app's, never both: a desktop key can write
     to the account, and an app's lives in somebody's own code."""
     chosen = set(scopes)
-    if not chosen or not chosen <= {SYNC, API_KEYS, *_APP_SCOPES}:
+    if not chosen or not chosen <= {SYNC, *_DESKTOP_EXTRAS, *_APP_SCOPES}:
         raise InvalidScopes
     if SYNC in chosen and chosen & _APP_SCOPES:
         raise InvalidScopes
-    if API_KEYS in chosen and SYNC not in chosen:
+    if chosen & _DESKTOP_EXTRAS and SYNC not in chosen:
         raise InvalidScopes
     # Lyrics are only ever those of the song playing now.
     if LYRICS in chosen and NOW_PLAYING not in chosen:

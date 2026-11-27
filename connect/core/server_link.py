@@ -27,7 +27,14 @@ from urllib.parse import urlsplit
 
 import httpx
 
-from core import account_settings, api_keys, lyrics_offsets, play_history
+from core import (
+    account_settings,
+    api_keys,
+    external_source,
+    lyrics_offsets,
+    milkdrop_presets,
+    play_history,
+)
 from core.account_settings import LINKED_FIELDS
 from core.paths import data_dir
 from core.play_history import Account
@@ -43,6 +50,8 @@ KEY_HEADER = "X-Beacon-Device-Key"
 INVALID_KEY_DETAIL = "Invalid device key"
 # What a key needs to be a desktop app's: core/device_keys.py has the others.
 SYNC_SCOPE = "sync"
+# Set up the server's external sources from here; only an admin's key has it.
+SOURCES_SCOPE = "sources"
 
 CONNECTED = "connected"
 WRONG_KEY = "wrong_key"
@@ -55,10 +64,19 @@ KEY_OF_ANOTHER_ACCOUNT = "key_of_another_account"
 INVALID_URL = "invalid_url"
 INSECURE_URL = "insecure_url"
 
-_PENDING_FIELDS = ("pending_settings", "pending_milestones", "pending_lyrics_offsets")
+_PENDING_FIELDS = (
+    "pending_settings",
+    "pending_milestones",
+    "pending_lyrics_offsets",
+    "pending_milkdrop_presets",
+)
 
 _BATCH_SIZE = 500
 _OFFSET_BATCH_SIZE = 500
+# Milkdrop presets go a few at a time: each can be up to
+# milkdrop_presets.MAX_PRESET_BYTES, and the Docker image's nginx takes 4 MB
+# per request under /device-link/ (ng.conf.template).
+_PRESET_BATCH_SIZE = 5
 IDLE_SECONDS = 300.0
 _BACKOFF_BASE_SECONDS = 30.0
 _BACKOFF_MAX_SECONDS = 3600.0
@@ -338,6 +356,7 @@ def pair(
         for song, seconds in lyrics_offsets.load(account).items()
         if song not in remote_offsets
     }
+    pending_presets = _presets_newer_here(url, key, account)
     play_history.forget_sent(account)
     with _lock:
         _write(
@@ -347,9 +366,11 @@ def pair(
                 "account": account._asdict(),
                 "settings_identity": settings_identity,
                 "remote_username": info.get("username", ""),
+                "scopes": _scopes_of(info),
                 "pending_settings": pending,
                 "pending_milestones": {},
                 "pending_lyrics_offsets": pending_offsets,
+                "pending_milkdrop_presets": pending_presets,
                 "backfill": True,
                 "last_sync_at": None,
             }
@@ -368,7 +389,20 @@ def unpair() -> None:
         except FileNotFoundError:
             pass
     _forget_api_keys()
+    external_source.forget_pairing()
     _note(CONNECTED)
+
+
+def _scopes_of(info: dict) -> list[str]:
+    scopes = info.get("scopes")
+    return [s for s in scopes if isinstance(s, str)] if isinstance(scopes, list) else []
+
+
+def may_set_up_sources() -> bool:
+    """Whether a source the server shares may be changed here: unpaired, or
+    paired with a key made by one of the server's admins."""
+    link = _read()
+    return link is None or SOURCES_SCOPE in link.get("scopes", [])
 
 
 def note_settings_changed(identity: tuple[str, str, str], patch: dict) -> None:
@@ -470,6 +504,68 @@ def pull_lyrics_offsets(account: Account) -> dict[str, float] | None:
     return {**(remote.get("offsets") or {}), **(link.get("pending_lyrics_offsets") or {})}
 
 
+def _remote_preset_index(url: str, key: str) -> dict[str, float] | None:
+    """Each of the server's presets with its stamp, or None for a server
+    from before presets were shared."""
+    try:
+        remote = _call(url, key, "GET", "/milkdrop-presets", timeout=_SETTINGS_TIMEOUT)
+    except LinkError as e:
+        if e.state != SERVER_TOO_OLD:
+            raise
+        return None
+    return {row["id"]: row["updated_at"] for row in remote.get("presets") or []}
+
+
+def _presets_newer_here(url: str, key: str, account: Account) -> dict[str, float]:
+    remote = _remote_preset_index(url, key) or {}
+    return {
+        row["id"]: row["updated_at"]
+        for row in milkdrop_presets.index(account)
+        if row["updated_at"] > remote.get(row["id"], -1.0)
+    }
+
+
+def note_milkdrop_presets(account: Account, stamps: dict[str, float]) -> None:
+    """Presets changed here, by id with their new stamp: the rows
+    themselves are read again when they are sent, they can be large."""
+    with _lock:
+        link = _read()
+        if link is None or _account_of(link) != account:
+            return
+        link.setdefault("pending_milkdrop_presets", {}).update(stamps)
+        _write(link)
+    wake()
+
+
+def pull_milkdrop_presets(account: Account) -> None:
+    """Takes what the server has newer than here into the local copy,
+    which then answers - with the server away too. Unsent changes made here
+    are newer still, and stay."""
+    link = _read()
+    if link is None or _account_of(link) != account:
+        return
+    try:
+        remote = _remote_preset_index(link["url"], link["key"])
+        if remote is None:
+            return
+        local = {row["id"]: row["updated_at"] for row in milkdrop_presets.index(account)}
+        wanted = [pid for pid, stamp in remote.items() if stamp > local.get(pid, -1.0)]
+        for start in range(0, len(wanted), _PRESET_BATCH_SIZE):
+            batch = wanted[start : start + _PRESET_BATCH_SIZE]
+            answer = _call(
+                link["url"],
+                link["key"],
+                "GET",
+                f"/milkdrop-presets/rows?ids={','.join(batch)}",
+                timeout=_SETTINGS_TIMEOUT,
+            )
+            milkdrop_presets.merge(account, answer.get("presets") or [])
+    except LinkError as e:
+        _note(e.state)
+        return
+    _note_answered()
+
+
 def relay_now_playing(report: dict | None) -> bool:
     """Passes on what this desktop plays, None for nothing. Whether the
     server has a use for it; not reaching it counts as no, and the next song
@@ -529,6 +625,31 @@ def _send_lyrics_offsets(link: dict) -> None:
         _forget_sent(link, "pending_lyrics_offsets", sent)
 
 
+def _send_milkdrop_presets(link: dict, account: Account) -> None:
+    """A server from before presets were shared answers 404, which must not
+    hold up the rest of the sync; what is pending stays for a newer one."""
+    ids = list(link.get("pending_milkdrop_presets") or {})
+    for start in range(0, len(ids), _PRESET_BATCH_SIZE):
+        batch = milkdrop_presets.rows(account, ids[start : start + _PRESET_BATCH_SIZE])
+        if batch:
+            try:
+                _call(link["url"], link["key"], "PATCH", "/milkdrop-presets", {"presets": batch})
+            except LinkError as e:
+                if e.state != SERVER_TOO_OLD:
+                    raise
+                return
+        sent = {row["id"]: row["updated_at"] for row in batch}
+        # Gone from here altogether (never stored, say): nothing to send.
+        sent.update(
+            {
+                pid: link["pending_milkdrop_presets"][pid]
+                for pid in ids[start : start + _PRESET_BATCH_SIZE]
+                if pid not in sent
+            }
+        )
+        _forget_sent(link, "pending_milkdrop_presets", sent)
+
+
 def _send_milestones(link: dict) -> None:
     sent = link.get("pending_milestones") or {}
     if not sent:
@@ -556,13 +677,31 @@ def _forget_api_keys() -> None:
         api_keys.set_shared(service, "")
 
 
-def _mark_synced(link: dict, now: float) -> None:
+def _sync_sources(link: dict, scopes: list[str]) -> None:
+    """A server from before external sources were shared answers 404 here,
+    which must not hold up the rest of the sync."""
+    try:
+        if SOURCES_SCOPE in scopes:
+            sent = external_source.outgoing()
+            remote = _call(link["url"], link["key"], "PATCH", "/external-sources", sent)
+            external_source.tokens_sent(sent)
+        else:
+            remote = _call(link["url"], link["key"], "GET", "/external-sources")
+    except LinkError as e:
+        if e.state != SERVER_TOO_OLD:
+            raise
+        return
+    external_source.adopt_from_server(remote)
+
+
+def _mark_synced(link: dict, now: float, scopes: list[str]) -> None:
     with _lock:
         current = _read()
         if current is None or current["key"] != link["key"]:
             return
         current["backfill"] = False
         current["last_sync_at"] = int(now)
+        current["scopes"] = scopes
         _write(current)
 
 
@@ -575,19 +714,22 @@ def send_once(now: float | None = None) -> bool:
     try:
         # First, so a pass with nothing to send still finds a server that
         # has gone or a key that was revoked.
-        _call(link["url"], link["key"], "GET", "/info")
+        scopes = _scopes_of(_call(link["url"], link["key"], "GET", "/info"))
         _send_listens(link, _account_of(link))
         _send_settings(link)
         _send_lyrics_offsets(link)
+        _send_milkdrop_presets(link, _account_of(link))
         _send_milestones(link)
         _adopt_api_keys(link)
+        _sync_sources(link, scopes)
     except LinkError as e:
         _note(e.state)
         if e.state == WRONG_KEY:
             _forget_api_keys()
+            external_source.forget_pairing()
         logger.info(f"[server-link] Sync paused: {e.state}")
         return False
-    _mark_synced(link, time.time() if now is None else now)
+    _mark_synced(link, time.time() if now is None else now, scopes)
     _note(CONNECTED)
     return True
 

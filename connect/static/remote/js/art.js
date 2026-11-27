@@ -24,6 +24,27 @@ function authenticated(url) {
   return `${url}${separator}password=${encodeURIComponent(password)}`;
 }
 
+// connect's Fanart.tv widths (core/fanart.py's IMAGE_WIDTHS) - the same
+// rule as the app's services/connect/fanartWidth.ts: the screen's long side
+// in device pixels, rounded up, and never past the largest on a phone, which
+// shows the photo cropped and darkened where 4K only costs mobile data.
+const FANART_WIDTHS = [1280, 1920, 2560];
+const PHONE_SHORT_SIDE = 600;
+
+function fanartWidth() {
+  const { width, height } = window.screen;
+  const longSide = Math.max(width, height) * (window.devicePixelRatio || 1);
+  const step = FANART_WIDTHS.find((w) => w >= longSide);
+  if (step) return step;
+  return Math.min(width, height) < PHONE_SHORT_SIDE ? 2560 : null;
+}
+
+function scaled(url) {
+  if (!url.startsWith('/remote/fanart?')) return url;
+  const width = fanartWidth();
+  return width ? `${url}&w=${width}` : url;
+}
+
 export function setArt(container, url, fallbackIconClass) {
   container.innerHTML = '';
   if (!url) {
@@ -31,7 +52,7 @@ export function setArt(container, url, fallbackIconClass) {
     return;
   }
   const img = document.createElement('img');
-  img.src = authenticated(url);
+  img.src = authenticated(scaled(url));
   img.alt = '';
   img.addEventListener('error', () => {
     container.innerHTML = fallbackIconClass ? `<i class="mdi ${fallbackIconClass}"></i>` : '';

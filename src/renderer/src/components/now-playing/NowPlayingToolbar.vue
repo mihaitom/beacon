@@ -65,9 +65,10 @@
        - that could only ever produce empty bars is worse than no control.
        - Still there while casting, whose data comes from the backend
        - instead. Nor sideways on a phone (`inline`), which shows no bars at
-       - all - see NowPlayingView's visualizerActive. -->
+       - all - see NowPlayingView's visualizerActive. Nor while Milkdrop is
+       - on, which takes the bars' place. -->
       <v-btn
-        v-if="source.visualizer.available && !inline"
+        v-if="source.visualizer.available && !inline && !source.milkdrop.active"
         icon="mdi-equalizer"
         :color="source.ui.showVisualizer ? 'primary' : undefined"
         variant="text"
@@ -75,12 +76,38 @@
         :title="$t('nowPlaying.toggleVisualizer')"
         @click="source.toggleVisualizer()"
       />
-      <!-- Brings the album artwork back, large, over the artist background.
-       - Only once there is a background loaded: without one the artwork is
-       - already what the stage shows, so there is nothing to toggle. Lit
-       - while the artwork is the thing on screen, like the other toggles. -->
+      <!-- Milkdrop in place of the artist background or blurred cover. Only
+       - where this device plays the audio itself - see NowPlayingView's
+       - milkdropAvailable. -->
       <v-btn
-        v-if="source.backdrop.isArtist"
+        v-if="source.milkdrop.available"
+        icon="mdi-lava-lamp"
+        :color="source.milkdrop.active ? 'primary' : undefined"
+        variant="text"
+        density="comfortable"
+        :title="$t('nowPlaying.toggleMilkdrop')"
+        @click="source.toggleMilkdrop()"
+      />
+      <v-btn
+        v-if="source.milkdrop.active"
+        icon="mdi-shuffle-variant"
+        variant="text"
+        density="comfortable"
+        :title="$t('nowPlaying.nextMilkdropPreset')"
+        @click="source.nextMilkdropPreset()"
+      />
+      <component
+        :is="source.milkdropMenuComponent"
+        v-if="source.milkdrop.active && source.milkdropMenuComponent"
+        :current="source.milkdrop.preset"
+      />
+      <!-- Brings the album artwork back, large, over the artist background.
+       - Only once there is one: without it the artwork is already what the
+       - stage shows, so there is nothing to toggle. Not under Milkdrop,
+       - whose presets draw the cover themselves. Lit while the artwork is
+       - the thing on screen, like the other toggles. -->
+      <v-btn
+        v-if="source.backdrop.isArtist && !source.milkdrop.active"
         icon="mdi-album"
         :color="!source.ui.artworkHidden ? 'primary' : undefined"
         variant="text"
@@ -90,9 +117,9 @@
       />
       <!-- Steps to the artist's next Fanart.tv background. Only when there
        - is more than one to step through - with a single image the button
-       - would do nothing. -->
+       - would do nothing, and not while Milkdrop covers the background. -->
       <v-btn
-        v-if="source.backdrop.backgrounds.length > 1"
+        v-if="source.backdrop.backgrounds.length > 1 && !source.milkdrop.active"
         icon="mdi-wallpaper"
         variant="text"
         density="comfortable"
@@ -106,6 +133,10 @@
         v-if="compact && source.capabilities.equalizer && source.equalizerComponent"
         compact
       />
+      <!-- Likewise the lights, whose desktop button sits in the player bar:
+       - the phone has to be able to stop them or move them to another room
+       - with the desktop shut down. -->
+      <component :is="source.lightsComponent" v-if="compact && source.lightsComponent" compact />
       <!-- Not a mobile feature — MobileTransportControls.vue/the tab bar
        - already own the phone's actual full screen; hiding *that* app chrome
        - behind the Fullscreen API here wouldn't gain anything and isn't what

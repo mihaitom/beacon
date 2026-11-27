@@ -1,4 +1,9 @@
 /** Casting: handing over to the speakers, and following what connect reports. */
+import {
+  levelForJoiningSpeaker,
+  resetGroupAnchor,
+  sendDeviceVolume,
+} from '@/services/volumeControl'
 import { getAudioEngine } from '@/services/audioEngine'
 import { useConnectStore } from '../connect'
 import { useAutoplayStore } from '../autoplay'
@@ -16,6 +21,7 @@ import { getLocalMix } from '@/services/playback/localMix'
 import {
   localSongChangeGuard,
   localRadioChangeGuard,
+  playHereRequest,
   resolveSongs,
   positionTracker,
 } from './shared'
@@ -37,6 +43,7 @@ export interface CastActions {
   resumeAfterInterruption(): Promise<void>
   castTo(targets: ConnectDeviceRef[], force?: boolean): Promise<void>
   applyTargets(desired: ConnectDeviceRef[], force?: boolean): Promise<void>
+  playHere(): Promise<void>
 }
 
 export const castActions: CastActions & ThisType<PlaybackContext> = {
@@ -485,21 +492,52 @@ export const castActions: CastActions & ThisType<PlaybackContext> = {
     // carries the queue, position and paused-state handoff that /join
     // has no reason to.
     if (active.length === 0) {
+      // Several at once in 'equal' mode all start at their average.
+      const startLevel = desired.length > 1 ? await levelForJoiningSpeaker(desired) : null
+      resetGroupAnchor()
       await this.castTo(desired, force)
+      if (startLevel != null) {
+        for (const target of connect.activeTargets) {
+          if (connect.isVolumeCapable(target.type)) sendDeviceVolume(target, startLevel)
+        }
+      }
       return
     }
 
     const desiredKeys = new Set(desired.map(key))
     const activeKeys = new Set(active.map(key))
-    for (const target of desired.filter((t) => !activeKeys.has(key(t)))) {
+    const joining = desired.filter((t) => !activeKeys.has(key(t)))
+    // Read before anything joins: the level of the speakers that stay.
+    const joinLevel = joining.length
+      ? await levelForJoiningSpeaker(active.filter((t) => desiredKeys.has(key(t))))
+      : null
+    for (const target of joining) {
       const joined = await connect.joinDevice(target, force)
       if (!joined) {
         connect.setTakeoverRetry(() => this.applyTargets(desired, true))
         return
       }
+      if (joinLevel != null && connect.isVolumeCapable(target.type)) {
+        sendDeviceVolume(target, joinLevel)
+      }
     }
     for (const target of active.filter((t) => !desiredKeys.has(key(t)))) {
       await connect.stopDevice(target.type, target.name)
+    }
+  },
+  /** Ends the cast and carries on on this device, playing - the one way a
+   * cast ends that is allowed to make sound here, because the user asked
+   * for exactly that. Only this client: the request is local, so the other
+   * clients in the session see an ordinary cast end and stay quiet. */
+  async playHere(): Promise<void> {
+    const connect = useConnectStore()
+    if (!connect.isActive) return
+    playHereRequest.pending = true
+    try {
+      await connect.stopAll()
+    } catch (error) {
+      playHereRequest.pending = false
+      throw error
     }
   },
 }

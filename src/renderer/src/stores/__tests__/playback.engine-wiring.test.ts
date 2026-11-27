@@ -711,6 +711,65 @@ describe('the store wiring the audio engine', () => {
       expect(engine.playLive).not.toHaveBeenCalled()
       expect(playback.isPlaying).toBe(false)
     })
+
+    describe('through "play on this device instead"', () => {
+      async function songOnACast(): Promise<ReturnType<typeof usePlaybackStore>> {
+        const playback = usePlaybackStore()
+        playback.init()
+        stubLibraryClient()
+        playback.setQueue([makeSong('a'), makeSong('b')], 1)
+        castTo()
+        await flushPromises()
+        vi.spyOn(useConnectStore(), 'stopAll').mockResolvedValue(undefined)
+        return playback
+      }
+
+      it('carries the song on here where the speaker left it', async () => {
+        const playback = await songOnACast()
+        playback.localPosition = 75
+
+        await playback.playHere()
+        await endCast()
+
+        expect(useConnectStore().stopAll).toHaveBeenCalled()
+        expect(engine.play).toHaveBeenCalledWith('https://server.example/stream/b', 75, 1)
+        expect(playback.isPlaying).toBe(true)
+      })
+
+      it('carries a station on here', async () => {
+        const playback = await playingStationOnACast()
+        vi.spyOn(useConnectStore(), 'stopAll').mockResolvedValue(undefined)
+
+        await playback.playHere()
+        await endCast()
+
+        expect(engine.playLive).toHaveBeenCalled()
+        expect(playback.isPlaying).toBe(true)
+      })
+
+      it('applies to that one cast end only', async () => {
+        const playback = await songOnACast()
+        await playback.playHere()
+        await endCast()
+        vi.mocked(engine.play).mockClear()
+
+        castTo()
+        await flushPromises()
+        await endCast()
+
+        expect(engine.play).not.toHaveBeenCalled()
+      })
+
+      it('drops the request when the cast could not be stopped', async () => {
+        const playback = await songOnACast()
+        vi.mocked(useConnectStore().stopAll).mockRejectedValue(new Error('offline'))
+
+        await expect(playback.playHere()).rejects.toThrow('offline')
+        await endCast()
+
+        expect(engine.play).not.toHaveBeenCalled()
+      })
+    })
   })
 
   describe('the radio now-playing poll', () => {

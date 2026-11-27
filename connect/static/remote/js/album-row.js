@@ -11,8 +11,10 @@ import { fireCommand } from './api.js';
 import { navigate } from './router.js';
 import { createArt } from './art.js';
 import { t } from './i18n.js';
+import { fillSplitLine } from './split-line.js';
 
-export function renderAlbumRow(album) {
+/** `detail` is what the library is sorted by; it takes the year's place. */
+export function renderAlbumRow(album, { detail } = {}) {
   const row = document.createElement('div');
   row.className = 'row';
 
@@ -28,10 +30,12 @@ export function renderAlbumRow(album) {
   main.appendChild(title);
 
   // Artist first, since that is what tells two same-named albums apart; the
-  // year only when the server actually reports one.
+  // year only when the server reports one. Sorted by something, the line
+  // shows that at its end instead of the year.
   const subtitle = document.createElement('div');
   subtitle.className = 'row-subtitle';
-  subtitle.textContent = [album.artist, album.year].filter(Boolean).join(' · ');
+  if (detail) fillSplitLine(subtitle, album.artist || '', detail);
+  else subtitle.textContent = [album.artist, album.year].filter(Boolean).join(' · ');
   main.appendChild(subtitle);
 
   row.appendChild(main);

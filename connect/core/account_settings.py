@@ -60,6 +60,7 @@ LINKED_FIELDS = frozenset(
         "speakerEqualizers",
         "equalizerPresets",
         "customThemes",
+        "milkdrop",
     }
 )
 

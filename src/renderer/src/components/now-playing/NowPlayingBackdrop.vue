@@ -14,6 +14,8 @@
     }"
     :style="url ? { backgroundImage: `url(${url})` } : {}"
   />
+  <!-- Whatever replaces the picture (Milkdrop) - over it, under the scrim. -->
+  <slot />
   <div class="now-playing__scrim" :style="scrimStyle" />
 </template>
 

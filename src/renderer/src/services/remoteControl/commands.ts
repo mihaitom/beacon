@@ -6,8 +6,10 @@
 import { usePlaybackStore } from '@/stores/playback'
 import { useLibraryStore } from '@/stores/library'
 import { useConnectStore } from '@/stores/connect'
+import { recordDeviceVolume, setVolume, volumeScope } from '@/services/volumeControl'
 import { useRemoteControlStore } from '@/stores/remoteControl'
 import { useAuthStore } from '@/stores/auth'
+import { useGroupVolumeStore } from '@/stores/groupVolume'
 import { useAutoplayStore } from '@/stores/autoplay'
 import { useFanartStore } from '@/stores/fanart'
 import { useLyricsStore } from '@/stores/lyrics'
@@ -17,10 +19,44 @@ import { discoverBridges, getLights, type LightsUpdate } from '@/services/connec
 import { PartyRefusal, usePartyStore } from '@/stores/party'
 import { getArtistArt, fanartSource } from '@/services/connect/fanart'
 import { EQ_PRESET_NAMES, EQ_PRESETS, sanitizeSetting } from '@/services/equalizer'
-import type { Album, Artist, Playlist, Song } from '@/types/library'
+import type { Album, Artist, Playlist, RadioStation, Song } from '@/types/library'
 import type { DeviceType, DiscoveredDevice } from '@/services/connect/types'
 import { faviconSizeStep, RADIO_FAVICON_CACHE_VERSION } from '@/services/connect/radio'
 import { matchesAllTerms } from '@/services/textSearch'
+import { getLocale, i18n, parseLocale } from '@/i18n'
+import { artistNameKey } from '@/services/artistCredits'
+import { loadAlbumSort } from '@/services/albumSort'
+import { loadArtistSort } from '@/services/artistSort'
+import { loadSongSort } from '@/services/library/songBrowse'
+import {
+  activeFilterCount,
+  filterOptionLabel,
+  filterOptions,
+  UNKNOWN_OPTION,
+  type FilterField,
+  type FilterFieldDef,
+  type LibraryFilters,
+} from '@/services/library/libraryFilter'
+import {
+  barSectionsOf,
+  defaultDirectionOf,
+  effectiveSort,
+  filterFieldsOf,
+  filterList,
+  sectionLabel,
+  sectionOfFn,
+  sectionShortLabel,
+  sortItems,
+  sortDetail,
+  sortKeysOf,
+  sortLabelKeyOf,
+  type AnySort,
+  type DetailFormat,
+  type BrowseContext,
+  type LibraryItem,
+  type LibraryTab,
+} from '@/services/library/libraryBrowse'
+import { searchEverything, type SearchLimits } from '@/services/library/searchEverything'
 
 export interface RemoteSong {
   id: string
@@ -161,6 +197,268 @@ function toRemoteArtist(artist: Artist) {
   }
 }
 
+/** A station row on the phone. */
+function toRemoteStation(station: RadioStation) {
+  return {
+    id: station.id,
+    name: station.name,
+    // min_size matters, not just cosmetic — see remoteRadioFaviconUrl's
+    // default-0 comment: without it, routes/radio.py's _select() tries
+    // the *smallest* candidate first, which is very often a Safari
+    // "mask-icon" (a deliberately monochrome, unstyled SVG meant to be
+    // recolored by Safari itself, not a real logo — see
+    // routes/radio.py's own _ICON_RELS comment). Matches RadioView.vue's
+    // own faviconUrl(homePageUrl, 32) for this same list-row use.
+    favicon_url: remoteRadioFaviconUrl(station.homePageUrl, 32, station.favicon ?? null),
+    // What favicon_url is built from, for an integration to build it
+    // itself - see cover_art_id on RemoteSong.
+    home_page_url: station.homePageUrl ?? null,
+    favicon_hint: station.favicon ?? null,
+  }
+}
+
+function toRemoteItem(view: LibraryTab, item: LibraryItem) {
+  if (view === 'artists') return toRemoteArtist(item as Artist)
+  return view === 'albums' ? toRemoteAlbum(item as Album) : toRemoteSong(item as Song)
+}
+
+/** In the phone's language rather than the desktop's: the remote picks its
+ * own (connect/static/remote/js/i18n.js), and every label sent from here
+ * sits among its words. */
+function detailFormatFor(locale: unknown): DetailFormat {
+  const target = parseLocale(typeof locale === 'string' ? locale : null) ?? getLocale()
+  const global = i18n.global as unknown as {
+    t(
+      key: string,
+      named: Record<string, unknown>,
+      options: { locale: string; plural?: number },
+    ): string
+  }
+  return {
+    t: (key, named = {}) => global.t(key, named, { locale: target }),
+    plural: (key, count) =>
+      global.t(key, { n: count.toLocaleString(target) }, { locale: target, plural: count }),
+    locale: target,
+  }
+}
+
+/** A direction left out is the one picking the order starts in. */
+function readSort(view: LibraryTab, raw: unknown): AnySort | null {
+  const sort = raw as { key?: unknown; direction?: unknown } | null | undefined
+  if (typeof sort?.key !== 'string' || !sort.key) return null
+  const direction =
+    sort.direction === 'asc' || sort.direction === 'desc'
+      ? sort.direction
+      : defaultDirectionOf(view, sort.key)
+  return { key: sort.key, direction }
+}
+
+/** Only fields and options the phone could have been offered: what it
+ * sends is somebody's localStorage, not something to trust blindly. */
+function readFilters(raw: unknown, fields: FilterFieldDef<never>[]): LibraryFilters {
+  if (!raw || typeof raw !== 'object') return {}
+  const filters: LibraryFilters = {}
+  for (const def of fields) {
+    const picked = (raw as Record<string, unknown>)[def.field]
+    if (!Array.isArray(picked)) continue
+    const options = picked.filter((option): option is string => typeof option === 'string')
+    if (options.length) filters[def.field] = options
+  }
+  return filters
+}
+
+function browseContext(): BrowseContext {
+  const auth = useAuthStore()
+  const library = useLibraryStore()
+  const stats = library.allSongsLoaded ? library.artistStatsByName : null
+  return {
+    serverType: auth.serverType,
+    rated: auth.capabilities.personalRating,
+    favorites: auth.capabilities.favorites,
+    statsOf: (artist) => stats?.get(artistNameKey(artist.name)) ?? null,
+  }
+}
+
+/** The half the phone browses, whole: the library's or the favourites'. */
+async function loadHalf(view: LibraryTab, favorites: boolean): Promise<LibraryItem[]> {
+  const library = useLibraryStore()
+  // The artist orders and filters count out of the song catalogue.
+  if (view === 'songs' || view === 'artists') {
+    if (!library.allSongsLoaded) await library.fetchAllSongs()
+  }
+  if (favorites) {
+    await library.fetchStarred()
+    return library.starred[view]
+  }
+  if (view === 'albums') {
+    if (!library.albums.length) await library.fetchAlbums()
+    return library.albums
+  }
+  if (view === 'artists') {
+    if (!library.artists.length) await library.fetchArtists()
+    return library.artists
+  }
+  return library.allSongs
+}
+
+/** The same list the phone shell's library shows (MobileLibraryView.vue),
+ * sorted, filtered and cut into sections - the phone gets a page of it.
+ * `sort` left empty is the order this desktop last browsed by. */
+async function browseHalf(view: LibraryTab, payload: Record<string, unknown>) {
+  const favorites = payload.favorites === true && useAuthStore().capabilities.favorites
+  const whole = await loadHalf(view, favorites)
+  const ctx = browseContext()
+  const remembered =
+    view === 'artists' ? loadArtistSort() : view === 'albums' ? loadAlbumSort() : loadSongSort()
+  const sort = effectiveSort(view, readSort(view, payload.sort) ?? remembered, ctx)
+  const fields = filterFieldsOf(view, ctx)
+  const filters = readFilters(payload.filters, fields)
+  const sorted = sortItems(view, whole, sort, ctx)
+  const shown = filterList(view, sorted, filters, ctx)
+  const format = detailFormatFor(payload.locale)
+  const t = format.t
+
+  const now = Date.now()
+  const sectionOf = sectionOfFn(view, sort, ctx, now)
+  const firstAt = new Map<string, number>()
+  if (sectionOf) {
+    shown.forEach((item, index) => {
+      const section = sectionOf(item)
+      if (!firstAt.has(section)) firstAt.set(section, index)
+    })
+  }
+  const sections = sectionOf
+    ? barSectionsOf(view, sorted, sort, ctx).map((section) => ({
+        key: section,
+        label: sectionLabel(view, sort.key, section, t),
+        short: sectionShortLabel(view, sort.key, section, t),
+        // Where the section starts in the filtered list, or null where a
+        // filter has emptied it - the index shows it greyed out.
+        offset: firstAt.get(section) ?? null,
+      }))
+    : []
+
+  // The menu's counts are over the whole half, not the filtered one: an
+  // option's count says what picking it brings in. A field the server sent
+  // nothing for has only its unknown option - nothing to pick between.
+  const filterFields = fields
+    .map((def) => ({
+      field: def.field,
+      label: t(def.labelKey),
+      options: filterOptions(whole as never[], def, now).map(({ option, count }) => ({
+        option,
+        label: filterOptionLabel(def.field as FilterField, option, t),
+        count,
+      })),
+    }))
+    .filter((field) =>
+      field.options.some(({ option, count }) => option !== UNKNOWN_OPTION && count > 0),
+    )
+
+  const offset = Math.max(0, Number(payload.offset ?? 0) || 0)
+  const limit = Math.max(1, Number(payload.limit ?? 50) || 50)
+  return {
+    items: shown.slice(offset, offset + limit).map((item) => {
+      // What the list is sorted by, for the row's second line.
+      const remote = {
+        ...toRemoteItem(view, item),
+        sort_detail: sortDetail(view, sort.key, item, format, ctx),
+      }
+      if (view !== 'artists') return remote
+      // Counted out of the song catalogue, which the artist card shows
+      // beside the albums once it is there - as the app's does.
+      return { ...remote, song_count: ctx.statsOf(item as Artist)?.songCount ?? null }
+    }),
+    total: shown.length,
+    sort,
+    sort_options: sortKeysOf(view, ctx).map((key) => ({
+      value: key,
+      label: t(sortLabelKeyOf(view, key)),
+    })),
+    sections,
+    filters,
+    filter_count: activeFilterCount(filters),
+    filter_fields: filterFields,
+  }
+}
+
+/** How many of each kind the remote's search shows before "show all" -
+ * the phone's own numbers (MobileSearchView.vue). */
+const SEARCH_LIMITS: SearchLimits = {
+  artists: 3,
+  albums: 4,
+  songs: 8,
+  playlists: 5,
+  stations: 5,
+}
+
+const SEARCH_KINDS = ['songs', 'albums', 'artists'] as const
+
+let stationsAsked = false
+
+/** The remote's search page: every kind at once, best fit first, or one
+ * kind's every match for its "show all" - the phone shell's search page
+ * (MobileSearchView.vue) over the same matcher. */
+async function searchLibrary(payload: Record<string, unknown>) {
+  const library = useLibraryStore()
+  const hasRadio = useAuthStore().capabilities.internetRadio
+  const query = String(payload.q ?? '').trim()
+  const kind = SEARCH_KINDS.find((k) => k === payload.kind) ?? null
+  if (!query) return kind ? { items: [], total: 0 } : { sections: [] }
+
+  // Settled, not all-or-nothing: a server whose radio list fails to load
+  // still finds songs. The stations are asked for once - an empty list is
+  // a real answer, not one to repeat on every keystroke.
+  const askStations = hasRadio && !library.radioStations.length && !stationsAsked
+  stationsAsked ||= askStations
+  await Promise.allSettled([
+    library.allSongsLoaded ? null : library.fetchAllSongs(),
+    library.albums.length ? null : library.fetchAlbums(),
+    library.artists.length ? null : library.fetchArtists(),
+    library.playlists.length ? null : library.fetchPlaylists(),
+    askStations ? library.fetchRadioStations() : null,
+  ])
+  const sources = {
+    artists: library.artists,
+    albums: library.albums,
+    songs: library.allSongs,
+    playlists: library.playlists,
+    stations: hasRadio ? library.radioStations : [],
+  }
+
+  if (kind) {
+    const only = {
+      artists: [],
+      albums: [],
+      songs: [],
+      playlists: [],
+      stations: [],
+      [kind]: sources[kind],
+    }
+    const limits = { ...SEARCH_LIMITS, [kind]: Number.POSITIVE_INFINITY }
+    const items = (searchEverything(query, only, limits)[0]?.items ?? []) as LibraryItem[]
+    const offset = Math.max(0, Number(payload.offset ?? 0) || 0)
+    const limit = Math.max(1, Number(payload.limit ?? 50) || 50)
+    return {
+      items: items.slice(offset, offset + limit).map((item) => toRemoteItem(kind, item)),
+      total: items.length,
+    }
+  }
+
+  return {
+    sections: searchEverything(query, sources, SEARCH_LIMITS).map((section) => {
+      const items = section.items as unknown[]
+      const mapped =
+        section.kind === 'playlists'
+          ? (items as Playlist[]).map(toRemotePlaylist)
+          : section.kind === 'stations'
+            ? (items as RadioStation[]).map(toRemoteStation)
+            : (items as LibraryItem[]).map((item) => toRemoteItem(section.kind as LibraryTab, item))
+      return { kind: section.kind, items: mapped, total: section.total }
+    }),
+  }
+}
+
 async function resolveSong(songId: string): Promise<Song | null> {
   const library = useLibraryStore()
   const cached = library.allSongs.find((t) => t.id === songId)
@@ -204,16 +502,17 @@ export async function handleRemoteCommand(
       await playback.seek(Number(payload.position))
       return
     case 'volume': {
-      // Mirrors PlayerBar.vue's own slider-swap logic exactly (single
-      // active cast target -> that device's volume; anything else -> local)
-      // — previously this always called playback.setVolume(), which is
-      // silently inaudible while casting (adjusts an <audio> element
-      // nobody's listening to). With 2+ active targets there's no single
-      // "the" volume to set here either, same as PlayerBar.vue's local
-      // slider going disabled in that case — see devices-request/
-      // set-device-volume below for per-device control instead.
+      // Mirrors PlayerBar.vue's own slider-swap logic exactly (one active
+      // cast target -> that device's volume; several -> the master over
+      // them; none -> local) — previously this always called
+      // playback.setVolume(), which is silently inaudible while casting
+      // (adjusts an <audio> element nobody's listening to).
       const targets = connect.activeTargets
-      if (targets.length === 1) {
+      if (targets.length > 1) {
+        const rounded = Math.round(Number(payload.volume) * 100)
+        await setVolume(volumeScope(), rounded)
+        useRemoteControlStore().reportDeviceVolume(rounded)
+      } else if (targets.length === 1) {
         const rounded = Math.round(Number(payload.volume) * 100)
         await connect.setDeviceVolume(targets[0]!.type, targets[0]!.name, rounded)
         // Updates remoteControl's device_volume cache immediately instead of
@@ -231,9 +530,17 @@ export async function handleRemoteCommand(
       const name = String(payload.name)
       const rounded = Number(payload.volume)
       await connect.setDeviceVolume(deviceType, name, rounded)
+      // So the master and this window's own sliders follow.
+      recordDeviceVolume({ type: deviceType, name }, rounded)
       const targets = connect.activeTargets
       if (targets.length === 1 && targets[0]!.type === deviceType && targets[0]!.name === name) {
         useRemoteControlStore().reportDeviceVolume(rounded)
+      }
+      return
+    }
+    case 'group-volume-mode': {
+      if (payload.mode === 'equal' || payload.mode === 'relative') {
+        useGroupVolumeStore().setMode(payload.mode)
       }
       return
     }
@@ -442,9 +749,17 @@ export async function handleRemoteCommand(
     case 'play-favorites': {
       // Fetched again rather than trusting the list the phone was shown:
       // a star toggled on the desktop since then shifts every index after
-      // it, so the id the phone tapped is what decides where to start.
+      // it, so the id the phone tapped is what decides where to start. In
+      // the order and through the filter the phone had on, so what plays
+      // on after the song is what came after it on the phone's screen.
       await library.fetchStarred()
-      const songs = library.starred.songs
+      let songs = library.starred.songs
+      if (payload.sort || payload.filters) {
+        const ctx = browseContext()
+        const sort = effectiveSort('songs', readSort('songs', payload.sort) ?? loadSongSort(), ctx)
+        const filters = readFilters(payload.filters, filterFieldsOf('songs', ctx))
+        songs = filterList('songs', sortItems('songs', songs, sort, ctx), filters, ctx) as Song[]
+      }
       const songId = String(payload.songId)
       const startIndex = Number(payload.startIndex)
       const position =
@@ -529,6 +844,9 @@ export async function resolveRemoteQuery(
 
   switch (type) {
     case 'songs-request': {
+      // Browsing (the remote's library) rather than searching (the party
+      // guests, an integration): see routes/remote.py's list_songs.
+      if (payload.browse === true) return browseHalf('songs', payload)
       if (!library.allSongsLoaded) await library.fetchAllSongs()
       const search = String(payload.search ?? '').trim()
       const filtered = search
@@ -544,6 +862,7 @@ export async function resolveRemoteQuery(
       }
     }
     case 'albums-request': {
+      if (payload.browse === true) return browseHalf('albums', payload)
       if (!library.albums.length) await library.fetchAlbums()
       const search = String(payload.search ?? '').trim()
       const filtered = search
@@ -556,6 +875,8 @@ export async function resolveRemoteQuery(
         total: filtered.length,
       }
     }
+    case 'search-request':
+      return searchLibrary(payload)
     case 'album-request': {
       try {
         const album = await library.fetchAlbum(String(payload.albumId))
@@ -568,6 +889,7 @@ export async function resolveRemoteQuery(
       }
     }
     case 'artists-request': {
+      if (payload.browse === true) return browseHalf('artists', payload)
       if (!library.artists.length) await library.fetchArtists()
       const search = String(payload.search ?? '').trim()
       const filtered = search
@@ -775,24 +1097,7 @@ export async function resolveRemoteQuery(
     }
     case 'radio-request': {
       if (!library.radioStations.length) await library.fetchRadioStations()
-      return {
-        items: library.radioStations.map((s) => ({
-          id: s.id,
-          name: s.name,
-          // min_size matters, not just cosmetic — see remoteRadioFaviconUrl's
-          // default-0 comment: without it, routes/radio.py's _select() tries
-          // the *smallest* candidate first, which is very often a Safari
-          // "mask-icon" (a deliberately monochrome, unstyled SVG meant to be
-          // recolored by Safari itself, not a real logo — see
-          // routes/radio.py's own _ICON_RELS comment). Matches RadioView.vue's
-          // own faviconUrl(homePageUrl, 32) for this same list-row use.
-          favicon_url: remoteRadioFaviconUrl(s.homePageUrl, 32, s.favicon ?? null),
-          // What favicon_url is built from, for an integration to build it
-          // itself - see cover_art_id on RemoteSong.
-          home_page_url: s.homePageUrl ?? null,
-          favicon_hint: s.favicon ?? null,
-        })),
-      }
+      return { items: library.radioStations.map(toRemoteStation) }
     }
     case 'devices-request': {
       const connect = useConnectStore()
@@ -812,6 +1117,7 @@ export async function resolveRemoteQuery(
       // the UI to grey the row out with a hint instead of pretending the
       // device isn't there.
       const typeOrder: DeviceType[] = ['sonos', 'airplay', 'chromecast', 'dlna']
+      const sessionId = useAuthStore().sessionId
       // Matches connectStore.isVolumeCapable() (see connect/routes/volume.py).
       const volumeCapableTypes = new Set<DeviceType>(['sonos', 'airplay', 'chromecast', 'dlna'])
       const flatten = (
@@ -821,6 +1127,8 @@ export async function resolveRemoteQuery(
         type: DeviceType
         name: string
         in_use_by_name: string | null
+        in_use_by_song: string | null
+        claimed: boolean
         needs_pairing: boolean
         volume_capable: boolean
       }[] =>
@@ -830,6 +1138,10 @@ export async function resolveRemoteQuery(
             type,
             name: d.name,
             in_use_by_name: d.in_use_by_name ?? null,
+            in_use_by_song: d.in_use_by_song ?? null,
+            // Held by another session rather than this window - the sheet
+            // offers "Take over" for these instead of a plain add.
+            claimed: d.in_use_by_session_id != null && d.in_use_by_session_id !== sessionId,
             needs_pairing: !!d.needs_pairing,
             volume_capable: volumeCapableTypes.has(type),
           }))

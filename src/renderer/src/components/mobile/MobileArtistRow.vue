@@ -12,15 +12,19 @@
     />
     <div class="mobile-row__text">
       <div class="text-body-medium">{{ artist.name }}</div>
-      <div class="text-body-small text-medium-emphasis">
-        {{ $n(artist.albumCount) }}
-        {{ artist.albumCount === 1 ? $t('library.album1') : $t('library.albumsN') }}
+      <div class="mobile-split-line text-body-small text-medium-emphasis">
+        <span>
+          {{ $n(artist.albumCount) }}
+          {{ artist.albumCount === 1 ? $t('library.album1') : $t('library.albumsN') }}
+        </span>
+        <span v-if="detail">{{ detail }}</span>
       </div>
     </div>
   </router-link>
 </template>
 
 <script lang="ts">
+import type { PropType } from 'vue'
 import CoverArt from '@/components/library/CoverArt.vue'
 import { MOBILE_ROW_ART_SIZE } from './rowMetrics'
 import type { Artist } from '@/types/library'
@@ -33,6 +37,9 @@ export default {
       type: Object as () => Artist,
       required: true,
     },
+    /** What the list is sorted by, after the second line's own text (see
+     * libraryBrowse.ts's sortDetail()). */
+    detail: { type: String as PropType<string | null>, default: null },
   },
   data() {
     return { MOBILE_ROW_ART_SIZE }

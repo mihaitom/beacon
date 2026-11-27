@@ -52,19 +52,17 @@ async def stored_images(body: StoredImagesRequest) -> dict:
 
 
 @router.get("/image")
-async def image(url: str = Query(...)) -> Response:
-    data = fanart.get_cached_image(url)
+async def image(url: str = Query(...), w: int | None = None) -> Response:
+    """The image as WebP, scaled down to `w` when that is one of
+    core/fanart.py's IMAGE_WIDTHS - what a smaller screen asks for."""
+    data = await fanart.image(url, w)
     if data is None:
-        fetched = await fanart.fetch_image(url)
-        if fetched is None:
-            # Either not a Fanart.tv URL, or the fetch failed. The page
-            # simply shows no image, so a 404 is the honest answer.
-            raise HTTPException(status_code=404, detail="Image not available")
-        data, _content_type = fetched
-        fanart.store_image(url, data)
+        # Either not a Fanart.tv URL, or the fetch failed. The page simply
+        # shows no image, so a 404 is the honest answer.
+        raise HTTPException(status_code=404, detail="Image not available")
     return Response(
         content=data,
-        media_type=fanart.content_type_for(url),
+        media_type=fanart.media_type(data),
         headers={
             "Cache-Control": _CACHE_CONTROL,
             # The colour extractor reads these pixels through a canvas, which

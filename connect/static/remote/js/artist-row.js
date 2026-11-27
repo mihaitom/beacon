@@ -6,8 +6,10 @@
 import { navigate } from './router.js';
 import { createArt } from './art.js';
 import { n, t } from './i18n.js';
+import { fillSplitLine } from './split-line.js';
 
-export function renderArtistRow(artist) {
+/** `detail` is what the library is sorted by, at the line's end. */
+export function renderArtistRow(artist, { detail } = {}) {
   const row = document.createElement('div');
   row.className = 'row';
   row.appendChild(createArt(artist.cover_art_url, 'mdi-account-music'));
@@ -23,7 +25,8 @@ export function renderArtistRow(artist) {
   const subtitle = document.createElement('div');
   subtitle.className = 'row-subtitle';
   const count = artist.album_count ?? 0;
-  subtitle.textContent = t(count === 1 ? 'artist.albumCount1' : 'artist.albumCountN', { count: n(count) });
+  const albums = t(count === 1 ? 'artist.albumCount1' : 'artist.albumCountN', { count: n(count) });
+  fillSplitLine(subtitle, albums, detail);
   main.appendChild(subtitle);
 
   row.appendChild(main);

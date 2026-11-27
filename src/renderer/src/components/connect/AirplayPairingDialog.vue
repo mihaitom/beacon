@@ -1,34 +1,73 @@
 <template>
   <v-dialog :model-value="modelValue" max-width="420" @update:model-value="onClose">
-    <v-card>
-      <v-card-title>{{ $t('connect.pairDeviceTitle', { name: deviceName }) }}</v-card-title>
-      <v-card-text>
-        <v-progress-circular v-if="loading" indeterminate class="pair-block" />
-        <v-alert v-if="error" type="error" variant="tonal" density="compact" class="pair-block">
+    <v-card class="airplay-pairing">
+      <v-card-title class="airplay-pairing__title">
+        {{ $t('connect.pairDeviceTitle', { name: deviceName }) }}
+      </v-card-title>
+      <v-card-text class="airplay-pairing__body">
+        <!-- Finding the device takes a scan of up to ten seconds - long enough
+         - that a bare spinner reads as a hang. -->
+        <div v-if="loading && !started" class="airplay-pairing__waiting">
+          <v-progress-circular indeterminate color="primary" size="24" width="3" />
+          <span class="text-body-medium">
+            {{ $t('connect.pairConnecting', { name: deviceName }) }}
+          </span>
+        </div>
+        <v-alert v-if="error" type="error" variant="tonal" density="compact">
           {{ error }}
         </v-alert>
         <template v-if="started && !error">
-          <p v-if="devicePin" class="pair-block">
-            {{ $t('connect.pairPinPrompt') }}
+          <template v-if="devicePin">
+            <p class="text-body-medium text-medium-emphasis">
+              {{ $t('connect.pairPinPrompt') }}
+            </p>
+            <!-- Plain text with no fixed length: a device may show four digits
+             - or six, and an AirPort Express takes the password its owner set,
+             - letters and all. -->
+            <v-text-field
+              v-model="pin"
+              :label="$t('connect.pin')"
+              autocomplete="off"
+              spellcheck="false"
+              variant="solo-filled"
+              hide-details
+              autofocus
+              :disabled="loading"
+              class="airplay-pairing__pin"
+              @keyup.enter="finish"
+            />
+          </template>
+          <p v-else class="text-body-medium text-medium-emphasis">
+            {{ $t('connect.pairConfirmPrompt') }}
           </p>
-          <v-text-field
-            v-if="devicePin"
-            v-model="pin"
-            :label="$t('connect.pin')"
-            type="number"
-            variant="solo-filled"
-            clearable
-            @keyup.enter="finish"
-          />
-          <p v-else class="pair-block">{{ $t('connect.pairConfirmPrompt') }}</p>
         </template>
       </v-card-text>
-      <v-card-actions>
+      <v-card-actions class="airplay-pairing__actions">
         <v-spacer />
         <v-btn variant="text" @click="onClose(false)">{{ $t('common.cancel') }}</v-btn>
-        <v-btn color="primary" :disabled="!started || loading" @click="finish">{{
-          $t('common.done')
-        }}</v-btn>
+        <!-- A failed attempt ends the session on connect's side (a wrong PIN
+         - included), so the way on is a fresh start, not another "Done". -->
+        <v-btn
+          v-if="error"
+          color="primary"
+          variant="flat"
+          rounded="pill"
+          prepend-icon="mdi-refresh"
+          @click="start"
+        >
+          {{ $t('common.retry') }}
+        </v-btn>
+        <v-btn
+          v-else
+          color="primary"
+          variant="flat"
+          rounded="pill"
+          :disabled="!canFinish"
+          :loading="loading && started"
+          @click="finish"
+        >
+          {{ $t('common.done') }}
+        </v-btn>
       </v-card-actions>
     </v-card>
   </v-dialog>
@@ -63,6 +102,10 @@ export default {
     connectStore() {
       return useConnectStore()
     },
+    canFinish(): boolean {
+      if (!this.started || this.loading) return false
+      return !this.devicePin || this.pin.length > 0
+    },
   },
   watch: {
     modelValue(open: boolean) {
@@ -72,8 +115,8 @@ export default {
   },
   methods: {
     async start() {
+      this.reset()
       this.loading = true
-      this.error = null
       try {
         const result = await this.connectStore.startPairing(this.deviceName)
         this.devicePin = result.device_provides_pin
@@ -85,12 +128,13 @@ export default {
       }
     },
     async finish() {
+      if (!this.canFinish) return
       this.loading = true
       this.error = null
       try {
         await this.connectStore.finishPairing(
           this.deviceName,
-          this.devicePin ? Number(this.pin) : undefined,
+          this.devicePin ? this.pin : undefined,
         )
         this.onClose(false)
       } catch (error) {
@@ -113,9 +157,31 @@ export default {
 </script>
 
 <style scoped>
-/* Every line in the dialog body - the spinner, an error, the prompt -
- * sits the same distance above whatever follows it. */
-.pair-block {
-  margin-bottom: 8px;
+.airplay-pairing.v-card {
+  border-radius: 16px;
+}
+
+/* A device name can be long; the title wraps rather than ellipsising it. */
+.airplay-pairing__title {
+  padding-top: 20px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.airplay-pairing__body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding-top: 12px;
+}
+
+.airplay-pairing__waiting {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.airplay-pairing__actions {
+  padding: 8px 24px 20px;
 }
 </style>

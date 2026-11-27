@@ -167,6 +167,12 @@ _RENDERING_CONTROL_ID = "urn:upnp-org:serviceId:RenderingControl"
 # is found as well as :1.
 _AV_TRANSPORT_ID = "urn:upnp-org:serviceId:AVTransport"
 
+# Transport states in which there is nothing for a pause or a stop to act
+# on. Anything else - playing, transitioning, a vendor's own state - gets the
+# command.
+_NOTHING_TO_STOP = frozenset({"STOPPED", "NO_MEDIA_PRESENT"})
+_NOTHING_TO_PAUSE = _NOTHING_TO_STOP | {"PAUSED_PLAYBACK"}
+
 
 async def _send_play(device) -> None:
     """Play, sent whatever the renderer last said it allows.
@@ -179,6 +185,16 @@ async def _send_play(device) -> None:
     if service is None or not service.has_action("Play"):
         raise MediaRejectedError("the renderer has no Play action")
     await service.action("Play").async_call(InstanceID=0, Speed="1")
+
+
+async def _send_transport_action(device, name: str) -> bool:
+    """Send an argument-less AVTransport action directly, past the allowed
+    actions. False when the renderer has no such action at all."""
+    service = device.profile_device.service_id(_AV_TRANSPORT_ID)
+    if service is None or not service.has_action(name):
+        return False
+    await service.action(name).async_call(InstanceID=0)
+    return True
 
 
 class DlnaDelivery(BaseDelivery):
@@ -326,25 +342,36 @@ class DlnaDelivery(BaseDelivery):
             logger.debug(f"[DLNA:{self.target}] volume eventing unavailable: {e}")
 
     @staticmethod
-    async def _refresh_allowed_actions(device) -> None:
-        """Ask the renderer afresh what it allows right now.
+    async def _transport_state(device):
+        """The renderer's transport state, asked afresh rather than taken
+        from the last poll."""
+        from async_upnp_client.profiles.dlna import TransportState
 
-        DmrDevice.async_pause() and async_stop() go by the allowed actions
-        from the last poll and send nothing when those leave the action out,
-        so a stop judged against a stale answer could leave the renderer
-        playing while Beacon reports it stopped. If a fresh answer still
-        leaves the action out, there is genuinely nothing to act on. A
-        renderer without the action at all is not that case: the library
-        raises for it, as it should."""
         await device.async_update(do_ping=False)
+        state = device.transport_state
+        return state.value if isinstance(state, TransportState) else state
+
+    async def _send_past_stale_actions(self, device, name: str, library_call) -> None:
+        """Pause or Stop, sent even when the allowed actions leave it out.
+
+        DmrDevice.async_pause() and async_stop() send nothing when the
+        allowed actions leave the action out, and those are not to be relied
+        on: a LinkPlay renderer that has just started a track lists neither
+        Pause nor Stop for a while, though it plays and accepts both. Taken
+        at its word, a pause there left the speaker playing while Beacon
+        showed it paused (#94). Sent directly, a renderer that really cannot
+        answers with a fault. A renderer without the action at all goes
+        through the library, which raises for it, as it should."""
+        allowed = getattr(device, f"can_{name.lower()}")
+        if allowed or not await _send_transport_action(device, name):
+            await library_call()
 
     async def pause(self) -> None:
         device = await self._get_device_or_evict()
-        await self._refresh_allowed_actions(device)
-        if device.has_pause and not device.can_pause:
+        if await self._transport_state(device) in _NOTHING_TO_PAUSE:
             logger.debug(f"[DLNA:{self.target}] nothing to pause")
             return
-        await device.async_pause()
+        await self._send_past_stale_actions(device, "Pause", device.async_pause)
         logger.info(f"[DLNA:{self.target}] paused")
 
     async def resume(self) -> None:
@@ -356,11 +383,10 @@ class DlnaDelivery(BaseDelivery):
 
     async def stop(self) -> None:
         device = await self._get_device_or_evict()
-        await self._refresh_allowed_actions(device)
-        if device.has_stop and not device.can_stop:
+        if await self._transport_state(device) in _NOTHING_TO_STOP:
             logger.debug(f"[DLNA:{self.target}] nothing to stop")
             return
-        await device.async_stop()
+        await self._send_past_stale_actions(device, "Stop", device.async_stop)
         logger.info(f"[DLNA:{self.target}] stopped")
 
     async def _poll_device(self):

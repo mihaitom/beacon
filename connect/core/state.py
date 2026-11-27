@@ -205,6 +205,10 @@ class AppState:
         self.stream_requests: deque[dict] = deque(maxlen=48)
         self.recent_streams: deque[StreamConnection] = deque(maxlen=16)
         self.device_reading: tuple[int, float, float, str] | None = None
+        # The first position a device reported for a stream, as
+        # (play_generation, target, position, moved since) - see
+        # core/cast_position.py's _position_frozen().
+        self.first_device_reading: tuple[int, str, float, bool] | None = None
         # The listener's standing quality ceiling for this cast, as last set
         # by a /play (see routes/playback.py's PlayRequest). Held on the
         # session rather than only per request because auto-advance

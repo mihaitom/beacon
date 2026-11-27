@@ -124,6 +124,25 @@ song. Speakers also load cover art from that address, so it has to be
 reachable from their network too. See the environment variables in the
 README.
 
+Beacon cannot get past an SSO login page such as Authentik's or Authelia's.
+Where it has no direct address to use, for example in the desktop app outside
+the server's network, let Navidrome's `/rest/` path past the login: that is
+the Subsonic API, which has its own login, and every Subsonic app needs it
+open the same way. Navidrome's documentation shows how, with examples for
+Traefik and Caddy:
+[Externalized Authentication](https://www.navidrome.org/docs/usage/integration/authentication/#subsonic-endpoint).
+Jellyfin's API is not under one path, so a Jellyfin server
+has to stay outside the SSO login altogether.
+
+If the proxy instead lets only clients with a certificate through (mTLS),
+give Beacon one with `MEDIA_SERVER_CLIENT_CERT` and, for a separate key
+file, `MEDIA_SERVER_CLIENT_KEY`. Beacon then presents it for everything it
+fetches from the server, the audio included, with Navidrome, Jellyfin and
+Plex alike. Speakers load cover art from the server themselves and cannot
+present a certificate, so they need an address without mTLS (the internal
+address above) to show covers. The README's environment variables cover
+the details, such as a server certificate from your own CA.
+
 ## When a speaker stops or starts over
 
 1. **Set the log level to Debug** (Settings → Advanced). While casting, Now

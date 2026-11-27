@@ -160,7 +160,10 @@ label and the column headings, where they mark a label rather than an
 action.
 
 The serif face is the app's signature and is rationed deliberately - two or
-three per screen at most, never for a label or a row.
+three per screen at most, never for a label or a row. Now Playing has the
+song title in it, and the line a Milkdrop preset's name and captions show
+in while it shows (the Fractal Zoom's "Mandelbrot set", "Seahorse Valley") -
+not the zoom beside it.
 
 ### The one type floor
 
@@ -570,6 +573,11 @@ grid of them, each one jumping as it was entered and left.
 so a long title has nowhere to wrap to. No list component says
 `text-truncate` on its own lines.
 
+In a sorted library list the second line carries what the order goes by
+(a year, the plays, the date added) at its far end: `.mobile-split-line`
+puts the line's own text left and the value right, and clips only the
+text. The grid cards do the same on their second line.
+
 Two more shared classes serve the library pages, for the same reason
 `.beacon-panel` does - they had been copied into six views each:
 
@@ -619,12 +627,55 @@ sections (letters, decades, stars, and the filter's ranges), the list draws
 them as `.letter-divider` headings and the index bar lists the same
 sections in short form.
 
+The phone's Library (`MobileLibraryView.vue`) is browsed with the same
+controls in one row under the Songs/Albums/Artists switch, but has no search
+of its own - the top bar's search is the one place to search on a phone. A
+heart pill at the start of the row stands in for it as the way to the
+favourites. The filter is the icon alone there, its count a badge on it, so
+the sort select gets the room. The grid uses `MobileGridTile.vue`, the
+desktop cards' rules at a phone's column width (at least 140px, two columns
+at the least), and the dividers are the same `.letter-divider`.
+
+The desktop's index bar is no target for a thumb - 10px letters in a 20px
+column, always on screen. The phone has `MobileSectionScrubber.vue` instead:
+nothing until the list scrolls, then a 48px grip at the right edge, riding
+at the scroll position and showing the section on screen. Dragging it opens
+a rail of the sections between the sticky controls and the bars and jumps
+section by section, with the section in a large amber bubble left of the
+thumb (the thumb covers the rail itself) and, on Android, a short vibration
+per section. A tap opens the rail to pick from instead. The list keeps its
+full width, since the grip only lies over it while it is in use.
+
 A playlist's page starts in the playlist's own order, offered first in the
 sort select and not remembered between playlists. Dragging a row needs the
 whole list in that order, so a search, a filter or another order turns it off.
 
 Scrollbars are hidden app-wide (`base.css`) - scrolling still works, only the
 chrome is gone. A scroll region therefore has to look scrollable on its own.
+
+## Rows that are sliders
+
+A speaker's volume is not a second line under its name: the row itself is the
+slider (`VolumeFader.vue`). The level fills the row from the left in a faint
+amber gradient, its edge a lit 2px line like a meter's needle; dragging across
+the row, the arrow keys or the wheel set it. A finger only takes the row once
+it moves sideways, so a vertical swipe still scrolls the list. The master over
+several speakers is the same row one size up, and shows the spread
+(`20–45%`) in its value. A row that only
+names a speaker (in "same level" mode, where the master is the only level)
+drops the fill altogether rather than showing it disabled.
+
+The cast menu on the desktop is built from these: two halves, what is playing
+on the left and what could be added on the right, so its height follows the
+speakers in use rather than every one the network has. Below 620px it stacks.
+
+On a phone (`MobileDevicePicker.vue`, and Remote Control's `devices.js`) the
+same two halves sit in one column of a sheet: a grabber and a large title on
+top, with round icon buttons for rescan and close, and the sheet closes when
+pulled down by its top. The rows are a thumb's height, 56px, and the master is
+68px, the one large thing in the sheet. The speakers to add sit in one grouped
+panel per kind, each marked by its icon in a small tile, with a round `+`.
+Every tap applies straight away, so there is no "Done".
 
 ## Empty states
 
@@ -765,6 +816,10 @@ does not scroll, which is what "the cap is clipping" looks like.
   right instead - the one exception is a dialog with a picture-backed
   header, which uses the icon only, since the footer button would sit under
   a header that already offers one.
+- A dialog that changes the picture behind it (the Milkdrop menu) sits at the
+  right edge of that picture (beside an open queue, not under it) and
+  without a scrim, so the change stays in view. Its button stays lit while
+  it is open.
 - A dialog's switches sit in a `.beacon-panel--flush`, one row each with the
   words on the left and the switch on the right, the whole row clickable
   (`DeviceKeyDialog.vue`). The confirming button is a filled pill. Help is the
@@ -874,21 +929,21 @@ what the app does is not drift - each of these is a different _kind_ of
 movement, and they are listed here so the next one reuses a duration instead
 of inventing a neighbouring one:
 
-| Duration           | Where                                        | Why not 0.15s                                                                       |
-| ------------------ | -------------------------------------------- | ----------------------------------------------------------------------------------- |
-| 0.1s               | Device rows in the cast pickers              | A dense list; the standard speed reads as lag when the pointer crosses several rows |
-| 0.3s in / 0.2s out | Toasts, queue rows entering and leaving      | Something arriving should be noticed, something leaving should get out of the way   |
-| 0.2s               | The login form swapping between server types | A whole panel changing, not one control                                             |
-| 0.25s              | Lyrics lines, a queue row being cleared      | Reads as the line changing rather than blinking                                     |
-| 0.26s              | The login card's own height                  | Paired with the 0.2s form swap inside it                                            |
-| 0.35s / 0.45s      | The lyrics column opening beside the artwork | A layout change, and the artwork drifts sideways with it                            |
-| 0.4s               | The visualizer row's height                  | Same: layout, not feedback                                                          |
-| 0.5s               | A queue row landing after a drag             | Confirms a drop the person made themselves                                          |
-| 0.7s               | Now Playing's flip card (artwork <-> lyrics) | The one deliberate showpiece; it is meant to be watched                             |
-| 0.9s               | The release-notes icon                       | A one-off flourish on a dialog seen once per version                                |
-| 1.2s               | Now Playing's scrim and glow                 | Follows the colour extracted from the cover; a fast change reads as a flicker       |
-| 1.1s / 1.3s        | The Stats hero: tonearm, count-up            | The page's one entrance, once per visit                                             |
-| 3.7s in all        | A Stats milestone moment                     | Rare by design (round numbers only) and closed by a click or Esc                    |
+| Duration           | Where                                                                     | Why not 0.15s                                                                       |
+| ------------------ | ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| 0.1s               | Device rows in the cast pickers                                           | A dense list; the standard speed reads as lag when the pointer crosses several rows |
+| 0.3s in / 0.2s out | Toasts, queue rows entering and leaving, the phone library's section grip | Something arriving should be noticed, something leaving should get out of the way   |
+| 0.2s               | The login form swapping between server types                              | A whole panel changing, not one control                                             |
+| 0.25s              | Lyrics lines, a queue row being cleared                                   | Reads as the line changing rather than blinking                                     |
+| 0.26s              | The login card's own height                                               | Paired with the 0.2s form swap inside it                                            |
+| 0.35s / 0.45s      | The lyrics column opening beside the artwork                              | A layout change, and the artwork drifts sideways with it                            |
+| 0.4s               | The visualizer row's height                                               | Same: layout, not feedback                                                          |
+| 0.5s               | A queue row landing after a drag                                          | Confirms a drop the person made themselves                                          |
+| 0.7s               | Now Playing's flip card (artwork <-> lyrics)                              | The one deliberate showpiece; it is meant to be watched                             |
+| 0.9s               | The release-notes icon                                                    | A one-off flourish on a dialog seen once per version                                |
+| 1.2s               | Now Playing's scrim and glow                                              | Follows the colour extracted from the cover; a fast change reads as a flicker       |
+| 1.1s / 1.3s        | The Stats hero: tonearm, count-up                                         | The page's one entrance, once per visit                                             |
+| 3.7s in all        | A Stats milestone moment                                                  | Rare by design (round numbers only) and closed by a click or Esc                    |
 
 Loops are their own thing - they show a state rather than a change, so they
 are slow enough not to nag: 1.8s for the page loader, 2.4s for radio's "on

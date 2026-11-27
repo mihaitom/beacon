@@ -2,7 +2,8 @@ import { defineStore } from 'pinia'
 import type { ThemeInstance } from 'vuetify'
 import { accountScopedKey } from '@/services/accountKey'
 import { appAccent, themeAccent } from '@/services/appAccent'
-import { hexToTriplet, isHexColor, towardsContrast, tripletToHex } from '@/services/themeColors'
+import { borrowAccent, lentAccent, type ThemeColorsTable } from '@/services/borrowedAccent'
+import { hexToTriplet, isHexColor } from '@/services/themeColors'
 import {
   DEFAULT_CUSTOM_COLORS,
   MAX_CUSTOM_THEMES,
@@ -122,6 +123,12 @@ export function applyThemePreference(theme: ThemeInstance, preference: ThemePref
   }
   void theme.change(preference.theme)
   applyThemeAccents(preference)
+  // A colour Now Playing has lent stays lent: this runs on every change to
+  // the store, a list of themes arriving from the account included.
+  const lent = lentAccent()
+  if (lent !== null) {
+    borrowAccent(theme.themes.value as unknown as ThemeColorsTable, preference, lent)
+  }
 }
 
 /** The accents the canvas components and Now Playing's fallbacks use,
@@ -143,52 +150,6 @@ export function initTheme(
 ): void {
   applyThemeAccents(store.$state)
   store.$subscribe(() => applyThemePreference(theme, store.$state))
-}
-
-// A borrowed accent on a light page: as far towards black as it takes to
-// read there, the same floor the presets' own accents keep.
-const BORROWED_ACCENT_CONTRAST = 4.5
-
-type ThemeColorsTable = Record<string, { colors: Record<string, unknown> }>
-
-/**
- * Puts an "r, g, b" colour into the theme's primary - Now Playing's
- * artwork colour, which the whole app's accent follows while it is open -
- * or, with null, gives the theme its own back. The night theme takes the
- * colour as it is (it was picked to stand off a dark picture); a light
- * theme gets it darkened until it reads on the page.
- *
- * Goes through the theme objects rather than --v-theme-primary directly so
- * Vuetify re-derives `on-primary` with it.
- */
-export function borrowAccent(
-  themes: ThemeColorsTable,
-  preference: ThemePreference,
-  color: string | null,
-): void {
-  const definitions = themeDefinitions(preference)
-  const night = nightTheme(preference)
-  for (const name of new Set([preference.theme, night, dayTheme(preference)])) {
-    const own = definitions[name]!.colors!
-    const target = themes[name]?.colors
-    if (!target) continue
-    if (color === null) {
-      target.primary = own.primary
-    } else if (name === night) {
-      target.primary = tripletToHex(color)
-    } else {
-      target.primary = towardsContrast(
-        tripletToHex(color),
-        own.background as string,
-        BORROWED_ACCENT_CONTRAST,
-      )
-    }
-  }
-  const current = themes[preference.theme]?.colors.primary
-  appAccent.value =
-    typeof current === 'string'
-      ? hexToTriplet(current)
-      : (color ?? hexToTriplet(definitions[preference.theme]!.colors!.primary as string))
 }
 
 export const useAppearanceStore = defineStore('appearance', {

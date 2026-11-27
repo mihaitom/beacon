@@ -10,6 +10,7 @@ test_stream.py's direct audio_stream() calls for stream_with_completion()'s
 failure paths."""
 
 import asyncio
+import base64
 import json
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -135,6 +136,7 @@ class _Analyzer:
         self.listeners = _Listeners(frames)
         self.last_release_debug = None
         self.last_release_lead = None
+        self.last_waveform = b"wave"
 
 
 async def test_two_connections_each_get_every_frame(default_session):
@@ -155,6 +157,21 @@ async def test_two_connections_each_get_every_frame(default_session):
             f"data: {json.dumps({'bands': [2.0]})}\n\n",
         ]
     )
+
+
+async def test_the_waveform_comes_only_when_asked_for(default_session):
+    """Milkdrop asks for it; the bars, which never read it, are spared the
+    extra bandwidth."""
+    default_session.visualizer.analyzer = _Analyzer([1.0])
+    plain = (await visualizer_events(session=default_session)).body_iterator
+    with_wave = (await visualizer_events(session=default_session, waveform=True)).body_iterator
+    try:
+        assert await plain.__anext__() == f"data: {json.dumps({'bands': [1.0]})}\n\n"
+        payload = json.loads((await with_wave.__anext__()).removeprefix("data: "))
+    finally:
+        await plain.aclose()
+        await with_wave.aclose()
+    assert base64.b64decode(payload["waveform"]) == b"wave"
 
 
 async def test_a_closed_connection_stops_listening(default_session):

@@ -19,7 +19,12 @@ import {
   writeSessionWasPlaying,
 } from '@/services/playback/persistence'
 import { markQueueRestored } from '@/services/playback/serverQueueSync'
-import { autoplayExhaustedSeedIds, localRadioChangeGuard, positionTracker } from './shared'
+import {
+  autoplayExhaustedSeedIds,
+  localRadioChangeGuard,
+  playHereRequest,
+  positionTracker,
+} from './shared'
 import { runtime } from './shared'
 import type { PlaybackContext } from './context'
 
@@ -229,7 +234,11 @@ export const lifecycleActions: LifecycleActions & ThisType<PlaybackContext> = {
     // the local element is then loaded at.
     const castingEdge = castingActiveEdge.update(activeNow)
     if (castingEdge === 'rising') this.yieldToCastPlayback()
-    if (localResumeDecided && castingEdge === 'falling') this.prepareLocalPlayback()
+    if (castingEdge === 'falling') {
+      const playHere = playHereRequest.pending
+      playHereRequest.pending = false
+      if (localResumeDecided) this.prepareLocalPlayback(playHere)
+    }
 
     // Once per payload, not once per mutation — see
     // interruptedPayloadHandled. Checked before the guard below, since

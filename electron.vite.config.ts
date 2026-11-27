@@ -3,6 +3,7 @@ import { defineConfig } from 'electron-vite';
 import vue from '@vitejs/plugin-vue';
 import vuetify from 'vite-plugin-vuetify';
 import { vuetifyComponentModules } from './vite.vuetify-deps';
+import { milkdropPresets } from './vite.milkdrop-presets';
 
 export default defineConfig({
     main: {
@@ -21,7 +22,7 @@ export default defineConfig({
                 '@': resolve('src/renderer/src'),
             },
         },
-        plugins: [vue(), vuetify({ autoImport: true })],
+        plugins: [vue(), vuetify({ autoImport: true }), milkdropPresets()],
         root: 'src/renderer',
         optimizeDeps: {
             include: vuetifyComponentModules,

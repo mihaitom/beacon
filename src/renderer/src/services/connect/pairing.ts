@@ -13,7 +13,7 @@ export async function startPairing(name: string, force = false): Promise<Pairing
   })
 }
 
-export async function finishPairing(name: string, pin?: number): Promise<void> {
+export async function finishPairing(name: string, pin?: string): Promise<void> {
   await fetchConnect('/pair/airplay/finish', {
     method: 'POST',
     body: { name, pin: pin ?? null },

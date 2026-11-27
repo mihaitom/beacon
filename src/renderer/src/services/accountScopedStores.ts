@@ -26,7 +26,9 @@
  * the server is the one allowed to win. */
 
 import { onAccountChange } from '@/services/accountKey'
+import { isBackingOff } from '@/services/connect/pollGate'
 import { useAppearanceStore } from '@/stores/appearance'
+import { useAuthStore } from '@/stores/auth'
 import { useUpdateStore } from '@/stores/update'
 import { usePlaybackStore } from '@/stores/playback'
 import { reloadLyricsCacheForAccount, useLyricsStore } from '@/stores/lyrics'
@@ -38,6 +40,7 @@ import { useEqualizerStore } from '@/stores/equalizer'
 import { useLastfmStore } from '@/stores/lastfm'
 import { useListenbrainzStore } from '@/stores/listenbrainz'
 import { useFanartStore } from '@/stores/fanart'
+import { useMilkdropStore } from '@/stores/milkdrop'
 import { useDrawersStore } from '@/stores/drawers'
 import {
   useLyricsProvidersStore,
@@ -45,6 +48,7 @@ import {
   type LyricProvider,
 } from '@/stores/lyricsProviders'
 import { useAutoplayStore } from '@/stores/autoplay'
+import { useGroupVolumeStore } from '@/stores/groupVolume'
 import { useSongColumnsStore } from '@/stores/songColumns'
 import { sanitizeColumns, useLibraryColumnsStore } from '@/stores/libraryColumns'
 import { usePlaylistSummariesStore } from '@/stores/playlistSummaries'
@@ -71,6 +75,7 @@ import { useExternalSourceStore } from '@/stores/externalSource'
  * "conflict policy" note for why this stays this simple (a single
  * person's own settings, not a multi-writer document). */
 async function pullAccountSettings(): Promise<void> {
+  lastPullAt = Date.now()
   try {
     const remote = await fetchAccountSettings()
 
@@ -132,6 +137,10 @@ async function pullAccountSettings(): Promise<void> {
       useFanartStore().setEnabled(remote.fanartEnabled)
     }
 
+    if (remote.milkdrop && typeof remote.milkdrop === 'object') {
+      useMilkdropStore().adopt(remote.milkdrop)
+    }
+
     if (Array.isArray(remote.songColumns)) {
       const known = new Set<string>(OPTIONAL_SONG_COLUMNS.map((column) => column.key))
       const valid = remote.songColumns.filter((key): key is SongColumnKey => known.has(key))
@@ -179,7 +188,26 @@ export async function syncWithAccount(): Promise<void> {
   await Promise.all([pullAccountSettings(), syncLyricsOffsets()])
 }
 
+// Settings changed on another device arrive when this window is looked at
+// again, not only at the next start - a browser tab or a desktop window
+// stays open for days. Spaced out so switching back and forth between two
+// windows is not a request per switch.
+const REFRESH_MIN_INTERVAL_MS = 10_000
+let lastPullAt = 0
+
+function refreshOnReturn(): void {
+  if (!useAuthStore().authenticated || isBackingOff()) return
+  if (Date.now() - lastPullAt < REFRESH_MIN_INTERVAL_MS) return
+  void pullAccountSettings()
+}
+
 export function initAccountScopedStores(): void {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') refreshOnReturn()
+  })
+  // A desktop window left open never stops being visible - coming back to
+  // it is a focus.
+  window.addEventListener('focus', refreshOnReturn)
   onAccountChange(() => {
     // Cover ids are only unique within one media server, so the artwork
     // this account is about to ask for must not be answered out of the
@@ -206,6 +234,8 @@ export function initAccountScopedStores(): void {
     useLastfmStore().reloadForAccount()
     useListenbrainzStore().reloadForAccount()
     useFanartStore().reloadForAccount()
+    useMilkdropStore().reloadForAccount()
+    useGroupVolumeStore().reloadForAccount()
     // Needs the signed-in session, and which ones this session may
     // configure differs per account.
     void useExternalSourceStore().load()

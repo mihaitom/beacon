@@ -82,15 +82,14 @@ def test_nothing_set_up_reads_back_as_no_sources():
 
 
 def test_saved_settings_read_back(configured):
-    assert external_source.load_sources() == [
-        {
-            "id": configured["id"],
-            "name": "Wishlist",
-            "icon": "mdi-gift",
-            "base_url": BASE,
-            "token": "s3cret",
-        }
-    ]
+    [stored] = external_source.load_sources()
+    assert {k: stored[k] for k in ("id", "name", "icon", "base_url", "token")} == {
+        "id": configured["id"],
+        "name": "Wishlist",
+        "icon": "mdi-gift",
+        "base_url": BASE,
+        "token": "s3cret",
+    }
 
 
 def test_several_sources_keep_their_order_and_ids(configured):
@@ -624,3 +623,157 @@ def test_party_guests_cannot_name_an_external_song():
     with pytest.raises(party_routes.HTTPException):
         party_routes._check_id("ext:abc")
     assert party_routes._check_id("abc") == "abc"
+
+
+# --- sharing with a paired server ------------------------------------------------
+
+# In the past: what is changed here during a test must count as newer.
+T0 = 1_700_000_000.0
+
+
+def _entry(source_id="srv1", name="Folder", updated_at=T0, base_url=BASE, **over) -> dict:
+    return {
+        "id": source_id,
+        "name": name,
+        "icon": "mdi-folder",
+        "base_url": base_url,
+        "updated_at": updated_at,
+        **over,
+    }
+
+
+def _by_id() -> dict:
+    return {s["id"]: s for s in external_source.load_sources()}
+
+
+def test_only_a_visible_change_counts_as_newer(configured):
+    again = external_source.save_source(configured["id"], "Wishlist", "mdi-gift", BASE, "new")
+    assert again["updated_at"] == configured["updated_at"]
+    assert again["token_pending"] is True
+    renamed = external_source.save_source(configured["id"], "Wishes", "mdi-gift", BASE, "new")
+    assert renamed["updated_at"] >= configured["updated_at"]
+
+
+def test_a_removal_is_remembered_for_the_other_side(configured):
+    external_source.remove_source(configured["id"])
+    assert configured["id"] in external_source.for_link(False)["removed"]
+
+
+def test_a_loopback_source_never_leaves_its_machine():
+    external_source.save_source(None, "Here", "", "http://127.0.0.1:8800", "")
+    external_source.save_source(None, "Here too", "", "http://localhost:8800", "")
+    assert external_source.for_link(True)["sources"] == []
+    assert external_source.outgoing()["sources"] == []
+    external_source.adopt_from_server({"sources": [_entry(base_url="http://[::1]:8800")]})
+    external_source.merge_from_desktop([_entry(base_url="http://localhost:1")], {})
+    assert len(external_source.load_sources()) == 2
+
+
+def test_the_server_takes_a_new_source_and_the_newer_change():
+    external_source.merge_from_desktop([_entry(token="t")], {})
+    assert _by_id()["srv1"]["token"] == "t"
+    external_source.merge_from_desktop([_entry(name="Older", updated_at=T0 - 5)], {})
+    assert _by_id()["srv1"]["name"] == "Folder"
+    external_source.merge_from_desktop([_entry(name="Newer", updated_at=T0 + 5)], {})
+    stored = _by_id()["srv1"]
+    # Without a token in the entry, the one there stays.
+    assert (stored["name"], stored["token"]) == ("Newer", "t")
+
+
+def test_the_same_app_under_another_id_keeps_the_servers(configured):
+    external_source.merge_from_desktop(
+        [_entry("desk1", updated_at=configured["updated_at"] + 1)], {}
+    )
+    assert list(_by_id()) == [configured["id"]]
+    assert _by_id()[configured["id"]]["name"] == "Folder"
+
+
+def test_a_removal_from_the_desktop_loses_to_a_later_change(configured):
+    external_source.merge_from_desktop([], {configured["id"]: configured["updated_at"] - 1})
+    assert configured["id"] in _by_id()
+    external_source.merge_from_desktop([], {configured["id"]: configured["updated_at"] + 1})
+    assert _by_id() == {}
+    # And a desktop that has not heard of it yet does not bring it back.
+    external_source.merge_from_desktop([_entry(configured["id"], updated_at=T0)], {})
+    assert _by_id() == {}
+
+
+def test_the_server_keeps_to_the_limit(monkeypatch):
+    monkeypatch.setattr(external_source, "MAX_SOURCES", 1)
+    external_source.merge_from_desktop(
+        [_entry("a", base_url=BASE), _entry("b", base_url="http://10.9.9.8:1")], {}
+    )
+    assert list(_by_id()) == ["a"]
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"icon": "javascript:x"},
+        {"base_url": "ftp://x"},
+        {"id": "../x"},
+        {"name": " "},
+        {"updated_at": "soon"},
+    ],
+)
+def test_an_entry_that_would_be_refused_here_is_dropped(bad):
+    external_source.merge_from_desktop([{**_entry(), **bad}], {})
+    external_source.adopt_from_server({"sources": [{**_entry(), **bad}]})
+    assert _by_id() == {}
+
+
+def test_a_desktop_takes_the_same_app_over_under_the_servers_id():
+    own = external_source.save_source(None, "Mine", "mdi-web", BASE + "/", "own-token")
+    external_source.adopt_from_server({"sources": [_entry()]})
+    [stored] = external_source.load_sources()
+    assert (stored["id"], stored["name"], stored["synced"]) == ("srv1", "Folder", True)
+    assert own["id"] != "srv1"
+    assert stored["token"] == "own-token"
+
+
+def test_a_desktop_keeps_its_own_newer_change():
+    external_source.adopt_from_server({"sources": [_entry()]})
+    external_source.save_source("srv1", "Renamed here", "mdi-folder", BASE, "")
+    external_source.adopt_from_server({"sources": [_entry()]})
+    assert _by_id()["srv1"]["name"] == "Renamed here"
+    external_source.adopt_from_server({"sources": [_entry(name="Later", updated_at=T0 * 1.1)]})
+    assert _by_id()["srv1"]["name"] == "Later"
+
+
+def test_a_source_gone_from_the_server_goes_here_too():
+    external_source.adopt_from_server({"sources": [_entry()]})
+    external_source.adopt_from_server({"sources": [], "removed": {}})
+    assert _by_id() == {}
+
+
+def test_a_lent_token_does_not_overwrite_one_changed_here():
+    external_source.adopt_from_server({"sources": [_entry(token="lent")]})
+    assert _by_id()["srv1"]["token_lent"] is True
+    external_source.save_source("srv1", "Folder", "mdi-folder", BASE, "mine")
+    external_source.adopt_from_server({"sources": [_entry(token="lent")]})
+    stored = _by_id()["srv1"]
+    assert (stored["token"], stored["token_lent"]) == ("mine", False)
+
+
+def test_a_source_removed_here_is_not_taken_back():
+    external_source.adopt_from_server({"sources": [_entry()]})
+    external_source.remove_source("srv1")
+    external_source.adopt_from_server({"sources": [_entry()]})
+    assert _by_id() == {}
+
+
+def test_a_token_counts_as_sent_unless_changed_since(configured):
+    sent = external_source.outgoing()
+    external_source.tokens_sent(sent)
+    assert _by_id()[configured["id"]]["token_pending"] is False
+    sent = {"sources": [{"id": configured["id"], "token": "old"}]}
+    external_source.save_source(configured["id"], "Wishlist", "mdi-gift", BASE, "newer")
+    external_source.tokens_sent(sent)
+    assert _by_id()[configured["id"]]["token_pending"] is True
+
+
+def test_an_old_file_without_the_sync_fields_still_reads(tmp_path):
+    with open(external_source._CONFIG_PATH, "w") as f:
+        json.dump({"sources": [{"id": "x", "name": "N", "base_url": BASE, "token": "t"}]}, f)
+    [stored] = external_source.load_sources()
+    assert (stored["updated_at"], stored["synced"], stored["token_lent"]) == (0.0, False, False)

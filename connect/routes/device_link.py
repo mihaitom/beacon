@@ -15,6 +15,7 @@ to the desktop app and change with it.
 import asyncio
 import json
 import logging
+import re
 from collections import Counter
 from typing import Annotated, Literal
 
@@ -27,9 +28,11 @@ from core import (
     api_keys,
     app_library,
     device_keys,
+    external_source,
     lyrics_offsets,
     mdns,
     media_login,
+    milkdrop_presets,
     now_playing,
     play_history,
     server_link,
@@ -49,6 +52,7 @@ from routes import player_desktop, player_server
 from routes.coverart import cover_image
 from routes.lyrics import auto_for_party
 from routes.lyrics_offsets import OffsetsPatch
+from routes.milkdrop_presets import PRESET_ID_PATTERN, PresetRow
 from routes.now_playing import NowPlayingReport, accept
 from routes.play_history import Listen, Milestones, Period, _own
 from routes.player_commands import LIBRARY_COMMANDS, TRANSPORT_COMMANDS
@@ -92,8 +96,12 @@ _MAX_LISTENS_BODY = 4 * 1024 * 1024
 _MAX_SETTINGS_BODY = 64 * 1024
 _MAX_MILESTONES_BODY = 1024
 _MAX_OFFSETS_BODY = 256 * 1024
+# A batch of core/server_link.py's _PRESET_BATCH_SIZE presets at their
+# largest, as far as the Docker image's nginx lets through anyway.
+_MAX_PRESETS_BODY = 4 * 1024 * 1024
 _MAX_REPORT_BODY = 16 * 1024
 _MAX_COMMAND_BODY = 8 * 1024
+_MAX_SOURCES_BODY = 64 * 1024
 
 
 class IncomingListen(Listen):
@@ -982,6 +990,33 @@ def get_api_keys(owner: KeyOwner = _syncing) -> dict:
     return {"keys": {service: api_keys.get(service) for service in api_keys.SERVICES}}
 
 
+class SourcesPatch(BaseModel):
+    sources: list[dict] = Field(max_length=external_source.MAX_SOURCES * 2)
+    removed: dict[str, float] = Field(default_factory=dict, max_length=200)
+
+
+def _sources_for(owner: KeyOwner) -> dict:
+    return external_source.for_link(device_keys.SOURCE_TOKENS in owner.scopes)
+
+
+@router.get("/external-sources")
+def get_external_sources(owner: KeyOwner = _syncing) -> dict:
+    """The installation's sources: the same for every account, as their tabs
+    are. Tokens only for a device they were confirmed for, like the API keys."""
+    return _sources_for(owner)
+
+
+@router.patch("/external-sources")
+async def patch_external_sources(request: Request, owner: KeyOwner = _syncing) -> dict:
+    """A desktop setting up this server's sources, which only an admin may
+    do here (routes/external_source.py); the key remembers who made it."""
+    if device_keys.SOURCES not in owner.scopes:
+        raise HTTPException(status_code=403, detail="Server administrator rights required")
+    patch = await _parsed(request, SourcesPatch, _MAX_SOURCES_BODY)
+    await asyncio.to_thread(external_source.merge_from_desktop, patch.sources, patch.removed)
+    return await asyncio.to_thread(_sources_for, owner)
+
+
 @router.get("/lyrics-offsets")
 def get_lyrics_offsets(owner: KeyOwner = _syncing) -> dict:
     return {"offsets": lyrics_offsets.load(owner.account)}
@@ -991,6 +1026,36 @@ def get_lyrics_offsets(owner: KeyOwner = _syncing) -> dict:
 async def patch_lyrics_offsets(request: Request, owner: KeyOwner = _syncing) -> dict:
     patch = await _parsed(request, OffsetsPatch, _MAX_OFFSETS_BODY)
     await asyncio.to_thread(lyrics_offsets.save, owner.account, patch.offsets)
+    return {"status": "ok"}
+
+
+_PRESET_ID = re.compile(PRESET_ID_PATTERN)
+
+
+class PresetsPatch(BaseModel):
+    presets: list[PresetRow] = Field(max_length=10)
+
+
+@router.get("/milkdrop-presets")
+def get_milkdrop_presets(owner: KeyOwner = _syncing) -> dict:
+    """Every preset with its stamp, deleted ones included, without the
+    contents - the desktop asks for those it lacks by id."""
+    return {"presets": milkdrop_presets.index(owner.account)}
+
+
+@router.get("/milkdrop-presets/rows")
+def get_milkdrop_preset_rows(ids: str = "", owner: KeyOwner = _syncing) -> dict:
+    wanted = [pid for pid in ids.split(",") if pid][:10]
+    if any(not _PRESET_ID.fullmatch(pid) for pid in wanted):
+        raise HTTPException(status_code=422, detail="Invalid request")
+    return {"presets": milkdrop_presets.rows(owner.account, wanted)}
+
+
+@router.patch("/milkdrop-presets")
+async def patch_milkdrop_presets(request: Request, owner: KeyOwner = _syncing) -> dict:
+    patch = await _parsed(request, PresetsPatch, _MAX_PRESETS_BODY)
+    rows = [row.model_dump() for row in patch.presets]
+    await asyncio.to_thread(milkdrop_presets.merge, owner.account, rows)
     return {"status": "ok"}
 
 
@@ -1011,16 +1076,22 @@ async def create_device_key(
     new_key: NewKey, session: SessionState = Depends(require_authenticated_session)
 ) -> dict:
     account = _require_account(session)
+    scopes = set(new_key.scopes)
     # AVAILABLE means this is a desktop app, which pairs with a server itself.
-    if server_link.AVAILABLE and device_keys.SERVER_ONLY_SCOPES & set(new_key.scopes):
+    if server_link.AVAILABLE and device_keys.SERVER_ONLY_SCOPES & scopes:
         raise HTTPException(status_code=422, detail="Invalid scopes")
+    # Not the client's to ask for: a key made by an admin may set up the
+    # sources from the desktop, as the admin may here.
+    scopes.discard(device_keys.SOURCES)
+    if device_keys.SYNC in scopes and session.account_is_admin:
+        scopes.add(device_keys.SOURCES)
     try:
         made = await asyncio.to_thread(
             device_keys.create,
             account,
             new_key.label,
             device_keys.settings_identity_of(session),
-            scopes=new_key.scopes,
+            scopes=scopes,
             login=media_login.capture(session.media),
             session_id=session.session_id,
         )

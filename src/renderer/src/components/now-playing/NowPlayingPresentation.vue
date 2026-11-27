@@ -19,7 +19,22 @@
         :source="source.backdrop.source"
         :is-artist="source.backdrop.isArtist"
         :scrim-style="source.ambientStyle"
-      />
+      >
+        <component
+          :is="source.milkdropComponent"
+          v-if="source.milkdrop.active && source.milkdropComponent"
+          :key="source.milkdrop.mode"
+          class="now-playing__milkdrop"
+          :playing="source.milkdrop.playing"
+          :preset="source.milkdrop.preset"
+          :cover="source.milkdrop.cover"
+          :accent="borrowedAccent"
+          :waveform="source.milkdrop.mode === 'cast' ? source.milkdrop.waveform : null"
+          :analyser="source.milkdrop.analyser"
+          :beat="source.milkdrop.beat"
+          @too-heavy="source.milkdropTooHeavy"
+        />
+      </now-playing-backdrop>
       <!-- Wherever the text (and on a phone held sideways the controls) sits
        - low over the picture: darkened from the bottom up, more over a light
        - photo than a dark one. -->
@@ -107,6 +122,11 @@
           :is="source.debugOverlayComponent"
           v-if="source.debugOverlayComponent"
           :debug="source.visualizer.debug"
+          :waveform="
+            source.milkdrop.active && source.milkdrop.mode === 'cast'
+              ? source.milkdrop.waveform
+              : null
+          "
         />
       </div>
     </v-theme-provider>
@@ -121,7 +141,8 @@ import NowPlayingVisualizer from '@/components/now-playing/NowPlayingVisualizer.
 import NowPlayingToolbar from '@/components/now-playing/NowPlayingToolbar.vue'
 import NowPlayingTrackPanels from '@/components/now-playing/NowPlayingTrackPanels.vue'
 import { nowPlayingSourceMixin } from '@/components/now-playing/useSource'
-import { borrowAccent, useAppearanceStore } from '@/stores/appearance'
+import { borrowAccent } from '@/services/borrowedAccent'
+import { nightTheme } from '@/plugins/theme'
 import {
   bottomScrimStrength,
   colourBehindControls,
@@ -182,7 +203,7 @@ export default {
   },
   computed: {
     nightTheme(): string {
-      return useAppearanceStore().nightTheme
+      return nightTheme(this.source.appearance.preference)
     },
     isLandscape(): boolean {
       return this.compact && this.landscape
@@ -222,7 +243,7 @@ export default {
      * colour, or nothing where that is switched off (Settings ->
      * Appearance) and the theme keeps its own. */
     borrowedAccent(): string | null {
-      return useAppearanceStore().adaptiveAccent ? this.accent : null
+      return this.source.appearance.adaptiveAccent ? this.accent : null
     },
   },
   watch: {
@@ -272,7 +293,7 @@ export default {
     /** Lends `color` - an "r, g, b" triplet - to the theme's primary, or
      * with null gives the theme its own back (see borrowAccent()). */
     applyPrimary(color: string | null): void {
-      borrowAccent(this.$vuetify.theme.themes, useAppearanceStore().$state, color)
+      borrowAccent(this.$vuetify.theme.themes, this.source.appearance.preference, color)
     },
     /** Requests fullscreen on this view's own root element, not
      * document.documentElement — the point is hiding the rest of the app
@@ -463,6 +484,23 @@ export default {
   pointer-events: auto;
 }
 
+/* The track text's type scale, so the desktop stage can leave room for it
+ * under the artwork (its artSize) with the same numbers the text is set
+ * in. The container units resolve where the sizes are used: inside the
+ * stage for the track text, inside the Milkdrop picture (as wide as the
+ * stage, and a container of its own) for what a preset names. The title
+ * follows the stage; artist and album follow the title, so a stage that
+ * shrinks the title shrinks them with it rather than leaving the artist
+ * nearly as large. Not on .now-playing as a whole: the sideways phone's
+ * text column sets its own sizes and must not pick these up. */
+.now-playing__stage,
+.now-playing__milkdrop {
+  --now-playing-eyebrow-size: clamp(0.65rem, min(1.6cqw, 2cqh), 0.85rem);
+  --now-playing-title-size: clamp(1.1rem, min(2.3cqw, 9cqh), 2.75rem);
+  --now-playing-artist-size: clamp(0.9rem, calc(var(--now-playing-title-size) * 0.55), 1.5rem);
+  --now-playing-album-size: clamp(0.75rem, calc(var(--now-playing-title-size) * 0.36), 1rem);
+}
+
 /* Row 1 of .now-playing's grid (minmax(0, 1fr), see above) — takes up
  * exactly "whatever's left" after the visualizer row has taken its share,
  * shrinkable below its own content's natural size like any minmax(0, ...)
@@ -479,16 +517,6 @@ export default {
   min-height: 0;
   container-type: size;
   container-name: now-playing-stage;
-  /* The track text's type scale, here so the desktop stage can leave room
-   * for it under the artwork (its artSize) with the same numbers the text
-   * is set in. The container units resolve where the sizes are used, all
-   * inside this container. The title follows the stage; artist and album
-   * follow the title, so a stage that shrinks the title shrinks them with
-   * it rather than leaving the artist nearly as large. */
-  --now-playing-eyebrow-size: clamp(0.65rem, min(1.6cqw, 2cqh), 0.85rem);
-  --now-playing-title-size: clamp(1.1rem, min(2.3cqw, 9cqh), 2.75rem);
-  --now-playing-artist-size: clamp(0.9rem, calc(var(--now-playing-title-size) * 0.55), 1.5rem);
-  --now-playing-album-size: clamp(0.75rem, calc(var(--now-playing-title-size) * 0.36), 1rem);
   display: flex;
   align-items: center;
   justify-content: center;
