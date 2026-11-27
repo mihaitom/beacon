@@ -112,9 +112,14 @@ function onePixel(colour: string): HTMLCanvasElement {
 
 /** What stands in without a cover (a radio station, a song without art): a
  * dark grey, so a preset built around the cover shows its motion on
- * something calm instead of Butterchurn's own cloud picture. */
+ * something calm instead of Butterchurn's own cloud picture. Half
+ * transparent, as every real cover is opaque: a preset can tell "no cover"
+ * from a dark one by its alpha, one that reads the colour only still gets
+ * the grey. */
+export const PLACEHOLDER_ALPHA = 0.5
+
 export function placeholderPicture(): HTMLCanvasElement {
-  return onePixel('#1c1b1f')
+  return onePixel(`rgba(28, 27, 31, ${PLACEHOLDER_ALPHA})`)
 }
 
 /** The accent, an "r, g, b" triplet as services/appAccent.ts keeps it. */
