@@ -204,6 +204,7 @@ export const queueActions: QueueActions & ThisType<PlaybackContext> = {
    * shuffle only kicking in from the second song onward. */
   setQueue(songs: Song[], startIndex = 0, pinFirst = true): void {
     this.leaveRadio()
+    this.moodMix = null
     // A different queue is a different question, even where its last song
     // happens to be one Autoplay gave up on before.
     autoplayExhaustedSeedIds.clear()
@@ -253,6 +254,7 @@ export const queueActions: QueueActions & ThisType<PlaybackContext> = {
   replaceQueueAfterCurrent(songs: Song[]): void {
     const current = this.queue[this.currentIndex]
     if (!current) return
+    this.moodMix = null
     const lockedNext = this.queue[this.lockedNextIndex]
     const head = lockedNext ? [current, lockedNext] : [current]
     const rest = songs.filter((t) => t.id !== lockedNext?.id)

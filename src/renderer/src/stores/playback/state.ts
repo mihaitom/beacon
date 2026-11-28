@@ -27,6 +27,9 @@ export interface PreviewState {
 export interface PlaybackState {
   originalQueue: Song[]
   queue: Song[]
+  /** The AudioMuse mood the queue was started from (Home's mood tiles),
+   * until anything else replaces the queue. */
+  moodMix: string | null
   currentIndex: number
   isPlaying: boolean
   /** A cast device dropped out on its own and playback can be picked back

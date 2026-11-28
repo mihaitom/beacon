@@ -104,18 +104,14 @@ describe("Home's AudioMuse rows", () => {
     expect(vm.sonicMoods).toEqual(['happy', 'sad'])
   })
 
-  it('knows its mood is playing while one of its songs is', async () => {
-    audiomuseAnswers()
+  it('marks the mood the queue was started from, until something else plays', () => {
     const playback = usePlaybackStore()
-    vi.spyOn(playback, 'startMoodMix').mockResolvedValue([makeSong('m1'), makeSong('m2')])
     const vm = mountHome().vm as unknown as HomeVm
-
-    await vm.playMood('relaxed')
-    playback.setQueue([makeSong('m1'), makeSong('m2'), makeSong('autoplayed')], 1)
+    playback.setQueue([makeSong('m1'), makeSong('m2')], 0)
+    playback.moodMix = 'relaxed'
     expect(vm.moodPlaying).toBe('relaxed')
 
-    // Autoplay carried on past the mix: that is not the mood any more.
-    playback.setQueue([makeSong('m1'), makeSong('m2'), makeSong('autoplayed')], 2)
+    playback.setQueue([makeSong('m1')], 0)
     expect(vm.moodPlaying).toBeNull()
   })
 

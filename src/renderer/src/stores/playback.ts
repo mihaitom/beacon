@@ -71,6 +71,7 @@ export const usePlaybackStore = defineStore('playback', {
     return {
       originalQueue: [],
       queue: [],
+      moodMix: null,
       currentIndex: -1,
       isPlaying: false,
       castInterrupted: false,

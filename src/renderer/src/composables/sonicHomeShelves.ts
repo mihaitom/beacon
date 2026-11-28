@@ -29,9 +29,6 @@ export const sonicHomeShelvesMixin = defineComponent({
       sonicMoods: [] as Mood[],
       // The mood whose mix is being fetched, for its button's spinner.
       moodLoading: null as Mood | null,
-      // The last mood started and its songs: while one of them plays, its
-      // tile shows it.
-      startedMood: null as { mood: Mood; songIds: Set<string> } | null,
     }
   },
   computed: {
@@ -41,12 +38,13 @@ export const sonicHomeShelvesMixin = defineComponent({
     mostPlayed(): Song[] {
       return useLibraryStore().mostPlayedSongs
     },
-    /** The mood whose mix is playing right now, or null. */
+    /** The mood the queue was started from, while it is what plays.
+     * Autoplay carrying on from it still counts: it continues from the
+     * mix's own songs. */
     moodPlaying(): Mood | null {
-      const started = this.startedMood
-      const current = usePlaybackStore().currentSong
-      if (!started || !current || !started.songIds.has(current.id)) return null
-      return started.mood
+      const playback = usePlaybackStore()
+      if (playback.radioStation || playback.preview || !playback.currentSong) return null
+      return (playback.moodMix as Mood | null) ?? null
     },
     soundsLikeYouReady(): boolean {
       return this.audiomuseAvailable && this.mostPlayed.length > 0
@@ -105,8 +103,7 @@ export const sonicHomeShelvesMixin = defineComponent({
       if (this.moodLoading) return
       this.moodLoading = mood
       try {
-        const songs = await usePlaybackStore().startMoodMix(mood)
-        this.startedMood = { mood, songIds: new Set(songs.map((song) => song.id)) }
+        await usePlaybackStore().startMoodMix(mood)
       } catch (error) {
         console.error('[home] mood mix failed:', error)
         emitter.emit('toast', {

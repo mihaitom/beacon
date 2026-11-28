@@ -295,9 +295,9 @@ describe('a mood mix', () => {
     const playback = usePlaybackStore()
     const played = vi.spyOn(playback, 'playSongList').mockResolvedValue(undefined)
 
-    const songs = await playback.startMoodMix('relaxed')
+    await playback.startMoodMix('relaxed')
 
-    expect(songs.map((s) => s.id)).toEqual(['m1', 'm2'])
+    expect(playback.moodMix).toBe('relaxed')
     expect(sonicMood).toHaveBeenCalledWith('relaxed', 50)
     expect(played.mock.calls[0]![0].map((s) => s.id)).toEqual(['m1', 'm2'])
   })
@@ -309,5 +309,32 @@ describe('a mood mix', () => {
 
     await expect(playback.startMoodMix('sad')).rejects.toThrow()
     expect(played).not.toHaveBeenCalled()
+  })
+})
+
+describe('which mood the queue came from', () => {
+  it('is forgotten when anything replaces the queue', () => {
+    const playback = usePlaybackStore()
+    playback.setQueue([makeSong('a'), makeSong('b')], 0)
+    vi.spyOn(playback, 'syncCastQueue').mockImplementation(() => {})
+
+    playback.moodMix = 'sad'
+    playback.setQueue([makeSong('c')], 0)
+    expect(playback.moodMix).toBeNull()
+
+    playback.moodMix = 'sad'
+    playback.replaceQueueAfterCurrent([makeSong('d')])
+    expect(playback.moodMix).toBeNull()
+  })
+
+  it('stays while songs are only added to it', () => {
+    const playback = usePlaybackStore()
+    playback.setQueue([makeSong('a')], 0)
+    vi.spyOn(playback, 'syncCastQueue').mockImplementation(() => {})
+    playback.moodMix = 'sad'
+
+    playback.addToQueue([makeSong('more')])
+
+    expect(playback.moodMix).toBe('sad')
   })
 })
