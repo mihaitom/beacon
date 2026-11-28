@@ -50,12 +50,7 @@
         :foldable="sonicShowing.sound || sonicShowing.lyrics"
       />
 
-      <sonic-search-section
-        kind="sound"
-        :query="query"
-        :foldable="sonicShowing.lyrics"
-        @showing="sonicShowing.sound = $event"
-      />
+      <sonic-search-section kind="sound" :query="query" @showing="sonicShowing.sound = $event" />
       <sonic-search-section kind="lyrics" :query="query" @showing="sonicShowing.lyrics = $event" />
 
       <empty-state

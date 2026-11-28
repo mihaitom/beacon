@@ -37,8 +37,9 @@ import type { Song } from '@/types/library'
 // The search page stacks several song lists, and a common word can match
 // a hundred titles: folded to this many, what comes after - AudioMuse's
 // "sounds like" and lyrics sections - stays within reach. Ten is about a
-// screen of rows. Only with something after it (`foldable`): the last list
-// on the page hides nothing by being long.
+// screen of rows. The ordinary matches fold only with something after them
+// (`foldable`); AudioMuse's sections always do, since they are ranked by
+// likeness and their first ten are the ones that fit best.
 const COLLAPSED_COUNT = 10
 
 /** One of the search page's song lists, folded to its first matches. */

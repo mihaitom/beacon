@@ -53,6 +53,19 @@ describe('SonicSearchSection', () => {
     expect(wrapper.get('.table').text()).toBe('a,b')
   })
 
+  it('folds a long answer even as the last section on the page', async () => {
+    vi.mocked(sonicSearch).mockResolvedValue(
+      Array.from({ length: 20 }, (_, i) => makeSong(`s${i}`)),
+    )
+    const wrapper = mountSection()
+
+    await vi.runAllTimersAsync()
+    await flushPromises()
+
+    expect(wrapper.get('.table').text().split(',').length).toBeLessThan(20)
+    expect(wrapper.find('button').exists()).toBe(true)
+  })
+
   it('waits for the typing to settle and asks only for the last words', async () => {
     vi.mocked(sonicSearch).mockResolvedValue([makeSong('a')])
     const wrapper = mountSection({ query: 'ca' })

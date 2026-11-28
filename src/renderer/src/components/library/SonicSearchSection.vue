@@ -23,7 +23,7 @@
     :title="title"
     :songs="songs"
     :loading="loading"
-    :foldable="foldable"
+    foldable
   />
 </template>
 
@@ -54,8 +54,6 @@ export default {
     /** The phone's rows instead of the desktop's table. */
     compact: { type: Boolean, default: false },
     limit: { type: Number, default: 20 },
-    /** See SearchSongsSection's own prop. */
-    foldable: { type: Boolean, default: false },
   },
   emits: ['play-song', 'open-actions', 'showing'],
   data() {
