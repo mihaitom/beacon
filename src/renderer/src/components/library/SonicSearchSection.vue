@@ -81,8 +81,13 @@ export default {
   watch: {
     query: { handler: 'schedule', immediate: true },
     available: 'schedule',
-    showing(value: boolean) {
-      this.$emit('showing', value)
+    // Immediate: the first search starts while the component is set up,
+    // so `showing` is already true by the time a plain watcher would look.
+    showing: {
+      handler(value: boolean) {
+        this.$emit('showing', value)
+      },
+      immediate: true,
     },
   },
   beforeUnmount() {

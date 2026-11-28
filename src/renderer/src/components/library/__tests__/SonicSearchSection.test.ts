@@ -53,6 +53,16 @@ describe('SonicSearchSection', () => {
     expect(wrapper.get('.table').text()).toBe('a,b')
   })
 
+  it('tells the page it is there from the first search on', async () => {
+    vi.mocked(sonicSearch).mockResolvedValue([makeSong('a')])
+    const wrapper = mountSection()
+
+    await vi.runAllTimersAsync()
+    await flushPromises()
+
+    expect(wrapper.emitted('showing')?.at(-1)).toEqual([true])
+  })
+
   it('folds a long answer even as the last section on the page', async () => {
     vi.mocked(sonicSearch).mockResolvedValue(
       Array.from({ length: 20 }, (_, i) => makeSong(`s${i}`)),
