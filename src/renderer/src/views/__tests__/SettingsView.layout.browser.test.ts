@@ -26,6 +26,7 @@ import '@mdi/font/css/materialdesignicons.css'
 // declarations are invalid at computed-value time and drop out whole, so
 // every border measures 0px and the divider assertion below would pass no
 // matter what the rule said.
+import { emitter } from '@/emitter'
 import { applyLocale, getLocale, i18n, SUPPORTED_LOCALES } from '@/i18n'
 import { useAuthStore } from '@/stores/auth'
 import { useExternalSourceStore } from '@/stores/externalSource'
@@ -62,7 +63,14 @@ async function mountSettings(width: number, height = 900) {
   // builds its wrapper this way.
   const wrapper = mount(
     { render: () => h(components.VApp, null, { default: () => h(SettingsView) }) },
-    { attachTo: document.body, global: { plugins: [vuetify, i18n, router] } },
+    {
+      attachTo: document.body,
+      global: {
+        plugins: [vuetify, i18n, router],
+        // main.ts installs it the same way; the sections subscribe to sync events.
+        config: { globalProperties: { $emitter: emitter } },
+      },
+    },
   )
   currentWrapper = wrapper
   await wrapper.vm.$nextTick()
