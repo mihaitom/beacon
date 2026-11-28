@@ -67,8 +67,8 @@ async function mountSettings(width: number, height = 900) {
       attachTo: document.body,
       global: {
         plugins: [vuetify, i18n, router],
-        // main.ts installs it the same way; the sections subscribe to sync events.
-        config: { globalProperties: { $emitter: emitter } },
+        // The real bus main.ts installs; the sections subscribe to sync events.
+        mocks: { $emitter: emitter },
       },
     },
   )
