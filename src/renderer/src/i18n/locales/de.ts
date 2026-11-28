@@ -97,9 +97,8 @@ export default {
     recentlyPlayed: 'Zuletzt gehört',
     rediscover: 'Lange nicht gehört',
     soundsLikeYou: 'Klingt nach dir',
-    moodsTitle: 'Stimmungen',
+    mixTilesTitle: 'Stimmungen & Themen',
     homeMixError: 'Dieser Mix ließ sich nicht zusammenstellen.',
-    themesTitle: 'Themen',
     themes: {
       onTheRoad: 'Unterwegs',
       city: 'Stadt',

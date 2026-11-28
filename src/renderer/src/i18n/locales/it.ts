@@ -97,9 +97,8 @@ export default {
     recentlyPlayed: 'Ascoltati di recente',
     rediscover: 'Da riscoprire',
     soundsLikeYou: 'Suona come te',
-    moodsTitle: 'Atmosfere',
+    mixTilesTitle: 'Atmosfere e temi',
     homeMixError: 'Impossibile creare questo mix.',
-    themesTitle: 'Temi',
     themes: {
       onTheRoad: 'In viaggio',
       city: 'Città',

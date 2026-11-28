@@ -97,9 +97,8 @@ export default {
     recentlyPlayed: 'Recently played',
     rediscover: 'Rediscover',
     soundsLikeYou: 'Sounds like you',
-    moodsTitle: 'Moods',
+    mixTilesTitle: 'Moods & themes',
     homeMixError: 'Could not put this mix together.',
-    themesTitle: 'Themes',
     themes: {
       onTheRoad: 'On the road',
       city: 'City',

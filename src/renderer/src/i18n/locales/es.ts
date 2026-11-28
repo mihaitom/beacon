@@ -101,9 +101,8 @@ export default {
     recentlyPlayed: 'Reproducido recientemente',
     rediscover: 'Para redescubrir',
     soundsLikeYou: 'Suena a ti',
-    moodsTitle: 'Estados de ánimo',
+    mixTilesTitle: 'Estados de ánimo y temas',
     homeMixError: 'No se pudo crear esta mezcla.',
-    themesTitle: 'Temas',
     themes: {
       onTheRoad: 'En la carretera',
       city: 'Ciudad',

@@ -39,6 +39,7 @@ type HomeVm = {
   sonicMoods: string[]
   loadSoundsLikeYou(): Promise<void>
   sonicThemes: string[]
+  homeMixTiles: { kind: string; item: string }[]
   playHomeMix(kind: 'mood' | 'theme', item: string): Promise<void>
   homeMixPlaying: string | null
 }
@@ -124,6 +125,12 @@ describe("Home's AudioMuse rows", () => {
     const vm = mountHome().vm as unknown as HomeVm
     await flushPromises()
     expect(vm.sonicThemes).toEqual(['city'])
+    // One section: the moods first, then the themes.
+    expect(vm.homeMixTiles).toEqual([
+      { kind: 'mood', item: 'happy' },
+      { kind: 'mood', item: 'sad' },
+      { kind: 'theme', item: 'city' },
+    ])
   })
 
   it('plays a theme through the theme mix', async () => {

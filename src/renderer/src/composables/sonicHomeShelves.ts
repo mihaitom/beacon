@@ -22,6 +22,11 @@ export type Mood = (typeof MOODS)[number]
  * about. */
 export type HomeMixKind = 'mood' | 'theme'
 
+export interface HomeMixTile {
+  kind: HomeMixKind
+  item: string
+}
+
 /** How the playback store remembers which tile started the queue. */
 export function homeMixKey(kind: HomeMixKind, item: string): string {
   return `${kind}:${item}`
@@ -56,6 +61,13 @@ export const sonicHomeShelvesMixin = defineComponent({
       const playback = usePlaybackStore()
       if (playback.radioStation || playback.preview || !playback.currentSong) return null
       return playback.homeMix
+    },
+    /** The moods, then the themes, as one section's tiles. */
+    homeMixTiles(): HomeMixTile[] {
+      return [
+        ...this.sonicMoods.map((item) => ({ kind: 'mood' as const, item })),
+        ...this.sonicThemes.map((item) => ({ kind: 'theme' as const, item })),
+      ]
     },
     soundsLikeYouReady(): boolean {
       return this.audiomuseAvailable && this.mostPlayed.length > 0

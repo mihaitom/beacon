@@ -53,26 +53,13 @@
     </section>
 
     <mix-tiles
-      v-if="audiomuseAvailable && sonicMoods.length"
+      v-if="audiomuseAvailable && homeMixTiles.length"
       class="mobile-home__section"
-      kind="mood"
-      :title="$t('home.moodsTitle')"
-      :items="sonicMoods"
+      :items="homeMixTiles"
       :loading="homeMixLoading"
       :playing="homeMixPlaying"
       :paused="!playbackStore.isPlaying"
-      @play="playHomeMix('mood', $event)"
-    />
-    <mix-tiles
-      v-if="audiomuseAvailable && sonicThemes.length"
-      class="mobile-home__section"
-      kind="theme"
-      :title="$t('home.themesTitle')"
-      :items="sonicThemes"
-      :loading="homeMixLoading"
-      :playing="homeMixPlaying"
-      :paused="!playbackStore.isPlaying"
-      @play="playHomeMix('theme', $event)"
+      @play="playHomeMix($event.kind, $event.item)"
     />
 
     <section v-if="loadingTopSongs || shownTopSongs.length" class="mobile-home__section">

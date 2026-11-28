@@ -1,29 +1,29 @@
 <template>
   <section class="mood-mixes">
-    <h2 class="section-title">{{ title }}</h2>
-    <div class="mood-mixes__grid" :style="{ '--mood-count': items.length }">
+    <h2 class="section-title">{{ $t('home.mixTilesTitle') }}</h2>
+    <div class="mood-mixes__grid" :style="{ '--mood-columns': wideColumns }">
       <button
-        v-for="item in items"
-        :key="item"
+        v-for="tile in tiles"
+        :key="tile.key"
         type="button"
         class="mood-tile"
         :class="[
-          `mood-tile--${kind}-${item}`,
+          `mood-tile--${tile.kind}-${tile.item}`,
           {
-            'mood-tile--loading': loading === key(item),
-            'mood-tile--playing': playing === key(item),
-            'mood-tile--paused': playing === key(item) && paused,
+            'mood-tile--loading': loading === tile.key,
+            'mood-tile--playing': playing === tile.key,
+            'mood-tile--paused': playing === tile.key && paused,
           },
         ]"
-        :disabled="loading !== null && loading !== key(item)"
-        :aria-busy="loading === key(item)"
-        :aria-current="playing === key(item) ? 'true' : undefined"
-        @click="$emit('play', item)"
+        :disabled="loading !== null && loading !== tile.key"
+        :aria-busy="loading === tile.key"
+        :aria-current="playing === tile.key ? 'true' : undefined"
+        @click="$emit('play', tile)"
       >
         <span class="mood-tile__glow" aria-hidden="true" />
-        <v-icon class="mood-tile__art" :icon="ICONS[key(item)]" aria-hidden="true" />
-        <span class="mood-tile__label">{{ $t(`home.${kind}s.${item}`) }}</span>
-        <span v-if="playing === key(item)" class="mood-tile__bars" aria-hidden="true">
+        <v-icon class="mood-tile__art" :icon="ICONS[tile.key]" aria-hidden="true" />
+        <span class="mood-tile__label">{{ $t(`home.${tile.kind}s.${tile.item}`) }}</span>
+        <span v-if="playing === tile.key" class="mood-tile__bars" aria-hidden="true">
           <i /><i /><i />
         </span>
         <span v-else class="mood-tile__play" aria-hidden="true">
@@ -36,7 +36,11 @@
 
 <script lang="ts">
 import type { PropType } from 'vue'
-import { homeMixKey, type HomeMixKind } from '@/composables/sonicHomeShelves'
+import { homeMixKey, type HomeMixTile } from '@/composables/sonicHomeShelves'
+
+// A row of tiles at full width; with moods and themes six each, that is the
+// moods over the themes.
+const MAX_WIDE_COLUMNS = 6
 
 const ICONS: Record<string, string> = {
   'mood:happy': 'mdi-white-balance-sunny',
@@ -53,15 +57,13 @@ const ICONS: Record<string, string> = {
   'theme:lookingBack': 'mdi-history',
 }
 
-/** One tile per AudioMuse-AI mood or lyric theme; each plays a mix of it.
- * `loading` and `playing` are keys across both rows (see homeMixKey()), so
- * a mix on its way in one row holds the other row too. */
+/** Home's AudioMuse-AI mixes in one section: a tile per mood, then one per
+ * lyric theme; each plays a mix of it. `loading` and `playing` are
+ * homeMixKey()s. */
 export default {
   name: 'MixTiles',
   props: {
-    kind: { type: String as PropType<HomeMixKind>, required: true },
-    title: { type: String, required: true },
-    items: { type: Array as PropType<string[]>, required: true },
+    items: { type: Array as PropType<HomeMixTile[]>, required: true },
     /** The mix on its way, or null. */
     loading: { type: String as PropType<string | null>, default: null },
     /** The mix that plays now, or null. */
@@ -73,9 +75,12 @@ export default {
   data() {
     return { ICONS }
   },
-  methods: {
-    key(item: string): string {
-      return homeMixKey(this.kind, item)
+  computed: {
+    tiles(): (HomeMixTile & { key: string })[] {
+      return this.items.map((tile) => ({ ...tile, key: homeMixKey(tile.kind, tile.item) }))
+    },
+    wideColumns(): number {
+      return Math.min(this.items.length, MAX_WIDE_COLUMNS)
     },
   },
 }
@@ -88,9 +93,9 @@ export default {
   margin-bottom: 16px;
 }
 
-/* Whole rows across the full width: all moods side by side where they
- * fit, otherwise three or two to a row - never a lone tile left over, and
- * no empty columns on the right. Measured on the section, not the window,
+/* Whole rows across the full width: six to a row where they fit (the moods
+ * over the themes), otherwise three or two - never a lone tile left over,
+ * and no empty columns on the right. Measured on the section, not the window,
  * since the nav rail and queue drawer take part of it. */
 .mood-mixes {
   container-type: inline-size;
@@ -110,7 +115,7 @@ export default {
 
 @container (min-width: 900px) {
   .mood-mixes__grid {
-    grid-template-columns: repeat(var(--mood-count), 1fr);
+    grid-template-columns: repeat(var(--mood-columns), 1fr);
   }
 }
 
