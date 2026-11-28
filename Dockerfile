@@ -152,7 +152,7 @@ RUN sh /build/verify-ffmpeg.sh /usr/local/bin/ffmpeg /build/ffmpeg/required-comp
 # nginx (1.28 on 3.23, without the HTTP/2 fixes of 1.30.7). The final stage
 # has to match this one exactly - the venv points at its Python and was
 # linked against its Rubber Band.
-FROM python:3.14-alpine3.24 AS python-builder
+FROM python:3.15-alpine3.24 AS python-builder
 
 COPY --from=ghcr.io/astral-sh/uv:0.13 /uv /usr/local/bin/uv
 
@@ -170,7 +170,7 @@ RUN uv sync --locked --no-dev
 # --- Final image
 # Same base as python-builder (see there). uv itself isn't needed here:
 # start.sh runs the venv's Python directly.
-FROM python:3.14-alpine3.24
+FROM python:3.15-alpine3.24
 
 WORKDIR /app
 
