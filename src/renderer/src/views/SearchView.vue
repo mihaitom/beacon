@@ -43,27 +43,19 @@
         />
       </card-shelf>
 
-      <template v-if="libraryStore.searchResults.songs.length">
-        <h2 class="section-title">{{ $t('search.songs') }}</h2>
-        <!-- One song, not the whole result set: a search result is a list of
-         - things that merely match a word, not a sequence anyone meant to
-         - listen to in order. Playing "Moon" and getting nineteen other
-         - songs with "moon" in the title queued behind it is not what the
-         - click asked for. The row's own menu still offers Play next, Add
-         - to queue and Song Radio for building a queue on purpose.
-         -
-         - default-sort-key null keeps the order the store ranked these in
-         - (best match first) instead of re-sorting them alphabetically,
-         - which would bury an exact title behind every other match. A click
-         - on a column still sorts them. -->
-        <song-table
-          :songs="libraryStore.searchResults.songs"
-          :queue-whole-list="false"
-          :default-sort-key="null"
-        />
-      </template>
+      <search-songs-section
+        v-if="libraryStore.searchResults.songs.length"
+        :title="$t('search.songs')"
+        :songs="libraryStore.searchResults.songs"
+        :foldable="sonicShowing.sound || sonicShowing.lyrics"
+      />
 
-      <sonic-search-section kind="sound" :query="query" @showing="sonicShowing.sound = $event" />
+      <sonic-search-section
+        kind="sound"
+        :query="query"
+        :foldable="sonicShowing.lyrics"
+        @showing="sonicShowing.sound = $event"
+      />
       <sonic-search-section kind="lyrics" :query="query" @showing="sonicShowing.lyrics = $event" />
 
       <empty-state
@@ -83,7 +75,7 @@ import PageLoader from '@/components/PageLoader.vue'
 import AlbumCard from '@/components/library/AlbumCard.vue'
 import ArtistCard from '@/components/library/ArtistCard.vue'
 import CardShelf from '@/components/library/CardShelf.vue'
-import SongTable from '@/components/library/SongTable.vue'
+import SearchSongsSection from '@/components/library/SearchSongsSection.vue'
 import SonicSearchSection from '@/components/library/SonicSearchSection.vue'
 import { readCardGridView, writeCardGridView } from '@/services/cardGridView'
 
@@ -104,7 +96,7 @@ export default {
     AlbumCard,
     ArtistCard,
     CardShelf,
-    SongTable,
+    SearchSongsSection,
     SonicSearchSection,
   },
   data() {
@@ -165,20 +157,8 @@ export default {
 
 <style scoped>
 /* One rhythm for the page: the query heading, then a heading and its
- * results per kind of match. */
+ * results per kind of match (each section spaces its own heading). */
 .page-title {
   margin-bottom: 16px;
-}
-
-.section-title {
-  margin-bottom: 8px;
-}
-
-.search-group {
-  margin-bottom: 16px;
-}
-
-.search-result__art {
-  margin-right: 12px;
 }
 </style>

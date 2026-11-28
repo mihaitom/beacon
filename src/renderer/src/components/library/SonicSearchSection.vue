@@ -1,37 +1,35 @@
 <template>
   <!-- Only while it is searching or has found something: a heading over
-   - nothing would read as an empty result for the whole search. -->
-  <section v-if="loading || songs.length" class="sonic-search">
+   - nothing would read as an empty result for the whole search. The phone
+   - shows few enough rows (its `limit`) to need no folding. -->
+  <section v-if="compact && showing" class="sonic-search">
     <h2 class="section-title">{{ title }}</h2>
-    <template v-if="compact">
-      <div v-if="loading" class="sonic-search__loading">
-        <v-skeleton-loader v-for="n in 3" :key="n" type="list-item-avatar-two-line" />
-      </div>
-      <template v-else>
-        <mobile-song-row
-          v-for="song in songs"
-          :key="song.id"
-          :song="song"
-          @play="$emit('play-song', song)"
-          @open-actions="$emit('open-actions', song)"
-        />
-      </template>
+    <div v-if="loading" class="sonic-search__loading">
+      <v-skeleton-loader v-for="n in 3" :key="n" type="list-item-avatar-two-line" />
+    </div>
+    <template v-else>
+      <mobile-song-row
+        v-for="song in songs"
+        :key="song.id"
+        :song="song"
+        @play="$emit('play-song', song)"
+        @open-actions="$emit('open-actions', song)"
+      />
     </template>
-    <!-- One song per click, like the matches above it (see SearchView.vue's
-     - own comment): these fit a description, they are not an order. -->
-    <song-table
-      v-else
-      :songs="songs"
-      :loading="loading"
-      :queue-whole-list="false"
-      :default-sort-key="null"
-    />
   </section>
+  <search-songs-section
+    v-else-if="showing"
+    class="sonic-search"
+    :title="title"
+    :songs="songs"
+    :loading="loading"
+    :foldable="foldable"
+  />
 </template>
 
 <script lang="ts">
 import type { PropType } from 'vue'
-import SongTable from './SongTable.vue'
+import SearchSongsSection from './SearchSongsSection.vue'
 import MobileSongRow from '@/components/mobile/MobileSongRow.vue'
 import { useAudioMuseStore } from '@/stores/audiomuse'
 import { sonicSearch, type SonicSearchKind } from '@/services/connect/audiomuse'
@@ -49,13 +47,15 @@ const SETTLE_MS = 600
  */
 export default {
   name: 'SonicSearchSection',
-  components: { SongTable, MobileSongRow },
+  components: { SearchSongsSection, MobileSongRow },
   props: {
     kind: { type: String as PropType<SonicSearchKind>, required: true },
     query: { type: String, required: true },
     /** The phone's rows instead of the desktop's table. */
     compact: { type: Boolean, default: false },
     limit: { type: Number, default: 20 },
+    /** See SearchSongsSection's own prop. */
+    foldable: { type: Boolean, default: false },
   },
   emits: ['play-song', 'open-actions', 'showing'],
   data() {
@@ -124,7 +124,7 @@ export default {
   margin-top: 24px;
 }
 
-.sonic-search .section-title {
+.sonic-search > .section-title {
   margin-bottom: 8px;
 }
 </style>
