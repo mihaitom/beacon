@@ -668,6 +668,7 @@ def _send_milestones(link: dict) -> None:
 def _adopt_api_keys(link: dict) -> None:
     body = _call(link["url"], link["key"], "GET", "/api-keys")
     lent = body.get("keys") or {}
+    audiomuse_key = api_keys.get(audiomuse.SERVICE)
     for service in api_keys.SERVICES:
         key = lent.get(service)
         api_keys.set_shared(service, key if isinstance(key, str) else "")
@@ -675,6 +676,8 @@ def _adopt_api_keys(link: dict) -> None:
     urls = body.get("urls") if isinstance(body.get("urls"), dict) else {}
     url = urls.get("audiomuse")
     audiomuse.set_shared_url(url if isinstance(url, str) else "")
+    if api_keys.get(audiomuse.SERVICE) != audiomuse_key:
+        audiomuse.forget_cached_state()
 
 
 def _forget_api_keys() -> None:
@@ -682,6 +685,7 @@ def _forget_api_keys() -> None:
     for service in api_keys.SERVICES:
         api_keys.set_shared(service, "")
     audiomuse.set_shared_url("")
+    audiomuse.forget_cached_state()
 
 
 def _sync_sources(link: dict, scopes: list[str]) -> None:

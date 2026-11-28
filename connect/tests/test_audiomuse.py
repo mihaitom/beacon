@@ -457,6 +457,20 @@ async def test_a_search_may_take_longer_than_a_lookup(fake, configured):
     assert timeout is not None and timeout.read > audiomuse._TIMEOUT.read
 
 
+async def test_a_new_address_is_checked_afresh(fake, configured):
+    await audiomuse.check()
+    audiomuse.set_url("http://elsewhere.local:8000")
+    await audiomuse.check()
+    assert fake.paths().count("/api/version") == 2
+
+
+async def test_a_new_lent_address_is_checked_afresh(fake, configured):
+    await audiomuse.check()
+    audiomuse.set_shared_url("http://lent.local:8000")
+    await audiomuse.check()
+    assert fake.paths().count("/api/version") == 2
+
+
 # ── moods and similar artists ───────────────────────────────────────────────
 
 

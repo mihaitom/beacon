@@ -162,6 +162,8 @@ def _shared_url() -> str:
 
 def set_url(value: str) -> None:
     _write(_url_path(), normalise_url(value))
+    # What was checked at the old address says nothing about the new one.
+    _forget_cached_state()
 
 
 def set_shared_url(value: str) -> None:
@@ -172,6 +174,7 @@ def set_shared_url(value: str) -> None:
         cleaned = ""
     if cleaned != _shared_url():
         _write(_shared_url_path(), cleaned)
+        _forget_cached_state()
 
 
 def is_configured() -> bool:

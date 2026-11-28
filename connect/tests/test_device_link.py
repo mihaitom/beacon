@@ -1332,6 +1332,18 @@ def test_the_desktop_uses_the_servers_audiomuse_until_unpaired(paired):
     assert audiomuse.base_url() == ""
 
 
+def test_a_new_lent_audiomuse_token_is_checked_afresh(paired):
+    paired.api_keys = {"audiomuse": "first"}
+    paired.api_urls = {"audiomuse": "http://audiomuse.local:8000"}
+    server_link.send_once(now=NOW)
+    audiomuse._status_cache = audiomuse._Cached({"available": True}, float("inf"))
+
+    paired.api_keys = {"audiomuse": "second"}
+    server_link.send_once(now=NOW + 3600)
+
+    assert audiomuse._status_cache is None
+
+
 def test_an_older_server_without_addresses_lends_no_audiomuse_address(paired):
     paired.api_keys = {"lastfm": "from-server"}
     paired.api_urls = None
