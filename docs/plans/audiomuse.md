@@ -1,13 +1,15 @@
 # Plan: AudioMuse-AI integration
 
-Status: phases 1 and 2 built 2026-11-28 on `feature/audiomuse`, tried
-against a real AudioMuse-AI v3.7.4 with one Navidrome server (numbers
-below), not yet used at length in the app. Phase 3 not started. The code is
-`connect/core/audiomuse.py` and `routes/audiomuse.py`, and on the renderer
-side `services/connect/audiomuse.ts`, `stores/audiomuse.ts`,
+Status: phases 1 to 3 built 2026-11-28 on `feature/audiomuse`, tried
+against a real AudioMuse-AI v3.7.4 with one Navidrome server, not yet used
+at length in the app. The code is `connect/core/audiomuse.py` and
+`routes/audiomuse.py`, and on the renderer side
+`services/connect/audiomuse.ts`, `stores/audiomuse.ts`,
 `services/playback/skips.ts`, `services/playback/sonicActions.ts`,
-`stores/playback/queue.ts` (Autoplay, path), `stores/playback/radio.ts`,
-`components/library/SonicSearchSection.vue` and
+`stores/playback/queue.ts` (Autoplay, path), `stores/playback/radio.ts`
+(radios, mood mix), `composables/sonicHomeShelves.ts`,
+`components/home/MoodMixes.vue`, `components/library/SonicSearchSection.vue`,
+`SearchSongsSection.vue`, `SonicSimilarArtists.vue` and
 `components/settings/AudioMuseSection.vue`.
 
 ## What it is for
@@ -192,17 +194,29 @@ connect's side and the renderer gets the batch it asked for.
 
 ## Phase 3: Home and artist page
 
-- **"Sounds like your listening"** shelf: Alchemy with the account's most
-  played songs from connect's own play history as ADD items. Deliberately
-  not AudioMuse's `sonic_fingerprint`, which reads listening history from
-  the media server and wants the user's media-server password in the
-  request.
-- **Mood mixes** from `mood_centroids` as a row of tiles. Only if the
-  clusters' top tags make names a person would recognise; the measured ones
-  ("rock, metal, alternative") need checking against a larger library.
-- **Similar artists by sound** on the artist page, as a second source next
-  to the ListenBrainz one, only for artists in the library (AudioMuse only
-  knows those anyway).
+- **"Sounds like your listening"** shelf on Home, desktop and phone: Alchemy
+  over five random picks of Home's top songs (the catalogue's play counts),
+  those top songs themselves left out, 30 songs; Reroll draws other seeds.
+  Five rather than all fifteen: a blend of everything averages into the
+  middle of the library. Deliberately not AudioMuse's `sonic_fingerprint`,
+  which reads listening history from the media server and wants the user's
+  media-server password in the request.
+- **Mood mixes** on Home: one tonal button per mood AudioMuse knows
+  (happy, relaxed, party, danceable, sad, aggressive - Beacon's own order
+  and names; a mood it has no name for is left out). A click plays 50
+  songs around one of the mood's centroids, picked at random weighted by
+  its song count, so the same mood sounds different the next time. The
+  centroids' top tags ("rock, metal, alternative") are not shown: they
+  describe genres inside a mood, not something to choose between. The
+  centroid list is cached for an hour (it changes only with a new
+  analysis). Measured 0.08 s for 50 songs.
+- **Similar artists by sound** on the artist page, desktop (card shelf at
+  the end) and phone (rows after the albums): `similar_artists` with the
+  artist's id, hydrated with `getArtist`. AudioMuse also names artists it
+  has no id for on the server (featured credits), which have no page and
+  are left out. The artist page had no similar-artist block before; the
+  ListenBrainz lookup feeds only Home's Discover (artists not in the
+  library). Measured 0.17 s for 12.
 
 ## Not planned
 

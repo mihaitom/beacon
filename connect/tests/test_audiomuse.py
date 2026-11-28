@@ -66,6 +66,18 @@ class FakeAudioMuse:
             "srv-other": [{"item_id": "probe", "title": "Something Else"}],
             "srv-jf": [{"item_id": "probe", "title": "Probe Song"}],
         }
+        self.moods = {
+            "happy": [
+                {"index": 0, "n_songs": 80, "top_tags": ["pop", "dance", "rock"]},
+                {"index": 1, "n_songs": 40, "top_tags": ["Hip-Hop", "rnb", "pop"]},
+            ],
+            "sad": [{"index": 0, "n_songs": 70, "top_tags": ["indie", "rock", "folk"]}],
+        }
+        self.artist_rows = [
+            {"artist": "Artist X", "artist_id": "x", "divergence": 0.04},
+            {"artist": "Featured Guest", "artist_id": None, "divergence": 0.05},
+            {"artist": "Artist Y", "artist_id": "y", "divergence": 0.06},
+        ]
         self.calls: list[tuple[str, str, dict]] = []
         self.raise_error: Exception | None = None
         self.timeouts: dict[str, object] = {}
@@ -90,6 +102,10 @@ class FakeAudioMuse:
                 "path": [{"item_id": i, "title": i} for i in self.results],
                 "total_distance": 1.0,
             }
+        elif path == "/api/mood_centroids":
+            body = self.moods
+        elif path == "/api/similar_artists":
+            body = self.artist_rows
         elif path == "/api/similar_tracks":
             body = [{"item_id": i, "title": i, "distance": 0.1} for i in self.results]
         else:  # hyperbolic and alchemy wrap their rows
@@ -107,7 +123,22 @@ def _req(url):
     return httpx.Request("GET", url)
 
 
+ARTISTS = {"seed-artist": "Seed Artist", "x": "Artist X", "y": "Artist Y"}
+
+
 async def _library_song(media, endpoint, **params):
+    if endpoint == "getArtist.view":
+        artist_id = params["id"]
+        if artist_id not in ARTISTS:
+            raise RuntimeError("Artist not found")
+        return {
+            "artist": {
+                "id": artist_id,
+                "name": ARTISTS[artist_id],
+                "albumCount": 2,
+                "album": [{"id": "al1"}, {"id": "al2"}],
+            }
+        }
     song_id = params["id"]
     if song_id not in LIBRARY:
         raise RuntimeError("Song not found")
@@ -426,6 +457,93 @@ async def test_a_search_may_take_longer_than_a_lookup(fake, configured):
     assert timeout is not None and timeout.read > audiomuse._TIMEOUT.read
 
 
+# ── moods and similar artists ───────────────────────────────────────────────
+
+
+async def test_the_moods_are_the_ones_audiomuse_knows(fake, configured):
+    assert await audiomuse.moods() == ["happy", "sad"]
+
+
+async def test_the_moods_are_asked_for_once(fake, configured):
+    await audiomuse.moods()
+    await audiomuse.mood_mix(_media(), "sad", 3, [])
+    assert fake.paths().count("/api/mood_centroids") == 1
+
+
+async def test_a_mood_mix_starts_from_one_of_the_moods_clusters(fake, configured):
+    songs = await audiomuse.mood_mix(_media(), "sad", 3, [])
+    asked = fake.last("/api/similar_tracks")
+    assert (asked["mood"], asked["centroid_index"], asked["server"]) == ("sad", 0, "srv-nav")
+    assert [s["id"] for s in songs] == ["a", "b", "c"]
+
+
+async def test_a_mood_sounds_different_each_time(fake, configured, monkeypatch):
+    picks = iter([[fake.moods["happy"][1]], [fake.moods["happy"][0]]])
+    monkeypatch.setattr(audiomuse.random, "choices", lambda options, weights: next(picks))
+    await audiomuse.mood_mix(_media(), "happy", 3, [])
+    await audiomuse.mood_mix(_media(), "happy", 3, [])
+    asked = [body["centroid_index"] for _, p, body in fake.calls if p == "/api/similar_tracks"]
+    assert asked == [1, 0]
+
+
+async def test_bigger_clusters_are_picked_more_often(fake, configured, monkeypatch):
+    seen = {}
+
+    def choices(options, weights):
+        seen["weights"] = weights
+        return [options[0]]
+
+    monkeypatch.setattr(audiomuse.random, "choices", choices)
+    await audiomuse.mood_mix(_media(), "happy", 3, [])
+    assert seen["weights"] == [80, 40]
+
+
+async def test_a_mood_mix_leaves_out_what_is_queued(fake, configured):
+    songs = await audiomuse.mood_mix(_media(), "sad", 3, ["b"])
+    assert [s["id"] for s in songs] == ["a", "c"]
+    assert fake.last("/api/similar_tracks")["n"] == 4
+
+
+async def test_an_unknown_mood_is_an_error(fake, configured):
+    with pytest.raises(audiomuse.AudioMuseError):
+        await audiomuse.mood_mix(_media(), "grumpy", 3, [])
+
+
+async def test_similar_artists_are_library_artists_closest_first(fake, configured):
+    artists = await audiomuse.similar_artists(_media(), "seed-artist", 5)
+    asked = fake.last("/api/similar_artists")
+    assert (asked["artist_id"], asked["server"]) == ("seed-artist", "srv-nav")
+    # The guest without an id has no page here.
+    assert [a["id"] for a in artists] == ["x", "y"]
+
+
+async def test_similar_artists_come_without_their_discography(fake, configured):
+    artists = await audiomuse.similar_artists(_media(), "seed-artist", 5)
+    assert artists[0] == {"id": "x", "name": "Artist X", "albumCount": 2}
+
+
+async def test_similar_artists_never_include_the_artist_itself(fake, configured):
+    fake.artist_rows.insert(0, {"artist": "Seed Artist", "artist_id": "seed-artist"})
+    artists = await audiomuse.similar_artists(_media(), "seed-artist", 5)
+    assert "seed-artist" not in [a["id"] for a in artists]
+
+
+async def test_an_artist_the_media_server_does_not_know_is_left_out(fake, configured):
+    fake.artist_rows.insert(0, {"artist": "Gone", "artist_id": "gone"})
+    artists = await audiomuse.similar_artists(_media(), "seed-artist", 5)
+    assert [a["id"] for a in artists] == ["x", "y"]
+
+
+async def test_only_as_many_artists_as_wanted(fake, configured):
+    fake.artist_rows += [{"artist": "Artist Z", "artist_id": "z"}]
+    ARTISTS["z"] = "Artist Z"
+    try:
+        artists = await audiomuse.similar_artists(_media(), "seed-artist", 2)
+    finally:
+        del ARTISTS["z"]
+    assert [a["id"] for a in artists] == ["x", "y"]
+
+
 # ── routes ───────────────────────────────────────────────────────────────────
 
 
@@ -496,3 +614,22 @@ def test_a_path_answers_songs_or_a_503(client, fake, configured):
     fake.raise_error = httpx.ConnectTimeout("timed out")
     audiomuse.forget_cached_state()
     assert client.post("/audiomuse/path", json={"start": "seed", "end": "d"}).status_code == 503
+
+
+def test_the_moods_route_answers_names_or_a_503(client, fake, configured):
+    assert client.get("/audiomuse/moods").json() == {"moods": ["happy", "sad"]}
+    fake.status_for["/api/mood_centroids"] = 500
+    audiomuse.forget_cached_state()
+    assert client.get("/audiomuse/moods").status_code == 503
+
+
+def test_a_mood_mix_answers_songs(client, fake, configured):
+    response = client.post("/audiomuse/mood", json={"mood": "sad", "n": 2})
+    assert [s["id"] for s in response.json()["songs"]] == ["a", "b"]
+    assert client.post("/audiomuse/mood", json={"mood": "grumpy"}).status_code == 503
+
+
+def test_similar_artists_answer_artists(client, fake, configured):
+    response = client.get("/audiomuse/similar-artists", params={"id": "seed-artist"})
+    assert [a["id"] for a in response.json()["artists"]] == ["x", "y"]
+    assert client.get("/audiomuse/similar-artists", params={"id": ""}).status_code == 422

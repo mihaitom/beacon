@@ -65,6 +65,33 @@
       </template>
     </song-shelf>
 
+    <template v-if="audiomuseAvailable">
+      <song-shelf
+        :title="$t('home.soundsLikeYou')"
+        :songs="soundsLikeYouSongs"
+        :loading="loadingSoundsLikeYou"
+        @play-all="playSongList(soundsLikeYouSongs)"
+      >
+        <template #action>
+          <v-btn
+            icon="mdi-shuffle-variant"
+            variant="text"
+            size="small"
+            :loading="loadingSoundsLikeYou"
+            :title="$t('home.reroll')"
+            @click="loadSoundsLikeYou"
+          />
+        </template>
+      </song-shelf>
+      <mood-mixes
+        v-if="sonicMoods.length"
+        class="home-moods"
+        :moods="sonicMoods"
+        :loading="moodLoading"
+        @play="playMood"
+      />
+    </template>
+
     <!-- Scrolls like every other shelf now, fit-to-screen dropped — see
      - DISCOVER_SHELF_SIZE's own comment for why a fixed-size pool this
      - much bigger than one screenful is worth scrolling through rather
@@ -116,7 +143,9 @@ import TopSongsList from '@/components/home/TopSongsList.vue'
 import AlbumShelf from '@/components/library/AlbumShelf.vue'
 import SimilarArtistsShelf from '@/components/library/SimilarArtistsShelf.vue'
 import SongShelf from '@/components/library/SongShelf.vue'
+import MoodMixes from '@/components/home/MoodMixes.vue'
 import { homeShelvesMixin } from '@/composables/homeShelves'
+import { sonicHomeShelvesMixin } from '@/composables/sonicHomeShelves'
 
 export default {
   name: 'HomeView',
@@ -127,13 +156,19 @@ export default {
     AlbumShelf,
     SimilarArtistsShelf,
     SongShelf,
+    MoodMixes,
   },
-  mixins: [homeShelvesMixin],
+  mixins: [homeShelvesMixin, sonicHomeShelvesMixin],
 }
 </script>
 
 <style scoped>
 .home-view {
   padding-bottom: 24px;
+}
+
+/* A shelf's own spacing (CardShelf.vue). */
+.home-moods {
+  margin-bottom: 40px;
 }
 </style>

@@ -5,7 +5,7 @@ import { useAutoplayStore } from '../autoplay'
 import { useAudioMuseStore } from '../audiomuse'
 import { useLibraryStore } from '../library'
 import { usePlaybackStore } from '../playback'
-import { getAudioMuseStatus, sonicMix, sonicPath } from '@/services/connect/audiomuse'
+import { getAudioMuseStatus, sonicMix, sonicMood, sonicPath } from '@/services/connect/audiomuse'
 import { clearSkips, noteSkipped, recentSkips } from '@/services/playback/skips'
 import { canPathTo } from '@/services/playback/sonicActions'
 import { emitter } from '@/emitter'
@@ -17,6 +17,7 @@ vi.mock('@/services/connect/audiomuse', () => ({
   getAudioMuseStatus: vi.fn(),
   sonicMix: vi.fn(),
   sonicPath: vi.fn(),
+  sonicMood: vi.fn(),
 }))
 
 /** AudioMuse-AI in Autoplay and the radios (docs/plans/audiomuse.md):
@@ -285,5 +286,27 @@ describe('a path to a song', () => {
     expect(canPathTo(makeSong('ext:folder:1'))).toBe(false)
     playback.setQueue([], -1)
     expect(canPathTo(makeSong('target'))).toBe(false)
+  })
+})
+
+describe('a mood mix', () => {
+  it("plays AudioMuse's songs for the mood", async () => {
+    vi.mocked(sonicMood).mockResolvedValue([makeSong('m1'), makeSong('m2')])
+    const playback = usePlaybackStore()
+    const played = vi.spyOn(playback, 'playSongList').mockResolvedValue(undefined)
+
+    await playback.startMoodMix('relaxed')
+
+    expect(sonicMood).toHaveBeenCalledWith('relaxed', 50)
+    expect(played.mock.calls[0]![0].map((s) => s.id)).toEqual(['m1', 'm2'])
+  })
+
+  it('leaves the queue alone and says so when nothing came back', async () => {
+    vi.mocked(sonicMood).mockResolvedValue([])
+    const playback = usePlaybackStore()
+    const played = vi.spyOn(playback, 'playSongList').mockResolvedValue(undefined)
+
+    await expect(playback.startMoodMix('sad')).rejects.toThrow()
+    expect(played).not.toHaveBeenCalled()
   })
 })

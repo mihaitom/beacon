@@ -26,6 +26,7 @@ what makes the bridges work unchanged.
 import asyncio
 import logging
 import os
+import random
 import re
 import threading
 import time
@@ -236,11 +237,13 @@ class _Cached:
 
 _status_cache: _Cached | None = None
 _mapping_cache: dict[tuple, _Cached] = {}
+_moods_cache: _Cached | None = None
 
 
 def _forget_cached_state() -> None:
-    global _status_cache
+    global _status_cache, _moods_cache
     _status_cache = None
+    _moods_cache = None
     _mapping_cache.clear()
 
 
@@ -563,3 +566,96 @@ async def search(media, kind: str, query: str, n: int) -> list[dict]:
         timeout=_SEARCH_TIMEOUT,
     )
     return await _hydrate(media, _result_ids(body), n, set())
+
+
+# The moods AudioMuse sorts songs into, each with a few dozen clusters
+# ("centroids") of the songs that carry it. They only change when the
+# library is analysed again, which takes days, not minutes.
+_MOODS_TTL = 3600.0
+
+
+async def _mood_centroids() -> dict[str, list[dict]]:
+    global _moods_cache
+    now = time.monotonic()
+    if _moods_cache is not None and now < _moods_cache.expires:
+        return _moods_cache.value
+    body = await _request("GET", "/api/mood_centroids")
+    moods: dict[str, list[dict]] = {}
+    if isinstance(body, dict):
+        for name, centroids in body.items():
+            usable = [
+                c
+                for c in centroids or []
+                if isinstance(c, dict) and isinstance(c.get("index"), int)
+            ]
+            if usable:
+                moods[str(name)] = usable
+    _moods_cache = _Cached(moods, now + _MOODS_TTL)
+    return moods
+
+
+async def moods() -> list[str]:
+    return sorted(await _mood_centroids())
+
+
+async def mood_mix(media, mood: str, n: int, exclude: list[str]) -> list[dict]:
+    """Songs around one of the mood's clusters. A mood spans very different
+    music (happy rock and happy hip-hop are both happy), so each mix starts
+    from another cluster, bigger ones more often: asked again, the same mood
+    sounds different."""
+    centroids = (await _mood_centroids()).get(mood)
+    if not centroids:
+        raise AudioMuseError("failed", f"unknown mood {mood!r}")
+    weights = [max(int(c.get("n_songs") or 0), 1) for c in centroids]
+    centroid = random.choices(centroids, weights=weights)[0]
+    server = await server_for(media)
+    excluded = set(exclude[:_MAX_EXCLUDE])
+    body = await _request(
+        "GET",
+        "/api/similar_tracks",
+        params={
+            "mood": mood,
+            "centroid_index": centroid["index"],
+            "n": min(n + len(excluded), _MAX_ASK),
+            "server": server["id"],
+        },
+    )
+    return await _hydrate(media, _result_ids(body), n, excluded)
+
+
+async def _get_artist(media, artist_id: str) -> dict | None:
+    try:
+        data = await subsonic_call(media, "getArtist.view", id=artist_id)
+    except Exception as e:
+        logger.debug(f"[audiomuse] getArtist {artist_id} failed: {e!r}")
+        return None
+    artist = data.get("artist") if isinstance(data, dict) else None
+    if not isinstance(artist, dict) or not artist.get("id"):
+        return None
+    # The card needs the artist, not its discography.
+    return {key: value for key, value in artist.items() if key != "album"}
+
+
+async def similar_artists(media, artist_id: str, n: int) -> list[dict]:
+    """Artists of the library that sound like `artist_id`, closest first.
+    AudioMuse also names artists it has no id for on this server (a credit
+    on someone else's song); those have no page to open and are left out."""
+    server = await server_for(media)
+    body = await _request(
+        "GET",
+        "/api/similar_artists",
+        params={"artist_id": artist_id, "n": min(n * 2, _MAX_ASK), "server": server["id"]},
+    )
+    ids: list[str] = []
+    for row in body if isinstance(body, list) else []:
+        other = str(row.get("artist_id") or "") if isinstance(row, dict) else ""
+        if other and other != artist_id and other not in ids:
+            ids.append(other)
+    semaphore = asyncio.Semaphore(_HYDRATE_CONCURRENCY)
+
+    async def one(other: str) -> dict | None:
+        async with semaphore:
+            return await _get_artist(media, other)
+
+    artists = await asyncio.gather(*(one(other) for other in ids[: n + n // 2]))
+    return [artist for artist in artists if artist is not None][:n]

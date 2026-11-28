@@ -173,6 +173,69 @@
       </div>
     </section>
 
+    <section
+      v-if="audiomuseAvailable && (loadingSoundsLikeYou || soundsLikeYouSongs.length)"
+      class="mobile-home__section"
+    >
+      <div class="mobile-home__head">
+        <h2 class="section-title mobile-home__title">
+          <button
+            v-if="soundsLikeYouSongs.length > SONG_ROWS"
+            type="button"
+            class="mobile-home__expand"
+            :aria-expanded="expanded.soundsLikeYou"
+            :title="expanded.soundsLikeYou ? $t('library.showLess') : $t('library.showMore')"
+            @click="expanded.soundsLikeYou = !expanded.soundsLikeYou"
+          >
+            {{ $t('home.soundsLikeYou') }}
+            <v-icon
+              :icon="expanded.soundsLikeYou ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+              size="20"
+            />
+          </button>
+          <template v-else>{{ $t('home.soundsLikeYou') }}</template>
+        </h2>
+        <v-btn
+          icon="mdi-shuffle-variant"
+          variant="text"
+          size="small"
+          :loading="loadingSoundsLikeYou"
+          :title="$t('home.reroll')"
+          :aria-label="$t('home.reroll')"
+          @click="loadSoundsLikeYou"
+        />
+        <v-btn
+          v-if="soundsLikeYouSongs.length"
+          icon="mdi-play-circle-outline"
+          variant="text"
+          size="small"
+          :title="$t('home.playAll')"
+          :aria-label="$t('home.playAll')"
+          @click="playSongList(soundsLikeYouSongs)"
+        />
+      </div>
+      <div v-if="loadingSoundsLikeYou" class="mobile-home__loading">
+        <v-progress-circular indeterminate color="primary" />
+      </div>
+      <div v-else class="mobile-home__rows">
+        <mobile-song-row
+          v-for="(song, index) in shownSoundsLikeYou"
+          :key="song.id"
+          :song="song"
+          @play="playFrom(soundsLikeYouSongs, index)"
+          @open-actions="openActions(song)"
+        />
+      </div>
+    </section>
+
+    <mood-mixes
+      v-if="audiomuseAvailable && sonicMoods.length"
+      class="mobile-home__section"
+      :moods="sonicMoods"
+      :loading="moodLoading"
+      @play="playMood"
+    />
+
     <section v-if="discoverAlbumsLoading || randomAlbums.length" class="mobile-home__section">
       <div class="mobile-home__head">
         <h2 class="section-title mobile-home__title">{{ $t('home.discover') }}</h2>
@@ -219,7 +282,9 @@ import MobileHomeHero from '@/components/mobile/MobileHomeHero.vue'
 import MobileAlbumTile from '@/components/mobile/MobileAlbumTile.vue'
 import MobileSongRow from '@/components/mobile/MobileSongRow.vue'
 import MobileSongActionSheet from '@/components/mobile/MobileSongActionSheet.vue'
+import MoodMixes from '@/components/home/MoodMixes.vue'
 import { homeShelvesMixin } from '@/composables/homeShelves'
+import { sonicHomeShelvesMixin } from '@/composables/sonicHomeShelves'
 import { usePlaybackStore } from '@/stores/playback'
 import type { Album, Song } from '@/types/library'
 
@@ -234,14 +299,14 @@ const SONG_ROWS = 5
  * laid out for one hand. */
 export default {
   name: 'MobileHomeView',
-  components: { MobileHomeHero, MobileAlbumTile, MobileSongRow, MobileSongActionSheet },
-  mixins: [homeShelvesMixin],
+  components: { MobileHomeHero, MobileAlbumTile, MobileSongRow, MobileSongActionSheet, MoodMixes },
+  mixins: [homeShelvesMixin, sonicHomeShelvesMixin],
   data() {
     return {
       RECENT_TILES,
       SONG_ROWS,
       // The two song lists open to their full length from their heading.
-      expanded: { top: false, rediscover: false },
+      expanded: { top: false, rediscover: false, soundsLikeYou: false },
       actionsOpen: false,
       activeSong: null as Song | null,
     }
@@ -252,6 +317,11 @@ export default {
     },
     shownTopSongs(): Song[] {
       return this.expanded.top ? this.topSongs : this.topSongs.slice(0, SONG_ROWS)
+    },
+    shownSoundsLikeYou(): Song[] {
+      return this.expanded.soundsLikeYou
+        ? this.soundsLikeYouSongs
+        : this.soundsLikeYouSongs.slice(0, SONG_ROWS)
     },
     shownRediscover(): Song[] {
       return this.expanded.rediscover

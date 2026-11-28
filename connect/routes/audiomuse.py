@@ -14,7 +14,7 @@ for the log.
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, StringConstraints
 
@@ -119,3 +119,43 @@ async def post_search(
     except audiomuse.AudioMuseError as e:
         return JSONResponse(status_code=503, content={"detail": e.reason})
     return {"songs": songs}
+
+
+class MoodRequest(BaseModel):
+    mood: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
+    n: int = Field(default=50, ge=1, le=100)
+    exclude: list[ItemId] = Field(default_factory=list, max_length=1000)
+
+
+@router.get("/moods", response_model=None)
+async def get_moods(
+    session: SessionState = Depends(require_authenticated_session),
+) -> dict | JSONResponse:
+    try:
+        return {"moods": await audiomuse.moods()}
+    except audiomuse.AudioMuseError as e:
+        return JSONResponse(status_code=503, content={"detail": e.reason})
+
+
+@router.post("/mood", response_model=None)
+async def post_mood(
+    req: MoodRequest, session: SessionState = Depends(require_authenticated_session)
+) -> dict | JSONResponse:
+    try:
+        songs = await audiomuse.mood_mix(session.media, req.mood, req.n, req.exclude)
+    except audiomuse.AudioMuseError as e:
+        return JSONResponse(status_code=503, content={"detail": e.reason})
+    return {"songs": songs}
+
+
+@router.get("/similar-artists", response_model=None)
+async def get_similar_artists(
+    id: str = Query(min_length=1, max_length=200),
+    n: int = Query(default=12, ge=1, le=30),
+    session: SessionState = Depends(require_authenticated_session),
+) -> dict | JSONResponse:
+    try:
+        artists = await audiomuse.similar_artists(session.media, id, n)
+    except audiomuse.AudioMuseError as e:
+        return JSONResponse(status_code=503, content={"detail": e.reason})
+    return {"artists": artists}

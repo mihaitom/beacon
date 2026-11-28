@@ -6,7 +6,7 @@ import { useAuthStore } from '../auth'
 import { useRadioSettingsStore } from '../radioSettings'
 import { useRadioMetadataStore } from '../radioMetadata'
 import { useAudioMuseStore } from '../audiomuse'
-import { sonicMix, type SonicMixRequest } from '@/services/connect/audiomuse'
+import { sonicMix, sonicMood, type SonicMixRequest } from '@/services/connect/audiomuse'
 import * as connectPlayback from '@/services/connect/playback'
 import type { Artist, RadioStation, Song } from '@/types/library'
 import { getLocalMix } from '@/services/playback/localMix'
@@ -26,6 +26,7 @@ export interface RadioActions {
   startSongRadio(song: Song): Promise<void>
   startArtistRadio(artist: Artist): Promise<void>
   startDiscoveryRadio(song: Song): Promise<void>
+  startMoodMix(mood: string): Promise<void>
   playRadioStation(station: RadioStation): Promise<void>
   leaveRadio(): void
   startLocalRadio(streamUrl: string): void
@@ -99,6 +100,15 @@ export const radioActions: RadioActions & ThisType<PlaybackContext> = {
     })
     if (!songs.length) throw new Error('AudioMuse found nothing to discover from this song')
     await playFromSong.call(this, song, songs)
+  },
+
+  /** A mix around one of AudioMuse-AI's moods (Home's mood row). Like
+   * Discovery Radio there is nothing to fall back on, so a failure is the
+   * caller's to show. */
+  async startMoodMix(mood: string): Promise<void> {
+    const songs = await sonicMood(mood, SONIC_RADIO_LENGTH)
+    if (!songs.length) throw new Error(`AudioMuse found nothing for the mood ${mood}`)
+    await this.playSongList(songs, 0, true, true)
   },
 
   /** Artist Radio — AudioMuse-AI's blend of the artist when it answers;

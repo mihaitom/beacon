@@ -134,6 +134,8 @@
           default-sort-direction="desc"
         />
       </template>
+
+      <sonic-similar-artists class="artist-similar" :artist-id="artist.id" />
     </v-container>
     <v-container v-else>
       <page-loader v-if="libraryStore.loading" />
@@ -155,6 +157,7 @@ import DetailPageBackdrop from '@/components/library/DetailPageBackdrop.vue'
 import AlbumShelf from '@/components/library/AlbumShelf.vue'
 import { readCardGridView, writeCardGridView } from '@/services/cardGridView'
 import SongTable from '@/components/library/SongTable.vue'
+import SonicSimilarArtists from '@/components/library/SonicSimilarArtists.vue'
 import PageLoader from '@/components/PageLoader.vue'
 import {
   getArtistBio,
@@ -185,7 +188,15 @@ const ALBUM_GRID_VIEW_KEY = 'beacon.artistGridView.albums'
 
 export default {
   name: 'ArtistDetailView',
-  components: { DetailHero, DetailPageBackdrop, AlbumShelf, SongTable, PageLoader, ArtistBio },
+  components: {
+    DetailHero,
+    DetailPageBackdrop,
+    AlbumShelf,
+    SongTable,
+    PageLoader,
+    ArtistBio,
+    SonicSimilarArtists,
+  },
   data() {
     return {
       artist: null as ArtistDetail | null,
@@ -544,5 +555,9 @@ export default {
 .section-header {
   margin-top: 32px;
   margin-bottom: 8px;
+}
+
+.artist-similar {
+  margin-top: 32px;
 }
 </style>

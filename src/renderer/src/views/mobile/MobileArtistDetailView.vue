@@ -64,6 +64,8 @@
       </div>
     </template>
 
+    <sonic-similar-artists :artist-id="artist.id" compact />
+
     <mobile-song-action-sheet v-model="actionsOpen" :song="activeSong" />
   </v-container>
   <v-container v-else>
@@ -84,13 +86,20 @@ import CoverArt from '@/components/library/CoverArt.vue'
 import MobileSongRow from '@/components/mobile/MobileSongRow.vue'
 import MobileAlbumRow from '@/components/mobile/MobileAlbumRow.vue'
 import MobileSongActionSheet from '@/components/mobile/MobileSongActionSheet.vue'
+import SonicSimilarArtists from '@/components/library/SonicSimilarArtists.vue'
 import type { Album, Song } from '@/types/library'
 
 type ArtistDetail = Awaited<ReturnType<ReturnType<typeof useLibraryStore>['fetchArtist']>>
 
 export default {
   name: 'MobileArtistDetailView',
-  components: { CoverArt, MobileSongRow, MobileAlbumRow, MobileSongActionSheet },
+  components: {
+    CoverArt,
+    MobileSongRow,
+    MobileAlbumRow,
+    MobileSongActionSheet,
+    SonicSimilarArtists,
+  },
   data() {
     return {
       artist: null as ArtistDetail | null,

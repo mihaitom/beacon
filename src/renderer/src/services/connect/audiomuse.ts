@@ -1,7 +1,7 @@
 import { fetchConnect } from './http'
-import { mapSong } from '@/services/subsonic/mappers'
-import type { RawSong } from '@/services/subsonic/types'
-import type { Song } from '@/types/library'
+import { mapArtist, mapSong } from '@/services/subsonic/mappers'
+import type { RawArtist, RawSong } from '@/services/subsonic/types'
+import type { Artist, Song } from '@/types/library'
 import type { ApiKeyStatus } from './apiKeys'
 
 /** AudioMuse-AI through connect (connect/core/audiomuse.py). connect holds
@@ -92,4 +92,26 @@ export async function sonicSearch(kind: SonicSearchKind, query: string, n = 20):
     body: { kind, query, n },
   })
   return data.songs.map(mapSong)
+}
+
+/** The moods AudioMuse sorts songs into ("happy", "relaxed", ...). */
+export async function getSonicMoods(): Promise<string[]> {
+  const data = await fetchConnect<{ moods: string[] }>('/audiomuse/moods')
+  return data.moods
+}
+
+/** A mix around one mood; each call starts somewhere else in it. */
+export async function sonicMood(mood: string, n = 50, exclude: string[] = []): Promise<Song[]> {
+  const data = await fetchConnect<{ songs: RawSong[] }>('/audiomuse/mood', {
+    method: 'POST',
+    body: { mood, n, exclude },
+  })
+  return data.songs.map(mapSong)
+}
+
+/** Library artists that sound like `artistId`, closest first. */
+export async function sonicSimilarArtists(artistId: string, n = 12): Promise<Artist[]> {
+  const params = new URLSearchParams({ id: artistId, n: String(n) })
+  const data = await fetchConnect<{ artists: RawArtist[] }>(`/audiomuse/similar-artists?${params}`)
+  return data.artists.map(mapArtist)
 }
