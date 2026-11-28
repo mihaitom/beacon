@@ -966,7 +966,7 @@ export default {
     airplayResetFailed: "Couldn't reset AirPlay pairings.",
     lastfmTitle: 'Last.fm',
     lastfmWhat:
-      'Lets anyone using this Beacon build playlists from Last.fm charts, a genre, an artist, or their own listening history.',
+      'Lets anyone using this Beacon build playlists from Last.fm charts, a genre, an artist, or their own listening history. Since 1 December 2026 Last.fm only answers these requests for a key whose account has a Last.fm Pro subscription.',
     lastfmStep1: 'Open last.fm/api/account/create and sign in.',
     lastfmStep2:
       'Fill in an application name and a description - anything sensible will do, nobody reviews it.',
@@ -1156,7 +1156,7 @@ export default {
     lastfmUsernameHint:
       'Your public Last.fm name. The Stats page can fill your listening year from it, and the playlist builder starts from it. No password needed.',
     listenbrainzHint:
-      'Your public ListenBrainz name. It fills the "Recommended for you" shelf on Home and is offered as the default in the playlist builder. No password needed. Last.fm is the better playlist builder, though - its charts come out more varied.',
+      'Your public ListenBrainz name. It fills the "Recommended for you" shelf on Home and is offered as the default in the playlist builder. No password needed.',
     lyricsProvidersTitle: 'Lyrics providers',
     lyricsProvidersHint:
       "Lyrics stored with the song file itself are always tried first and never leave your server. Every provider below is enabled by default - deselect any you'd rather Beacon not send a song's title and artist to.",

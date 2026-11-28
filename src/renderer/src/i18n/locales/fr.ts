@@ -980,7 +980,7 @@ export default {
     airplayResetFailed: 'Impossible de réinitialiser les associations AirPlay.',
     lastfmTitle: 'Last.fm',
     lastfmWhat:
-      "Permet à toute personne utilisant ce Beacon de créer des playlists à partir des classements Last.fm, d'un genre, d'un artiste ou de son propre historique.",
+      "Permet à toute personne utilisant ce Beacon de créer des playlists à partir des classements Last.fm, d'un genre, d'un artiste ou de son propre historique. Depuis le 1er décembre 2026, Last.fm ne répond plus à ces requêtes que pour une clé dont le compte a un abonnement Last.fm Pro.",
     lastfmStep1: 'Ouvrez last.fm/api/account/create et connectez-vous.',
     lastfmStep2:
       "Renseignez un nom d'application et une description : n'importe quoi de sensé convient, personne ne les vérifie.",
@@ -1173,7 +1173,7 @@ export default {
     lastfmUsernameHint:
       'Votre nom public Last.fm. La page Statistiques peut en tirer votre année d’écoute, et le générateur de playlists part de ce nom. Aucun mot de passe requis.',
     listenbrainzHint:
-      "Votre nom public ListenBrainz. Il remplit la rangée « Recommandé pour vous » sur l'accueil et sert de valeur par défaut dans le générateur de playlists. Aucun mot de passe requis. Pour créer une playlist, en revanche, Last.fm reste le meilleur choix : ses classements sont plus variés.",
+      "Votre nom public ListenBrainz. Il remplit la rangée « Recommandé pour vous » sur l'accueil et sert de valeur par défaut dans le générateur de playlists. Aucun mot de passe requis.",
     lyricsProvidersTitle: 'Fournisseurs de paroles',
     lyricsProvidersHint:
       "Les paroles enregistrées dans le fichier lui-même sont toujours essayées en premier et ne quittent jamais votre serveur. Tous les fournisseurs ci-dessous sont activés par défaut - décochez ceux auxquels vous préférez que Beacon n'envoie pas le titre et l'artiste d'un morceau.",

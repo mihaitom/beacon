@@ -974,7 +974,7 @@ export default {
     airplayResetFailed: 'AirPlay-Kopplungen konnten nicht zurückgesetzt werden.',
     lastfmTitle: 'Last.fm',
     lastfmWhat:
-      'Erlaubt allen, die dieses Beacon nutzen, Playlists aus Last.fm-Charts, einem Genre, einem Künstler oder der eigenen Hörhistorie zu bauen.',
+      'Erlaubt allen, die dieses Beacon nutzen, Playlists aus Last.fm-Charts, einem Genre, einem Künstler oder der eigenen Hörhistorie zu bauen. Seit dem 1. Dezember 2026 beantwortet Last.fm diese Anfragen nur noch für einen Key, dessen Konto ein Last.fm-Pro-Abo hat.',
     lastfmStep1: 'last.fm/api/account/create öffnen und anmelden.',
     lastfmStep2:
       'Anwendungsnamen und Beschreibung eintragen - irgendetwas Sinnvolles genügt, das prüft niemand.',
@@ -1168,7 +1168,7 @@ export default {
     lastfmUsernameHint:
       'Dein öffentlicher Last.fm-Name. Die Stats-Seite kann daraus dein Hörjahr füllen, und der Playlist-Baukasten startet damit. Kein Passwort nötig.',
     listenbrainzHint:
-      'Dein öffentlicher ListenBrainz-Name. Er füllt den Shelf „Für dich empfohlen“ auf Home und steht im Playlist-Baukasten als Vorauswahl. Kein Passwort nötig. Zum Bauen einer Playlist ist Last.fm allerdings die bessere Wahl - seine Charts sind abwechslungsreicher.',
+      'Dein öffentlicher ListenBrainz-Name. Er füllt den Shelf „Für dich empfohlen“ auf Home und steht im Playlist-Baukasten als Vorauswahl. Kein Passwort nötig.',
     lyricsProvidersTitle: 'Songtext-Anbieter',
     lyricsProvidersHint:
       'Songtexte, die in der Datei selbst stecken, werden immer zuerst versucht und verlassen deinen Server nie. Alle Anbieter unten sind standardmäßig aktiv - wähle die ab, an die Beacon Titel und Künstler eines Songs nicht senden soll.',

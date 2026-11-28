@@ -13,6 +13,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Changed
 
+- Settings and the help point out that Last.fm, since 1 December 2026, needs a Last.fm Pro subscription on the account the installation's key belongs to, and no longer recommend it over ListenBrainz for the playlist builder
 - Search shows the first ten matching songs with a button for the rest when more sections follow below, so those stay within reach
 
 ## [1.13.0] - 2026-11-27

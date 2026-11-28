@@ -979,7 +979,7 @@ export default {
     airplayResetFailed: 'No se pudieron restablecer los emparejamientos de AirPlay.',
     lastfmTitle: 'Last.fm',
     lastfmWhat:
-      'Permite a cualquiera que use este Beacon crear listas a partir de las listas de éxitos de Last.fm, de un género, un artista o su propio historial.',
+      'Permite a cualquiera que use este Beacon crear listas a partir de las listas de éxitos de Last.fm, de un género, un artista o su propio historial. Desde el 1 de diciembre de 2026, Last.fm solo responde a estas peticiones con una clave cuya cuenta tenga una suscripción a Last.fm Pro.',
     lastfmStep1: 'Abre last.fm/api/account/create e inicia sesión.',
     lastfmStep2:
       'Rellena un nombre de aplicación y una descripción: vale cualquier cosa razonable, nadie lo revisa.',
@@ -1174,7 +1174,7 @@ export default {
     lastfmUsernameHint:
       'Tu nombre público de Last.fm. La página de estadísticas puede rellenar tu año de escucha con él, y el generador de listas parte de él. No hace falta contraseña.',
     listenbrainzHint:
-      'Tu nombre público de ListenBrainz. Rellena la estantería «Recomendado para ti» en Inicio y se ofrece como valor predeterminado en el generador de listas. No hace falta contraseña. Para crear una lista, eso sí, Last.fm es la mejor opción: sus listas son más variadas.',
+      'Tu nombre público de ListenBrainz. Rellena la estantería «Recomendado para ti» en Inicio y se ofrece como valor predeterminado en el generador de listas. No hace falta contraseña.',
     lyricsProvidersTitle: 'Proveedores de letras',
     lyricsProvidersHint:
       'Las letras guardadas en el propio archivo se intentan siempre primero y nunca salen de tu servidor. Todos los proveedores de abajo están activados por defecto - desmarca aquellos a los que prefieras que Beacon no envíe el título y el artista de una canción.',
