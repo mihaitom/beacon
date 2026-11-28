@@ -285,6 +285,8 @@ export default {
     songRadioError: 'No se pudo iniciar la radio de la canción.',
     discoveryRadio: 'Radio de descubrimiento',
     discoveryRadioError: 'No se pudo iniciar la radio de descubrimiento.',
+    pathTo: 'Camino hasta esta canción',
+    pathToError: 'No se encontró un camino hasta esta canción.',
     artistRadio: 'Radio del artista',
     artistRadioError: 'No se pudo iniciar la radio del artista.',
     plexPassRequired:
@@ -1754,6 +1756,8 @@ export default {
     noResultsHint: 'Revisa la ortografía o prueba con menos palabras.',
     label: 'Buscar',
     resultsFor: 'Resultados para "{query}"',
+    bySound: 'Suena a "{query}"',
+    byLyrics: 'Letras sobre "{query}"',
     artists: 'Artistas',
     albums: 'Álbumes',
     songs: 'Canciones',

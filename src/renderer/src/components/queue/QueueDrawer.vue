@@ -296,6 +296,10 @@
           <template #prepend><v-icon icon="mdi-compass-outline" size="small" /></template>
           <v-list-item-title>{{ $t('library.discoveryRadio') }}</v-list-item-title>
         </v-list-item>
+        <v-list-item v-if="canPathTo(menuSong)" @click="menuPathTo">
+          <template #prepend><v-icon icon="mdi-map-marker-path" size="small" /></template>
+          <v-list-item-title>{{ $t('library.pathTo') }}</v-list-item-title>
+        </v-list-item>
 
         <context-menu-section :label="$t('library.menuLibrary')" />
         <rating-item v-if="menuSong" :item="menuSong" />
@@ -346,7 +350,7 @@ import RatingItem from '@/components/library/RatingItem.vue'
 import CreatePlaylistDialog from '@/components/library/CreatePlaylistDialog.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useAudioMuseStore } from '@/stores/audiomuse'
-import { playDiscoveryRadio } from '@/services/playback/discoveryRadio'
+import { canPathTo, playDiscoveryRadio, playPathTo } from '@/services/playback/sonicActions'
 import {
   canSaveServerQueue,
   loadServerQueue,
@@ -902,6 +906,10 @@ export default {
         })
         console.error('[song-radio]', error)
       }
+    },
+    canPathTo,
+    menuPathTo() {
+      if (this.menuSong) void playPathTo(this.menuSong)
     },
     menuDiscoveryRadio() {
       if (this.menuSong) void playDiscoveryRadio(this.menuSong)

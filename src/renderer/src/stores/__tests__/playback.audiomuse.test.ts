@@ -5,8 +5,9 @@ import { useAutoplayStore } from '../autoplay'
 import { useAudioMuseStore } from '../audiomuse'
 import { useLibraryStore } from '../library'
 import { usePlaybackStore } from '../playback'
-import { getAudioMuseStatus, sonicMix } from '@/services/connect/audiomuse'
+import { getAudioMuseStatus, sonicMix, sonicPath } from '@/services/connect/audiomuse'
 import { clearSkips, noteSkipped, recentSkips } from '@/services/playback/skips'
+import { canPathTo } from '@/services/playback/sonicActions'
 import { emitter } from '@/emitter'
 import type { SubsonicClient } from '@/services/subsonic/client'
 import { makeSong } from './fixtures'
@@ -15,6 +16,7 @@ vi.mock('@/services/audioEngine', () => ({ getAudioEngine: vi.fn() }))
 vi.mock('@/services/connect/audiomuse', () => ({
   getAudioMuseStatus: vi.fn(),
   sonicMix: vi.fn(),
+  sonicPath: vi.fn(),
 }))
 
 /** AudioMuse-AI in Autoplay and the radios (docs/plans/audiomuse.md):
@@ -244,5 +246,44 @@ describe('the radios with AudioMuse-AI', () => {
       expect.objectContaining({ method: 'discovery', add: [{ id: 'seed' }] }),
     )
     expect(played.mock.calls[0]?.[0].map((s) => s.id)).toEqual(['seed', 'x'])
+  })
+})
+
+describe('a path to a song', () => {
+  function playingA(): ReturnType<typeof usePlaybackStore> {
+    const playback = usePlaybackStore()
+    playback.setQueue([makeSong('a'), makeSong('b'), makeSong('target'), makeSong('c')], 0)
+    vi.spyOn(playback, 'syncCastQueue').mockImplementation(() => {})
+    return playback
+  }
+
+  it('plays the songs leading there right after the current one', async () => {
+    const playback = playingA()
+    vi.mocked(sonicPath).mockResolvedValue([makeSong('p1'), makeSong('p2'), makeSong('target')])
+
+    await playback.queuePathTo(makeSong('target'))
+
+    expect(sonicPath).toHaveBeenCalledWith('a', 'target')
+    // The later copy of the target goes, so it is not heard twice.
+    expect(playback.queue.map((s) => s.id)).toEqual(['a', 'p1', 'p2', 'target', 'b', 'c'])
+  })
+
+  it('leaves the queue as it was when there is no path', async () => {
+    const playback = playingA()
+    vi.mocked(sonicPath).mockResolvedValue([])
+
+    await expect(playback.queuePathTo(makeSong('target'))).rejects.toThrow()
+    expect(playback.queue.map((s) => s.id)).toEqual(['a', 'b', 'target', 'c'])
+  })
+
+  it('is offered only for another library song, with AudioMuse there', () => {
+    const playback = playingA()
+    expect(canPathTo(makeSong('target'))).toBe(false)
+    audiomuseAnswers()
+    expect(canPathTo(makeSong('target'))).toBe(true)
+    expect(canPathTo(makeSong('a'))).toBe(false) // the one playing
+    expect(canPathTo(makeSong('ext:folder:1'))).toBe(false)
+    playback.setQueue([], -1)
+    expect(canPathTo(makeSong('target'))).toBe(false)
   })
 })

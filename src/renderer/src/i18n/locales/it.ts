@@ -281,6 +281,8 @@ export default {
     songRadioError: 'Impossibile avviare la radio del brano.',
     discoveryRadio: 'Radio scoperta',
     discoveryRadioError: 'Impossibile avviare la radio scoperta.',
+    pathTo: 'Percorso fino a questo brano',
+    pathToError: 'Nessun percorso trovato fino a questo brano.',
     artistRadio: "Radio dell'artista",
     artistRadioError: "Impossibile avviare la radio dell'artista.",
     plexPassRequired:
@@ -1745,6 +1747,8 @@ export default {
     noResultsHint: "Controlla l'ortografia o prova con meno parole.",
     label: 'Cerca',
     resultsFor: 'Risultati per "{query}"',
+    bySound: 'Suona come "{query}"',
+    byLyrics: 'Testi su "{query}"',
     artists: 'Artisti',
     albums: 'Album',
     songs: 'Brani',

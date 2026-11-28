@@ -71,3 +71,25 @@ export async function sonicMix(request: SonicMixRequest): Promise<Song[]> {
   })
   return data.songs.map(mapSong)
 }
+
+/** The songs from `start` (left out) to `end` (last). Throws when AudioMuse
+ * cannot answer. */
+export async function sonicPath(start: string, end: string): Promise<Song[]> {
+  const data = await fetchConnect<{ songs: RawSong[] }>('/audiomuse/path', {
+    method: 'POST',
+    body: { start, end },
+  })
+  return data.songs.map(mapSong)
+}
+
+/** - sound: by describing how it sounds ("calm piano")
+ * - lyrics: by what the lyrics are about ("leaving home") */
+export type SonicSearchKind = 'sound' | 'lyrics'
+
+export async function sonicSearch(kind: SonicSearchKind, query: string, n = 20): Promise<Song[]> {
+  const data = await fetchConnect<{ songs: RawSong[] }>('/audiomuse/search', {
+    method: 'POST',
+    body: { kind, query, n },
+  })
+  return data.songs.map(mapSong)
+}

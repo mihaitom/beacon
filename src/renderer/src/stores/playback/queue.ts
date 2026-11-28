@@ -4,7 +4,7 @@ import { useAuthStore } from '../auth'
 import { AUTOPLAY_BATCH_SIZE, autoplayCandidateCount, useAutoplayStore } from '../autoplay'
 import { useDrawersStore } from '../drawers'
 import { useAudioMuseStore } from '../audiomuse'
-import { sonicMix } from '@/services/connect/audiomuse'
+import { sonicMix, sonicPath } from '@/services/connect/audiomuse'
 import { recentSkips } from '@/services/playback/skips'
 import type { Song } from '@/types/library'
 import { shuffled } from '@/services/shuffle'
@@ -106,6 +106,7 @@ export interface QueueActions {
   addToQueue(songs: Song[], options?: { autoplayTopUp?: boolean }): void
   maybeAutoplay(): Promise<void>
   queueNext(songs: Song[]): void
+  queuePathTo(song: Song): Promise<void>
   insertAt(index: number, songs: Song[]): Song[]
   removeFromQueue(index: number): void
   reorderQueue(from: number, to: number): void
@@ -350,6 +351,22 @@ export const queueActions: QueueActions & ThisType<PlaybackContext> = {
 
   /** Inserts `songs` right after the currently playing one — "Play next",
    * as opposed to addToQueue() which appends at the end. */
+  /** "Path to this song": AudioMuse-AI's songs leading from the one
+   * playing over to `song`, `song` last, played right after the current
+   * one. What was queued before carries on after them. Throws when
+   * AudioMuse cannot answer; there is no media-server way to do this. */
+  async queuePathTo(song: Song): Promise<void> {
+    const current = this.currentSong
+    if (!current) throw new Error('Nothing is playing to start a path from')
+    const songs = await sonicPath(current.id, song.id)
+    if (!songs.length) throw new Error('AudioMuse found no path to this song')
+    // The song is where the path arrives; a second copy further down the
+    // queue would play it twice.
+    const later = this.queue.findIndex((t, i) => i > this.currentIndex && t.id === song.id)
+    if (later !== -1) this.removeFromQueue(later)
+    this.queueNext(songs)
+  },
+
   queueNext(songs: Song[]): void {
     if (this.currentIndex < 0) {
       this.addToQueue(songs) // peeks on its own, see its own comment

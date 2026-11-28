@@ -63,8 +63,11 @@
         />
       </template>
 
+      <sonic-search-section kind="sound" :query="query" @showing="sonicShowing.sound = $event" />
+      <sonic-search-section kind="lyrics" :query="query" @showing="sonicShowing.lyrics = $event" />
+
       <empty-state
-        v-if="query && !hasResults"
+        v-if="query && !hasResults && !sonicShowing.sound && !sonicShowing.lyrics"
         icon="mdi-magnify-close"
         :title="$t('search.noResults', { query })"
         :text="$t('search.noResultsHint')"
@@ -81,6 +84,7 @@ import AlbumCard from '@/components/library/AlbumCard.vue'
 import ArtistCard from '@/components/library/ArtistCard.vue'
 import CardShelf from '@/components/library/CardShelf.vue'
 import SongTable from '@/components/library/SongTable.vue'
+import SonicSearchSection from '@/components/library/SonicSearchSection.vue'
 import { readCardGridView, writeCardGridView } from '@/services/cardGridView'
 
 type CardSection = 'artists' | 'albums'
@@ -94,10 +98,21 @@ const GRID_VIEW_KEY: Record<CardSection, string> = {
 
 export default {
   name: 'SearchView',
-  components: { EmptyState, PageLoader, AlbumCard, ArtistCard, CardShelf, SongTable },
+  components: {
+    EmptyState,
+    PageLoader,
+    AlbumCard,
+    ArtistCard,
+    CardShelf,
+    SongTable,
+    SonicSearchSection,
+  },
   data() {
     return {
       query: '',
+      // Whether AudioMuse's sections below have anything to show, so the
+      // empty state does not claim "nothing found" above their results.
+      sonicShowing: { sound: false, lyrics: false },
       gridView: {
         artists: readCardGridView(GRID_VIEW_KEY.artists),
         albums: readCardGridView(GRID_VIEW_KEY.albums),

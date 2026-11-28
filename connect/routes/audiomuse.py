@@ -4,10 +4,12 @@
   PUT  /audiomuse/settings   store the address and/or the key
   GET  /audiomuse/status     whether this session can use it, and why not
   POST /audiomuse/mix        songs for Autoplay and the radios
+  POST /audiomuse/path       the songs between the one playing and another
+  POST /audiomuse/search     songs by their sound or their lyrics, in words
 
-The mix answers 503 for every "use what you used before" case, so the
-renderer has a single thing to fall back on; the reason is in the body for
-the log.
+The last three answer 503 whenever AudioMuse cannot, so the renderer has a
+single thing to react to (fall back, or say so); the reason is in the body
+for the log.
 """
 
 from typing import Annotated, Literal
@@ -81,6 +83,39 @@ async def post_mix(
             req.n,
             req.exclude,
         )
+    except audiomuse.AudioMuseError as e:
+        return JSONResponse(status_code=503, content={"detail": e.reason})
+    return {"songs": songs}
+
+
+class PathRequest(BaseModel):
+    start: ItemId
+    end: ItemId
+
+
+class SearchRequest(BaseModel):
+    kind: Literal["sound", "lyrics"]
+    query: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+    n: int = Field(default=20, ge=1, le=50)
+
+
+@router.post("/path", response_model=None)
+async def post_path(
+    req: PathRequest, session: SessionState = Depends(require_authenticated_session)
+) -> dict | JSONResponse:
+    try:
+        songs = await audiomuse.path(session.media, req.start, req.end)
+    except audiomuse.AudioMuseError as e:
+        return JSONResponse(status_code=503, content={"detail": e.reason})
+    return {"songs": songs}
+
+
+@router.post("/search", response_model=None)
+async def post_search(
+    req: SearchRequest, session: SessionState = Depends(require_authenticated_session)
+) -> dict | JSONResponse:
+    try:
+        songs = await audiomuse.search(session.media, req.kind, req.query, req.n)
     except audiomuse.AudioMuseError as e:
         return JSONResponse(status_code=503, content={"detail": e.reason})
     return {"songs": songs}

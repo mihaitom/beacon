@@ -68,11 +68,13 @@ class FakeAudioMuse:
         }
         self.calls: list[tuple[str, str, dict]] = []
         self.raise_error: Exception | None = None
+        self.timeouts: dict[str, object] = {}
 
-    async def request(self, method, url, headers=None, params=None, json=None):
+    async def request(self, method, url, headers=None, params=None, json=None, timeout=None):
         path = url.split("://", 1)[1].split("/", 1)[1]
         path = "/" + path
         self.calls.append((method, path, params or json or {}))
+        self.timeouts[path] = timeout
         if self.raise_error:
             raise self.raise_error
         if path in self.status_for:
@@ -83,6 +85,11 @@ class FakeAudioMuse:
             body = {"servers": self.servers, "default_id": "srv-nav"}
         elif path == "/api/search_tracks":
             body = self.probe_rows.get(params["server"], [])
+        elif path == "/api/find_path":
+            body = {
+                "path": [{"item_id": i, "title": i} for i in self.results],
+                "total_distance": 1.0,
+            }
         elif path == "/api/similar_tracks":
             body = [{"item_id": i, "title": i, "distance": 0.1} for i in self.results]
         else:  # hyperbolic and alchemy wrap their rows
@@ -372,6 +379,53 @@ async def test_a_seed_audiomuse_has_not_analysed_is_an_error_to_fall_back_on(fak
         await audiomuse.mix(_media(), "similar", SEED, [], 10, [])
 
 
+# ── path ─────────────────────────────────────────────────────────────────────
+
+
+async def test_a_path_leads_from_the_playing_song_to_the_chosen_one(fake, configured):
+    fake.results = ["seed", "a", "b", "d"]
+    songs = await audiomuse.path(_media(), "seed", "d")
+    asked = fake.last("/api/find_path")
+    assert (asked["start_song_id"], asked["end_song_id"]) == ("seed", "d")
+    assert asked["server"] == "srv-nav"
+    assert asked["max_steps"] == audiomuse.PATH_STEPS
+    assert [s["id"] for s in songs] == ["a", "b", "d"]
+
+
+async def test_a_path_always_ends_on_the_chosen_song(fake, configured):
+    """Even where AudioMuse's path ends elsewhere or the lookup lost it."""
+    fake.results = ["seed", "a", "b"]
+    songs = await audiomuse.path(_media(), "seed", "d")
+    assert [s["id"] for s in songs] == ["a", "b", "d"]
+
+
+async def test_a_path_to_a_song_the_server_does_not_have_is_an_error(fake, configured):
+    fake.results = ["seed", "a"]
+    with pytest.raises(audiomuse.AudioMuseError):
+        await audiomuse.path(_media(), "seed", "gone")
+
+
+# ── search ───────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("kind", "endpoint"),
+    [("sound", "/api/clap/search"), ("lyrics", "/api/lyrics/search/text")],
+)
+async def test_a_search_asks_the_right_index(fake, configured, kind, endpoint):
+    songs = await audiomuse.search(_media(), kind, "calm piano", 2)
+    assert fake.last(endpoint) == {"query": "calm piano", "limit": 2, "server": "srv-nav"}
+    assert [s["id"] for s in songs] == ["a", "b"]
+
+
+async def test_a_search_may_take_longer_than_a_lookup(fake, configured):
+    """The text searches run a model over the query; the short timeout made
+    for Autoplay would cut them off."""
+    await audiomuse.search(_media(), "sound", "calm piano", 2)
+    timeout = fake.timeouts["/api/clap/search"]
+    assert timeout is not None and timeout.read > audiomuse._TIMEOUT.read
+
+
 # ── routes ───────────────────────────────────────────────────────────────────
 
 
@@ -421,3 +475,24 @@ def test_every_reason_to_fall_back_is_a_503(client, fake):
 
 def test_a_mix_needs_a_seed(client, fake, configured):
     assert client.post("/audiomuse/mix", json={"method": "blend", "add": []}).status_code == 422
+
+
+def test_a_search_answers_songs(client, fake, configured):
+    response = client.post("/audiomuse/search", json={"kind": "lyrics", "query": " home "})
+    assert response.status_code == 200
+    assert fake.last("/api/lyrics/search/text")["query"] == "home"
+
+
+def test_an_empty_search_is_refused(client, fake, configured):
+    assert (
+        client.post("/audiomuse/search", json={"kind": "sound", "query": "  "}).status_code == 422
+    )
+
+
+def test_a_path_answers_songs_or_a_503(client, fake, configured):
+    fake.results = ["seed", "a", "d"]
+    response = client.post("/audiomuse/path", json={"start": "seed", "end": "d"})
+    assert [s["id"] for s in response.json()["songs"]] == ["a", "d"]
+    fake.raise_error = httpx.ConnectTimeout("timed out")
+    audiomuse.forget_cached_state()
+    assert client.post("/audiomuse/path", json={"start": "seed", "end": "d"}).status_code == 503

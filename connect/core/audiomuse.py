@@ -508,3 +508,58 @@ async def mix(
             "POST", "/api/alchemy", json={"items": items, "n": ask, "server": server["id"]}
         )
     return await _hydrate(media, _result_ids(body), n, excluded)
+
+
+# How many songs a path puts between the one playing and the one chosen, at
+# most: about half an hour of getting there. AudioMuse's own default (25)
+# is an evening's worth, more than "take me over to that song" means.
+PATH_STEPS = 8
+
+# The text searches run a model over the query (about 3 s for sound and 1.6 s
+# for lyrics, measured), well past what a similarity lookup takes.
+_SEARCH_TIMEOUT = httpx.Timeout(20.0, connect=2.0)
+
+SEARCH_KINDS = ("sound", "lyrics")
+
+
+async def path(media, start_id: str, end_id: str) -> list[dict]:
+    """The songs leading from `start_id` to `end_id`, `end_id` last and
+    `start_id` left out (it is the one already playing)."""
+    server = await server_for(media)
+    body = await _request(
+        "GET",
+        "/api/find_path",
+        params={
+            "start_song_id": start_id,
+            "end_song_id": end_id,
+            "max_steps": PATH_STEPS,
+            "server": server["id"],
+        },
+    )
+    rows = body.get("path") if isinstance(body, dict) else None
+    ids = _result_ids(rows)
+    songs = await _hydrate(media, ids, PATH_STEPS + 2, {start_id})
+    # The path ends on the chosen song even where the lookup dropped or
+    # merged songs on the way.
+    if not songs or songs[-1].get("id") != end_id:
+        end = await _get_song(media, end_id)
+        if end is None:
+            raise AudioMuseError("failed", "the chosen song is not on the media server")
+        songs = [song for song in songs if song.get("id") != end_id] + [end]
+    return songs
+
+
+async def search(media, kind: str, query: str, n: int) -> list[dict]:
+    """Songs found by describing their sound ("calm piano") or what their
+    lyrics are about ("leaving home")."""
+    if kind not in SEARCH_KINDS:
+        raise ValueError(f"Unknown search kind {kind!r}")
+    server = await server_for(media)
+    endpoint = "/api/clap/search" if kind == "sound" else "/api/lyrics/search/text"
+    body = await _request(
+        "POST",
+        endpoint,
+        json={"query": query, "limit": n, "server": server["id"]},
+        timeout=_SEARCH_TIMEOUT,
+    )
+    return await _hydrate(media, _result_ids(body), n, set())

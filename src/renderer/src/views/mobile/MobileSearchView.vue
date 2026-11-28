@@ -46,8 +46,19 @@
         @play-station="playStation"
         @open-actions="openActions"
       />
+      <sonic-search-section
+        v-for="sonicKind in SONIC_KINDS"
+        :key="sonicKind"
+        :kind="sonicKind"
+        :query="query"
+        :limit="LIMITS.songs"
+        compact
+        @play-song="playSong"
+        @open-actions="openActions"
+        @showing="sonicShowing[sonicKind] = $event"
+      />
       <empty-state
-        v-if="!sections.length"
+        v-if="!sections.length && !sonicShowing.sound && !sonicShowing.lyrics"
         icon="mdi-magnify-close"
         :title="$t('search.noResults', { query })"
         :text="$t('search.noResultsHint')"
@@ -69,6 +80,8 @@ import MobileSongActionSheet from '@/components/mobile/MobileSongActionSheet.vue
 import MobileAlbumRow from '@/components/mobile/MobileAlbumRow.vue'
 import MobileArtistRow from '@/components/mobile/MobileArtistRow.vue'
 import MobileSongRow from '@/components/mobile/MobileSongRow.vue'
+import SonicSearchSection from '@/components/library/SonicSearchSection.vue'
+import type { SonicSearchKind } from '@/services/connect/audiomuse'
 import { MOBILE_ROW_HEIGHT } from '@/components/mobile/rowMetrics'
 import {
   searchEverything,
@@ -111,10 +124,15 @@ export default {
     MobileAlbumRow,
     MobileArtistRow,
     MobileSongRow,
+    SonicSearchSection,
   },
   data() {
     return {
       MOBILE_ROW_HEIGHT,
+      LIMITS,
+      SONIC_KINDS: ['sound', 'lyrics'] as SonicSearchKind[],
+      // See SearchView.vue's own sonicShowing.
+      sonicShowing: { sound: false, lyrics: false } as Record<SonicSearchKind, boolean>,
       actionsOpen: false,
       activeSong: null as Song | null,
     }

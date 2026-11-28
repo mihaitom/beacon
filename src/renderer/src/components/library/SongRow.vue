@@ -216,6 +216,10 @@
         <template #prepend><v-icon icon="mdi-compass-outline" size="small" /></template>
         <v-list-item-title>{{ $t('library.discoveryRadio') }}</v-list-item-title>
       </v-list-item>
+      <v-list-item v-if="!showSelectionSubheader && canPathTo(song as Song)" @click="pathTo">
+        <template #prepend><v-icon icon="mdi-map-marker-path" size="small" /></template>
+        <v-list-item-title>{{ $t('library.pathTo') }}</v-list-item-title>
+      </v-list-item>
 
       <!-- What is still true tomorrow. The queue section above is undone
          - by playing something else; this writes to a playlist. -->
@@ -282,7 +286,7 @@ import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
 import { useAudioMuseStore } from '@/stores/audiomuse'
-import { playDiscoveryRadio } from '@/services/playback/discoveryRadio'
+import { canPathTo, playDiscoveryRadio, playPathTo } from '@/services/playback/sonicActions'
 import type { PropType } from 'vue'
 import type { SongColumn } from '@/services/library/songColumns'
 import type { Song } from '@/types/library'
@@ -426,6 +430,10 @@ export default {
     },
   },
   methods: {
+    canPathTo,
+    pathTo() {
+      void playPathTo(this.song as Song)
+    },
     startDiscoveryRadio() {
       void playDiscoveryRadio(this.song as Song)
     },

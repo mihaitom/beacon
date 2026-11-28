@@ -1,12 +1,14 @@
 # Plan: AudioMuse-AI integration
 
-Status: phase 1 built 2026-11-28 on `feature/audiomuse`, tried against a
-real AudioMuse-AI v3.7.4 with one Navidrome server (numbers below), not yet
-used at length in the app. Phases 2 and 3 not started. The code is
+Status: phases 1 and 2 built 2026-11-28 on `feature/audiomuse`, tried
+against a real AudioMuse-AI v3.7.4 with one Navidrome server (numbers
+below), not yet used at length in the app. Phase 3 not started. The code is
 `connect/core/audiomuse.py` and `routes/audiomuse.py`, and on the renderer
 side `services/connect/audiomuse.ts`, `stores/audiomuse.ts`,
-`services/playback/skips.ts`, `stores/playback/queue.ts` (Autoplay),
-`stores/playback/radio.ts` and `components/settings/AudioMuseSection.vue`.
+`services/playback/skips.ts`, `services/playback/sonicActions.ts`,
+`stores/playback/queue.ts` (Autoplay, path), `stores/playback/radio.ts`,
+`components/library/SonicSearchSection.vue` and
+`components/settings/AudioMuseSection.vue`.
 
 ## What it is for
 
@@ -170,16 +172,23 @@ connect's side and the renderer gets the batch it asked for.
 
 ## Phase 2: path and search
 
-- **"Path to this song"**: from what is playing to a chosen song, via
-  `find_path`, inserted after the current song. In the queue's context menu
-  and the song menu. Duplicates of the same recording on different albums
-  come back in the path as separate songs; connect filters them by
-  title and artist.
-- **Search by sound and by lyrics** as an extra section in the search view,
-  under the normal results, only when `sonicMix` is on. 1.6 to 3 s per query
-  means it cannot run on every keystroke: it starts after a pause or on
-  Enter, with its own loading state, and the normal results do not wait for
-  it.
+- **"Path to this song"** (`queuePathTo()`): from what is playing to the
+  chosen song via `find_path`, at most `PATH_STEPS` (8) songs between them,
+  played right after the current one; what was queued carries on after
+  the path. A later copy of the chosen song in the queue is taken out, so
+  it is not heard twice. In the song menus of song tables, the context
+  menu, the queue and the phone's song sheet; not in the player's own song
+  menu, which is the song already playing. Offered only for a library song
+  other than the one playing (`canPathTo()`). Duplicates of a recording on
+  different albums are filtered by title and artist, like every result.
+- **Search by sound and by lyrics** (`SonicSearchSection.vue`): two
+  sections under the ordinary results, desktop and phone, only with
+  AudioMuse. Each waits 600 ms for typing to settle (the phone searches as
+  it is typed), only the newest answer is shown, and a section without
+  results or with a failed search is not shown at all. The empty state no
+  longer says "nothing found" while one of them has results. Measured 1.2
+  to 3 s per query, so connect gives these a 20 s timeout instead of the
+  short one made for Autoplay.
 
 ## Phase 3: Home and artist page
 

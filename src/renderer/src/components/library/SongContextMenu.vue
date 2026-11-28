@@ -24,6 +24,10 @@
       <template #prepend><v-icon icon="mdi-compass-outline" size="small" /></template>
       <v-list-item-title>{{ $t('library.discoveryRadio') }}</v-list-item-title>
     </v-list-item>
+    <v-list-item v-if="canPathTo(song)" @click="pathTo">
+      <template #prepend><v-icon icon="mdi-map-marker-path" size="small" /></template>
+      <v-list-item-title>{{ $t('library.pathTo') }}</v-list-item-title>
+    </v-list-item>
     <!-- A song from the external source is not on the media server, so
        - there is nothing to rate or put in a playlist there. -->
     <template v-if="!external">
@@ -62,7 +66,7 @@ import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
 import { useAudioMuseStore } from '@/stores/audiomuse'
-import { playDiscoveryRadio } from '@/services/playback/discoveryRadio'
+import { canPathTo, playDiscoveryRadio, playPathTo } from '@/services/playback/sonicActions'
 import { emitter } from '@/emitter'
 import type { Song } from '@/types/library'
 import { isExternalSourceSong } from '@/services/connect/externalSource'
@@ -123,6 +127,10 @@ export default {
         })
         console.error('[song-radio]', error)
       }
+    },
+    canPathTo,
+    pathTo(): void {
+      void playPathTo(this.song)
     },
     startDiscoveryRadio(): void {
       void playDiscoveryRadio(this.song)

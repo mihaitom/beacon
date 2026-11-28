@@ -48,6 +48,10 @@
           <template #prepend><v-icon icon="mdi-compass-outline" /></template>
           <v-list-item-title>{{ $t('library.discoveryRadio') }}</v-list-item-title>
         </v-list-item>
+        <v-list-item v-if="canPathTo(song)" @click="pathTo">
+          <template #prepend><v-icon icon="mdi-map-marker-path" /></template>
+          <v-list-item-title>{{ $t('library.pathTo') }}</v-list-item-title>
+        </v-list-item>
         <v-list-item v-if="authStore.capabilities.favorites" @click="toggleFavorite">
           <template #prepend>
             <v-icon :icon="song.starred ? 'mdi-heart' : 'mdi-heart-outline'" />
@@ -107,6 +111,10 @@
           <template #prepend><v-icon icon="mdi-compass-outline" /></template>
           <v-list-item-title>{{ $t('library.discoveryRadio') }}</v-list-item-title>
         </v-list-item>
+        <v-list-item v-if="canPathTo(song)" @click="pathTo">
+          <template #prepend><v-icon icon="mdi-map-marker-path" /></template>
+          <v-list-item-title>{{ $t('library.pathTo') }}</v-list-item-title>
+        </v-list-item>
         <v-list-item v-if="authStore.capabilities.favorites" @click="toggleFavorite">
           <template #prepend>
             <v-icon :icon="song.starred ? 'mdi-heart' : 'mdi-heart-outline'" />
@@ -159,7 +167,7 @@ import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore, type QueueMoveTarget } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
 import { useAudioMuseStore } from '@/stores/audiomuse'
-import { playDiscoveryRadio } from '@/services/playback/discoveryRadio'
+import { canPathTo, playDiscoveryRadio, playPathTo } from '@/services/playback/sonicActions'
 import type { Song } from '@/types/library'
 import type { CreditPart } from '@/services/artistCredits'
 
@@ -297,6 +305,12 @@ export default {
       const song = this.song
       if (!song) return
       this.act(() => this.playbackStore.startSongRadio(song))
+    },
+    canPathTo,
+    pathTo() {
+      const song = this.song
+      if (!song) return
+      this.act(() => playPathTo(song))
     },
     startDiscoveryRadio() {
       const song = this.song

@@ -282,6 +282,8 @@ export default {
     songRadioError: 'Could not start Song Radio.',
     discoveryRadio: 'Discovery Radio',
     discoveryRadioError: 'Could not start Discovery Radio.',
+    pathTo: 'Path to this song',
+    pathToError: 'Could not find a path to this song.',
     artistRadio: 'Artist Radio',
     artistRadioError: 'Could not start Artist Radio.',
     plexPassRequired:
@@ -1732,6 +1734,8 @@ export default {
     noResultsHint: 'Check the spelling or try fewer words.',
     label: 'Search',
     resultsFor: 'Results for "{query}"',
+    bySound: 'Sounds like "{query}"',
+    byLyrics: 'Lyrics about "{query}"',
     artists: 'Artists',
     albums: 'Albums',
     songs: 'Songs',
