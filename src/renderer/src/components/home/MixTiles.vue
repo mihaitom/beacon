@@ -171,12 +171,12 @@ export default {
   position: relative;
   isolation: isolate;
   display: flex;
-  align-items: flex-end;
-  min-height: 112px;
-  padding: 16px 18px;
+  align-items: center;
+  min-height: 64px;
+  padding: 12px 52px 12px 16px;
   overflow: hidden;
   border: 1px solid rgba(var(--mood), 0.3);
-  border-radius: 18px;
+  border-radius: 14px;
   background:
     radial-gradient(120% 90% at 100% 0%, rgba(var(--mood), 0.5), transparent 60%),
     radial-gradient(110% 100% at 0% 100%, rgba(var(--mood-2), 0.34), transparent 65%),
@@ -206,10 +206,10 @@ export default {
 /* The mood's symbol, large and cropped by the corner, as the tile's art. */
 .mood-tile__art {
   position: absolute;
-  right: -14px;
-  bottom: -18px;
+  right: -8px;
+  bottom: -14px;
   z-index: -1;
-  font-size: 96px;
+  font-size: 64px;
   color: rgb(var(--mood));
   opacity: 0.32;
   transform: rotate(-14deg);
@@ -219,16 +219,26 @@ export default {
 }
 
 .mood-tile__label {
-  font-size: 1.125rem;
+  font-size: 1rem;
   font-weight: 700;
   letter-spacing: -0.01em;
 }
 
+/* On the right, in the middle of a tile this flat; margins rather than a
+ * transform, which the play button's own scale needs. */
 .mood-tile__play,
 .mood-tile__bars {
   position: absolute;
-  top: 14px;
-  left: 16px;
+  top: 50%;
+  right: 14px;
+}
+
+.mood-tile__play {
+  margin-top: -16px;
+}
+
+.mood-tile__bars {
+  margin-top: -9px;
 }
 
 .mood-tile__play {
