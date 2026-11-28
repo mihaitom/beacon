@@ -1009,7 +1009,8 @@ export default {
     apiKeyFailed: "Impossible d'enregistrer la clé",
     audiomuseTitle: 'AudioMuse-AI',
     audiomuseWhat:
-      "Laisse AudioMuse-AI choisir les titres selon leur son : la lecture automatique prolonge les derniers titres de la file et évite ceux qui ont été passés, la radio du titre et celle de l'artiste utilisent son analyse, et les menus des titres proposent la radio découverte. Sans lui, tout fonctionne comme avant.",
+      "Laisse AudioMuse-AI choisir les titres selon leur son et le sujet de leurs paroles : lecture automatique, radio du titre et de l'artiste, radio découverte et un chemin vers un titre dans les menus des titres, recherche par le son et par les paroles, mix par ambiance et par thème sur l'accueil, et artistes au son proche. Sans lui, tout fonctionne comme avant.",
+    audiomuseHelp: 'Aide',
     audiomuseUrlLabel: 'Adresse',
     audiomuseKeyLabel: "Jeton d'API",
     audiomuseStep1:
@@ -1602,6 +1603,13 @@ export default {
         purpose: "Trouver le logo d'une station, affiché dans la liste et pendant la lecture.",
         sends:
           "Rien vous concernant. La page d'accueil de la station et l'image qu'elle indique sont lues.",
+      },
+      audiomuse: {
+        name: 'Votre propre AudioMuse-AI',
+        purpose:
+          'Choisir les titres selon leur son et le sujet de leurs paroles, une fois son adresse saisie dans Paramètres > Avancé.',
+        sends:
+          "Les identifiants de titres et d'artistes (les titres de départ d'un mix, la file d'attente, les titres passés), ce que vous recherchez et l'ambiance ou le thème choisi. Uniquement à l'adresse saisie.",
       },
       lrclib: {
         name: 'LRCLIB',

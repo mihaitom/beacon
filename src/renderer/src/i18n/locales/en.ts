@@ -994,7 +994,8 @@ export default {
     apiKeyFailed: 'Could not save the key',
     audiomuseTitle: 'AudioMuse-AI',
     audiomuseWhat:
-      'Lets AudioMuse-AI pick songs by how they sound: Autoplay continues from the last few queued songs and steers away from skipped ones, Song and Artist Radio use its analysis, and song menus get Discovery Radio. Without it, everything works as before.',
+      'Lets AudioMuse-AI pick songs by how they sound and what their lyrics are about: Autoplay, Song and Artist Radio, Discovery Radio and a path to a song in the song menus, search by sound and by lyrics, mixes by mood and theme on Home, and similar-sounding artists. Without it, everything works as before.',
+    audiomuseHelp: 'Help',
     audiomuseUrlLabel: 'Address',
     audiomuseKeyLabel: 'API token',
     audiomuseStep1:
@@ -1580,6 +1581,13 @@ export default {
         name: "Radio stations' own websites",
         purpose: "Finding a station's logo, shown in the list and while it plays.",
         sends: "Nothing about you. It reads the station's home page and the image it names.",
+      },
+      audiomuse: {
+        name: 'Your own AudioMuse-AI',
+        purpose:
+          'Picking songs by how they sound and what their lyrics are about, once you have entered its address in Settings > Advanced.',
+        sends:
+          "Ids of songs and artists (a mix's starting songs, the queue, the songs you skipped), what you search for, and the mood or theme you picked. Only to the address you entered.",
       },
       lrclib: {
         name: 'LRCLIB',

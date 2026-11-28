@@ -1002,7 +1002,8 @@ export default {
     apiKeyFailed: 'Impossibile salvare la chiave',
     audiomuseTitle: 'AudioMuse-AI',
     audiomuseWhat:
-      "Lascia che AudioMuse-AI scelga i brani in base al loro suono: la riproduzione automatica prosegue dagli ultimi brani in coda ed evita quelli saltati, la radio del brano e quella dell'artista usano la sua analisi, e i menu dei brani offrono la radio scoperta. Senza, tutto funziona come prima.",
+      "Lascia che AudioMuse-AI scelga i brani in base al loro suono e a ciò di cui parlano i testi: riproduzione automatica, radio del brano e dell'artista, radio scoperta e un percorso verso un brano nei menu dei brani, ricerca per suono e per testi, mix per atmosfera e tema nella Home, e artisti dal suono simile. Senza, tutto funziona come prima.",
+    audiomuseHelp: 'Aiuto',
     audiomuseUrlLabel: 'Indirizzo',
     audiomuseKeyLabel: 'Token API',
     audiomuseStep1:
@@ -1593,6 +1594,13 @@ export default {
         purpose: "Trovare il logo di una stazione, mostrato nell'elenco e durante la riproduzione.",
         sends:
           "Nulla che ti riguardi. Vengono letti la home page della stazione e l'immagine che indica.",
+      },
+      audiomuse: {
+        name: 'Il tuo AudioMuse-AI',
+        purpose:
+          "Scegliere i brani in base al suono e a ciò di cui parlano i testi, dopo averne inserito l'indirizzo in Impostazioni > Avanzate.",
+        sends:
+          "Gli ID di brani e artisti (i brani di partenza di un mix, la coda, i brani saltati), ciò che cerchi e l'atmosfera o il tema scelto. Solo all'indirizzo inserito.",
       },
       lrclib: {
         name: 'LRCLIB',

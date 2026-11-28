@@ -1004,7 +1004,8 @@ export default {
     apiKeyFailed: 'Schlüssel konnte nicht gespeichert werden',
     audiomuseTitle: 'AudioMuse-AI',
     audiomuseWhat:
-      'Lässt AudioMuse-AI Songs danach auswählen, wie sie klingen: Autoplay setzt die letzten Songs der Warteschlange fort und meidet übersprungene, Song- und Künstler-Radio nutzen die Analyse, und die Song-Menüs bekommen das Entdeckungs-Radio. Ohne AudioMuse-AI funktioniert alles wie bisher.',
+      'Lässt AudioMuse-AI Songs danach auswählen, wie sie klingen und wovon ihre Texte handeln: Autoplay, Song- und Künstler-Radio, Entdeckungs-Radio und den Weg zu einem Song in den Song-Menüs, die Suche nach Klang und nach Songtexten, Mixe nach Stimmung und Thema auf Home und ähnlich klingende Künstler. Ohne AudioMuse-AI funktioniert alles wie bisher.',
+    audiomuseHelp: 'Hilfe',
     audiomuseUrlLabel: 'Adresse',
     audiomuseKeyLabel: 'API-Token',
     audiomuseStep1:
@@ -1595,6 +1596,13 @@ export default {
         name: 'Die Webseiten der Radiosender',
         purpose: 'Das Logo eines Senders finden, das in der Liste und beim Abspielen erscheint.',
         sends: 'Nichts über dich. Ein Abruf der Startseite des Senders und des gefundenen Bildes.',
+      },
+      audiomuse: {
+        name: 'Dein eigenes AudioMuse-AI',
+        purpose:
+          'Songs danach auswählen, wie sie klingen und wovon ihre Texte handeln, sobald du seine Adresse unter Einstellungen > Erweitert eingetragen hast.',
+        sends:
+          'IDs von Songs und Künstlern (die Ausgangssongs eines Mixes, die Warteschlange, übersprungene Songs), deine Suchbegriffe und die gewählte Stimmung oder das Thema. Nur an die eingetragene Adresse.',
       },
       lrclib: {
         name: 'LRCLIB',

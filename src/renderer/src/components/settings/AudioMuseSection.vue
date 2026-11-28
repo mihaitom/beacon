@@ -48,6 +48,14 @@
         <div class="audiomuse-actions">
           <!-- Only what Settings stored can be removed here; a value from
            - the deployment or the paired server would stay in effect. -->
+          <v-btn
+            variant="text"
+            rounded="pill"
+            prepend-icon="mdi-help-circle-outline"
+            @click="$emitter.emit('openHelp', 'faq/audiomuse')"
+          >
+            {{ $t('settings.audiomuseHelp') }}
+          </v-btn>
           <v-btn v-if="removable" variant="text" rounded="pill" :disabled="busy" @click="remove">
             {{ $t('settings.audiomuseRemove') }}
           </v-btn>

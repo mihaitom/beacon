@@ -1007,7 +1007,8 @@ export default {
     apiKeyFailed: 'No se ha podido guardar la clave',
     audiomuseTitle: 'AudioMuse-AI',
     audiomuseWhat:
-      'Permite que AudioMuse-AI elija canciones por cómo suenan: la reproducción automática continúa a partir de las últimas canciones de la cola y evita las que se han saltado, la radio de la canción y la del artista usan su análisis, y los menús de canciones incluyen la radio de descubrimiento. Sin él, todo funciona como antes.',
+      'Permite que AudioMuse-AI elija canciones por cómo suenan y de qué tratan sus letras: reproducción automática, radio de la canción y del artista, radio de descubrimiento y un camino hasta una canción en los menús de canciones, búsqueda por sonido y por letras, mezclas por estado de ánimo y tema en Inicio, y artistas que suenan parecido. Sin él, todo funciona como antes.',
+    audiomuseHelp: 'Ayuda',
     audiomuseUrlLabel: 'Dirección',
     audiomuseKeyLabel: 'Token de API',
     audiomuseStep1:
@@ -1600,6 +1601,13 @@ export default {
         purpose:
           'Encontrar el logotipo de una emisora, visible en la lista y durante la reproducción.',
         sends: 'Nada sobre ti. Lee la página de inicio de la emisora y la imagen que indica.',
+      },
+      audiomuse: {
+        name: 'Tu propio AudioMuse-AI',
+        purpose:
+          'Elegir canciones por cómo suenan y de qué tratan sus letras, una vez que has introducido su dirección en Ajustes > Avanzado.',
+        sends:
+          'Identificadores de canciones y artistas (las canciones de partida de una mezcla, la cola, las canciones saltadas), lo que buscas y el estado de ánimo o tema elegido. Solo a la dirección introducida.',
       },
       lrclib: {
         name: 'LRCLIB',

@@ -120,6 +120,9 @@ const SERVICES = {
       url: 'https://www.radio-browser.info/',
     },
     { key: 'stationSite', host: '', url: '' },
+    // Your own instance at the address entered, and only once one is:
+    // no host to name, and not setting it up is the opt-out.
+    { key: 'audiomuse', host: '', url: 'https://github.com/NeptuneHub/AudioMuse-AI' },
     { key: 'lrclib', host: 'lrclib.net', url: 'https://lrclib.net/', optOut: 'lyrics' },
     { key: 'lrcred', host: 'lrc.red', url: 'https://lrc.red/', optOut: 'lyrics' },
     { key: 'netease', host: 'music.163.com', url: 'https://music.163.com/', optOut: 'lyrics' },
