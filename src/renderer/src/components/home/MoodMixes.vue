@@ -1,7 +1,7 @@
 <template>
   <section class="mood-mixes">
     <h2 class="section-title">{{ $t('home.moodsTitle') }}</h2>
-    <div class="mood-mixes__grid">
+    <div class="mood-mixes__grid" :style="{ '--mood-count': moods.length }">
       <button
         v-for="mood in moods"
         :key="mood"
@@ -62,10 +62,30 @@ export default {
   margin-bottom: 16px;
 }
 
+/* Whole rows across the full width: all moods side by side where they
+ * fit, otherwise three or two to a row - never a lone tile left over, and
+ * no empty columns on the right. Measured on the section, not the window,
+ * since the nav rail and queue drawer take part of it. */
+.mood-mixes {
+  container-type: inline-size;
+}
+
 .mood-mixes__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  grid-template-columns: repeat(2, 1fr);
   gap: 12px;
+}
+
+@container (min-width: 520px) {
+  .mood-mixes__grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@container (min-width: 900px) {
+  .mood-mixes__grid {
+    grid-template-columns: repeat(var(--mood-count), 1fr);
+  }
 }
 
 /* Each mood keeps a hue of its own on every theme - the one exception to
