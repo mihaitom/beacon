@@ -38,6 +38,7 @@ type HomeVm = {
   sonicMoods: string[]
   loadSoundsLikeYou(): Promise<void>
   playMood(mood: string): Promise<void>
+  moodPlaying: string | null
 }
 
 describe("Home's AudioMuse rows", () => {
@@ -101,6 +102,21 @@ describe("Home's AudioMuse rows", () => {
     const vm = mountHome().vm as unknown as HomeVm
     await flushPromises()
     expect(vm.sonicMoods).toEqual(['happy', 'sad'])
+  })
+
+  it('knows its mood is playing while one of its songs is', async () => {
+    audiomuseAnswers()
+    const playback = usePlaybackStore()
+    vi.spyOn(playback, 'startMoodMix').mockResolvedValue([makeSong('m1'), makeSong('m2')])
+    const vm = mountHome().vm as unknown as HomeVm
+
+    await vm.playMood('relaxed')
+    playback.setQueue([makeSong('m1'), makeSong('m2'), makeSong('autoplayed')], 1)
+    expect(vm.moodPlaying).toBe('relaxed')
+
+    // Autoplay carried on past the mix: that is not the mood any more.
+    playback.setQueue([makeSong('m1'), makeSong('m2'), makeSong('autoplayed')], 2)
+    expect(vm.moodPlaying).toBeNull()
   })
 
   it('says so when a mood finds nothing', async () => {

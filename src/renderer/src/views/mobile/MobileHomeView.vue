@@ -57,6 +57,8 @@
       class="mobile-home__section"
       :moods="sonicMoods"
       :loading="moodLoading"
+      :playing="moodPlaying"
+      :paused="!playbackStore.isPlaying"
       @play="playMood"
     />
 

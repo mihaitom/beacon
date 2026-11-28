@@ -295,8 +295,9 @@ describe('a mood mix', () => {
     const playback = usePlaybackStore()
     const played = vi.spyOn(playback, 'playSongList').mockResolvedValue(undefined)
 
-    await playback.startMoodMix('relaxed')
+    const songs = await playback.startMoodMix('relaxed')
 
+    expect(songs.map((s) => s.id)).toEqual(['m1', 'm2'])
     expect(sonicMood).toHaveBeenCalledWith('relaxed', 50)
     expect(played.mock.calls[0]![0].map((s) => s.id)).toEqual(['m1', 'm2'])
   })

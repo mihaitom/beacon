@@ -132,11 +132,12 @@ its milestone moments (disc, tape reel, cassette) are objects, not interface. Vi
 colours on every theme, and only the grooves' markings use the accent. The
 full records on the shelf below it are objects too, in the metal of their tier.
 
-The mood tiles on Home (`MoodMixes.vue`) are the other: each mood keeps a hue
-of its own on every theme, because the colour names the mood rather than
-marking anything in the interface. Only as a tint over the surface and on
-the mood's icon - the label stays the theme's text colour, so it reads on
-light and dark themes alike.
+The mood tiles on Home (`MoodMixes.vue`) are the other: each mood keeps two
+hues of its own on every theme, because the colour names the mood rather than
+marking anything in the interface. They tint the surface and the mood's
+symbol; the label stays the theme's text colour, so it reads on light and
+dark themes alike. They move only for a reason - hover, a mix loading, and
+the bars of the mood that is playing, which stop while it is paused.
 
 ## Type
 

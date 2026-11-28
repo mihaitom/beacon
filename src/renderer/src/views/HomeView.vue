@@ -37,6 +37,8 @@
       class="home-moods"
       :moods="sonicMoods"
       :loading="moodLoading"
+      :playing="moodPlaying"
+      :paused="!playbackStore.isPlaying"
       @play="playMood"
     />
 

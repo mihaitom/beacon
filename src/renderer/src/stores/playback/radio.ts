@@ -26,7 +26,7 @@ export interface RadioActions {
   startSongRadio(song: Song): Promise<void>
   startArtistRadio(artist: Artist): Promise<void>
   startDiscoveryRadio(song: Song): Promise<void>
-  startMoodMix(mood: string): Promise<void>
+  startMoodMix(mood: string): Promise<Song[]>
   playRadioStation(station: RadioStation): Promise<void>
   leaveRadio(): void
   startLocalRadio(streamUrl: string): void
@@ -104,11 +104,13 @@ export const radioActions: RadioActions & ThisType<PlaybackContext> = {
 
   /** A mix around one of AudioMuse-AI's moods (Home's mood row). Like
    * Discovery Radio there is nothing to fall back on, so a failure is the
-   * caller's to show. */
-  async startMoodMix(mood: string): Promise<void> {
+   * caller's to show. Returns the songs, so Home can tell while the mix
+   * is what plays. */
+  async startMoodMix(mood: string): Promise<Song[]> {
     const songs = await sonicMood(mood, SONIC_RADIO_LENGTH)
     if (!songs.length) throw new Error(`AudioMuse found nothing for the mood ${mood}`)
     await this.playSongList(songs, 0, true, true)
+    return songs
   },
 
   /** Artist Radio — AudioMuse-AI's blend of the artist when it answers;

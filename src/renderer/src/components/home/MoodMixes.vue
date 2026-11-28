@@ -7,21 +7,28 @@
         :key="mood"
         type="button"
         class="mood-tile"
-        :class="`mood-tile--${mood}`"
+        :class="[
+          `mood-tile--${mood}`,
+          {
+            'mood-tile--loading': loading === mood,
+            'mood-tile--playing': playing === mood,
+            'mood-tile--paused': playing === mood && paused,
+          },
+        ]"
         :disabled="loading !== null && loading !== mood"
         :aria-busy="loading === mood"
+        :aria-current="playing === mood ? 'true' : undefined"
         @click="$emit('play', mood)"
       >
-        <v-icon class="mood-tile__icon" :icon="ICONS[mood]" size="40" />
+        <span class="mood-tile__glow" aria-hidden="true" />
+        <v-icon class="mood-tile__art" :icon="ICONS[mood]" aria-hidden="true" />
         <span class="mood-tile__label">{{ $t(`home.moods.${mood}`) }}</span>
-        <v-progress-circular
-          v-if="loading === mood"
-          class="mood-tile__spinner"
-          indeterminate
-          size="20"
-          width="2"
-        />
-        <v-icon v-else class="mood-tile__play" icon="mdi-play" size="20" />
+        <span v-if="playing === mood" class="mood-tile__bars" aria-hidden="true">
+          <i /><i /><i />
+        </span>
+        <span v-else class="mood-tile__play" aria-hidden="true">
+          <v-icon icon="mdi-play" size="18" />
+        </span>
       </button>
     </div>
   </section>
@@ -47,6 +54,10 @@ export default {
     moods: { type: Array as PropType<Mood[]>, required: true },
     /** The mood whose mix is on its way, or null. */
     loading: { type: String as PropType<Mood | null>, default: null },
+    /** The mood whose mix is what plays now, or null. */
+    playing: { type: String as PropType<Mood | null>, default: null },
+    /** Whether playback is paused, so the playing tile holds still. */
+    paused: { type: Boolean, default: false },
   },
   emits: ['play'],
   data() {
@@ -88,53 +99,140 @@ export default {
   }
 }
 
-/* Each mood keeps a hue of its own on every theme - the one exception to
- * "no colour in a component" (see docs/styleguide.md, Palette): it names
- * the mood, it is not interface. Only as a tint over the surface, so the
- * label stays the theme's own text colour. */
+/* Each mood keeps two hues of its own on every theme - the exception to
+ * "no colour in a component" (see docs/styleguide.md, Palette): they name
+ * the mood, they are not interface. The label stays the theme's text
+ * colour, so it reads on light and dark themes alike. */
 .mood-tile--happy {
-  --mood: 242, 190, 60;
+  --mood: 247, 186, 52;
+  --mood-2: 245, 112, 84;
 }
 .mood-tile--relaxed {
-  --mood: 72, 178, 160;
+  --mood: 64, 184, 160;
+  --mood-2: 72, 140, 210;
 }
 .mood-tile--party {
-  --mood: 214, 88, 168;
+  --mood: 222, 76, 170;
+  --mood-2: 250, 150, 60;
 }
 .mood-tile--danceable {
-  --mood: 138, 108, 228;
+  --mood: 140, 100, 236;
+  --mood-2: 60, 196, 230;
 }
 .mood-tile--sad {
-  --mood: 88, 130, 205;
+  --mood: 84, 128, 214;
+  --mood-2: 110, 84, 190;
 }
 .mood-tile--aggressive {
-  --mood: 226, 74, 70;
+  --mood: 232, 66, 64;
+  --mood-2: 250, 128, 40;
 }
 
 .mood-tile {
   position: relative;
+  isolation: isolate;
   display: flex;
   align-items: flex-end;
-  min-height: 84px;
-  padding: 14px 16px;
+  min-height: 112px;
+  padding: 16px 18px;
   overflow: hidden;
-  border: 1px solid rgba(var(--mood), 0.32);
-  border-radius: 14px;
+  border: 1px solid rgba(var(--mood), 0.3);
+  border-radius: 18px;
   background:
-    radial-gradient(circle at 100% 0%, rgba(var(--mood), 0.42), transparent 62%),
-    linear-gradient(135deg, rgba(var(--mood), 0.2), rgba(var(--mood), 0.06));
+    radial-gradient(120% 90% at 100% 0%, rgba(var(--mood), 0.5), transparent 60%),
+    radial-gradient(110% 100% at 0% 100%, rgba(var(--mood-2), 0.34), transparent 65%),
+    linear-gradient(150deg, rgba(var(--mood), 0.14), rgba(var(--mood-2), 0.1));
+  background-color: rgb(var(--v-theme-surface));
   color: rgb(var(--v-theme-on-surface));
   text-align: left;
   cursor: pointer;
   transition:
-    transform 0.15s ease,
-    border-color 0.15s ease,
-    opacity 0.15s ease;
+    transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1),
+    box-shadow 0.25s ease,
+    border-color 0.25s ease,
+    opacity 0.2s ease;
 }
 
-.mood-tile:hover:not(:disabled) {
-  transform: translateY(-2px);
-  border-color: rgba(var(--mood), 0.6);
+/* A soft light that follows the hover in from the top: the tile lights up
+ * rather than only moving. */
+.mood-tile__glow {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: radial-gradient(80% 70% at 70% 0%, rgba(var(--mood), 0.45), transparent 70%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+/* The mood's symbol, large and cropped by the corner, as the tile's art. */
+.mood-tile__art {
+  position: absolute;
+  right: -14px;
+  bottom: -18px;
+  z-index: -1;
+  font-size: 96px;
+  color: rgb(var(--mood));
+  opacity: 0.32;
+  transform: rotate(-14deg);
+  transition:
+    transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1),
+    opacity 0.3s ease;
+}
+
+.mood-tile__label {
+  font-size: 1.125rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.mood-tile__play,
+.mood-tile__bars {
+  position: absolute;
+  top: 14px;
+  left: 16px;
+}
+
+.mood-tile__play {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  /* The dark pill a button on a cover gets: white on a yellow tint would
+   * not read. */
+  background: rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(6px);
+  color: #fff;
+  opacity: 0;
+  transform: scale(0.7);
+  transition:
+    opacity 0.2s ease,
+    transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.mood-tile:hover:not(:disabled),
+.mood-tile:focus-visible {
+  transform: translateY(-3px);
+  border-color: rgba(var(--mood), 0.65);
+  box-shadow: 0 12px 28px -12px rgba(var(--mood), 0.7);
+}
+
+.mood-tile:hover:not(:disabled) .mood-tile__glow,
+.mood-tile:focus-visible .mood-tile__glow,
+.mood-tile--playing .mood-tile__glow {
+  opacity: 1;
+}
+
+.mood-tile:hover:not(:disabled) .mood-tile__art,
+.mood-tile:focus-visible .mood-tile__art {
+  opacity: 0.5;
+  transform: rotate(0deg) scale(1.08);
+}
+
+.mood-tile:hover:not(:disabled) .mood-tile__play,
+.mood-tile:focus-visible .mood-tile__play {
+  opacity: 1;
+  transform: scale(1);
 }
 
 .mood-tile:focus-visible {
@@ -144,46 +242,91 @@ export default {
 
 .mood-tile:disabled {
   cursor: default;
-  opacity: 0.5;
+  opacity: 0.45;
 }
 
-.mood-tile__icon {
+/* Loading: a sheen sweeping across while the mix is put together. */
+.mood-tile--loading::after {
+  content: '';
   position: absolute;
-  top: 10px;
-  right: 12px;
-  color: rgb(var(--mood));
-  opacity: 0.9;
+  inset: 0;
+  background: linear-gradient(
+    100deg,
+    transparent 30%,
+    rgba(var(--v-theme-on-surface), 0.16) 50%,
+    transparent 70%
+  );
+  transform: translateX(-100%);
+  animation: mood-sheen 1.1s ease-in-out infinite;
 }
 
-.mood-tile__label {
-  font-size: 1rem;
-  font-weight: 600;
+@keyframes mood-sheen {
+  to {
+    transform: translateX(100%);
+  }
 }
 
-.mood-tile__play,
-.mood-tile__spinner {
-  position: absolute;
-  right: 14px;
-  bottom: 14px;
-  color: rgb(var(--v-theme-on-surface));
+/* Playing: the tile stays lit and its bars move with the music - and hold
+ * still while it is paused. */
+.mood-tile--playing {
+  border-color: rgba(var(--mood), 0.8);
+  box-shadow:
+    0 0 0 1px rgba(var(--mood), 0.4),
+    0 12px 32px -14px rgba(var(--mood), 0.8);
 }
 
-.mood-tile__play {
-  opacity: 0;
-  transition: opacity 0.15s ease;
+.mood-tile__bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 18px;
 }
 
-.mood-tile:hover .mood-tile__play,
-.mood-tile:focus-visible .mood-tile__play {
-  opacity: 0.8;
+.mood-tile__bars i {
+  width: 4px;
+  height: 100%;
+  border-radius: 2px;
+  background: rgb(var(--mood));
+  transform-origin: bottom;
+  animation: mood-bar 0.9s ease-in-out infinite alternate;
+}
+
+.mood-tile__bars i:nth-child(2) {
+  animation-delay: -0.3s;
+  animation-duration: 0.7s;
+}
+
+.mood-tile__bars i:nth-child(3) {
+  animation-delay: -0.6s;
+  animation-duration: 1.1s;
+}
+
+.mood-tile--paused .mood-tile__bars i {
+  animation-play-state: paused;
+}
+
+@keyframes mood-bar {
+  from {
+    transform: scaleY(0.25);
+  }
+  to {
+    transform: scaleY(1);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .mood-tile {
+  .mood-tile,
+  .mood-tile__art,
+  .mood-tile__play {
     transition: none;
   }
-  .mood-tile:hover:not(:disabled) {
+  .mood-tile:hover:not(:disabled),
+  .mood-tile:focus-visible {
     transform: none;
+  }
+  .mood-tile--loading::after,
+  .mood-tile__bars i {
+    animation: none;
   }
 }
 </style>
