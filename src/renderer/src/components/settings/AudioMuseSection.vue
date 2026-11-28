@@ -143,6 +143,10 @@ export default {
   },
   created() {
     void this.load()
+    this.$emitter.on('serverLinkSynced', this.reloadLent)
+  },
+  beforeUnmount() {
+    this.$emitter.off('serverLinkSynced', this.reloadLent)
   },
   methods: {
     async load() {
@@ -152,6 +156,13 @@ export default {
         console.error('[settings] Failed to load the AudioMuse settings:', error)
       }
       await this.recheck()
+    },
+    /** A sync may have brought the server's address and token: shown
+     * without reopening Settings, and checked at once - unless the field
+     * is being edited. */
+    async reloadLent() {
+      if (this.busy || this.changed) return
+      await this.load()
     },
     apply(settings: AudioMuseSettings) {
       this.settings = settings

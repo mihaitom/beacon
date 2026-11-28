@@ -265,7 +265,10 @@ export default {
   methods: {
     async load() {
       try {
+        const previous = this.link?.last_sync_at
         this.link = await getServerLink()
+        const synced = this.link.last_sync_at
+        if (previous && synced && synced !== previous) this.$emitter.emit('serverLinkSynced')
       } catch (error) {
         console.error('[settings] Failed to read the server pairing:', error)
       }

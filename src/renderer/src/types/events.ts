@@ -14,6 +14,9 @@ export type AppEvents = {
   // dialog, the home automation key, the quality settings - so the triggers
   // are as spread out as showArtwork's below.
   openHelp: string | HelpTarget
+  // ServerLinkSection.vue, when a sync with the paired server has run:
+  // what it lends (API keys, AudioMuse) may have changed under Settings.
+  serverLinkSynced: void
   // Broadcast by SongRow.vue's openMenu() with its own menuId — every other
   // mounted SongRow closes its context menu on receiving one that isn't its
   // own. Each row's v-menu is independent local state (its own menuOpen),

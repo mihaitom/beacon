@@ -66,6 +66,19 @@ describe('ServerLinkSection', () => {
     delete (window as unknown as { api?: unknown }).api
   })
 
+  it('tells Settings when a sync has run, so what the server lends shows at once', async () => {
+    vi.mocked(getServerLink).mockResolvedValue({ ...PAIRED, last_sync_at: 100 })
+    const { wrapper, emit } = await mountSection()
+    const load = (wrapper.vm as unknown as { load(): Promise<void> }).load
+
+    await load()
+    expect(emit).not.toHaveBeenCalledWith('serverLinkSynced')
+
+    vi.mocked(getServerLink).mockResolvedValue({ ...PAIRED, last_sync_at: 160 })
+    await load()
+    expect(emit).toHaveBeenCalledWith('serverLinkSynced')
+  })
+
   it('is not offered in a browser', async () => {
     delete (window as unknown as { api?: unknown }).api
     const { wrapper } = await mountSection()

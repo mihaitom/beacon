@@ -163,6 +163,11 @@ export default {
   },
   created() {
     void this.loadStatuses()
+    // A sync may have brought or taken away the server's keys.
+    this.$emitter.on('serverLinkSynced', this.loadStatuses)
+  },
+  beforeUnmount() {
+    this.$emitter.off('serverLinkSynced', this.loadStatuses)
   },
   methods: {
     statusFor(id: ApiKeyService): ApiKeyStatus {
