@@ -42,7 +42,7 @@ class MixRequest(BaseModel):
     method: Literal["similar", "discovery", "blend"]
     add: list[MixItem] = Field(min_length=1, max_length=20)
     subtract: list[MixItem] = Field(default_factory=list, max_length=50)
-    n: int = Field(default=10, ge=1, le=100)
+    n: int = Field(default=10, ge=1, le=audiomuse.MAX_SONGS)
     exclude: list[ItemId] = Field(default_factory=list, max_length=1000)
 
 
@@ -91,12 +91,14 @@ async def post_mix(
 class PathRequest(BaseModel):
     start: ItemId
     end: ItemId
+    # Both ends counted; left out for the song menu's short path.
+    length: int | None = Field(default=None, ge=3, le=audiomuse.PATH_MAX_LENGTH)
 
 
 class SearchRequest(BaseModel):
     kind: Literal["sound", "lyrics"]
     query: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
-    n: int = Field(default=20, ge=1, le=50)
+    n: int = Field(default=20, ge=1, le=audiomuse.MAX_SONGS)
 
 
 @router.post("/path", response_model=None)
@@ -104,7 +106,7 @@ async def post_path(
     req: PathRequest, session: SessionState = Depends(require_authenticated_session)
 ) -> dict | JSONResponse:
     try:
-        songs = await audiomuse.path(session.media, req.start, req.end)
+        songs = await audiomuse.path(session.media, req.start, req.end, req.length)
     except audiomuse.AudioMuseError as e:
         return JSONResponse(status_code=503, content={"detail": e.reason})
     return {"songs": songs}
@@ -123,7 +125,7 @@ async def post_search(
 
 class MoodRequest(BaseModel):
     mood: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)]
-    n: int = Field(default=50, ge=1, le=100)
+    n: int = Field(default=50, ge=1, le=audiomuse.MAX_SONGS)
     exclude: list[ItemId] = Field(default_factory=list, max_length=1000)
 
 
@@ -163,7 +165,7 @@ async def get_similar_artists(
 
 class ThemeRequest(BaseModel):
     theme: Literal[tuple(audiomuse.THEMES)]  # type: ignore[valid-type]
-    n: int = Field(default=50, ge=1, le=100)
+    n: int = Field(default=50, ge=1, le=audiomuse.MAX_SONGS)
     exclude: list[ItemId] = Field(default_factory=list, max_length=1000)
 
 

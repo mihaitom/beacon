@@ -14,6 +14,7 @@ order: 5
 - In every song menu, **Discovery Radio** plays songs that sound related but sit further out in your library, and **Path to this song** plays a short bridge of songs from the one playing over to the one you picked.
 - **Search** also finds songs by how they sound ("calm piano") and by what their lyrics are about ("leaving home"), in two sections under the ordinary results.
 - **Home** gets a "Sounds like you" shelf blended from your most played songs, and **Moods & themes**: one tile per mood (happy, relaxed, party, ...) and per lyric theme (on the road, in love, looking back, ...), each a fresh mix of 50 songs on every click.
+- The **playlist builder** on the Playlists page gets AudioMuse as a source: a playlist by mood, by what the lyrics are about, by a description of how it should sound, of songs that sound like one of yours (or are related further out), a path of any length from one song to another, or "Sounds like you". It picks straight from your library, so nothing is missing from the result.
 - **Artist pages** show the artists of your library that sound similar, at the bottom on a computer and after the albums on a phone.
 
 Without AudioMuse-AI all of this is either not there or works as before: the radios and Autoplay ask your media server again, and nothing is greyed out or broken.

@@ -428,7 +428,19 @@ async def test_a_path_leads_from_the_playing_song_to_the_chosen_one(fake, config
     assert (asked["start_song_id"], asked["end_song_id"]) == ("seed", "d")
     assert asked["server"] == "srv-nav"
     assert asked["max_steps"] == audiomuse.PATH_STEPS
+    assert "path_fix_size" not in asked
     assert [s["id"] for s in songs] == ["a", "b", "d"]
+
+
+async def test_a_path_of_a_chosen_length_asks_for_exactly_that_many(fake, configured):
+    """A playlist's length is the whole path, and without path_fix_size
+    AudioMuse quietly drops the steps it finds nothing for."""
+    fake.results = ["seed", "a", "b", "c", "d"]
+    songs = await audiomuse.path(_media(), "seed", "d", length=5)
+    asked = fake.last("/api/find_path")
+    assert asked["max_steps"] == 5
+    assert asked["path_fix_size"] == "true"
+    assert [s["id"] for s in songs] == ["a", "b", "c", "d"]
 
 
 async def test_a_path_always_ends_on_the_chosen_song(fake, configured):
@@ -596,6 +608,25 @@ async def test_a_theme_draws_from_a_bigger_pool_in_a_new_order(fake, configured,
     assert [s["id"] for s in songs] == ["c", "b"]
 
 
+async def test_a_long_theme_mix_still_draws_from_three_times_its_length(fake, configured):
+    """A playlist of 200 drawn from a pool of 150 would be no draw at all."""
+    await audiomuse.theme_mix(_media(), "city", audiomuse.MAX_SONGS, [])
+    assert fake.last("/api/lyrics/search/axes")["limit"] == 3 * audiomuse.MAX_SONGS
+
+
+def test_the_song_routes_take_up_to_the_builders_maximum(client, fake, configured):
+    longest = audiomuse.MAX_SONGS
+    requests = [
+        ("/audiomuse/mix", {"method": "similar", "add": [{"id": "seed"}]}),
+        ("/audiomuse/search", {"kind": "sound", "query": "calm piano"}),
+        ("/audiomuse/mood", {"mood": "happy"}),
+        ("/audiomuse/theme", {"theme": "city"}),
+    ]
+    for route, body in requests:
+        assert client.post(route, json={**body, "n": longest}).status_code == 200, route
+        assert client.post(route, json={**body, "n": longest + 1}).status_code == 422, route
+
+
 async def test_a_theme_mix_leaves_out_what_is_queued(fake, configured):
     songs = await audiomuse.theme_mix(_media(), "city", 3, ["b"])
     assert "b" not in [s["id"] for s in songs]
@@ -673,6 +704,11 @@ def test_a_path_answers_songs_or_a_503(client, fake, configured):
     fake.results = ["seed", "a", "d"]
     response = client.post("/audiomuse/path", json={"start": "seed", "end": "d"})
     assert [s["id"] for s in response.json()["songs"]] == ["a", "d"]
+    assert fake.last("/api/find_path")["max_steps"] == audiomuse.PATH_STEPS
+    client.post("/audiomuse/path", json={"start": "seed", "end": "d", "length": 40})
+    assert fake.last("/api/find_path")["max_steps"] == 40
+    too_long = {"start": "seed", "end": "d", "length": audiomuse.PATH_MAX_LENGTH + 1}
+    assert client.post("/audiomuse/path", json=too_long).status_code == 422
     fake.raise_error = httpx.ConnectTimeout("timed out")
     audiomuse.forget_cached_state()
     assert client.post("/audiomuse/path", json={"start": "seed", "end": "d"}).status_code == 503

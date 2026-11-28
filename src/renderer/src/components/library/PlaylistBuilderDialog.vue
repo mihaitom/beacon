@@ -140,61 +140,57 @@
                 "
               >
                 <template #prepend>
-                  <img
-                    :src="item.pictureUrl"
-                    alt=""
-                    class="seed-option__art playlist-option__art"
-                  />
+                  <img :src="item.pictureUrl" alt="" class="playlist-option__art" />
                 </template>
               </v-list-item>
             </template>
           </v-autocomplete>
 
-          <!-- Similar to a track of your own. The seed is picked from the
-           - library rather than typed as free text, so what Last.fm is
-           - asked about is always a track this server actually holds. -->
-          <v-autocomplete
-            v-if="op === 'similar'"
+          <!-- The seed is picked from the library rather than typed, so
+           - what the service is asked about is always a song this server
+           - holds. -->
+          <library-song-picker
+            v-if="op === 'similar' || op === 'discovery' || op === 'path'"
             v-model="seedSong"
-            :search="seedQuery"
-            :items="seedOptions"
-            :item-title="songLabel"
-            :loading="seedSearching"
-            :label="$t('lastfm.seedTrack')"
-            :placeholder="$t('lastfm.seedTrackPlaceholder')"
+            :label="op === 'path' ? $t('builder.pathFrom') : $t('lastfm.seedTrack')"
+          />
+          <library-song-picker
+            v-if="op === 'path'"
+            v-model="pathEnd"
+            :label="$t('builder.pathTo')"
+          />
+
+          <v-select
+            v-if="op === 'mood'"
+            v-model="sonicMoodValue"
+            :items="moodItems"
+            :loading="sonicListsLoading"
+            :label="$t('builder.mood')"
             variant="solo-filled"
             hide-details
-            no-filter
-            return-object
-            clearable
-            @update:search="onSeedSearch"
-          >
-            <!-- Vuetify's own "No data available" reads as a fault; before
-             - anything is typed this is simply an empty search box. -->
-            <template #no-data>
-              <v-list-item>
-                <v-list-item-title class="text-medium-emphasis">
-                  {{
-                    seedSearching
-                      ? $t('common.loading')
-                      : seedQuery.trim().length < 2
-                        ? $t('lastfm.seedHint')
-                        : $t('lastfm.seedNoResults')
-                  }}
-                </v-list-item-title>
-              </v-list-item>
-            </template>
-            <!-- Title, then artist, then the cover: the same three things a
-             - song row shows, so a hit is recognisable without reading the
-             - artist off a single combined line. -->
-            <template #item="{ props: optionProps, item }">
-              <v-list-item v-bind="optionProps" :title="item.title" :subtitle="item.artist">
-                <template #prepend>
-                  <cover-art :cover-art-id="item.coverArtId" :size="36" class="seed-option__art" />
-                </template>
-              </v-list-item>
-            </template>
-          </v-autocomplete>
+          />
+          <v-select
+            v-if="op === 'theme'"
+            v-model="sonicThemeValue"
+            :items="themeItems"
+            :loading="sonicListsLoading"
+            :label="$t('builder.theme')"
+            variant="solo-filled"
+            hide-details
+          />
+          <v-text-field
+            v-if="op === 'describe'"
+            v-model="description"
+            :label="$t('builder.describe')"
+            :placeholder="$t('builder.describePlaceholder')"
+            variant="solo-filled"
+            hide-details
+          />
+          <p v-if="op === 'soundsLikeYou'" class="setting-note text-body-small">
+            {{
+              mostPlayed.length ? $t('builder.soundsLikeYouHint') : $t('builder.soundsLikeYouEmpty')
+            }}
+          </p>
 
           <template v-if="op === 'mytop' || op === 'recommended'">
             <v-text-field
@@ -218,7 +214,7 @@
 
           <!-- A playlist is matched whole: cutting a curated list short
            - would not be that list any more. -->
-          <div v-if="op !== 'playlist'" class="limit">
+          <div v-if="showLimit" class="limit">
             <div class="limit__head">
               <span class="eyebrow-label">{{ $t('lastfm.limit') }}</span>
               <span class="limit__value">{{ limit }}</span>
@@ -254,12 +250,16 @@
             <div class="summary">
               <div class="summary__count">
                 <span class="summary__found">{{ $n(foundCount) }}</span>
-                <span class="summary__total text-medium-emphasis">/ {{ $n(resolved.length) }}</span>
+                <span v-if="!fromLibrary" class="summary__total text-medium-emphasis"
+                  >/ {{ $n(resolved.length) }}</span
+                >
               </div>
               <div class="summary__text">
-                <p class="summary__label">{{ $t('lastfm.summaryFound') }}</p>
+                <p class="summary__label">
+                  {{ fromLibrary ? $t('builder.fromLibrary') : $t('lastfm.summaryFound') }}
+                </p>
                 <p class="text-body-small text-medium-emphasis">
-                  {{ $t('lastfm.summaryHint') }}
+                  {{ fromLibrary ? $t('builder.fromLibraryHint') : $t('lastfm.summaryHint') }}
                 </p>
               </div>
             </div>
@@ -298,7 +298,7 @@
               <!-- Which column is which. Same grid as a row, so the two
                - headings sit exactly over the two sides; hidden on a
                - phone, where the pair stacks and the arrow says it. -->
-              <div class="tracks-head">
+              <div v-if="!fromLibrary" class="tracks-head">
                 <span />
                 <span class="column-label">{{ providerName }}</span>
                 <span class="tracks-head__gap" />
@@ -310,7 +310,7 @@
                   v-for="(entry, index) in resolved"
                   :key="index"
                   class="track"
-                  :class="{ 'track--missing': !entry.match }"
+                  :class="{ 'track--missing': !entry.match, 'track--library': fromLibrary }"
                 >
                   <!-- The chart position, so it counts every entry rather
                  - than only the found ones: number 5 is number 5 whether
@@ -318,7 +318,9 @@
                  - gaps would claim a ranking Last.fm never gave. -->
                   <span class="track__rank">{{ index + 1 }}</span>
 
-                  <div class="track__side track__side--source">
+                  <!-- A song AudioMuse picked is already the library's own:
+                   - there is no second side to compare it with. -->
+                  <div v-if="!fromLibrary" class="track__side track__side--source">
                     <!-- Every row, found or not: a preview tells a close
                      - match apart from the wrong song as well as it lets a
                      - missing one be heard. Played like an album's or
@@ -359,6 +361,7 @@
                   </div>
 
                   <v-icon
+                    v-if="!fromLibrary"
                     :icon="entry.match ? 'mdi-arrow-right' : 'mdi-close'"
                     :color="entry.match ? 'primary' : undefined"
                     size="16"
@@ -471,9 +474,22 @@
 import { useLibraryStore } from '@/stores/library'
 import CoverArt from './CoverArt.vue'
 import SongContextMenu from './SongContextMenu.vue'
+import LibrarySongPicker from './LibrarySongPicker.vue'
 import { ConnectApiError } from '@/services/connect/http'
 import { useLastfmStore } from '@/stores/lastfm'
 import { useListenbrainzStore } from '@/stores/listenbrainz'
+import { useAudioMuseStore } from '@/stores/audiomuse'
+import {
+  getSonicMoods,
+  getSonicThemes,
+  sonicMix,
+  sonicMood,
+  sonicPath,
+  sonicSearch,
+  sonicTheme,
+} from '@/services/connect/audiomuse'
+import { MOODS } from '@/composables/sonicHomeShelves'
+import { shuffled } from '@/services/shuffle'
 import SegmentedControl, { type SegmentedOption } from '@/components/SegmentedControl.vue'
 import {
   getDeezerGenres,
@@ -510,17 +526,25 @@ import {
   type CountryDividerItem,
 } from '@/services/recentCountries'
 
-/** Which service the builder reads from. All three share the whole
- * matcher/result/creation half and differ only in which backend query they
- * send (see search()). */
-type BuilderSource = 'deezer' | 'lastfm' | 'listenbrainz'
-type BuilderOp = LastfmOp | ListenbrainzOp | DeezerOp
+/** Which service the builder reads from. Deezer, Last.fm and ListenBrainz
+ * share the whole matcher/result/creation half and differ only in which
+ * backend query they send (see search()); AudioMuse answers in library
+ * songs, so it skips the matching. */
+type BuilderSource = 'deezer' | 'lastfm' | 'listenbrainz' | 'audiomuse'
+type AudioMuseOp =
+  'mood' | 'theme' | 'describe' | 'similar' | 'discovery' | 'path' | 'soundsLikeYou'
+type BuilderOp = LastfmOp | ListenbrainzOp | DeezerOp | AudioMuseOp
+
+// The same draw as Home's "Sounds like you": a blend of all the most
+// played songs averages out into the library's middle.
+const SOUNDS_LIKE_YOU_SEEDS = 5
 
 // Service names are brands, not copy, so they are not translated.
 const PROVIDER_NAMES: Record<BuilderSource, string> = {
   deezer: 'Deezer',
   lastfm: 'Last.fm',
   listenbrainz: 'ListenBrainz',
+  audiomuse: 'AudioMuse',
 }
 
 // The service picked last, so the builder opens on it again. A per-device
@@ -602,7 +626,7 @@ const GENRE_SUGGESTIONS = [
  */
 export default {
   name: 'PlaylistBuilderDialog',
-  components: { CoverArt, SegmentedControl, SongContextMenu },
+  components: { CoverArt, LibrarySongPicker, SegmentedControl, SongContextMenu },
   data() {
     return {
       GENRE_SUGGESTIONS,
@@ -624,15 +648,19 @@ export default {
       country: '',
       tag: '',
       artist: '',
-      // The seed of a "similar tracks" run: a song picked out of the
-      // library, with the search text and hits the picker needs to find it.
+      // The seed of a "similar tracks" run, or where an AudioMuse path
+      // starts: a song picked out of the library.
       seedSong: null as Song | null,
-      seedQuery: '',
-      seedOptions: [] as Song[],
-      seedSearching: false,
-      seedSeq: 0,
-      seedSearchTimer: undefined as ReturnType<typeof setTimeout> | undefined,
-      // The Deezer playlist picker, built the same way as the seed picker.
+      pathEnd: null as Song | null,
+      // AudioMuse's moods and lyric themes, by Beacon's keys (home.moods,
+      // home.themes), loaded once the source is picked.
+      sonicMoods: [] as string[],
+      sonicThemes: [] as string[],
+      sonicListsLoading: false,
+      sonicMood: '',
+      sonicTheme: '',
+      description: '',
+      // The Deezer playlist picker, a search box like the seed picker.
       deezerPlaylist: null as DeezerPlaylist | null,
       playlistQuery: '',
       playlistOptions: [] as DeezerPlaylist[],
@@ -699,6 +727,49 @@ export default {
     lastfmStore() {
       return useLastfmStore()
     },
+    audiomuseStore() {
+      return useAudioMuseStore()
+    },
+    mostPlayed(): Song[] {
+      return this.libraryStore.mostPlayedSongs
+    },
+    /** AudioMuse answers with the library's own songs: nothing to match,
+     * nothing missing. */
+    fromLibrary(): boolean {
+      return this.source === 'audiomuse'
+    },
+    showLimit(): boolean {
+      return this.op !== 'playlist'
+    },
+    moodItems(): { title: string; value: string }[] {
+      return MOODS.filter((mood) => this.sonicMoods.includes(mood)).map((mood) => ({
+        title: this.$t(`home.moods.${mood}`),
+        value: mood,
+      }))
+    },
+    themeItems(): { title: string; value: string }[] {
+      return this.sonicThemes.map((theme) => ({
+        title: this.$t(`home.themes.${theme}`),
+        value: theme,
+      }))
+    },
+    /** v-select hands back `null` when cleared, like the comboboxes. */
+    sonicMoodValue: {
+      get(): string {
+        return this.sonicMood
+      },
+      set(value: string | null) {
+        this.sonicMood = value ?? ''
+      },
+    },
+    sonicThemeValue: {
+      get(): string {
+        return this.sonicTheme
+      },
+      set(value: string | null) {
+        this.sonicTheme = value ?? ''
+      },
+    },
     listenbrainzStore() {
       return useListenbrainzStore()
     },
@@ -710,12 +781,13 @@ export default {
     providerName(): string {
       return PROVIDER_NAMES[this.source]
     },
-    /** Last.fm only once connect has a key for it - without one every
-     * query could only fail. */
+    /** Last.fm only once connect has a key for it, AudioMuse only while it
+     * answers - without either every query could only fail. */
     providerOptions(): SegmentedOption[] {
-      const sources: BuilderSource[] = this.lastfmStore.configured
-        ? ['deezer', 'lastfm', 'listenbrainz']
-        : ['deezer', 'listenbrainz']
+      const sources: BuilderSource[] = ['deezer']
+      if (this.lastfmStore.configured) sources.push('lastfm')
+      sources.push('listenbrainz')
+      if (this.audiomuseStore.available) sources.push('audiomuse')
       return sources.map((value) => ({ title: PROVIDER_NAMES[value], value }))
     },
     /** Until the list arrives (or when it cannot), the overall chart is
@@ -741,6 +813,17 @@ export default {
         : this.$t('lastfm.period')
     },
     sourceOptions(): { title: string; value: BuilderOp }[] {
+      if (this.source === 'audiomuse') {
+        return [
+          { title: this.$t('builder.sourceMood'), value: 'mood' },
+          { title: this.$t('builder.sourceTheme'), value: 'theme' },
+          { title: this.$t('builder.sourceDescribe'), value: 'describe' },
+          { title: this.$t('builder.sourceSimilar'), value: 'similar' },
+          { title: this.$t('builder.sourceDiscovery'), value: 'discovery' },
+          { title: this.$t('builder.sourcePath'), value: 'path' },
+          { title: this.$t('builder.sourceSoundsLikeYou'), value: 'soundsLikeYou' },
+        ]
+      }
       if (this.source === 'deezer') {
         return [
           { title: this.$t('deezer.sourceCharts'), value: 'charts' },
@@ -806,6 +889,15 @@ export default {
     },
     canSearch(): boolean {
       if (this.busy) return false
+      if (this.source === 'audiomuse') {
+        if (this.op === 'mood') return !!this.sonicMood
+        if (this.op === 'theme') return !!this.sonicTheme
+        if (this.op === 'describe') return !!this.description.trim()
+        if (this.op === 'path') {
+          return !!this.seedSong && !!this.pathEnd && this.seedSong.id !== this.pathEnd.id
+        }
+        if (this.op === 'soundsLikeYou') return this.mostPlayed.length > 0
+      }
       if (this.op === 'genre') return !!this.tag.trim()
       if (this.op === 'artist' || this.op === 'radio') return !!this.artist.trim()
       if (this.op === 'playlist') return !!this.deezerPlaylist
@@ -895,10 +987,13 @@ export default {
      * cannot do, and brings in that service's own username. */
     source(source: BuilderSource) {
       this.error = ''
-      if (!this.sourceOptions.some((option) => option.value === this.op)) this.op = 'charts'
+      if (!this.sourceOptions.some((option) => option.value === this.op)) {
+        this.op = this.sourceOptions[0]!.value
+      }
       if (source === 'listenbrainz') this.username = this.listenbrainzStore.username
       else if (source === 'lastfm') this.username = this.lastfmStore.username
       if (source === 'deezer') void this.loadDeezerGenres()
+      if (source === 'audiomuse') void this.loadSonicLists()
       saveProvider(source)
     },
     /** The menu's album and artist links lead away from here, and the page
@@ -916,7 +1011,6 @@ export default {
   },
   beforeUnmount() {
     clearTimeout(this.copyResetTimer)
-    clearTimeout(this.seedSearchTimer)
     clearTimeout(this.playlistSearchTimer)
   },
   methods: {
@@ -924,12 +1018,11 @@ export default {
     open(source?: BuilderSource): void {
       this.source = source ?? loadProvider() ?? 'deezer'
       this.step = 'form'
-      this.op = 'charts'
+      this.op = this.sourceOptions[0]!.value
       this.error = ''
       this.resolved = []
       this.seedSong = null
-      this.seedQuery = ''
-      this.seedOptions = []
+      this.pathEnd = null
       this.deezerPlaylist = null
       this.playlistQuery = ''
       this.updateMode = 'append'
@@ -940,10 +1033,14 @@ export default {
             ? this.lastfmStore.username
             : ''
       if (this.source === 'deezer') void this.loadDeezerGenres()
+      if (this.source === 'audiomuse') void this.loadSonicLists()
       // Cached per session. A remembered Last.fm whose key has since gone
       // falls back to Deezer rather than opening on a service that fails.
       void this.lastfmStore.checkConfigured().then((configured) => {
         if (!configured && this.source === 'lastfm') this.source = 'deezer'
+      })
+      void this.audiomuseStore.ensure().then((available) => {
+        if (!available && this.source === 'audiomuse') this.source = 'deezer'
       })
       this.visible = true
       // The name field matches against these, so they have to be loaded
@@ -968,7 +1065,7 @@ export default {
       }
     },
 
-    /** Same pattern as onSeedSearch(): typing over a picked playlist
+    /** Same pattern as the song picker (LibrarySongPicker): typing over a picked playlist
      * clears it, and the lookup waits for a pause in typing. */
     onPlaylistSearch(value: string | null): void {
       const query = value ?? ''
@@ -998,43 +1095,55 @@ export default {
       }
     },
 
-    /** The seed picker's display name - "Artist · Title", the pair a track
-     * is identified by everywhere else in the app. */
-    songLabel(song: Song): string {
-      return `${song.artist} · ${song.title}`
-    },
-
-    /** Keeps the search text and the chosen seed in step: typing over a
-     * picked track clears it (otherwise the seed would stay on the old song
-     * while the field shows a new query), and a fresh query is looked up
-     * after a pause rather than on every keystroke. */
-    onSeedSearch(value: string): void {
-      const label = this.seedSong ? this.songLabel(this.seedSong) : ''
-      this.seedQuery = value
-      if (value === label) return
-      this.seedSong = null
-      clearTimeout(this.seedSearchTimer)
-      this.seedSearchTimer = setTimeout(() => void this.searchSeedTracks(), 300)
-    },
-
-    /** The library search behind the seed picker. A response a newer query
-     * already superseded is dropped rather than shown under the new text. */
-    async searchSeedTracks(): Promise<void> {
-      const query = this.seedQuery.trim()
-      if (query.length < 2) {
-        this.seedOptions = []
-        return
-      }
-      const seq = ++this.seedSeq
-      this.seedSearching = true
+    /** Once per dialog: AudioMuse's moods and themes only change with a
+     * new analysis. A failure leaves the select empty, and the search
+     * button with it. */
+    async loadSonicLists(): Promise<void> {
+      if (this.sonicMoods.length || this.sonicListsLoading) return
+      this.sonicListsLoading = true
       try {
-        const songs = (await this.libraryStore.client().search3(query, 15, 0, 0)).songs
-        if (seq === this.seedSeq) this.seedOptions = songs
+        const [moods, themes] = await Promise.all([getSonicMoods(), getSonicThemes()])
+        this.sonicMoods = moods
+        this.sonicThemes = themes
       } catch (error) {
-        console.error('[lastfm] Seed track search failed:', error)
-        if (seq === this.seedSeq) this.seedOptions = []
+        console.error('[builder] AudioMuse moods and themes failed:', error)
       } finally {
-        if (seq === this.seedSeq) this.seedSearching = false
+        this.sonicListsLoading = false
+      }
+    },
+
+    /** The songs AudioMuse picks for the chosen source. A path, a similar
+     * and a discovery mix start with the song they were built from. */
+    async fetchSonicSongs(): Promise<Song[]> {
+      const n = this.limit
+      const seed = this.seedSong
+      switch (this.op as AudioMuseOp) {
+        case 'mood':
+          return sonicMood(this.sonicMood, n)
+        case 'theme':
+          return sonicTheme(this.sonicTheme, n)
+        case 'describe':
+          return sonicSearch('sound', this.description.trim(), n)
+        case 'path':
+          return [seed!, ...(await sonicPath(seed!.id, this.pathEnd!.id, n))]
+        case 'soundsLikeYou':
+          return sonicMix({
+            method: 'blend',
+            add: shuffled(this.mostPlayed)
+              .slice(0, SOUNDS_LIKE_YOU_SEEDS)
+              .map((song) => ({ id: song.id })),
+            n,
+          })
+        default:
+          return [
+            seed!,
+            ...(await sonicMix({
+              method: this.op === 'discovery' ? 'discovery' : 'similar',
+              add: [{ id: seed!.id }],
+              n: n - 1,
+              exclude: [seed!.id],
+            })),
+          ]
       }
     },
 
@@ -1073,6 +1182,7 @@ export default {
      * enough that three imports don't sit in the list as "Last.fm",
      * "Last.fm (1)" and "Last.fm (2)". */
     defaultName(): string {
+      if (this.source === 'audiomuse') return this.sonicName()
       if (this.source === 'deezer') {
         if (this.op === 'artist')
           return this.$t('deezer.nameArtist', { artist: this.artist.trim() })
@@ -1109,6 +1219,26 @@ export default {
       return this.chartScope === 'global'
         ? this.$t('lastfm.nameGlobalCharts')
         : this.$t('lastfm.nameCountryCharts', { country: this.countryName.trim() })
+    },
+
+    sonicName(): string {
+      const title = this.seedSong?.title ?? ''
+      switch (this.op as AudioMuseOp) {
+        case 'mood':
+          return this.$t('builder.nameMood', { mood: this.$t(`home.moods.${this.sonicMood}`) })
+        case 'theme':
+          return this.$t('builder.nameTheme', { theme: this.$t(`home.themes.${this.sonicTheme}`) })
+        case 'describe':
+          return this.description.trim()
+        case 'path':
+          return this.$t('builder.namePath', { from: title, to: this.pathEnd?.title ?? '' })
+        case 'soundsLikeYou':
+          return this.$t('home.soundsLikeYou')
+        case 'discovery':
+          return this.$t('builder.nameDiscovery', { title })
+        default:
+          return this.$t('builder.nameSimilar', { title })
+      }
     },
 
     /** The backend's own reason when it sent one (an unknown Last.fm
@@ -1188,6 +1318,21 @@ export default {
       this.progressTotal = 0
 
       try {
+        if (this.source === 'audiomuse') {
+          const songs = await this.fetchSonicSongs()
+          if (this.abortSignal.aborted) return
+          if (songs.length === 0) {
+            this.error = this.$t('builder.noTracks', { provider: this.providerName })
+            this.step = 'form'
+            return
+          }
+          this.resolved = songs.map((song) => ({
+            track: { title: song.title, artist: song.artist, mbid: '' },
+            match: { song, confidence: 'exact' },
+          }))
+          this.playlistName = this.defaultName()
+          return
+        }
         // "similar" sends the picked seed song, not the artist text field -
         // that field belongs to the "top tracks of an artist" source.
         const seed = this.op === 'similar' ? this.seedSong : null
@@ -1492,6 +1637,10 @@ export default {
   opacity: 0.62;
 }
 
+.track.track--library {
+  grid-template-columns: 1.75rem 1fr;
+}
+
 /* ... but its copy button has to be readable to be found, so hovering the
  * row brings the whole thing back to full strength. */
 .track--missing:hover {
@@ -1540,12 +1689,9 @@ export default {
 
 /* Vuetify's prepend slot leaves too little gap here, so the title sits
  * against the cover. */
-.seed-option__art {
+.playlist-option__art {
   border-radius: 4px;
   margin-right: 12px;
-}
-
-.playlist-option__art {
   width: 36px;
   height: 36px;
   object-fit: cover;
@@ -1606,6 +1752,11 @@ export default {
   .track__side--found,
   .track__side--missing {
     grid-area: found;
+  }
+
+  .track.track--library {
+    grid-template-columns: 1.5rem 1fr;
+    grid-template-areas: 'rank found';
   }
 
   .summary {

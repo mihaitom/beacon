@@ -22,6 +22,8 @@ import PlaylistBuilderDialog from '../PlaylistBuilderDialog.vue'
 import * as lastfmApi from '@/services/connect/lastfm'
 import * as listenbrainzApi from '@/services/connect/listenbrainz'
 import * as deezerApi from '@/services/connect/deezer'
+import * as audiomuseApi from '@/services/connect/audiomuse'
+import { useAudioMuseStore } from '@/stores/audiomuse'
 
 const vuetify = createVuetify({ components, directives })
 
@@ -74,6 +76,8 @@ describe('PlaylistBuilderDialog', () => {
     // not switched over to Deezer by the availability check.
     useLastfmStore().configured = true
     vi.spyOn(deezerApi, 'getDeezerGenres').mockResolvedValue([])
+    // AudioMuse is not set up unless a test says otherwise.
+    vi.spyOn(audiomuseApi, 'getAudioMuseStatus').mockResolvedValue({ available: false })
     // The recent-countries list lives here and would otherwise leak from
     // one test into the next.
     localStorage.clear()
@@ -532,38 +536,6 @@ describe('PlaylistBuilderDialog', () => {
     expect(vm.canSearch).toBe(false)
     vm.seedSong = makeSong('s1', { title: 'Roads', artist: 'Portishead' })
     expect(vm.canSearch).toBe(true)
-  })
-
-  it('looks the seed up in the library and drops it when the query changes', async () => {
-    const songs = [makeSong('s1', { title: 'Roads', artist: 'Portishead' })]
-    const search3 = vi.fn().mockResolvedValue({ songs })
-    vi.spyOn(useLibraryStore(), 'client').mockReturnValue({
-      search3,
-    } as unknown as SubsonicClient)
-
-    const { vm } = await openDialog()
-    vm.op = 'similar'
-    // Let the picker mount first: mounting it emits its own (empty)
-    // search, which would otherwise supersede the query armed below.
-    await flushPromises()
-    const call = vm as unknown as { onSeedSearch: (value: string) => void }
-    call.onSeedSearch('roads')
-    // Debounced: a keystroke does not search on its own.
-    expect(search3).not.toHaveBeenCalled()
-    await new Promise((resolve) => setTimeout(resolve, 350))
-    expect(search3).toHaveBeenCalledWith('roads', 15, 0, 0)
-    expect(vm.seedOptions).toEqual(songs)
-
-    // Typing over the picked track clears it; the label it would show does
-    // not.
-    vm.seedSong = songs[0]
-    const label = (vm as unknown as { songLabel: (song: unknown) => string }).songLabel(songs[0])
-    call.onSeedSearch(label)
-    expect(vm.seedSong).toEqual(songs[0])
-    call.onSeedSearch('something else')
-    expect(vm.seedSong).toBeNull()
-    // Let the trailing debounce fire while the mock is still in place.
-    await new Promise((resolve) => setTimeout(resolve, 350))
   })
 
   describe('an existing playlist of the same name', () => {
@@ -1194,6 +1166,129 @@ describe('PlaylistBuilderDialog', () => {
       expect(getTracks).toHaveBeenCalledWith(
         expect.objectContaining({ op: 'genre', tag: 'vaporwave' }),
       )
+    })
+  })
+  describe('AudioMuse', () => {
+    type Vm = Record<string, unknown> & {
+      open: (s?: string) => void
+      search: () => Promise<void>
+      create: () => Promise<void>
+    }
+
+    async function openAudioMuse(): Promise<Vm> {
+      vi.spyOn(audiomuseApi, 'getAudioMuseStatus').mockResolvedValue({ available: true })
+      vi.spyOn(audiomuseApi, 'getSonicMoods').mockResolvedValue(['happy', 'sad', 'unnamed'])
+      vi.spyOn(audiomuseApi, 'getSonicThemes').mockResolvedValue(['onTheRoad'])
+      await useAudioMuseStore().ensure()
+      const wrapper = mount(PlaylistBuilderDialog, { global: globalOptions })
+      const vm = wrapper.vm as unknown as Vm
+      vm.open('audiomuse')
+      await flushPromises()
+      return vm
+    }
+
+    const roads = makeSong('a', { title: 'Roads', artist: 'Portishead' })
+    const teardrop = makeSong('b', { title: 'Teardrop', artist: 'Massive Attack' })
+    const angel = makeSong('c', { title: 'Angel', artist: 'Massive Attack' })
+
+    it('is only offered while AudioMuse answers', async () => {
+      const wrapper = mount(PlaylistBuilderDialog, { global: globalOptions })
+      const vm = wrapper.vm as unknown as Vm
+      vm.open('audiomuse')
+      await flushPromises()
+
+      expect(rowTexts('[role="radio"]')).not.toContain('AudioMuse')
+      expect(vm.source).toBe('deezer')
+    })
+
+    it('offers only the moods it has a name for', async () => {
+      const vm = await openAudioMuse()
+
+      expect(vm.op).toBe('mood')
+      expect((vm.moodItems as { value: string }[]).map((item) => item.value)).toEqual([
+        'happy',
+        'sad',
+      ])
+    })
+
+    it('saves the songs AudioMuse picked without matching them', async () => {
+      const mood = vi.spyOn(audiomuseApi, 'sonicMood').mockResolvedValue([roads, teardrop])
+      const { search3, createPlaylist } = stubSearch([])
+      const vm = await openAudioMuse()
+      vm.sonicMood = 'happy'
+      vm.limit = 30
+      await vm.search()
+      await vm.create()
+
+      expect(mood).toHaveBeenCalledWith('happy', 30)
+      expect(search3).not.toHaveBeenCalled()
+      expect(createPlaylist).toHaveBeenCalledWith(
+        i18n.global.t('builder.nameMood', { mood: i18n.global.t('home.moods.happy') }),
+        ['a', 'b'],
+      )
+    })
+
+    it('walks a path from the first song to the second, start included', async () => {
+      const path = vi.spyOn(audiomuseApi, 'sonicPath').mockResolvedValue([teardrop, angel])
+      const { createPlaylist } = stubSearch([])
+      const vm = await openAudioMuse()
+      vm.op = 'path'
+      vm.seedSong = roads
+      vm.pathEnd = roads
+      expect(vm.canSearch).toBe(false)
+      vm.pathEnd = angel
+      expect(vm.canSearch).toBe(true)
+      vm.limit = 150
+      await vm.search()
+      await vm.create()
+
+      expect(path).toHaveBeenCalledWith('a', 'c', 150)
+      expect(createPlaylist).toHaveBeenCalledWith(expect.any(String), ['a', 'b', 'c'])
+    })
+
+    it('starts a discovery mix with its seed and keeps the seed out of the mix', async () => {
+      const mix = vi.spyOn(audiomuseApi, 'sonicMix').mockResolvedValue([teardrop])
+      const { createPlaylist } = stubSearch([])
+      const vm = await openAudioMuse()
+      vm.op = 'discovery'
+      vm.seedSong = roads
+      vm.limit = 20
+      await vm.search()
+      await vm.create()
+
+      expect(mix).toHaveBeenCalledWith({
+        method: 'discovery',
+        add: [{ id: 'a' }],
+        n: 19,
+        exclude: ['a'],
+      })
+      expect(createPlaylist).toHaveBeenCalledWith(expect.any(String), ['a', 'b'])
+    })
+
+    it('blends a few of the most played songs for "Sounds like you"', async () => {
+      const mix = vi.spyOn(audiomuseApi, 'sonicMix').mockResolvedValue([angel])
+      stubSearch([])
+      const library = useLibraryStore()
+      library.allSongs = Array.from({ length: 8 }, (_, i) =>
+        makeSong(`p${i}`, { playCount: 10 + i }),
+      )
+      const vm = await openAudioMuse()
+      vm.op = 'soundsLikeYou'
+      expect(vm.canSearch).toBe(true)
+      await vm.search()
+
+      const request = mix.mock.calls[0]![0]
+      expect(request.method).toBe('blend')
+      expect(request.add).toHaveLength(5)
+      expect(request.add.every((item) => item.id.startsWith('p'))).toBe(true)
+    })
+
+    it('cannot blend without any played songs', async () => {
+      stubSearch([])
+      const vm = await openAudioMuse()
+      vm.op = 'soundsLikeYou'
+
+      expect(vm.canSearch).toBe(false)
     })
   })
 })

@@ -227,6 +227,26 @@ connect's side and the renderer gets the batch it asked for.
   ListenBrainz lookup feeds only Home's Discover (artists not in the
   library). Measured 0.17 s for 12.
 
+## Playlist builder
+
+AudioMuse is the builder's fourth source, offered while it answers: mood,
+lyric theme, a described sound (the CLAP search), similar or discovery
+around one library song, a path between two library songs, and "Sounds
+like you". Its answer is already library songs, so the matching step and
+the two-column comparison are skipped. Seed-based results start with their
+seed.
+
+- **Counts up to 200,** the builder's own maximum. The routes' caps are
+  Beacon's (`MAX_SONGS`); AudioMuse caps none of these endpoints, only the
+  analysed library limits them. A theme draws from three times its length.
+- **A path's length** is `max_steps`, which counts the whole path, both
+  ends included (its docstring says "intermediate songs"; the code counts
+  all). Sent with `path_fix_size=true`: without it AudioMuse skips every
+  step it finds nothing for and the path comes out short. Even with it the
+  length is best effort - it widens the search, it never pads. The song
+  menu's path stays at `PATH_STEPS` without the flag. AudioMuse's own
+  ceiling is `PATH_MAX_LENGTH`, 200 by default.
+
 ## Not planned
 
 AI chat playlists, the music map, clustering (its playlists already land on

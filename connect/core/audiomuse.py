@@ -58,10 +58,15 @@ _TIMEOUT = httpx.Timeout(6.0, connect=2.0)
 _STATUS_TTL = 300.0
 _FAILURE_TTL = 30.0
 
+# The most songs one mix, search, mood or theme returns: what the playlist
+# builder offers. AudioMuse itself caps none of them.
+MAX_SONGS = 200
+
 # How many results to ask for beyond what the caller wants: songs already
 # in the queue come back as candidates and are dropped here. Capped, since
-# the queue a long session excludes grows without bound.
-_MAX_ASK = 200
+# the queue a long session excludes grows without bound - at three times
+# the longest list, the same headroom a theme's pool has.
+_MAX_ASK = 3 * MAX_SONGS
 _MAX_EXCLUDE = 1000
 
 # Parallel getSong lookups. Enough to hydrate a batch in about one round
@@ -518,10 +523,13 @@ async def mix(
     return await _hydrate(media, _result_ids(body), n, excluded)
 
 
-# How many songs a path puts between the one playing and the one chosen, at
-# most: about half an hour of getting there. AudioMuse's own default (25)
-# is an evening's worth, more than "take me over to that song" means.
+# How long a path from a song menu is, at most, both ends counted (AudioMuse's
+# `max_steps` is the whole path, not the songs in between): about half an
+# hour of getting there. AudioMuse's own default (25) is an evening's worth,
+# more than "take me over to that song" means.
 PATH_STEPS = 8
+# AudioMuse's own ceiling for `max_steps` (its PATH_MAX_LENGTH).
+PATH_MAX_LENGTH = 200
 
 # The text searches run a model over the query (about 3 s for sound and 1.6 s
 # for lyrics, measured), well past what a similarity lookup takes.
@@ -530,23 +538,27 @@ _SEARCH_TIMEOUT = httpx.Timeout(20.0, connect=2.0)
 SEARCH_KINDS = ("sound", "lyrics")
 
 
-async def path(media, start_id: str, end_id: str) -> list[dict]:
+async def path(media, start_id: str, end_id: str, length: int | None = None) -> list[dict]:
     """The songs leading from `start_id` to `end_id`, `end_id` last and
-    `start_id` left out (it is the one already playing)."""
+    `start_id` left out (it is the one already playing).
+
+    `length` asks for a path of that many songs, both ends counted, for a
+    playlist of a chosen size. Without `path_fix_size` AudioMuse skips every
+    step it finds nothing for and the path comes out shorter; with it, it
+    widens the search instead. Still best effort - it never pads."""
     server = await server_for(media)
-    body = await _request(
-        "GET",
-        "/api/find_path",
-        params={
-            "start_song_id": start_id,
-            "end_song_id": end_id,
-            "max_steps": PATH_STEPS,
-            "server": server["id"],
-        },
-    )
+    params: dict[str, object] = {
+        "start_song_id": start_id,
+        "end_song_id": end_id,
+        "max_steps": length or PATH_STEPS,
+        "server": server["id"],
+    }
+    if length:
+        params["path_fix_size"] = "true"
+    body = await _request("GET", "/api/find_path", params=params)
     rows = body.get("path") if isinstance(body, dict) else None
     ids = _result_ids(rows)
-    songs = await _hydrate(media, ids, PATH_STEPS + 2, {start_id})
+    songs = await _hydrate(media, ids, length or PATH_STEPS, {start_id})
     # The path ends on the chosen song even where the lookup dropped or
     # merged songs on the way.
     if not songs or songs[-1].get("id") != end_id:
@@ -683,7 +695,8 @@ THEMES: dict[str, dict[str, str]] = {
 }
 
 # The axis search ranks the same songs the same way every time, so a theme
-# draws its mix from the best this many: asked again, it sounds different.
+# draws its mix from the best this many (or three times the songs wanted,
+# for a long one): asked again, it sounds different.
 _THEME_POOL = 150
 
 
@@ -725,7 +738,7 @@ async def theme_mix(media, theme: str, n: int, exclude: list[str]) -> list[dict]
         "/api/lyrics/search/axes",
         json={
             "targets": targets,
-            "limit": min(_THEME_POOL + len(excluded), _MAX_ASK),
+            "limit": min(max(_THEME_POOL, 3 * n) + len(excluded), _MAX_ASK),
             "server": server["id"],
         },
     )

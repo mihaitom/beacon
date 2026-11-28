@@ -72,12 +72,14 @@ export async function sonicMix(request: SonicMixRequest): Promise<Song[]> {
   return data.songs.map(mapSong)
 }
 
-/** The songs from `start` (left out) to `end` (last). Throws when AudioMuse
- * cannot answer. */
-export async function sonicPath(start: string, end: string): Promise<Song[]> {
+/** The songs from `start` (left out) to `end` (last). `length` asks for a
+ * path that long, both ends counted - best effort, never padded; without
+ * it the path is the song menu's short one. Throws when AudioMuse cannot
+ * answer. */
+export async function sonicPath(start: string, end: string, length?: number): Promise<Song[]> {
   const data = await fetchConnect<{ songs: RawSong[] }>('/audiomuse/path', {
     method: 'POST',
-    body: { start, end },
+    body: { start, end, length },
   })
   return data.songs.map(mapSong)
 }
