@@ -96,7 +96,7 @@ export default {
     recentlyAdded: 'Zuletzt hinzugefügt',
     recentlyPlayed: 'Zuletzt gehört',
     rediscover: 'Lange nicht gehört',
-    soundsLikeYou: 'Klingt wie dein Hören',
+    soundsLikeYou: 'Klingt nach dir',
     moodsTitle: 'Stimmungen',
     moodMixError: 'Für diese Stimmung ließ sich kein Mix zusammenstellen.',
     moods: {

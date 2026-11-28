@@ -96,7 +96,7 @@ export default {
     recentlyAdded: 'Recently added',
     recentlyPlayed: 'Recently played',
     rediscover: 'Rediscover',
-    soundsLikeYou: 'Sounds like your listening',
+    soundsLikeYou: 'Sounds like you',
     moodsTitle: 'Moods',
     moodMixError: 'Could not put a mix together for this mood.',
     moods: {

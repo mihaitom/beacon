@@ -96,7 +96,7 @@ export default {
     recentlyAdded: 'Aggiunti di recente',
     recentlyPlayed: 'Ascoltati di recente',
     rediscover: 'Da riscoprire',
-    soundsLikeYou: 'Suona come i tuoi ascolti',
+    soundsLikeYou: 'Suona come te',
     moodsTitle: 'Atmosfere',
     moodMixError: 'Impossibile creare un mix per questa atmosfera.',
     moods: {

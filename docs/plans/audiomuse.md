@@ -194,16 +194,16 @@ connect's side and the renderer gets the batch it asked for.
 
 ## Phase 3: Home and artist page
 
-- **"Sounds like your listening"** shelf on Home, desktop and phone: Alchemy
+- **"Sounds like you"** shelf on Home, desktop and phone: Alchemy
   over five random picks of Home's top songs (the catalogue's play counts),
   those top songs themselves left out, 30 songs; Reroll draws other seeds.
   Five rather than all fifteen: a blend of everything averages into the
   middle of the library. Deliberately not AudioMuse's `sonic_fingerprint`,
   which reads listening history from the media server and wants the user's
   media-server password in the request.
-- **Mood mixes** on Home: one tonal button per mood AudioMuse knows
-  (happy, relaxed, party, danceable, sad, aggressive - Beacon's own order
-  and names; a mood it has no name for is left out). A click plays 50
+- **Mood mixes** on Home, right under the recently played albums: one
+  coloured tile per mood AudioMuse knows, a fixed six (happy, relaxed,
+  party, danceable, sad, aggressive - Beacon's own order and names; a mood it has no name for is left out). A click plays 50
   songs around one of the mood's centroids, picked at random weighted by
   its song count, so the same mood sounds different the next time. The
   centroids' top tags ("rock, metal, alternative") are not shown: they

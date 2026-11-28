@@ -7,7 +7,7 @@ import { getSonicMoods, sonicMix } from '@/services/connect/audiomuse'
 import { shuffled } from '@/services/shuffle'
 import type { Song } from '@/types/library'
 
-// How many of the most played songs one "Sounds like your listening" draw
+// How many of the most played songs one "Sounds like you" draw
 // blends. All fifteen would average out into the library's middle; a few
 // keep it recognisably yours, and Reroll picks another few.
 const SEEDS_PER_DRAW = 5
@@ -77,7 +77,7 @@ export const sonicHomeShelvesMixin = defineComponent({
           exclude: mostPlayed.map((song) => song.id),
         })
       } catch (error) {
-        console.warn('[home] AudioMuse "sounds like your listening" failed:', error)
+        console.warn('[home] AudioMuse "sounds like you" failed:', error)
         this.soundsLikeYouSongs = []
       } finally {
         this.loadingSoundsLikeYou = false

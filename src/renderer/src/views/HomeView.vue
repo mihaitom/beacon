@@ -32,6 +32,14 @@
       @play-all="playAllAlbums($event, 'recent')"
     />
 
+    <mood-mixes
+      v-if="audiomuseAvailable && sonicMoods.length"
+      class="home-moods"
+      :moods="sonicMoods"
+      :loading="moodLoading"
+      @play="playMood"
+    />
+
     <top-songs-list
       :title="$t('home.topSongs')"
       :songs="topSongs"
@@ -83,13 +91,6 @@
           />
         </template>
       </song-shelf>
-      <mood-mixes
-        v-if="sonicMoods.length"
-        class="home-moods"
-        :moods="sonicMoods"
-        :loading="moodLoading"
-        @play="playMood"
-      />
     </template>
 
     <!-- Scrolls like every other shelf now, fit-to-screen dropped — see

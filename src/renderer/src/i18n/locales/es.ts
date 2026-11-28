@@ -100,7 +100,7 @@ export default {
     recentlyAdded: 'Añadido recientemente',
     recentlyPlayed: 'Reproducido recientemente',
     rediscover: 'Para redescubrir',
-    soundsLikeYou: 'Suena como lo que escuchas',
+    soundsLikeYou: 'Suena a ti',
     moodsTitle: 'Estados de ánimo',
     moodMixError: 'No se pudo crear una mezcla para este estado de ánimo.',
     moods: {

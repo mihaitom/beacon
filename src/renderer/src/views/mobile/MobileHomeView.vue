@@ -52,6 +52,14 @@
       </div>
     </section>
 
+    <mood-mixes
+      v-if="audiomuseAvailable && sonicMoods.length"
+      class="mobile-home__section"
+      :moods="sonicMoods"
+      :loading="moodLoading"
+      @play="playMood"
+    />
+
     <section v-if="loadingTopSongs || shownTopSongs.length" class="mobile-home__section">
       <div class="mobile-home__head">
         <h2 class="section-title mobile-home__title">
@@ -227,14 +235,6 @@
         />
       </div>
     </section>
-
-    <mood-mixes
-      v-if="audiomuseAvailable && sonicMoods.length"
-      class="mobile-home__section"
-      :moods="sonicMoods"
-      :loading="moodLoading"
-      @play="playMood"
-    />
 
     <section v-if="discoverAlbumsLoading || randomAlbums.length" class="mobile-home__section">
       <div class="mobile-home__head">
