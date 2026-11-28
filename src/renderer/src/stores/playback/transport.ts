@@ -12,6 +12,7 @@ import type { PlayResponse } from '@/services/connect/types'
 import type { Song } from '@/types/library'
 import { createSequenceGuard } from '@/services/playback/sequenceGuard'
 import { createLock } from '@/services/playback/lock'
+import { noteSkipped } from '@/services/playback/skips'
 import { getLocalMix, STALE_PAUSE_MS } from '@/services/playback/localMix'
 import { stopRadioMetadataWatch } from '@/services/connect/radioMetadata'
 import { localSongChangeGuard, positionTracker } from './shared'
@@ -100,6 +101,26 @@ export interface TransportActions {
     pinFirst?: boolean,
     peek?: boolean,
   ): Promise<void>
+}
+
+/** Next song, shared by the Next button and a song ending on its own;
+ * only the first of those can be a skip, see playNext(). */
+async function advanceToNext(this: PlaybackContext): Promise<void> {
+  if (this.preview) {
+    await this.previewNext()
+    return
+  }
+  if (this.radioStation) return // radio has no queue to advance
+  const index = this.nextIndex(1)
+  if (index === null) {
+    this.isPlaying = false
+    return
+  }
+  // preservePause: harmless from advanceOnSongEnd()'s natural-end call
+  // (wasPlaying is true right up to 'ended' firing, so this never
+  // triggers there) — matters for the PlayerBar's own Next button, see
+  // switchToIndex()'s comment.
+  await this.switchToIndex(index, true)
 }
 
 export const transportActions: TransportActions & ThisType<PlaybackContext> = {
@@ -386,29 +407,20 @@ export const transportActions: TransportActions & ThisType<PlaybackContext> = {
    * the next song, even with repeat-one active. Repeat-one only replays
    * the current song when it ends naturally, see advanceOnSongEnd();
    * a manual skip is an explicit "I'm done with this one", same as every
-   * other player. */
+   * other player. Leaving a song before it scrobbled is remembered as a
+   * skip for Autoplay (services/playback/skips.ts). */
   async playNext(): Promise<void> {
-    if (this.preview) {
-      await this.previewNext()
-      return
+    const song = this.currentSong
+    if (song && !this.preview && !this.radioStation && runtime.scrobbledSongId !== song.id) {
+      noteSkipped(song.id)
     }
-    if (this.radioStation) return // radio has no queue to advance
-    const index = this.nextIndex(1)
-    if (index === null) {
-      this.isPlaying = false
-      return
-    }
-    // preservePause: harmless from advanceOnSongEnd()'s natural-end call
-    // (wasPlaying is true right up to 'ended' firing, so this never
-    // triggers there) — matters for the PlayerBar's own Next button, see
-    // switchToIndex()'s comment.
-    await this.switchToIndex(index, true)
+    await advanceToNext.call(this)
   },
 
   /** Called when a song finishes on its own (local <audio> 'ended', or
    * the connect backend's status.ended transition) — unlike playNext(),
    * this is where repeat-one actually applies (replays the current song
-   * instead of advancing). */
+   * instead of advancing), and it is never a skip. */
   async advanceOnSongEnd(): Promise<void> {
     if (this.radioStation) return
     if (this.repeatMode === 'one') {
@@ -420,7 +432,7 @@ export const transportActions: TransportActions & ThisType<PlaybackContext> = {
       }
       return
     }
-    await this.playNext()
+    await advanceToNext.call(this)
   },
 
   async playPrevious(): Promise<void> {

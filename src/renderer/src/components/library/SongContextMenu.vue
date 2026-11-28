@@ -20,6 +20,10 @@
       <template #prepend><v-icon icon="mdi-radio-tower" size="small" /></template>
       <v-list-item-title>{{ $t('library.songRadio') }}</v-list-item-title>
     </v-list-item>
+    <v-list-item v-if="audiomuse.available && !external" @click="startDiscoveryRadio">
+      <template #prepend><v-icon icon="mdi-compass-outline" size="small" /></template>
+      <v-list-item-title>{{ $t('library.discoveryRadio') }}</v-list-item-title>
+    </v-list-item>
     <!-- A song from the external source is not on the media server, so
        - there is nothing to rate or put in a playlist there. -->
     <template v-if="!external">
@@ -57,6 +61,8 @@ import CreatePlaylistDialog from './CreatePlaylistDialog.vue'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
+import { useAudioMuseStore } from '@/stores/audiomuse'
+import { playDiscoveryRadio } from '@/services/playback/discoveryRadio'
 import { emitter } from '@/emitter'
 import type { Song } from '@/types/library'
 import { isExternalSourceSong } from '@/services/connect/externalSource'
@@ -78,6 +84,9 @@ export default {
     authStore() {
       return useAuthStore()
     },
+    audiomuse() {
+      return useAudioMuseStore()
+    },
     external(): boolean {
       return isExternalSourceSong(this.song)
     },
@@ -86,6 +95,7 @@ export default {
     open(event: MouseEvent): void {
       const menu = this.$refs.menu as { open: (event: MouseEvent) => void } | undefined
       menu?.open(event)
+      void this.audiomuse.ensure()
       // Same eager warm-up as SongRow.vue's openMenu().
       if (useLibraryStore().playlists.length === 0) {
         void useLibraryStore().fetchPlaylists()
@@ -113,6 +123,9 @@ export default {
         })
         console.error('[song-radio]', error)
       }
+    },
+    startDiscoveryRadio(): void {
+      void playDiscoveryRadio(this.song)
     },
     async addToPlaylist(playlistId: string): Promise<void> {
       await useLibraryStore().addToPlaylist(playlistId, [this.song.id])

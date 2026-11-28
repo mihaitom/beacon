@@ -279,6 +279,8 @@ export default {
     menuDetails: 'Details',
     songsUnavailable: 'Die Titel dazu konnten nicht geladen werden.',
     songRadioError: 'Song-Radio konnte nicht gestartet werden.',
+    discoveryRadio: 'Entdeckungs-Radio',
+    discoveryRadioError: 'Entdeckungs-Radio konnte nicht gestartet werden.',
     artistRadio: 'Künstler-Radio',
     artistRadioError: 'Künstler-Radio konnte nicht gestartet werden.',
     plexPassRequired:
@@ -978,6 +980,28 @@ export default {
     apiKeySaved: 'Schlüssel gespeichert',
     apiKeyCleared: 'Schlüssel entfernt',
     apiKeyFailed: 'Schlüssel konnte nicht gespeichert werden',
+    audiomuseTitle: 'AudioMuse-AI',
+    audiomuseWhat:
+      'Lässt AudioMuse-AI Songs danach auswählen, wie sie klingen: Autoplay setzt die letzten Songs der Warteschlange fort und meidet übersprungene, Song- und Künstler-Radio nutzen die Analyse, und die Song-Menüs bekommen das Entdeckungs-Radio. Ohne AudioMuse-AI funktioniert alles wie bisher.',
+    audiomuseUrlLabel: 'Adresse',
+    audiomuseKeyLabel: 'API-Token',
+    audiomuseStep1:
+      'In AudioMuse-AI unter Administration > Setup Wizard ein API-Token (API_TOKEN) festlegen, falls noch keins gesetzt ist.',
+    audiomuseStep2:
+      'Die Adresse von AudioMuse-AI so eintragen, wie dieses Beacon sie erreicht, und das Token hier einfügen.',
+    audiomuseChecking: 'Verbindung wird geprüft ...',
+    audiomuseConnected: 'Verbunden mit AudioMuse-AI {version}, Songs von dessen Server „{server}“.',
+    audiomuseNotConfigured: 'Nicht eingerichtet.',
+    audiomuseUnreachable: 'AudioMuse-AI ist unter dieser Adresse nicht erreichbar.',
+    audiomuseUnauthorized: 'AudioMuse-AI akzeptiert dieses Token nicht.',
+    audiomuseTooOld: 'Dieses AudioMuse-AI ist zu alt. Nötig ist Version 3.7.0 oder neuer.',
+    audiomuseNoServer:
+      'AudioMuse-AI kennt die Songs des Servers nicht, bei dem du angemeldet bist. Füge diesen Server in AudioMuse-AI hinzu und lass die Bibliothek analysieren.',
+    audiomuseFromServer: 'Die Adresse kommt von deinem Beacon-Server.',
+    audiomuseRemove: 'Verbindung entfernen',
+    audiomuseSaved: 'Gespeichert',
+    audiomuseRemoved: 'Verbindung entfernt',
+    audiomuseFailed: 'AudioMuse-AI-Einstellungen konnten nicht gespeichert werden',
     homeAutomationTitle: 'Hausautomation',
     homeAutomationRetiring:
       'Dieser Schlüssel wird abgelöst. Richte Home Assistant neu mit einem Schlüssel unter Konto > Apps und Geräte ein; die Anleitung zeigt, wie. Was diesen Schlüssel nutzt, funktioniert vorerst weiter.',

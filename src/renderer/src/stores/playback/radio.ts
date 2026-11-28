@@ -5,6 +5,8 @@ import { useConnectStore } from '../connect'
 import { useAuthStore } from '../auth'
 import { useRadioSettingsStore } from '../radioSettings'
 import { useRadioMetadataStore } from '../radioMetadata'
+import { useAudioMuseStore } from '../audiomuse'
+import { sonicMix, type SonicMixRequest } from '@/services/connect/audiomuse'
 import * as connectPlayback from '@/services/connect/playback'
 import type { Artist, RadioStation, Song } from '@/types/library'
 import { getLocalMix } from '@/services/playback/localMix'
@@ -23,42 +25,97 @@ import type { PlaybackContext } from './context'
 export interface RadioActions {
   startSongRadio(song: Song): Promise<void>
   startArtistRadio(artist: Artist): Promise<void>
+  startDiscoveryRadio(song: Song): Promise<void>
   playRadioStation(station: RadioStation): Promise<void>
   leaveRadio(): void
   startLocalRadio(streamUrl: string): void
   reconnectRadio(): void
 }
 
+// As many songs as a radio starts with when AudioMuse-AI picks them. Enough
+// for a couple of hours; Autoplay carries on from there if it is on.
+const SONIC_RADIO_LENGTH = 50
+
+/** AudioMuse-AI's songs for a radio, or null when it cannot answer and the
+ * media server should be asked instead. */
+async function sonicRadio(request: SonicMixRequest): Promise<Song[] | null> {
+  const audiomuse = useAudioMuseStore()
+  if (!audiomuse.usable()) return null
+  try {
+    const songs = await sonicMix({ n: SONIC_RADIO_LENGTH, ...request })
+    return songs.length ? songs : null
+  } catch (error) {
+    console.warn('[playback] AudioMuse radio failed, using the media server:', error)
+    audiomuse.reset()
+    return null
+  }
+}
+
+/** Plays `song` followed by `similar` - or, when `song` is the one already
+ * playing, keeps it going and replaces only what comes after. */
+async function playFromSong(this: PlaybackContext, song: Song, similar: Song[]): Promise<void> {
+  const rest = similar.filter((t) => t.id !== song.id)
+  // From the song that is playing, the music carries on: only what
+  // comes after it is replaced.
+  if (!this.preview && this.currentSong?.id === song.id) {
+    this.replaceQueueAfterCurrent(rest)
+    return
+  }
+  // peek: a server-picked mix, unlike playSongList()'s other, more
+  // direct callers (clicking a song/album/playlist you were already
+  // looking at) — see peekQueueDrawer()'s own comment for why that
+  // distinction is what actually decides whether a call site peeks.
+  await this.playSongList([song, ...rest], 0, true, true)
+}
+
 export const radioActions: RadioActions & ThisType<PlaybackContext> = {
-  /** Song Radio — fetches songs similar to `song` from the media server
-   * and starts a fresh queue with `song` first, so picking it always
-   * plays the song you actually clicked, not an arbitrary similar one. */
+  /** Song Radio — songs similar to `song`, from AudioMuse-AI when it
+   * answers and from the media server otherwise, in a fresh queue with
+   * `song` first, so picking it always plays the song you actually
+   * clicked, not an arbitrary similar one. */
   async startSongRadio(song: Song): Promise<void> {
+    const sonic = await sonicRadio({ method: 'similar', add: [{ id: song.id }] })
+    if (sonic) {
+      await playFromSong.call(this, song, sonic)
+      return
+    }
     const { songs: similar, plexPassRequired } = await useLibraryStore()
       .client()
       .getSimilarSongs2(song.id)
     if (plexPassRequired) notifyPlexPassRequired('library.songRadio')
-    // From the song that is playing, the music carries on: only what
-    // comes after it is replaced.
-    if (!this.preview && this.currentSong?.id === song.id) {
-      this.replaceQueueAfterCurrent(similar.filter((t) => t.id !== song.id))
-      return
-    }
-    const songs = [song, ...similar.filter((t) => t.id !== song.id)]
-    // peek: a server-picked mix, unlike playSongList()'s other, more
-    // direct callers (clicking a song/album/playlist you were already
-    // looking at) — see peekQueueDrawer()'s own comment for why that
-    // distinction is what actually decides whether a call site peeks.
-    await this.playSongList(songs, 0, true, true)
+    await playFromSong.call(this, song, similar)
   },
 
-  /** Artist Radio — same getSimilarSongs2 endpoint as Song Radio, but
+  /** Discovery Radio — songs that sound related to `song` but sit further
+   * from the middle of the library, AudioMuse-AI's hyperbolic "niche". No
+   * fallback: without AudioMuse it would only be Song Radio again, so the
+   * menus offer it only when AudioMuse answers, and a failure is an error
+   * for the caller to show. */
+  async startDiscoveryRadio(song: Song): Promise<void> {
+    const songs = await sonicMix({
+      method: 'discovery',
+      add: [{ id: song.id }],
+      n: SONIC_RADIO_LENGTH,
+    })
+    if (!songs.length) throw new Error('AudioMuse found nothing to discover from this song')
+    await playFromSong.call(this, song, songs)
+  },
+
+  /** Artist Radio — AudioMuse-AI's blend of the artist when it answers;
+   * otherwise the same getSimilarSongs2 endpoint as Song Radio, but
    * `id` here is the artist's own id rather than a song's; Navidrome's
    * recommendation engine accepts either (see SubsonicClient.
    * getSimilarSongs2's docstring). No single "seed" song to pin first
    * like Song Radio does — the whole point here is a mix across the
    * artist's catalog, not one particular song. */
   async startArtistRadio(artist: Artist): Promise<void> {
+    // The artist's whole sound as one seed, rather than the media server's
+    // guess from tags.
+    const sonic = await sonicRadio({ method: 'blend', add: [{ id: artist.id, type: 'artist' }] })
+    if (sonic) {
+      await this.playSongList(sonic, 0, true, true)
+      return
+    }
     const { songs, plexPassRequired } = await useLibraryStore().client().getSimilarSongs2(artist.id)
     if (plexPassRequired) notifyPlexPassRequired('library.artistRadio')
     // peek — see startSongRadio()'s identical comment.

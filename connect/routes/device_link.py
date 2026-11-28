@@ -27,6 +27,7 @@ from core import (
     account_settings,
     api_keys,
     app_library,
+    audiomuse,
     device_keys,
     external_source,
     lyrics_offsets,
@@ -987,7 +988,10 @@ def get_api_keys(owner: KeyOwner = _syncing) -> dict:
     key was made. They end up in a file on that computer, hence one by one."""
     if device_keys.API_KEYS not in owner.scopes:
         return {"keys": {}}
-    return {"keys": {service: api_keys.get(service) for service in api_keys.SERVICES}}
+    return {
+        "keys": {service: api_keys.get(service) for service in api_keys.SERVICES},
+        "urls": {"audiomuse": audiomuse.base_url()},
+    }
 
 
 class SourcesPatch(BaseModel):

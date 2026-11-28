@@ -292,6 +292,10 @@
           <template #prepend><v-icon icon="mdi-radio-tower" size="small" /></template>
           <v-list-item-title>{{ $t('library.songRadio') }}</v-list-item-title>
         </v-list-item>
+        <v-list-item v-if="audiomuse.available" @click="menuDiscoveryRadio">
+          <template #prepend><v-icon icon="mdi-compass-outline" size="small" /></template>
+          <v-list-item-title>{{ $t('library.discoveryRadio') }}</v-list-item-title>
+        </v-list-item>
 
         <context-menu-section :label="$t('library.menuLibrary')" />
         <rating-item v-if="menuSong" :item="menuSong" />
@@ -341,6 +345,8 @@ import AddToPlaylistSubmenu from '@/components/library/AddToPlaylistSubmenu.vue'
 import RatingItem from '@/components/library/RatingItem.vue'
 import CreatePlaylistDialog from '@/components/library/CreatePlaylistDialog.vue'
 import { useAuthStore } from '@/stores/auth'
+import { useAudioMuseStore } from '@/stores/audiomuse'
+import { playDiscoveryRadio } from '@/services/playback/discoveryRadio'
 import {
   canSaveServerQueue,
   loadServerQueue,
@@ -539,6 +545,9 @@ export default {
     },
     authStore() {
       return useAuthStore()
+    },
+    audiomuse() {
+      return useAudioMuseStore()
     },
     virtualizeQueue(): boolean {
       return this.playbackStore.queue.length > QUEUE_VIRTUALIZE_THRESHOLD
@@ -861,6 +870,7 @@ export default {
     openMenu(index: number, event: MouseEvent) {
       this.menuSong = this.playbackStore.queue[index] ?? null
       ;(this.$refs.menu as { open: (event: MouseEvent) => void } | undefined)?.open(event)
+      void this.audiomuse.ensure()
       // Loaded now, so the playlist submenu has them by the time it opens
       // (see SongRow.vue's openMenu).
       if (this.libraryStore.playlists.length === 0) void this.libraryStore.fetchPlaylists()
@@ -892,6 +902,9 @@ export default {
         })
         console.error('[song-radio]', error)
       }
+    },
+    menuDiscoveryRadio() {
+      if (this.menuSong) void playDiscoveryRadio(this.menuSong)
     },
     menuCreatePlaylist() {
       if (!this.menuSong) return

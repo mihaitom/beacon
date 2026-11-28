@@ -281,6 +281,8 @@ export default {
     menuDetails: 'Détails',
     songsUnavailable: 'Impossible de charger les titres correspondants.',
     songRadioError: 'Impossible de démarrer la radio du titre.',
+    discoveryRadio: 'Radio découverte',
+    discoveryRadioError: 'Impossible de démarrer la radio découverte.',
     artistRadio: "Radio de l'artiste",
     artistRadioError: "Impossible de démarrer la radio de l'artiste.",
     plexPassRequired:
@@ -983,6 +985,29 @@ export default {
     apiKeySaved: 'Clé enregistrée',
     apiKeyCleared: 'Clé supprimée',
     apiKeyFailed: "Impossible d'enregistrer la clé",
+    audiomuseTitle: 'AudioMuse-AI',
+    audiomuseWhat:
+      "Laisse AudioMuse-AI choisir les titres selon leur son : la lecture automatique prolonge les derniers titres de la file et évite ceux qui ont été passés, la radio du titre et celle de l'artiste utilisent son analyse, et les menus des titres proposent la radio découverte. Sans lui, tout fonctionne comme avant.",
+    audiomuseUrlLabel: 'Adresse',
+    audiomuseKeyLabel: "Jeton d'API",
+    audiomuseStep1:
+      "Dans AudioMuse-AI, ouvrez Administration > Setup Wizard et définissez un jeton d'API (API_TOKEN) s'il n'y en a pas encore.",
+    audiomuseStep2:
+      "Saisissez l'adresse d'AudioMuse-AI telle que ce Beacon l'atteint, et collez le jeton ici.",
+    audiomuseChecking: 'Vérification de la connexion...',
+    audiomuseConnected: 'Connecté à AudioMuse-AI {version}, titres de son serveur « {server} ».',
+    audiomuseNotConfigured: 'Non configuré.',
+    audiomuseUnreachable: 'AudioMuse-AI est injoignable à cette adresse.',
+    audiomuseUnauthorized: "AudioMuse-AI n'accepte pas ce jeton.",
+    audiomuseTooOld:
+      'Cet AudioMuse-AI est trop ancien. La version 3.7.0 ou plus récente est nécessaire.',
+    audiomuseNoServer:
+      'AudioMuse-AI ne connaît pas les titres du serveur auquel vous êtes connecté. Ajoutez ce serveur dans AudioMuse-AI et laissez-le analyser la bibliothèque.',
+    audiomuseFromServer: "L'adresse vient de votre serveur Beacon.",
+    audiomuseRemove: 'Supprimer la connexion',
+    audiomuseSaved: 'Enregistré',
+    audiomuseRemoved: 'Connexion supprimée',
+    audiomuseFailed: "Impossible d'enregistrer les réglages d'AudioMuse-AI",
     homeAutomationTitle: 'Domotique',
     homeAutomationRetiring:
       "Cette clé va être retirée. Configurez à nouveau Home Assistant avec une clé sous Compte > Applications et appareils ; le guide explique comment. Ce qui utilise cette clé continue de fonctionner pour l'instant.",

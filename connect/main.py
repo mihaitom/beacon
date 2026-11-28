@@ -48,6 +48,7 @@ from media import jellyfin_bridge, plex_bridge
 from media.login_errors import LoginFailed
 from routes.account_settings import router as account_settings_router
 from routes.api_keys import router as api_keys_router
+from routes.audiomuse import router as audiomuse_router
 from routes.cast_permissions import router as cast_permissions_router
 from routes.coverart import router as coverart_router
 from routes.debug import router as debug_router
@@ -530,6 +531,7 @@ app.include_router(lights_router)
 app.include_router(account_settings_router)
 app.include_router(cast_permissions_router)
 app.include_router(api_keys_router)
+app.include_router(audiomuse_router)
 app.include_router(pairing_router)
 app.include_router(lyrics_router)
 app.include_router(lyrics_offsets_router)

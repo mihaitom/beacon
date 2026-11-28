@@ -280,6 +280,8 @@ export default {
     menuDetails: 'Details',
     songsUnavailable: 'Could not load the songs for that.',
     songRadioError: 'Could not start Song Radio.',
+    discoveryRadio: 'Discovery Radio',
+    discoveryRadioError: 'Could not start Discovery Radio.',
     artistRadio: 'Artist Radio',
     artistRadioError: 'Could not start Artist Radio.',
     plexPassRequired:
@@ -968,6 +970,28 @@ export default {
     apiKeySaved: 'Key saved',
     apiKeyCleared: 'Key removed',
     apiKeyFailed: 'Could not save the key',
+    audiomuseTitle: 'AudioMuse-AI',
+    audiomuseWhat:
+      'Lets AudioMuse-AI pick songs by how they sound: Autoplay continues from the last few queued songs and steers away from skipped ones, Song and Artist Radio use its analysis, and song menus get Discovery Radio. Without it, everything works as before.',
+    audiomuseUrlLabel: 'Address',
+    audiomuseKeyLabel: 'API token',
+    audiomuseStep1:
+      'In AudioMuse-AI, open Administration > Setup Wizard and set an API token (API_TOKEN) if there is none yet.',
+    audiomuseStep2:
+      "Enter AudioMuse-AI's address as this Beacon reaches it, and paste the token here.",
+    audiomuseChecking: 'Checking the connection...',
+    audiomuseConnected: 'Connected to AudioMuse-AI {version}, songs from its server "{server}".',
+    audiomuseNotConfigured: 'Not set up.',
+    audiomuseUnreachable: 'AudioMuse-AI cannot be reached at this address.',
+    audiomuseUnauthorized: 'AudioMuse-AI does not accept this token.',
+    audiomuseTooOld: 'This AudioMuse-AI is too old. Version 3.7.0 or newer is needed.',
+    audiomuseNoServer:
+      'AudioMuse-AI does not know the songs of the server you are logged in to. Add that server in AudioMuse-AI and let it analyse the library.',
+    audiomuseFromServer: 'The address comes from your Beacon server.',
+    audiomuseRemove: 'Remove connection',
+    audiomuseSaved: 'Saved',
+    audiomuseRemoved: 'Connection removed',
+    audiomuseFailed: 'Could not save the AudioMuse-AI settings',
     homeAutomationTitle: 'Home automation',
     homeAutomationRetiring:
       'This key is being retired. Set Home Assistant up again with a key under Account > Apps and devices; the guide shows how. What uses this key keeps working for now.',

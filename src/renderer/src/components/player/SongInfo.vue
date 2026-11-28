@@ -96,6 +96,10 @@
           <template #prepend><v-icon icon="mdi-radio-tower" size="small" /></template>
           <v-list-item-title>{{ $t('library.songRadio') }}</v-list-item-title>
         </v-list-item>
+        <v-list-item v-if="audiomuse.available" @click="startDiscoveryRadio">
+          <template #prepend><v-icon icon="mdi-compass-outline" size="small" /></template>
+          <v-list-item-title>{{ $t('library.discoveryRadio') }}</v-list-item-title>
+        </v-list-item>
         <context-menu-section :label="$t('library.menuLibrary')" />
         <rating-item :item="currentSong" />
         <add-to-playlist-submenu @create="createPlaylist" @select="addToPlaylist" />
@@ -132,6 +136,8 @@ import { usePlaybackStore } from '@/stores/playback'
 import { useRadioMetadataStore } from '@/stores/radioMetadata'
 import { useLibraryStore } from '@/stores/library'
 import { useAuthStore } from '@/stores/auth'
+import { useAudioMuseStore } from '@/stores/audiomuse'
+import { playDiscoveryRadio } from '@/services/playback/discoveryRadio'
 import { radioFaviconRequest, type RadioFaviconRequest } from '@/services/connect/radio'
 import { emitter } from '@/emitter'
 import ArtistCredit from '@/components/library/ArtistCredit.vue'
@@ -176,6 +182,9 @@ export default {
     authStore() {
       return useAuthStore()
     },
+    audiomuse() {
+      return useAudioMuseStore()
+    },
     currentSong() {
       return this.playbackStore.currentSong
     },
@@ -209,6 +218,7 @@ export default {
     openMenu(event: MouseEvent) {
       const menu = this.$refs.menu as { open: (event: MouseEvent) => void } | undefined
       menu?.open(event)
+      void this.audiomuse.ensure()
       // Same eager warm-up as SongRow.vue's openMenu(), for the library
       // song's playlist submenu.
       if (this.playbackStore.currentSongInLibrary && useLibraryStore().playlists.length === 0) {
@@ -229,6 +239,9 @@ export default {
       } catch (error) {
         console.error('[player] Failed to copy artist and title:', error)
       }
+    },
+    startDiscoveryRadio() {
+      if (this.currentSong) void playDiscoveryRadio(this.currentSong)
     },
     async startSongRadio() {
       if (!this.currentSong) return

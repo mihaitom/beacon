@@ -66,6 +66,7 @@
           <advanced-section />
           <storage-section />
           <api-keys-section />
+          <audio-muse-section />
           <home-automation-section />
         </v-tabs-window-item>
       </v-tabs-window>
@@ -86,6 +87,7 @@ import ExternalSourceSection from '@/components/settings/ExternalSourceSection.v
 import StorageSection from '@/components/settings/StorageSection.vue'
 import LyricsProvidersSection from '@/components/settings/LyricsProvidersSection.vue'
 import ApiKeysSection from '@/components/settings/ApiKeysSection.vue'
+import AudioMuseSection from '@/components/settings/AudioMuseSection.vue'
 import HomeAutomationSection from '@/components/settings/HomeAutomationSection.vue'
 import ServerLinkSection from '@/components/settings/ServerLinkSection.vue'
 import DeviceKeysSection from '@/components/settings/DeviceKeysSection.vue'
@@ -114,6 +116,7 @@ export default {
     StorageSection,
     LyricsProvidersSection,
     ApiKeysSection,
+    AudioMuseSection,
     HomeAutomationSection,
     ServerLinkSection,
     DeviceKeysSection,

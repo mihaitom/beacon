@@ -30,6 +30,7 @@ import httpx
 from core import (
     account_settings,
     api_keys,
+    audiomuse,
     external_source,
     lyrics_offsets,
     milkdrop_presets,
@@ -665,16 +666,22 @@ def _send_milestones(link: dict) -> None:
 
 
 def _adopt_api_keys(link: dict) -> None:
-    lent = _call(link["url"], link["key"], "GET", "/api-keys").get("keys") or {}
+    body = _call(link["url"], link["key"], "GET", "/api-keys")
+    lent = body.get("keys") or {}
     for service in api_keys.SERVICES:
         key = lent.get(service)
         api_keys.set_shared(service, key if isinstance(key, str) else "")
+    # AudioMuse's token is no use without the address it belongs to.
+    urls = body.get("urls") if isinstance(body.get("urls"), dict) else {}
+    url = urls.get("audiomuse")
+    audiomuse.set_shared_url(url if isinstance(url, str) else "")
 
 
 def _forget_api_keys() -> None:
     """They were lent for as long as this desktop is paired."""
     for service in api_keys.SERVICES:
         api_keys.set_shared(service, "")
+    audiomuse.set_shared_url("")
 
 
 def _sync_sources(link: dict, scopes: list[str]) -> None:

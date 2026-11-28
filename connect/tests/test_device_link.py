@@ -23,6 +23,7 @@ from starlette.requests import ClientDisconnect
 from core import (
     account_settings,
     api_keys,
+    audiomuse,
     device_keys,
     external_source,
     lyrics_offsets,
@@ -63,8 +64,11 @@ def _isolated(tmp_path, monkeypatch):
     api_keys._cache.clear()
     monkeypatch.delenv("LASTFM_API_KEY", raising=False)
     monkeypatch.delenv("FANART_API_KEY", raising=False)
+    monkeypatch.delenv("AUDIOMUSE_API_KEY", raising=False)
+    monkeypatch.delenv("AUDIOMUSE_URL", raising=False)
     with (
         patch.object(api_keys, "_DATA_DIR", str(tmp_path / "keys")),
+        patch.object(audiomuse, "_DATA_DIR", str(tmp_path / "keys")),
         patch.object(play_history, "_DIR", str(tmp_path / "history")),
         patch.object(account_settings, "_PATH", str(tmp_path / "settings.json")),
     ):
@@ -468,6 +472,7 @@ class FakeServer:
         # from before they were shared.
         self.presets: dict[str, dict] | None = {}
         self.api_keys: dict = {}
+        self.api_urls: dict = {}
         self.sources: dict | None = {"sources": [], "removed": {}}
         self.summary: dict = {
             "available": True,
@@ -513,7 +518,7 @@ class FakeServer:
         if path == "/charts":
             return httpx.Response(200, json=self.charts)
         if path == "/api-keys":
-            return httpx.Response(200, json={"keys": self.api_keys})
+            return httpx.Response(200, json={"keys": self.api_keys, "urls": self.api_urls})
         if path == "/external-sources":
             if self.sources is None:
                 return httpx.Response(404, json={"detail": "Not Found"})
@@ -1261,7 +1266,18 @@ def sharing_key() -> str:
 def test_a_device_confirmed_for_it_gets_the_installations_keys(public):
     api_keys.set("lastfm", "lastfm-secret")
     answer = public.get("/device-link/api-keys", headers=auth(sharing_key())).json()
-    assert answer == {"keys": {"lastfm": "lastfm-secret", "fanart": ""}}
+    assert answer == {
+        "keys": {"lastfm": "lastfm-secret", "fanart": "", "audiomuse": ""},
+        "urls": {"audiomuse": ""},
+    }
+
+
+def test_audiomuse_is_lent_with_its_address(public):
+    audiomuse.set_url("http://audiomuse.local:8000")
+    api_keys.set("audiomuse", "am-token")
+    answer = public.get("/device-link/api-keys", headers=auth(sharing_key())).json()
+    assert answer["keys"]["audiomuse"] == "am-token"
+    assert answer["urls"] == {"audiomuse": "http://audiomuse.local:8000"}
 
 
 def test_a_device_without_that_confirmation_does_not(public):
@@ -1304,6 +1320,24 @@ def test_the_desktop_uses_the_servers_key(paired):
         "fromEnvironment": False,
         "fromServer": True,
     }
+
+
+def test_the_desktop_uses_the_servers_audiomuse_until_unpaired(paired):
+    paired.api_keys = {"audiomuse": "from-server"}
+    paired.api_urls = {"audiomuse": "http://audiomuse.local:8000"}
+    server_link.send_once(now=NOW)
+    assert audiomuse.is_configured() is True
+    assert audiomuse.settings_status()["urlFromServer"] is True
+    server_link.unpair()
+    assert audiomuse.base_url() == ""
+
+
+def test_an_older_server_without_addresses_lends_no_audiomuse_address(paired):
+    paired.api_keys = {"lastfm": "from-server"}
+    paired.api_urls = None
+    server_link.send_once(now=NOW)
+    assert api_keys.get("lastfm") == "from-server"
+    assert audiomuse.base_url() == ""
 
 
 def test_a_key_entered_here_stays_in_charge(paired):

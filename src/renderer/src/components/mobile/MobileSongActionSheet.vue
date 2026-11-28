@@ -44,6 +44,10 @@
           <template #prepend><v-icon icon="mdi-radio-tower" /></template>
           <v-list-item-title>{{ $t('library.songRadio') }}</v-list-item-title>
         </v-list-item>
+        <v-list-item v-if="audiomuse.available" @click="startDiscoveryRadio">
+          <template #prepend><v-icon icon="mdi-compass-outline" /></template>
+          <v-list-item-title>{{ $t('library.discoveryRadio') }}</v-list-item-title>
+        </v-list-item>
         <v-list-item v-if="authStore.capabilities.favorites" @click="toggleFavorite">
           <template #prepend>
             <v-icon :icon="song.starred ? 'mdi-heart' : 'mdi-heart-outline'" />
@@ -99,6 +103,10 @@
           <template #prepend><v-icon icon="mdi-radio-tower" /></template>
           <v-list-item-title>{{ $t('library.songRadio') }}</v-list-item-title>
         </v-list-item>
+        <v-list-item v-if="audiomuse.available" @click="startDiscoveryRadio">
+          <template #prepend><v-icon icon="mdi-compass-outline" /></template>
+          <v-list-item-title>{{ $t('library.discoveryRadio') }}</v-list-item-title>
+        </v-list-item>
         <v-list-item v-if="authStore.capabilities.favorites" @click="toggleFavorite">
           <template #prepend>
             <v-icon :icon="song.starred ? 'mdi-heart' : 'mdi-heart-outline'" />
@@ -150,6 +158,8 @@ import CoverArt from '@/components/library/CoverArt.vue'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore, type QueueMoveTarget } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
+import { useAudioMuseStore } from '@/stores/audiomuse'
+import { playDiscoveryRadio } from '@/services/playback/discoveryRadio'
 import type { Song } from '@/types/library'
 import type { CreditPart } from '@/services/artistCredits'
 
@@ -201,6 +211,9 @@ export default {
     authStore() {
       return useAuthStore()
     },
+    audiomuse() {
+      return useAudioMuseStore()
+    },
     inQueue(): boolean {
       return this.queueIndex >= 0
     },
@@ -215,6 +228,7 @@ export default {
     modelValue(open: boolean) {
       if (open) {
         this.playlistPicker = false
+        void this.audiomuse.ensure()
         if (this.libraryStore.playlists.length === 0) void this.libraryStore.fetchPlaylists()
       }
     },
@@ -283,6 +297,11 @@ export default {
       const song = this.song
       if (!song) return
       this.act(() => this.playbackStore.startSongRadio(song))
+    },
+    startDiscoveryRadio() {
+      const song = this.song
+      if (!song) return
+      this.act(() => playDiscoveryRadio(song))
     },
     toggleFavorite() {
       const song = this.song

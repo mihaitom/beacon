@@ -209,6 +209,13 @@
         <template #prepend><v-icon icon="mdi-radio-tower" size="small" /></template>
         <v-list-item-title>{{ $t('library.songRadio') }}</v-list-item-title>
       </v-list-item>
+      <v-list-item
+        v-if="audiomuse.available && !showSelectionSubheader"
+        @click="startDiscoveryRadio"
+      >
+        <template #prepend><v-icon icon="mdi-compass-outline" size="small" /></template>
+        <v-list-item-title>{{ $t('library.discoveryRadio') }}</v-list-item-title>
+      </v-list-item>
 
       <!-- What is still true tomorrow. The queue section above is undone
          - by playing something else; this writes to a playlist. -->
@@ -274,6 +281,8 @@ import RatingItem from './RatingItem.vue'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
 import { useAuthStore } from '@/stores/auth'
+import { useAudioMuseStore } from '@/stores/audiomuse'
+import { playDiscoveryRadio } from '@/services/playback/discoveryRadio'
 import type { PropType } from 'vue'
 import type { SongColumn } from '@/services/library/songColumns'
 import type { Song } from '@/types/library'
@@ -402,6 +411,9 @@ export default {
     authStore() {
       return useAuthStore()
     },
+    audiomuse() {
+      return useAudioMuseStore()
+    },
     isCurrentSong() {
       return this.playbackStore.currentSong?.id === this.song.id
     },
@@ -414,6 +426,9 @@ export default {
     },
   },
   methods: {
+    startDiscoveryRadio() {
+      void playDiscoveryRadio(this.song as Song)
+    },
     /** What a plain text cell says. The column itself knows - this only
      * hands it the song and the locale it should be written in (a date
      * column reads differently in de than in en). */
@@ -477,6 +492,7 @@ export default {
     },
     openMenu(event: MouseEvent) {
       ;(this.$refs.menu as { open: (event: MouseEvent) => void } | undefined)?.open(event)
+      void this.audiomuse.ensure()
       // Fetched eagerly (not on-demand when the submenu opens) so the
       // playlist list is already there by the time it's hovered — playlist
       // counts are small enough that this is cheap, and it only ever

@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Added
 
+- AudioMuse-AI can be connected under Settings > Advanced: Autoplay then continues from the last few songs in the queue and steers away from the ones you skipped, Song and Artist Radio pick by sound on Navidrome, Jellyfin and Plex alike, and song menus get a Discovery Radio with related songs from further out in your library
 - The web version notices when the server has been updated while it was open and offers a reload, instead of carrying on with the old version until a page fails to load
 
 ## [1.13.0] - 2026-11-27

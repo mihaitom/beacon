@@ -283,6 +283,8 @@ export default {
     menuDetails: 'Detalles',
     songsUnavailable: 'No se pudieron cargar las canciones.',
     songRadioError: 'No se pudo iniciar la radio de la canción.',
+    discoveryRadio: 'Radio de descubrimiento',
+    discoveryRadioError: 'No se pudo iniciar la radio de descubrimiento.',
     artistRadio: 'Radio del artista',
     artistRadioError: 'No se pudo iniciar la radio del artista.',
     plexPassRequired:
@@ -981,6 +983,29 @@ export default {
     apiKeySaved: 'Clave guardada',
     apiKeyCleared: 'Clave eliminada',
     apiKeyFailed: 'No se ha podido guardar la clave',
+    audiomuseTitle: 'AudioMuse-AI',
+    audiomuseWhat:
+      'Permite que AudioMuse-AI elija canciones por cómo suenan: la reproducción automática continúa a partir de las últimas canciones de la cola y evita las que se han saltado, la radio de la canción y la del artista usan su análisis, y los menús de canciones incluyen la radio de descubrimiento. Sin él, todo funciona como antes.',
+    audiomuseUrlLabel: 'Dirección',
+    audiomuseKeyLabel: 'Token de API',
+    audiomuseStep1:
+      'En AudioMuse-AI, abre Administration > Setup Wizard y establece un token de API (API_TOKEN) si aún no hay ninguno.',
+    audiomuseStep2:
+      'Introduce la dirección de AudioMuse-AI tal como la alcanza este Beacon y pega aquí el token.',
+    audiomuseChecking: 'Comprobando la conexión...',
+    audiomuseConnected: 'Conectado a AudioMuse-AI {version}, canciones de su servidor «{server}».',
+    audiomuseNotConfigured: 'Sin configurar.',
+    audiomuseUnreachable: 'No se puede acceder a AudioMuse-AI en esta dirección.',
+    audiomuseUnauthorized: 'AudioMuse-AI no acepta este token.',
+    audiomuseTooOld:
+      'Este AudioMuse-AI es demasiado antiguo. Se necesita la versión 3.7.0 o posterior.',
+    audiomuseNoServer:
+      'AudioMuse-AI no conoce las canciones del servidor en el que has iniciado sesión. Añade ese servidor en AudioMuse-AI y deja que analice la biblioteca.',
+    audiomuseFromServer: 'La dirección viene de tu servidor Beacon.',
+    audiomuseRemove: 'Quitar conexión',
+    audiomuseSaved: 'Guardado',
+    audiomuseRemoved: 'Conexión quitada',
+    audiomuseFailed: 'No se pudo guardar la configuración de AudioMuse-AI',
     homeAutomationTitle: 'Domótica',
     homeAutomationRetiring:
       'Esta clave se va a retirar. Vuelve a configurar Home Assistant con una clave en Cuenta > Apps y dispositivos; la guía explica cómo. Lo que usa esta clave sigue funcionando por ahora.',

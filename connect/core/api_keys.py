@@ -1,8 +1,8 @@
 """core/api_keys.py — installation-wide API keys for external services.
 
 One place for the credentials Beacon stores on behalf of a whole
-installation rather than one account: Last.fm's application key and
-Fanart.tv's personal key today. Each is a plain text file under
+installation rather than one account: Last.fm's application key,
+Fanart.tv's personal key and AudioMuse-AI's API token. Each is a plain text file under
 CONNECT_DATA_DIR (`<service>_api_key.txt`, mode 0600) so it survives an
 Electron app update, whose packaged resources folder is replaced wholesale,
 and a Docker container recreation. An environment variable
@@ -29,7 +29,7 @@ from core.paths import data_dir
 logger = logging.getLogger("connect.api_keys")
 
 # Every service a key may be stored for. The route only accepts these.
-SERVICES = ("lastfm", "fanart")
+SERVICES = ("lastfm", "fanart", "audiomuse")
 
 _DATA_DIR = data_dir()
 

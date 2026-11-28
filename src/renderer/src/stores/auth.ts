@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { buildSubsonicCredential } from '@/services/subsonic/client'
 import { computeConnectSessionId } from '@/services/connect/session-id'
 import { postConfig, getHealth } from '@/services/connect/config'
+import { useAudioMuseStore } from './audiomuse'
 import { loginErrorMessage } from '@/services/connect/errorMessage'
 import {
   postJellyfinLogin,
@@ -171,6 +172,11 @@ export const useAuthStore = defineStore('auth', {
 
       this.health = await getHealth()
       this.authenticated = true
+      // Asked now rather than when a song menu first opens, so its
+      // AudioMuse entry is there from the start instead of appearing in an
+      // open menu. Not awaited: nothing about logging in depends on it.
+      useAudioMuseStore().reset()
+      void useAudioMuseStore().ensure()
       await this.resolveAdminRole()
     },
 
