@@ -6,7 +6,7 @@ import { emitter } from '@/emitter'
 import { useAudioMuseStore } from '@/stores/audiomuse'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
-import { getSonicMoods, sonicMix } from '@/services/connect/audiomuse'
+import { getSonicMoods, getSonicThemes, sonicMix } from '@/services/connect/audiomuse'
 import { makeSong } from '@/stores/__tests__/fixtures'
 import { sonicHomeShelvesMixin } from '../sonicHomeShelves'
 
@@ -14,6 +14,7 @@ vi.mock('@/services/audioEngine', () => ({ getAudioEngine: vi.fn() }))
 vi.mock('@/services/connect/audiomuse', () => ({
   getAudioMuseStatus: vi.fn().mockResolvedValue({ available: false, reason: 'not-configured' }),
   getSonicMoods: vi.fn(),
+  getSonicThemes: vi.fn(),
   sonicMix: vi.fn(),
 }))
 
@@ -37,8 +38,9 @@ type HomeVm = {
   soundsLikeYouSongs: { id: string }[]
   sonicMoods: string[]
   loadSoundsLikeYou(): Promise<void>
-  playMood(mood: string): Promise<void>
-  moodPlaying: string | null
+  sonicThemes: string[]
+  playHomeMix(kind: 'mood' | 'theme', item: string): Promise<void>
+  homeMixPlaying: string | null
 }
 
 describe("Home's AudioMuse rows", () => {
@@ -48,6 +50,7 @@ describe("Home's AudioMuse rows", () => {
       .mockReset()
       .mockResolvedValue([makeSong('new')])
     vi.mocked(getSonicMoods).mockReset().mockResolvedValue(['sad', 'happy'])
+    vi.mocked(getSonicThemes).mockReset().mockResolvedValue(['city'])
   })
 
   it('blends a few of the most played songs, never offering them back', async () => {
@@ -82,6 +85,7 @@ describe("Home's AudioMuse rows", () => {
     await flushPromises()
     expect(sonicMix).not.toHaveBeenCalled()
     expect(getSonicMoods).not.toHaveBeenCalled()
+    expect(getSonicThemes).not.toHaveBeenCalled()
   })
 
   it('shows an empty shelf rather than an old one when the blend fails', async () => {
@@ -108,11 +112,28 @@ describe("Home's AudioMuse rows", () => {
     const playback = usePlaybackStore()
     const vm = mountHome().vm as unknown as HomeVm
     playback.setQueue([makeSong('m1'), makeSong('m2')], 0)
-    playback.moodMix = 'relaxed'
-    expect(vm.moodPlaying).toBe('relaxed')
+    playback.homeMix = 'theme:city'
+    expect(vm.homeMixPlaying).toBe('theme:city')
 
     playback.setQueue([makeSong('m1')], 0)
-    expect(vm.moodPlaying).toBeNull()
+    expect(vm.homeMixPlaying).toBeNull()
+  })
+
+  it('offers the themes AudioMuse can answer', async () => {
+    audiomuseAnswers()
+    const vm = mountHome().vm as unknown as HomeVm
+    await flushPromises()
+    expect(vm.sonicThemes).toEqual(['city'])
+  })
+
+  it('plays a theme through the theme mix', async () => {
+    audiomuseAnswers()
+    const theme = vi.spyOn(usePlaybackStore(), 'startThemeMix').mockResolvedValue()
+    const vm = mountHome().vm as unknown as HomeVm
+
+    await vm.playHomeMix('theme', 'city')
+
+    expect(theme).toHaveBeenCalledWith('city')
   })
 
   it('says so when a mood finds nothing', async () => {
@@ -123,7 +144,7 @@ describe("Home's AudioMuse rows", () => {
     emitter.on('toast', toast)
     const vm = mountHome().vm as unknown as HomeVm
 
-    await vm.playMood('sad')
+    await vm.playHomeMix('mood', 'sad')
 
     expect(toast).toHaveBeenCalledWith(expect.objectContaining({ level: 'error' }))
     emitter.off('toast', toast)

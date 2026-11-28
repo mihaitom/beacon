@@ -8,7 +8,7 @@ at length in the app. The code is `connect/core/audiomuse.py` and
 `services/playback/skips.ts`, `services/playback/sonicActions.ts`,
 `stores/playback/queue.ts` (Autoplay, path), `stores/playback/radio.ts`
 (radios, mood mix), `composables/sonicHomeShelves.ts`,
-`components/home/MoodMixes.vue`, `components/library/SonicSearchSection.vue`,
+`components/home/MixTiles.vue`, `components/library/SonicSearchSection.vue`,
 `SearchSongsSection.vue`, `SonicSimilarArtists.vue` and
 `components/settings/AudioMuseSection.vue`.
 
@@ -210,6 +210,15 @@ connect's side and the renderer gets the batch it asked for.
   describe genres inside a mood, not something to choose between. The
   centroid list is cached for an hour (it changes only with a new
   analysis). Measured 0.08 s for 50 songs.
+- **Lyric themes** on Home, right under the moods, in the same tiles: what
+  the lyrics are about, from the five axes AudioMuse files every analysed
+  lyric under (`/api/lyrics/axes`). Six of Beacon's own picks, one or two
+  labels each (connect's `THEMES`): on the road (TRANSIT), city (URBAN),
+  nature (WILDERNESS), in love (ROMANTIC + RADIANT), heartbreak (ROMANTIC +
+  MELANCHOLIC), looking back (RETROSPECTIVE). Offered only for the labels
+  the instance knows, so without its lyrics analysis there is no row. The
+  axis search ranks the same way every time, so a mix is 50 songs drawn at
+  random from the best 150. Measured 0.1 s.
 - **Similar artists by sound** on the artist page, desktop (card shelf at
   the end) and phone (rows after the albums): `similar_artists` with the
   artist's id, hydrated with `getArtist`. AudioMuse also names artists it

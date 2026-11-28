@@ -100,7 +100,16 @@ export default {
     rediscover: 'À redécouvrir',
     soundsLikeYou: 'Ça vous ressemble',
     moodsTitle: 'Ambiances',
-    moodMixError: 'Impossible de composer un mix pour cette ambiance.',
+    homeMixError: 'Impossible de composer ce mix.',
+    themesTitle: 'Thèmes',
+    themes: {
+      onTheRoad: 'Sur la route',
+      city: 'En ville',
+      nature: 'Nature',
+      inLove: 'Amoureux',
+      heartbreak: "Chagrin d'amour",
+      lookingBack: 'Souvenirs',
+    },
     moods: {
       happy: 'Joyeux',
       relaxed: 'Détente',

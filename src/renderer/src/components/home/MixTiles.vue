@@ -1,29 +1,29 @@
 <template>
   <section class="mood-mixes">
-    <h2 class="section-title">{{ $t('home.moodsTitle') }}</h2>
-    <div class="mood-mixes__grid" :style="{ '--mood-count': moods.length }">
+    <h2 class="section-title">{{ title }}</h2>
+    <div class="mood-mixes__grid" :style="{ '--mood-count': items.length }">
       <button
-        v-for="mood in moods"
-        :key="mood"
+        v-for="item in items"
+        :key="item"
         type="button"
         class="mood-tile"
         :class="[
-          `mood-tile--${mood}`,
+          `mood-tile--${kind}-${item}`,
           {
-            'mood-tile--loading': loading === mood,
-            'mood-tile--playing': playing === mood,
-            'mood-tile--paused': playing === mood && paused,
+            'mood-tile--loading': loading === key(item),
+            'mood-tile--playing': playing === key(item),
+            'mood-tile--paused': playing === key(item) && paused,
           },
         ]"
-        :disabled="loading !== null && loading !== mood"
-        :aria-busy="loading === mood"
-        :aria-current="playing === mood ? 'true' : undefined"
-        @click="$emit('play', mood)"
+        :disabled="loading !== null && loading !== key(item)"
+        :aria-busy="loading === key(item)"
+        :aria-current="playing === key(item) ? 'true' : undefined"
+        @click="$emit('play', item)"
       >
         <span class="mood-tile__glow" aria-hidden="true" />
-        <v-icon class="mood-tile__art" :icon="ICONS[mood]" aria-hidden="true" />
-        <span class="mood-tile__label">{{ $t(`home.moods.${mood}`) }}</span>
-        <span v-if="playing === mood" class="mood-tile__bars" aria-hidden="true">
+        <v-icon class="mood-tile__art" :icon="ICONS[key(item)]" aria-hidden="true" />
+        <span class="mood-tile__label">{{ $t(`home.${kind}s.${item}`) }}</span>
+        <span v-if="playing === key(item)" class="mood-tile__bars" aria-hidden="true">
           <i /><i /><i />
         </span>
         <span v-else class="mood-tile__play" aria-hidden="true">
@@ -36,32 +36,47 @@
 
 <script lang="ts">
 import type { PropType } from 'vue'
-import type { Mood } from '@/composables/sonicHomeShelves'
+import { homeMixKey, type HomeMixKind } from '@/composables/sonicHomeShelves'
 
-const ICONS: Record<Mood, string> = {
-  happy: 'mdi-white-balance-sunny',
-  relaxed: 'mdi-leaf',
-  party: 'mdi-party-popper',
-  danceable: 'mdi-music-note-eighth',
-  sad: 'mdi-weather-rainy',
-  aggressive: 'mdi-lightning-bolt',
+const ICONS: Record<string, string> = {
+  'mood:happy': 'mdi-white-balance-sunny',
+  'mood:relaxed': 'mdi-leaf',
+  'mood:party': 'mdi-party-popper',
+  'mood:danceable': 'mdi-music-note-eighth',
+  'mood:sad': 'mdi-weather-rainy',
+  'mood:aggressive': 'mdi-lightning-bolt',
+  'theme:onTheRoad': 'mdi-road-variant',
+  'theme:city': 'mdi-city-variant-outline',
+  'theme:nature': 'mdi-pine-tree',
+  'theme:inLove': 'mdi-heart',
+  'theme:heartbreak': 'mdi-heart-broken',
+  'theme:lookingBack': 'mdi-history',
 }
 
-/** One tile per AudioMuse-AI mood; each plays a mix in that mood. */
+/** One tile per AudioMuse-AI mood or lyric theme; each plays a mix of it.
+ * `loading` and `playing` are keys across both rows (see homeMixKey()), so
+ * a mix on its way in one row holds the other row too. */
 export default {
-  name: 'MoodMixes',
+  name: 'MixTiles',
   props: {
-    moods: { type: Array as PropType<Mood[]>, required: true },
-    /** The mood whose mix is on its way, or null. */
-    loading: { type: String as PropType<Mood | null>, default: null },
-    /** The mood whose mix is what plays now, or null. */
-    playing: { type: String as PropType<Mood | null>, default: null },
+    kind: { type: String as PropType<HomeMixKind>, required: true },
+    title: { type: String, required: true },
+    items: { type: Array as PropType<string[]>, required: true },
+    /** The mix on its way, or null. */
+    loading: { type: String as PropType<string | null>, default: null },
+    /** The mix that plays now, or null. */
+    playing: { type: String as PropType<string | null>, default: null },
     /** Whether playback is paused, so the playing tile holds still. */
     paused: { type: Boolean, default: false },
   },
   emits: ['play'],
   data() {
     return { ICONS }
+  },
+  methods: {
+    key(item: string): string {
+      return homeMixKey(this.kind, item)
+    },
   },
 }
 </script>
@@ -99,33 +114,57 @@ export default {
   }
 }
 
-/* Each mood keeps two hues of its own on every theme - the exception to
+/* Each mood and theme keeps two hues of its own on every theme - the exception to
  * "no colour in a component" (see docs/styleguide.md, Palette): they name
  * the mood, they are not interface. The label stays the theme's text
  * colour, so it reads on light and dark themes alike. */
-.mood-tile--happy {
+.mood-tile--mood-happy {
   --mood: 247, 186, 52;
   --mood-2: 245, 112, 84;
 }
-.mood-tile--relaxed {
+.mood-tile--mood-relaxed {
   --mood: 64, 184, 160;
   --mood-2: 72, 140, 210;
 }
-.mood-tile--party {
+.mood-tile--mood-party {
   --mood: 222, 76, 170;
   --mood-2: 250, 150, 60;
 }
-.mood-tile--danceable {
+.mood-tile--mood-danceable {
   --mood: 140, 100, 236;
   --mood-2: 60, 196, 230;
 }
-.mood-tile--sad {
+.mood-tile--mood-sad {
   --mood: 84, 128, 214;
   --mood-2: 110, 84, 190;
 }
-.mood-tile--aggressive {
+.mood-tile--mood-aggressive {
   --mood: 232, 66, 64;
   --mood-2: 250, 128, 40;
+}
+.mood-tile--theme-onTheRoad {
+  --mood: 238, 142, 58;
+  --mood-2: 214, 84, 70;
+}
+.mood-tile--theme-city {
+  --mood: 98, 108, 234;
+  --mood-2: 206, 76, 206;
+}
+.mood-tile--theme-nature {
+  --mood: 70, 168, 92;
+  --mood-2: 156, 192, 64;
+}
+.mood-tile--theme-inLove {
+  --mood: 236, 78, 122;
+  --mood-2: 250, 150, 172;
+}
+.mood-tile--theme-heartbreak {
+  --mood: 150, 88, 176;
+  --mood-2: 86, 108, 196;
+}
+.mood-tile--theme-lookingBack {
+  --mood: 200, 152, 88;
+  --mood-2: 150, 118, 204;
 }
 
 .mood-tile {

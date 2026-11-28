@@ -32,14 +32,27 @@
       @play-all="playAllAlbums($event, 'recent')"
     />
 
-    <mood-mixes
+    <mix-tiles
       v-if="audiomuseAvailable && sonicMoods.length"
       class="home-moods"
-      :moods="sonicMoods"
-      :loading="moodLoading"
-      :playing="moodPlaying"
+      kind="mood"
+      :title="$t('home.moodsTitle')"
+      :items="sonicMoods"
+      :loading="homeMixLoading"
+      :playing="homeMixPlaying"
       :paused="!playbackStore.isPlaying"
-      @play="playMood"
+      @play="playHomeMix('mood', $event)"
+    />
+    <mix-tiles
+      v-if="audiomuseAvailable && sonicThemes.length"
+      class="home-moods"
+      kind="theme"
+      :title="$t('home.themesTitle')"
+      :items="sonicThemes"
+      :loading="homeMixLoading"
+      :playing="homeMixPlaying"
+      :paused="!playbackStore.isPlaying"
+      @play="playHomeMix('theme', $event)"
     />
 
     <top-songs-list
@@ -146,7 +159,7 @@ import TopSongsList from '@/components/home/TopSongsList.vue'
 import AlbumShelf from '@/components/library/AlbumShelf.vue'
 import SimilarArtistsShelf from '@/components/library/SimilarArtistsShelf.vue'
 import SongShelf from '@/components/library/SongShelf.vue'
-import MoodMixes from '@/components/home/MoodMixes.vue'
+import MixTiles from '@/components/home/MixTiles.vue'
 import { homeShelvesMixin } from '@/composables/homeShelves'
 import { sonicHomeShelvesMixin } from '@/composables/sonicHomeShelves'
 
@@ -159,7 +172,7 @@ export default {
     AlbumShelf,
     SimilarArtistsShelf,
     SongShelf,
-    MoodMixes,
+    MixTiles,
   },
   mixins: [homeShelvesMixin, sonicHomeShelvesMixin],
 }

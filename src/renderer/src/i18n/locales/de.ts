@@ -98,7 +98,16 @@ export default {
     rediscover: 'Lange nicht gehört',
     soundsLikeYou: 'Klingt nach dir',
     moodsTitle: 'Stimmungen',
-    moodMixError: 'Für diese Stimmung ließ sich kein Mix zusammenstellen.',
+    homeMixError: 'Dieser Mix ließ sich nicht zusammenstellen.',
+    themesTitle: 'Themen',
+    themes: {
+      onTheRoad: 'Unterwegs',
+      city: 'Stadt',
+      nature: 'Natur',
+      inLove: 'Verliebt',
+      heartbreak: 'Herzschmerz',
+      lookingBack: 'Erinnerungen',
+    },
     moods: {
       happy: 'Fröhlich',
       relaxed: 'Entspannt',

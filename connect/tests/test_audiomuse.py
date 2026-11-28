@@ -73,6 +73,12 @@ class FakeAudioMuse:
             ],
             "sad": [{"index": 0, "n_songs": 70, "top_tags": ["indie", "rock", "folk"]}],
         }
+        self.axes = {
+            "AXIS_1_SETTING": {"labels": {"TRANSIT": "x", "URBAN": "x", "WILDERNESS": "x"}},
+            "AXIS_2_SOCIAL_DYNAMIC": {"labels": {"ROMANTIC": "x"}},
+            # No RADIANT: "in love" cannot be asked for here.
+            "AXIS_3_EMOTIONAL_VALENCE": {"labels": {"MELANCHOLIC": "x"}},
+        }
         self.artist_rows = [
             {"artist": "Artist X", "artist_id": "x", "divergence": 0.04},
             {"artist": "Featured Guest", "artist_id": None, "divergence": 0.05},
@@ -104,6 +110,8 @@ class FakeAudioMuse:
             }
         elif path == "/api/mood_centroids":
             body = self.moods
+        elif path == "/api/lyrics/axes":
+            body = {"axes": self.axes}
         elif path == "/api/similar_artists":
             body = self.artist_rows
         elif path == "/api/similar_tracks":
@@ -558,6 +566,46 @@ async def test_only_as_many_artists_as_wanted(fake, configured):
     assert [a["id"] for a in artists] == ["x", "y"]
 
 
+# ── themes ───────────────────────────────────────────────────────────────────
+
+
+async def test_only_themes_whose_labels_audiomuse_knows_are_offered(fake, configured):
+    assert await audiomuse.themes() == ["onTheRoad", "city", "nature", "heartbreak"]
+
+
+async def test_without_lyrics_analysis_there_are_no_themes(fake, configured):
+    fake.status_for["/api/lyrics/axes"] = 400
+    with pytest.raises(audiomuse.AudioMuseError):
+        await audiomuse.themes()
+
+
+async def test_a_theme_asks_for_its_labels_on_the_sessions_server(fake, configured):
+    await audiomuse.theme_mix(_media(), "heartbreak", 3, [])
+    asked = fake.last("/api/lyrics/search/axes")
+    assert asked["targets"] == {
+        "AXIS_2_SOCIAL_DYNAMIC": "ROMANTIC",
+        "AXIS_3_EMOTIONAL_VALENCE": "MELANCHOLIC",
+    }
+    assert asked["server"] == "srv-nav"
+
+
+async def test_a_theme_draws_from_a_bigger_pool_in_a_new_order(fake, configured, monkeypatch):
+    monkeypatch.setattr(audiomuse.random, "shuffle", lambda ids: ids.reverse())
+    songs = await audiomuse.theme_mix(_media(), "city", 2, [])
+    assert fake.last("/api/lyrics/search/axes")["limit"] > 2
+    assert [s["id"] for s in songs] == ["c", "b"]
+
+
+async def test_a_theme_mix_leaves_out_what_is_queued(fake, configured):
+    songs = await audiomuse.theme_mix(_media(), "city", 3, ["b"])
+    assert "b" not in [s["id"] for s in songs]
+
+
+async def test_an_unknown_theme_is_an_error(fake, configured):
+    with pytest.raises(audiomuse.AudioMuseError):
+        await audiomuse.theme_mix(_media(), "space", 3, [])
+
+
 # ── routes ───────────────────────────────────────────────────────────────────
 
 
@@ -647,3 +695,10 @@ def test_similar_artists_answer_artists(client, fake, configured):
     response = client.get("/audiomuse/similar-artists", params={"id": "seed-artist"})
     assert [a["id"] for a in response.json()["artists"]] == ["x", "y"]
     assert client.get("/audiomuse/similar-artists", params={"id": ""}).status_code == 422
+
+
+def test_the_theme_routes_answer_or_refuse(client, fake, configured):
+    assert client.get("/audiomuse/themes").json()["themes"][0] == "onTheRoad"
+    response = client.post("/audiomuse/theme", json={"theme": "city", "n": 2})
+    assert len(response.json()["songs"]) == 2
+    assert client.post("/audiomuse/theme", json={"theme": "space"}).status_code == 422

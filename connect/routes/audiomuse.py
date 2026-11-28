@@ -159,3 +159,30 @@ async def get_similar_artists(
     except audiomuse.AudioMuseError as e:
         return JSONResponse(status_code=503, content={"detail": e.reason})
     return {"artists": artists}
+
+
+class ThemeRequest(BaseModel):
+    theme: Literal[tuple(audiomuse.THEMES)]  # type: ignore[valid-type]
+    n: int = Field(default=50, ge=1, le=100)
+    exclude: list[ItemId] = Field(default_factory=list, max_length=1000)
+
+
+@router.get("/themes", response_model=None)
+async def get_themes(
+    session: SessionState = Depends(require_authenticated_session),
+) -> dict | JSONResponse:
+    try:
+        return {"themes": await audiomuse.themes()}
+    except audiomuse.AudioMuseError as e:
+        return JSONResponse(status_code=503, content={"detail": e.reason})
+
+
+@router.post("/theme", response_model=None)
+async def post_theme(
+    req: ThemeRequest, session: SessionState = Depends(require_authenticated_session)
+) -> dict | JSONResponse:
+    try:
+        songs = await audiomuse.theme_mix(session.media, req.theme, req.n, req.exclude)
+    except audiomuse.AudioMuseError as e:
+        return JSONResponse(status_code=503, content={"detail": e.reason})
+    return {"songs": songs}

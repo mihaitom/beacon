@@ -109,6 +109,21 @@ export async function sonicMood(mood: string, n = 50, exclude: string[] = []): P
   return data.songs.map(mapSong)
 }
 
+/** The lyric themes this AudioMuse can answer ("onTheRoad", "city", ...). */
+export async function getSonicThemes(): Promise<string[]> {
+  const data = await fetchConnect<{ themes: string[] }>('/audiomuse/themes')
+  return data.themes
+}
+
+/** A mix of songs whose lyrics are about one theme; each call draws anew. */
+export async function sonicTheme(theme: string, n = 50, exclude: string[] = []): Promise<Song[]> {
+  const data = await fetchConnect<{ songs: RawSong[] }>('/audiomuse/theme', {
+    method: 'POST',
+    body: { theme, n, exclude },
+  })
+  return data.songs.map(mapSong)
+}
+
 /** Library artists that sound like `artistId`, closest first. */
 export async function sonicSimilarArtists(artistId: string, n = 12): Promise<Artist[]> {
   const params = new URLSearchParams({ id: artistId, n: String(n) })

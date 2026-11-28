@@ -241,12 +241,14 @@ class _Cached:
 _status_cache: _Cached | None = None
 _mapping_cache: dict[tuple, _Cached] = {}
 _moods_cache: _Cached | None = None
+_axes_cache: _Cached | None = None
 
 
 def _forget_cached_state() -> None:
-    global _status_cache, _moods_cache
+    global _status_cache, _moods_cache, _axes_cache
     _status_cache = None
     _moods_cache = None
+    _axes_cache = None
     _mapping_cache.clear()
 
 
@@ -662,3 +664,71 @@ async def similar_artists(media, artist_id: str, n: int) -> list[dict]:
 
     artists = await asyncio.gather(*(one(other) for other in ids[: n + n // 2]))
     return [artist for artist in artists if artist is not None][:n]
+
+
+# Themes are what a song's lyrics are about, from the five axes AudioMuse
+# files every analysed lyric under (setting, relationship, feeling, way of
+# telling, weight). Each is one or two of those labels - Beacon's own
+# choice of the combinations a person would pick from.
+THEMES: dict[str, dict[str, str]] = {
+    "onTheRoad": {"AXIS_1_SETTING": "TRANSIT"},
+    "city": {"AXIS_1_SETTING": "URBAN"},
+    "nature": {"AXIS_1_SETTING": "WILDERNESS"},
+    "inLove": {"AXIS_2_SOCIAL_DYNAMIC": "ROMANTIC", "AXIS_3_EMOTIONAL_VALENCE": "RADIANT"},
+    "heartbreak": {
+        "AXIS_2_SOCIAL_DYNAMIC": "ROMANTIC",
+        "AXIS_3_EMOTIONAL_VALENCE": "MELANCHOLIC",
+    },
+    "lookingBack": {"AXIS_4_NARRATIVE_TEMPORALITY": "RETROSPECTIVE"},
+}
+
+# The axis search ranks the same songs the same way every time, so a theme
+# draws its mix from the best this many: asked again, it sounds different.
+_THEME_POOL = 150
+
+
+async def _lyric_axes() -> dict[str, set[str]]:
+    global _axes_cache
+    now = time.monotonic()
+    if _axes_cache is not None and now < _axes_cache.expires:
+        return _axes_cache.value
+    body = await _request("GET", "/api/lyrics/axes")
+    axes: dict[str, set[str]] = {}
+    raw = body.get("axes") if isinstance(body, dict) else None
+    for name, axis in (raw or {}).items():
+        labels = axis.get("labels") if isinstance(axis, dict) else None
+        if isinstance(labels, dict):
+            axes[str(name)] = set(labels)
+    _axes_cache = _Cached(axes, now + _MOODS_TTL)
+    return axes
+
+
+async def themes() -> list[str]:
+    """The themes this AudioMuse can answer: its lyrics analysis is on, and
+    it knows every label the theme is made of."""
+    axes = await _lyric_axes()
+    return [
+        theme
+        for theme, targets in THEMES.items()
+        if all(label in axes.get(axis, ()) for axis, label in targets.items())
+    ]
+
+
+async def theme_mix(media, theme: str, n: int, exclude: list[str]) -> list[dict]:
+    targets = THEMES.get(theme)
+    if targets is None:
+        raise AudioMuseError("failed", f"unknown theme {theme!r}")
+    server = await server_for(media)
+    excluded = set(exclude[:_MAX_EXCLUDE])
+    body = await _request(
+        "POST",
+        "/api/lyrics/search/axes",
+        json={
+            "targets": targets,
+            "limit": min(_THEME_POOL + len(excluded), _MAX_ASK),
+            "server": server["id"],
+        },
+    )
+    ids = _result_ids(body)
+    random.shuffle(ids)
+    return await _hydrate(media, ids, n, excluded)

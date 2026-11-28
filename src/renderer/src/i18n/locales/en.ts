@@ -98,7 +98,16 @@ export default {
     rediscover: 'Rediscover',
     soundsLikeYou: 'Sounds like you',
     moodsTitle: 'Moods',
-    moodMixError: 'Could not put a mix together for this mood.',
+    homeMixError: 'Could not put this mix together.',
+    themesTitle: 'Themes',
+    themes: {
+      onTheRoad: 'On the road',
+      city: 'City',
+      nature: 'Nature',
+      inLove: 'In love',
+      heartbreak: 'Heartbreak',
+      lookingBack: 'Looking back',
+    },
     moods: {
       happy: 'Happy',
       relaxed: 'Relaxed',

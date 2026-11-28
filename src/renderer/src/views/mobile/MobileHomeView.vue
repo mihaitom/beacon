@@ -52,14 +52,27 @@
       </div>
     </section>
 
-    <mood-mixes
+    <mix-tiles
       v-if="audiomuseAvailable && sonicMoods.length"
       class="mobile-home__section"
-      :moods="sonicMoods"
-      :loading="moodLoading"
-      :playing="moodPlaying"
+      kind="mood"
+      :title="$t('home.moodsTitle')"
+      :items="sonicMoods"
+      :loading="homeMixLoading"
+      :playing="homeMixPlaying"
       :paused="!playbackStore.isPlaying"
-      @play="playMood"
+      @play="playHomeMix('mood', $event)"
+    />
+    <mix-tiles
+      v-if="audiomuseAvailable && sonicThemes.length"
+      class="mobile-home__section"
+      kind="theme"
+      :title="$t('home.themesTitle')"
+      :items="sonicThemes"
+      :loading="homeMixLoading"
+      :playing="homeMixPlaying"
+      :paused="!playbackStore.isPlaying"
+      @play="playHomeMix('theme', $event)"
     />
 
     <section v-if="loadingTopSongs || shownTopSongs.length" class="mobile-home__section">
@@ -284,7 +297,7 @@ import MobileHomeHero from '@/components/mobile/MobileHomeHero.vue'
 import MobileAlbumTile from '@/components/mobile/MobileAlbumTile.vue'
 import MobileSongRow from '@/components/mobile/MobileSongRow.vue'
 import MobileSongActionSheet from '@/components/mobile/MobileSongActionSheet.vue'
-import MoodMixes from '@/components/home/MoodMixes.vue'
+import MixTiles from '@/components/home/MixTiles.vue'
 import { homeShelvesMixin } from '@/composables/homeShelves'
 import { sonicHomeShelvesMixin } from '@/composables/sonicHomeShelves'
 import { usePlaybackStore } from '@/stores/playback'
@@ -301,7 +314,7 @@ const SONG_ROWS = 5
  * laid out for one hand. */
 export default {
   name: 'MobileHomeView',
-  components: { MobileHomeHero, MobileAlbumTile, MobileSongRow, MobileSongActionSheet, MoodMixes },
+  components: { MobileHomeHero, MobileAlbumTile, MobileSongRow, MobileSongActionSheet, MixTiles },
   mixins: [homeShelvesMixin, sonicHomeShelvesMixin],
   data() {
     return {

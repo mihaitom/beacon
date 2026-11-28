@@ -6,7 +6,7 @@ import { useAuthStore } from '../auth'
 import { useRadioSettingsStore } from '../radioSettings'
 import { useRadioMetadataStore } from '../radioMetadata'
 import { useAudioMuseStore } from '../audiomuse'
-import { sonicMix, sonicMood, type SonicMixRequest } from '@/services/connect/audiomuse'
+import { sonicMix, sonicMood, sonicTheme, type SonicMixRequest } from '@/services/connect/audiomuse'
 import * as connectPlayback from '@/services/connect/playback'
 import type { Artist, RadioStation, Song } from '@/types/library'
 import { getLocalMix } from '@/services/playback/localMix'
@@ -27,6 +27,7 @@ export interface RadioActions {
   startArtistRadio(artist: Artist): Promise<void>
   startDiscoveryRadio(song: Song): Promise<void>
   startMoodMix(mood: string): Promise<void>
+  startThemeMix(theme: string): Promise<void>
   playRadioStation(station: RadioStation): Promise<void>
   leaveRadio(): void
   startLocalRadio(streamUrl: string): void
@@ -110,7 +111,16 @@ export const radioActions: RadioActions & ThisType<PlaybackContext> = {
     if (!songs.length) throw new Error(`AudioMuse found nothing for the mood ${mood}`)
     await this.playSongList(songs, 0, true, true)
     // After playSongList(), whose new queue clears it.
-    this.moodMix = mood
+    this.homeMix = `mood:${mood}`
+  },
+
+  /** A mix of songs whose lyrics are about one theme (Home's theme row),
+   * the same way as a mood mix. */
+  async startThemeMix(theme: string): Promise<void> {
+    const songs = await sonicTheme(theme, SONIC_RADIO_LENGTH)
+    if (!songs.length) throw new Error(`AudioMuse found nothing for the theme ${theme}`)
+    await this.playSongList(songs, 0, true, true)
+    this.homeMix = `theme:${theme}`
   },
 
   /** Artist Radio — AudioMuse-AI's blend of the artist when it answers;

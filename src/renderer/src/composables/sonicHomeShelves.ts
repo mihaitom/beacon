@@ -3,7 +3,7 @@ import { emitter } from '@/emitter'
 import { useAudioMuseStore } from '@/stores/audiomuse'
 import { useLibraryStore } from '@/stores/library'
 import { usePlaybackStore } from '@/stores/playback'
-import { getSonicMoods, sonicMix } from '@/services/connect/audiomuse'
+import { getSonicMoods, getSonicThemes, sonicMix } from '@/services/connect/audiomuse'
 import { shuffled } from '@/services/shuffle'
 import type { Song } from '@/types/library'
 
@@ -18,17 +18,28 @@ const SOUNDS_LIKE_YOU_LENGTH = 30
 export const MOODS = ['happy', 'relaxed', 'party', 'danceable', 'sad', 'aggressive'] as const
 export type Mood = (typeof MOODS)[number]
 
-/** Options-API mixin: Home's two AudioMuse-AI rows, shared by the desktop
- * and the phone page like homeShelvesMixin. Both stay away without
- * AudioMuse. */
+/** Home's two rows of mix tiles: AudioMuse's moods, and what the lyrics are
+ * about. */
+export type HomeMixKind = 'mood' | 'theme'
+
+/** How the playback store remembers which tile started the queue. */
+export function homeMixKey(kind: HomeMixKind, item: string): string {
+  return `${kind}:${item}`
+}
+
+/** Options-API mixin: Home's AudioMuse-AI rows ("Sounds like you", moods,
+ * themes), shared by the desktop and the phone page like homeShelvesMixin.
+ * All of them stay away without AudioMuse. */
 export const sonicHomeShelvesMixin = defineComponent({
   data() {
     return {
       soundsLikeYouSongs: [] as Song[],
       loadingSoundsLikeYou: false,
       sonicMoods: [] as Mood[],
-      // The mood whose mix is being fetched, for its button's spinner.
-      moodLoading: null as Mood | null,
+      // In AudioMuse's order, which is Beacon's (connect's THEMES).
+      sonicThemes: [] as string[],
+      // The tile whose mix is being fetched (homeMixKey()), for its spinner.
+      homeMixLoading: null as string | null,
     }
   },
   computed: {
@@ -38,13 +49,13 @@ export const sonicHomeShelvesMixin = defineComponent({
     mostPlayed(): Song[] {
       return useLibraryStore().mostPlayedSongs
     },
-    /** The mood the queue was started from, while it is what plays.
-     * Autoplay carrying on from it still counts: it continues from the
-     * mix's own songs. */
-    moodPlaying(): Mood | null {
+    /** The tile the queue was started from (homeMixKey()), while it is
+     * what plays. Autoplay carrying on from it still counts: it continues
+     * from the mix's own songs. */
+    homeMixPlaying(): string | null {
       const playback = usePlaybackStore()
       if (playback.radioStation || playback.preview || !playback.currentSong) return null
-      return (playback.moodMix as Mood | null) ?? null
+      return playback.homeMix
     },
     soundsLikeYouReady(): boolean {
       return this.audiomuseAvailable && this.mostPlayed.length > 0
@@ -61,7 +72,9 @@ export const sonicHomeShelvesMixin = defineComponent({
     },
     audiomuseAvailable: {
       handler(available: boolean) {
-        if (available && !this.sonicMoods.length) void this.loadMoods()
+        if (!available) return
+        if (!this.sonicMoods.length) void this.loadMoods()
+        if (!this.sonicThemes.length) void this.loadThemes()
       },
       immediate: true,
     },
@@ -99,20 +112,29 @@ export const sonicHomeShelvesMixin = defineComponent({
         console.warn('[home] AudioMuse moods failed:', error)
       }
     },
-    async playMood(mood: Mood) {
-      if (this.moodLoading) return
-      this.moodLoading = mood
+    async loadThemes() {
       try {
-        await usePlaybackStore().startMoodMix(mood)
+        this.sonicThemes = await getSonicThemes()
       } catch (error) {
-        console.error('[home] mood mix failed:', error)
+        // AudioMuse without its lyrics analysis has no themes to offer.
+        console.warn('[home] AudioMuse themes failed:', error)
+      }
+    },
+    async playHomeMix(kind: HomeMixKind, item: string) {
+      if (this.homeMixLoading) return
+      this.homeMixLoading = homeMixKey(kind, item)
+      const playback = usePlaybackStore()
+      try {
+        await (kind === 'mood' ? playback.startMoodMix(item) : playback.startThemeMix(item))
+      } catch (error) {
+        console.error(`[home] ${kind} mix failed:`, error)
         emitter.emit('toast', {
           level: 'error',
-          title: this.$t(`home.moods.${mood}`),
-          message: this.$t('home.moodMixError'),
+          title: this.$t(`home.${kind}s.${item}`),
+          message: this.$t('home.homeMixError'),
         })
       } finally {
-        this.moodLoading = null
+        this.homeMixLoading = null
       }
     },
   },

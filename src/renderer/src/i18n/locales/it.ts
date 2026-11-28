@@ -98,7 +98,16 @@ export default {
     rediscover: 'Da riscoprire',
     soundsLikeYou: 'Suona come te',
     moodsTitle: 'Atmosfere',
-    moodMixError: 'Impossibile creare un mix per questa atmosfera.',
+    homeMixError: 'Impossibile creare questo mix.',
+    themesTitle: 'Temi',
+    themes: {
+      onTheRoad: 'In viaggio',
+      city: 'Città',
+      nature: 'Natura',
+      inLove: 'Innamorati',
+      heartbreak: 'Cuore spezzato',
+      lookingBack: 'Ricordi',
+    },
     moods: {
       happy: 'Allegro',
       relaxed: 'Rilassato',

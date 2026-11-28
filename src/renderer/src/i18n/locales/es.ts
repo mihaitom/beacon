@@ -102,7 +102,16 @@ export default {
     rediscover: 'Para redescubrir',
     soundsLikeYou: 'Suena a ti',
     moodsTitle: 'Estados de ánimo',
-    moodMixError: 'No se pudo crear una mezcla para este estado de ánimo.',
+    homeMixError: 'No se pudo crear esta mezcla.',
+    themesTitle: 'Temas',
+    themes: {
+      onTheRoad: 'En la carretera',
+      city: 'Ciudad',
+      nature: 'Naturaleza',
+      inLove: 'Enamorado',
+      heartbreak: 'Desamor',
+      lookingBack: 'Recuerdos',
+    },
     moods: {
       happy: 'Alegre',
       relaxed: 'Relajado',

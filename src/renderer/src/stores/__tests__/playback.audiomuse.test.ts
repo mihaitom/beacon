@@ -5,7 +5,13 @@ import { useAutoplayStore } from '../autoplay'
 import { useAudioMuseStore } from '../audiomuse'
 import { useLibraryStore } from '../library'
 import { usePlaybackStore } from '../playback'
-import { getAudioMuseStatus, sonicMix, sonicMood, sonicPath } from '@/services/connect/audiomuse'
+import {
+  getAudioMuseStatus,
+  sonicMix,
+  sonicMood,
+  sonicPath,
+  sonicTheme,
+} from '@/services/connect/audiomuse'
 import { clearSkips, noteSkipped, recentSkips } from '@/services/playback/skips'
 import { canPathTo } from '@/services/playback/sonicActions'
 import { emitter } from '@/emitter'
@@ -18,6 +24,7 @@ vi.mock('@/services/connect/audiomuse', () => ({
   sonicMix: vi.fn(),
   sonicPath: vi.fn(),
   sonicMood: vi.fn(),
+  sonicTheme: vi.fn(),
 }))
 
 /** AudioMuse-AI in Autoplay and the radios (docs/plans/audiomuse.md):
@@ -297,7 +304,7 @@ describe('a mood mix', () => {
 
     await playback.startMoodMix('relaxed')
 
-    expect(playback.moodMix).toBe('relaxed')
+    expect(playback.homeMix).toBe('mood:relaxed')
     expect(sonicMood).toHaveBeenCalledWith('relaxed', 50)
     expect(played.mock.calls[0]![0].map((s) => s.id)).toEqual(['m1', 'm2'])
   })
@@ -312,29 +319,52 @@ describe('a mood mix', () => {
   })
 })
 
+describe('a theme mix', () => {
+  it("plays AudioMuse's songs for the theme and remembers it", async () => {
+    vi.mocked(sonicTheme).mockResolvedValue([makeSong('t1'), makeSong('t2')])
+    const playback = usePlaybackStore()
+    const played = vi.spyOn(playback, 'playSongList').mockResolvedValue(undefined)
+
+    await playback.startThemeMix('city')
+
+    expect(sonicTheme).toHaveBeenCalledWith('city', 50)
+    expect(played.mock.calls[0]![0].map((s) => s.id)).toEqual(['t1', 't2'])
+    expect(playback.homeMix).toBe('theme:city')
+  })
+
+  it('leaves the queue alone and says so when nothing came back', async () => {
+    vi.mocked(sonicTheme).mockResolvedValue([])
+    const playback = usePlaybackStore()
+    const played = vi.spyOn(playback, 'playSongList').mockResolvedValue(undefined)
+
+    await expect(playback.startThemeMix('city')).rejects.toThrow()
+    expect(played).not.toHaveBeenCalled()
+  })
+})
+
 describe('which mood the queue came from', () => {
   it('is forgotten when anything replaces the queue', () => {
     const playback = usePlaybackStore()
     playback.setQueue([makeSong('a'), makeSong('b')], 0)
     vi.spyOn(playback, 'syncCastQueue').mockImplementation(() => {})
 
-    playback.moodMix = 'sad'
+    playback.homeMix = 'mood:sad'
     playback.setQueue([makeSong('c')], 0)
-    expect(playback.moodMix).toBeNull()
+    expect(playback.homeMix).toBeNull()
 
-    playback.moodMix = 'sad'
+    playback.homeMix = 'mood:sad'
     playback.replaceQueueAfterCurrent([makeSong('d')])
-    expect(playback.moodMix).toBeNull()
+    expect(playback.homeMix).toBeNull()
   })
 
   it('stays while songs are only added to it', () => {
     const playback = usePlaybackStore()
     playback.setQueue([makeSong('a')], 0)
     vi.spyOn(playback, 'syncCastQueue').mockImplementation(() => {})
-    playback.moodMix = 'sad'
+    playback.homeMix = 'mood:sad'
 
     playback.addToQueue([makeSong('more')])
 
-    expect(playback.moodMix).toBe('sad')
+    expect(playback.homeMix).toBe('mood:sad')
   })
 })
